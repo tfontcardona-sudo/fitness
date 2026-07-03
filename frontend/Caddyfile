@@ -1,0 +1,15 @@
+# Si DOMAIN está definido, Caddy sirve en ese dominio con HTTPS automático.
+# Si está vacío, sirve en :80 (pruebas locales o VPS sin dominio todavía).
+{$DOMAIN::80} {
+	encode gzip
+
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

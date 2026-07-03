@@ -1,0 +1,38 @@
+# --- Core API ---
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+pydantic==2.11.4
+pydantic-settings==2.9.1
+python-multipart==0.0.20
+email-validator==2.2.0
+# --- Base de datos ---
+sqlalchemy==2.0.40
+alembic==1.15.2
+psycopg[binary]==3.2.6
+
+# --- Seguridad ---
+pyjwt==2.10.1
+bcrypt==4.2.1
+itsdangerous==2.2.0
+slowapi==0.1.9
+
+# --- IA ---
+anthropic==0.51.0
+httpx==0.28.1
+
+# --- Scheduler ---
+apscheduler==3.11.0
+
+# --- Documentos y gráficas ---
+python-docx==1.1.2
+reportlab==4.4.0
+matplotlib==3.10.1
+pillow==11.2.1
+
+# --- Email y plantillas ---
+aiosmtplib==4.0.1
+jinja2==3.1.6
+
+# --- Tests ---
+pytest==8.3.5
+pytest-asyncio==0.26.0

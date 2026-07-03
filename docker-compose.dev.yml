@@ -1,0 +1,53 @@
+# Uso: docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+# Añade: hot-reload del backend, servidor Vite, Mailpit para ver emails, puertos abiertos.
+
+services:
+  db:
+    ports:
+      - "5432:5432"
+
+  api:
+    build:
+      context: ./backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./backend:/code
+      - ./storage:/storage
+    ports:
+      - "8000:8000"
+    environment:
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_USER: ""
+      SMTP_PASS: ""
+      SMTP_FROM: dev@fitness.local
+    depends_on:
+      mailpit:
+        condition: service_started
+      db:
+        condition: service_healthy
+
+  web:
+    # En dev usamos el servidor de Vite con HMR en lugar del build estático
+    build:
+      context: ./frontend
+      target: build
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://api:8000
+
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - "8025:8025"   # UI web para ver los emails enviados
+      - "1025:1025"   # SMTP
+
+volumes:
+  frontend_node_modules:

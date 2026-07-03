@@ -1,0 +1,54 @@
+"""Configuración de marca (H.1) — única fila, aplica a app/portal/docs/emails."""
+
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.db import get_db
+from app.deps import get_current_user
+from app.models import BrandConfig
+from app.schemas.entities import BrandConfigIn, BrandConfigOut
+from app.services.audit import log_event
+from app.services.storage import PhotoValidationError, save_brand_logo
+
+router = APIRouter(prefix="/api/brand", tags=["brand"], dependencies=[Depends(get_current_user)])
+
+
+def _brand(db: Session) -> BrandConfig:
+    brand = db.scalar(select(BrandConfig).limit(1))
+    if not brand:  # el seed la crea; defensa por si se vació la tabla
+        brand = BrandConfig()
+        db.add(brand)
+        db.commit()
+        db.refresh(brand)
+    return brand
+
+
+@router.get("", response_model=BrandConfigOut)
+def get_brand(db: Session = Depends(get_db)) -> BrandConfigOut:
+    return BrandConfigOut.model_validate(_brand(db))
+
+
+@router.put("", response_model=BrandConfigOut)
+def update_brand(body: BrandConfigIn, db: Session = Depends(get_db)) -> BrandConfigOut:
+    brand = _brand(db)
+    for field, value in body.model_dump().items():
+        setattr(brand, field, value)
+    log_event(db, "brand", brand.id, "brand_updated", None)
+    db.commit()
+    db.refresh(brand)
+    return BrandConfigOut.model_validate(brand)
+
+
+@router.post("/logo", response_model=BrandConfigOut)
+def upload_logo(file: UploadFile = File(...), db: Session = Depends(get_db)) -> BrandConfigOut:
+    brand = _brand(db)
+    try:
+        brand.logo_path = save_brand_logo(file.file.read(), file.filename or "logo")
+    except PhotoValidationError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    log_event(db, "brand", brand.id, "brand_logo_updated", None)
+    db.commit()
+    db.refresh(brand)
+    return BrandConfigOut.model_validate(brand)

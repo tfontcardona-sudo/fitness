@@ -1,0 +1,557 @@
+"""Gestión de planes y períodos por el coach (soporte de Fases 6–7).
+
+Cierra el ciclo de vida para que el portal tenga datos reales:
+- POST /api/clients/{id}/plans         crea un plan (borrador) con el contenido
+                                       generado (núcleo + banco + educativo).
+- POST /api/plans/{id}/publish         publica el plan → cliente pasa a active,
+                                       email de bienvenida/nuevo plan (G.5).
+- POST /api/clients/{id}/periods       abre un período sobre un plan publicado.
+- GET  /api/clients/{id}/plans         lista de planes del cliente (para la app).
+- GET  /api/clients/{id}/change-requests  cola de solicitudes de ajuste.
+
+La generación con IA (Fase 3) produce el contenido; aquí se persiste y publica.
+El endpoint de creación acepta el contenido ya ensamblado para no acoplar la
+publicación a una llamada de IA en vivo (que puede orquestarse aparte).
+"""
+
+
+from datetime import date, timedelta
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.config import settings
+from app.db import get_db
+from app.deps import get_current_user
+from app.models import ChangeRequest, Client, FeedbackDoc, Period, Plan
+from app.schemas.entities import ChangeRequestOut, PeriodCreateIn
+from app.services import email_templates as tpl
+from app.services.audit import log_event
+from app.services.email_service import EmailService, brand_from_config
+
+router = APIRouter(tags=["plans"], dependencies=[Depends(get_current_user)])
+
+
+class PlanCreateIn(BaseModel):
+    month_index: int = 1
+    nutrition_json: dict | None = None
+    training_json: dict | None = None
+    education_json: dict | None = None
+    guardrail_flags: list[str] | None = None
+    generated_by: str | None = None
+
+
+class PlanOut(BaseModel):
+    id: int
+    client_id: int
+    month_index: int
+    version: int
+    status: str
+    nutrition_json: dict | None
+    training_json: dict | None
+    education_json: dict | None
+    guardrail_flags: list[str] | None
+
+    model_config = {"from_attributes": True}
+
+
+def _client_or_404(db: Session, client_id: int) -> Client:
+    c = db.get(Client, client_id)
+    if not c:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Cliente no encontrado")
+    return c
+
+
+@router.post("/api/clients/{client_id}/plans", response_model=PlanOut,
+             status_code=status.HTTP_201_CREATED)
+def create_plan(client_id: int, body: PlanCreateIn, db: Session = Depends(get_db)) -> PlanOut:
+    _client_or_404(db, client_id)
+    # versión siguiente para ese mes
+    last = db.scalar(
+        select(Plan).where(Plan.client_id == client_id, Plan.month_index == body.month_index)
+        .order_by(Plan.version.desc()).limit(1)
+    )
+    version = (last.version + 1) if last else 1
+    plan = Plan(
+        client_id=client_id, month_index=body.month_index, version=version,
+        status="draft", nutrition_json=body.nutrition_json,
+        training_json=body.training_json, education_json=body.education_json,
+        guardrail_flags=body.guardrail_flags, generated_by=body.generated_by,
+    )
+    db.add(plan)
+    db.flush()
+    log_event(db, "plan", plan.id, "plan_created", {"client_id": client_id, "version": version})
+    db.commit()
+    db.refresh(plan)
+    return PlanOut.model_validate(plan)
+
+
+class PlanUpdateIn(BaseModel):
+    """Edición manual del plan por el coach (revisión antes de enviar)."""
+    nutrition_json: dict | None = None
+    training_json: dict | None = None
+    education_json: dict | None = None
+
+
+@router.patch("/api/plans/{plan_id}", response_model=PlanOut)
+def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db)) -> PlanOut:
+    """Guarda los cambios manuales del coach en el plan (núcleo/comidas/educativo).
+
+    No re-ejecuta los guardrails: son ediciones del coach, que revisa bajo su
+    criterio (el principio de seguridad aplica a lo que genera la IA, no a la
+    corrección manual). El plan editado queda persistido y descargable.
+    """
+    plan = db.get(Plan, plan_id)
+    if not plan:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan no encontrado")
+    changes = body.model_dump(exclude_unset=True)
+    for field, value in changes.items():
+        if value is not None:
+            setattr(plan, field, value)
+    log_event(db, "plan", plan.id, "plan_edited", {"fields": list(changes.keys())})
+    db.commit()
+    db.refresh(plan)
+    return PlanOut.model_validate(plan)
+
+
+@router.get("/api/clients/{client_id}/plans", response_model=list[PlanOut])
+def list_plans(client_id: int, db: Session = Depends(get_db)) -> list[PlanOut]:
+    _client_or_404(db, client_id)
+    plans = db.scalars(
+        select(Plan).where(Plan.client_id == client_id)
+        .order_by(Plan.month_index.desc(), Plan.version.desc())
+    ).all()
+    return [PlanOut.model_validate(p) for p in plans]
+
+
+@router.post("/api/plans/{plan_id}/publish", response_model=PlanOut)
+def publish_plan(plan_id: int, db: Session = Depends(get_db)) -> PlanOut:
+    plan = db.get(Plan, plan_id)
+    if not plan:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan no encontrado")
+    client = db.get(Client, plan.client_id)
+
+    # Las versiones anteriores del mismo mes quedan supersedidas
+    for older in db.scalars(
+        select(Plan).where(
+            Plan.client_id == plan.client_id, Plan.month_index == plan.month_index,
+            Plan.status == "published",
+        )
+    ):
+        older.status = "superseded"
+
+    plan.status = "published"
+    is_new_month = plan.month_index > 1
+    if client.status == "onboarding":
+        client.status = "active"
+
+    log_event(db, "plan", plan.id, "plan_published", {"month_index": plan.month_index})
+
+    # Email de bienvenida / nuevo plan (G.5)
+    brand = brand_from_config(db)
+    portal_url = f"{settings.public_base_url}/p/{client.portal_token}"
+    subject, html = tpl.plan_published(
+        brand, client.full_name.split()[0], portal_url, is_new_month
+    )
+    EmailService(db).send(to=client.email, subject=subject, html=html,
+                          kind="plan_published", client=client)
+
+    db.commit()
+    db.refresh(plan)
+    return PlanOut.model_validate(plan)
+
+
+@router.post("/api/clients/{client_id}/periods", response_model=dict,
+             status_code=status.HTTP_201_CREATED)
+def create_period(client_id: int, body: PeriodCreateIn, db: Session = Depends(get_db)) -> dict:
+    _client_or_404(db, client_id)
+    plan = db.get(Plan, body.plan_id)
+    if not plan or plan.client_id != client_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan no encontrado para este cliente")
+    if plan.status != "published":
+        raise HTTPException(status.HTTP_409_CONFLICT, "El plan debe estar publicado")
+
+    last = db.scalar(
+        select(Period).where(Period.client_id == client_id)
+        .order_by(Period.period_index.desc()).limit(1)
+    )
+    period_index = (last.period_index + 1) if last else 1
+    period = Period(
+        client_id=client_id, plan_id=plan.id, period_index=period_index,
+        starts_on=body.starts_on, ends_on=body.starts_on + timedelta(days=body.days - 1),
+        status="open",
+    )
+    db.add(period)
+    db.flush()
+    log_event(db, "period", period.id, "period_opened", {"index": period_index})
+    db.commit()
+    return {"period_id": period.id, "period_index": period_index,
+            "starts_on": period.starts_on.isoformat(), "ends_on": period.ends_on.isoformat()}
+
+
+@router.get("/api/clients/{client_id}/change-requests", response_model=list[ChangeRequestOut])
+def list_change_requests(client_id: int, db: Session = Depends(get_db)) -> list[ChangeRequestOut]:
+    _client_or_404(db, client_id)
+    crs = db.scalars(
+        select(ChangeRequest).where(ChangeRequest.client_id == client_id)
+        .order_by(ChangeRequest.created_at.desc())
+    ).all()
+    return [ChangeRequestOut.model_validate(c) for c in crs]
+
+
+@router.post("/api/change-requests/{cr_id}/resolve", response_model=ChangeRequestOut)
+def resolve_change_request(cr_id: int, db: Session = Depends(get_db)) -> ChangeRequestOut:
+    from datetime import datetime, timezone
+
+    cr = db.get(ChangeRequest, cr_id)
+    if not cr:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Solicitud no encontrada")
+    cr.status = "resolved"
+    cr.resolved_at = datetime.now(timezone.utc)
+    log_event(db, "client", cr.client_id, "change_request_resolved", {"id": cr.id})
+    db.commit()
+    db.refresh(cr)
+    return ChangeRequestOut.model_validate(cr)
+
+
+# ------------------------------------------------------- feedback (cierre → informe) ----
+
+class PeriodOut(BaseModel):
+    id: int
+    plan_id: int | None = None
+    period_index: int
+    starts_on: date
+    ends_on: date
+    status: str
+    closing_weight_kg: float | None = None
+    closing_rating: int | None = None
+    closing_hardest: str | None = None
+    closing_questions: str | None = None
+    closing_waist_cm: float | None = None
+    closing_hip_cm: float | None = None
+    closing_arm_cm: float | None = None
+    closing_thigh_cm: float | None = None
+    feedback_id: int | None = None
+
+    model_config = {"from_attributes": True}
+
+
+@router.get("/api/clients/{client_id}/periods", response_model=list[PeriodOut])
+def list_periods(client_id: int, db: Session = Depends(get_db)) -> list[PeriodOut]:
+    """Períodos del cliente (con datos de cierre) + si ya tienen feedback."""
+    _client_or_404(db, client_id)
+    periods = db.scalars(
+        select(Period).where(Period.client_id == client_id)
+        .order_by(Period.period_index.desc())
+    ).all()
+    out = []
+    for p in periods:
+        po = PeriodOut.model_validate(p)
+        fb = db.scalar(
+            select(FeedbackDoc).where(FeedbackDoc.period_id == p.id)
+            .order_by(FeedbackDoc.id.desc()).limit(1)
+        )
+        po.feedback_id = fb.id if fb else None
+        out.append(po)
+    return out
+
+
+@router.get("/api/periods/{period_id}/metrics")
+def period_metrics(period_id: int, db: Session = Depends(get_db)) -> dict:
+    """Resumen de métricas del período (sin IA): peso, adherencia, fuerza, objetivo."""
+    from app.services.feedback_service import FeedbackError, compute_period_summary
+
+    if not db.get(Period, period_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Período no encontrado")
+    try:
+        return compute_period_summary(db, period_id)
+    except FeedbackError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+
+
+@router.post("/api/periods/{period_id}/feedback")
+def generate_feedback(period_id: int, db: Session = Depends(get_db)) -> dict:
+    """Genera (con IA) el feedback del período cerrado y lo persiste."""
+    from app.services.feedback_service import FeedbackError, build_period_feedback
+
+    period = db.get(Period, period_id)
+    if not period:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Período no encontrado")
+    try:
+        fb = build_period_feedback(db, period_id)
+    except FeedbackError as exc:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"message": str(exc)},
+        ) from exc
+    return {
+        "feedback_id": fb.id, "period_id": period_id,
+        "kind": fb.kind, "content": fb.content_json,
+    }
+
+
+@router.get("/api/feedback/{doc_id}")
+def get_feedback(doc_id: int, db: Session = Depends(get_db)) -> dict:
+    """Contenido del feedback (para mostrarlo en la pestaña del coach)."""
+    fb = db.get(FeedbackDoc, doc_id)
+    if not fb:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Feedback no encontrado")
+    return {
+        "id": fb.id, "period_id": fb.period_id, "kind": fb.kind,
+        "content": fb.content_json,
+        "sent_at": fb.sent_at.isoformat() if fb.sent_at else None,
+    }
+
+
+class FeedbackEditIn(BaseModel):
+    """Edición manual del feedback por el coach (solo el texto)."""
+    natural_analysis: str | None = None
+    changes_bullets: list[str] | None = None
+    answers: str | None = None
+    next_objectives: list[str] | None = None
+    closing_message: str | None = None
+
+
+@router.patch("/api/feedback/{doc_id}")
+def edit_feedback(doc_id: int, body: FeedbackEditIn, db: Session = Depends(get_db)) -> dict:
+    """Guarda los cambios del coach en el texto del feedback y regenera el Word.
+    Si ya estaba enviado, el cliente verá la versión editada en su Progreso."""
+    from app.services.feedback_service import FeedbackError, update_feedback_text
+
+    if not db.get(FeedbackDoc, doc_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Feedback no encontrado")
+    try:
+        fb = update_feedback_text(db, doc_id, body.model_dump(exclude_unset=True))
+    except FeedbackError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    return {
+        "id": fb.id, "content": fb.content_json,
+        "sent_at": fb.sent_at.isoformat() if fb.sent_at else None,
+    }
+
+
+@router.post("/api/feedback/{doc_id}/send")
+def send_feedback(doc_id: int, db: Session = Depends(get_db)) -> dict:
+    """Envía el feedback al cliente: lo hace visible en su portal (Progreso),
+    avanza el ciclo (review_pending → active, cierra la notificación) y le avisa
+    por email. Hasta este punto el feedback es un borrador que solo ve el coach."""
+    from datetime import datetime, timezone
+
+    fb = db.get(FeedbackDoc, doc_id)
+    if not fb:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Feedback no encontrado")
+    fb.sent_at = datetime.now(timezone.utc)
+
+    period = db.get(Period, fb.period_id)
+    client = db.get(Client, period.client_id) if period else None
+    if client and client.status == "review_pending":
+        client.status = "active"  # cerrado el feedback, arranca el siguiente ciclo
+
+    if client:
+        log_event(db, "client", client.id, "feedback_sent", {"feedback_id": fb.id})
+        # Aviso al cliente (si los emails están activos)
+        try:
+            brand = brand_from_config(db)
+            portal_url = f"{settings.public_base_url}/p/{client.portal_token}"
+            subject, html = tpl.feedback_ready(brand, client.full_name.split()[0], portal_url)
+            EmailService(db).send(to=client.email, subject=subject, html=html,
+                                  kind="feedback_ready", client=client)
+        except Exception:
+            pass
+    db.commit()
+    return {"sent": True, "sent_at": fb.sent_at.isoformat()}
+
+
+@router.get("/api/feedback/{doc_id}/document")
+def download_feedback_document(doc_id: int, db: Session = Depends(get_db)):
+    """Descarga el documento Word del feedback."""
+    from fastapi import Response
+
+    from app.services.storage import abs_path
+
+    fb = db.get(FeedbackDoc, doc_id)
+    if not fb or not fb.docx_path:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Feedback no encontrado")
+    path = abs_path(fb.docx_path)
+    if not path.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Documento no encontrado")
+    period = db.get(Period, fb.period_id)
+    idx = period.period_index if period else fb.id
+    return Response(
+        content=path.read_bytes(),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="feedback_periodo{idx}.docx"'},
+    )
+
+
+# ------------------------------------------- documentos Word del plan (Fase 7) ----
+
+def _doc_brand(db: Session):
+    from app.models import BrandConfig
+    from app.services.docs.word_base import DocBrand
+
+    cfg = db.scalar(select(BrandConfig).limit(1))
+    if cfg is None:
+        return DocBrand(name="Tu asesoría", color_primary="#6EE7B7",
+                        color_secondary="#8B9DF7", font_family="Inter")
+    logo_abs = None
+    if cfg.logo_path:
+        from app.services.storage import abs_path
+
+        try:
+            logo_abs = str(abs_path(cfg.logo_path))
+        except Exception:
+            logo_abs = None
+    return DocBrand(
+        name=cfg.name, color_primary=cfg.color_primary,
+        color_secondary=cfg.color_secondary, font_family=cfg.font_family,
+        tagline=cfg.tagline, contact_email=cfg.contact_email, logo_path=logo_abs,
+    )
+
+
+@router.get("/api/plans/{plan_id}/document")
+def download_plan_document(plan_id: int, db: Session = Depends(get_db)):
+    """Genera y descarga el documento Word del plan (H.3)."""
+    from fastapi import Response
+
+    from app.services.docs.plan_doc import generate_plan_doc
+
+    from app.models import Exercise
+
+    plan = db.get(Plan, plan_id)
+    if not plan:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan no encontrado")
+    client = db.get(Client, plan.client_id)
+
+    # Nombres reales de ejercicios para las tablas de entrenamiento
+    training = plan.training_json or {}
+    ex_ids = {
+        ex.get("exercise_id")
+        for sess in training.get("sessions", [])
+        for ex in sess.get("exercises", [])
+        if ex.get("exercise_id") is not None
+    }
+    exercise_names: dict[int, str] = {}
+    if ex_ids:
+        for ex in db.scalars(select(Exercise).where(Exercise.id.in_(ex_ids))):
+            exercise_names[ex.id] = ex.canonical_name
+
+    data = generate_plan_doc(
+        brand=_doc_brand(db),
+        client_name=client.full_name,
+        month_index=plan.month_index,
+        goal_type=client.goal_type,
+        diet_mode=client.diet_mode,
+        nutrition=plan.nutrition_json or {},
+        training=training,
+        education=plan.education_json or {},
+        exercise_names=exercise_names,
+        food_allergies=client.food_allergies,
+        food_dislikes=client.food_dislikes,
+    )
+    import unicodedata
+
+    ascii_name = unicodedata.normalize("NFKD", client.full_name).encode("ascii", "ignore").decode()
+    safe = "".join(c if c.isalnum() else "_" for c in ascii_name).strip("_").lower() or "cliente"
+
+    # Se entrega como PDF convertido en el servidor (LibreOffice) → idéntico al
+    # que se verifica y sin depender del Word del cliente. Fallback a .docx si la
+    # conversión fallara, para no romper la descarga.
+    from app.services.docs.pdf_convert import docx_bytes_to_pdf
+
+    try:
+        pdf = docx_bytes_to_pdf(data)
+        return Response(
+            content=pdf,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="plan_{safe}_mes{plan.month_index}.pdf"'},
+        )
+    except Exception as exc:  # noqa: BLE001 — degradación controlada
+        import logging
+        logging.getLogger("uvicorn.error").warning("Conversión PDF falló, se entrega .docx: %s", exc)
+        return Response(
+            content=data,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f'attachment; filename="plan_{safe}_mes{plan.month_index}.docx"'},
+        )
+
+
+# ----------------------------------------------- swap de ejercicios (Fase 8, F.5) ----
+
+class SwapProposeOut(BaseModel):
+    exercise_id: int
+    name: str
+    movement_pattern: str
+    muscle_primary: str
+    equipment: list[str]
+    similarity: int
+
+
+class SwapApplyIn(BaseModel):
+    session_index: int
+    old_exercise_id: int
+    new_exercise_id: int
+    permanent: bool = False
+    reason: str = ""
+
+
+@router.get("/api/clients/{client_id}/plans/{plan_id}/swap-options/{exercise_id}",
+            response_model=list[SwapProposeOut])
+def swap_options(client_id: int, plan_id: int, exercise_id: int,
+                 db: Session = Depends(get_db)) -> list[SwapProposeOut]:
+    """Propone 2–3 alternativas válidas para sustituir un ejercicio (F.5.1)."""
+    from app.services.swap import propose_alternatives
+
+    client = _client_or_404(db, client_id)
+    plan = db.get(Plan, plan_id)
+    if not plan or plan.client_id != client_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan no encontrado")
+    alts = propose_alternatives(db, client, exercise_id)
+    return [SwapProposeOut(**a.__dict__) for a in alts]
+
+
+@router.post("/api/clients/{client_id}/plans/{plan_id}/swap", response_model=dict)
+def swap_apply(client_id: int, plan_id: int, body: SwapApplyIn,
+               db: Session = Depends(get_db)) -> dict:
+    """Aplica el swap creando una nueva versión del plan (borrador) (F.5.2–4)."""
+    from app.services.swap import apply_swap
+
+    client = _client_or_404(db, client_id)
+    plan = db.get(Plan, plan_id)
+    if not plan or plan.client_id != client_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan no encontrado")
+    try:
+        result = apply_swap(
+            db, client=client, plan=plan, session_index=body.session_index,
+            old_exercise_id=body.old_exercise_id, new_exercise_id=body.new_exercise_id,
+            permanent=body.permanent, reason=body.reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    return {
+        "new_plan_id": result.new_plan_id, "new_version": result.new_version,
+        "group_volume_after": result.group_volume_after,
+        "guardrail_flags": result.guardrail_flags,
+    }
+
+
+# ------------------------------------------- plantilla de anamnesis (PDF oficial) ----
+
+@router.get("/api/anamnesis-template")
+def download_anamnesis_template():
+    """Descarga la plantilla oficial de anamnesis (PDF en blanco) para que el
+    coach la envíe por correo al cliente."""
+    from pathlib import Path
+
+    from fastapi import Response
+
+    path = Path(__file__).resolve().parent.parent / "assets" / "anamnesis_template.pdf"
+    if not path.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plantilla no encontrada")
+    return Response(
+        content=path.read_bytes(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="anamnesis.pdf"'},
+    )

@@ -1,0 +1,25 @@
+# Entorno
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Frontend
+node_modules/
+frontend/dist/
+
+# Datos y almacenamiento (nunca al repo: datos de salud RGPD)
+storage/*
+!storage/.gitkeep
+
+# QA de render docx→PDF (imágenes + instaladores) — regenerable y muy pesado (~440MB)
+_render/
+
+# Artefactos comprimidos (el bundle sí se versiona; el zip no)
+*.zip
+
+# Varios
+.DS_Store
+*.log
+.pytest_cache/

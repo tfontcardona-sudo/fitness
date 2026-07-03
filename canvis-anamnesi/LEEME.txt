@@ -1,0 +1,21 @@
+CAMBIOS PARA LA ANAMNESIS (Camí A: PDF + subida)
+=================================================
+
+Reemplaza estos archivos en tu proyecto (mismas rutas):
+
+ARCHIVOS MODIFICADOS (reemplazar el contenido entero):
+  backend/app/services/storage.py
+  backend/app/routers/clients.py
+  frontend/src/lib/api.ts
+  frontend/src/pages/ClientProfilePage.tsx
+
+ARCHIVO NUEVO (crear):
+  frontend/src/components/ClientDocuments.tsx
+
+Después: reiniciar Docker (down + up --build).
+
+Qué añade:
+- Botón "Enviar enlace de anamnesis" en el perfil del cliente.
+- Zona para subir (arrastrar o clic) el PDF de la anamnesis rellenada.
+- Lista de documentos subidos, con clic para abrirlos.
+- Backend: 3 endpoints (subir/listar/descargar PDF), solo acepta PDF, máx 25 MB.
