@@ -432,6 +432,14 @@ export interface PortalState {
   brand: PortalBrand;
 }
 
+/** GET /api/p/{token}/push/pending — espejo de PushPendingOut. */
+export interface PushPending {
+  diary: boolean;
+  workout: boolean;
+  quincenal: boolean;
+  count: number;
+}
+
 export interface TodayMealOption {
   key: string;
   title: string;

@@ -269,6 +269,28 @@ class BrandConfig(Base):
     portal_theme: Mapped[str] = mapped_column(String(10), default="dark")  # light|dark
 
 
+# --------------------------------------------------- push_subscriptions ----
+class PushSubscription(Base):
+    """Suscripción Web Push de un dispositivo del cliente (portal).
+
+    Un cliente puede tener varias (móvil + tablet). `endpoint` es la URL única
+    que da el servicio de push del navegador; `p256dh` y `auth` son las claves
+    de cifrado del payload. Si el servicio responde 404/410 al enviar, la
+    suscripción caducó y se borra la fila.
+    """
+
+    __tablename__ = "push_subscriptions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
+    endpoint: Mapped[str] = mapped_column(Text, unique=True)
+    p256dh: Mapped[str] = mapped_column(String(255))
+    auth: Mapped[str] = mapped_column(String(255))
+    user_agent: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 # ------------------------------------------------------------ email_log ----
 class EmailLog(Base):
     __tablename__ = "email_log"

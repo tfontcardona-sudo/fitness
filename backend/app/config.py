@@ -50,6 +50,14 @@ class Settings(BaseSettings):
     smtp_from: str = ""
     emails_enabled: bool = True
 
+    # --- Web Push (VAPID) ---
+    # Generar UNA vez con scripts/generate_vapid_keys.py y no cambiar (si
+    # cambian, todas las suscripciones existentes quedan inválidas).
+    vapid_public_key: str = ""
+    vapid_private_key: str = ""
+    vapid_subject: str = ""  # mailto:... (contacto para los servicios de push)
+    push_enabled: bool = True
+
     # --- Comportamiento ---
     auto_pilot_default: bool = False
     tz: str = "Europe/Madrid"

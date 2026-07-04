@@ -1,7 +1,7 @@
 # Documento de traspaso — Fitness System (DQ / David Quiceno)
 
 > Objetivo de este doc: que otra sesión de IA (Fable u otra) pueda **continuar el trabajo sin perder contexto**.
-> Última actualización: 2026-07-02. Autor del último tramo: Claude Opus 4.8.
+> Última actualización: 2026-07-03. Autor del último tramo: Claude Fable 5 (Web Push).
 > Cliente/marca: **David Quiceno (DQ)** — asesoría de fitness. Colores marca: **vino `#8B1A2B`**, **azul `#4A7BA8`**.
 
 ---
@@ -10,8 +10,8 @@
 
 - Sistema de **asesoría de fitness** completo: app del **coach** (web con login JWT) + **portal del cliente** (sin login, por token `/p/{token}`) + **backend FastAPI** + IA para generar planes y feedback.
 - Acabamos de terminar una **gran feature: portal de seguimiento** (entreno/diario/quincenal) + **seguimiento en tiempo real** del coach + **adaptación del plan** tras cada revisión quincenal. Backend + frontend **aplicados y verificados**.
+- **HECHO (2026-07-03): Web Push completo** (§8.1) — PWA instalable por cliente, service worker, suscripciones VAPID, job cada 4 h y badge en el icono. Falta solo generar las claves VAPID en el `.env` (1 comando) y, para móviles reales, tener HTTPS.
 - **BLOQUEANTE ACTUAL:** la **API de Anthropic no tiene crédito** (`Your credit balance is too low`). Por eso la generación de plan inicial y el feedback IA fallan (502/error). Se **simularon a mano** para el cliente de prueba. La **adaptación de plan NO necesita IA** (es determinista) y funciona.
-- **PENDIENTE GRANDE:** **Web Push** (notificaciones push del portal) — especificado abajo, sin empezar.
 
 ---
 
@@ -184,17 +184,55 @@ docker compose exec api sh -c "cd /code && alembic upgrade head"
 
 ## 8. PENDIENTE
 
-### 8.1 Web Push (GRANDE, sin empezar) — el usuario eligió "Web Push completo"
-Recordatorio: notificaciones push del portal para que el cliente rellene lo que falta.
-Pasos (todos pendientes):
-1. **PWA instalable**: `manifest.json` + **service worker** en el portal.
-2. **Suscripción push** + **claves VAPID** (generar y poner en `config`).
-3. Tabla **`push_subscriptions`** + migración.
-4. Endpoints: suscribir + get-public-key.
-5. **Scheduler**: tarea **cada 4h** que envía a quien tenga pendientes (diario/entreno/quincenal sin rellenar); el nº depende de lo que falte.
-6. **Badge en el icono**: `navigator.setAppBadge(count)`.
-7. Al desbloquear el móvil que salga el recordatorio.
-- **Requiere HTTPS/dominio** para entrega real (en localhost solo se prueba parcialmente). Librería backend sugerida: `pywebpush`.
+### 8.1 Web Push — **HECHO (2026-07-03, Claude Fable 5)**
+Implementado completo según la spec original. Mapa de piezas:
+
+**Backend**
+- `app/services/push.py` — núcleo: `pending_for_client` (qué falta HOY: diario /
+  entreno / quincenal), `build_reminder_payload`, `send_to_client` (pywebpush +
+  VAPID; borra suscripciones caducadas 404/410), `run_push_reminders` (el job).
+- `app/models.py` → **`PushSubscription`** + migración **`0004_push_subscriptions`**.
+- `app/routers/portal_public.py` — 5 endpoints nuevos bajo `/api/p/{token}`:
+  `GET /push/public-key`, `POST /push/subscribe`, `POST /push/unsubscribe`,
+  `GET /push/pending` (para el badge al abrir) y `GET /manifest.webmanifest`
+  (**manifest PWA POR CLIENTE**: `start_url=/p/{token}` → al instalar la app se
+  abre directamente SU portal).
+- `app/services/scheduler.py` — job `push_reminders` **cada 4 h** en punto
+  (CronTrigger `*/4`); el propio job descarta ejecuciones fuera de **08–22**
+  (constantes `ACTIVE_FROM/ACTIVE_UNTIL` en push.py) → en la práctica envía a
+  las 08/12/16/20 y **solo a quien tenga algo pendiente**.
+- `app/config.py` + `.env.example` → `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`,
+  `VAPID_SUBJECT`, `PUSH_ENABLED`. `scripts/generate_vapid_keys.py` las genera.
+- `requirements.txt` → `pywebpush==2.3.0`.
+- Tests: `tests/test_push.py` (9 tests: puros + integración con PG, envío
+  monkeypatcheado). Verificado además con smoke test HTTP de los 5 endpoints.
+
+**Frontend**
+- `public/sw.js` — service worker (raíz → scope cubre `/p/*`): muestra la
+  notificación, pone `count` en el badge (`navigator.setAppBadge`) y al tocarla
+  enfoca/abre el portal. Sin caché offline (a propósito).
+- `public/icons/` — icon-192/512, maskable-512 y badge-72 (mancuerna, vino DQ).
+- `src/portal/push.ts` — registro del SW, **inyección del manifest por cliente**,
+  `enablePush` (permiso + PushManager.subscribe + POST al backend),
+  `resyncPushIfGranted` (autocura silenciosa), `refreshBadge`.
+- `src/portal/PortalApp.tsx` — `PushBanner` ("¿Te aviso si te falta algo?" con
+  botón Activar; en **iOS sin instalar** muestra instrucciones de "Añadir a
+  pantalla de inicio", porque en iOS el push solo existe en la app instalada);
+  badge sincronizado al cargar y al volver el foco.
+- `index.html` — apple-touch-icon + metas PWA.
+
+**Para activarlo (una vez):**
+```bash
+docker compose exec api python -m scripts.generate_vapid_keys
+# pegar las 3 líneas en .env  →  docker compose build api && docker compose up -d
+```
+
+**Cómo probar:** en el PC, Chrome en `http://localhost:5173/p/{token}` (localhost
+cuenta como contexto seguro): banner → Activar → aceptar permiso → fila en
+`push_subscriptions`. Forzar un envío sin esperar al cron:
+`docker compose exec api python -c "from app.db import SessionLocal; from app.services.push import run_push_reminders; print(run_push_reminders(SessionLocal()))"`
+(dentro de la ventana 08–22 y con algo pendiente). **En móviles reales hace
+falta HTTPS** (DOMAIN configurado con Caddy); en iOS además instalar la PWA.
 
 ### 8.2 Pulido (no bloqueante)
 - Look "iron obsidiana" oscuro vino/azul del tracker: se activa vía BrandPage → `portal_theme=dark` (el código ya respeta el tema; el default actual es crema claro).
@@ -215,6 +253,13 @@ Pasos (todos pendientes):
 - **PowerShell 5.1**: sin `&&`/`||`/ternarios; el clasificador de sandbox se pone nervioso con rutas cerca de `C:\Program Files`.
 - **La infra de tracking YA existía** (DailyLog/WorkoutLog/Period/portal) — se **extendió**, no se creó de cero.
 - Las **fotos** de progreso se envían por **WhatsApp**, no se suben al portal.
+- **Migraciones**: `0001` hace `create_all` desde los modelos ACTUALES → en una
+  BD nueva, cualquier migración posterior encuentra sus columnas/tablas ya
+  creadas. Por eso **0002–0004 son idempotentes** (comprueban existencia antes
+  de añadir) y **toda migración futura debe serlo también**.
+- **`SessionLocal` usa `autoflush=False`**: un servicio que hace add/delete y
+  luego SELECT en la misma sesión debe hacer `db.flush()` entre medias o no
+  verá sus propios cambios (ver `push.save_subscription`).
 
 ---
 
@@ -231,7 +276,21 @@ En `C:\Users\Usuari\.claude\projects\C--Users-Usuari-Desktop-fitness-system\memo
 
 ## 11. Mapa rápido de archivos tocados en el último tramo
 
-**Backend**
+**Web Push (2026-07-03)**
+- `backend/app/services/push.py` — **NUEVO** (núcleo Web Push).
+- `backend/app/models.py` — `PushSubscription`.
+- `backend/alembic/versions/0004_push_subscriptions.py` — **NUEVO**.
+- `backend/alembic/versions/0002/0003` — hechas idempotentes (BD nueva no rompía).
+- `backend/app/routers/portal_public.py` — 5 endpoints push/manifest.
+- `backend/app/schemas/entities.py` — `PushKeyOut`, `PushSubscribeIn`, `PushPendingOut`…
+- `backend/app/services/scheduler.py` — job `push_reminders` cada 4 h.
+- `backend/app/config.py`, `.env.example`, `backend/requirements.txt` (pywebpush).
+- `backend/scripts/generate_vapid_keys.py`, `backend/tests/test_push.py` — **NUEVOS**.
+- `frontend/public/sw.js`, `frontend/public/icons/*` — **NUEVOS**.
+- `frontend/src/portal/push.ts` — **NUEVO**; `PortalApp.tsx` (banner + badge),
+  `portalApi.ts`, `types.ts`, `index.html`.
+
+**Backend (tramo anterior)**
 - `app/services/adapt_plan.py` — **NUEVO** (adaptación determinista).
 - `app/routers/clients.py` — endpoints tracking/history reescritos + adapt-plan + list_clients con `pending_review`.
 - `app/models.py` — Period `coach_reviewed_at` (+ campos tracking previos).

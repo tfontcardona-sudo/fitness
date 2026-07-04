@@ -371,6 +371,38 @@ class PortalState(BaseModel):
     brand: PortalBrand
 
 
+class PushKeyOut(BaseModel):
+    """GET /api/p/{token}/push/public-key — clave pública VAPID para subscribe."""
+
+    enabled: bool
+    public_key: str | None = None
+
+
+class PushSubscriptionKeys(BaseModel):
+    p256dh: str = Field(min_length=1, max_length=255)
+    auth: str = Field(min_length=1, max_length=255)
+
+
+class PushSubscribeIn(BaseModel):
+    """Cuerpo = PushSubscription.toJSON() del navegador."""
+
+    endpoint: str = Field(min_length=10, max_length=2000)
+    keys: PushSubscriptionKeys
+
+
+class PushUnsubscribeIn(BaseModel):
+    endpoint: str = Field(min_length=10, max_length=2000)
+
+
+class PushPendingOut(BaseModel):
+    """GET /api/p/{token}/push/pending — para sincronizar el badge al abrir."""
+
+    diary: bool
+    workout: bool
+    quincenal: bool
+    count: int
+
+
 class TodayMealOption(BaseModel):
     key: str
     title: str

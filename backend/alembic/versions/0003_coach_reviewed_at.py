@@ -13,7 +13,11 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("periods", sa.Column("coach_reviewed_at", sa.DateTime(timezone=True), nullable=True))
+    # Idempotente: en una BD nueva, 0001 (create_all) ya trae la columna.
+    insp = sa.inspect(op.get_bind())
+    cols = {c["name"] for c in insp.get_columns("periods")}
+    if "coach_reviewed_at" not in cols:
+        op.add_column("periods", sa.Column("coach_reviewed_at", sa.DateTime(timezone=True), nullable=True))
 
 
 def downgrade() -> None:

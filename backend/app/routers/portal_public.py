@@ -21,6 +21,7 @@ from slowapi.util import get_remote_address
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.db import get_db
 from app.deps import get_client_by_token
 from app.models import (
@@ -45,9 +46,14 @@ from app.schemas.entities import (
     PortalBrand,
     PortalPlanOut,
     PortalState,
+    PushKeyOut,
+    PushPendingOut,
+    PushSubscribeIn,
+    PushUnsubscribeIn,
     TodayView,
 )
 from app.services import portal as portal_svc
+from app.services import push as push_svc
 from app.services.audit import log_event
 from app.services.consent_pdf import generate_consent_pdf
 from app.services.email_service import EmailService, brand_from_config
@@ -507,3 +513,106 @@ def portal_change_request(
     db.commit()
     db.refresh(cr)
     return ChangeRequestOut.model_validate(cr)
+
+
+# ------------------------------------------------- Web Push + PWA (§8.1) ----
+
+@router.get("/{token}/manifest.webmanifest")
+@limiter.limit("60/minute")
+def portal_manifest(
+    request: Request,
+    client: Client = Depends(get_client_by_token),
+    db: Session = Depends(get_db),
+):
+    """Manifest PWA POR CLIENTE: start_url apunta a SU portal (/p/{token}), de
+    modo que al instalar la app en el móvil se abre directamente su seguimiento
+    sin tener que guardar el enlace. Tematizado con la marca."""
+    from fastapi.responses import JSONResponse
+
+    brand = portal_svc.brand_payload(db)
+    light = brand.get("portal_theme") == "light"
+    name = brand.get("name") or "Mi seguimiento"
+    manifest = {
+        "name": name,
+        "short_name": name[:12],
+        "description": "Tu portal de seguimiento: entreno, diario y revisión quincenal.",
+        "lang": "es",
+        "start_url": f"/p/{client.portal_token}",
+        "scope": f"/p/{client.portal_token}",
+        "display": "standalone",
+        "background_color": "#F5F0E8" if light else "#0A0A0F",
+        "theme_color": brand.get("color_primary", "#8B1A2B"),
+        "icons": [
+            {"src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
+            {"src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png"},
+            {"src": "/icons/icon-maskable-512.png", "sizes": "512x512",
+             "type": "image/png", "purpose": "maskable"},
+        ],
+    }
+    return JSONResponse(manifest, media_type="application/manifest+json")
+
+
+@router.get("/{token}/push/public-key", response_model=PushKeyOut)
+@limiter.limit("60/minute")
+def push_public_key(
+    request: Request,
+    client: Client = Depends(get_client_by_token),
+) -> PushKeyOut:
+    """Clave pública VAPID para PushManager.subscribe (o enabled=false si el
+    servidor no tiene Web Push configurado)."""
+    if not push_svc.push_configured():
+        return PushKeyOut(enabled=False)
+    return PushKeyOut(enabled=True, public_key=settings.vapid_public_key)
+
+
+@router.post("/{token}/push/subscribe", response_model=dict)
+@limiter.limit("20/minute")
+def push_subscribe(
+    request: Request,
+    body: PushSubscribeIn,
+    client: Client = Depends(get_client_by_token),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Guarda (upsert por endpoint) la suscripción del dispositivo."""
+    if not push_svc.push_configured():
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                            "Notificaciones no disponibles en este momento")
+    push_svc.save_subscription(
+        db, client,
+        endpoint=body.endpoint,
+        p256dh=body.keys.p256dh,
+        auth=body.keys.auth,
+        user_agent=request.headers.get("user-agent"),
+    )
+    log_event(db, "client", client.id, "push_subscribed", None)
+    db.commit()
+    return {"subscribed": True}
+
+
+@router.post("/{token}/push/unsubscribe", response_model=dict)
+@limiter.limit("20/minute")
+def push_unsubscribe(
+    request: Request,
+    body: PushUnsubscribeIn,
+    client: Client = Depends(get_client_by_token),
+    db: Session = Depends(get_db),
+) -> dict:
+    removed = push_svc.remove_subscription(db, client, body.endpoint)
+    if removed:
+        log_event(db, "client", client.id, "push_unsubscribed", None)
+    db.commit()
+    return {"removed": removed}
+
+
+@router.get("/{token}/push/pending", response_model=PushPendingOut)
+@limiter.limit("120/minute")
+def push_pending(
+    request: Request,
+    client: Client = Depends(get_client_by_token),
+    db: Session = Depends(get_db),
+) -> PushPendingOut:
+    """Pendientes de HOY (diario/entreno/quincenal) para que el portal
+    sincronice el badge del icono al abrirse (navigator.setAppBadge)."""
+    from datetime import date as _d
+
+    return PushPendingOut(**push_svc.pending_for_client(db, client, _d.today()))

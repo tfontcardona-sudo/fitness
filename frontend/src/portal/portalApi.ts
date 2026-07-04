@@ -12,6 +12,7 @@ import type {
   PeriodCloseIn,
   PortalPlanOut,
   PortalState,
+  PushPending,
   TodaySession,
   TodayView,
 } from "../types";
@@ -73,5 +74,14 @@ export function portalApi(token: string) {
     feedback: () => req<FeedbackDocOut[]>("GET", `${base}/feedback`),
     changeRequest: (message: string) =>
       req<ChangeRequestOut>("POST", `${base}/change-request`, { message }),
+    // --- Web Push (§8.1) ---
+    pushPublicKey: () =>
+      req<{ enabled: boolean; public_key: string | null }>("GET", `${base}/push/public-key`),
+    pushSubscribe: (sub: { endpoint: string; keys: { p256dh: string; auth: string } }) =>
+      req<{ subscribed: boolean }>("POST", `${base}/push/subscribe`, sub),
+    pushUnsubscribe: (endpoint: string) =>
+      req<{ removed: boolean }>("POST", `${base}/push/unsubscribe`, { endpoint }),
+    pushPending: () =>
+      req<PushPending>("GET", `${base}/push/pending`),
   };
 }

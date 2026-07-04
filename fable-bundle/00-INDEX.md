@@ -42,4 +42,4 @@ Si Fable necesita tocar el PDF del plan, que mire esos assets + `05-backend-serv
 - Última feature terminada y verificada: **portal de seguimiento** (entreno/diario/quincenal) + seguimiento en tiempo real del coach + **adaptación de plan** tras la revisión quincenal.
 - **502 al adaptar plan: RESUELTO** (adaptación determinista sin IA, `services/adapt_plan.py`).
 - **Bloqueante:** API de Anthropic **sin crédito** → generar plan/feedback IA falla (se simuló para el cliente Manuel id 34). Adaptar NO necesita IA y funciona.
-- **Pendiente grande:** **Web Push** (PWA + service worker + VAPID + tabla `push_subscriptions` + scheduler cada 4h + badge). Sin empezar. Spec completa en `01-TRASPASO.md` §8.1.
+- **Web Push: HECHO (2026-07-03)** — PWA por cliente + service worker + VAPID + `push_subscriptions` + job cada 4 h + badge. Detalle y activación en `01-TRASPASO.md` §8.1. OJO: los volcados de código de este bundle (02–07) son del snapshot 2026-07-02 y NO incluyen los archivos de Web Push; la fuente de verdad es el repo.

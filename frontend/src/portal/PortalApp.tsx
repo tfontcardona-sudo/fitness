@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarCheck, Dumbbell, NotebookPen } from "lucide-react";
+import { Bell, CalendarCheck, Dumbbell, NotebookPen, X } from "lucide-react";
 import { portalApi, PortalError } from "./portalApi";
 import type { PortalState } from "../types";
 import { PortalWorkout } from "./PortalWorkout";
 import { PortalDiary } from "./PortalDiary";
 import { PortalClose } from "./PortalClose";
-import { PortalToastProvider } from "./PortalToast";
+import { PortalToastProvider, usePortalToast } from "./PortalToast";
+import {
+  enablePush,
+  injectManifest,
+  isPushSupported,
+  needsInstallFirst,
+  refreshBadge,
+  registerServiceWorker,
+  resyncPushIfGranted,
+} from "./push";
 
 // El portal del cliente es SOLO seguimiento: 3 pestañas abajo (Entreno, Diario,
 // Quincenal). Nada más (ni Hoy, ni Plan, ni Feedback): la dieta va en el PDF.
@@ -29,11 +38,27 @@ export default function PortalApp({ token }: { token: string }) {
       .then((s) => {
         setState(s);
         applyBrand(s);
+        refreshBadge(apiClient); // badge del icono = pendientes de hoy
       })
       .catch((e) => setError(e instanceof PortalError ? e.message : "No se pudo cargar tu portal"));
   }, [apiClient]);
 
   useEffect(reload, [reload]);
+
+  // PWA + Web Push (§8.1): manifest por cliente, service worker, resuscripción
+  // silenciosa si el permiso ya está concedido, y badge al volver a la app.
+  useEffect(() => {
+    injectManifest(token);
+    registerServiceWorker();
+    resyncPushIfGranted(apiClient);
+    const onFocus = () => refreshBadge(apiClient);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, [token, apiClient]);
 
   if (error) {
     return (
@@ -84,6 +109,7 @@ export default function PortalApp({ token }: { token: string }) {
         </header>
 
         <main className="relative z-[1] flex-1 px-5 pb-28 pt-2">
+          <PushBanner api={apiClient} accent={state.brand.color_primary} />
           {tab === "entreno" && <PortalWorkout api={apiClient} brand={state.brand} />}
           {tab === "diario" && <PortalDiary api={apiClient} brand={state.brand} />}
           {tab === "cierre" && (
@@ -120,6 +146,88 @@ export default function PortalApp({ token }: { token: string }) {
         </nav>
       </div>
     </PortalToastProvider>
+  );
+}
+
+const PUSH_DISMISSED_KEY = "portal_push_dismissed";
+
+/**
+ * Banner de activación de recordatorios (§8.1). Tres estados:
+ * - Android/escritorio sin permiso → botón "Activar" (pide permiso + suscribe).
+ * - iOS en Safari sin instalar → instrucciones de "Añadir a pantalla de inicio"
+ *   (en iOS el push solo funciona con la app instalada).
+ * - Permiso ya concedido, denegado o descartado → no se muestra nada.
+ */
+function PushBanner({ api, accent }: { api: ReturnType<typeof portalApi>; accent: string }) {
+  const toast = usePortalToast();
+  const [dismissed, setDismissed] = useState(
+    () => localStorage.getItem(PUSH_DISMISSED_KEY) === "1"
+  );
+  const [granted, setGranted] = useState(
+    () => isPushSupported() && Notification.permission === "granted"
+  );
+  const [busy, setBusy] = useState(false);
+
+  const installFirst = needsInstallFirst();
+  if (dismissed || granted || (!isPushSupported() && !installFirst)) return null;
+
+  const dismiss = () => {
+    localStorage.setItem(PUSH_DISMISSED_KEY, "1");
+    setDismissed(true);
+  };
+
+  const activate = async () => {
+    setBusy(true);
+    try {
+      await enablePush(api);
+      setGranted(true);
+      refreshBadge(api);
+      toast.push("Recordatorios activados 🔔");
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "No se pudo activar");
+      if (isPushSupported() && Notification.permission === "denied") dismiss();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="portal-card mb-4 flex items-start gap-3 p-3">
+      <span className="mt-0.5 shrink-0" style={{ color: accent }}>
+        <Bell size={18} />
+      </span>
+      <div className="min-w-0 flex-1">
+        {installFirst ? (
+          <>
+            <p className="text-sm font-semibold">Recibe recordatorios</p>
+            <p className="mt-0.5 text-xs opacity-70">
+              Instala la app para no olvidar tus registros: toca{" "}
+              <span className="font-medium">Compartir</span> y luego{" "}
+              <span className="font-medium">"Añadir a pantalla de inicio"</span>.
+              Después actívalos desde aquí.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-sm font-semibold">¿Te aviso si te falta algo?</p>
+            <p className="mt-0.5 text-xs opacity-70">
+              Un recordatorio si queda el diario, el entreno o la revisión sin rellenar.
+            </p>
+            <button
+              onClick={activate}
+              disabled={busy}
+              className="portal-btn3d mt-2 px-4 py-1.5 text-xs font-semibold"
+              style={{ background: accent, color: "#fff" }}
+            >
+              {busy ? "Activando…" : "Activar recordatorios"}
+            </button>
+          </>
+        )}
+      </div>
+      <button onClick={dismiss} aria-label="Cerrar" className="shrink-0 opacity-40 hover:opacity-80">
+        <X size={16} />
+      </button>
+    </div>
   );
 }
 

@@ -27,11 +27,23 @@ _PERIOD = [
 ]
 
 
+def _existing_columns(table: str) -> set[str]:
+    insp = sa.inspect(op.get_bind())
+    return {c["name"] for c in insp.get_columns(table)}
+
+
 def upgrade() -> None:
+    # Idempotente: 0001 hace create_all desde los modelos ACTUALES, así que en
+    # una BD nueva estas columnas ya existen; solo se añaden si faltan (BDs
+    # antiguas que migran de verdad).
+    daily_cols = _existing_columns("daily_logs")
     for name, coltype in _DAILY:
-        op.add_column("daily_logs", sa.Column(name, coltype, nullable=True))
+        if name not in daily_cols:
+            op.add_column("daily_logs", sa.Column(name, coltype, nullable=True))
+    period_cols = _existing_columns("periods")
     for name, coltype in _PERIOD:
-        op.add_column("periods", sa.Column(name, coltype, nullable=True))
+        if name not in period_cols:
+            op.add_column("periods", sa.Column(name, coltype, nullable=True))
 
 
 def downgrade() -> None:
