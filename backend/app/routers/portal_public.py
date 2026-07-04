@@ -540,7 +540,7 @@ def portal_manifest(
         "start_url": f"/p/{client.portal_token}",
         "scope": f"/p/{client.portal_token}",
         "display": "standalone",
-        "background_color": "#F5F0E8" if light else "#0A0A0F",
+        "background_color": "#F5F0E8" if light else "#0E0B10",
         "theme_color": brand.get("color_primary", "#8B1A2B"),
         "icons": [
             {"src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png"},

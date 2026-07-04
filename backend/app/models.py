@@ -266,7 +266,7 @@ class BrandConfig(Base):
     contact_phone: Mapped[str | None] = mapped_column(String(40))
     contact_web: Mapped[str | None] = mapped_column(String(200))
     docs_theme: Mapped[str] = mapped_column(String(10), default="light")  # light|dark
-    portal_theme: Mapped[str] = mapped_column(String(10), default="dark")  # light|dark
+    portal_theme: Mapped[str] = mapped_column(String(10), default="light")  # light|dark
 
 
 # --------------------------------------------------- push_subscriptions ----

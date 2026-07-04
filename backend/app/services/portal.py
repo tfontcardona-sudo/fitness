@@ -73,7 +73,7 @@ def brand_payload(db: Session) -> dict:
         return {
             "name": "Tu asesoría", "color_primary": "#6EE7B7",
             "color_secondary": "#8B9DF7", "color_bg": "#0A0A0F",
-            "font_family": "Inter", "portal_theme": "dark", "logo_path": None,
+            "font_family": "Inter", "portal_theme": "light", "logo_path": None,
         }
     return {
         "name": cfg.name, "color_primary": cfg.color_primary,

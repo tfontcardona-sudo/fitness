@@ -125,11 +125,18 @@ export function PortalWorkout({ api, brand }: { api: Api; brand: PortalBrand }) 
             <button
               key={i}
               onClick={() => setSelectedIdx(i)}
-              className="rounded-xl border px-3 py-2 text-left text-xs transition-colors"
-              style={active ? { borderColor: brand.color_primary, background: `${brand.color_primary}1f` } : { borderColor: "rgba(128,128,128,0.22)" }}
+              className="relative rounded-xl border px-3 py-2 text-left text-xs transition-colors"
+              style={
+                active
+                  ? { borderColor: brand.color_primary, background: `${brand.color_primary}1f` }
+                  : isToday
+                    ? { borderColor: `${brand.color_primary}66` }
+                    : { borderColor: "rgba(128,128,128,0.22)" }
+              }
             >
               <span className="block font-semibold">{s.name || `Sesión ${i + 1}`}</span>
-              <span className="opacity-60">{s.day}{isToday ? " · hoy" : ""}</span>
+              <span className="opacity-60">{s.day}</span>
+              {isToday && <span className="portal-today-pill">HOY</span>}
             </button>
           );
         })}

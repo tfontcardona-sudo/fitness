@@ -1,7 +1,7 @@
 # Documento de traspaso — Fitness System (DQ / David Quiceno)
 
 > Objetivo de este doc: que otra sesión de IA (Fable u otra) pueda **continuar el trabajo sin perder contexto**.
-> Última actualización: 2026-07-03. Autor del último tramo: Claude Fable 5 (Web Push).
+> Última actualización: 2026-07-04. Autor del último tramo: Claude (pulido §8.2: tema oscuro + pill HOY).
 > Cliente/marca: **David Quiceno (DQ)** — asesoría de fitness. Colores marca: **vino `#8B1A2B`**, **azul `#4A7BA8`**.
 
 ---
@@ -11,6 +11,7 @@
 - Sistema de **asesoría de fitness** completo: app del **coach** (web con login JWT) + **portal del cliente** (sin login, por token `/p/{token}`) + **backend FastAPI** + IA para generar planes y feedback.
 - Acabamos de terminar una **gran feature: portal de seguimiento** (entreno/diario/quincenal) + **seguimiento en tiempo real** del coach + **adaptación del plan** tras cada revisión quincenal. Backend + frontend **aplicados y verificados**.
 - **HECHO (2026-07-03): Web Push completo** (§8.1) — PWA instalable por cliente, service worker, suscripciones VAPID, job cada 4 h y badge en el icono. Falta solo generar las claves VAPID en el `.env` (1 comando) y, para móviles reales, tener HTTPS.
+- **HECHO (2026-07-04): pulido §8.2** — tema oscuro **"iron obsidiana"** del portal (BrandPage → Portal del cliente → Oscuro) + **pill "HOY"** en el selector de sesión de entreno. Default normalizado a claro (migración `0005`). Verificado con screenshots Playwright (3 pestañas × 2 temas, 0 errores JS).
 - **BLOQUEANTE ACTUAL:** la **API de Anthropic no tiene crédito** (`Your credit balance is too low`). Por eso la generación de plan inicial y el feedback IA fallan (502/error). Se **simularon a mano** para el cliente de prueba. La **adaptación de plan NO necesita IA** (es determinista) y funciona.
 
 ---
@@ -234,10 +235,20 @@ cuenta como contexto seguro): banner → Activar → aceptar permiso → fila en
 (dentro de la ventana 08–22 y con algo pendiente). **En móviles reales hace
 falta HTTPS** (DOMAIN configurado con Caddy); en iOS además instalar la PWA.
 
-### 8.2 Pulido (no bloqueante)
-- Look "iron obsidiana" oscuro vino/azul del tracker: se activa vía BrandPage → `portal_theme=dark` (el código ya respeta el tema; el default actual es crema claro).
-- Historial: los antes/después y % de fuerza necesitan **≥2 períodos** para verse; con 1 salen "—".
-- Reforzar marcado visual de la sesión de entreno "de hoy" (ya funciona, opcional).
+### 8.2 Pulido — **HECHO (2026-07-04)**
+- **Look "iron obsidiana"** oscuro vino/azul del portal: la paleta del portal ahora
+  vive en variables CSS en `.portal-root` (crema por defecto) y `.portal-root.portal-dark`
+  las sobrescribe (fondo obsidiana `#0e0b10`, glows vino/azul más intensos, tarjetas
+  metal oscuro, nav oscura). `PortalApp` añade la clase cuando `brand.portal_theme === "dark"`.
+  Se activa vía BrandPage → Portal del cliente → **Oscuro**.
+- **Default normalizado a claro**: el modelo decía `default="dark"` pero el CSS siempre
+  pintaba crema; al honrar de verdad el tema, eso habría oscurecido portales existentes
+  por sorpresa. Default en modelo/schema/fallback → `"light"` + **migración `0005`**
+  (una vez: `portal_theme 'dark' → 'light'`; conserva lo que el cliente VE).
+- **Pill "HOY"** en el selector de sesión de entreno (`.portal-today-pill`, vino + neón)
+  y borde tintado en la sesión de hoy cuando no está seleccionada (antes solo "· hoy" en texto).
+- El manifest PWA oscuro usa `background_color #0E0B10` (alineado con el nuevo fondo).
+- Historial: los antes/después y % de fuerza necesitan **≥2 períodos** para verse; con 1 salen "—" (informativo, no es bug).
 
 ### 8.3 Cuando haya crédito de IA
 - Probar generar plan inicial + feedback real end-to-end (hoy simulado para Manuel).
@@ -275,6 +286,19 @@ En `C:\Users\Usuari\.claude\projects\C--Users-Usuari-Desktop-fitness-system\memo
 ---
 
 ## 11. Mapa rápido de archivos tocados en el último tramo
+
+**Pulido §8.2 (2026-07-04)**
+- `frontend/src/index.css` — paleta del portal en variables + `.portal-dark`
+  (iron obsidiana) + `.portal-today-pill`.
+- `frontend/src/portal/PortalApp.tsx` — clase `portal-dark` según tema; nav idle
+  con `var(--p-nav-idle)`.
+- `frontend/src/portal/PortalWorkout.tsx` — pill "HOY" + borde tintado en la
+  sesión de hoy.
+- `backend/app/models.py`, `schemas/entities.py`, `services/portal.py` —
+  default `portal_theme="light"`.
+- `backend/alembic/versions/0005_portal_theme_light.py` — **NUEVO** (normaliza
+  'dark'→'light' una vez).
+- `backend/app/routers/portal_public.py` — manifest oscuro `#0E0B10`.
 
 **Web Push (2026-07-03)**
 - `backend/app/services/push.py` — **NUEVO** (núcleo Web Push).

@@ -138,6 +138,7 @@ body {
 }
 
 /* ================= PORTAL DEL CLIENTE — crema + neón + 3D ================= */
+/* La paleta vive en variables para que el tema oscuro solo las sobrescriba. */
 .portal-root {
   --p-cream: #f5f0e8;
   --p-cream-2: #efe6d6;
@@ -146,17 +147,43 @@ body {
   --p-wine: var(--brand-accent, #8b1a2b);
   --p-blue: var(--brand-accent-2, #4a7ba8);
   --p-line: rgba(43, 33, 24, 0.12);
+  --p-bg: var(--p-cream);
+  --p-glow-top: rgba(74, 123, 168, 0.12);
+  --p-glow-bottom: rgba(139, 26, 43, 0.10);
+  --p-dots: rgba(43, 33, 24, 0.04);
+  --p-card-top: #ffffff;
+  --p-card-bottom: var(--p-cream-2);
+  --p-card-inset: rgba(255, 255, 255, 0.7);
+  --p-card-shadow: rgba(43, 33, 24, 0.07);
+  --p-nav-idle: #9a8f7d;
+  --p-nav-shadow: rgba(43, 33, 24, 0.08);
   background:
-    radial-gradient(120% 55% at 50% -8%, rgba(74, 123, 168, 0.12), transparent 60%),
-    radial-gradient(120% 55% at 50% 108%, rgba(139, 26, 43, 0.10), transparent 60%),
-    var(--p-cream) !important;
+    radial-gradient(120% 55% at 50% -8%, var(--p-glow-top), transparent 60%),
+    radial-gradient(120% 55% at 50% 108%, var(--p-glow-bottom), transparent 60%),
+    var(--p-bg) !important;
   color: var(--p-ink) !important;
 }
-/* textura sutil de papel */
+/* Tema oscuro "iron obsidiana" (§8.2): BrandPage → portal_theme = dark */
+.portal-root.portal-dark {
+  --p-ink: #ece7e0;
+  --p-ink-soft: #a89e91;
+  --p-line: rgba(236, 231, 224, 0.10);
+  --p-bg: #0e0b10;
+  --p-glow-top: rgba(74, 123, 168, 0.17);
+  --p-glow-bottom: rgba(139, 26, 43, 0.22);
+  --p-dots: rgba(255, 255, 255, 0.035);
+  --p-card-top: #1b151e;
+  --p-card-bottom: #120e15;
+  --p-card-inset: rgba(255, 255, 255, 0.05);
+  --p-card-shadow: rgba(0, 0, 0, 0.45);
+  --p-nav-idle: #8d8496;
+  --p-nav-shadow: rgba(0, 0, 0, 0.5);
+}
+/* textura sutil de papel (puntos claros en oscuro) */
 .portal-root::before {
   content: "";
   position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: 0.5;
-  background-image: radial-gradient(rgba(43, 33, 24, 0.04) 1px, transparent 1px);
+  background-image: radial-gradient(var(--p-dots) 1px, transparent 1px);
   background-size: 22px 22px;
 }
 .portal-root .opacity-60, .portal-root .opacity-50, .portal-root .opacity-40 { color: var(--p-ink-soft); }
@@ -182,12 +209,12 @@ body {
 }
 .portal-btn3d:disabled { filter: grayscale(0.4) opacity(0.55); }
 
-/* Tarjeta con relieve suave sobre crema */
+/* Tarjeta con relieve suave (blanca sobre crema, metal sobre obsidiana) */
 .portal-card {
-  background: linear-gradient(180deg, #ffffff, var(--p-cream-2));
+  background: linear-gradient(180deg, var(--p-card-top), var(--p-card-bottom));
   border: 1px solid var(--p-line);
   border-radius: 16px;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset, 0 6px 18px rgba(43, 33, 24, 0.07);
+  box-shadow: 0 1px 0 var(--p-card-inset) inset, 0 6px 18px var(--p-card-shadow);
 }
 /* Neón de detalle (marca) */
 .portal-neon-wine { box-shadow: 0 0 0 1px rgba(139, 26, 43, 0.55), 0 0 12px rgba(139, 26, 43, 0.5), 0 0 26px rgba(139, 26, 43, 0.25); }
@@ -195,9 +222,9 @@ body {
 
 /* Nav inferior con relieve */
 .portal-nav {
-  background: linear-gradient(180deg, #ffffff, var(--p-cream-2)) !important;
+  background: linear-gradient(180deg, var(--p-card-top), var(--p-card-bottom)) !important;
   border-top: 1px solid var(--p-line) !important;
-  box-shadow: 0 -4px 18px rgba(43, 33, 24, 0.08);
+  box-shadow: 0 -4px 18px var(--p-nav-shadow);
 }
 .portal-nav .nav-active {
   color: var(--p-wine);
@@ -218,3 +245,12 @@ body {
 }
 @keyframes portal-badge-pop { 0% { transform: translateX(16px) scale(0); } 60% { transform: translateX(16px) scale(1.25); } 100% { transform: translateX(16px) scale(1); } }
 .portal-tab-badge { animation: portal-badge-pop 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+
+/* Pill "HOY" del selector de sesión de entreno (§8.2) */
+.portal-today-pill {
+  position: absolute; top: -7px; right: -6px;
+  padding: 2px 6px; border-radius: 999px;
+  font-size: 9px; font-weight: 800; letter-spacing: 0.06em; line-height: 1.2;
+  color: #fff; background: var(--p-wine);
+  box-shadow: 0 0 0 1px rgba(139, 26, 43, 0.4), 0 0 10px rgba(139, 26, 43, 0.55);
+}
