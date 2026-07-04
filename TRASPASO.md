@@ -157,6 +157,8 @@ Obtener token de portal de un cliente: `GET /api/clients/{id}/portal-link` (con 
 
 ## 7. Cómo arrancar / probar / verificar
 
+> Para publicarlo en internet (link público permanente con HTTPS): ver **`DEPLOY.md`**.
+
 ```bash
 # Arrancar todo
 cd C:/Users/Usuari/Desktop/fitness-system
