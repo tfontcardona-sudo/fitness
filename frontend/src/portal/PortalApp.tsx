@@ -91,7 +91,7 @@ export default function PortalApp({ token }: { token: string }) {
 
   return (
     <PortalToastProvider light={light}>
-      <div className="portal-root mx-auto flex min-h-screen max-w-md flex-col">
+      <div className={`portal-root ${light ? "" : "portal-dark"} mx-auto flex min-h-screen max-w-md flex-col`}>
         {/* Cabecera con marca */}
         <header className="relative z-[1] flex items-center justify-between px-5 pb-2 pt-6">
           <div>
@@ -135,7 +135,7 @@ export default function PortalApp({ token }: { token: string }) {
                 key={id}
                 onClick={() => setTab(id)}
                 className={`relative flex flex-1 flex-col items-center gap-0.5 rounded-xl py-1.5 transition-colors ${active ? "nav-active" : ""}`}
-                style={{ color: active ? undefined : "#9a8f7d" }}
+                style={{ color: active ? undefined : "var(--p-nav-idle)" }}
               >
                 <span className="nav-ico p-1"><Icon size={20} /></span>
                 <span className="text-[10px] font-medium">{label}</span>

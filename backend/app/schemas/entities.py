@@ -206,7 +206,7 @@ class BrandConfigIn(BaseModel):
     contact_phone: str | None = None
     contact_web: str | None = None
     docs_theme: Theme = "light"
-    portal_theme: Theme = "dark"
+    portal_theme: Theme = "light"
 
 
 class BrandConfigOut(BrandConfigIn):
