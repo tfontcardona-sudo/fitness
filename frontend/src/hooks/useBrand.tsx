@@ -27,6 +27,7 @@ export function BrandProvider({ children }: { children: ReactNode }) {
       .then((b) => {
         setBrand(b);
         document.documentElement.style.setProperty("--brand-accent", b.color_primary);
+        document.documentElement.style.setProperty("--brand-accent-2", b.color_secondary);
       })
       .catch(() => {
         /* sin marca todavía: se mantienen los defaults del CSS */

@@ -234,6 +234,9 @@ class PeriodOut(BaseModel):
     closing_arm_cm: float | None = None
     closing_thigh_cm: float | None = None
     feedback_id: int | None = None
+    # Ajustes propuestos por el feedback IA de esta revisión (área/cambio/motivo):
+    # la pestaña Planificación los muestra ANTES de pulsar "Adaptar".
+    plan_adjustments: list[dict] | None = None
 
     model_config = {"from_attributes": True}
 
@@ -254,6 +257,7 @@ def list_periods(client_id: int, db: Session = Depends(get_db)) -> list[PeriodOu
             .order_by(FeedbackDoc.id.desc()).limit(1)
         )
         po.feedback_id = fb.id if fb else None
+        po.plan_adjustments = (p.ai_analysis_json or {}).get("plan_adjustments") or None
         out.append(po)
     return out
 

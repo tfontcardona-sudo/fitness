@@ -8,7 +8,7 @@ type Hist = Awaited<ReturnType<typeof api.getClientHistory>>;
 
 const STATUS: Record<string, string> = { open: "Abierto", closed: "Cerrado", analyzed: "Analizado" };
 function badge(s: string): React.CSSProperties {
-  if (s === "analyzed") return { background: "rgba(110,231,183,0.15)", color: "var(--brand-accent)" };
+  if (s === "analyzed") return { background: "color-mix(in srgb, var(--brand-accent) 15%, transparent)", color: "var(--brand-accent)" };
   if (s === "closed") return { background: "rgba(247,201,110,0.15)", color: "#F7C96E" };
   return { background: "rgba(255,255,255,0.08)", color: "#a1a1aa" };
 }

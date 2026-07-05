@@ -52,8 +52,8 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
           <span>{p.starts_on} → {p.ends_on}</span>
           <span>día {p.days_elapsed}/{p.days_total}</span>
         </div>
-        <div className="mt-2 h-2 overflow-hidden rounded bg-zinc-700">
-          <div className="h-full bg-emerald-500" style={{ width: `${pct}%` }} />
+        <div className="mt-2 h-2 overflow-hidden rounded" style={{ background: "var(--surface-raised)" }}>
+          <div className="h-full rounded" style={{ width: `${pct}%`, background: "var(--brand-accent)" }} />
         </div>
         <div className="mt-2 text-xs text-zinc-300">
           Días registrados: <b>{data.days_logged ?? 0}</b> ·{" "}
@@ -81,12 +81,12 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
                 {daily.map((d) => (
                   <tr key={d.date} className="border-t border-white/5">
                     <td className="px-3 py-2">{d.date}</td>
-                    <td>{d.weight_kg ?? "—"}</td>
-                    <td>{d.sleep_hours ?? "—"}</td>
+                    <td>{fmt1(d.weight_kg)}</td>
+                    <td>{fmt1(d.sleep_hours)}</td>
                     <td className="max-w-[130px] truncate">{d.steps ?? "—"}</td>
                     <td>{d.satiety_1_10 ?? "—"}</td>
-                    <td>{d.water_liters ?? "—"}</td>
-                    <td>{d.diet_adherence ?? "—"}</td>
+                    <td>{fmt1(d.water_liters)}</td>
+                    <td>{ADHERENCE_LABEL[d.diet_adherence ?? ""] ?? d.diet_adherence ?? "—"}</td>
                     <td>{d.workout_sets || "—"}</td>
                   </tr>
                 ))}
@@ -95,8 +95,8 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
                 <tfoot>
                   <tr className="border-t border-white/10 font-semibold text-zinc-100" style={{ background: "var(--surface-raised)" }}>
                     <td className="px-3 py-2">Media</td>
-                    <td>{avg.weight_kg ?? "—"}</td>
-                    <td>{avg.sleep_hours ?? "—"}</td>
+                    <td>{fmt1(avg.weight_kg)}</td>
+                    <td>{fmt1(avg.sleep_hours)}</td>
                     <td className="max-w-[130px] truncate">{avg.steps != null ? Math.round(avg.steps) : "—"}</td>
                     <td>{avg.satiety_1_10 ?? "—"}</td>
                     <td>{avg.water_liters ?? "—"}</td>
@@ -126,7 +126,7 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
                 </span>
                 <span className="flex items-center gap-2">
                   {q.feelings_score_10 != null && (
-                    <span className="rounded-full px-2 py-0.5 text-xs font-semibold" style={{ background: "rgba(74,123,168,0.18)", color: "#8FB4D6" }}>
+                    <span className="rounded-full px-2 py-0.5 text-xs font-semibold" style={{ background: "color-mix(in srgb, var(--brand-accent-2, #2E5E8C) 25%, transparent)", color: "#8FB4D6" }}>
                       {q.feelings_score_10}/10
                     </span>
                   )}
@@ -164,6 +164,13 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
     </div>
   );
 }
+
+/** Peso/sueño/agua con un decimal como mucho (evita 83.60000000000001). */
+function fmt1(v: number | null | undefined): string | number {
+  return v == null ? "—" : Math.round(v * 10) / 10;
+}
+
+const ADHERENCE_LABEL: Record<string, string> = { yes: "sí", partial: "parcial", no: "no" };
 
 /** Antes → después con delta coloreado. */
 function BeforeAfter({ label, before, after, lowerBetter }: {

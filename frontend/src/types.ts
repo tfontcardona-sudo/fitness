@@ -486,6 +486,20 @@ export interface TodayView {
   already_logged: boolean;
 }
 
+/** Cambios aplicados al plan en la última adaptación (revisión quincenal):
+ *  qué cambió (con antes→después si fue automático), dónde y por qué. */
+export interface PlanChangeItem {
+  area: string;               // "dieta" | "entreno" | otro
+  change: string;             // el cambio tal como lo propuso el feedback
+  reason: string;             // el porqué
+  applied: boolean;           // false = lo aplicó el coach a mano al editar
+  detail: string | null;      // "Proteína: 185 → 200 g" (antes→después)
+}
+export interface PlanChanges {
+  period_index: number;
+  items: PlanChangeItem[];
+}
+
 export interface PortalPlanOut {
   month_index: number;
   nutrition: NutritionCore & { meal_bank?: MealsOutput } | null;

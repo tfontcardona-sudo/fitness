@@ -314,6 +314,21 @@ def generate_plan_doc(
     section_bar(doc, "Notas del ajuste", BLUE)
     info_box(doc, _concise_notas(nutrition, goal_type, meals))
 
+    # Cambios aplicados en la última adaptación (revisión quincenal): el cliente
+    # ve QUÉ cambió, DÓNDE y POR QUÉ directamente en su PDF.
+    aa = nutrition.get("applied_adjustments") or {}
+    aa_items = aa.get("items") or []
+    if aa_items:
+        section_bar(doc, f"Cambios de tu plan · revisión #{aa.get('period_index', '')}", GOLD)
+        rows = [[
+            (it.get("area") or "").capitalize(),
+            it.get("detail") or it.get("change") or "",
+            it.get("reason") or "",
+        ] for it in aa_items]
+        clean_table(doc, ["Área", "Qué cambia", "Por qué"], rows, brand,
+                    header_color=WINE, header_text_color="FFFFFF",
+                    col_widths=[1400, 3800, 3826])
+
     if meals:
         section_bar(doc, "Estructura diaria", GOLD)
         rows = [[m.get("time", ""), m.get("name", f"Comida {m.get('slot')}"),

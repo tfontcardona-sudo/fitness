@@ -131,7 +131,7 @@ function ClientsTable({ clients }: { clients: ClientOut[] }) {
                     {c.pending_review && (
                       <span
                         className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold text-white shadow"
-                        style={{ background: "var(--brand-primary, #8B1A2B)" }}
+                        style={{ background: "var(--brand-accent)" }}
                         title={`Revisión quincenal #${c.pending_review_period ?? ""} pendiente de ver`}
                       >
                         !
@@ -144,7 +144,7 @@ function ClientsTable({ clients }: { clients: ClientOut[] }) {
                       {c.pending_review && (
                         <span
                           className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
-                          style={{ background: "rgba(139,26,43,0.15)", color: "var(--brand-primary, #C0455A)" }}
+                          style={{ background: "color-mix(in srgb, var(--brand-accent) 15%, transparent)", color: "var(--brand-accent)" }}
                         >
                           <AlertCircle size={10} /> Revisión #{c.pending_review_period}
                         </span>

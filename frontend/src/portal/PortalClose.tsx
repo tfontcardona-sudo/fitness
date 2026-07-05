@@ -98,7 +98,7 @@ export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDat
   if (!canClose) {
     return (
       <div className="flex flex-col items-center py-16 text-center">
-        <div className="portal-neon-wine flex h-24 w-24 items-center justify-center rounded-full border-2"
+        <div className="portal-neon-accent flex h-24 w-24 items-center justify-center rounded-full border-2"
           style={{ borderColor: brand.color_primary, color: brand.color_primary }}>
           <span className="text-4xl font-bold">{daysLeft != null && daysLeft > 0 ? daysLeft : "—"}</span>
         </div>

@@ -46,7 +46,10 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
   const [startingPeriod, setStartingPeriod] = useState(false);
   const [editing, setEditing] = useState(false);
   const [missing, setMissing] = useState<string[] | null>(null);
-  const [periods, setPeriods] = useState<{ id: number; period_index: number; plan_id: number | null; starts_on: string; ends_on: string; status: string }[]>([]);
+  const [periods, setPeriods] = useState<{
+    id: number; period_index: number; plan_id: number | null; starts_on: string; ends_on: string; status: string;
+    plan_adjustments?: { area: string; change: string; reason: string }[] | null;
+  }[]>([]);
 
   // Al montar: carga el último plan guardado + el mapa de ejercicios + los períodos.
   useEffect(() => {
@@ -127,7 +130,11 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
     try {
       await api.publishPlan(plan.id);
       setPlan({ ...plan, status: "published" });
-      toast.push("Plan publicado: ya es visible en el portal del cliente");
+      toast.push(
+        plan.nutrition?.applied_adjustments
+          ? "Plan publicado: el portal ya muestra la rutina nueva y el PDF está actualizado — descárgalo y envíaselo al cliente"
+          : "Plan publicado: ya es visible en el portal del cliente",
+      );
     } catch {
       toast.push("No se pudo publicar", "error");
     } finally {
@@ -163,7 +170,7 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
     return (
       <div className="card p-6">
         <div className="flex items-start gap-3">
-          <div className="rounded-xl p-2.5" style={{ background: "rgba(110,231,183,0.12)" }}>
+          <div className="rounded-xl p-2.5" style={{ background: "color-mix(in srgb, var(--brand-accent) 12%, transparent)" }}>
             <Sparkles size={20} style={{ color: "var(--brand-accent)" }} />
           </div>
           <div className="flex-1">
@@ -226,6 +233,17 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
   const exName = (id: number) => exMap[id] ?? `Ejercicio #${id}`;
   const currentPeriod = periods.find((p) => p.plan_id === plan.id);
 
+  // Última revisión quincenal analizada + estado de la adaptación:
+  // - Si este plan aún NO está adaptado a ella → tarjeta de PROPUESTA (cambios
+  //   y porqués, desplegados) con el botón "Adaptar" dentro.
+  // - Si ya está adaptado → tarjeta de CAMBIOS APLICADOS (antes→después).
+  const review = periods
+    .filter((p) => p.status === "analyzed")
+    .reduce<(typeof periods)[number] | null>((a, b) => (!a || b.period_index > a.period_index ? b : a), null);
+  const appliedBlock: { period_index: number; items: { area: string; change: string; reason: string; applied: boolean; detail: string | null }[] } | null =
+    nut.applied_adjustments ?? null;
+  const alreadyAdapted = review != null && appliedBlock?.period_index === review.period_index;
+
   return (
     <div className="space-y-4">
       {/* Cabecera con acciones */}
@@ -238,7 +256,7 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
                 className="rounded-full px-2 py-0.5 text-xs font-medium"
                 style={
                   plan.status === "published"
-                    ? { background: "rgba(110,231,183,0.15)", color: "var(--brand-accent)" }
+                    ? { background: "color-mix(in srgb, var(--brand-accent) 15%, transparent)", color: "var(--brand-accent)" }
                     : { background: "rgba(255,255,255,0.08)", color: "#a1a1aa" }
                 }
               >
@@ -250,27 +268,6 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
             </p>
           </div>
           <div className="flex gap-2">
-            {(() => {
-              const review = periods
-                .filter((p) => p.status === "analyzed")
-                .reduce<(typeof periods)[number] | null>((a, b) => (!a || b.period_index > a.period_index ? b : a), null);
-              return review ? (
-                <button
-                  onClick={adapt}
-                  disabled={generating}
-                  className="btn btn-primary"
-                  title="Aplica los cambios de la última revisión quincenal (dieta + entreno) y crea un borrador. No usa IA."
-                >
-                  <span
-                    className="mr-1 inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold text-white"
-                    style={{ background: "rgba(255,255,255,0.25)" }}
-                  >
-                    !
-                  </span>
-                  {generating ? "Adaptando…" : `Adaptar a la revisión #${review.period_index}`}
-                </button>
-              ) : null;
-            })()}
             <button onClick={() => setEditing(true)} className="btn btn-ghost">
               <Pencil size={15} /> Editar
             </button>
@@ -293,7 +290,7 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
               <span className="flex items-center gap-2 text-xs text-zinc-400">
                 <CalendarDays size={14} style={{ color: "var(--brand-accent)" }} />
                 Seguimiento activo · {currentPeriod.starts_on} → {currentPeriod.ends_on}
-                <span className="rounded-full px-2 py-0.5" style={{ background: "rgba(110,231,183,0.12)", color: "var(--brand-accent)" }}>
+                <span className="rounded-full px-2 py-0.5" style={{ background: "color-mix(in srgb, var(--brand-accent) 12%, transparent)", color: "var(--brand-accent)" }}>
                   {currentPeriod.status === "open" ? "abierto" : currentPeriod.status === "closed" ? "cerrado" : "analizado"}
                 </span>
               </span>
@@ -308,6 +305,63 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
           </div>
         )}
       </div>
+
+      {/* Cambios PROPUESTOS por la última revisión quincenal: se ven ANTES de
+          adaptar (qué cambia y por qué, dieta y entreno) y el botón va dentro. */}
+      {review?.plan_adjustments?.length && !alreadyAdapted ? (
+        <details open className="card p-5" style={{ borderColor: "color-mix(in srgb, var(--brand-accent) 55%, transparent)" }}>
+          <summary className="cursor-pointer text-sm font-semibold text-zinc-100">
+            Cambios propuestos por la revisión #{review.period_index}
+            <span className="ml-2 text-xs font-normal text-zinc-500">
+              {review.plan_adjustments.length} ajustes · dieta y entrenamiento
+            </span>
+          </summary>
+          <div className="mt-3 space-y-2">
+            {review.plan_adjustments.map((a, i) => (
+              <AdjustmentRow key={i} area={a.area} main={a.change} reason={a.reason} />
+            ))}
+          </div>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t pt-3" style={{ borderColor: "var(--line)" }}>
+            <p className="text-xs text-zinc-500">
+              Al adaptar se crea un <b className="text-zinc-300">borrador nuevo</b> con los ajustes numéricos ya
+              aplicados (macros y cargas). Después podrás verlo, editarlo y publicarlo.
+            </p>
+            <button onClick={adapt} disabled={generating} className="btn btn-primary">
+              {generating ? "Adaptando…" : `Adaptar a la revisión #${review.period_index}`}
+            </button>
+          </div>
+        </details>
+      ) : null}
+
+      {/* Cambios APLICADOS en esta versión (tras adaptar): antes→después + porqué.
+          Queda visible también una vez publicado, como registro de la versión. */}
+      {appliedBlock?.items?.length ? (
+        <details open={plan.status !== "published"} className="card p-5">
+          <summary className="cursor-pointer text-sm font-semibold text-zinc-100">
+            Cambios aplicados en esta versión
+            <span className="ml-2 text-xs font-normal text-zinc-500">revisión #{appliedBlock.period_index}</span>
+          </summary>
+          <div className="mt-3 space-y-2">
+            {appliedBlock.items.map((it, i) => (
+              <AdjustmentRow
+                key={i}
+                area={it.area}
+                main={it.detail ?? it.change}
+                secondary={it.detail ? it.change : undefined}
+                reason={it.reason}
+                manual={!it.applied}
+              />
+            ))}
+          </div>
+          {plan.status !== "published" && (
+            <p className="mt-3 border-t pt-3 text-xs text-zinc-500" style={{ borderColor: "var(--line)" }}>
+              Revisa cómo ha quedado, <b className="text-zinc-300">edita</b> lo que quieras (los ajustes marcados
+              como "a mano" no se aplican solos) y <b className="text-zinc-300">publica</b>: el cliente verá la
+              rutina nueva en su portal y el PDF quedará actualizado para enviárselo.
+            </p>
+          )}
+        </details>
+      ) : null}
 
       {/* Nutrición */}
       <div className="card p-5">
@@ -487,6 +541,38 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
       <button onClick={generate} disabled={generating} className="btn btn-ghost text-xs">
         <Sparkles size={14} /> {generating ? "Regenerando…" : "Regenerar plan (nueva versión)"}
       </button>
+    </div>
+  );
+}
+
+/** Fila de un ajuste de la revisión: chip de área + cambio + porqué. */
+function AdjustmentRow({ area, main, secondary, reason, manual }: {
+  area: string; main: string; secondary?: string; reason: string; manual?: boolean;
+}) {
+  const isDiet = /diet|nutri/i.test(area);
+  const isTrain = /entren|train/i.test(area);
+  return (
+    <div className="rounded-lg p-3" style={{ background: "var(--surface-raised)" }}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span
+          className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+          style={isDiet
+            ? { background: "color-mix(in srgb, var(--brand-accent) 18%, transparent)", color: "var(--brand-accent)" }
+            : isTrain
+              ? { background: "color-mix(in srgb, var(--brand-accent-2, #4C7DB0) 22%, transparent)", color: "var(--brand-accent-2, #7FA8CF)" }
+              : { background: "rgba(255,255,255,0.08)", color: "#a1a1aa" }}
+        >
+          {isDiet ? "Dieta" : isTrain ? "Entreno" : area || "General"}
+        </span>
+        <span className="text-sm font-medium text-zinc-100">{main}</span>
+        {manual && (
+          <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: "rgba(247,201,110,0.15)", color: "#F7C96E" }}>
+            aplicar a mano
+          </span>
+        )}
+      </div>
+      {secondary && <p className="mt-0.5 text-xs text-zinc-500">{secondary}</p>}
+      {reason && <p className="mt-1 text-xs text-zinc-400"><b className="text-zinc-500">Por qué:</b> {reason}</p>}
     </div>
   );
 }

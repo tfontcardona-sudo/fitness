@@ -20,7 +20,7 @@ export const STATUS_LABEL: Record<ClientStatus, string> = {
 // Color de acento por estado (para badges y puntos). Tonos sobrios sobre fondo oscuro.
 export const STATUS_TONE: Record<ClientStatus, string> = {
   onboarding: "#8B9DF7", // índigo suave: aún configurándose
-  active: "#6EE7B7", // acento de marca: todo en marcha
+  active: "#E8833A", // acento de marca: todo en marcha
   awaiting_feedback: "#F7C96E", // ámbar: requiere acción próxima
   at_risk: "#F77E7E", // rojo: atención
   review_pending: "#C99EF7", // violeta: en cola del coach

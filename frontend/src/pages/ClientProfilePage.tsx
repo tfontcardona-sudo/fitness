@@ -80,7 +80,7 @@ export default function ClientProfilePage() {
       {client.status === "review_pending" && (
         <div
           className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3.5"
-          style={{ borderColor: "var(--brand-accent)", background: "rgba(110,231,183,0.10)" }}
+          style={{ borderColor: "var(--brand-accent)", background: "color-mix(in srgb, var(--brand-accent) 10%, transparent)" }}
         >
           <div className="flex items-center gap-2.5 text-sm text-zinc-200">
             <BellRing size={18} style={{ color: "var(--brand-accent)" }} />

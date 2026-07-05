@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Dumbbell, Plus, Trash2, PlayCircle, Check } from "lucide-react";
-import type { PortalBrand, TodaySession } from "../types";
+import { Dumbbell, Plus, Trash2, PlayCircle, Check, Sparkles } from "lucide-react";
+import type { PlanChanges, PortalBrand, TodaySession } from "../types";
 import { usePortalToast } from "./PortalToast";
 import { Loading, Empty } from "./PortalToday";
 import type { portalApi } from "./portalApi";
@@ -20,6 +20,7 @@ export function PortalWorkout({ api, brand }: { api: Api; brand: PortalBrand }) 
   const toast = usePortalToast();
   const today = new Date().toISOString().slice(0, 10);
   const [sessions, setSessions] = useState<TodaySession[] | null>(null);
+  const [planChanges, setPlanChanges] = useState<PlanChanges | null>(null);
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [todayDay, setTodayDay] = useState<string | null>(null);
   const [sets, setSets] = useState<Record<number, SetRow[]>>({});
@@ -30,6 +31,7 @@ export function PortalWorkout({ api, brand }: { api: Api; brand: PortalBrand }) 
     Promise.all([api.training(), api.today(), api.getDiary(today), api.workoutHistory()]).then(([tr, t, diary, hist]) => {
       const ss = tr.sessions ?? [];
       setSessions(ss);
+      setPlanChanges(tr.plan_changes ?? null);
       setHistory(hist.history ?? {});
       setTodayDay(t.session?.day ?? null);
       if (t.session) {
@@ -115,6 +117,36 @@ export function PortalWorkout({ api, brand }: { api: Api; brand: PortalBrand }) 
         <h2 className="text-lg font-semibold">Registrar entreno</h2>
         <p className="mt-0.5 text-xs opacity-60">Elige la sesión que has hecho y anota tus series. Se guarda solo.</p>
       </div>
+
+      {/* Novedades del plan: qué cambió en la última revisión, dónde y por qué */}
+      {planChanges?.items?.length ? (
+        <details className="portal-card overflow-hidden">
+          <summary className="flex cursor-pointer items-center gap-2 p-3.5 text-sm font-semibold">
+            <Sparkles size={16} style={{ color: brand.color_primary }} />
+            Novedades de tu plan
+            <span className="ml-auto text-[11px] font-normal opacity-60">revisión #{planChanges.period_index}</span>
+          </summary>
+          <div className="space-y-2 px-3.5 pb-3.5">
+            {planChanges.items.map((it, i) => (
+              <div key={i} className="rounded-xl border p-2.5" style={{ borderColor: "rgba(128,128,128,0.18)" }}>
+                <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold">
+                  <span
+                    className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white"
+                    style={{ background: /entren/i.test(it.area) ? brand.color_secondary : brand.color_primary }}
+                  >
+                    {/entren/i.test(it.area) ? "Entreno" : /diet|nutri/i.test(it.area) ? "Dieta" : it.area}
+                  </span>
+                  {it.detail ?? it.change}
+                </div>
+                {it.reason && <p className="mt-1 text-xs opacity-70">{it.reason}</p>}
+              </div>
+            ))}
+            <p className="pt-0.5 text-[11px] opacity-50">
+              Los cambios de dieta ya están en tu PDF actualizado; los de entreno, aplicados en tus sesiones de aquí abajo.
+            </p>
+          </div>
+        </details>
+      ) : null}
 
       {/* Selector de sesión */}
       <div className="flex flex-wrap gap-2">

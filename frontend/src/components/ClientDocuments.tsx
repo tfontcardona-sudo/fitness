@@ -94,7 +94,7 @@ export function ClientDocuments({ client, onUploaded }: { client: ClientOut; onU
       {docs && docs.length > 0 && (
         <div
           className="mb-3 flex items-center gap-2 rounded-lg px-3 py-2.5"
-          style={{ background: "rgba(110,231,183,0.10)", border: "1px solid rgba(110,231,183,0.25)" }}
+          style={{ background: "color-mix(in srgb, var(--brand-accent) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--brand-accent) 25%, transparent)" }}
         >
           <CheckCircle2 size={16} style={{ color: "var(--brand-accent)" }} />
           <span className="text-sm font-medium" style={{ color: "var(--brand-accent)" }}>
@@ -121,7 +121,7 @@ export function ClientDocuments({ client, onUploaded }: { client: ClientOut; onU
         className="flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed py-6 text-center transition-colors"
         style={{
           borderColor: dragOver ? "var(--brand-accent)" : "var(--line-strong)",
-          background: dragOver ? "rgba(110,231,183,0.06)" : "transparent",
+          background: dragOver ? "color-mix(in srgb, var(--brand-accent) 6%, transparent)" : "transparent",
         }}
       >
         <Upload size={18} className="text-zinc-500" />
