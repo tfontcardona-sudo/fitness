@@ -11,6 +11,24 @@ Postgres + API + **Caddy**, que sirve el frontend compilado, proxyea `/api` y
 
 ---
 
+## ⚡ Vía rápida — instalador automático
+
+Con el VPS creado y el DNS apuntando (pasos 0–2 de abajo), conéctate por SSH
+(`ssh root@IP-DEL-VPS`) y pega **una sola línea** (sustituye `TU_TOKEN` por un
+token de GitHub de solo-lectura del repo, ver paso 3):
+
+```bash
+apt-get update -qq; apt-get install -y -qq git; [ -d /root/fitness ] || git clone https://TU_TOKEN@github.com/tfontcardona-sudo/fitness.git /root/fitness; bash /root/fitness/deploy/install-vps.sh
+```
+
+El instalador (`deploy/install-vps.sh`) pregunta el dominio, los dos usuarios
+del coach y la clave de Anthropic, y hace **todo lo demás solo**: Docker,
+firewall, `.env` con secretos aleatorios, arranque, claves VAPID del push y un
+resumen final con los links. Es seguro re-ejecutarlo. Los pasos manuales de
+abajo quedan como referencia/detalle.
+
+---
+
 ## 0. Qué necesitas comprar (una vez)
 
 1. **Un VPS** (servidor Linux siempre encendido). Vale el más barato:
