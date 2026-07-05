@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Dumbbell } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useBrand } from "../hooks/useBrand";
 import { Spinner } from "../components/ui";
@@ -32,21 +31,17 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center p-6">
-      {/* Atmósfera: un halo tenue del color de marca, sin estridencias */}
+      {/* Atmósfera: azul arriba, naranja abajo — la firma visual DQ */}
       <div
         className="pointer-events-none fixed inset-0"
         style={{
           background:
-            "radial-gradient(60% 50% at 50% 0%, rgba(110,231,183,0.06), transparent 70%)",
+            "radial-gradient(60% 50% at 50% 0%, rgba(46,94,140,0.10), transparent 70%)," +
+            "radial-gradient(50% 40% at 50% 100%, rgba(232,131,58,0.07), transparent 70%)",
         }}
       />
       <div className="animate-rise card relative w-full max-w-sm p-8">
-        <div
-          className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl"
-          style={{ background: "var(--brand-accent)" }}
-        >
-          <Dumbbell size={22} color="#0a0a0f" />
-        </div>
+        <img src="/dq-logo.png" alt="DQ" className="mb-6 h-11 w-auto rounded-lg" />
         <h1 className="text-xl font-semibold text-zinc-100">
           {brand?.name ?? "Asesorías Fitness"}
         </h1>

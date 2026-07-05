@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
-  Dumbbell,
   LayoutDashboard,
   LogOut,
   PanelLeftClose,
@@ -31,15 +30,10 @@ export default function AppShell() {
         className="flex flex-col border-r transition-all duration-200"
         style={{ borderColor: "var(--line)", width: collapsed ? 64 : 232, background: "var(--surface)" }}
       >
-        <div className="flex h-16 items-center gap-3 px-4">
-          <div
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
-            style={{ background: "var(--brand-accent)" }}
-          >
-            <Dumbbell size={18} color="#0a0a0f" />
-          </div>
+        <div className="flex h-16 items-center gap-3 border-b px-4" style={{ borderColor: "var(--line)" }}>
+          <img src="/dq-logo.png" alt="DQ" className="h-8 w-auto shrink-0 rounded-md" />
           {!collapsed && (
-            <span className="truncate text-sm font-semibold text-zinc-100">
+            <span className="truncate text-sm font-semibold tracking-wide text-zinc-100">
               {brand?.name ?? "Asesorías"}
             </span>
           )}
@@ -52,12 +46,14 @@ export default function AppShell() {
               to={to}
               end={end}
               className={({ isActive }) =>
-                `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
+                `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
                   isActive ? "text-zinc-100" : "text-zinc-500 hover:text-zinc-200"
                 }`
               }
               style={({ isActive }) =>
-                isActive ? { background: "var(--surface-raised)" } : undefined
+                isActive
+                  ? { background: "var(--surface-raised)", boxShadow: "inset 2px 0 0 var(--brand-accent)" }
+                  : undefined
               }
             >
               <Icon size={18} className="shrink-0" />

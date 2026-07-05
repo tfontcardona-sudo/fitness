@@ -46,7 +46,7 @@ export function ClientSummaryTab({ client }: { client: ClientOut }) {
 
   const accent = getComputedStyle(document.documentElement)
     .getPropertyValue("--brand-accent")
-    .trim() || "#6EE7B7";
+    .trim() || "#E8833A";
 
   return (
     <div className="space-y-5">
@@ -149,7 +149,7 @@ function Kpi({
 }) {
   const display =
     value == null ? "—" : `${signed && value > 0 ? "+" : ""}${value} ${unit}`;
-  const tone = signed && value != null ? (value < 0 ? "#6EE7B7" : value > 0 ? "#F7C96E" : undefined) : undefined;
+  const tone = signed && value != null ? (value < 0 ? "#E8833A" : value > 0 ? "#F7C96E" : undefined) : undefined;
   return (
     <div className="card p-4">
       <p className="text-xl font-semibold" style={{ color: tone ?? "#e7e7ea" }}>

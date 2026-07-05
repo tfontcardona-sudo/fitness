@@ -1,7 +1,9 @@
 # Documento de traspaso — Fitness System (DQ / David Quiceno)
 
 > Objetivo de este doc: que otra sesión de IA (Fable u otra) pueda **continuar el trabajo sin perder contexto**.
-> Última actualización: 2026-07-04. Autor del último tramo: Claude (pulido §8.2: tema oscuro + pill HOY).
+> Última actualización: 2026-07-05. Autor del último tramo: Claude (rebrand DQ + flujo adaptar-revisión visible).
+> **PRODUCCIÓN:** el sistema está desplegado en `https://app.dqrassessories.com` (VPS Hetzner
+> `46.225.57.25`, repo en `/root/fitness`, ver `DEPLOY.md`). Actualizar: `cd /root/fitness && git pull && docker compose up -d --build`.
 > Cliente/marca: **David Quiceno (DQ)** — asesoría de fitness. Colores marca: **vino `#8B1A2B`**, **azul `#4A7BA8`**.
 
 ---
@@ -286,6 +288,35 @@ En `C:\Users\Usuari\.claude\projects\C--Users-Usuari-Desktop-fitness-system\memo
 - `docx-render-tooling.md` — cómo renderizar docx→imagen para QA.
 
 ---
+
+## 10.b Tramo 2026-07-05 — Rebrand DQ + flujo adaptar-revisión transparente
+
+**Identidad nueva (azul `#2E5E8C` + naranja `#E8833A` + crema `#F6F1E7` + logo DQ):**
+- Coach app: tema azul noche (`--bg #0B111C`) con acento naranja; logo DQ en sidebar/login;
+  todos los verdes menta antiguos sustituidos por `var(--brand-accent)`.
+- Portal: crema suave con acentos naranja (acción) y azul (estructura); tema oscuro = azul noche.
+- Iconos PWA regenerados ("DQ." sobre azul noche) · manifest actualizado.
+- Migración **`0006_dq_rebrand`** actualiza la fila `brand_config` existente.
+  Defaults nuevos en `models.py` / `portal.py`.
+
+**Flujo "adaptar a la revisión" (petición del coach — todo transparente):**
+1. Feedback: el banner ya NO adapta a ciegas → lleva a Planificación.
+2. Planificación: desplegable **"Cambios propuestos por la revisión #N"** (chips Dieta/Entreno,
+   cambio + porqué) con el botón Adaptar dentro. Datos: `PeriodOut.plan_adjustments`
+   (de `ai_analysis_json`, en `list_periods`).
+3. Al adaptar, `adapt_plan.py` guarda en `nutrition_json.applied_adjustments`
+   `{period_index, items:[{area,change,reason,applied,detail}]}` con **antes→después**
+   ("Proteína: 185 → 200 g"); lo no numérico queda `applied:false` ("aplicar a mano").
+4. El borrador muestra **"Cambios aplicados en esta versión"**; el coach edita y publica.
+5. Portal Entreno: desplegable **"Novedades de tu plan"** (GET `/p/{token}/training` →
+   `plan_changes`, solo si el plan está publicado). PDF: sección **"Cambios de tu plan ·
+   revisión #N"** (tabla Área/Qué cambia/Por qué) tras "Notas del ajuste".
+6. **Fix workflow:** `portal.published_plan_for_period` ahora cae a la última versión
+   publicada si el plan anclado al período fue supersedido (adaptación a mitad de período).
+
+**QA:** tsc + build + compileall OK; screenshots Playwright con API stubbeada de TODA la web
+(login/dashboard/clientes/6 tabs, 2 estados de Planificación) y el portal (3 tabs × 2 temas),
+0 errores JS. Scripts en el scratchpad de la sesión (verify-coach.mjs / verify-portal.mjs).
 
 ## 11. Mapa rápido de archivos tocados en el último tramo
 

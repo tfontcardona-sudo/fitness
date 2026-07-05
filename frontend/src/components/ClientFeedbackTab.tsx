@@ -36,22 +36,6 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
   const [editingFb, setEditingFb] = useState<number | null>(null);
   const [metrics, setMetrics] = useState<Record<number, any>>({});
   const [loadingMetrics, setLoadingMetrics] = useState<number | null>(null);
-  const [adapting, setAdapting] = useState(false);
-
-  async function adapt() {
-    if (adapting) return;
-    setAdapting(true);
-    try {
-      const r = await api.adaptPlan(client.id);
-      toast.push(`Plan adaptado a la revisión (borrador v${r.version}). Revísalo y publícalo.`);
-      onGoPlan?.();
-    } catch (e: any) {
-      const detail = e?.detail ?? e?.data?.detail;
-      toast.push(detail?.message ?? e?.message ?? "No se pudo adaptar el plan", "error");
-    } finally {
-      setAdapting(false);
-    }
-  }
 
   async function loadMetrics(periodId: number) {
     if (loadingMetrics != null) return;
@@ -162,19 +146,21 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
       {latestReview && (
         <div
           className="card flex flex-wrap items-center justify-between gap-2 p-3.5"
-          style={{ borderColor: "var(--brand-primary, #8B1A2B)", borderWidth: 1 }}
+          style={{ borderColor: "var(--brand-accent)", borderWidth: 1 }}
         >
           <span className="flex items-center gap-2 text-sm text-zinc-200">
             <span
               className="flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold text-white"
-              style={{ background: "var(--brand-primary, #8B1A2B)" }}
+              style={{ background: "var(--brand-accent)" }}
             >
               !
             </span>
             Revisión quincenal #{latestReview.period_index} lista — {latestReview.ends_on}
           </span>
-          <button onClick={adapt} disabled={adapting} className="btn btn-primary">
-            <Sparkles size={14} /> {adapting ? "Adaptando…" : `Adaptar planificación a la revisión #${latestReview.period_index}`}
+          {/* Lleva a Planificación: allí se ven los cambios propuestos y su
+              porqué ANTES de adaptar (ya no se adapta a ciegas desde aquí). */}
+          <button onClick={() => onGoPlan?.()} className="btn btn-primary">
+            <Sparkles size={14} /> Revisar cambios y adaptar la planificación
           </button>
         </div>
       )}
@@ -196,7 +182,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                     {STATUS_LABEL[p.status] ?? p.status}
                   </span>
                   {sent && (
-                    <span className="flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium" style={{ background: "rgba(110,231,183,0.15)", color: "var(--brand-accent)" }}>
+                    <span className="flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium" style={{ background: "color-mix(in srgb, var(--brand-accent) 15%, transparent)", color: "var(--brand-accent)" }}>
                       <CheckCircle2 size={12} /> Feedback enviado
                     </span>
                   )}
@@ -354,7 +340,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
 
 const STATUS_LABEL: Record<string, string> = { open: "Abierto", closed: "Cerrado", analyzed: "Analizado" };
 function badge(status: string): React.CSSProperties {
-  if (status === "analyzed") return { background: "rgba(110,231,183,0.15)", color: "var(--brand-accent)" };
+  if (status === "analyzed") return { background: "color-mix(in srgb, var(--brand-accent) 15%, transparent)", color: "var(--brand-accent)" };
   if (status === "closed") return { background: "rgba(247,201,110,0.15)", color: "#F7C96E" };
   return { background: "rgba(255,255,255,0.08)", color: "#a1a1aa" };
 }

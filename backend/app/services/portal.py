@@ -34,7 +34,13 @@ def active_period(db: Session, client_id: int) -> Period | None:
 
 
 def published_plan_for_period(db: Session, period: Period) -> Plan | None:
-    return db.get(Plan, period.plan_id)
+    plan = db.get(Plan, period.plan_id)
+    if plan is not None and plan.status == "published":
+        return plan
+    # El plan del período fue SUPERSEDIDO (p. ej. el coach adaptó y publicó una
+    # versión nueva a mitad de período): el portal debe enseñar siempre la
+    # última versión publicada, no la rutina antigua anclada al período.
+    return latest_published_plan(db, period.client_id)
 
 
 def latest_published_plan(db: Session, client_id: int) -> Plan | None:
@@ -71,8 +77,8 @@ def brand_payload(db: Session) -> dict:
     cfg = db.scalar(select(BrandConfig).limit(1))
     if cfg is None:
         return {
-            "name": "Tu asesoría", "color_primary": "#6EE7B7",
-            "color_secondary": "#8B9DF7", "color_bg": "#0A0A0F",
+            "name": "Tu asesoría", "color_primary": "#E8833A",
+            "color_secondary": "#2E5E8C", "color_bg": "#0B111C",
             "font_family": "Inter", "portal_theme": "light", "logo_path": None,
         }
     return {

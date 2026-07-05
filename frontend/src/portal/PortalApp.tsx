@@ -94,9 +94,12 @@ export default function PortalApp({ token }: { token: string }) {
       <div className={`portal-root ${light ? "" : "portal-dark"} mx-auto flex min-h-screen max-w-md flex-col`}>
         {/* Cabecera con marca */}
         <header className="relative z-[1] flex items-center justify-between px-5 pb-2 pt-6">
-          <div>
-            <p className="text-xs uppercase tracking-widest opacity-50">{state.brand.name}</p>
-            <h1 className="text-xl font-semibold">Hola, {state.first_name}</h1>
+          <div className="flex items-center gap-3">
+            <img src="/dq-logo.png" alt="" className="h-9 w-auto rounded-lg shadow-sm" />
+            <div>
+              <p className="text-[10px] uppercase tracking-widest opacity-50">{state.brand.name}</p>
+              <h1 className="text-xl font-semibold">Hola, {state.first_name}</h1>
+            </div>
           </div>
           {state.period && (
             <div className="text-right">

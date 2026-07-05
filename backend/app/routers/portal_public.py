@@ -231,8 +231,19 @@ def portal_training(
     db: Session = Depends(get_db),
 ) -> dict:
     """Todas las sesiones del plan (con nombres de ejercicio) para el selector
-    de la pantalla de registro de entreno."""
-    return {"sessions": portal_svc.build_training_sessions(db, client)}
+    de la pantalla de registro de entreno. Incluye los cambios aplicados en la
+    última adaptación del plan (qué cambió, dónde y por qué) para el desplegable
+    "Novedades de tu plan"."""
+    period = portal_svc.active_period(db, client.id)
+    plan = (
+        portal_svc.published_plan_for_period(db, period)
+        if period
+        else portal_svc.latest_published_plan(db, client.id)
+    )
+    changes = None
+    if plan is not None and plan.status == "published":
+        changes = (plan.nutrition_json or {}).get("applied_adjustments") or None
+    return {"sessions": portal_svc.build_training_sessions(db, client), "plan_changes": changes}
 
 
 @router.get("/{token}/plan", response_model=PortalPlanOut)
@@ -540,8 +551,8 @@ def portal_manifest(
         "start_url": f"/p/{client.portal_token}",
         "scope": f"/p/{client.portal_token}",
         "display": "standalone",
-        "background_color": "#F5F0E8" if light else "#0E0B10",
-        "theme_color": brand.get("color_primary", "#8B1A2B"),
+        "background_color": "#F6F1E7" if light else "#0C1420",
+        "theme_color": brand.get("color_primary", "#E8833A"),
         "icons": [
             {"src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
             {"src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png"},

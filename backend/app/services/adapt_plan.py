@@ -87,28 +87,60 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
     edu = copy.deepcopy(base.education_json or {})
     macros = nut.setdefault("macros", {})
 
+    # Registro estructurado de cada ajuste (con antes→después cuando se aplica
+    # automáticamente): lo consumen la pestaña Planificación del coach, el
+    # desplegable "Novedades de tu plan" del portal y el PDF.
+    items: list[dict] = []
     for a in adjustments:
         area = _norm(a.get("area", ""))
         change = a.get("change", "")
         cn = _norm(change)
         mode, val = _parse_change(change)
-        if val is None:
-            continue
-        if "diet" in area or "nutri" in area:
+        is_diet = "diet" in area or "nutri" in area
+        entry = {
+            "area": "dieta" if is_diet else ("entreno" if "entren" in area else (a.get("area") or "general")),
+            "change": change,
+            "reason": a.get("reason") or "",
+            "applied": False,
+            "detail": None,
+        }
+        details: list[str] = []
+        if val is not None and is_diet:
             if "proteina" in cn:
-                macros["protein_g"] = _apply(macros.get("protein_g"), mode, val)
+                before = macros.get("protein_g")
+                macros["protein_g"] = _apply(before, mode, val)
+                details.append(f"Proteína: {round(before) if before else '—'} → {macros['protein_g']} g")
             if "hidrato" in cn or "carbo" in cn or re.search(r"\bch\b", cn):
-                macros["carbs_g"] = _apply(macros.get("carbs_g"), mode, val)
+                before = macros.get("carbs_g")
+                macros["carbs_g"] = _apply(before, mode, val)
+                details.append(f"Carbohidratos: {round(before) if before else '—'} → {macros['carbs_g']} g")
             if ("kcal" in cn or "calor" in cn) and "manten" not in cn:
+                before = nut.get("target_kcal")
                 nut["target_kcal"] = _apply(nut.get("target_kcal"), mode, val)
-        elif "entren" in area:
+                details.append(f"Calorías: {round(before) if before else '—'} → {nut['target_kcal']} kcal")
+        elif val is not None and "entren" in area:
             # En entreno solo aplicamos ajustes RELATIVOS de carga (+X kg): un
             # objetivo absoluto no se puede repartir entre todos los ejercicios.
             if mode == "delta" and "kg" in cn:
+                touched = 0
                 for s in tr.get("sessions", []):
                     for ex in s.get("exercises", []):
                         if ex.get("start_weight_hint_kg"):
                             ex["start_weight_hint_kg"] = round(ex["start_weight_hint_kg"] + val, 1)
+                            touched += 1
+                if touched:
+                    details.append(f"Carga inicial: {'+' if val >= 0 else ''}{val:g} kg en {touched} ejercicios")
+        if details:
+            entry["applied"] = True
+            entry["detail"] = " · ".join(details)
+        items.append(entry)
+
+    # Siempre se sobreescribe (el plan base puede arrastrar el bloque de una
+    # adaptación anterior tras el deepcopy).
+    if items:
+        nut["applied_adjustments"] = {"period_index": period.period_index, "items": items}
+    else:
+        nut.pop("applied_adjustments", None)
 
     if adjustments:
         grid = "\n".join(f"- [{a.get('area')}] {a.get('change')} — {a.get('reason')}" for a in adjustments)

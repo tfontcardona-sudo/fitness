@@ -10,6 +10,7 @@ import type {
   DailyLogUpsert,
   FeedbackDocOut,
   PeriodCloseIn,
+  PlanChanges,
   PortalPlanOut,
   PortalState,
   PushPending,
@@ -55,7 +56,7 @@ export function portalApi(token: string) {
   return {
     state: () => req<PortalState>("GET", `${base}/state`),
     today: () => req<TodayView>("GET", `${base}/today`),
-    training: () => req<{ sessions: TodaySession[] }>("GET", `${base}/training`),
+    training: () => req<{ sessions: TodaySession[]; plan_changes?: PlanChanges | null }>("GET", `${base}/training`),
     workoutHistory: () =>
       req<{ history: Record<string, { date: string; sets: { set: number; weight_kg: number | null; reps: number | null }[] }[]> }>(
         "GET", `${base}/workout-history`,

@@ -257,9 +257,9 @@ class BrandConfig(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120), default="Mi Asesoría")
     logo_path: Mapped[str | None] = mapped_column(String(500))
-    color_primary: Mapped[str] = mapped_column(String(9), default="#6EE7B7")
-    color_secondary: Mapped[str] = mapped_column(String(9), default="#34D399")
-    color_bg: Mapped[str] = mapped_column(String(9), default="#0A0A0F")
+    color_primary: Mapped[str] = mapped_column(String(9), default="#E8833A")   # naranja DQ
+    color_secondary: Mapped[str] = mapped_column(String(9), default="#2E5E8C") # azul DQ
+    color_bg: Mapped[str] = mapped_column(String(9), default="#0B111C")        # azul noche
     font_family: Mapped[str] = mapped_column(String(40), default="Inter")
     tagline: Mapped[str | None] = mapped_column(String(200))
     contact_email: Mapped[str | None] = mapped_column(String(160))
