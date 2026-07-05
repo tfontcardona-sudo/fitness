@@ -63,7 +63,7 @@ export default function ClientsPage() {
               className="rounded-lg px-3 py-1.5 text-xs font-medium transition-colors"
               style={
                 filter === s
-                  ? { background: "var(--brand-accent)", color: "#0a0a0f" }
+                  ? { background: "var(--brand-accent)", color: "#221407" }
                   : { background: "var(--surface)", color: "var(--text-dim)" }
               }
             >
@@ -122,7 +122,7 @@ function ClientsTable({ clients }: { clients: ClientOut[] }) {
             <tr
               key={c.id}
               className="border-t transition-colors hover:bg-[var(--surface-raised)]"
-              style={{ borderColor: "var(--line)", background: i % 2 ? "rgba(255,255,255,0.012)" : undefined }}
+              style={{ borderColor: "var(--line)", background: i % 2 ? "rgba(38,33,26,0.02)" : undefined }}
             >
               <td className="px-4 py-3">
                 <Link to={`/clientes/${c.id}?tab=seguimiento`} className="flex items-center gap-3">

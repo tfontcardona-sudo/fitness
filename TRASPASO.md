@@ -318,6 +318,22 @@ En `C:\Users\Usuari\.claude\projects\C--Users-Usuari-Desktop-fitness-system\memo
 (login/dashboard/clientes/6 tabs, 2 estados de Planificación) y el portal (3 tabs × 2 temas),
 0 errores JS. Scripts en el scratchpad de la sesión (verify-coach.mjs / verify-portal.mjs).
 
+**Iteración 2 (mismo día):**
+- **La web del coach ahora es CREMA** (`--bg #F4EEE3`, tarjetas blancas, tinta cálida).
+  Las clases zinc (pensadas para fondo oscuro) se remapean a tinta cálida con overrides
+  globales al final de `index.css` (el portal no usa zinc). `tailwind.config` apunta a
+  las variables CSS. Todos los colores inline oscuros (ámbar/rojo/azules claros/tooltips
+  de la gráfica) remapeados a tonos con contraste sobre claro; `STATUS_TONE` oscurecido.
+- **Dashboard = cola de acciones**: cada cliente se traduce en su siguiente acción
+  ("Revisión quincenal subida → Generar feedback", "Feedback listo → Adaptar
+  planificación", "Onboarding → Crear planificación", "Adherencia baja → Ver
+  seguimiento", "Esperando cierre") con botón directo a la pestaña del perfil.
+  Secciones: Qué toca hacer / En espera del cliente / Al día. (`DashboardPage.tsx`
+  reescrito; el mapeo vive en `nextAction()`.)
+- **Página "Marca" ELIMINADA** (ruta, nav y archivo). Los colores de marca siguen
+  saliendo de `brand_config` en BD (los fijó la migración 0006); si algún día hay que
+  cambiarlos: UPDATE a `brand_config` o restaurar la página desde git.
+
 ## 11. Mapa rápido de archivos tocados en el último tramo
 
 **Pulido §8.2 (2026-07-04)**

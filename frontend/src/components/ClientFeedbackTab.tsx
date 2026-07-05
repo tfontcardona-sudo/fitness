@@ -210,7 +210,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
             </div>
 
             {p.status === "open" && (
-              <div className="mt-3 flex items-center gap-2 rounded-lg p-2.5 text-xs" style={{ background: "rgba(247,201,110,0.08)", color: "#F7C96E" }}>
+              <div className="mt-3 flex items-center gap-2 rounded-lg p-2.5 text-xs" style={{ background: "rgba(154,107,21,0.09)", color: "#9A6B15" }}>
                 <AlertTriangle size={14} /> El período aún está abierto: el cliente debe cerrarlo antes de generar el feedback.
               </div>
             )}
@@ -263,7 +263,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                           <span className="whitespace-nowrap text-zinc-400">
                             {Math.round(s.e1rm_kg)} kg
                             {s.delta_kg != null && (
-                              <span style={{ color: s.delta_kg >= 0 ? "var(--brand-accent)" : "#F77E7E" }}>
+                              <span style={{ color: s.delta_kg >= 0 ? "var(--brand-accent)" : "#C2453A" }}>
                                 {" "}{s.delta_kg >= 0 ? "▲" : "▼"} {Math.abs(s.delta_kg)}
                               </span>
                             )}
@@ -341,8 +341,8 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
 const STATUS_LABEL: Record<string, string> = { open: "Abierto", closed: "Cerrado", analyzed: "Analizado" };
 function badge(status: string): React.CSSProperties {
   if (status === "analyzed") return { background: "color-mix(in srgb, var(--brand-accent) 15%, transparent)", color: "var(--brand-accent)" };
-  if (status === "closed") return { background: "rgba(247,201,110,0.15)", color: "#F7C96E" };
-  return { background: "rgba(255,255,255,0.08)", color: "#a1a1aa" };
+  if (status === "closed") return { background: "rgba(154,107,21,0.14)", color: "#9A6B15" };
+  return { background: "rgba(38,33,26,0.08)", color: "#7A7060" };
 }
 
 function fmtDelta(v: number | null | undefined, unit: string): string {
@@ -367,7 +367,7 @@ function BAStat({ label, before, after, lowerBetter }: {
         <span className="text-zinc-600">→</span>
         <span className="font-semibold">{a ?? "—"}</span>
         {delta != null && delta !== 0 && (
-          <span className="text-xs" style={{ color: good ? "var(--brand-accent)" : bad ? "#F77E7E" : "#a1a1aa" }}>
+          <span className="text-xs" style={{ color: good ? "var(--brand-accent)" : bad ? "#C2453A" : "#7A7060" }}>
             {delta > 0 ? "+" : ""}{delta}
           </span>
         )}

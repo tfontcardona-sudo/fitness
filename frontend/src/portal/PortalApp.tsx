@@ -243,7 +243,7 @@ function applyBrand(s: PortalState) {
 function Centered({ children }: { children: React.ReactNode }) {
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center px-8 text-center"
-      style={{ background: "#0a0a0f", color: "#e7e7ea" }}>
+      style={{ background: "#f6f1e7", color: "#26211a" }}>
       {children}
     </div>
   );

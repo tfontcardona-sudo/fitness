@@ -6,7 +6,6 @@ import AppShell from "./components/AppShell";
 import DashboardPage from "./pages/DashboardPage";
 import ClientsPage from "./pages/ClientsPage";
 import ClientProfilePage from "./pages/ClientProfilePage";
-import BrandPage from "./pages/BrandPage";
 import PortalApp from "./portal/PortalApp";
 
 /**
@@ -47,7 +46,6 @@ function CoachApp() {
         <Route index element={<DashboardPage />} />
         <Route path="clientes" element={<ClientsPage />} />
         <Route path="clientes/:id" element={<ClientProfilePage />} />
-        <Route path="marca" element={<BrandPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

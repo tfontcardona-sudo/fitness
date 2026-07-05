@@ -1,16 +1,76 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertTriangle, ArrowUpRight, CalendarClock, ClipboardList, UserPlus } from "lucide-react";
+import {
+  ArrowRight,
+  CheckCircle2,
+  ClipboardCheck,
+  HeartPulse,
+  Hourglass,
+  Sparkles,
+  UserPlus,
+} from "lucide-react";
 import { api } from "../lib/api";
 import type { ClientOut } from "../types";
 import { PageLoader, StatusBadge } from "../components/ui";
 import { initials, relativeDays } from "../lib/format";
 
 /**
- * Dashboard = puesto de mando. El brief pide que las acciones frecuentes estén
- * a 2 clics: por eso lo primero que ve el coach son las COLAS DE ACCIÓN
- * (clientes en riesgo y revisiones pendientes), no métricas decorativas.
+ * Dashboard = "qué toca hacer AHORA con cada cliente". Cada cliente se traduce
+ * en su siguiente acción concreta (generar feedback, adaptar planificación,
+ * crear planificación…) con un botón que lleva directo a la pestaña adecuada.
+ * Lo que está al día se aparta abajo, sin ruido.
  */
+
+interface Accion {
+  client: ClientOut;
+  prio: number;              // 1 = lo más urgente
+  title: string;             // qué ha pasado
+  detail: string;            // qué hay que hacer
+  cta: string;               // texto del botón
+  tab: string;               // pestaña destino del perfil
+  tone: string;              // color del indicador
+  icon: typeof Sparkles;
+}
+
+function nextAction(c: ClientOut): Accion | null {
+  if (c.status === "review_pending")
+    return {
+      client: c, prio: 1, tone: "#7B4FC9", icon: ClipboardCheck,
+      title: "Revisión quincenal subida",
+      detail: "El cliente ha cerrado sus 2 semanas: revisa los datos y genera su feedback.",
+      cta: "Generar feedback", tab: "feedback",
+    };
+  if (c.status === "at_risk")
+    return {
+      client: c, prio: 1, tone: "#C2453A", icon: HeartPulse,
+      title: "Adherencia baja",
+      detail: "Lleva días sin registrar o con adherencia baja: revisa su seguimiento y contáctalo.",
+      cta: "Ver seguimiento", tab: "seguimiento",
+    };
+  if (c.pending_review)
+    return {
+      client: c, prio: 2, tone: "#C96A1E", icon: Sparkles,
+      title: `Feedback de la revisión #${c.pending_review_period ?? ""} listo`,
+      detail: "Revisa los cambios propuestos (dieta y entreno) y adapta su planificación.",
+      cta: "Adaptar planificación", tab: "planificacion",
+    };
+  if (c.status === "onboarding")
+    return {
+      client: c, prio: 3, tone: "#4C66C9", icon: UserPlus,
+      title: "Cliente nuevo en onboarding",
+      detail: "Cuando llegue su anamnesis, revísala y crea su primera planificación.",
+      cta: "Crear planificación", tab: "planificacion",
+    };
+  if (c.status === "awaiting_feedback")
+    return {
+      client: c, prio: 4, tone: "#9A6B15", icon: Hourglass,
+      title: "Esperando su cierre quincenal",
+      detail: "El período está en marcha: puedes seguir sus registros diarios en tiempo real.",
+      cta: "Ver seguimiento", tab: "seguimiento",
+    };
+  return null; // activo y al día
+}
+
 export default function DashboardPage() {
   const [clients, setClients] = useState<ClientOut[] | null>(null);
 
@@ -18,24 +78,23 @@ export default function DashboardPage() {
     api.listClients().then(setClients).catch(() => setClients([]));
   }, []);
 
-  const groups = useMemo(() => {
+  const { acciones, alDia } = useMemo(() => {
     const c = clients ?? [];
-    return {
-      atRisk: c.filter((x) => x.status === "at_risk"),
-      reviewPending: c.filter((x) => x.status === "review_pending"),
-      awaiting: c.filter((x) => x.status === "awaiting_feedback"),
-      onboarding: c.filter((x) => x.status === "onboarding"),
-      active: c.filter((x) => x.status === "active"),
-      total: c.length,
-    };
+    const acciones = c
+      .map(nextAction)
+      .filter((a): a is Accion => a !== null)
+      .sort((a, b) => a.prio - b.prio);
+    const conAccion = new Set(acciones.map((a) => a.client.id));
+    return { acciones, alDia: c.filter((x) => !conAccion.has(x.id) && x.status !== "inactive") };
   }, [clients]);
 
   if (clients === null) return <PageLoader />;
 
-  const needsAttention = [...groups.atRisk, ...groups.reviewPending];
+  const urgentes = acciones.filter((a) => a.prio <= 3);
+  const enEspera = acciones.filter((a) => a.prio > 3);
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
+    <div className="mx-auto max-w-5xl px-6 py-8">
       <header className="flex items-end justify-between">
         <div>
           <p className="text-xs uppercase tracking-widest text-zinc-500">Panel</p>
@@ -46,115 +105,100 @@ export default function DashboardPage() {
         </Link>
       </header>
 
-      {/* Tira de métricas: contexto, no protagonismo */}
-      <div className="mt-7 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metric label="Clientes activos" value={groups.active.length} />
-        <Metric label="En riesgo" value={groups.atRisk.length} tone="#F77E7E" />
-        <Metric label="Revisión pendiente" value={groups.reviewPending.length} tone="#C99EF7" />
-        <Metric label="En onboarding" value={groups.onboarding.length} tone="#8B9DF7" />
-      </div>
-
-      {/* COLA DE ACCIÓN — el corazón del dashboard */}
-      <section className="mt-8">
-        <div className="mb-3 flex items-center gap-2">
-          <AlertTriangle size={16} className="text-zinc-400" />
-          <h2 className="text-sm font-semibold text-zinc-200">Requiere tu atención</h2>
+      {/* QUÉ TOCA HACER — el corazón del panel */}
+      <section className="mt-7">
+        <div className="mb-3 flex items-baseline justify-between">
+          <h2 className="text-sm font-semibold text-zinc-200">Qué toca hacer</h2>
+          <span className="text-xs text-zinc-500">
+            {urgentes.length === 0 ? "nada pendiente" : `${urgentes.length} acción${urgentes.length === 1 ? "" : "es"}`}
+          </span>
         </div>
 
-        {needsAttention.length === 0 ? (
-          <div className="card p-8 text-center text-sm text-zinc-500">
-            Todo en orden. No hay clientes en riesgo ni revisiones pendientes.
+        {urgentes.length === 0 ? (
+          <div className="card flex items-center justify-center gap-2.5 p-10 text-sm text-zinc-500">
+            <CheckCircle2 size={18} style={{ color: "var(--brand-accent)" }} />
+            Todo al día. Ninguna acción pendiente con tus clientes.
           </div>
         ) : (
-          <div className="space-y-2">
-            {needsAttention.map((c) => (
-              <Link
-                key={c.id}
-                to={`/clientes/${c.id}`}
-                className="card card-hover flex items-center justify-between p-4"
-              >
-                <div className="flex items-center gap-3">
-                  <Avatar name={c.full_name} />
-                  <div>
-                    <p className="text-sm font-medium text-zinc-100">{c.full_name}</p>
-                    <p className="text-xs text-zinc-500">
-                      {c.status === "at_risk"
-                        ? "Adherencia baja o período sin cerrar"
-                        : "Cierre listo para revisar y publicar"}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <StatusBadge status={c.status} />
-                  <ArrowUpRight size={16} className="text-zinc-600" />
-                </div>
-              </Link>
+          <div className="space-y-2.5">
+            {urgentes.map((a) => (
+              <ActionCard key={a.client.id} a={a} />
             ))}
           </div>
         )}
       </section>
 
-      {/* Próximos cierres + onboarding pendientes en dos columnas */}
-      <div className="mt-8 grid gap-5 lg:grid-cols-2">
-        <Panel title="Esperando cierre" icon={CalendarClock} clients={groups.awaiting}
-          emptyHint="Ningún período pendiente de cierre." />
-        <Panel title="Onboarding en curso" icon={ClipboardList} clients={groups.onboarding}
-          emptyHint="Ningún cliente en onboarding." />
-      </div>
-    </div>
-  );
-}
+      {/* EN ESPERA — informativo, sin urgencia */}
+      {enEspera.length > 0 && (
+        <section className="mt-8">
+          <h2 className="mb-3 text-sm font-semibold text-zinc-200">En espera del cliente</h2>
+          <div className="space-y-2">
+            {enEspera.map((a) => (
+              <ActionCard key={a.client.id} a={a} quiet />
+            ))}
+          </div>
+        </section>
+      )}
 
-function Metric({ label, value, tone }: { label: string; value: number; tone?: string }) {
-  return (
-    <div className="card p-4">
-      <p className="text-2xl font-semibold" style={{ color: tone ?? "#e7e7ea" }}>
-        {value}
-      </p>
-      <p className="mt-0.5 text-xs text-zinc-500">{label}</p>
-    </div>
-  );
-}
-
-function Panel({
-  title,
-  icon: Icon,
-  clients,
-  emptyHint,
-}: {
-  title: string;
-  icon: typeof CalendarClock;
-  clients: ClientOut[];
-  emptyHint: string;
-}) {
-  return (
-    <div className="card p-5">
-      <div className="mb-3 flex items-center gap-2">
-        <Icon size={15} className="text-zinc-400" />
-        <h3 className="text-sm font-semibold text-zinc-200">{title}</h3>
-        <span className="ml-auto text-xs text-zinc-600">{clients.length}</span>
-      </div>
-      {clients.length === 0 ? (
-        <p className="py-4 text-sm text-zinc-600">{emptyHint}</p>
-      ) : (
-        <ul className="space-y-1">
-          {clients.slice(0, 6).map((c) => (
-            <li key={c.id}>
-              <Link
-                to={`/clientes/${c.id}`}
-                className="flex items-center justify-between rounded-lg px-2 py-2 hover:bg-[var(--surface-raised)]"
-              >
-                <span className="flex items-center gap-2.5">
-                  <Avatar name={c.full_name} size={28} />
-                  <span className="text-sm text-zinc-200">{c.full_name}</span>
-                </span>
-                <span className="text-xs text-zinc-600">{relativeDays(c.updated_at)}</span>
-              </Link>
-            </li>
-          ))}
-        </ul>
+      {/* AL DÍA — compacto */}
+      {alDia.length > 0 && (
+        <section className="mt-8">
+          <h2 className="mb-3 text-sm font-semibold text-zinc-200">
+            Al día <span className="ml-1 text-xs font-normal text-zinc-500">{alDia.length}</span>
+          </h2>
+          <div className="card p-2">
+            <ul className="divide-y" style={{ borderColor: "var(--line)" }}>
+              {alDia.map((c) => (
+                <li key={c.id}>
+                  <Link
+                    to={`/clientes/${c.id}?tab=seguimiento`}
+                    className="flex items-center justify-between rounded-lg px-3 py-2.5 hover:bg-[var(--surface-raised)]"
+                  >
+                    <span className="flex items-center gap-2.5">
+                      <Avatar name={c.full_name} size={30} />
+                      <span className="text-sm font-medium text-zinc-200">{c.full_name}</span>
+                    </span>
+                    <span className="flex items-center gap-3">
+                      <StatusBadge status={c.status} />
+                      <span className="w-20 text-right text-xs text-zinc-600">{relativeDays(c.updated_at)}</span>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
       )}
     </div>
+  );
+}
+
+function ActionCard({ a, quiet }: { a: Accion; quiet?: boolean }) {
+  const Icon = a.icon;
+  return (
+    <Link
+      to={`/clientes/${a.client.id}?tab=${a.tab}`}
+      className="card card-hover flex flex-wrap items-center gap-4 p-4"
+      style={quiet ? undefined : { borderLeft: `3px solid ${a.tone}` }}
+    >
+      <span
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+        style={{ background: `${a.tone}14`, color: a.tone }}
+      >
+        <Icon size={19} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm text-zinc-100">
+          <b>{a.client.full_name}</b>
+          <span className="mx-1.5 text-zinc-600">·</span>
+          {a.title}
+        </p>
+        <p className="mt-0.5 text-xs text-zinc-500">{a.detail}</p>
+      </div>
+      <span className={quiet ? "btn btn-ghost pointer-events-none px-3.5 py-2 text-xs" : "btn btn-primary pointer-events-none px-3.5 py-2 text-xs"}>
+        {a.cta} <ArrowRight size={13} />
+      </span>
+    </Link>
   );
 }
 

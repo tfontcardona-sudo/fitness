@@ -70,7 +70,7 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <p className="rounded-lg px-3 py-2 text-sm" style={{ background: "#F77E7E18", color: "#F7A0A0" }}>
+            <p className="rounded-lg px-3 py-2 text-sm" style={{ background: "rgba(194,69,58,0.10)", color: "#B4453A" }}>
               {error}
             </p>
           )}

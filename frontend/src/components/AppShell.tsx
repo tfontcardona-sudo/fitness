@@ -5,16 +5,14 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
-  Settings,
   Users,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useBrand } from "../hooks/useBrand";
 
 const NAV = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
+  { to: "/", label: "Hoy", icon: LayoutDashboard, end: true },
   { to: "/clientes", label: "Clientes", icon: Users, end: false },
-  { to: "/marca", label: "Marca", icon: Settings, end: false },
 ];
 
 export default function AppShell() {

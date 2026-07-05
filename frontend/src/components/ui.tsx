@@ -93,15 +93,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             className="animate-rise flex items-center gap-2.5 rounded-xl border px-4 py-3 text-sm shadow-xl"
             style={{
               background: "var(--surface-raised)",
-              borderColor: t.tone === "error" ? "#F77E7E55" : "var(--line-strong)",
+              borderColor: t.tone === "error" ? "#C2453A55" : "var(--line-strong)",
             }}
           >
             <span
               className="flex h-5 w-5 items-center justify-center rounded-full"
-              style={{ background: t.tone === "error" ? "#F77E7E22" : "#E8833A22" }}
+              style={{ background: t.tone === "error" ? "#C2453A22" : "#E8833A22" }}
             >
               {t.tone === "error" ? (
-                <AlertTriangle size={13} color="#F77E7E" />
+                <AlertTriangle size={13} color="#C2453A" />
               ) : (
                 <Check size={13} color="#E8833A" />
               )}
@@ -180,7 +180,7 @@ export function ConfirmDialog({
           </button>
           <button
             className="btn btn-primary"
-            style={destructive ? { background: "#F77E7E" } : undefined}
+            style={destructive ? { background: "#C2453A" } : undefined}
             disabled={!canConfirm}
             onClick={onConfirm}
           >

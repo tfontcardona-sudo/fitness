@@ -91,17 +91,17 @@ export function ClientSummaryTab({ client }: { client: ClientOut }) {
                     <stop offset="100%" stopColor={accent} stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
-                <XAxis dataKey="label" stroke="#6b6b76" fontSize={12} tickLine={false} axisLine={false} />
-                <YAxis stroke="#6b6b76" fontSize={12} tickLine={false} axisLine={false} domain={["dataMin - 2", "dataMax + 2"]} />
+                <CartesianGrid stroke="rgba(38,33,26,0.08)" vertical={false} />
+                <XAxis dataKey="label" stroke="#8B8172" fontSize={12} tickLine={false} axisLine={false} />
+                <YAxis stroke="#8B8172" fontSize={12} tickLine={false} axisLine={false} domain={["dataMin - 2", "dataMax + 2"]} />
                 <Tooltip
                   contentStyle={{
-                    background: "#1a1a24",
-                    border: "1px solid rgba(255,255,255,0.1)",
+                    background: "#fffdf9",
+                    border: "1px solid rgba(38,33,26,0.15)",
                     borderRadius: 12,
                     fontSize: 13,
                   }}
-                  labelStyle={{ color: "#9a9aa6" }}
+                  labelStyle={{ color: "#6E6455" }}
                 />
                 {client.goal_weight_kg != null && (
                   <ReferenceLine
@@ -109,7 +109,7 @@ export function ClientSummaryTab({ client }: { client: ClientOut }) {
                     stroke={accent}
                     strokeDasharray="4 4"
                     strokeOpacity={0.5}
-                    label={{ value: "Objetivo", fill: "#9a9aa6", fontSize: 11, position: "right" }}
+                    label={{ value: "Objetivo", fill: "#6E6455", fontSize: 11, position: "right" }}
                   />
                 )}
                 <Area type="monotone" dataKey="peso" stroke={accent} strokeWidth={2} fill="url(#pesoFill)" />
@@ -149,10 +149,10 @@ function Kpi({
 }) {
   const display =
     value == null ? "—" : `${signed && value > 0 ? "+" : ""}${value} ${unit}`;
-  const tone = signed && value != null ? (value < 0 ? "#E8833A" : value > 0 ? "#F7C96E" : undefined) : undefined;
+  const tone = signed && value != null ? (value < 0 ? "#E8833A" : value > 0 ? "#9A6B15" : undefined) : undefined;
   return (
     <div className="card p-4">
-      <p className="text-xl font-semibold" style={{ color: tone ?? "#e7e7ea" }}>
+      <p className="text-xl font-semibold" style={{ color: tone ?? "#26211A" }}>
         {display}
       </p>
       <p className="mt-0.5 text-xs text-zinc-500">{label}</p>
