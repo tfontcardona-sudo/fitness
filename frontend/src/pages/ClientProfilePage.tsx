@@ -134,7 +134,7 @@ export default function ClientProfilePage() {
                 key={t}
                 onClick={() => setTab(t)}
                 className="relative px-4 py-2.5 text-sm font-medium capitalize transition-colors"
-                style={{ color: tab === t ? "#e7e7ea" : "var(--text-faint)" }}
+                style={{ color: tab === t ? "#26211A" : "var(--text-faint)" }}
               >
                 {t === "resumen" ? "Resumen" : t === "anamnesis" ? "Anamnesis" : t === "planificacion" ? "Planificación" : t === "seguimiento" ? "Seguimiento" : t === "feedback" ? "Feedback" : "Historial"}
                 {tab === t && (

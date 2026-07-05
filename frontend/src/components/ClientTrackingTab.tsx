@@ -126,7 +126,7 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
                 </span>
                 <span className="flex items-center gap-2">
                   {q.feelings_score_10 != null && (
-                    <span className="rounded-full px-2 py-0.5 text-xs font-semibold" style={{ background: "color-mix(in srgb, var(--brand-accent-2, #2E5E8C) 25%, transparent)", color: "#8FB4D6" }}>
+                    <span className="rounded-full px-2 py-0.5 text-xs font-semibold" style={{ background: "color-mix(in srgb, var(--brand-accent-2, #2E5E8C) 25%, transparent)", color: "#3D6E9E" }}>
                       {q.feelings_score_10}/10
                     </span>
                   )}
@@ -187,7 +187,7 @@ function BeforeAfter({ label, before, after, lowerBetter }: {
         <span className="text-zinc-600">→</span>
         <span className="font-semibold">{after ?? "—"}</span>
         {delta != null && delta !== 0 && (
-          <span className="text-xs" style={{ color: good ? "var(--brand-accent)" : bad ? "#F77E7E" : "#a1a1aa" }}>
+          <span className="text-xs" style={{ color: good ? "var(--brand-accent)" : bad ? "#C2453A" : "#7A7060" }}>
             {delta > 0 ? "+" : ""}{delta}
           </span>
         )}

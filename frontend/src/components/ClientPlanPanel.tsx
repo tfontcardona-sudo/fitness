@@ -181,7 +181,7 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
             </p>
 
             {missing && (
-              <div className="mt-4 rounded-lg border p-3" style={{ borderColor: "#7a5b1a", background: "rgba(247,201,110,0.08)" }}>
+              <div className="mt-4 rounded-lg border p-3" style={{ borderColor: "rgba(154,107,21,0.45)", background: "rgba(154,107,21,0.09)" }}>
                 <div className="flex items-center gap-2 text-sm font-medium text-amber-300">
                   <AlertTriangle size={15} /> Faltan datos en la anamnesis
                 </div>
@@ -190,7 +190,7 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
                 </p>
                 <ul className="mt-2 flex flex-wrap gap-1.5">
                   {missing.map((m) => (
-                    <li key={m} className="rounded-md px-2 py-0.5 text-xs" style={{ background: "rgba(247,201,110,0.15)", color: "#F7C96E" }}>
+                    <li key={m} className="rounded-md px-2 py-0.5 text-xs" style={{ background: "rgba(154,107,21,0.14)", color: "#9A6B15" }}>
                       {m}
                     </li>
                   ))}
@@ -257,7 +257,7 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
                 style={
                   plan.status === "published"
                     ? { background: "color-mix(in srgb, var(--brand-accent) 15%, transparent)", color: "var(--brand-accent)" }
-                    : { background: "rgba(255,255,255,0.08)", color: "#a1a1aa" }
+                    : { background: "rgba(38,33,26,0.08)", color: "#7A7060" }
                 }
               >
                 {plan.status === "published" ? "Publicado" : "Borrador"} · v{plan.version}
@@ -559,14 +559,14 @@ function AdjustmentRow({ area, main, secondary, reason, manual }: {
           style={isDiet
             ? { background: "color-mix(in srgb, var(--brand-accent) 18%, transparent)", color: "var(--brand-accent)" }
             : isTrain
-              ? { background: "color-mix(in srgb, var(--brand-accent-2, #4C7DB0) 22%, transparent)", color: "var(--brand-accent-2, #7FA8CF)" }
-              : { background: "rgba(255,255,255,0.08)", color: "#a1a1aa" }}
+              ? { background: "color-mix(in srgb, var(--brand-accent-2, #2E5E8C) 22%, transparent)", color: "var(--brand-accent-2, #3D6E9E)" }
+              : { background: "rgba(38,33,26,0.08)", color: "#7A7060" }}
         >
           {isDiet ? "Dieta" : isTrain ? "Entreno" : area || "General"}
         </span>
         <span className="text-sm font-medium text-zinc-100">{main}</span>
         {manual && (
-          <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: "rgba(247,201,110,0.15)", color: "#F7C96E" }}>
+          <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: "rgba(154,107,21,0.14)", color: "#9A6B15" }}>
             aplicar a mano
           </span>
         )}

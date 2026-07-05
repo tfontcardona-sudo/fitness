@@ -9,8 +9,8 @@ type Hist = Awaited<ReturnType<typeof api.getClientHistory>>;
 const STATUS: Record<string, string> = { open: "Abierto", closed: "Cerrado", analyzed: "Analizado" };
 function badge(s: string): React.CSSProperties {
   if (s === "analyzed") return { background: "color-mix(in srgb, var(--brand-accent) 15%, transparent)", color: "var(--brand-accent)" };
-  if (s === "closed") return { background: "rgba(247,201,110,0.15)", color: "#F7C96E" };
-  return { background: "rgba(255,255,255,0.08)", color: "#a1a1aa" };
+  if (s === "closed") return { background: "rgba(154,107,21,0.14)", color: "#9A6B15" };
+  return { background: "rgba(38,33,26,0.08)", color: "#7A7060" };
 }
 
 /**
@@ -144,7 +144,7 @@ function BA({ label, before, after, lowerBetter }: {
         <span className="text-zinc-600">→</span>
         <span className="font-semibold">{after ?? "—"}</span>
         {delta != null && delta !== 0 && (
-          <span className="text-xs" style={{ color: good ? "var(--brand-accent)" : bad ? "#F77E7E" : "#a1a1aa" }}>
+          <span className="text-xs" style={{ color: good ? "var(--brand-accent)" : bad ? "#C2453A" : "#7A7060" }}>
             {delta > 0 ? "+" : ""}{delta}
           </span>
         )}
@@ -165,7 +165,7 @@ function Title({ icon: Icon, text }: { icon: typeof History; text: string }) {
 function Stat({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
     <div className="rounded-lg p-3 text-center" style={{ background: "var(--surface-raised)" }}>
-      <div className="text-lg font-bold" style={{ color: highlight ? "var(--brand-accent)" : "#e7e7ea" }}>{value}</div>
+      <div className="text-lg font-bold" style={{ color: highlight ? "var(--brand-accent)" : "#26211A" }}>{value}</div>
       <div className="text-xs text-zinc-500">{label}</div>
     </div>
   );

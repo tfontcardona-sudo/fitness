@@ -8,10 +8,10 @@ export default {
   theme: {
     extend: {
       colors: {
-        bg: "#0A0A0F",
-        surface: { DEFAULT: "#111118", raised: "#1A1A24" },
-        accent: "var(--brand-accent, #6EE7B7)",
-        line: "rgba(255,255,255,0.06)",
+        bg: "var(--bg)",
+        surface: { DEFAULT: "var(--surface)", raised: "var(--surface-raised)" },
+        accent: "var(--brand-accent, #E8833A)",
+        line: "var(--line)",
       },
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],

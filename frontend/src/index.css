@@ -8,14 +8,15 @@
   --brand-accent: #e8833a;
   --brand-accent-2: #2e5e8c;
 
-  /* Paleta de la app del coach — azul noche profundo, serio y premium */
-  --bg: #0b111c;
-  --surface: #101927;
-  --surface-raised: #172438;
-  --line: rgba(233, 228, 218, 0.07);
-  --line-strong: rgba(233, 228, 218, 0.13);
-  --text-dim: #9aa3b2;
-  --text-faint: #677181;
+  /* Paleta de la app del coach — crema premium, serena y profesional */
+  --bg: #f4eee3;
+  --surface: #fffdf9;
+  --surface-raised: #f5efe4;
+  --line: rgba(38, 33, 26, 0.08);
+  --line-strong: rgba(38, 33, 26, 0.16);
+  --ink: #26211a;
+  --text-dim: #6e6455;
+  --text-faint: #988d7c;
 }
 
 * {
@@ -30,8 +31,10 @@ body,
 
 body {
   margin: 0;
-  background: var(--bg);
-  color: #e9e7e1;
+  background:
+    radial-gradient(90% 40% at 50% -5%, rgba(46, 94, 140, 0.05), transparent 65%),
+    var(--bg);
+  color: var(--ink);
   font-family: Inter, system-ui, -apple-system, sans-serif;
   font-feature-settings: "cv02", "cv03", "ss01";
   -webkit-font-smoothing: antialiased;
@@ -45,12 +48,12 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(233, 228, 218, 0.1);
+  background: rgba(38, 33, 26, 0.14);
   border-radius: 8px;
   border: 2px solid var(--bg);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(233, 228, 218, 0.18);
+  background: rgba(38, 33, 26, 0.24);
 }
 
 :focus-visible {
@@ -63,13 +66,14 @@ body {
   .card {
     @apply rounded-2xl border bg-surface;
     border-color: var(--line);
+    box-shadow: 0 1px 2px rgba(38, 33, 26, 0.04), 0 8px 24px rgba(38, 33, 26, 0.05);
   }
   .card-hover {
     transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
   }
   .card-hover:hover {
     border-color: var(--line-strong);
-    box-shadow: 0 0 0 1px rgba(232, 131, 58, 0.07), 0 8px 30px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 0 0 1px rgba(232, 131, 58, 0.12), 0 10px 32px rgba(38, 33, 26, 0.10);
   }
 
   .btn {
@@ -78,8 +82,8 @@ body {
   }
   .btn-primary {
     background: var(--brand-accent);
-    color: #16100a;
-    box-shadow: 0 2px 10px rgba(232, 131, 58, 0.25);
+    color: #221407;
+    box-shadow: 0 2px 10px rgba(232, 131, 58, 0.30);
   }
   .btn-primary:hover {
     opacity: 0.92;
@@ -87,8 +91,8 @@ body {
   .btn-ghost {
     @apply border;
     border-color: var(--line-strong);
-    color: #e9e7e1;
-    background: transparent;
+    color: var(--ink);
+    background: var(--surface);
   }
   .btn-ghost:hover {
     background: var(--surface-raised);
@@ -99,9 +103,10 @@ body {
   }
 
   .input {
-    @apply w-full rounded-xl border bg-transparent px-3.5 py-2.5 text-sm;
+    @apply w-full rounded-xl border px-3.5 py-2.5 text-sm;
     border-color: var(--line-strong);
-    color: #e9e7e1;
+    background: var(--surface);
+    color: var(--ink);
   }
   .input::placeholder {
     color: var(--text-faint);
@@ -116,6 +121,21 @@ body {
     color: var(--text-dim);
   }
 }
+
+/* ---- Skin crema de la app del coach ------------------------------------
+   Los componentes usan la escala zinc pensada para fondo oscuro; aquí se
+   remapea a tinta cálida sobre crema. (El portal no usa clases zinc.) */
+.text-zinc-100, .text-zinc-200 { color: #26211a; }
+.text-zinc-300 { color: #3d362b; }
+.text-zinc-400 { color: #5a5245; }
+.text-zinc-500 { color: #7a7060; }
+.text-zinc-600 { color: #988d7c; }
+.hover\:text-zinc-200:hover, .hover\:text-zinc-300:hover { color: #26211a; }
+.text-amber-300, .text-amber-400 { color: #9a6b15; }
+.text-emerald-400 { color: #1b7f4d; }
+.text-red-400 { color: #b4453a; }
+.border-white\/5, .border-white\/10 { border-color: rgba(38, 33, 26, 0.10); }
+.bg-black\/60 { background: rgba(30, 24, 16, 0.40); }
 
 @keyframes rise {
   from { opacity: 0; transform: translateY(6px); }
