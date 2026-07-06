@@ -150,7 +150,7 @@ export default function ClientProfilePage() {
 
           {tab === "resumen" && <ClientSummaryTab client={client} />}
           {tab === "anamnesis" && <ClientAnamnesisTab client={client} onSaved={load} />}
-          {tab === "planificacion" && <ClientPlanPanel client={client} />}
+          {tab === "planificacion" && <ClientPlanPanel client={client} onClientChanged={load} />}
           {tab === "seguimiento" && <ClientTrackingTab client={client} />}
           {tab === "feedback" && <ClientFeedbackTab client={client} onClientChanged={load} onGoPlan={() => setTab("planificacion")} />}
           {tab === "historial" && <ClientHistoryTab client={client} />}

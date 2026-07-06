@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Download, TrendingDown, History, Ruler } from "lucide-react";
-import { api, getToken } from "../lib/api";
-import { Spinner, useToast } from "./ui";
+import { TrendingDown, History, Ruler } from "lucide-react";
+import { api } from "../lib/api";
+import { Spinner } from "./ui";
 import type { ClientOut } from "../types";
 
 type Hist = Awaited<ReturnType<typeof api.getClientHistory>>;
@@ -15,28 +15,15 @@ function badge(s: string): React.CSSProperties {
 
 /**
  * Historial: toda la evolución del cliente en el tiempo, resumida y limpia.
- * Resumen global + tabla por período (peso/adherencia/fuerza) + planes. Todo
- * descargable (ZIP completo o cada plan en Word). Editable desde sus pestañas.
+ * Resumen global + tabla por período (peso/adherencia/fuerza) + planes.
+ * Editable desde sus pestañas.
  */
 export function ClientHistoryTab({ client }: { client: ClientOut }) {
-  const toast = useToast();
   const [h, setH] = useState<Hist | null>(null);
 
   useEffect(() => {
     api.getClientHistory(client.id).then(setH).catch(() => setH(null));
   }, [client.id]);
-
-  function dl(url: string, name: string) {
-    fetch(url, { headers: { Authorization: `Bearer ${getToken()}` } })
-      .then((r) => r.blob())
-      .then((b) => {
-        const u = URL.createObjectURL(b);
-        const a = document.createElement("a");
-        a.href = u; a.download = name; a.click();
-        URL.revokeObjectURL(u);
-      })
-      .catch(() => toast.push("No se pudo descargar", "error"));
-  }
 
   if (!h) {
     return <div className="card flex items-center justify-center gap-2 p-8 text-sm text-zinc-500"><Spinner /> Cargando historial…</div>;
@@ -45,7 +32,6 @@ export function ClientHistoryTab({ client }: { client: ClientOut }) {
   const delta = h.current_weight_kg != null && h.start_weight_kg != null
     ? Math.round((h.current_weight_kg - h.start_weight_kg) * 10) / 10 : null;
   const closings = h.periods.map((p) => p.closing_weight_kg).filter((w): w is number => w != null);
-  const slug = client.full_name.replace(/\s+/g, "_").toLowerCase();
   const measureRows: [string, "waist" | "hip" | "arm" | "thigh"][] = [
     ["Cintura", "waist"], ["Cadera", "hip"], ["Brazo", "arm"], ["Muslo", "thigh"],
   ];
@@ -55,11 +41,8 @@ export function ClientHistoryTab({ client }: { client: ClientOut }) {
     <div className="space-y-4">
       {/* Resumen global + objetivo */}
       <div className="card p-5">
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3">
           <Title icon={History} text="Resumen del cliente" />
-          <button onClick={() => dl(api.exportClientUrl(client.id), `cliente_${slug}.zip`)} className="btn btn-ghost">
-            <Download size={15} /> Descargar todo
-          </button>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <Stat label="Peso inicial" value={h.start_weight_kg != null ? `${h.start_weight_kg} kg` : "—"} />
