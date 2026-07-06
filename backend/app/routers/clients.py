@@ -128,6 +128,12 @@ def client_tracking(client_id: int, db: Session = Depends(get_db)) -> dict:
     if not client:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Cliente no encontrado")
 
+    # Seguimiento autónomo: si hay plan publicado y ningún período abierto, se
+    # abre aquí (el coach ya no pulsa "Iniciar seguimiento").
+    from app.services.periods import ensure_open_period
+
+    ensure_open_period(db, client_id)
+
     periods = list(db.scalars(
         select(Period).where(Period.client_id == client_id).order_by(Period.period_index)
     ))

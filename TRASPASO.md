@@ -334,6 +334,27 @@ En `C:\Users\Usuari\.claude\projects\C--Users-Usuari-Desktop-fitness-system\memo
   saliendo de `brand_config` en BD (los fijó la migración 0006); si algún día hay que
   cambiarlos: UPDATE a `brand_config` o restaurar la página desde git.
 
+**Iteración 4 — Asesorías ágiles (WhatsApp + períodos autónomos + análisis quincenal):**
+- **Seguimiento → revisión quincenal reestructurada**: bloque "Puntos a vigilar"
+  (análisis DETERMINISTA en `ClientTrackingTab.avisosQuincenal`: ritmo kg/sem vs
+  objetivo, adherencias <6/<8, sensaciones ≤2, comidas libres ≥4, días sin
+  registrar, sueño/saciedad medios, dudas pendientes) + secciones Medidas /
+  Adherencia (stats coloreados) / Sensaciones (chips) / "En palabras del cliente".
+- **WhatsApp con un clic** (`lib/whatsapp.ts`, 9 dígitos → +34):
+  · Feedback: "Enviar por WhatsApp" abre wa.me con el texto completo y marca
+    sent (review_pending → active). Ya no se "envía al portal".
+  · Plan: "Enviar por WhatsApp" manda el enlace al PDF público
+    **`GET /api/p/{token}/plan.pdf`** (nuevo; constructor compartido en
+    `services/plan_delivery.py`, usado también por la descarga del coach).
+- **Períodos AUTÓNOMOS** (`services/periods.ensure_open_period`, idempotente):
+  se abre al publicar un plan, al entrar el cliente al portal (/state), al abrir
+  el coach Seguimiento, y red de seguridad en el job diario. **"Iniciar
+  seguimiento" eliminado** del panel de Planificación.
+- **Botones que desaparecen solos**: banner de Feedback "Revisar cambios…" se
+  oculta cuando el último plan ya está adaptado a esa revisión (compara
+  applied_adjustments.period_index); la tarjeta "Cambios propuestos"+Adaptar ya
+  se ocultaba. **"Regenerar plan (nueva versión)" eliminado.**
+
 **Iteración 3 — UX/UI del portal (navegación en 1 clic, táctil, a11y):**
 - **`src/lib/useDismiss.ts`** — hook ÚNICO de cierre de overlays: click/tap fuera
   (en fase de captura → una sola pulsación cierra Y ejecuta el destino), ESC, y

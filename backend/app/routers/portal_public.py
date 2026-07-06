@@ -196,6 +196,11 @@ def portal_state_full(
     db: Session = Depends(get_db),
 ) -> PortalState:
     """Estado completo para arrancar el portal: período activo y marca."""
+    # Seguimiento autónomo: si el cliente entra sin período abierto (p. ej. el
+    # anterior se cerró ayer), se abre el siguiente aquí mismo.
+    from app.services.periods import ensure_open_period
+
+    ensure_open_period(db, client.id, commit=True)
     period = portal_svc.active_period(db, client.id)
     plan = (
         portal_svc.published_plan_for_period(db, period)
@@ -268,6 +273,38 @@ def portal_plan(
         training=plan.training_json,
         education=plan.education_json,
         diet_mode=client.diet_mode,
+    )
+
+
+@router.get("/{token}/plan.pdf")
+@limiter.limit("10/minute")
+def portal_plan_pdf(
+    request: Request,
+    client: Client = Depends(get_client_by_token),
+    db: Session = Depends(get_db),
+):
+    """El plan PUBLICADO del cliente en PDF, por su token (sin login).
+
+    Pensado para el botón "Enviar plan por WhatsApp" del coach: el mensaje
+    lleva este enlace y el cliente descarga su PDF con un toque."""
+    from fastapi import Response
+
+    from app.services.plan_delivery import build_plan_pdf
+
+    period = portal_svc.active_period(db, client.id)
+    plan = (
+        portal_svc.published_plan_for_period(db, period)
+        if period
+        else portal_svc.latest_published_plan(db, client.id)
+    )
+    if plan is None or plan.status != "published":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Aún no tienes un plan publicado")
+
+    content, media_type, filename = build_plan_pdf(db, plan, client)
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )
 
 

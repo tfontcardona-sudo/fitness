@@ -149,6 +149,12 @@ def publish_plan(plan_id: int, db: Session = Depends(get_db)) -> PlanOut:
 
     log_event(db, "plan", plan.id, "plan_published", {"month_index": plan.month_index})
 
+    # Seguimiento AUTÓNOMO: publicar activa el período de 14 días si no hay
+    # ninguno abierto (el coach ya no lo inicia a mano).
+    from app.services.periods import ensure_open_period
+
+    ensure_open_period(db, client.id)
+
     # Email de bienvenida / nuevo plan (G.5)
     brand = brand_from_config(db)
     portal_url = f"{settings.public_base_url}/p/{client.portal_token}"
@@ -417,69 +423,23 @@ def _doc_brand(db: Session):
 
 @router.get("/api/plans/{plan_id}/document")
 def download_plan_document(plan_id: int, db: Session = Depends(get_db)):
-    """Genera y descarga el documento Word del plan (H.3)."""
+    """Genera y descarga el plan en PDF (constructor compartido con el enlace
+    público del cliente — ver services/plan_delivery)."""
     from fastapi import Response
 
-    from app.services.docs.plan_doc import generate_plan_doc
-
-    from app.models import Exercise
+    from app.services.plan_delivery import build_plan_pdf
 
     plan = db.get(Plan, plan_id)
     if not plan:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan no encontrado")
     client = db.get(Client, plan.client_id)
 
-    # Nombres reales de ejercicios para las tablas de entrenamiento
-    training = plan.training_json or {}
-    ex_ids = {
-        ex.get("exercise_id")
-        for sess in training.get("sessions", [])
-        for ex in sess.get("exercises", [])
-        if ex.get("exercise_id") is not None
-    }
-    exercise_names: dict[int, str] = {}
-    if ex_ids:
-        for ex in db.scalars(select(Exercise).where(Exercise.id.in_(ex_ids))):
-            exercise_names[ex.id] = ex.canonical_name
-
-    data = generate_plan_doc(
-        brand=_doc_brand(db),
-        client_name=client.full_name,
-        month_index=plan.month_index,
-        goal_type=client.goal_type,
-        diet_mode=client.diet_mode,
-        nutrition=plan.nutrition_json or {},
-        training=training,
-        education=plan.education_json or {},
-        exercise_names=exercise_names,
-        food_allergies=client.food_allergies,
-        food_dislikes=client.food_dislikes,
+    content, media_type, filename = build_plan_pdf(db, plan, client)
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
-    import unicodedata
-
-    ascii_name = unicodedata.normalize("NFKD", client.full_name).encode("ascii", "ignore").decode()
-    safe = "".join(c if c.isalnum() else "_" for c in ascii_name).strip("_").lower() or "cliente"
-
-    # Se entrega como PDF convertido en el servidor (LibreOffice) → idéntico al
-    # que se verifica y sin depender del Word del cliente. Fallback a .docx si la
-    # conversión fallara, para no romper la descarga.
-    from app.services.docs.pdf_convert import docx_bytes_to_pdf
-
-    try:
-        pdf = docx_bytes_to_pdf(data)
-        return Response(
-            content=pdf,
-            media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="plan_{safe}_mes{plan.month_index}.pdf"'},
-        )
-    except Exception as exc:  # noqa: BLE001 — degradación controlada
-        import logging
-        logging.getLogger("uvicorn.error").warning("Conversión PDF falló, se entrega .docx: %s", exc)
-        return Response(
-            content=data,
-            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={"Content-Disposition": f'attachment; filename="plan_{safe}_mes{plan.month_index}.docx"'},
-        )
 
 
 # ----------------------------------------------- swap de ejercicios (Fase 8, F.5) ----

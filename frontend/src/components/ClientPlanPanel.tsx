@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, Pencil } from "lucide-react";
+import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Pencil } from "lucide-react";
 import { api, getToken } from "../lib/api";
+import { openWhatsApp, waPhone } from "../lib/whatsapp";
 import { Spinner, useToast } from "./ui";
 import { ClientPlanEditor } from "./ClientPlanEditor";
 import type { ClientOut } from "../types";
@@ -43,7 +44,6 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [publishing, setPublishing] = useState(false);
-  const [startingPeriod, setStartingPeriod] = useState(false);
   const [editing, setEditing] = useState(false);
   const [missing, setMissing] = useState<string[] | null>(null);
   const [periods, setPeriods] = useState<{
@@ -74,19 +74,26 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
     };
   }, [client.id]);
 
-  async function startPeriod() {
-    if (!plan || startingPeriod) return;
-    setStartingPeriod(true);
+  /** Un clic: abre WhatsApp del cliente con el enlace directo a su PDF
+   *  (endpoint público por token — no necesita login). */
+  async function sendPlanWhatsApp() {
+    const phone = waPhone(client.phone);
+    if (!phone) {
+      toast.push("Añade el teléfono del cliente en su ficha para enviarlo por WhatsApp", "error");
+      return;
+    }
     try {
-      const today = new Date().toISOString().slice(0, 10);
-      await api.createPeriod(client.id, plan.id, today, 14);
-      setPeriods(await api.listPeriods(client.id));
-      toast.push("Seguimiento iniciado (14 días). El cliente ya puede registrar su diario.");
-    } catch (e: any) {
-      const detail = e?.detail ?? e?.data?.detail;
-      toast.push([detail?.message ?? e?.message ?? "No se pudo iniciar el período", detail?.error].filter(Boolean).join(" — "), "error");
-    } finally {
-      setStartingPeriod(false);
+      const link = await api.portalLink(client.id);
+      const adapted = plan?.nutrition?.applied_adjustments;
+      const first = client.full_name.split(" ")[0];
+      const pdfUrl = `${window.location.origin}/api/p/${link.portal_token}/plan.pdf`;
+      openWhatsApp(
+        phone,
+        `Hola ${first}! 💪 Te dejo tu plan ${adapted ? `actualizado tras tu revisión #${adapted.period_index}` : `del mes ${plan?.month_index ?? 1}`} en PDF:\n${pdfUrl}\n\nCualquier duda me escribes.`,
+      );
+      toast.push("WhatsApp abierto con el enlace del plan — dale a enviar");
+    } catch {
+      toast.push("No se pudo obtener el enlace del plan", "error");
     }
   }
 
@@ -130,10 +137,11 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
     try {
       await api.publishPlan(plan.id);
       setPlan({ ...plan, status: "published" });
+      setPeriods(await api.listPeriods(client.id).catch(() => periods));
       toast.push(
         plan.nutrition?.applied_adjustments
-          ? "Plan publicado: el portal ya muestra la rutina nueva y el PDF está actualizado — descárgalo y envíaselo al cliente"
-          : "Plan publicado: ya es visible en el portal del cliente",
+          ? "Plan publicado: el portal ya muestra la rutina nueva — envíale el PDF por WhatsApp"
+          : "Plan publicado: el seguimiento del cliente queda activo — envíale el PDF por WhatsApp",
       );
     } catch {
       toast.push("No se pudo publicar", "error");
@@ -231,7 +239,10 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
   const macros = nut.macros ?? {};
   const mealBank = nut.meal_bank ?? null;
   const exName = (id: number) => exMap[id] ?? `Ejercicio #${id}`;
-  const currentPeriod = periods.find((p) => p.plan_id === plan.id);
+  // El período abierto puede seguir anclado al plan anterior (adaptación a
+  // mitad de ciclo): el seguimiento activo es el período ABIERTO, sea del plan
+  // que sea; el portal ya enseña siempre la última versión publicada.
+  const currentPeriod = periods.find((p) => p.status === "open") ?? periods.find((p) => p.plan_id === plan.id);
 
   // Última revisión quincenal analizada + estado de la adaptación:
   // - Si este plan aún NO está adaptado a ella → tarjeta de PROPUESTA (cambios
@@ -274,6 +285,11 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
             <button onClick={downloadPdf} className="btn btn-ghost">
               <Download size={15} /> Descargar PDF
             </button>
+            {plan.status === "published" && (
+              <button onClick={sendPlanWhatsApp} className="btn btn-primary">
+                <MessageCircle size={15} /> Enviar por WhatsApp
+              </button>
+            )}
             {plan.status !== "published" && (
               <button onClick={publish} disabled={publishing} className="btn btn-primary">
                 <Send size={15} /> {publishing ? "Publicando…" : "Publicar"}
@@ -282,25 +298,24 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
           </div>
         </div>
 
-        {/* Seguimiento: tras publicar, iniciar el período para que el cliente
-            registre el diario en el portal (cierra el ciclo hacia el feedback). */}
+        {/* Seguimiento AUTÓNOMO: el período de 14 días se abre al publicar y se
+            renueva solo tras cada cierre — el coach ya no inicia nada a mano. */}
         {plan.status === "published" && (
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg p-3" style={{ background: "var(--surface-raised)" }}>
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg p-3" style={{ background: "var(--surface-raised)" }}>
+            <CalendarDays size={14} style={{ color: "var(--brand-accent)" }} />
             {currentPeriod ? (
-              <span className="flex items-center gap-2 text-xs text-zinc-400">
-                <CalendarDays size={14} style={{ color: "var(--brand-accent)" }} />
+              <span className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
                 Seguimiento activo · {currentPeriod.starts_on} → {currentPeriod.ends_on}
                 <span className="rounded-full px-2 py-0.5" style={{ background: "color-mix(in srgb, var(--brand-accent) 12%, transparent)", color: "var(--brand-accent)" }}>
                   {currentPeriod.status === "open" ? "abierto" : currentPeriod.status === "closed" ? "cerrado" : "analizado"}
                 </span>
+                <span className="text-zinc-500">se renueva solo cada 14 días</span>
               </span>
             ) : (
-              <>
-                <span className="text-xs text-zinc-500">Inicia el seguimiento para que el cliente registre su diario y, al cerrarlo, puedas generar el feedback.</span>
-                <button onClick={startPeriod} disabled={startingPeriod} className="btn btn-ghost">
-                  <CalendarDays size={15} /> {startingPeriod ? "Iniciando…" : "Iniciar seguimiento (14 días)"}
-                </button>
-              </>
+              <span className="text-xs text-zinc-500">
+                El seguimiento se activa solo: en cuanto el cliente entre en su portal (o mañana
+                a más tardar) tendrá su período de 14 días abierto.
+              </span>
             )}
           </div>
         )}
@@ -538,9 +553,6 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
         )}
       </div>
 
-      <button onClick={generate} disabled={generating} className="btn btn-ghost text-xs">
-        <Sparkles size={14} /> {generating ? "Regenerando…" : "Regenerar plan (nueva versión)"}
-      </button>
     </div>
   );
 }
