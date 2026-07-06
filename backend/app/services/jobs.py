@@ -87,13 +87,22 @@ def _facts_for(db: Session, client: Client) -> ClientFacts:
 def run_daily_maintenance(db: Session, today: date | None = None) -> dict:
     """Job diario. Devuelve un resumen de lo actuado (útil para logs/tests)."""
     today = today or date.today()
-    summary = {"evaluated": 0, "transitions": 0, "reminders": 0, "at_risk_alerts": 0}
+    summary = {"evaluated": 0, "transitions": 0, "reminders": 0, "at_risk_alerts": 0,
+               "periods_opened": 0}
 
     clients = db.scalars(
         select(Client).where(Client.status.notin_(["inactive"]))
     ).all()
     if not clients:
         return summary
+
+    # Seguimiento autónomo (red de seguridad diaria): reabrir el ciclo de 14
+    # días a quien tenga plan publicado y ningún período abierto.
+    from app.services.periods import ensure_open_period
+
+    for c in clients:
+        if ensure_open_period(db, c.id) is not None:
+            summary["periods_opened"] += 1
 
     emailer = EmailService(db)
     brand = brand_from_config(db)

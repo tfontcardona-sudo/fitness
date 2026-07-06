@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { Sparkles, AlertTriangle, MessageSquare, Target, TrendingUp, BarChart3, Send, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
+import { Sparkles, AlertTriangle, MessageSquare, MessageCircle, Target, TrendingUp, BarChart3, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
 import { api } from "../lib/api";
+import { openWhatsApp, waPhone } from "../lib/whatsapp";
 import { Spinner, useToast } from "./ui";
 import type { ClientOut } from "../types";
 
@@ -32,7 +33,6 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
   const [periods, setPeriods] = useState<Period[] | null>(null);
   const [contents, setContents] = useState<Record<number, any>>({});
   const [generating, setGenerating] = useState<number | null>(null);
-  const [sending, setSending] = useState<number | null>(null);
   const [editingFb, setEditingFb] = useState<number | null>(null);
   const [metrics, setMetrics] = useState<Record<number, any>>({});
   const [loadingMetrics, setLoadingMetrics] = useState<number | null>(null);
@@ -51,7 +51,14 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
     }
   }
 
+  // Revisión a la que ya está adaptado el último plan (para ocultar el banner
+  // "Revisar cambios…" una vez adaptada: el trabajo ya está hecho).
+  const [adaptedIdx, setAdaptedIdx] = useState<number | null>(null);
+
   const load = useCallback(() => {
+    api.listPlans(client.id)
+      .then((plans) => setAdaptedIdx(plans[0]?.nutrition_json?.applied_adjustments?.period_index ?? null))
+      .catch(() => {});
     api.listPeriods(client.id)
       .then(async (ps) => {
         setPeriods(ps);
@@ -88,22 +95,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
     }
   }
 
-  async function send(feedbackId: number) {
-    if (sending != null) return;
-    setSending(feedbackId);
-    try {
-      await api.sendFeedback(feedbackId);
-      toast.push("Feedback enviado: ya es visible en el portal del cliente");
-      load();
-      onClientChanged?.(); // refresca el perfil para cerrar la notificación
-    } catch (e: any) {
-      toast.push(e?.message ?? "No se pudo enviar el feedback", "error");
-    } finally {
-      setSending(null);
-    }
-  }
-
-  function copyAll(content: any) {
+  function buildFeedbackText(content: any): string {
     const parts: string[] = [];
     if (content.natural_analysis) parts.push(content.natural_analysis);
     if (Array.isArray(content.changes_bullets) && content.changes_bullets.length)
@@ -112,9 +104,32 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
     if (Array.isArray(content.next_objectives) && content.next_objectives.length)
       parts.push("Objetivos próximas 2 semanas:\n" + content.next_objectives.map((o: string) => `• ${o}`).join("\n"));
     if (content.closing_message) parts.push(content.closing_message);
-    navigator.clipboard.writeText(parts.join("\n\n"))
+    return parts.join("\n\n");
+  }
+
+  function copyAll(content: any) {
+    navigator.clipboard.writeText(buildFeedbackText(content))
       .then(() => toast.push("Feedback copiado al portapapeles"))
       .catch(() => toast.push("No se pudo copiar", "error"));
+  }
+
+  /** Un clic: abre WhatsApp del cliente con el feedback ya escrito y lo marca
+   *  como enviado (el ciclo avanza a "activo"). */
+  async function sendWhatsApp(feedbackId: number, content: any) {
+    const phone = waPhone(client.phone);
+    if (!phone) {
+      toast.push("Añade el teléfono del cliente en su ficha para enviarlo por WhatsApp", "error");
+      return;
+    }
+    openWhatsApp(phone, `Hola ${client.full_name.split(" ")[0]}! Tu feedback de la quincena 👇\n\n${buildFeedbackText(content)}`);
+    try {
+      await api.sendFeedback(feedbackId);
+      toast.push("WhatsApp abierto con el feedback listo — dale a enviar");
+      load();
+      onClientChanged?.();
+    } catch {
+      /* el WhatsApp ya está abierto; el marcado puede reintentarse */
+    }
   }
 
   if (periods === null) {
@@ -140,10 +155,12 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
   const latestReview = periods
     .filter((p) => p.status === "analyzed")
     .reduce<Period | null>((a, b) => (!a || b.period_index > a.period_index ? b : a), null);
+  // El banner desaparece en cuanto la planificación YA está adaptada a esa revisión
+  const needsAdapt = latestReview != null && adaptedIdx !== latestReview.period_index;
 
   return (
     <div className="space-y-4">
-      {latestReview && (
+      {latestReview && needsAdapt && (
         <div
           className="card flex flex-wrap items-center justify-between gap-2 p-3.5"
           style={{ borderColor: "var(--brand-accent)", borderWidth: 1 }}
@@ -195,9 +212,9 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                     <BarChart3 size={15} /> {loadingMetrics === p.id ? "Calculando…" : "Resumen"}
                   </button>
                 )}
-                {p.feedback_id && !sent && (
-                  <button onClick={() => send(p.feedback_id as number)} disabled={sending === p.feedback_id} className="btn btn-primary">
-                    <Send size={15} /> {sending === p.feedback_id ? "Enviando…" : "Enviar al cliente"}
+                {p.feedback_id && content && !sent && (
+                  <button onClick={() => sendWhatsApp(p.feedback_id as number, content)} className="btn btn-primary">
+                    <MessageCircle size={15} /> Enviar por WhatsApp
                   </button>
                 )}
                 {canGenerate && !p.feedback_id && (

@@ -133,34 +133,218 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
                   <span className="text-xs text-emerald-400">{q.analyzed ? "analizada" : "recibida"}</span>
                 </span>
               </summary>
-              <div className="border-t border-white/5 px-4 py-3">
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  <BeforeAfter label="Peso (kg)" before={q.weight_before} after={q.weight_after} lowerBetter />
-                  <BeforeAfter label="Cintura (cm)" before={q.waist_before} after={q.waist_after} lowerBetter />
-                  <BeforeAfter label="Cadera (cm)" before={q.hip_before} after={q.hip_after} lowerBetter />
-                  <BeforeAfter label="Brazo (cm)" before={q.arm_before} after={q.arm_after} />
-                  <BeforeAfter label="Muslo (cm)" before={q.thigh_before} after={q.thigh_after} />
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-zinc-300">
-                  <span>Adherencia dieta: <b>{q.adherence_diet ?? "—"}/10</b></span>
-                  <span>Adherencia entreno: <b>{q.adherence_training ?? "—"}/10</b></span>
-                  <span>Comidas libres: <b>{q.free_meals ?? "—"}</b></span>
-                  <span>Valoración sensaciones: <b>{q.feelings_score_10 ?? "—"}/10</b></span>
-                  {q.feelings && (
-                    <span className="col-span-2">
-                      Sensaciones: {Object.entries(q.feelings).map(([k, v]) => `${k} ${v}/5`).join(" · ")}
-                    </span>
-                  )}
-                  {q.changes && <span className="col-span-2">Cambios: {q.changes}</span>}
-                  {q.hardest && <span className="col-span-2">Le cuesta: {q.hardest}</span>}
-                  {q.next_goal && <span className="col-span-2">Objetivo: {q.next_goal}</span>}
-                  {q.questions && <span className="col-span-2">Dudas: {q.questions}</span>}
-                </div>
+              <div className="space-y-4 border-t border-white/5 px-4 py-3.5">
+                {/* Análisis automático: lo crítico, arriba y sin que el coach lo busque */}
+                <Vigilar
+                  q={q}
+                  goal={client.goal_type}
+                  extras={i === 0 ? {
+                    daysLogged: data.days_logged ?? null,
+                    daysTotal: data.period?.days_total ?? 14,
+                    sleep: avg?.sleep_hours ?? null,
+                    satiety: avg?.satiety_1_10 ?? null,
+                  } : undefined}
+                />
+
+                <section>
+                  <MiniTitle>Medidas · antes → después</MiniTitle>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    <BeforeAfter label="Peso (kg)" before={q.weight_before} after={q.weight_after} lowerBetter />
+                    <BeforeAfter label="Cintura (cm)" before={q.waist_before} after={q.waist_after} lowerBetter />
+                    <BeforeAfter label="Cadera (cm)" before={q.hip_before} after={q.hip_after} lowerBetter />
+                    <BeforeAfter label="Brazo (cm)" before={q.arm_before} after={q.arm_after} />
+                    <BeforeAfter label="Muslo (cm)" before={q.thigh_before} after={q.thigh_after} />
+                  </div>
+                </section>
+
+                <section>
+                  <MiniTitle>Adherencia y valoración</MiniTitle>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <ScoreStat label="Dieta" value={q.adherence_diet} />
+                    <ScoreStat label="Entreno" value={q.adherence_training} />
+                    <ScoreStat label="Sensaciones" value={q.feelings_score_10} />
+                    <CountStat label="Comidas libres" value={q.free_meals} />
+                  </div>
+                </section>
+
+                {q.feelings && (
+                  <section>
+                    <MiniTitle>Sensaciones (1 = muy mal · 5 = excelente)</MiniTitle>
+                    <div className="flex flex-wrap gap-1.5">
+                      {Object.entries(q.feelings).map(([k, v]) => (
+                        <FeelingChip key={k} name={k} value={Number(v)} />
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {(q.changes || q.hardest || q.next_goal || q.questions) && (
+                  <section>
+                    <MiniTitle>En palabras del cliente</MiniTitle>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <TextCard label="Cambios que nota" text={q.changes} />
+                      <TextCard label="Lo que más le cuesta" text={q.hardest} />
+                      <TextCard label="Su objetivo" text={q.next_goal} />
+                      <TextCard label="Dudas para ti" text={q.questions} highlight />
+                    </div>
+                  </section>
+                )}
               </div>
             </details>
           ))
         )}
       </div>
+    </div>
+  );
+}
+
+/* ---------- Análisis automático de la revisión quincenal ------------------
+   Reglas deterministas sobre los datos que ya tenemos: lo crítico sale solo,
+   sin que el coach tenga que rebuscar. */
+
+type Aviso = { sev: "alto" | "medio"; text: string };
+const SEV_COLOR: Record<Aviso["sev"], string> = { alto: "#C2453A", medio: "#9A6B15" };
+const FEELING_LABEL: Record<string, string> = {
+  energia: "Energía", hambre: "Hambre", sueno: "Sueño",
+  estres: "Estrés", motivacion: "Motivación", digestion: "Digestión",
+};
+
+function avisosQuincenal(
+  q: any,
+  goal: string | null | undefined,
+  extras?: { daysLogged: number | null; daysTotal: number; sleep: number | null; satiety: number | null },
+): Aviso[] {
+  const out: Aviso[] = [];
+
+  // Ritmo de cambio de peso (kg/semana sobre las 2 semanas del período)
+  if (q.weight_before != null && q.weight_after != null && q.weight_after > 0) {
+    const perWeek = (q.weight_after - q.weight_before) / 2;
+    const pct = (Math.abs(perWeek) / q.weight_after) * 100;
+    const v = `${perWeek > 0 ? "+" : ""}${perWeek.toFixed(2)} kg/sem`;
+    if (goal === "muscle_gain") {
+      if (perWeek <= 0) out.push({ sev: "medio", text: `No sube de peso (${v}): revisa kcal si el objetivo es ganar músculo.` });
+      else if (pct > 0.5) out.push({ sev: "medio", text: `Sube demasiado rápido (${v}): riesgo de acumular grasa.` });
+    } else {
+      if (perWeek >= 0) out.push({ sev: "alto", text: `Sin pérdida de peso en el período (${v}): revisa kcal y adherencia real.` });
+      else if (pct > 1) out.push({ sev: "alto", text: `Ritmo de pérdida muy rápido (${v}, >1% del peso): protege masa muscular y energía.` });
+      else if (pct < 0.25) out.push({ sev: "medio", text: `Ritmo de pérdida lento (${v}): valora ajustar el déficit o los pasos.` });
+    }
+  }
+
+  if (q.adherence_diet != null && q.adherence_diet < 6) out.push({ sev: "alto", text: `Adherencia a la dieta baja (${q.adherence_diet}/10): simplifica antes de apretar.` });
+  else if (q.adherence_diet != null && q.adherence_diet < 8) out.push({ sev: "medio", text: `Adherencia a la dieta mejorable (${q.adherence_diet}/10).` });
+  if (q.adherence_training != null && q.adherence_training < 6) out.push({ sev: "alto", text: `Adherencia al entreno baja (${q.adherence_training}/10): revisa la rutina o su agenda.` });
+  else if (q.adherence_training != null && q.adherence_training < 8) out.push({ sev: "medio", text: `Adherencia al entreno mejorable (${q.adherence_training}/10).` });
+  if (q.free_meals != null && q.free_meals >= 4) out.push({ sev: "medio", text: `${q.free_meals} comidas libres/saltadas en 2 semanas: puede frenar el progreso.` });
+
+  for (const [k, v] of Object.entries(q.feelings ?? {})) {
+    if (typeof v === "number" && v <= 2) {
+      out.push({ sev: "alto", text: `${FEELING_LABEL[k] ?? k} en zona roja (${v}/5): trátalo en el feedback.` });
+    }
+  }
+
+  if (extras) {
+    if (extras.daysLogged != null && extras.daysTotal - extras.daysLogged > 3)
+      out.push({ sev: "medio", text: `Solo ${extras.daysLogged}/${extras.daysTotal} días registrados: los datos pueden quedarse cortos.` });
+    if (extras.sleep != null && extras.sleep < 6.5)
+      out.push({ sev: "medio", text: `Media de sueño baja (${extras.sleep} h): afecta a recuperación y hambre.` });
+    if (extras.satiety != null && extras.satiety < 5)
+      out.push({ sev: "medio", text: `Saciedad media baja (${extras.satiety}/10): sube volumen de comida o proteína.` });
+  }
+
+  if (q.questions) out.push({ sev: "medio", text: "Tiene una duda pendiente: respóndela en el feedback." });
+  return out;
+}
+
+function Vigilar({ q, goal, extras }: {
+  q: any; goal: string | null | undefined;
+  extras?: { daysLogged: number | null; daysTotal: number; sleep: number | null; satiety: number | null };
+}) {
+  const items = avisosQuincenal(q, goal, extras);
+  const ok = items.length === 0;
+  return (
+    <div
+      className="rounded-xl border p-3"
+      style={ok
+        ? { borderColor: "rgba(27,127,77,0.35)", background: "rgba(27,127,77,0.05)" }
+        : { borderColor: "rgba(194,69,58,0.35)", background: "rgba(194,69,58,0.04)" }}
+    >
+      <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide" style={{ color: ok ? "#1B7F4D" : "#C2453A" }}>
+        {ok ? "Período sólido" : "Puntos a vigilar"}
+      </p>
+      {ok ? (
+        <p className="text-xs text-zinc-400">Sin señales de alarma: ritmo, adherencia y sensaciones en orden.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {items.map((a, i) => (
+            <li key={i} className="flex items-start gap-2 text-xs leading-relaxed text-zinc-300">
+              <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: SEV_COLOR[a.sev] }} />
+              <span>{a.text}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function MiniTitle({ children }: { children: React.ReactNode }) {
+  return <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{children}</p>;
+}
+
+function scoreTone(v: number | null | undefined, of = 10): string {
+  if (v == null) return "#7A7060";
+  const pct = v / of;
+  return pct >= 0.8 ? "#1B7F4D" : pct >= 0.6 ? "#9A6B15" : "#C2453A";
+}
+
+function ScoreStat({ label, value }: { label: string; value: number | null }) {
+  return (
+    <div className="rounded-lg p-2.5 text-center" style={{ background: "var(--surface-raised)" }}>
+      <div className="text-base font-bold" style={{ color: scoreTone(value) }}>
+        {value ?? "—"}<span className="text-xs font-medium text-zinc-500">/10</span>
+      </div>
+      <div className="text-[11px] text-zinc-500">{label}</div>
+    </div>
+  );
+}
+
+function CountStat({ label, value }: { label: string; value: number | null }) {
+  const tone = value == null ? "#7A7060" : value <= 2 ? "#1B7F4D" : value <= 3 ? "#9A6B15" : "#C2453A";
+  return (
+    <div className="rounded-lg p-2.5 text-center" style={{ background: "var(--surface-raised)" }}>
+      <div className="text-base font-bold" style={{ color: tone }}>{value ?? "—"}</div>
+      <div className="text-[11px] text-zinc-500">{label}</div>
+    </div>
+  );
+}
+
+function FeelingChip({ name, value }: { name: string; value: number }) {
+  const tone = value >= 4 ? "#1B7F4D" : value === 3 ? "#9A6B15" : "#C2453A";
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs"
+      style={{ borderColor: `${tone}55`, color: "#3D362B" }}
+    >
+      {FEELING_LABEL[name] ?? name}
+      <b style={{ color: tone }}>{value}/5</b>
+    </span>
+  );
+}
+
+function TextCard({ label, text, highlight }: { label: string; text: string | null; highlight?: boolean }) {
+  if (!text) return null;
+  return (
+    <div
+      className="rounded-lg border p-2.5"
+      style={highlight
+        ? { borderColor: "rgba(154,107,21,0.4)", background: "rgba(154,107,21,0.06)" }
+        : { borderColor: "var(--line)", background: "var(--surface-raised)" }}
+    >
+      <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: highlight ? "#9A6B15" : "#7A7060" }}>
+        {label}
+      </p>
+      <p className="mt-1 text-sm leading-relaxed text-zinc-200">{text}</p>
     </div>
   );
 }
