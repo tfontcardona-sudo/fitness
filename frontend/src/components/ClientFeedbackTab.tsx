@@ -483,7 +483,8 @@ function Stat({ label, value }: { label: string; value: string }) {
 function SubTitle({ icon: Icon, text }: { icon: typeof Target; text: string }) {
   return (
     <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-      <Icon size={13} /> {text}
+      {/* Icono en azul de marca: los subtítulos son estructura, no acción */}
+      <Icon size={13} style={{ color: "var(--brand-accent-2)" }} /> {text}
     </div>
   );
 }

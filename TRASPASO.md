@@ -334,6 +334,46 @@ En `C:\Users\Usuari\.claude\projects\C--Users-Usuari-Desktop-fitness-system\memo
   saliendo de `brand_config` en BD (los fijó la migración 0006); si algún día hay que
   cambiarlos: UPDATE a `brand_config` o restaurar la página desde git.
 
+**Iteración 7 — Auditoría profunda del workflow + azul de marca:**
+- BUGS BACKEND arreglados (auditoría a fondo del ciclo):
+  · `periods.ensure_open_period`: ya NO abre período nuevo con la revisión
+    entregada y el feedback pendiente (cliente review_pending o último período
+    "closed") — antes el ciclo 2 arrancaba solo y quemaba días mientras el
+    coach revisaba. El período nuevo se abre AL ENVIAR el feedback
+    (send_feedback llama a ensure_open_period) → ciclo determinista.
+  · `adapt_plan`: IDEMPOTENTE. Plan vigente ya adaptado a esa revisión →
+    error claro; borrador ya adaptado → se REHACE desde el publicado (los
+    deltas nunca se acumulan: proteína 150→165→180 era posible antes).
+    Base elegida por (mes, versión) — antes solo versión y podía coger el mes
+    equivocado. Guard "mantener": "Mantener proteína en 180 g" ya no toca macros.
+  · `feedback_service`: regenerar feedback REEMPLAZA el doc del período (no
+    apila un segundo) y lo devuelve a borrador.
+  · `update_plan` PATCH: si el editor manda nutrition_json sin
+    applied_adjustments pero el plan lo tenía, se conserva (el portal/PDF no
+    pierden las "Novedades").
+- BUGS PORTAL arreglados:
+  · Revisión quincenal con BORRADOR persistente (localStorage por período):
+    cambiar de pestaña a mitad ya no borra lo escrito; se limpia al enviar.
+  · Fecha local (`PortalUi.localToday`): toISOString daba la fecha UTC y a
+    partir de las ~23h los registros caían en el día siguiente.
+  · Autosave sin pérdidas: volcado inmediato al ocultar la app/cambiar de
+    pestaña (visibilitychange/pagehide/desmontaje) y AVISO si falla la red
+    (antes fallaba en silencio bajo "se guarda solo").
+  · "días restantes" nunca negativo; tarjeta "vuelta a la calma" con
+    .portal-card real (la var --portal-card no existía); nota de Novedades
+    condicional por áreas; FEELING_LABEL con las claves reales del portal
+    (recuperacion/animo/digestiones) y seed alineado.
+- AZUL de marca (azul = estructura/datos/info · naranja = acción):
+  coach → foco/inputs en foco, hover de pestañas, subtítulos de Feedback,
+  MiniTitle de Seguimiento, fila "Seguimiento activo", chips de día y "Sem N"
+  del entrenamiento, cabecera de la comparativa del Historial, barrita de
+  "En espera del cliente". Portal → nº "días restantes", campana del banner,
+  chip "revisión #N", pill HOY, borde de sesión de hoy, enlace "historial",
+  candado quincenal (portal-neon-blue), números de sección, banner de fotos,
+  carets de datos. Táctil: inputs de series ≥44px, papelera w-11, banner push.
+- QA: `portal-behavior-test.mjs` (7 asserts del borrador quincenal y el envío)
+  + los 4 harnesses previos re-pasados (coach, portal light/dark, behavior, wa).
+
 **Iteración 6 — Feedback plegable, ajustes editables y comparativa de revisiones:**
 - **Aviso "Ir a Feedback" del perfil**: solo mientras la última revisión cerrada
   NO tenga feedback generado (`ClientProfilePage.feedbackPending`, comprueba

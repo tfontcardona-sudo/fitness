@@ -204,8 +204,11 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
 
 type Aviso = { sev: "alto" | "medio"; text: string };
 const SEV_COLOR: Record<Aviso["sev"], string> = { alto: "#C2453A", medio: "#9A6B15" };
+// Claves REALES que envía el portal (PortalClose.FEELINGS) + variantes de
+// datos antiguos/semilla: todas con etiqueta bonita.
 const FEELING_LABEL: Record<string, string> = {
   energia: "Energía", hambre: "Hambre", sueno: "Sueño",
+  recuperacion: "Recuperación", animo: "Ánimo", digestiones: "Digestiones",
   estres: "Estrés", motivacion: "Motivación", digestion: "Digestión",
 };
 
@@ -289,7 +292,13 @@ function Vigilar({ q, goal, extras }: {
 }
 
 function MiniTitle({ children }: { children: React.ReactNode }) {
-  return <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{children}</p>;
+  return (
+    <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+      {/* Barrita azul de marca: guía visual de estructura */}
+      <span aria-hidden className="h-3 w-1 rounded-full" style={{ background: "var(--brand-accent-2)" }} />
+      {children}
+    </p>
+  );
 }
 
 function scoreTone(v: number | null | undefined, of = 10): string {

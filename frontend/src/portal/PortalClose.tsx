@@ -1,10 +1,23 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, MessageCircle } from "lucide-react";
 import type { PortalBrand } from "../types";
 import { usePortalToast } from "./PortalToast";
 import type { portalApi } from "./portalApi";
 
 type Api = ReturnType<typeof portalApi>;
+
+/** BORRADOR persistente de la revisión: es el formulario más largo del portal
+ *  y el cliente puede salir a mirar su diario a mitad — nada debe perderse.
+ *  Se guarda en el móvil (localStorage) por período y se limpia al enviar. */
+const DRAFT_KEY = (closeDate: string | null) => `portal_close_draft_${closeDate ?? "actual"}`;
+
+function loadDraft(closeDate: string | null): Record<string, any> {
+  try {
+    return JSON.parse(localStorage.getItem(DRAFT_KEY(closeDate)) ?? "{}");
+  } catch {
+    return {};
+  }
+}
 
 // Sección 2 de la revisión quincenal: sensaciones (1 muy mal → 5 excelente)
 const FEELINGS: { key: string; label: string }[] = [
@@ -30,21 +43,34 @@ export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDat
     ? new Date(closeDate + "T00:00:00").toLocaleDateString("es-ES", { day: "2-digit", month: "long" })
     : null;
   const toast = usePortalToast();
-  const [weight, setWeight] = useState("");
-  const [waist, setWaist] = useState("");
-  const [hip, setHip] = useState("");
-  const [arm, setArm] = useState("");
-  const [thigh, setThigh] = useState("");
-  const [feelings, setFeelings] = useState<Record<string, number>>({});
-  const [adhDiet, setAdhDiet] = useState("");
-  const [adhTrain, setAdhTrain] = useState("");
-  const [freeMeals, setFreeMeals] = useState("");
-  const [changes, setChanges] = useState("");
-  const [hardest, setHardest] = useState("");
-  const [nextGoal, setNextGoal] = useState("");
-  const [questions, setQuestions] = useState("");
+  const draft = loadDraft(closeDate);
+  const [weight, setWeight] = useState<string>(draft.weight ?? "");
+  const [waist, setWaist] = useState<string>(draft.waist ?? "");
+  const [hip, setHip] = useState<string>(draft.hip ?? "");
+  const [arm, setArm] = useState<string>(draft.arm ?? "");
+  const [thigh, setThigh] = useState<string>(draft.thigh ?? "");
+  const [feelings, setFeelings] = useState<Record<string, number>>(draft.feelings ?? {});
+  const [adhDiet, setAdhDiet] = useState<string>(draft.adhDiet ?? "");
+  const [adhTrain, setAdhTrain] = useState<string>(draft.adhTrain ?? "");
+  const [freeMeals, setFreeMeals] = useState<string>(draft.freeMeals ?? "");
+  const [changes, setChanges] = useState<string>(draft.changes ?? "");
+  const [hardest, setHardest] = useState<string>(draft.hardest ?? "");
+  const [nextGoal, setNextGoal] = useState<string>(draft.nextGoal ?? "");
+  const [questions, setQuestions] = useState<string>(draft.questions ?? "");
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
+
+  // Cada cambio queda guardado en el móvil: volver a la pestaña lo restaura.
+  useEffect(() => {
+    if (done) return;
+    try {
+      localStorage.setItem(DRAFT_KEY(closeDate), JSON.stringify({
+        weight, waist, hip, arm, thigh, feelings,
+        adhDiet, adhTrain, freeMeals, changes, hardest, nextGoal, questions,
+      }));
+    } catch { /* almacenamiento lleno o bloqueado: seguimos sin borrador */ }
+  }, [weight, waist, hip, arm, thigh, feelings, adhDiet, adhTrain, freeMeals,
+      changes, hardest, nextGoal, questions, closeDate, done]);
 
   const allFeelings = FEELINGS.every((f) => feelings[f.key] > 0);
   const canSubmit = Number(weight) > 30 && allFeelings && adhDiet !== "" && adhTrain !== "" && !busy;
@@ -72,6 +98,7 @@ export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDat
         closing_next_goal: nextGoal || null,
       });
       setDone(true);
+      try { localStorage.removeItem(DRAFT_KEY(closeDate)); } catch { /* sin borrador */ }
       toast.push("Revisión enviada");
       setTimeout(onClosed, 1600);
     } catch (e: any) {
@@ -95,11 +122,12 @@ export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDat
   }
 
   // Bloqueada hasta el día 15: contador de días restantes.
+  // Azul de marca: es información del ciclo (cuenta atrás), no una acción.
   if (!canClose) {
     return (
       <div className="flex flex-col items-center py-16 text-center">
-        <div className="portal-neon-accent flex h-24 w-24 items-center justify-center rounded-full border-2"
-          style={{ borderColor: brand.color_primary, color: brand.color_primary }}>
+        <div className="portal-neon-blue flex h-24 w-24 items-center justify-center rounded-full border-2"
+          style={{ borderColor: brand.color_secondary, color: brand.color_secondary }}>
           <span className="text-4xl font-bold">{daysLeft != null && daysLeft > 0 ? daysLeft : "—"}</span>
         </div>
         <p className="mt-4 text-lg font-semibold">Revisión quincenal</p>
@@ -109,7 +137,7 @@ export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDat
             : "Se desbloquea al completar tus 2 semanas."}
         </p>
         {fechaCae && (
-          <p className="mt-1 text-sm font-semibold" style={{ color: brand.color_primary }}>
+          <p className="mt-1 text-sm font-semibold" style={{ color: brand.color_secondary }}>
             Se activa el {fechaCae}
           </p>
         )}
@@ -121,7 +149,9 @@ export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDat
     <div className="space-y-6">
       <div>
         <h2 className="text-lg font-semibold">Revisión quincenal</h2>
-        <p className="mt-1 text-sm opacity-60">Rellénala al terminar tus 2 semanas. Prepara tu próximo plan.</p>
+        <p className="mt-0.5 text-xs opacity-60">
+          Rellénala al terminar tus 2 semanas. Prepara tu próximo plan — lo que escribas se guarda en tu móvil.
+        </p>
       </div>
 
       {/* 1 · Medidas */}
@@ -196,10 +226,10 @@ export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDat
           placeholder='Algo concreto: "bajar 0,5 kg", "dormir 7 h", "mejorar técnica de sentadilla"…' />
       </Section>
 
-      {/* 7 · Fotos (WhatsApp) */}
+      {/* 7 · Fotos (WhatsApp) — banner informativo en azul de marca */}
       <Section n={7} title="Fotos de progreso">
-        <div className="flex items-start gap-2 rounded-xl border p-3 text-sm" style={{ borderColor: `${brand.color_primary}55`, background: `${brand.color_primary}10` }}>
-          <MessageCircle size={18} style={{ color: brand.color_primary }} className="mt-0.5 shrink-0" />
+        <div className="flex items-start gap-2 rounded-xl border p-3 text-sm" style={{ borderColor: `${brand.color_secondary}55`, background: `${brand.color_secondary}10` }}>
+          <MessageCircle size={18} style={{ color: brand.color_secondary }} className="mt-0.5 shrink-0" />
           <p className="opacity-80">
             Envía 3 fotos (<b>frontal</b>, <b>lateral</b> y <b>espalda</b>) a tu coach por <b>WhatsApp</b>.
             Fondo neutro, buena luz, misma hora y lugar que la vez anterior, sin filtros.
@@ -225,8 +255,15 @@ export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDat
 function Section({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
     <div>
-      <p className="mb-2 text-sm font-semibold">
-        <span className="opacity-40">{n}.</span> {title}
+      <p className="mb-2 flex items-center gap-2 text-sm font-semibold">
+        {/* Número de sección en azul de marca: guía la estructura del formulario */}
+        <span
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
+          style={{ background: "var(--p-accent-2)" }}
+        >
+          {n}
+        </span>
+        {title}
       </p>
       {children}
     </div>
@@ -246,10 +283,11 @@ function Field({ label, required, children }: { label: string; required?: boolea
 
 function Perimeter({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
-    <label className="block rounded-xl border p-3" style={{ borderColor: "rgba(128,128,128,0.2)" }}>
+    <label className="portal-card block p-3">
       <span className="block text-xs opacity-50">{label} (cm)</span>
       <input type="number" step={0.5} inputMode="decimal"
         className="mt-1 w-full bg-transparent text-lg font-semibold outline-none"
+        style={{ caretColor: "var(--p-accent-2)" }}
         value={value} onChange={(e) => onChange(e.target.value)} placeholder="—" />
     </label>
   );
@@ -259,10 +297,11 @@ function NumField({ label, value, onChange, min, max, required }: {
   label: string; value: string; onChange: (v: string) => void; min: number; max: number; required?: boolean;
 }) {
   return (
-    <label className="block rounded-xl border p-3" style={{ borderColor: "rgba(128,128,128,0.2)" }}>
+    <label className="portal-card block p-3">
       <span className="block text-xs opacity-50">{label} {required && <span style={{ color: "#C2453A" }}>*</span>}</span>
       <input type="number" step={1} min={min} max={max} inputMode="numeric"
         className="mt-1 w-full bg-transparent text-lg font-semibold outline-none"
+        style={{ caretColor: "var(--p-accent-2)" }}
         value={value} onChange={(e) => onChange(e.target.value)} placeholder="—" />
     </label>
   );

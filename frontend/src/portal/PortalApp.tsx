@@ -110,8 +110,10 @@ export default function PortalApp({ token }: { token: string }) {
           </div>
           {state.period && (
             <div className="text-right">
-              <p className="text-2xl font-bold" style={{ color: state.brand.color_primary, textShadow: `0 0 12px ${state.brand.color_primary}55` }}>
-                {state.period.days_left}
+              {/* Azul (secundario): es un dato del ciclo, no una acción.
+                  Nunca negativo (período vencido pendiente de cerrar → 0). */}
+              <p className="text-2xl font-bold" style={{ color: state.brand.color_secondary, textShadow: `0 0 12px ${state.brand.color_secondary}55` }}>
+                {Math.max(0, state.period.days_left)}
               </p>
               <p className="text-[11px] opacity-50">días restantes</p>
             </div>
@@ -207,7 +209,8 @@ function PushBanner({ api, accent }: { api: ReturnType<typeof portalApi>; accent
 
   return (
     <div className="portal-card mb-4 flex items-start gap-3 p-3">
-      <span className="mt-0.5 shrink-0" style={{ color: accent }}>
+      {/* Azul: banner informativo, no acción principal */}
+      <span className="mt-0.5 shrink-0" style={{ color: "var(--p-accent-2)" }}>
         <Bell size={18} />
       </span>
       <div className="min-w-0 flex-1">
@@ -230,7 +233,7 @@ function PushBanner({ api, accent }: { api: ReturnType<typeof portalApi>; accent
             <button
               onClick={activate}
               disabled={busy}
-              className="portal-btn3d mt-2 px-4 py-1.5 text-xs font-semibold"
+              className="portal-btn3d mt-2 min-h-[40px] px-4 py-2 text-xs font-semibold"
               style={{ background: accent, color: "#fff" }}
             >
               {busy ? "Activando…" : "Activar recordatorios"}
@@ -238,7 +241,7 @@ function PushBanner({ api, accent }: { api: ReturnType<typeof portalApi>; accent
           </>
         )}
       </div>
-      <button onClick={dismiss} aria-label="Cerrar" className="shrink-0 opacity-40 hover:opacity-80">
+      <button onClick={dismiss} aria-label="Cerrar" className="-m-2 shrink-0 p-2 opacity-40 hover:opacity-80">
         <X size={16} />
       </button>
     </div>

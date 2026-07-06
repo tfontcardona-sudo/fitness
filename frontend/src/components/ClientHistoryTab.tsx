@@ -137,10 +137,10 @@ function BA({ label, before, after, lowerBetter }: {
   );
 }
 
-function Title({ icon: Icon, text }: { icon: typeof History; text: string }) {
+function Title({ icon: Icon, text, accent }: { icon: typeof History; text: string; accent?: string }) {
   return (
     <div className="flex items-center gap-2">
-      <Icon size={16} style={{ color: "var(--brand-accent)" }} />
+      <Icon size={16} style={{ color: accent ?? "var(--brand-accent)" }} />
       <h4 className="text-sm font-semibold text-zinc-200">{text}</h4>
     </div>
   );
@@ -182,14 +182,14 @@ function ReviewComparison({ h, lowerBetter }: { h: Hist; lowerBetter: boolean })
 
   return (
     <div className="card p-5">
-      <Title icon={LineChart} text="Evolución tras las revisiones quincenales" />
+      <Title icon={LineChart} text="Evolución tras las revisiones quincenales" accent="var(--brand-accent-2)" />
 
       {points.length >= 2 && <WeightLine points={points} />}
 
       <div className="mt-3 overflow-x-auto">
         <table className="w-full min-w-[520px] text-sm">
           <thead>
-            <tr className="text-left text-[11px] uppercase tracking-wide text-zinc-500">
+            <tr className="text-left text-[11px] uppercase tracking-wide" style={{ color: "var(--brand-accent-2)" }}>
               <th className="py-1.5 pr-3 font-semibold">Revisión</th>
               <th className="py-1.5 pr-3 font-semibold">Peso</th>
               <th className="py-1.5 pr-3 font-semibold">Δ kg</th>
