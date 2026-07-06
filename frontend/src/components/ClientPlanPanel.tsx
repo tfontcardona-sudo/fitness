@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Pencil } from "lucide-react";
+import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Pencil, Save, X } from "lucide-react";
 import { api, getToken } from "../lib/api";
 import { openWhatsApp, planAndFeedbackMessage, planMessage, waPhone } from "../lib/whatsapp";
 import { Spinner, useToast } from "./ui";
@@ -53,6 +53,9 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
   }[]>([]);
   // Último feedback generado (para poder enviarlo junto al plan por WhatsApp).
   const [fb, setFb] = useState<{ id: number; content: any; sent: boolean } | null>(null);
+  // Edición de los "Cambios aplicados" tras adaptar: texto/porqué o quitar filas.
+  const [adjDraft, setAdjDraft] = useState<{ area: string; main: string; reason: string; orig: any }[] | null>(null);
+  const [savingAdj, setSavingAdj] = useState(false);
 
   // Al montar: carga el último plan guardado + el mapa de ejercicios + los períodos.
   useEffect(() => {
@@ -131,6 +134,29 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
       }
     } catch {
       toast.push("No se pudo preparar el envío", "error");
+    }
+  }
+
+  /** Guarda la edición de los cambios aplicados (persisten en portal y PDF,
+   *  que leen applied_adjustments del propio plan). */
+  async function saveAdjustments(appliedBlock: { period_index: number; items: any[] }) {
+    if (!plan || !adjDraft || savingAdj) return;
+    setSavingAdj(true);
+    try {
+      const items = adjDraft.map((d) =>
+        d.orig.detail != null
+          ? { ...d.orig, detail: d.main, reason: d.reason }
+          : { ...d.orig, change: d.main, reason: d.reason },
+      );
+      const nutrition = { ...plan.nutrition, applied_adjustments: { ...appliedBlock, items } };
+      await api.updatePlan(plan.id, { nutrition_json: nutrition });
+      setPlan({ ...plan, nutrition });
+      setAdjDraft(null);
+      toast.push("Cambios de la revisión actualizados");
+    } catch {
+      toast.push("No se pudieron guardar los cambios", "error");
+    } finally {
+      setSavingAdj(false);
     }
   }
 
@@ -391,30 +417,85 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
       ) : null}
 
       {/* Cambios APLICADOS en esta versión (tras adaptar): antes→después + porqué.
-          Queda visible también una vez publicado, como registro de la versión. */}
+          Queda visible también una vez publicado, como registro de la versión, y
+          es EDITABLE por si el coach quiere matizar el texto o quitar un ajuste. */}
       {appliedBlock?.items?.length ? (
         <details open={plan.status !== "published"} className="card p-5">
-          <summary className="cursor-pointer text-sm font-semibold text-zinc-100">
-            Cambios aplicados en esta versión
-            <span className="ml-2 text-xs font-normal text-zinc-500">revisión #{appliedBlock.period_index}</span>
+          <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 text-sm font-semibold text-zinc-100">
+            <span>
+              Cambios aplicados en esta versión
+              <span className="ml-2 text-xs font-normal text-zinc-500">revisión #{appliedBlock.period_index}</span>
+            </span>
+            {adjDraft === null && (
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  setAdjDraft(appliedBlock.items.map((it) => ({ area: it.area, main: it.detail ?? it.change, reason: it.reason, orig: it })));
+                }}
+                className="flex items-center gap-1 text-xs font-normal text-zinc-400 hover:text-zinc-200"
+              >
+                <Pencil size={13} /> Editar cambios
+              </button>
+            )}
           </summary>
-          <div className="mt-3 space-y-2">
-            {appliedBlock.items.map((it, i) => (
-              <AdjustmentRow
-                key={i}
-                area={it.area}
-                main={it.detail ?? it.change}
-                secondary={it.detail ? it.change : undefined}
-                reason={it.reason}
-                manual={!it.applied}
-              />
-            ))}
-          </div>
-          {plan.status !== "published" && (
+
+          {adjDraft === null ? (
+            <div className="mt-3 space-y-2">
+              {appliedBlock.items.map((it, i) => (
+                <AdjustmentRow
+                  key={i}
+                  area={it.area}
+                  main={it.detail ?? it.change}
+                  secondary={it.detail ? it.change : undefined}
+                  reason={it.reason}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="mt-3 space-y-2">
+              {adjDraft.map((d, i) => (
+                <div key={i} className="space-y-1.5 rounded-lg p-3" style={{ background: "var(--surface-raised)" }}>
+                  <div className="flex items-center justify-between gap-2">
+                    <AreaChip area={d.area} />
+                    <button
+                      onClick={() => setAdjDraft(adjDraft.filter((_, j) => j !== i))}
+                      aria-label="Quitar este cambio"
+                      className="p-1 text-zinc-500 hover:text-zinc-200"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <input
+                    value={d.main}
+                    onChange={(e) => setAdjDraft(adjDraft.map((x, j) => (j === i ? { ...x, main: e.target.value } : x)))}
+                    className="input w-full text-sm"
+                    placeholder="Cambio"
+                  />
+                  <textarea
+                    value={d.reason}
+                    onChange={(e) => setAdjDraft(adjDraft.map((x, j) => (j === i ? { ...x, reason: e.target.value } : x)))}
+                    rows={2}
+                    className="input w-full resize-y text-xs"
+                    placeholder="Por qué"
+                  />
+                </div>
+              ))}
+              <div className="flex justify-end gap-2 pt-1">
+                <button onClick={() => setAdjDraft(null)} className="btn btn-ghost">
+                  <X size={14} /> Cancelar
+                </button>
+                <button onClick={() => saveAdjustments(appliedBlock)} disabled={savingAdj} className="btn btn-primary">
+                  <Save size={14} /> {savingAdj ? "Guardando…" : "Guardar cambios"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {plan.status !== "published" && adjDraft === null && (
             <p className="mt-3 border-t pt-3 text-xs text-zinc-500" style={{ borderColor: "var(--line)" }}>
-              Revisa cómo ha quedado, <b className="text-zinc-300">edita</b> lo que quieras (los ajustes marcados
-              como "a mano" no se aplican solos) y <b className="text-zinc-300">publica</b>: el cliente verá la
-              rutina nueva en su portal y el PDF quedará actualizado para enviárselo.
+              Revisa cómo ha quedado, <b className="text-zinc-300">edita</b> lo que quieras y{" "}
+              <b className="text-zinc-300">publica</b>: el cliente verá la rutina nueva en su portal
+              y el PDF quedará actualizado para enviárselo.
             </p>
           )}
         </details>
@@ -599,31 +680,43 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
   );
 }
 
+/** Color fijo por ÁREA del ajuste (identidad estable: el mismo área siempre
+ *  lleva el mismo color, en tonos oscuros legibles sobre el fondo crema). */
+const AREA_CHIPS: { match: RegExp; label: string; bg: string; fg: string }[] = [
+  { match: /diet|nutri|calor|comid/i, label: "Dieta", bg: "color-mix(in srgb, var(--brand-accent) 18%, transparent)", fg: "var(--brand-accent)" },
+  { match: /entren|train|fuerza|pesas/i, label: "Entreno", bg: "color-mix(in srgb, var(--brand-accent-2, #2E5E8C) 22%, transparent)", fg: "var(--brand-accent-2, #3D6E9E)" },
+  { match: /sue|sleep|descans/i, label: "Sueño", bg: "rgba(107,90,168,0.15)", fg: "#63519E" },
+  { match: /activ|pasos|neat|cardio|steps/i, label: "Actividad diaria", bg: "rgba(71,124,78,0.15)", fg: "#3F7446" },
+  { match: /hidrat|agua|water/i, label: "Hidratación", bg: "rgba(46,126,138,0.15)", fg: "#28707C" },
+  { match: /suplement/i, label: "Suplementos", bg: "rgba(154,107,21,0.15)", fg: "#8A6212" },
+];
+
+function areaChip(area: string) {
+  const hit = AREA_CHIPS.find((c) => c.match.test(area));
+  return hit ?? { label: area || "General", bg: "rgba(38,33,26,0.08)", fg: "#7A7060" };
+}
+
+function AreaChip({ area }: { area: string }) {
+  const c = areaChip(area);
+  return (
+    <span
+      className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+      style={{ background: c.bg, color: c.fg }}
+    >
+      {c.label}
+    </span>
+  );
+}
+
 /** Fila de un ajuste de la revisión: chip de área + cambio + porqué. */
-function AdjustmentRow({ area, main, secondary, reason, manual }: {
-  area: string; main: string; secondary?: string; reason: string; manual?: boolean;
+function AdjustmentRow({ area, main, secondary, reason }: {
+  area: string; main: string; secondary?: string; reason: string;
 }) {
-  const isDiet = /diet|nutri/i.test(area);
-  const isTrain = /entren|train/i.test(area);
   return (
     <div className="rounded-lg p-3" style={{ background: "var(--surface-raised)" }}>
       <div className="flex flex-wrap items-center gap-2">
-        <span
-          className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
-          style={isDiet
-            ? { background: "color-mix(in srgb, var(--brand-accent) 18%, transparent)", color: "var(--brand-accent)" }
-            : isTrain
-              ? { background: "color-mix(in srgb, var(--brand-accent-2, #2E5E8C) 22%, transparent)", color: "var(--brand-accent-2, #3D6E9E)" }
-              : { background: "rgba(38,33,26,0.08)", color: "#7A7060" }}
-        >
-          {isDiet ? "Dieta" : isTrain ? "Entreno" : area || "General"}
-        </span>
+        <AreaChip area={area} />
         <span className="text-sm font-medium text-zinc-100">{main}</span>
-        {manual && (
-          <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: "rgba(154,107,21,0.14)", color: "#9A6B15" }}>
-            aplicar a mano
-          </span>
-        )}
       </div>
       {secondary && <p className="mt-0.5 text-xs text-zinc-500">{secondary}</p>}
       {reason && <p className="mt-1 text-xs text-zinc-400"><b className="text-zinc-500">Por qué:</b> {reason}</p>}
