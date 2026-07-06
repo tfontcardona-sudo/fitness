@@ -334,6 +334,30 @@ En `C:\Users\Usuari\.claude\projects\C--Users-Usuari-Desktop-fitness-system\memo
   saliendo de `brand_config` en BD (los fijó la migración 0006); si algún día hay que
   cambiarlos: UPDATE a `brand_config` o restaurar la página desde git.
 
+**Iteración 6 — Feedback plegable, ajustes editables y comparativa de revisiones:**
+- **Aviso "Ir a Feedback" del perfil**: solo mientras la última revisión cerrada
+  NO tenga feedback generado (`ClientProfilePage.feedbackPending`, comprueba
+  `listPeriods → feedback_id`); generar el feedback lo apaga al instante
+  (generate() llama a onClientChanged).
+- **Feedback por períodos plegables**: solo el período ACTUAL sale desplegado;
+  los anteriores en `<details>` plegados (orden: más reciente arriba). El botón
+  "Resumen" desapareció: las métricas se cargan SOLAS (período actual al entrar,
+  antiguos al desplegarlos vía onToggle). Botones del summary con preventDefault
+  para no plegar la tarjeta.
+- **AdjustmentRow**: fuera el badge "aplicar a mano"; chips de color FIJO por
+  área (`AREA_CHIPS`): dieta naranja, entreno azul, sueño violeta #63519E,
+  actividad diaria verde #3F7446, hidratación teal #28707C, suplementos ocre.
+- **"Cambios aplicados" EDITABLE** (lápiz "Editar cambios" en el summary):
+  texto y porqué por fila, quitar filas, guardar → PATCH /plans/{id} con
+  nutrition_json.applied_adjustments actualizado (persiste en portal y PDF).
+- **Historial → "Evolución tras las revisiones quincenales"**: línea SVG del
+  peso (Inicio + cierre de cada revisión, valores rotulados, si >6 puntos solo
+  los clave) + tabla con Δ kg, Δ %, adherencia y fuerza por revisión + fila
+  TOTAL. Sustituye al viejo sparkline. "Descargar todo" ya estaba fuera.
+- QA: `scratchpad/behavior-test.mjs` (11 asserts: plegado/desplegado, carga de
+  métricas por onToggle, edición y PATCH con payload verificado) + harness
+  visual y wa-test re-pasados.
+
 **Iteración 5 — Envíos por WhatsApp profesionales + teléfono editable:**
 - **Teléfono editable** en la ficha del cliente (primera fila de la tarjeta,
   `ClientProfilePage.PhoneRow`): lápiz → input tel → Enter/✓ guarda vía

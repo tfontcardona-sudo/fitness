@@ -37,17 +37,17 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
   const [metrics, setMetrics] = useState<Record<number, any>>({});
   const [loadingMetrics, setLoadingMetrics] = useState<number | null>(null);
 
+  /** Carga el resumen de métricas de un período (se muestra SIEMPRE, sin botón:
+   *  al cargar la pestaña para el período actual y al desplegar los antiguos). */
   async function loadMetrics(periodId: number) {
-    if (loadingMetrics != null) return;
-    setLoadingMetrics(periodId);
+    setLoadingMetrics((prev) => prev ?? periodId);
     try {
       const m = await api.getPeriodMetrics(periodId);
       setMetrics((prev) => ({ ...prev, [periodId]: m }));
-    } catch (e: any) {
-      const detail = e?.detail ?? e?.data?.detail;
-      toast.push([detail?.message ?? e?.message ?? "No se pudo cargar el resumen", detail?.error].filter(Boolean).join(" — "), "error");
+    } catch {
+      /* sin resumen: el período se muestra igualmente con sus datos de cierre */
     } finally {
-      setLoadingMetrics(null);
+      setLoadingMetrics((prev) => (prev === periodId ? null : prev));
     }
   }
 
@@ -62,6 +62,9 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
     api.listPeriods(client.id)
       .then(async (ps) => {
         setPeriods(ps);
+        // El resumen del período ACTUAL se carga solo (los antiguos, al desplegarlos)
+        const latest = ps.reduce<Period | null>((a, b) => (!a || b.period_index > a.period_index ? b : a), null);
+        if (latest && latest.status !== "open") loadMetrics(latest.id);
         // Carga el contenido de los feedbacks ya existentes para mostrarlo.
         const withFb = ps.filter((p) => p.feedback_id);
         const entries = await Promise.all(
@@ -76,6 +79,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
         setContents(map);
       })
       .catch(() => setPeriods([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client.id]);
 
   useEffect(load, [load]);
@@ -85,8 +89,9 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
     setGenerating(periodId);
     try {
       await api.generateFeedback(periodId);
-      toast.push("Feedback generado. Revísalo y descárgalo.");
+      toast.push("Feedback generado. Revísalo y envíalo por WhatsApp.");
       load();
+      onClientChanged?.(); // el aviso "Ir a Feedback" del perfil desaparece
     } catch (e: any) {
       const detail = e?.detail ?? e?.data?.detail;
       toast.push([detail?.message ?? e?.message ?? "No se pudo generar el feedback", detail?.error].filter(Boolean).join(" — "), "error");
@@ -150,6 +155,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
     .reduce<Period | null>((a, b) => (!a || b.period_index > a.period_index ? b : a), null);
   // El banner desaparece en cuanto la planificación YA está adaptada a esa revisión
   const needsAdapt = latestReview != null && adaptedIdx !== latestReview.period_index;
+  const maxIdx = periods.reduce((mx, p) => Math.max(mx, p.period_index), 0);
 
   return (
     <div className="space-y-4">
@@ -174,7 +180,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
           </button>
         </div>
       )}
-      {periods.map((p) => {
+      {[...periods].sort((a, b) => b.period_index - a.period_index).map((p) => {
         const fb = p.feedback_id ? contents[p.feedback_id] : null;
         const content = fb?.content;
         const sent: string | null = fb?.sent_at ?? null;
@@ -182,9 +188,19 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
         const daysElapsed = Math.floor((Date.now() - new Date(p.starts_on + "T00:00:00").getTime()) / 86400000) + 1;
         const ready = p.status !== "open" || daysElapsed >= 14; // resumen disponible a las 2 semanas
         const m = metrics[p.id];
+        const isCurrent = p.period_index === maxIdx;
         return (
-          <div key={p.id} className="card p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+          // Solo el período ACTUAL está desplegado; los anteriores quedan
+          // plegados y cargan su resumen al abrirlos.
+          <details
+            key={p.id}
+            className="card p-5"
+            open={isCurrent}
+            onToggle={(e) => {
+              if ((e.currentTarget as HTMLDetailsElement).open && ready && !metrics[p.id]) loadMetrics(p.id);
+            }}
+          >
+            <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-base font-semibold text-zinc-100">Período {p.period_index}</h3>
@@ -199,12 +215,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                 </div>
                 <p className="mt-0.5 text-xs text-zinc-500">{p.starts_on} → {p.ends_on}</p>
               </div>
-              <div className="flex gap-2">
-                {ready && (
-                  <button onClick={() => loadMetrics(p.id)} disabled={loadingMetrics === p.id} className="btn btn-ghost">
-                    <BarChart3 size={15} /> {loadingMetrics === p.id ? "Calculando…" : "Resumen"}
-                  </button>
-                )}
+              <div className="flex gap-2" onClick={(e) => e.preventDefault()}>
                 {p.feedback_id && content && !sent && (
                   <button onClick={() => sendWhatsApp(p.feedback_id as number, content, false)} className="btn btn-primary">
                     <MessageCircle size={15} /> Enviar por WhatsApp
@@ -217,7 +228,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                   </button>
                 )}
               </div>
-            </div>
+            </summary>
 
             {p.status === "open" && (
               <div className="mt-3 flex items-center gap-2 rounded-lg p-2.5 text-xs" style={{ background: "rgba(154,107,21,0.09)", color: "#9A6B15" }}>
@@ -239,12 +250,18 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
             {p.closing_hardest && <p className="mt-2 text-xs text-zinc-400"><b className="text-zinc-300">Lo más difícil:</b> {p.closing_hardest}</p>}
             {p.closing_questions && <p className="mt-1 text-xs text-zinc-400"><b className="text-zinc-300">Dudas:</b> {p.closing_questions}</p>}
 
-            {/* Resumen de métricas (sin IA): fuerza, peso, adherencia, objetivo — colapsable */}
+            {/* Resumen de métricas (sin IA): fuerza, peso, adherencia, objetivo.
+                Se muestra SIEMPRE, ya cargado — sin botones que pulsar. */}
+            {!m && loadingMetrics === p.id && (
+              <p className="mt-4 flex items-center gap-2 border-t pt-4 text-xs text-zinc-500" style={{ borderColor: "var(--line)" }}>
+                <Spinner /> Calculando el resumen de las 2 semanas…
+              </p>
+            )}
             {m && (
-              <details open className="mt-4 space-y-3 border-t pt-4" style={{ borderColor: "var(--line)" }}>
-                <summary className="flex cursor-pointer items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              <div className="mt-4 space-y-3 border-t pt-4" style={{ borderColor: "var(--line)" }}>
+                <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">
                   <BarChart3 size={13} /> Resumen de las 2 semanas
-                </summary>
+                </div>
                 {/* Antes → después de los datos en 15 días (peso día 1 → día 15) */}
                 <div className="mt-3">
                   <SubTitle icon={TrendingUp} text="Antes → después (15 días)" />
@@ -286,7 +303,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                 {(!m.strength || m.strength.length === 0) && (
                   <p className="mt-2 text-xs text-zinc-500">Sin series registradas aún para calcular la fuerza.</p>
                 )}
-              </details>
+              </div>
             )}
 
             {/* Feedback: edición o vista */}
@@ -348,7 +365,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                 {content.closing_message && <p className="text-sm italic text-zinc-400">{content.closing_message}</p>}
               </div>
             )}
-          </div>
+          </details>
         );
       })}
     </div>

@@ -32,12 +32,30 @@ export default function ClientProfilePage() {
   const [tab, setTab] = useState<Tab>(initialTab);
   const [confirmRegen, setConfirmRegen] = useState(false);
   const [portalUrl, setPortalUrl] = useState<string | null>(null);
+  // Aviso "revisión cerrada": solo mientras el feedback de la última revisión
+  // NO exista todavía. En cuanto el coach lo genera, el aviso desaparece.
+  const [feedbackPending, setFeedbackPending] = useState(false);
 
   const load = useCallback(() => {
     api.getClient(clientId).then(setClient).catch(() => setClient(null));
   }, [clientId]);
 
   useEffect(load, [load]);
+
+  useEffect(() => {
+    if (client?.status !== "review_pending") {
+      setFeedbackPending(false);
+      return;
+    }
+    api.listPeriods(clientId)
+      .then((ps: any[]) => {
+        const latest = ps
+          .filter((p) => p.status !== "open")
+          .reduce<any>((a, b) => (!a || b.period_index > a.period_index ? b : a), null);
+        setFeedbackPending(latest != null && !latest.feedback_id);
+      })
+      .catch(() => setFeedbackPending(true));
+  }, [client, clientId]);
 
   // Precargamos el enlace del portal con el ORIGEN actual del navegador (en dev
   // :5173, en prod el dominio) para poder abrirlo de forma síncrona (sin que el
@@ -76,8 +94,9 @@ export default function ClientProfilePage() {
         <ArrowLeft size={15} /> Clientes
       </Link>
 
-      {/* Notificación: el cliente cerró su período → toca generar feedback */}
-      {client.status === "review_pending" && (
+      {/* Notificación: el cliente cerró su período → toca generar feedback.
+          Se oculta en cuanto el feedback ya está generado. */}
+      {client.status === "review_pending" && feedbackPending && (
         <div
           className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3.5"
           style={{ borderColor: "var(--brand-accent)", background: "color-mix(in srgb, var(--brand-accent) 10%, transparent)" }}
