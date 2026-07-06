@@ -84,7 +84,7 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
       toast.push("Seguimiento iniciado (14 días). El cliente ya puede registrar su diario.");
     } catch (e: any) {
       const detail = e?.detail ?? e?.data?.detail;
-      toast.push(detail?.message ?? e?.message ?? "No se pudo iniciar el período", "error");
+      toast.push([detail?.message ?? e?.message ?? "No se pudo iniciar el período", detail?.error].filter(Boolean).join(" — "), "error");
     } finally {
       setStartingPeriod(false);
     }
@@ -101,7 +101,7 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
     } catch (e: any) {
       const detail = e?.detail ?? e?.data?.detail;
       if (detail?.missing) setMissing(detail.missing);
-      else toast.push(detail?.message ?? e?.message ?? "No se pudo generar el plan", "error");
+      else toast.push([detail?.message ?? e?.message ?? "No se pudo generar el plan", detail?.error].filter(Boolean).join(" — "), "error");
     } finally {
       setGenerating(false);
     }
@@ -118,7 +118,7 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
       toast.push(`Plan adaptado a la revisión (borrador v${r.version}). Revísalo y publícalo.`);
     } catch (e: any) {
       const detail = e?.detail ?? e?.data?.detail;
-      toast.push(detail?.message ?? e?.message ?? "No se pudo adaptar el plan", "error");
+      toast.push([detail?.message ?? e?.message ?? "No se pudo adaptar el plan", detail?.error].filter(Boolean).join(" — "), "error");
     } finally {
       setGenerating(false);
     }

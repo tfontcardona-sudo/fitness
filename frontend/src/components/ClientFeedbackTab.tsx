@@ -45,7 +45,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
       setMetrics((prev) => ({ ...prev, [periodId]: m }));
     } catch (e: any) {
       const detail = e?.detail ?? e?.data?.detail;
-      toast.push(detail?.message ?? e?.message ?? "No se pudo cargar el resumen", "error");
+      toast.push([detail?.message ?? e?.message ?? "No se pudo cargar el resumen", detail?.error].filter(Boolean).join(" — "), "error");
     } finally {
       setLoadingMetrics(null);
     }
@@ -82,7 +82,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
       load();
     } catch (e: any) {
       const detail = e?.detail ?? e?.data?.detail;
-      toast.push(detail?.message ?? e?.message ?? "No se pudo generar el feedback", "error");
+      toast.push([detail?.message ?? e?.message ?? "No se pudo generar el feedback", detail?.error].filter(Boolean).join(" — "), "error");
     } finally {
       setGenerating(null);
     }
