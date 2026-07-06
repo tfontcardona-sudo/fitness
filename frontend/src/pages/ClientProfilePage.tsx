@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, ExternalLink, BellRing } from "lucide-react";
+import { ArrowLeft, Check, ExternalLink, BellRing, Pencil } from "lucide-react";
 import { api } from "../lib/api";
 import type { ClientOut } from "../types";
 import {
@@ -108,6 +108,7 @@ export default function ClientProfilePage() {
             </div>
 
             <dl className="mt-5 space-y-2.5 text-sm">
+              <PhoneRow client={client} onSaved={load} />
               <Row label="Edad" value={age ? `${age} años` : "—"} />
               <Row label="Objetivo" value={client.goal_type ? GOAL_LABEL[client.goal_type] : "—"} />
               <Row label="Nivel" value={client.level ? LEVEL_LABEL[client.level] : "—"} />
@@ -164,6 +165,64 @@ export default function ClientProfilePage() {
         onConfirm={regenerate}
         onCancel={() => setConfirmRegen(false)}
       />
+    </div>
+  );
+}
+
+/** Teléfono editable en línea: imprescindible para los envíos por WhatsApp
+ *  (feedback y plan). Lápiz → escribir → Enter o ✓ para guardar. */
+function PhoneRow({ client, onSaved }: { client: ClientOut; onSaved: () => void }) {
+  const toast = useToast();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(client.phone ?? "");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => setValue(client.phone ?? ""), [client.phone]);
+
+  async function save() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await api.updateClient(client.id, { phone: value.trim() || null });
+      toast.push("Teléfono guardado");
+      setEditing(false);
+      onSaved();
+    } catch {
+      toast.push("No se pudo guardar el teléfono", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <dt className="text-zinc-500">Teléfono</dt>
+      {editing ? (
+        <dd className="flex items-center gap-1.5">
+          <input
+            autoFocus
+            type="tel"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") save();
+              if (e.key === "Escape") setEditing(false);
+            }}
+            placeholder="612 345 678"
+            className="input w-36 px-2 py-1 text-sm"
+          />
+          <button onClick={save} disabled={busy} aria-label="Guardar teléfono" className="p-1 text-zinc-500 hover:text-zinc-200">
+            <Check size={16} />
+          </button>
+        </dd>
+      ) : (
+        <dd className="flex items-center gap-1.5 font-medium text-zinc-200">
+          {client.phone || <span className="font-normal text-zinc-500">añádelo para WhatsApp</span>}
+          <button onClick={() => setEditing(true)} aria-label="Editar teléfono" className="p-1 text-zinc-500 hover:text-zinc-200">
+            <Pencil size={13} />
+          </button>
+        </dd>
+      )}
     </div>
   );
 }
