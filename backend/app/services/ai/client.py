@@ -76,7 +76,20 @@ class AIClient:
     """Wrapper con reintento y validación. Inyectable/mockeable en tests."""
 
     def __init__(self, api_key: str | None = None):
-        self._api_key = api_key or settings.anthropic_api_key
+        key = (api_key or settings.anthropic_api_key or "").strip()
+        # Una clave corrupta (p. ej. mal pegada en el .env por el terminal, con
+        # caracteres no ASCII) rompe httpx al montar la cabecera x-api-key con
+        # un UnicodeEncodeError opaco. Mejor fallar aquí con un mensaje claro.
+        if not key:
+            raise AIGenerationError(
+                "Falta ANTHROPIC_API_KEY en el .env del servidor: añádela y reinicia."
+            )
+        if not key.isascii():
+            raise AIGenerationError(
+                "La ANTHROPIC_API_KEY del .env contiene caracteres no válidos "
+                "(probablemente se corrompió al pegarla). Vuelve a escribirla en el .env."
+            )
+        self._api_key = key
         self._client = None  # perezoso: no instanciar SDK si se usa un mock
 
     def _anthropic(self):
