@@ -105,10 +105,13 @@ export default function DashboardPage() {
         </Link>
       </header>
 
-      {/* QUÉ TOCA HACER — el corazón del panel */}
+      {/* QUÉ TOCA HACER — el corazón del panel (naranja: acción) */}
       <section className="mt-7">
         <div className="mb-3 flex items-baseline justify-between">
-          <h2 className="text-sm font-semibold text-zinc-200">Qué toca hacer</h2>
+          <h2 className="flex items-center gap-1.5 text-sm font-semibold text-zinc-200">
+            <span aria-hidden className="h-3.5 w-1 rounded-full" style={{ background: "var(--brand-accent)" }} />
+            Qué toca hacer
+          </h2>
           <span className="text-xs text-zinc-500">
             {urgentes.length === 0 ? "nada pendiente" : `${urgentes.length} acción${urgentes.length === 1 ? "" : "es"}`}
           </span>
@@ -128,10 +131,13 @@ export default function DashboardPage() {
         )}
       </section>
 
-      {/* EN ESPERA — informativo, sin urgencia */}
+      {/* EN ESPERA — informativo, sin urgencia (azul: información) */}
       {enEspera.length > 0 && (
         <section className="mt-8">
-          <h2 className="mb-3 text-sm font-semibold text-zinc-200">En espera del cliente</h2>
+          <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-zinc-200">
+            <span aria-hidden className="h-3.5 w-1 rounded-full" style={{ background: "var(--brand-accent-2)" }} />
+            En espera del cliente
+          </h2>
           <div className="space-y-2">
             {enEspera.map((a) => (
               <ActionCard key={a.client.id} a={a} quiet />

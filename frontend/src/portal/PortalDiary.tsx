@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { DietAdherence, PortalBrand } from "../types";
 import { usePortalToast } from "./PortalToast";
-import { Loading } from "./PortalUi";
+import { Loading, localToday } from "./PortalUi";
 import type { portalApi } from "./portalApi";
 
 type Api = ReturnType<typeof portalApi>;
@@ -38,7 +38,7 @@ const EMPTY: DiaryForm = {
  */
 export function PortalDiary({ api, brand }: { api: Api; brand: PortalBrand }) {
   const toast = usePortalToast();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localToday();
   const [form, setForm] = useState<DiaryForm | null>(null);
   const saveTimer = useRef<number | null>(null);
 
@@ -66,33 +66,61 @@ export function PortalDiary({ api, brand }: { api: Api; brand: PortalBrand }) {
     });
   }
 
-  function scheduleSave(next: DiaryForm) {
+  // Debounce SIN pérdidas: lo pendiente se vuelca al instante al salir de la
+  // app o cambiar de pestaña, y un fallo de red avisa (no falla en silencio).
+  const pendingRef = useRef<DiaryForm | null>(null);
+  const saveNowRef = useRef<() => void>(() => {});
+  saveNowRef.current = () => {
+    const data = pendingRef.current;
+    if (!data) return;
+    pendingRef.current = null;
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => {
-      // Solo campos del diario: NO mandamos workout_sets para no borrar las
-      // series registradas en la pestaña "Entreno" (upsert parcial en backend).
-      api
-        .saveDiary({ log_date: today, ...next })
-        .then(() => toast.push("Guardado"))
-        .catch(() => {});
-    }, 800);
+    // Solo campos del diario: NO mandamos workout_sets para no borrar las
+    // series registradas en la pestaña "Entreno" (upsert parcial en backend).
+    api
+      .saveDiary({ log_date: today, ...data })
+      .then(() => toast.push("Guardado"))
+      .catch(() => toast.push("No se pudo guardar el último cambio — revisa tu conexión"));
+  };
+
+  function scheduleSave(next: DiaryForm) {
+    pendingRef.current = next;
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => saveNowRef.current(), 800);
   }
+
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState === "hidden") saveNowRef.current();
+    };
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", onHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", onHide);
+      saveNowRef.current();
+    };
+  }, []);
 
   if (!form) return <Loading />;
 
   return (
     <div className="space-y-5">
-      <h2 className="text-lg font-semibold">Mi día</h2>
+      <div>
+        <h2 className="text-lg font-semibold">Mi día</h2>
+        <p className="mt-0.5 text-xs opacity-60">Un minuto al día: peso, sueño y cómo te ha ido. Se guarda solo.</p>
+      </div>
 
       <div className="grid grid-cols-2 gap-3">
+        {/* Cursor azul: entrada de DATOS (el naranja queda para acciones) */}
         <NumberCard label="Peso en ayunas" unit="kg" value={form.weight_kg} step={0.1}
-          onChange={(v) => update({ weight_kg: v })} accent={brand.color_primary} />
+          onChange={(v) => update({ weight_kg: v })} accent={brand.color_secondary} />
         <NumberCard label="Horas de sueño" unit="h" value={form.sleep_hours} step={0.5}
-          onChange={(v) => update({ sleep_hours: v })} accent={brand.color_primary} />
+          onChange={(v) => update({ sleep_hours: v })} accent={brand.color_secondary} />
         <NumberCard label="Saciedad (1-10)" unit="" value={form.satiety_1_10} step={0.5}
-          onChange={(v) => update({ satiety_1_10: v })} accent={brand.color_primary} />
+          onChange={(v) => update({ satiety_1_10: v })} accent={brand.color_secondary} />
         <NumberCard label="Agua" unit="L" value={form.water_liters} step={0.5}
-          onChange={(v) => update({ water_liters: v })} accent={brand.color_primary} />
+          onChange={(v) => update({ water_liters: v })} accent={brand.color_secondary} />
       </div>
 
       <Field label="Pasos / cardio del día" htmlFor="diary-steps">
@@ -175,7 +203,7 @@ function NumberCard({
   accent: string;
 }) {
   return (
-    <label className="block rounded-2xl border p-4" style={{ borderColor: "rgba(128,128,128,0.2)" }}>
+    <label className="portal-card block p-4">
       <span className="block text-xs opacity-50">{label}</span>
       <div className="mt-1 flex items-baseline gap-1">
         <input

@@ -288,12 +288,21 @@ def build_period_feedback(db: Session, period_id: int, ai=None) -> FeedbackDoc:
         raise FeedbackError(f"La IA no devolvió un feedback válido: {exc}") from exc
 
     docx_rel = _write_feedback_doc(db, client, period, inputs, ai_out)
-    fb = FeedbackDoc(period_id=period.id, kind="biweekly",
-                     content_json={**ai_out.model_dump(), "metrics": inputs["metrics_json"],
-                                   "weight_points": inputs["weight_points"],
-                                   "goal_weight_kg": client.goal_weight_kg},
-                     docx_path=docx_rel)
-    db.add(fb)
+    content = {**ai_out.model_dump(), "metrics": inputs["metrics_json"],
+               "weight_points": inputs["weight_points"],
+               "goal_weight_kg": client.goal_weight_kg}
+    # Regenerar NO duplica: si el período ya tiene feedback, se reemplaza su
+    # contenido (mismo doc, mismo id) en vez de apilar un segundo documento.
+    fb = db.scalar(select(FeedbackDoc).where(FeedbackDoc.period_id == period.id)
+                   .order_by(FeedbackDoc.id.desc()).limit(1))
+    if fb is not None:
+        fb.content_json = content
+        fb.docx_path = docx_rel
+        fb.sent_at = None  # el texto cambió: vuelve a estado borrador
+    else:
+        fb = FeedbackDoc(period_id=period.id, kind="biweekly",
+                         content_json=content, docx_path=docx_rel)
+        db.add(fb)
     period.status = "analyzed"
     period.metrics_json = inputs["metrics_json"]
     period.ai_analysis_json = ai_out.model_dump()

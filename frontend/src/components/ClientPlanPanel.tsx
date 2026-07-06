@@ -369,20 +369,27 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
         {/* Seguimiento AUTÓNOMO: el período de 14 días se abre al publicar y se
             renueva solo tras cada cierre — el coach ya no inicia nada a mano. */}
         {plan.status === "published" && (
-          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg p-3" style={{ background: "var(--surface-raised)" }}>
-            <CalendarDays size={14} style={{ color: "var(--brand-accent)" }} />
+          // Azul de marca: información del ciclo (estructura), no una acción
+          <div
+            className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border p-3"
+            style={{
+              background: "color-mix(in srgb, var(--brand-accent-2) 6%, transparent)",
+              borderColor: "color-mix(in srgb, var(--brand-accent-2) 25%, transparent)",
+            }}
+          >
+            <CalendarDays size={14} style={{ color: "var(--brand-accent-2)" }} />
             {currentPeriod ? (
               <span className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
                 Seguimiento activo · {currentPeriod.starts_on} → {currentPeriod.ends_on}
-                <span className="rounded-full px-2 py-0.5" style={{ background: "color-mix(in srgb, var(--brand-accent) 12%, transparent)", color: "var(--brand-accent)" }}>
+                <span className="rounded-full px-2 py-0.5 font-semibold" style={{ background: "color-mix(in srgb, var(--brand-accent-2) 15%, transparent)", color: "var(--brand-accent-2)" }}>
                   {currentPeriod.status === "open" ? "abierto" : currentPeriod.status === "closed" ? "cerrado" : "analizado"}
                 </span>
-                <span className="text-zinc-500">se renueva solo cada 14 días</span>
+                <span className="text-zinc-500">se renueva solo tras cada feedback</span>
               </span>
             ) : (
               <span className="text-xs text-zinc-500">
-                El seguimiento se activa solo: en cuanto el cliente entre en su portal (o mañana
-                a más tardar) tendrá su período de 14 días abierto.
+                El seguimiento se activa solo: al enviar el feedback (o al entrar el cliente en su
+                portal) se abre su período de 14 días.
               </span>
             )}
           </div>
@@ -603,9 +610,9 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
         </div>
       )}
 
-      {/* Entrenamiento */}
+      {/* Entrenamiento — azul de marca (como sus chips de ajustes) */}
       <div className="card p-5">
-        <SectionTitle icon={Dumbbell} title={`Entrenamiento${tr.split_name ? ` · ${tr.split_name}` : ""}`} />
+        <SectionTitle icon={Dumbbell} title={`Entrenamiento${tr.split_name ? ` · ${tr.split_name}` : ""}`} accent="var(--brand-accent-2)" />
         {tr.split_rationale && (
           <details className="mb-3 text-sm">
             <summary className="cursor-pointer font-medium text-zinc-400 hover:text-zinc-200">Sobre esta estructura</summary>
@@ -618,8 +625,14 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
             <h5 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Progresión semanal</h5>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {tr.weekly_progression.map((w: any) => (
-                <div key={w.week} className="rounded-lg p-2.5 text-xs" style={{ background: "var(--surface-raised)" }}>
-                  <div className="font-semibold text-zinc-200">Sem {w.week} · {w.intent}</div>
+                <div
+                  key={w.week}
+                  className="rounded-lg border-l-2 p-2.5 text-xs"
+                  style={{ background: "var(--surface-raised)", borderColor: "var(--brand-accent-2)" }}
+                >
+                  <div className="font-semibold text-zinc-200">
+                    <span style={{ color: "var(--brand-accent-2)" }}>Sem {w.week}</span> · {w.intent}
+                  </div>
                   <div className="text-zinc-500">Carga {w.load_pct}% · RIR {w.rir_target}</div>
                   {w.volume_note && <div className="mt-0.5 text-zinc-500">{w.volume_note}</div>}
                 </div>
@@ -631,7 +644,16 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
         <div className="space-y-3">
           {(tr.sessions ?? []).map((s: any, i: number) => (
             <div key={i} className="rounded-lg p-3" style={{ background: "var(--surface-raised)" }}>
-              <div className="text-sm font-medium text-zinc-200">{s.day} · {s.name}</div>
+              <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-zinc-200">
+                <span
+                  className="rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+                  style={{ background: "color-mix(in srgb, var(--brand-accent-2) 15%, transparent)", color: "var(--brand-accent-2)" }}
+                >
+                  {s.day}
+                </span>
+                {s.name}
+                <span className="text-xs font-normal text-zinc-500">{(s.exercises ?? []).length} ejercicios</span>
+              </div>
               {s.warmup && <p className="mt-1 text-xs text-zinc-500"><b>Calentamiento:</b> {s.warmup}</p>}
               <div className="mt-2 space-y-1.5">
                 {(s.exercises ?? []).map((ex: any, j: number) => {
@@ -724,10 +746,10 @@ function AdjustmentRow({ area, main, secondary, reason }: {
   );
 }
 
-function SectionTitle({ icon: Icon, title }: { icon: typeof Utensils; title: string }) {
+function SectionTitle({ icon: Icon, title, accent }: { icon: typeof Utensils; title: string; accent?: string }) {
   return (
     <div className="mb-3 flex items-center gap-2">
-      <Icon size={16} style={{ color: "var(--brand-accent)" }} />
+      <Icon size={16} style={{ color: accent ?? "var(--brand-accent)" }} />
       <h4 className="text-sm font-semibold text-zinc-200">{title}</h4>
     </div>
   );

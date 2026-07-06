@@ -2,6 +2,14 @@ import type { LucideIcon } from "lucide-react";
 
 /** Piezas de UI compartidas del portal: carga (skeleton) y estados vacíos. */
 
+/** Fecha de HOY en horario LOCAL del cliente (YYYY-MM-DD).
+ *  OJO: toISOString() da la fecha UTC — en España, a partir de las 22-23 h
+ *  cambia de día y el registro caería en la fecha equivocada. */
+export function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 /** Skeleton de carga: la interfaz nunca parece congelada ni "salta" al cargar. */
 export function Loading() {
   return (

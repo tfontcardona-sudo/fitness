@@ -56,8 +56,10 @@ body {
   background: rgba(38, 33, 26, 0.24);
 }
 
+/* Anillo de foco AZUL (secundario de marca): visible también sobre los
+   botones naranjas, donde un anillo naranja desaparecería. */
 :focus-visible {
-  outline: 2px solid var(--brand-accent);
+  outline: 2px solid var(--brand-accent-2);
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -112,7 +114,8 @@ body {
     color: var(--text-faint);
   }
   .input:focus {
-    border-color: var(--brand-accent);
+    border-color: var(--brand-accent-2);
+    box-shadow: 0 0 0 3px rgba(46, 94, 140, 0.12);
     outline: none;
   }
 
@@ -120,6 +123,11 @@ body {
     @apply mb-1.5 block text-xs font-medium uppercase tracking-wider;
     color: var(--text-dim);
   }
+}
+
+/* Pestañas del perfil: hover en azul de marca (estructura/navegación) */
+.tab-btn:hover {
+  color: var(--brand-accent-2) !important;
 }
 
 /* ---- Skin crema de la app del coach ------------------------------------
@@ -301,11 +309,12 @@ button, [role="button"], summary, a {
 @keyframes portal-badge-pop { 0% { transform: translateX(16px) scale(0); } 60% { transform: translateX(16px) scale(1.25); } 100% { transform: translateX(16px) scale(1); } }
 .portal-tab-badge { animation: portal-badge-pop 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
 
-/* Pill "HOY" del selector de sesión de entreno */
+/* Pill "HOY" del selector de sesión de entreno — AZUL: es información
+   (qué día toca), no una acción; así no compite con la sesión elegida. */
 .portal-today-pill {
   position: absolute; top: -7px; right: -6px;
   padding: 2px 6px; border-radius: 999px;
   font-size: 9px; font-weight: 800; letter-spacing: 0.06em; line-height: 1.2;
-  color: #fff; background: var(--p-accent);
-  box-shadow: 0 0 0 1px rgba(232, 131, 58, 0.4), 0 0 10px rgba(232, 131, 58, 0.55);
+  color: #fff; background: var(--p-accent-2);
+  box-shadow: 0 0 0 1px rgba(46, 94, 140, 0.4), 0 0 10px rgba(46, 94, 140, 0.55);
 }

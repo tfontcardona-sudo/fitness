@@ -109,6 +109,14 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
     changes = body.model_dump(exclude_unset=True)
     for field, value in changes.items():
         if value is not None:
+            # Red de seguridad: nutrition_json se reemplaza entero; si el editor
+            # manda un objeto sin `applied_adjustments` pero el plan lo tenía,
+            # se conserva (si no, el portal y el PDF perderían las "Novedades").
+            if (field == "nutrition_json" and isinstance(value, dict)
+                    and "applied_adjustments" not in value
+                    and isinstance(plan.nutrition_json, dict)
+                    and plan.nutrition_json.get("applied_adjustments")):
+                value = {**value, "applied_adjustments": plan.nutrition_json["applied_adjustments"]}
             setattr(plan, field, value)
     log_event(db, "plan", plan.id, "plan_edited", {"fields": list(changes.keys())})
     db.commit()
@@ -358,6 +366,10 @@ def send_feedback(doc_id: int, db: Session = Depends(get_db)) -> dict:
     client = db.get(Client, period.client_id) if period else None
     if client and client.status == "review_pending":
         client.status = "active"  # cerrado el feedback, arranca el siguiente ciclo
+        # El nuevo período de 14 días empieza HOY (día del envío), no cuando
+        # alguien vuelva a abrir el portal: el ciclo queda determinista.
+        from app.services.periods import ensure_open_period
+        ensure_open_period(db, client.id)
 
     if client:
         log_event(db, "client", client.id, "feedback_sent", {"feedback_id": fb.id})

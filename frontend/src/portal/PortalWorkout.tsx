@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Dumbbell, Plus, Trash2, PlayCircle, Check, Sparkles } from "lucide-react";
 import type { PlanChanges, PortalBrand, TodaySession } from "../types";
 import { usePortalToast } from "./PortalToast";
-import { Loading, Empty } from "./PortalUi";
+import { Loading, Empty, localToday } from "./PortalUi";
 import { useDismiss } from "../lib/useDismiss";
 import type { portalApi } from "./portalApi";
 
@@ -19,7 +19,7 @@ interface HistSession { date: string; sets: HistSet[] }
  */
 export function PortalWorkout({ api, brand }: { api: Api; brand: PortalBrand }) {
   const toast = usePortalToast();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localToday();
   const [sessions, setSessions] = useState<TodaySession[] | null>(null);
   const [planChanges, setPlanChanges] = useState<PlanChanges | null>(null);
   const [newsOpen, setNewsOpen] = useState(false);
@@ -72,20 +72,47 @@ export function PortalWorkout({ api, brand }: { api: Api; brand: PortalBrand }) 
     });
   }, [selected]);
 
-  function flush(next: Record<number, SetRow[]>) {
+  // Guardado con debounce PERO sin pérdidas: lo pendiente se vuelca al instante
+  // si el cliente sale de la app, bloquea el móvil o cambia de pestaña, y un
+  // fallo de red AVISA (antes fallaba en silencio con "se guarda solo" puesto).
+  const pendingRef = useRef<Record<number, SetRow[]> | null>(null);
+  const saveNowRef = useRef<() => void>(() => {});
+  saveNowRef.current = () => {
+    const data = pendingRef.current;
+    if (!data) return;
+    pendingRef.current = null;
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
     const workout_sets: any[] = [];
-    Object.entries(next).forEach(([exId, rows]) => {
+    Object.entries(data).forEach(([exId, rows]) => {
       rows.forEach((r, i) => {
         if (r.weight_kg != null || r.reps != null) {
           workout_sets.push({ exercise_id: Number(exId), set_number: i + 1, reps: r.reps, weight_kg: r.weight_kg });
         }
       });
     });
+    api.saveDiary({ log_date: today, workout_sets })
+      .then(() => toast.push("Entreno guardado"))
+      .catch(() => toast.push("No se pudo guardar el último cambio — revisa tu conexión"));
+  };
+
+  function flush(next: Record<number, SetRow[]>) {
+    pendingRef.current = next;
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => {
-      api.saveDiary({ log_date: today, workout_sets }).then(() => toast.push("Entreno guardado")).catch(() => {});
-    }, 800);
+    saveTimer.current = window.setTimeout(() => saveNowRef.current(), 800);
   }
+
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState === "hidden") saveNowRef.current();
+    };
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", onHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", onHide);
+      saveNowRef.current(); // al cambiar de pestaña (desmontaje) no se pierde nada
+    };
+  }, []);
 
   function setRow(exId: number, idx: number, patch: Partial<SetRow>) {
     setSets((s) => {
@@ -133,7 +160,12 @@ export function PortalWorkout({ api, brand }: { api: Api; brand: PortalBrand }) 
           <summary className="tap flex cursor-pointer items-center gap-2 p-3.5 text-sm font-semibold">
             <Sparkles size={16} style={{ color: brand.color_primary }} />
             Novedades de tu plan
-            <span className="ml-auto text-[11px] font-normal opacity-60">revisión #{planChanges.period_index}</span>
+            <span
+              className="ml-auto rounded-full px-2 py-0.5 text-[10px] font-bold text-white"
+              style={{ background: brand.color_secondary }}
+            >
+              revisión #{planChanges.period_index}
+            </span>
           </summary>
           <div className="space-y-2 px-3.5 pb-3.5">
             {planChanges.items.map((it, i) => (
@@ -151,7 +183,11 @@ export function PortalWorkout({ api, brand }: { api: Api; brand: PortalBrand }) 
               </div>
             ))}
             <p className="pt-0.5 text-[11px] opacity-50">
-              Los cambios de dieta ya están en tu PDF actualizado; los de entreno, aplicados en tus sesiones de aquí abajo.
+              {[
+                planChanges.items.some((it) => /diet|nutri/i.test(it.area)) && "Los cambios de dieta ya están en tu PDF actualizado",
+                planChanges.items.some((it) => /entren/i.test(it.area)) && "los de entreno, aplicados en tus sesiones de aquí abajo",
+              ].filter(Boolean).join("; ") || "Tu coach los ha dejado anotados en tu plan."}
+              .
             </p>
           </div>
         </details>
@@ -171,7 +207,7 @@ export function PortalWorkout({ api, brand }: { api: Api; brand: PortalBrand }) 
                 active
                   ? { borderColor: brand.color_primary, background: `${brand.color_primary}1f` }
                   : isToday
-                    ? { borderColor: `${brand.color_primary}66` }
+                    ? { borderColor: `${brand.color_secondary}88` } // azul: info "toca hoy"
                     : { borderColor: "rgba(128,128,128,0.22)" }
               }
             >
@@ -206,7 +242,12 @@ export function PortalWorkout({ api, brand }: { api: Api; brand: PortalBrand }) 
                       </span>
                     )}
                     {ex.video_url && (
-                      <a href={ex.video_url} target="_blank" rel="noreferrer" style={{ color: brand.color_primary }}>
+                      <a
+                        href={ex.video_url} target="_blank" rel="noreferrer"
+                        aria-label={`Vídeo de ${ex.name}`}
+                        className="tap flex items-center justify-center"
+                        style={{ color: brand.color_secondary }}
+                      >
                         <PlayCircle size={18} />
                       </a>
                     )}
@@ -222,9 +263,9 @@ export function PortalWorkout({ api, brand }: { api: Api; brand: PortalBrand }) 
                     return (
                       <div key={i} className="grid grid-cols-[28px_1fr_1fr_40px] items-center gap-2">
                         <span className="text-center text-xs font-semibold tabular-nums" style={{ color: done ? brand.color_primary : undefined, opacity: done ? 1 : 0.5 }}>{i + 1}</span>
-                        <SetInput value={r.weight_kg} step={0.5} placeholder={ex.start_weight_hint_kg ? String(ex.start_weight_hint_kg) : "—"} accent={brand.color_primary} onChange={(v) => setRow(ex.exercise_id, i, { weight_kg: v })} />
-                        <SetInput value={r.reps} step={1} placeholder="—" accent={brand.color_primary} onChange={(v) => setRow(ex.exercise_id, i, { reps: v })} />
-                        <button onClick={() => removeSet(ex.exercise_id, i)} aria-label={`Borrar serie ${i + 1}`} className="flex h-11 w-10 items-center justify-center justify-self-center rounded-lg opacity-40 hover:opacity-100"><Trash2 size={15} /></button>
+                        <SetInput value={r.weight_kg} step={0.5} placeholder={ex.start_weight_hint_kg ? String(ex.start_weight_hint_kg) : "—"} accent={brand.color_secondary} onChange={(v) => setRow(ex.exercise_id, i, { weight_kg: v })} />
+                        <SetInput value={r.reps} step={1} placeholder="—" accent={brand.color_secondary} onChange={(v) => setRow(ex.exercise_id, i, { reps: v })} />
+                        <button onClick={() => removeSet(ex.exercise_id, i)} aria-label={`Borrar serie ${i + 1}`} className="flex h-11 w-11 items-center justify-center justify-self-center rounded-lg opacity-40 hover:opacity-100"><Trash2 size={15} /></button>
                       </div>
                     );
                   })}
@@ -233,14 +274,15 @@ export function PortalWorkout({ api, brand }: { api: Api; brand: PortalBrand }) 
                   </button>
                 </div>
                 {history[String(ex.exercise_id)]?.length ? (
-                  <ExHistory sessions={history[String(ex.exercise_id)]} accent={brand.color_primary} />
+                  // Azul: el historial es consulta de datos, no acción
+                  <ExHistory sessions={history[String(ex.exercise_id)]} accent={brand.color_secondary} />
                 ) : null}
                 {ex.technique_cue && <p className="mt-2 text-xs opacity-50">💡 {ex.technique_cue}</p>}
               </div>
             );
           })}
           {selected.cooldown && (
-            <div className="rounded-2xl border p-4 text-xs opacity-60" style={cardStyle}>
+            <div className="portal-card p-4 text-xs opacity-60">
               Vuelta a la calma: {selected.cooldown}
             </div>
           )}
@@ -262,7 +304,7 @@ function SetInput({ value, step, placeholder, accent, onChange }: {
       value={value ?? ""}
       placeholder={placeholder}
       onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
-      className="w-full rounded-xl border bg-transparent px-3 py-2 text-center text-sm font-semibold outline-none"
+      className="min-h-[44px] w-full rounded-xl border bg-transparent px-3 py-2 text-center text-sm font-semibold outline-none"
       style={{ borderColor: "rgba(128,128,128,0.22)", caretColor: accent }}
     />
   );
@@ -292,7 +334,3 @@ function ExHistory({ sessions, accent }: { sessions: HistSession[]; accent: stri
   );
 }
 
-const cardStyle = {
-  background: "var(--portal-card, rgba(255,255,255,0.03))",
-  borderColor: "rgba(128,128,128,0.18)",
-} as const;

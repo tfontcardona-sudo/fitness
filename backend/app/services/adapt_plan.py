@@ -73,14 +73,39 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
         raise AdaptError("No hay ninguna revisión quincenal analizada para adaptar el plan.")
     adjustments = (period.ai_analysis_json or {}).get("plan_adjustments") or []
 
+    # Plan base = el último PUBLICADO por (mes, versión) — las versiones se
+    # reinician por mes, así que ordenar solo por versión elegiría el mes
+    # equivocado cuando conviven planes de varios meses.
     base = db.scalar(
         select(Plan).where(Plan.client_id == client_id, Plan.status == "published")
-        .order_by(Plan.version.desc()).limit(1)
+        .order_by(Plan.month_index.desc(), Plan.version.desc()).limit(1)
     ) or db.scalar(
-        select(Plan).where(Plan.client_id == client_id).order_by(Plan.version.desc()).limit(1)
+        select(Plan).where(Plan.client_id == client_id)
+        .order_by(Plan.month_index.desc(), Plan.version.desc()).limit(1)
     )
     if not base:
         raise AdaptError("El cliente no tiene un plan base que adaptar.")
+
+    # IDEMPOTENCIA — adaptar dos veces a la misma revisión NO debe acumular
+    # los ajustes numéricos (p. ej. proteína 150→165 y luego 165→180):
+    # · si el plan vigente YA está adaptado a esta revisión → error claro;
+    # · si ya existe un BORRADOR adaptado a esta revisión → se rehace ese
+    #   borrador desde el plan publicado (no se crea otra versión más).
+    def _adapted_idx(p: Plan) -> int | None:
+        return ((p.nutrition_json or {}).get("applied_adjustments") or {}).get("period_index")
+
+    if _adapted_idx(base) == period.period_index:
+        raise AdaptError(
+            f"El plan vigente ya está adaptado a la revisión #{period.period_index}. "
+            "Edítalo directamente si quieres retocarlo."
+        )
+    existing_draft = next(
+        (p for p in db.scalars(
+            select(Plan).where(Plan.client_id == client_id, Plan.status == "draft")
+            .order_by(Plan.month_index.desc(), Plan.version.desc())
+        ) if _adapted_idx(p) == period.period_index),
+        None,
+    )
 
     nut = copy.deepcopy(base.nutrition_json or {})
     tr = copy.deepcopy(base.training_json or {})
@@ -105,7 +130,9 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
             "detail": None,
         }
         details: list[str] = []
-        if val is not None and is_diet:
+        # "Mantener X" no es un cambio numérico: no debe tocar los macros
+        # aunque el texto lleve un número ("mantener proteína en 180 g").
+        if val is not None and is_diet and "manten" not in cn:
             if "proteina" in cn:
                 before = macros.get("protein_g")
                 macros["protein_g"] = _apply(before, mode, val)
@@ -114,7 +141,7 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
                 before = macros.get("carbs_g")
                 macros["carbs_g"] = _apply(before, mode, val)
                 details.append(f"Carbohidratos: {round(before) if before else '—'} → {macros['carbs_g']} g")
-            if ("kcal" in cn or "calor" in cn) and "manten" not in cn:
+            if "kcal" in cn or "calor" in cn:
                 before = nut.get("target_kcal")
                 nut["target_kcal"] = _apply(nut.get("target_kcal"), mode, val)
                 details.append(f"Calorías: {round(before) if before else '—'} → {nut['target_kcal']} kcal")
@@ -151,20 +178,29 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
     tr["split_rationale"] = (tr.get("split_rationale", "") or "") + \
         f" · Adaptado a la revisión quincenal #{period.period_index}."
 
-    last = db.scalar(
-        select(Plan).where(Plan.client_id == client_id, Plan.month_index == base.month_index)
-        .order_by(Plan.version.desc()).limit(1)
-    )
-    new_version = (last.version if last else 0) + 1
-    plan = Plan(
-        client_id=client_id, month_index=base.month_index, version=new_version, status="draft",
-        nutrition_json=nut, training_json=tr, education_json=edu,
-        guardrail_flags=[], generated_by="adaptación quincenal",
-    )
-    db.add(plan)
+    if existing_draft is not None:
+        # Rehacer el borrador existente (mismo número de versión): los ajustes
+        # se recalculan siempre desde el plan publicado, nunca se acumulan.
+        existing_draft.nutrition_json = nut
+        existing_draft.training_json = tr
+        existing_draft.education_json = edu
+        plan = existing_draft
+    else:
+        last = db.scalar(
+            select(Plan).where(Plan.client_id == client_id, Plan.month_index == base.month_index)
+            .order_by(Plan.version.desc()).limit(1)
+        )
+        plan = Plan(
+            client_id=client_id, month_index=base.month_index,
+            version=(last.version if last else 0) + 1, status="draft",
+            nutrition_json=nut, training_json=tr, education_json=edu,
+            guardrail_flags=[], generated_by="adaptación quincenal",
+        )
+        db.add(plan)
     db.flush()
     log_event(db, "plan", plan.id, "plan_adapted",
-              {"from_plan": base.id, "period_index": period.period_index})
+              {"from_plan": base.id, "period_index": period.period_index,
+               "redo": existing_draft is not None})
     db.commit()
     db.refresh(plan)
     return plan

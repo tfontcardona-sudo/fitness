@@ -53,7 +53,8 @@ STORIES: dict[int, dict] = {
         satiety_range=(5, 8),
         waist=88.5, hip=101.0, arm=36.5, thigh=58.0,
         rating=4,
-        feelings={"energia": 4, "hambre": 3, "sueno": 4, "estres": 3, "motivacion": 5, "digestion": 4},
+        # Mismas claves que envía el portal real (PortalClose.FEELINGS)
+        feelings={"energia": 4, "hambre": 3, "sueno": 4, "recuperacion": 4, "animo": 5, "digestiones": 4},
         adherence_diet=8, adherence_training=9, free_meals=2,
         adherence_map={4: "partial", 9: "no", 11: "partial"},
         notes={
@@ -73,7 +74,8 @@ STORIES: dict[int, dict] = {
         satiety_range=(6, 9),  # con las calorías nuevas llega mejor a las comidas
         waist=87.5, hip=100.5, arm=36.6, thigh=57.5,
         rating=4,
-        feelings={"energia": 4, "hambre": 4, "sueno": 3, "estres": 2, "motivacion": 4, "digestion": 4},
+        # "sueno" en zona roja (2/5) → dispara el aviso del análisis automático
+        feelings={"energia": 4, "hambre": 4, "sueno": 2, "recuperacion": 3, "animo": 4, "digestiones": 4},
         adherence_diet=9, adherence_training=8, free_meals=4,
         adherence_map={3: "partial", 8: "partial", 12: "no", 13: "partial"},
         notes={
