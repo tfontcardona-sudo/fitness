@@ -19,13 +19,21 @@ export default function AppShell() {
   const { user, logout } = useAuth();
   const { brand } = useBrand();
   const navigate = useNavigate();
-  const [collapsed, setCollapsed] = useState(false);
+  // Barra lateral inteligente: en móvil arranca contraída (pantalla estrecha).
+  const [collapsed, setCollapsed] = useState(
+    () => typeof window !== "undefined" && window.innerWidth < 768,
+  );
 
   return (
     <div className="flex h-screen overflow-hidden">
-      {/* Sidebar colapsable (H.2) */}
+      {/* Sidebar colapsable e INTELIGENTE:
+          - contraída + pulsar la franja → se despliega (y si tocas un icono,
+            además navega: una sola pulsación hace las dos cosas);
+          - desplegada + pulsar el contenido de la derecha → se contrae sola. */}
       <aside
-        className="flex flex-col border-r transition-all duration-200"
+        onClick={collapsed ? () => setCollapsed(false) : undefined}
+        title={collapsed ? "Desplegar menú" : undefined}
+        className={`flex flex-col border-r transition-all duration-200 ${collapsed ? "cursor-pointer" : ""}`}
         style={{ borderColor: "var(--line)", width: collapsed ? 64 : 232, background: "var(--surface)" }}
       >
         <div className="flex h-16 items-center gap-3 border-b px-4" style={{ borderColor: "var(--line)" }}>
@@ -63,6 +71,7 @@ export default function AppShell() {
         <div className="border-t p-2.5" style={{ borderColor: "var(--line)" }}>
           <button
             onClick={() => setCollapsed((c) => !c)}
+            aria-label={collapsed ? "Desplegar menú" : "Contraer menú"}
             className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-zinc-500 hover:text-zinc-200"
           >
             {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
@@ -81,7 +90,11 @@ export default function AppShell() {
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto" style={{ background: "var(--bg)" }}>
+      <main
+        onClick={!collapsed ? () => setCollapsed(true) : undefined}
+        className="flex-1 overflow-y-auto"
+        style={{ background: "var(--bg)" }}
+      >
         <Outlet />
       </main>
     </div>
