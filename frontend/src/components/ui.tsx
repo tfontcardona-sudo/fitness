@@ -3,12 +3,14 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { AlertTriangle, Check, Loader2, X } from "lucide-react";
 import type { ClientStatus } from "../types";
 import { STATUS_LABEL, STATUS_TONE } from "../lib/format";
+import { useDismiss, useModalFocus } from "../lib/useDismiss";
 
 /* ---------------------------------------------------------- StatusBadge ---- */
 
@@ -86,7 +88,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ push }}>
       {children}
-      <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2">
+      {/* pointer-events-none: informa sin robar clics; role=status → accesible */}
+      <div
+        className="pointer-events-none fixed bottom-5 right-5 z-50 flex flex-col gap-2"
+        role="status"
+        aria-live="polite"
+      >
         {toasts.map((t) => (
           <div
             key={t.id}
@@ -136,31 +143,32 @@ export function ConfirmDialog({
   onCancel: () => void;
 }) {
   const [typed, setTyped] = useState("");
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Cierre unificado (fuera + ESC) y foco: atrapado dentro mientras está
+  // abierto, devuelto al elemento que lo abrió al cerrarse.
+  useDismiss(dialogRef, onCancel, open);
+  useModalFocus(dialogRef, open);
 
   useEffect(() => {
     if (open) setTyped("");
   }, [open]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCancel();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onCancel]);
-
   if (!open) return null;
   const canConfirm = !requireText || typed === requireText;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onCancel}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
         className="card animate-rise w-full max-w-md p-6"
         style={{ background: "var(--surface-raised)" }}
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between">
           <h3 className="text-base font-semibold text-zinc-100">{title}</h3>
-          <button onClick={onCancel} className="text-zinc-500 hover:text-zinc-300">
+          <button onClick={onCancel} aria-label="Cerrar" className="text-zinc-500 hover:text-zinc-300">
             <X size={18} />
           </button>
         </div>

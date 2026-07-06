@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Bell, CalendarCheck, Dumbbell, NotebookPen, X } from "lucide-react";
 import { portalApi, PortalError } from "./portalApi";
 import type { PortalState } from "../types";
@@ -30,7 +31,13 @@ export default function PortalApp({ token }: { token: string }) {
   const apiClient = useMemo(() => portalApi(token), [token]);
   const [state, setState] = useState<PortalState | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>("entreno");
+  // La pestaña vive en la URL (?tab=): el botón "atrás" del navegador vuelve a
+  // la pestaña anterior (no expulsa del portal) y los overlays abiertos se
+  // cierran solos al cambiar de ruta (el contenido de la pestaña se desmonta).
+  const [params, setParams] = useSearchParams();
+  const rawTab = params.get("tab");
+  const tab: Tab = rawTab === "diario" || rawTab === "cierre" ? rawTab : "entreno";
+  const setTab = (t: Tab) => setParams(t === "entreno" ? {} : { tab: t });
 
   const reload = useCallback(() => {
     apiClient
@@ -113,18 +120,21 @@ export default function PortalApp({ token }: { token: string }) {
 
         <main className="relative z-[1] flex-1 px-5 pb-28 pt-2">
           <PushBanner api={apiClient} accent={state.brand.color_primary} />
-          {tab === "entreno" && <PortalWorkout api={apiClient} brand={state.brand} />}
-          {tab === "diario" && <PortalDiary api={apiClient} brand={state.brand} />}
-          {tab === "cierre" && (
-            <PortalClose
-              api={apiClient}
-              brand={state.brand}
-              onClosed={reload}
-              canClose={canClose}
-              daysLeft={state.period?.days_left ?? null}
-              closeDate={state.period?.ends_on ?? null}
-            />
-          )}
+          {/* key={tab} → transición suave (animate-rise respeta reduced-motion) */}
+          <div key={tab} className="animate-rise">
+            {tab === "entreno" && <PortalWorkout api={apiClient} brand={state.brand} />}
+            {tab === "diario" && <PortalDiary api={apiClient} brand={state.brand} />}
+            {tab === "cierre" && (
+              <PortalClose
+                api={apiClient}
+                brand={state.brand}
+                onClosed={reload}
+                canClose={canClose}
+                daysLeft={state.period?.days_left ?? null}
+                closeDate={state.period?.ends_on ?? null}
+              />
+            )}
+          </div>
         </main>
 
         {/* Navegación inferior: 3 pestañas, relieve + neón */}
@@ -137,7 +147,8 @@ export default function PortalApp({ token }: { token: string }) {
               <button
                 key={id}
                 onClick={() => setTab(id)}
-                className={`relative flex flex-1 flex-col items-center gap-0.5 rounded-xl py-1.5 transition-colors ${active ? "nav-active" : ""}`}
+                aria-current={active ? "page" : undefined}
+                className={`tap relative flex flex-1 flex-col items-center gap-0.5 rounded-xl py-1.5 transition-colors ${active ? "nav-active" : ""}`}
                 style={{ color: active ? undefined : "var(--p-nav-idle)" }}
               >
                 <span className="nav-ico p-1"><Icon size={20} /></span>

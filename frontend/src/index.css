@@ -160,6 +160,18 @@ body {
   }
 }
 
+/* ---- Táctil real -------------------------------------------------------
+   Sin retardo de 300 ms ni zoom por doble tap en controles; el zoom de
+   pellizco sigue funcionando (accesibilidad). */
+button, [role="button"], summary, a {
+  touch-action: manipulation;
+}
+/* Área táctil mínima cómoda para controles pequeños (44×44). */
+.tap {
+  min-height: 44px;
+  min-width: 44px;
+}
+
 /* ============== PORTAL DEL CLIENTE — crema suave + azul/naranja DQ ==============
    La paleta vive en variables para que el tema oscuro solo las sobrescriba. */
 .portal-root {
@@ -211,6 +223,24 @@ body {
 }
 .portal-root .opacity-60, .portal-root .opacity-50, .portal-root .opacity-40 { color: var(--p-ink-soft); }
 
+/* iOS hace zoom involuntario al enfocar campos con fuente <16px:
+   en el portal TODOS los campos van a 16px. */
+.portal-root input, .portal-root textarea, .portal-root select {
+  font-size: 16px;
+}
+/* Feedback táctil inmediato en todo lo pulsable del portal (estado pressed). */
+.portal-root button:not(.portal-btn3d) {
+  transition: transform 0.1s ease, opacity 0.1s ease;
+}
+.portal-root button:not(.portal-btn3d):active {
+  transform: scale(0.97);
+}
+@media (hover: hover) {
+  .portal-root button:not(.portal-btn3d):hover {
+    opacity: 0.85;
+  }
+}
+
 /* Botón 3D con relieve y halo naranja de marca */
 .portal-btn3d {
   position: relative;
@@ -243,11 +273,13 @@ body {
 .portal-neon-accent { box-shadow: 0 0 0 1px rgba(232, 131, 58, 0.55), 0 0 12px rgba(232, 131, 58, 0.5), 0 0 26px rgba(232, 131, 58, 0.25); }
 .portal-neon-blue { box-shadow: 0 0 0 1px rgba(46, 94, 140, 0.55), 0 0 12px rgba(46, 94, 140, 0.5), 0 0 26px rgba(46, 94, 140, 0.25); }
 
-/* Nav inferior con relieve */
+/* Nav inferior con relieve. padding-bottom respeta la safe area (barra
+   inferior del iPhone / notch): la nav nunca queda medio tapada. */
 .portal-nav {
   background: linear-gradient(180deg, var(--p-card-top), var(--p-card-bottom)) !important;
   border-top: 1px solid var(--p-line) !important;
   box-shadow: 0 -4px 18px var(--p-nav-shadow);
+  padding-bottom: calc(0.5rem + env(safe-area-inset-bottom)) !important;
 }
 .portal-nav .nav-active {
   color: var(--p-accent);

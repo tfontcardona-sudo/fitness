@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { DietAdherence, PortalBrand } from "../types";
 import { usePortalToast } from "./PortalToast";
-import { Loading } from "./PortalToday";
+import { Loading } from "./PortalUi";
 import type { portalApi } from "./portalApi";
 
 type Api = ReturnType<typeof portalApi>;
@@ -95,8 +95,9 @@ export function PortalDiary({ api, brand }: { api: Api; brand: PortalBrand }) {
           onChange={(v) => update({ water_liters: v })} accent={brand.color_primary} />
       </div>
 
-      <Field label="Pasos / cardio del día">
+      <Field label="Pasos / cardio del día" htmlFor="diary-steps">
         <input
+          id="diary-steps"
           type="text"
           className="w-full rounded-xl border bg-transparent p-3 text-sm"
           style={{ borderColor: "rgba(128,128,128,0.2)" }}
@@ -130,8 +131,9 @@ export function PortalDiary({ api, brand }: { api: Api; brand: PortalBrand }) {
       <ScaleField label="Ánimo" value={form.mood_1_5} onChange={(v) => update({ mood_1_5: v })} accent={brand.color_primary} />
       <ScaleField label="Fatiga" value={form.fatigue_1_5} onChange={(v) => update({ fatigue_1_5: v })} accent={brand.color_primary} invert />
 
-      <Field label="Notas (opcional)">
+      <Field label="Notas (opcional)" htmlFor="diary-notes">
         <textarea
+          id="diary-notes"
           className="min-h-[72px] w-full rounded-xl border bg-transparent p-3 text-sm"
           style={{ borderColor: "rgba(128,128,128,0.2)" }}
           placeholder="Cómo te has sentido, incidencias…"
@@ -145,10 +147,13 @@ export function PortalDiary({ api, brand }: { api: Api; brand: PortalBrand }) {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+/** Grupo con título. OJO: div, no <label> — algunos hijos son grupos de
+ *  botones y un label activaría el primero al tocar el texto. Para campos de
+ *  texto se pasa htmlFor y el título sí actúa de etiqueta real. */
+function Field({ label, htmlFor, children }: { label: string; htmlFor?: string; children: React.ReactNode }) {
   return (
-    <div>
-      <p className="mb-2 text-sm font-medium opacity-80">{label}</p>
+    <div role="group" aria-label={htmlFor ? undefined : label}>
+      <label htmlFor={htmlFor} className="mb-2 block text-sm font-medium opacity-80">{label}</label>
       {children}
     </div>
   );
@@ -170,8 +175,8 @@ function NumberCard({
   accent: string;
 }) {
   return (
-    <div className="rounded-2xl border p-4" style={{ borderColor: "rgba(128,128,128,0.2)" }}>
-      <p className="text-xs opacity-50">{label}</p>
+    <label className="block rounded-2xl border p-4" style={{ borderColor: "rgba(128,128,128,0.2)" }}>
+      <span className="block text-xs opacity-50">{label}</span>
       <div className="mt-1 flex items-baseline gap-1">
         <input
           type="number"
@@ -185,7 +190,7 @@ function NumberCard({
         />
         <span className="text-sm opacity-50">{unit}</span>
       </div>
-    </div>
+    </label>
   );
 }
 

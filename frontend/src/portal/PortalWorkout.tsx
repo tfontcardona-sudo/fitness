@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Dumbbell, Plus, Trash2, PlayCircle, Check, Sparkles } from "lucide-react";
 import type { PlanChanges, PortalBrand, TodaySession } from "../types";
 import { usePortalToast } from "./PortalToast";
-import { Loading, Empty } from "./PortalToday";
+import { Loading, Empty } from "./PortalUi";
+import { useDismiss } from "../lib/useDismiss";
 import type { portalApi } from "./portalApi";
 
 type Api = ReturnType<typeof portalApi>;
@@ -21,6 +22,9 @@ export function PortalWorkout({ api, brand }: { api: Api; brand: PortalBrand }) 
   const today = new Date().toISOString().slice(0, 10);
   const [sessions, setSessions] = useState<TodaySession[] | null>(null);
   const [planChanges, setPlanChanges] = useState<PlanChanges | null>(null);
+  const [newsOpen, setNewsOpen] = useState(false);
+  const newsRef = useRef<HTMLDetailsElement>(null);
+  useDismiss(newsRef, () => setNewsOpen(false), newsOpen); // fuera/ESC → se cierra
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [todayDay, setTodayDay] = useState<string | null>(null);
   const [sets, setSets] = useState<Record<number, SetRow[]>>({});
@@ -120,8 +124,13 @@ export function PortalWorkout({ api, brand }: { api: Api; brand: PortalBrand }) 
 
       {/* Novedades del plan: qué cambió en la última revisión, dónde y por qué */}
       {planChanges?.items?.length ? (
-        <details className="portal-card overflow-hidden">
-          <summary className="flex cursor-pointer items-center gap-2 p-3.5 text-sm font-semibold">
+        <details
+          ref={newsRef}
+          open={newsOpen}
+          onToggle={(e) => setNewsOpen((e.target as HTMLDetailsElement).open)}
+          className="portal-card overflow-hidden"
+        >
+          <summary className="tap flex cursor-pointer items-center gap-2 p-3.5 text-sm font-semibold">
             <Sparkles size={16} style={{ color: brand.color_primary }} />
             Novedades de tu plan
             <span className="ml-auto text-[11px] font-normal opacity-60">revisión #{planChanges.period_index}</span>
@@ -205,21 +214,21 @@ export function PortalWorkout({ api, brand }: { api: Api; brand: PortalBrand }) 
                 </div>
 
                 <div className="mt-3 space-y-1.5">
-                  <div className="grid grid-cols-[28px_1fr_1fr_28px] items-center gap-2 px-1 text-[10px] uppercase tracking-wide opacity-40">
+                  <div className="grid grid-cols-[28px_1fr_1fr_40px] items-center gap-2 px-1 text-[10px] uppercase tracking-wide opacity-40">
                     <span>Set</span><span>Peso (kg)</span><span>Reps</span><span></span>
                   </div>
                   {rows.map((r, i) => {
                     const done = r.weight_kg != null && r.reps != null;
                     return (
-                      <div key={i} className="grid grid-cols-[28px_1fr_1fr_28px] items-center gap-2">
+                      <div key={i} className="grid grid-cols-[28px_1fr_1fr_40px] items-center gap-2">
                         <span className="text-center text-xs font-semibold tabular-nums" style={{ color: done ? brand.color_primary : undefined, opacity: done ? 1 : 0.5 }}>{i + 1}</span>
                         <SetInput value={r.weight_kg} step={0.5} placeholder={ex.start_weight_hint_kg ? String(ex.start_weight_hint_kg) : "—"} accent={brand.color_primary} onChange={(v) => setRow(ex.exercise_id, i, { weight_kg: v })} />
                         <SetInput value={r.reps} step={1} placeholder="—" accent={brand.color_primary} onChange={(v) => setRow(ex.exercise_id, i, { reps: v })} />
-                        <button onClick={() => removeSet(ex.exercise_id, i)} className="flex justify-center opacity-40 hover:opacity-100"><Trash2 size={14} /></button>
+                        <button onClick={() => removeSet(ex.exercise_id, i)} aria-label={`Borrar serie ${i + 1}`} className="flex h-11 w-10 items-center justify-center justify-self-center rounded-lg opacity-40 hover:opacity-100"><Trash2 size={15} /></button>
                       </div>
                     );
                   })}
-                  <button onClick={() => addSet(ex.exercise_id)} className="mt-1 flex w-full items-center justify-center gap-1 rounded-xl border border-dashed py-2 text-xs opacity-70" style={{ borderColor: "rgba(128,128,128,0.3)" }}>
+                  <button onClick={() => addSet(ex.exercise_id)} className="tap mt-1 flex w-full items-center justify-center gap-1 rounded-xl border border-dashed py-2 text-xs opacity-70" style={{ borderColor: "rgba(128,128,128,0.3)" }}>
                     <Plus size={13} /> Añadir serie
                   </button>
                 </div>
@@ -265,7 +274,7 @@ function ExHistory({ sessions, accent }: { sessions: HistSession[]; accent: stri
   const last = sessions[0];
   return (
     <div className="mt-2 border-t pt-2 text-xs" style={{ borderColor: "rgba(128,128,128,0.15)" }}>
-      <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center justify-between opacity-70">
+      <button onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex min-h-[44px] w-full items-center justify-between opacity-70">
         <span className="truncate">Última vez: {last.sets.map(fmt).join(" · ")}</span>
         <span className="ml-2 shrink-0" style={{ color: accent }}>{open ? "▾" : "▸"} historial</span>
       </button>

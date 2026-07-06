@@ -334,6 +334,27 @@ En `C:\Users\Usuari\.claude\projects\C--Users-Usuari-Desktop-fitness-system\memo
   saliendo de `brand_config` en BD (los fijó la migración 0006); si algún día hay que
   cambiarlos: UPDATE a `brand_config` o restaurar la página desde git.
 
+**Iteración 3 — UX/UI del portal (navegación en 1 clic, táctil, a11y):**
+- **`src/lib/useDismiss.ts`** — hook ÚNICO de cierre de overlays: click/tap fuera
+  (en fase de captura → una sola pulsación cierra Y ejecuta el destino), ESC, y
+  limpieza al desmontar (cambio de pestaña/ruta). + `useModalFocus` (focus trap +
+  devolución del foco al abridor). Aplicado a: "Novedades de tu plan" (details
+  controlado), `ConfirmDialog` y `NewClientModal` (con role=dialog/aria-modal).
+- **Toasts** (portal y coach): `pointer-events-none` (no roban taps a la nav) +
+  `role=status aria-live=polite`.
+- **Táctil:** inputs del portal a 16px (adiós zoom iOS), `viewport-fit=cover` +
+  `env(safe-area-inset-bottom)` en la nav inferior, `touch-action: manipulation`
+  global, estados :active (scale 0.97) y hover en todo lo pulsable del portal,
+  papelera de serie con área 44px + aria-label, botones 1-5 con `.tap`.
+- **Pestañas del portal en la URL (`?tab=`)**: el botón atrás vuelve a la pestaña
+  anterior (no expulsa); transición `animate-rise` al cambiar; `aria-current` en
+  la nav. Labels reales en Diario/Quincenal (htmlFor / label envolvente).
+- **Código muerto borrado**: PortalToday/PortalPlan/PortalFeedback → `Loading`
+  (ahora skeleton) y `Empty` viven en `PortalUi.tsx`.
+- **QA de comportamiento**: `ux-tests.mjs` (scratchpad) — 9 asserts Playwright
+  (click-fuera, ESC, 1-tap con overlay abierto, botón atrás, aria-current,
+  pointer-events del toast, 16px, safe-area, sin scroll horizontal) → 9/9 PASS.
+
 ## 11. Mapa rápido de archivos tocados en el último tramo
 
 **Pulido §8.2 (2026-07-04)**

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Copy, Search, UserPlus, AlertCircle } from "lucide-react";
+import { useDismiss, useModalFocus } from "../lib/useDismiss";
 import { api, ApiError } from "../lib/api";
 import type { ClientOut, ClientStatus, PortalLinkOut } from "../types";
 import { EmptyState, PageLoader, StatusBadge, useToast } from "../components/ui";
@@ -176,6 +177,9 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
   const [phone, setPhone] = useState("");
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState<PortalLinkOut | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDismiss(dialogRef, onClose); // fuera + ESC, en una sola pulsación
+  useModalFocus(dialogRef, true); // foco atrapado; al cerrar vuelve al botón
 
   async function submit() {
     if (!name || !email || busy) return;
@@ -197,11 +201,14 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Nuevo cliente"
         className="card animate-rise w-full max-w-md p-6"
         style={{ background: "var(--surface-raised)" }}
-        onClick={(e) => e.stopPropagation()}
       >
         {!created ? (
           <>
