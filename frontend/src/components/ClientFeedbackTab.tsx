@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Sparkles, AlertTriangle, MessageSquare, MessageCircle, Target, TrendingUp, BarChart3, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
 import { api } from "../lib/api";
-import { openWhatsApp, waPhone } from "../lib/whatsapp";
+import { feedbackBody, feedbackMessage, openWhatsApp, waPhone } from "../lib/whatsapp";
 import { Spinner, useToast } from "./ui";
 import type { ClientOut } from "../types";
 
@@ -95,33 +95,26 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
     }
   }
 
-  function buildFeedbackText(content: any): string {
-    const parts: string[] = [];
-    if (content.natural_analysis) parts.push(content.natural_analysis);
-    if (Array.isArray(content.changes_bullets) && content.changes_bullets.length)
-      parts.push("Cambios en el plan:\n" + content.changes_bullets.map((b: string) => `• ${b}`).join("\n"));
-    if (content.answers) parts.push("Respuesta a tus dudas:\n" + content.answers);
-    if (Array.isArray(content.next_objectives) && content.next_objectives.length)
-      parts.push("Objetivos próximas 2 semanas:\n" + content.next_objectives.map((o: string) => `• ${o}`).join("\n"));
-    if (content.closing_message) parts.push(content.closing_message);
-    return parts.join("\n\n");
-  }
-
   function copyAll(content: any) {
-    navigator.clipboard.writeText(buildFeedbackText(content))
+    navigator.clipboard.writeText(feedbackBody(content))
       .then(() => toast.push("Feedback copiado al portapapeles"))
       .catch(() => toast.push("No se pudo copiar", "error"));
   }
 
-  /** Un clic: abre WhatsApp del cliente con el feedback ya escrito y lo marca
-   *  como enviado (el ciclo avanza a "activo"). */
-  async function sendWhatsApp(feedbackId: number, content: any) {
+  /** Un clic: abre WhatsApp del cliente con el feedback ya escrito (entrada,
+   *  informe y cierre profesionales) y, la primera vez, lo marca como enviado
+   *  (el ciclo avanza a "activo"). Se puede reenviar cuantas veces haga falta. */
+  async function sendWhatsApp(feedbackId: number, content: any, alreadySent: boolean) {
     const phone = waPhone(client.phone);
     if (!phone) {
       toast.push("Añade el teléfono del cliente en su ficha para enviarlo por WhatsApp", "error");
       return;
     }
-    openWhatsApp(phone, `Hola ${client.full_name.split(" ")[0]}! Tu feedback de la quincena 👇\n\n${buildFeedbackText(content)}`);
+    openWhatsApp(phone, feedbackMessage(client.full_name, content));
+    if (alreadySent) {
+      toast.push("WhatsApp abierto con el feedback — dale a enviar");
+      return;
+    }
     try {
       await api.sendFeedback(feedbackId);
       toast.push("WhatsApp abierto con el feedback listo — dale a enviar");
@@ -213,7 +206,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                   </button>
                 )}
                 {p.feedback_id && content && !sent && (
-                  <button onClick={() => sendWhatsApp(p.feedback_id as number, content)} className="btn btn-primary">
+                  <button onClick={() => sendWhatsApp(p.feedback_id as number, content, false)} className="btn btn-primary">
                     <MessageCircle size={15} /> Enviar por WhatsApp
                   </button>
                 )}
@@ -310,6 +303,13 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                 <div className="flex items-center justify-between">
                   <SubTitle icon={TrendingUp} text="Feedback" />
                   <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => sendWhatsApp(p.feedback_id as number, content, !!sent)}
+                      className="flex items-center gap-1 text-xs font-medium hover:opacity-80"
+                      style={{ color: "var(--brand-accent)" }}
+                    >
+                      <MessageCircle size={13} /> Enviar por WhatsApp
+                    </button>
                     <button onClick={() => copyAll(content)} className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200">
                       <Copy size={13} /> Copiar todo
                     </button>

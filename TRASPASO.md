@@ -334,6 +334,27 @@ En `C:\Users\Usuari\.claude\projects\C--Users-Usuari-Desktop-fitness-system\memo
   saliendo de `brand_config` en BD (los fijó la migración 0006); si algún día hay que
   cambiarlos: UPDATE a `brand_config` o restaurar la página desde git.
 
+**Iteración 5 — Envíos por WhatsApp profesionales + teléfono editable:**
+- **Teléfono editable** en la ficha del cliente (primera fila de la tarjeta,
+  `ClientProfilePage.PhoneRow`): lápiz → input tel → Enter/✓ guarda vía
+  `updateClient`; vacío muestra "añádelo para WhatsApp".
+- **Mensajes de WhatsApp centralizados y profesionales** en `lib/whatsapp.ts`
+  (SIN emojis — se corrompían como `�` — saludo con nombre capitalizado, cuerpo
+  con secciones en *negrita* de WhatsApp y cierre serio): `feedbackMessage`,
+  `planMessage`, `planAndFeedbackMessage`, `feedbackBody` (también alimenta
+  "Copiar todo").
+- **Feedback**: enlace naranja "Enviar por WhatsApp" junto a "Copiar todo /
+  Editar texto" — permanece tras el envío (reenvíos); solo marca sent la
+  primera vez.
+- **Planificación** (plan publicado): "Enviar plan por WhatsApp" + botón
+  primario "Enviar plan + feedback" (un solo mensaje con informe + enlace al
+  PDF). El panel carga el último feedback vía `listPeriods → getFeedback`; el
+  envío conjunto marca sent si no lo estaba (prop `onClientChanged` nueva).
+- **"Descargar todo" (ZIP) eliminado** del Historial (`exportClientUrl` sigue
+  en la API por si se recupera).
+- QA: `scratchpad/wa-test.mjs` captura el wa.me real por clic y verifica los
+  tres textos (número +34, nombre capitalizado, negritas, enlace PDF).
+
 **Iteración 4 — Asesorías ágiles (WhatsApp + períodos autónomos + análisis quincenal):**
 - **Seguimiento → revisión quincenal reestructurada**: bloque "Puntos a vigilar"
   (análisis DETERMINISTA en `ClientTrackingTab.avisosQuincenal`: ritmo kg/sem vs

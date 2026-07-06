@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Pencil } from "lucide-react";
 import { api, getToken } from "../lib/api";
-import { openWhatsApp, waPhone } from "../lib/whatsapp";
+import { openWhatsApp, planAndFeedbackMessage, planMessage, waPhone } from "../lib/whatsapp";
 import { Spinner, useToast } from "./ui";
 import { ClientPlanEditor } from "./ClientPlanEditor";
 import type { ClientOut } from "../types";
@@ -37,7 +37,7 @@ function normalize(p: any): PlanData {
  * TODA la info (nutrición, banco de comidas, entrenamiento, educativo) y permite
  * publicarlo y descargarlo en Word.
  */
-export function ClientPlanPanel({ client }: { client: ClientOut }) {
+export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut; onClientChanged?: () => void }) {
   const toast = useToast();
   const [plan, setPlan] = useState<PlanData | null>(null);
   const [exMap, setExMap] = useState<Record<number, string>>({});
@@ -48,8 +48,11 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
   const [missing, setMissing] = useState<string[] | null>(null);
   const [periods, setPeriods] = useState<{
     id: number; period_index: number; plan_id: number | null; starts_on: string; ends_on: string; status: string;
+    feedback_id?: number | null;
     plan_adjustments?: { area: string; change: string; reason: string }[] | null;
   }[]>([]);
+  // Último feedback generado (para poder enviarlo junto al plan por WhatsApp).
+  const [fb, setFb] = useState<{ id: number; content: any; sent: boolean } | null>(null);
 
   // Al montar: carga el último plan guardado + el mapa de ejercicios + los períodos.
   useEffect(() => {
@@ -66,6 +69,15 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
         setExMap(map);
         setPeriods(pds);
         if (plans.length) setPlan(normalize(plans[0])); // [0] = versión más reciente
+        // Feedback más reciente (si existe): habilita el envío conjunto.
+        const withFb = pds
+          .filter((p: any) => p.feedback_id)
+          .reduce<any>((a, b) => (!a || b.period_index > a.period_index ? b : a), null);
+        if (withFb?.feedback_id) {
+          api.getFeedback(withFb.feedback_id)
+            .then((f) => alive && setFb({ id: withFb.feedback_id, content: f.content, sent: !!f.sent_at }))
+            .catch(() => {});
+        }
       })
       .catch(() => {})
       .finally(() => alive && setLoading(false));
@@ -74,8 +86,14 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
     };
   }, [client.id]);
 
-  /** Un clic: abre WhatsApp del cliente con el enlace directo a su PDF
-   *  (endpoint público por token — no necesita login). */
+  /** Enlace público al PDF del plan (endpoint por token — sin login). */
+  async function planPdfUrl(): Promise<string> {
+    const link = await api.portalLink(client.id);
+    return `${window.location.origin}/api/p/${link.portal_token}/plan.pdf`;
+  }
+
+  /** Un clic: abre WhatsApp del cliente con el mensaje profesional del plan
+   *  y el enlace directo a su PDF. */
   async function sendPlanWhatsApp() {
     const phone = waPhone(client.phone);
     if (!phone) {
@@ -83,17 +101,36 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
       return;
     }
     try {
-      const link = await api.portalLink(client.id);
-      const adapted = plan?.nutrition?.applied_adjustments;
-      const first = client.full_name.split(" ")[0];
-      const pdfUrl = `${window.location.origin}/api/p/${link.portal_token}/plan.pdf`;
-      openWhatsApp(
-        phone,
-        `Hola ${first}! 💪 Te dejo tu plan ${adapted ? `actualizado tras tu revisión #${adapted.period_index}` : `del mes ${plan?.month_index ?? 1}`} en PDF:\n${pdfUrl}\n\nCualquier duda me escribes.`,
-      );
+      const pdfUrl = await planPdfUrl();
+      const adaptedIdx = plan?.nutrition?.applied_adjustments?.period_index ?? null;
+      openWhatsApp(phone, planMessage(client.full_name, pdfUrl, adaptedIdx, plan?.month_index ?? 1));
       toast.push("WhatsApp abierto con el enlace del plan — dale a enviar");
     } catch {
       toast.push("No se pudo obtener el enlace del plan", "error");
+    }
+  }
+
+  /** Un clic: plan + feedback juntos en un solo WhatsApp (mensaje profesional).
+   *  Si el feedback aún no constaba como enviado, se marca (el ciclo avanza). */
+  async function sendPlanAndFeedbackWhatsApp() {
+    if (!fb) return;
+    const phone = waPhone(client.phone);
+    if (!phone) {
+      toast.push("Añade el teléfono del cliente en su ficha para enviarlo por WhatsApp", "error");
+      return;
+    }
+    try {
+      const pdfUrl = await planPdfUrl();
+      const adaptedIdx = plan?.nutrition?.applied_adjustments?.period_index ?? null;
+      openWhatsApp(phone, planAndFeedbackMessage(client.full_name, fb.content, pdfUrl, adaptedIdx));
+      toast.push("WhatsApp abierto con el plan y el feedback — dale a enviar");
+      if (!fb.sent) {
+        await api.sendFeedback(fb.id).catch(() => {});
+        setFb({ ...fb, sent: true });
+        onClientChanged?.();
+      }
+    } catch {
+      toast.push("No se pudo preparar el envío", "error");
     }
   }
 
@@ -286,8 +323,13 @@ export function ClientPlanPanel({ client }: { client: ClientOut }) {
               <Download size={15} /> Descargar PDF
             </button>
             {plan.status === "published" && (
-              <button onClick={sendPlanWhatsApp} className="btn btn-primary">
-                <MessageCircle size={15} /> Enviar por WhatsApp
+              <button onClick={sendPlanWhatsApp} className={fb ? "btn btn-ghost" : "btn btn-primary"}>
+                <MessageCircle size={15} /> Enviar plan por WhatsApp
+              </button>
+            )}
+            {plan.status === "published" && fb && (
+              <button onClick={sendPlanAndFeedbackWhatsApp} className="btn btn-primary">
+                <MessageCircle size={15} /> Enviar plan + feedback
               </button>
             )}
             {plan.status !== "published" && (
