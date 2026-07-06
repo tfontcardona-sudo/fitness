@@ -23,3 +23,6 @@ _render/
 .DS_Store
 *.log
 .pytest_cache/
+
+# Caché incremental de TypeScript (artefacto de build)
+*.tsbuildinfo
