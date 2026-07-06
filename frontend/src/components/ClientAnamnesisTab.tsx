@@ -73,7 +73,7 @@ export function ClientAnamnesisTab({ client, onSaved }: { client: ClientOut; onS
       onSaved();
     } catch (e: any) {
       const detail = e?.detail ?? e?.data?.detail;
-      toast.push(detail?.message ?? e?.message ?? "No se pudo leer el PDF", "error");
+      toast.push([detail?.message ?? e?.message ?? "No se pudo leer el PDF", detail?.error].filter(Boolean).join(" — "), "error");
     } finally {
       setReading(false);
     }
