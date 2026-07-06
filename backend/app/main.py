@@ -5,6 +5,7 @@ en entrypoint.sh antes de arrancar; el scheduler se añade en la Fase 4.
 """
 
 from contextlib import asynccontextmanager
+import logging
 import os
 
 from fastapi import FastAPI, Request, status
@@ -56,6 +57,23 @@ def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONRespons
     return JSONResponse(
         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         content={"detail": "Demasiadas peticiones, inténtalo en un momento"},
+    )
+
+
+# Los errores NO controlados dejaban un 500 opaco ("Internal Server Error") que
+# no decía nada al coach ni facilitaba el diagnóstico. Ahora: traza completa en
+# los logs + causa legible en la respuesta (la web la muestra en el aviso).
+# App single-tenant tras login: exponer el tipo/mensaje del error es aceptable
+# y ahorra un viaje a los logs del servidor.
+_errlog = logging.getLogger("app.errors")
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    _errlog.exception("Error no controlado en %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": {"message": f"Error interno ({type(exc).__name__}): {exc}"}},
     )
 
 
