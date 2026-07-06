@@ -662,7 +662,7 @@ def generate_client_plan(
     from datetime import date
 
     from app.models import Exercise, Plan
-    from app.services.ai.client import AIClient
+    from app.services.ai.client import AIClient, AIGenerationError
     from app.services.ai.generator import (
         ClientContext,
         PlanGenerationError,
@@ -779,6 +779,12 @@ def generate_client_plan(
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY,
             detail={"message": "La IA no devolvió un plan válido.", "error": str(exc)},
+        ) from exc
+    except AIGenerationError as exc:
+        # Config/clave inválida u error de la API: mensaje accionable, no un 500.
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            detail={"message": str(exc)},
         ) from exc
 
     nutrition, training, education, flags = generated.to_persistable()
