@@ -151,7 +151,7 @@ export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDat
               <div className="flex justify-between gap-1.5">
                 {[1, 2, 3, 4, 5].map((n) => (
                   <button key={n} onClick={() => setFeelings((s) => ({ ...s, [f.key]: n }))}
-                    className="flex-1 rounded-lg border py-2 text-sm font-semibold"
+                    className="tap flex-1 rounded-lg border py-2 text-sm font-semibold"
                     style={feelings[f.key] === n
                       ? { borderColor: brand.color_primary, background: `${brand.color_primary}1f`, color: brand.color_primary }
                       : { borderColor: "rgba(128,128,128,0.2)" }}>
@@ -237,7 +237,7 @@ function Field({ label, required, children }: { label: string; required?: boolea
   return (
     <div>
       <p className="mb-2 text-sm font-medium opacity-80">
-        {label} {required && <span style={{ color: "#F77E7E" }}>*</span>}
+        {label} {required && <span style={{ color: "#C2453A" }}>*</span>}
       </p>
       {children}
     </div>
@@ -246,12 +246,12 @@ function Field({ label, required, children }: { label: string; required?: boolea
 
 function Perimeter({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
-    <div className="rounded-xl border p-3" style={{ borderColor: "rgba(128,128,128,0.2)" }}>
-      <p className="text-xs opacity-50">{label} (cm)</p>
+    <label className="block rounded-xl border p-3" style={{ borderColor: "rgba(128,128,128,0.2)" }}>
+      <span className="block text-xs opacity-50">{label} (cm)</span>
       <input type="number" step={0.5} inputMode="decimal"
         className="mt-1 w-full bg-transparent text-lg font-semibold outline-none"
         value={value} onChange={(e) => onChange(e.target.value)} placeholder="—" />
-    </div>
+    </label>
   );
 }
 
@@ -259,11 +259,11 @@ function NumField({ label, value, onChange, min, max, required }: {
   label: string; value: string; onChange: (v: string) => void; min: number; max: number; required?: boolean;
 }) {
   return (
-    <div className="rounded-xl border p-3" style={{ borderColor: "rgba(128,128,128,0.2)" }}>
-      <p className="text-xs opacity-50">{label} {required && <span style={{ color: "#F77E7E" }}>*</span>}</p>
+    <label className="block rounded-xl border p-3" style={{ borderColor: "rgba(128,128,128,0.2)" }}>
+      <span className="block text-xs opacity-50">{label} {required && <span style={{ color: "#C2453A" }}>*</span>}</span>
       <input type="number" step={1} min={min} max={max} inputMode="numeric"
         className="mt-1 w-full bg-transparent text-lg font-semibold outline-none"
         value={value} onChange={(e) => onChange(e.target.value)} placeholder="—" />
-    </div>
+    </label>
   );
 }

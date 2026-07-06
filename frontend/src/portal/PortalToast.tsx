@@ -18,11 +18,17 @@ export function PortalToastProvider({ children, light }: { children: ReactNode; 
   return (
     <Ctx.Provider value={{ push }}>
       {children}
-      <div className="fixed bottom-24 left-1/2 z-50 flex -translate-x-1/2 flex-col items-center gap-2">
+      {/* pointer-events-none: el toast informa, nunca roba el tap a la nav
+          inferior; role=status para que los lectores de pantalla lo anuncien. */}
+      <div
+        className="pointer-events-none fixed bottom-24 left-1/2 z-50 flex -translate-x-1/2 flex-col items-center gap-2"
+        role="status"
+        aria-live="polite"
+      >
         {toasts.map((t) => (
           <div
             key={t.id}
-            className="rounded-full px-4 py-2 text-sm font-medium shadow-lg"
+            className="animate-rise rounded-full px-4 py-2 text-sm font-medium shadow-lg"
             style={{
               background: light ? "#1a1a24" : "#fafaf9",
               color: light ? "#fafaf9" : "#1a1a24",
