@@ -29,8 +29,10 @@ export function ClientHistoryTab({ client }: { client: ClientOut }) {
     return <div className="card flex items-center justify-center gap-2 p-8 text-sm text-zinc-500"><Spinner /> Cargando historial…</div>;
   }
 
-  const delta = h.current_weight_kg != null && h.start_weight_kg != null
-    ? Math.round((h.current_weight_kg - h.start_weight_kg) * 10) / 10 : null;
+  // Misma fuente y fallback que la pestaña Resumen: sin divergencias
+  const currentW = h.current_weight_kg ?? client.current_weight_kg ?? null;
+  const delta = currentW != null && h.start_weight_kg != null
+    ? Math.round((currentW - h.start_weight_kg) * 10) / 10 : null;
   const measureRows: [string, "waist" | "hip" | "arm" | "thigh"][] = [
     ["Cintura", "waist"], ["Cadera", "hip"], ["Brazo", "arm"], ["Muslo", "thigh"],
   ];
@@ -45,7 +47,7 @@ export function ClientHistoryTab({ client }: { client: ClientOut }) {
         </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <Stat label="Peso inicial" value={h.start_weight_kg != null ? `${h.start_weight_kg} kg` : "—"} />
-          <Stat label="Peso actual" value={h.current_weight_kg != null ? `${h.current_weight_kg} kg` : "—"} />
+          <Stat label="Peso actual" value={currentW != null ? `${currentW} kg` : "—"} />
           <Stat label="Cambio total" value={delta != null ? `${delta > 0 ? "+" : ""}${delta} kg` : "—"} highlight />
           <Stat label="Objetivo" value={h.goal_weight_kg != null ? `${h.goal_weight_kg} kg` : "—"} />
           <Stat label="Le quedan" value={h.remaining_to_goal_kg != null ? `${h.remaining_to_goal_kg} kg` : "—"} highlight />

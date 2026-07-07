@@ -212,7 +212,7 @@ def portal_state_full(
         status=client.status,
         diet_mode=client.diet_mode,
         has_plan=plan is not None,
-        period=portal_svc.period_info(period, _date.today()),
+        period=portal_svc.period_info(period, portal_svc.today_local()),
         brand=PortalBrand(**portal_svc.brand_payload(db)),
     )
 
@@ -225,7 +225,7 @@ def portal_today(
     db: Session = Depends(get_db),
 ) -> TodayView:
     """Vista HOY: qué como y qué entreno hoy. Lectura en <30 s (G.4)."""
-    return TodayView(**portal_svc.build_today_view(db, client, _date.today()))
+    return TodayView(**portal_svc.build_today_view(db, client, portal_svc.today_local()))
 
 
 @router.get("/{token}/training", response_model=dict)
@@ -249,7 +249,7 @@ def portal_training(
     changes = None
     if plan is not None and plan.status == "published":
         changes = (plan.nutrition_json or {}).get("applied_adjustments") or None
-    week = portal_svc.current_training_week(db, plan, _date.today())
+    week = portal_svc.current_training_week(db, plan, portal_svc.today_local())
     if week:
         week = {**week, "started_on": week["started_on"].isoformat()}
     return {
@@ -421,7 +421,7 @@ def portal_workout_history(
         .where(Period.client_id == client.id)
         .order_by(DailyLog.log_date.desc(), WorkoutLog.set_number)
     ).all()
-    today = _date.today()
+    today = portal_svc.today_local()
     hist: dict[int, dict[str, list]] = {}
     for log_date, ex_id, set_number, weight, reps in rows:
         if log_date == today:
@@ -451,7 +451,7 @@ def portal_close_period(
     if period is None or period.status != "open":
         raise HTTPException(status.HTTP_409_CONFLICT, "No tienes un período abierto")
 
-    info = portal_svc.period_info(period, _date.today())
+    info = portal_svc.period_info(period, portal_svc.today_local())
     if not info or not info["can_close"]:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,

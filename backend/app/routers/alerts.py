@@ -5,9 +5,10 @@ leído): en cuanto el coach hace la acción que pide, la alerta desaparece sola.
 Cubre el ciclo completo de la asesoría para que sea imposible dejar pasos sin
 atender:
 
-  onboarding  → crear/publicar la planificación
+  onboarding  → crear la planificación (queda ACTIVA al generarse; "activar"
+                solo aplica a borradores antiguos)
   revisión    → generar el feedback → enviarlo por WhatsApp
-  adaptación  → adaptar el plan a la última revisión → publicar el borrador
+  adaptación  → adaptar el plan a la última revisión (queda activo al momento)
   seguimiento → cliente sin registros varios días
   objetivo    → 45 días en la misma etapa: valorar cambio (posponible)
 """

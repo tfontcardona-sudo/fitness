@@ -144,21 +144,33 @@ def compute_period_summary(db: Session, period_id: int) -> dict:
 
     avg_now = _avg_by_ex(sets)
     # Períodos anteriores, del más reciente al más antiguo: el primer dato que
-    # exista por ejercicio es la referencia de comparación.
+    # exista por ejercicio es la referencia de comparación. UNA sola consulta
+    # (join) para todos los períodos: sin N consultas por período.
     prev_best: dict[int, float] = {}
     prev_avg: dict[int, tuple[float, float]] = {}
-    earlier = list(db.scalars(
-        select(Period).where(Period.client_id == period.client_id,
-                             Period.period_index < period.period_index)
+    earlier_ids = list(db.scalars(
+        select(Period.id).where(Period.client_id == period.client_id,
+                                Period.period_index < period.period_index)
         .order_by(Period.period_index.desc())
     ))
-    for prev_p in earlier:
-        prev_log_ids = list(db.scalars(select(DailyLog.id).where(DailyLog.period_id == prev_p.id)))
-        prev_sets = _workout_sets_for_logs(db, prev_log_ids)
-        for p in M.exercise_e1rm_progress(prev_sets):
-            prev_best.setdefault(p.exercise_id, p.best_e1rm_kg)
-        for ex_id, avg in _avg_by_ex(prev_sets).items():
-            prev_avg.setdefault(ex_id, avg)
+    if earlier_ids:
+        rows = db.execute(
+            select(DailyLog.period_id, WorkoutLog.exercise_id,
+                   WorkoutLog.weight_kg, WorkoutLog.reps, WorkoutLog.daily_log_id)
+            .join(WorkoutLog, WorkoutLog.daily_log_id == DailyLog.id)
+            .where(DailyLog.period_id.in_(earlier_ids))
+        ).all()
+        sets_by_period: dict[int, list[dict]] = {}
+        for pid, ex_id, w, reps, dlid in rows:
+            sets_by_period.setdefault(pid, []).append(
+                {"exercise_id": ex_id, "weight_kg": w, "reps": reps, "daily_log_id": dlid}
+            )
+        for prev_id in earlier_ids:  # ya en orden descendente
+            prev_sets = sets_by_period.get(prev_id) or []
+            for p in M.exercise_e1rm_progress(prev_sets):
+                prev_best.setdefault(p.exercise_id, p.best_e1rm_kg)
+            for ex_id, avg in _avg_by_ex(prev_sets).items():
+                prev_avg.setdefault(ex_id, avg)
 
     ex_ids = {p.exercise_id for p in progress_all}
     ex_info = {e.id: e for e in db.scalars(select(Exercise).where(Exercise.id.in_(ex_ids)))} if ex_ids else {}

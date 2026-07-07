@@ -125,6 +125,20 @@ def run_daily_maintenance(db: Session, today: date | None = None) -> dict:
                          kind="reminder_no_logs", client=client)
             summary["reminders"] += 1
 
+        # 1b) Día 14+: recordatorio de CERRAR la revisión quincenal (uno al
+        # día mientras el período siga abierto y vencido).
+        closing_period = _active_period(db, client.id)
+        if (closing_period is not None and closing_period.status == "open"
+                and today >= closing_period.ends_on
+                and not _already_sent_today(db, client.id, "closing_due", today)):
+            subject, html = tpl.closing_due(
+                brand, client.full_name.split()[0],
+                f"{base}/p/{client.portal_token}", closing_period.period_index,
+            )
+            emailer.send(to=client.email, subject=subject, html=html,
+                         kind="closing_due", client=client)
+            summary["reminders"] += 1
+
         # 2) Cambio de estado
         if decision.new_status and decision.new_status != client.status:
             if can_transition(client.status, decision.new_status):
@@ -141,7 +155,7 @@ def run_daily_maintenance(db: Session, today: date | None = None) -> dict:
                     coach_to = settings.smtp_from or settings.smtp_user
                     if coach_to:
                         subject, html = tpl.coach_at_risk(
-                            brand, client.full_name, decision.reason, f"{base}/clients/{client.id}",
+                            brand, client.full_name, decision.reason, f"{base}/clientes/{client.id}",
                         )
                         emailer.send(to=coach_to, subject=subject, html=html,
                                      kind="coach_at_risk", client=client)

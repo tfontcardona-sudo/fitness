@@ -175,6 +175,8 @@ export function rescaleNutrition(nut: any, next: MacroTargets): void {
     }
     for (const ing of o.ingredients ?? []) {
       ing.grams = scaleG(ing.grams, rK);
+      // La medida casera ("1 taza ≈ 80 g") también lleva gramos dentro
+      ing.household = scaleAmountText(ing.household, rK);
     }
   };
   const bank = nut.meal_bank;

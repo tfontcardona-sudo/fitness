@@ -143,8 +143,9 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
       <div className="card p-6">
         <h3 className="text-base font-semibold text-zinc-100">Feedback</h3>
         <p className="mt-1 text-sm text-zinc-400">
-          Aún no hay períodos. El feedback se genera cuando el cliente cierra un período
-          (publica un plan, crea el período y el cliente registra su diario y lo cierra).
+          Aún no hay períodos. El ciclo es automático: al generar la planificación se abre
+          el período de 14 días; el cliente registra su diario, lo cierra, y aquí generas
+          su feedback.
         </p>
       </div>
     );
@@ -266,7 +267,8 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                 <div className="mt-3">
                   <SubTitle icon={TrendingUp} text="Antes → después (15 días)" />
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    <BAStat label="Peso (kg)" before={m.weight?.start_kg} after={m.weight?.end_kg} lowerBetter />
+                    {/* Bajar peso solo es "bueno" si el objetivo lo pide */}
+                    <BAStat label="Peso (kg)" before={m.weight?.start_kg} after={m.weight?.end_kg} lowerBetter={client.goal_type !== "muscle_gain"} />
                     {p.closing_waist_cm != null && <BAStat label="Cintura (cm)" before={null} after={p.closing_waist_cm} lowerBetter />}
                     {p.closing_hip_cm != null && <BAStat label="Cadera (cm)" before={null} after={p.closing_hip_cm} lowerBetter />}
                     {p.closing_arm_cm != null && <BAStat label="Brazo (cm)" before={null} after={p.closing_arm_cm} />}

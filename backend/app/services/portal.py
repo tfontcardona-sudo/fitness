@@ -13,7 +13,8 @@ opciones por slot; estricto: el plato del día).
 from __future__ import annotations
 
 import re
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -22,6 +23,20 @@ from app.models import BrandConfig, Client, DailyLog, Exercise, Period, Plan
 
 DAY_LABELS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 DAY_SLUGS = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
+
+
+def today_local() -> date:
+    """HOY en la zona horaria del negocio (settings.tz, Europe/Madrid).
+
+    El servidor corre en UTC: entre las 00:00 y ~02:00 de Madrid, date.today()
+    aún es "ayer" y descuadra días restantes, cierre quincenal y semana del
+    mesociclo con el calendario real del cliente. Igual que hace push.py."""
+    from app.config import settings
+
+    try:
+        return datetime.now(ZoneInfo(getattr(settings, "tz", None) or "Europe/Madrid")).date()
+    except Exception:
+        return date.today()
 
 
 def active_period(db: Session, client_id: int) -> Period | None:
@@ -235,12 +250,16 @@ def _session_for_today(db: Session, plan: Plan, today: date) -> dict | None:
 
     Mapea el weekday actual al `day` de las sesiones del plan (que vienen como
     "Lunes", "Martes"…). Si hoy no hay sesión, es día de descanso → None.
+    Los pesos sugeridos van AJUSTADOS a la semana del mesociclo (mismo factor
+    que la pestaña Entreno — sin desincronizaciones entre vistas).
     """
     training = plan.training_json or {}
     today_label = DAY_LABELS[today.weekday()].lower()
+    week = current_training_week(db, plan, today)
+    factor = (week or {}).get("load_factor") or 1.0
     for sess in training.get("sessions", []):
         if sess.get("day", "").strip().lower() == today_label:
-            return _resolve_session(db, sess)
+            return _resolve_session(db, sess, factor)
     return None
 
 

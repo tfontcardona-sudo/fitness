@@ -412,6 +412,13 @@ def run() -> None:
                         dbx.close()
                         check(np_.goal_type == "recomp", f"[{goal}] plan nuevo archiva objetivo nuevo")
                         check(old.goal_type == "fat_loss", f"[{goal}] plan antiguo conserva su objetivo")
+                        # Un ÚNICO plan activo: el del mes anterior queda
+                        # sustituido (el portal nunca sirve el plan viejo)
+                        dbx2 = SessionLocal()
+                        n_pub = len(list(dbx2.scalars(
+                            select(Plan).where(Plan.client_id == cid, Plan.status == "published"))))
+                        dbx2.close()
+                        check(n_pub == 1, f"[{goal}] un único plan ACTIVO tras regenerar ({n_pub})")
                         check(cl.goal_started_on == today, f"[{goal}] etapa nueva desde hoy")
                         c["goal"] = "recomp"
                         c["changed"] = True

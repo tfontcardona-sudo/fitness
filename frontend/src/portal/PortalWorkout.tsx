@@ -17,7 +17,12 @@ interface HistSession { date: string; sets: HistSet[] }
  * hoy. Todo se guarda solo en el backend (workout_sets) y el coach lo ve al
  * instante. Las series se conservan aunque cambie de sesión o guarde el diario.
  */
-export function PortalWorkout({ api, brand }: { api: Api; brand: PortalBrand }) {
+export function PortalWorkout({ api, brand, periodStatus = null }: {
+  api: Api; brand: PortalBrand; periodStatus?: string | null;
+}) {
+  // Con la revisión ya ENVIADA (período cerrado) el backend rechaza el
+  // guardado: mejor avisar y no dejar teclear datos que no se guardarían.
+  const readOnly = periodStatus != null && periodStatus !== "open";
   const toast = usePortalToast();
   const today = localToday();
   const [sessions, setSessions] = useState<TodaySession[] | null>(null);
@@ -117,6 +122,7 @@ export function PortalWorkout({ api, brand }: { api: Api; brand: PortalBrand }) 
   }, []);
 
   function setRow(exId: number, idx: number, patch: Partial<SetRow>) {
+    if (readOnly) return;
     setSets((s) => {
       const next = { ...s, [exId]: s[exId].map((r, i) => (i === idx ? { ...r, ...patch } : r)) };
       flush(next);
@@ -124,6 +130,7 @@ export function PortalWorkout({ api, brand }: { api: Api; brand: PortalBrand }) 
     });
   }
   function removeSet(exId: number, idx: number) {
+    if (readOnly) return;
     setSets((s) => {
       const next = { ...s, [exId]: s[exId].filter((_, i) => i !== idx) };
       flush(next);
@@ -142,6 +149,17 @@ export function PortalWorkout({ api, brand }: { api: Api; brand: PortalBrand }) 
         <h2 className="text-lg font-semibold">Registrar entreno</h2>
         <p className="mt-0.5 text-xs opacity-60">Elige la sesión que has hecho y anota tus series. Se guarda solo.</p>
       </div>
+
+      {/* Revisión enviada: el registro queda en pausa hasta el nuevo período */}
+      {readOnly && (
+        <div className="portal-card border-l-4 p-3.5 text-sm" style={{ borderLeftColor: brand.color_primary }}>
+          <p className="font-semibold">Revisión enviada — registro en pausa</p>
+          <p className="mt-1 text-xs opacity-70">
+            Tu coach está preparando tu feedback. En cuanto te lo envíe se abrirá tu
+            siguiente período y podrás volver a registrar aquí.
+          </p>
+        </div>
+      )}
 
       {/* SEMANA del mesociclo: en qué fase estás, qué toca y POR QUÉ. Los pesos
           sugeridos de abajo ya vienen ajustados a esta semana. */}
