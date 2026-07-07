@@ -1,38 +1,68 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Copy, Search, UserPlus, AlertCircle } from "lucide-react";
+import { Copy, Search, UserPlus, ChevronRight, Flag } from "lucide-react";
 import { useDismiss, useModalFocus } from "../lib/useDismiss";
 import { api, ApiError } from "../lib/api";
-import type { ClientOut, ClientStatus, PortalLinkOut } from "../types";
+import type { ClientOut, PortalLinkOut } from "../types";
 import { EmptyState, PageLoader, StatusBadge, useToast } from "../components/ui";
 import { Avatar } from "./DashboardPage";
-import { GOAL_LABEL, relativeDays, STATUS_LABEL } from "../lib/format";
+import { GOAL_LABEL, goalReviewDue, relativeDays } from "../lib/format";
 
-const STATUS_FILTERS: (ClientStatus | "all")[] = [
-  "all", "active", "at_risk", "review_pending", "awaiting_feedback", "onboarding", "inactive",
+/** CARPETAS de la cartera según el punto del ciclo (no solo el estado crudo):
+ *  Activos = planificación publicada · Pendientes = aún sin planificación
+ *  (solo anamnesis / alta) · Revisión pendiente = quincenal subida (con su nº)
+ *  · Objetivo 45 días = toca valorar cambio (sale de la carpeta al mantener). */
+type Category = "all" | "activos" | "pendientes" | "revision" | "objetivo" | "inactivos";
+const CATEGORIES: { id: Category; label: string }[] = [
+  { id: "all", label: "Todos" },
+  { id: "activos", label: "Activos" },
+  { id: "pendientes", label: "Pendientes" },
+  { id: "revision", label: "Revisión pendiente" },
+  { id: "objetivo", label: "Objetivo 45 días" },
+  { id: "inactivos", label: "Inactivos" },
 ];
+
+function inCategory(c: ClientOut, cat: Category): boolean {
+  switch (cat) {
+    case "all": return true;
+    case "activos": return !!c.has_published_plan && c.status !== "inactive" && c.status !== "review_pending";
+    case "pendientes": return !c.has_published_plan && c.status !== "inactive";
+    case "revision": return c.status === "review_pending";
+    case "objetivo": return goalReviewDue(c) != null && c.status !== "inactive";
+    case "inactivos": return c.status === "inactive";
+  }
+}
 
 export default function ClientsPage() {
   const [params, setParams] = useSearchParams();
   const [clients, setClients] = useState<ClientOut[] | null>(null);
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<ClientStatus | "all">("all");
+  const [filter, setFilter] = useState<Category>("all");
   const [showNew, setShowNew] = useState(params.get("nuevo") === "1");
 
   const load = useCallback(() => {
     api
-      .listClients({
-        status: filter === "all" ? undefined : filter,
-        q: q.length >= 2 ? q : undefined,
-      })
+      .listClients({ q: q.length >= 2 ? q : undefined })
       .then(setClients)
       .catch(() => setClients([]));
-  }, [filter, q]);
+  }, [q]);
 
   useEffect(() => {
     const t = setTimeout(load, 200); // debounce de la búsqueda
     return () => clearTimeout(t);
   }, [load]);
+
+  const counts = useMemo(() => {
+    const all = clients ?? [];
+    return Object.fromEntries(
+      CATEGORIES.map((c) => [c.id, all.filter((x) => inCategory(x, c.id)).length]),
+    ) as Record<Category, number>;
+  }, [clients]);
+
+  const visible = useMemo(
+    () => (clients ?? []).filter((c) => inCategory(c, filter)),
+    [clients, filter],
+  );
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-8">
@@ -57,18 +87,21 @@ export default function ClientsPage() {
           />
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {STATUS_FILTERS.map((s) => (
+          {CATEGORIES.map(({ id, label }) => (
             <button
-              key={s}
-              onClick={() => setFilter(s)}
-              className="rounded-lg px-3 py-1.5 text-xs font-medium transition-colors"
+              key={id}
+              onClick={() => setFilter(id)}
+              className="tap rounded-lg px-3 py-1.5 text-xs font-medium transition-colors"
               style={
-                filter === s
+                filter === id
                   ? { background: "var(--brand-accent)", color: "#221407" }
                   : { background: "var(--surface)", color: "var(--text-dim)" }
               }
             >
-              {s === "all" ? "Todos" : STATUS_LABEL[s]}
+              {label}
+              {clients !== null && counts[id] > 0 && (
+                <span className="ml-1 opacity-70">{counts[id]}</span>
+              )}
             </button>
           ))}
         </div>
@@ -77,18 +110,34 @@ export default function ClientsPage() {
       <div className="mt-5">
         {clients === null ? (
           <PageLoader />
-        ) : clients.length === 0 ? (
+        ) : visible.length === 0 ? (
           <EmptyState
-            title="Sin clientes que mostrar"
-            hint="Da de alta tu primer cliente para generarle el enlace de anamnesis."
+            title={filter === "all" ? "Sin clientes que mostrar" : "Nada en esta carpeta"}
+            hint={
+              filter === "all"
+                ? "Da de alta tu primer cliente para generarle el enlace de anamnesis."
+                : "Cuando un cliente esté en este punto del ciclo aparecerá aquí."
+            }
             action={
-              <button className="btn btn-primary" onClick={() => setShowNew(true)}>
-                <UserPlus size={16} /> Nuevo cliente
-              </button>
+              filter === "all" ? (
+                <button className="btn btn-primary" onClick={() => setShowNew(true)}>
+                  <UserPlus size={16} /> Nuevo cliente
+                </button>
+              ) : undefined
             }
           />
         ) : (
-          <ClientsTable clients={clients} />
+          <>
+            {/* Tabla en pantallas medianas/grandes; TARJETAS en el móvil */}
+            <div className="hidden sm:block">
+              <ClientsTable clients={visible} />
+            </div>
+            <div className="space-y-2 sm:hidden">
+              {visible.map((c) => (
+                <ClientCard key={c.id} c={c} />
+              ))}
+            </div>
+          </>
         )}
       </div>
 
@@ -103,6 +152,68 @@ export default function ClientsPage() {
         />
       )}
     </div>
+  );
+}
+
+/** Estado con contexto del ciclo: nº de revisión pendiente y aviso de objetivo. */
+function CycleBadges({ c }: { c: ClientOut }) {
+  const due = goalReviewDue(c);
+  const reviewIdx = c.review_period_index ?? c.pending_review_period;
+  return (
+    <span className="flex flex-wrap items-center gap-1.5">
+      {c.status === "review_pending" && reviewIdx != null ? (
+        <span
+          className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+          style={{ background: "rgba(123,79,201,0.14)", color: "#7B4FC9" }}
+        >
+          <span className="pulse-dot h-1.5 w-1.5 rounded-full" style={{ background: "#7B4FC9" }} />
+          Revisión #{reviewIdx} pendiente
+        </span>
+      ) : (
+        <StatusBadge status={c.status} />
+      )}
+      {due != null && c.status !== "inactive" && (
+        <span
+          className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+          style={{ background: "color-mix(in srgb, var(--brand-accent-2) 14%, transparent)", color: "var(--brand-accent-2)" }}
+          title={`${due} días con el mismo objetivo: valora si toca cambiarlo`}
+        >
+          <Flag size={10} /> Objetivo · {due} d
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** Tarjeta de cliente para MÓVIL: toda la fila en un solo toque cómodo. */
+function ClientCard({ c }: { c: ClientOut }) {
+  return (
+    <Link
+      to={`/clientes/${c.id}?tab=seguimiento`}
+      className="card flex items-center gap-3 p-3.5 active:scale-[0.99]"
+    >
+      <div className="relative shrink-0">
+        <Avatar name={c.full_name} size={38} />
+        {c.pending_review && (
+          <span
+            className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold text-white shadow"
+            style={{ background: "var(--brand-accent)" }}
+          >
+            !
+          </span>
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-zinc-100">{c.full_name}</p>
+        <p className="truncate text-xs text-zinc-500">
+          {c.goal_type ? GOAL_LABEL[c.goal_type] : "Sin objetivo aún"} · {relativeDays(c.updated_at)}
+        </p>
+        <div className="mt-1.5">
+          <CycleBadges c={c} />
+        </div>
+      </div>
+      <ChevronRight size={16} className="shrink-0 text-zinc-600" />
+    </Link>
   );
 }
 
@@ -140,17 +251,7 @@ function ClientsTable({ clients }: { clients: ClientOut[] }) {
                     )}
                   </div>
                   <div>
-                    <p className="flex items-center gap-1.5 font-medium text-zinc-100">
-                      {c.full_name}
-                      {c.pending_review && (
-                        <span
-                          className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
-                          style={{ background: "color-mix(in srgb, var(--brand-accent) 15%, transparent)", color: "var(--brand-accent)" }}
-                        >
-                          <AlertCircle size={10} /> Revisión #{c.pending_review_period}
-                        </span>
-                      )}
-                    </p>
+                    <p className="font-medium text-zinc-100">{c.full_name}</p>
                     <p className="text-xs text-zinc-500">{c.email}</p>
                   </div>
                 </Link>
@@ -159,7 +260,7 @@ function ClientsTable({ clients }: { clients: ClientOut[] }) {
                 {c.goal_type ? GOAL_LABEL[c.goal_type] : <span className="text-zinc-600">—</span>}
               </td>
               <td className="px-4 py-3">
-                <StatusBadge status={c.status} />
+                <CycleBadges c={c} />
               </td>
               <td className="px-4 py-3 text-zinc-500">{relativeDays(c.updated_at)}</td>
             </tr>

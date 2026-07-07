@@ -120,8 +120,8 @@ export default function ClientProfilePage() {
       )}
 
       <div className="mt-4 grid gap-6 lg:grid-cols-[300px_1fr]">
-        {/* SIDEBAR del cliente */}
-        <aside className="space-y-4">
+        {/* SIDEBAR del cliente (min-w-0: que nada fuerce el ancho en móvil) */}
+        <aside className="min-w-0 space-y-4">
           <div className="card p-5">
             <div className="flex items-center gap-3">
               <Avatar name={client.full_name} size={48} />
@@ -155,8 +155,8 @@ export default function ClientProfilePage() {
         </aside>
 
         {/* CONTENIDO con tabs */}
-        <div>
-          <div className="mb-5 flex gap-1 border-b" style={{ borderColor: "var(--line)" }}>
+        <div className="min-w-0">
+          <div className="profile-tabs mb-5 flex gap-1 border-b" style={{ borderColor: "var(--line)" }}>
             {(["resumen", "anamnesis", "planificacion", "seguimiento", "feedback", "historial"] as Tab[]).map((t) => (
               <button
                 key={t}

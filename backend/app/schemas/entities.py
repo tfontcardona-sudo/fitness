@@ -173,6 +173,10 @@ class ClientOut(BaseModel):
     # No viene de la BD; lo rellena el listado. Se apaga al abrir Seguimiento.
     pending_review: bool = False
     pending_review_period: int | None = None
+    # Rellenados por el listado para las CARPETAS de la cartera:
+    # ¿tiene planificación publicada? y nº de la última revisión recibida.
+    has_published_plan: bool = False
+    review_period_index: int | None = None
 
 
 # ------------------------------------------------------------ exercises ----

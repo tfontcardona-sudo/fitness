@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -16,14 +16,66 @@ const NAV = [
   { to: "/clientes", label: "Clientes", icon: Users, end: false },
 ];
 
+/** ¿Pantalla de móvil? (reactiva al girar el dispositivo) */
+function useIsMobile(): boolean {
+  const [mobile, setMobile] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const on = () => setMobile(mq.matches);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  return mobile;
+}
+
 export default function AppShell() {
   const { user, logout } = useAuth();
   const { brand } = useBrand();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   // Barra lateral inteligente: en móvil arranca contraída (pantalla estrecha).
   const [collapsed, setCollapsed] = useState(
     () => typeof window !== "undefined" && window.innerWidth < 768,
   );
+
+  // ---- MÓVIL: sin sidebar — navegación inferior tipo app (como el portal) ----
+  if (isMobile) {
+    return (
+      <div className="flex h-screen flex-col overflow-hidden">
+        <main className="coach-mobile relative flex-1 overflow-y-auto pb-24" style={{ background: "var(--bg)" }}>
+          <AlertsBell />
+          <Outlet />
+        </main>
+        <nav
+          className="coach-bottom-nav fixed inset-x-0 bottom-0 z-40 flex justify-around border-t px-2 py-1.5"
+          style={{ background: "var(--surface)", borderColor: "var(--line)" }}
+        >
+          {NAV.map(({ to, label, icon: Icon, end }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              className="tap flex flex-1 flex-col items-center gap-0.5 rounded-xl py-1.5 text-[11px] font-medium"
+              style={({ isActive }) => ({ color: isActive ? "var(--brand-accent)" : "var(--text-faint)" })}
+            >
+              <Icon size={20} />
+              {label}
+            </NavLink>
+          ))}
+          <button
+            onClick={() => { logout(); navigate("/"); }}
+            className="tap flex flex-1 flex-col items-center gap-0.5 rounded-xl py-1.5 text-[11px] font-medium"
+            style={{ color: "var(--text-faint)" }}
+          >
+            <LogOut size={20} />
+            Salir
+          </button>
+        </nav>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen overflow-hidden">

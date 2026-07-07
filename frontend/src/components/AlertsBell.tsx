@@ -46,7 +46,7 @@ export function AlertsBell() {
   }
 
   return (
-    <div className="fixed right-5 top-4 z-40" ref={panelRef}>
+    <div className="alerts-bell fixed right-5 top-4 z-40" ref={panelRef}>
       <button
         onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
         aria-label={count ? `${count} alertas pendientes` : "Sin alertas"}
@@ -67,7 +67,7 @@ export function AlertsBell() {
 
       {open && (
         <div
-          className="card absolute right-0 mt-2 w-[380px] max-w-[calc(100vw-40px)] overflow-hidden"
+          className="card absolute right-0 mt-2 w-[380px] max-w-[calc(100vw-40px)] overflow-hidden max-sm:bottom-14 max-sm:mt-0"
           role="dialog"
           aria-label="Alertas del coach"
           onClick={(e) => e.stopPropagation()}

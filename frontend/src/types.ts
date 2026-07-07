@@ -288,6 +288,8 @@ export interface ClientOut {
   updated_at: string;
   pending_review?: boolean;
   pending_review_period?: number | null;
+  has_published_plan?: boolean;
+  review_period_index?: number | null;
 }
 
 export interface ExerciseOut {
