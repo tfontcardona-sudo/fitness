@@ -65,10 +65,10 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
 
     # --- Arranque: sin planificación aún -----------------------------------
     if published is None:
-        if latest is not None:  # hay borrador esperando
+        if latest is not None:  # borrador ANTIGUO sin activar (legado)
             out.append(_alert(client, "publish_plan", "alta",
-                              f"Borrador v{latest.version} listo: revísalo y publícalo.",
-                              "planificacion", "Publicar planificación"))
+                              f"Borrador v{latest.version} sin activar: revísalo y actívalo.",
+                              "planificacion", "Activar planificación"))
         else:
             out.append(_alert(client, "create_plan", "media",
                               "Sin planificación: completa la anamnesis y genera el plan.",
@@ -104,13 +104,13 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
                               "planificacion", "Adaptar planificación"))
         elif latest is not None and latest.status == "draft":
             out.append(_alert(client, "publish_plan", "alta",
-                              f"Borrador adaptado a la revisión #{last_period.period_index} sin publicar.",
-                              "planificacion", "Publicar planificación"))
+                              f"Borrador adaptado a la revisión #{last_period.period_index} sin activar.",
+                              "planificacion", "Activar planificación"))
     elif latest is not None and latest.status == "draft":
-        # Borrador nuevo (p. ej. tras cambio de objetivo) pendiente de publicar
+        # Borrador antiguo suelto (legado): los planes nuevos se activan solos
         out.append(_alert(client, "publish_plan", "media",
-                          f"Borrador v{latest.version} sin publicar.",
-                          "planificacion", "Publicar planificación"))
+                          f"Borrador v{latest.version} sin activar.",
+                          "planificacion", "Activar planificación"))
 
     # --- Cliente sin registros varios días (período abierto) ----------------
     if last_period is not None and last_period.status == "open":

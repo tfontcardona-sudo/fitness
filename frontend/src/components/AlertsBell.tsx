@@ -25,10 +25,12 @@ export function AlertsBell() {
   }, []);
 
   // Al montar, al navegar (una acción resuelta debe apagar su alerta al
-  // instante) y de fondo cada 2 minutos.
+  // instante) y de fondo cada 30 s — la web siempre al día.
   useEffect(load, [load, location.pathname, location.search]);
   useEffect(() => {
-    const t = window.setInterval(load, 120000);
+    const t = window.setInterval(() => {
+      if (!document.hidden) load();
+    }, 30000);
     return () => window.clearInterval(t);
   }, [load]);
 

@@ -171,7 +171,8 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
     try {
       const p = await api.generatePlan(client.id, plan?.month_index ?? 1);
       setPlan(normalize(p));
-      toast.push("Planificación generada");
+      setPeriods(await api.listPeriods(client.id).catch(() => periods));
+      toast.push("Planificación generada y ACTIVA — revísala y envíasela por WhatsApp");
     } catch (e: any) {
       const detail = e?.detail ?? e?.data?.detail;
       if (detail?.missing) setMissing(detail.missing);
@@ -190,7 +191,8 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
       setAllPlans(plans);
       const full = plans.find((pl) => pl.id === r.id) ?? plans[0]; // listPlans → más reciente primero
       if (full) setPlan(normalize(full));
-      toast.push(`Plan adaptado a la revisión (borrador v${r.version}). Revísalo y publícalo.`);
+      setPeriods(await api.listPeriods(client.id).catch(() => periods));
+      toast.push(`Plan adaptado y ACTIVO (v${r.version}): portal y PDF ya muestran la versión nueva.`);
     } catch (e: any) {
       const detail = e?.detail ?? e?.data?.detail;
       toast.push([detail?.message ?? e?.message ?? "No se pudo adaptar el plan", detail?.error].filter(Boolean).join(" — "), "error");
@@ -199,20 +201,18 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
     }
   }
 
-  async function publish() {
+  /** Solo para BORRADORES ANTIGUOS (de antes de la activación automática):
+   *  los planes nuevos quedan activos al generarse o adaptarse. */
+  async function activateLegacy() {
     if (!plan || publishing) return;
     setPublishing(true);
     try {
       await api.publishPlan(plan.id);
       setPlan({ ...plan, status: "published" });
       setPeriods(await api.listPeriods(client.id).catch(() => periods));
-      toast.push(
-        plan.nutrition?.applied_adjustments
-          ? "Plan publicado: el portal ya muestra la rutina nueva — envíale el PDF por WhatsApp"
-          : "Plan publicado: el seguimiento del cliente queda activo — envíale el PDF por WhatsApp",
-      );
+      toast.push("Planificación activada: el portal y el PDF ya muestran esta versión");
     } catch {
-      toast.push("No se pudo publicar", "error");
+      toast.push("No se pudo activar", "error");
     } finally {
       setPublishing(false);
     }
@@ -346,11 +346,12 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
                     : { background: "rgba(38,33,26,0.08)", color: "#7A7060" }
                 }
               >
-                {plan.status === "published" ? "Publicado" : "Borrador"} · v{plan.version}
+                {plan.status === "published" ? "Activa" : "Borrador antiguo"} · v{plan.version}
               </span>
             </div>
             <p className="mt-0.5 text-xs text-zinc-500">
-              Revisa el plan. Cuando esté listo, publícalo (lo verá el cliente) y descárgalo.
+              La planificación queda ACTIVA al generarla o adaptarla: revísala, edítala si
+              quieres y envíasela por WhatsApp.
             </p>
           </div>
           <div className="flex gap-2">
@@ -371,8 +372,8 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
               </button>
             )}
             {plan.status !== "published" && (
-              <button onClick={publish} disabled={publishing} className="btn btn-primary">
-                <Send size={15} /> {publishing ? "Publicando…" : "Publicar"}
+              <button onClick={activateLegacy} disabled={publishing} className="btn btn-primary">
+                <Send size={15} /> {publishing ? "Activando…" : "Activar"}
               </button>
             )}
           </div>
@@ -441,8 +442,9 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
           </div>
           <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t pt-3" style={{ borderColor: "var(--line)" }}>
             <p className="text-xs text-zinc-500">
-              Al adaptar se crea un <b className="text-zinc-300">borrador nuevo</b> con los ajustes numéricos ya
-              aplicados (macros y cargas). Después podrás verlo, editarlo y publicarlo.
+              Al adaptar, la versión nueva queda <b className="text-zinc-300">ACTIVA al momento</b> (portal y
+              PDF actualizados), con calorías, macros, comidas y gramos reescalados en bloque.
+              Puedes editarla después y enviarla por WhatsApp.
             </p>
             <button onClick={adapt} disabled={generating} className="btn btn-primary">
               {generating ? "Adaptando…" : `Adaptar a la revisión #${review.period_index}`}
@@ -528,9 +530,8 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
 
           {plan.status !== "published" && adjDraft === null && (
             <p className="mt-3 border-t pt-3 text-xs text-zinc-500" style={{ borderColor: "var(--line)" }}>
-              Revisa cómo ha quedado, <b className="text-zinc-300">edita</b> lo que quieras y{" "}
-              <b className="text-zinc-300">publica</b>: el cliente verá la rutina nueva en su portal
-              y el PDF quedará actualizado para enviárselo.
+              Este borrador es de una versión antigua: revísalo y pulsa <b className="text-zinc-300">Activar</b>
+              para que el portal y el PDF lo muestren.
             </p>
           )}
         </details>
@@ -834,7 +835,7 @@ function GoalStageCard({ client, currentMonth, onClientChanged, onRegenerated }:
       onClientChanged?.();
       await api.generatePlan(client.id, currentMonth + 1);
       await onRegenerated();
-      toast.push("Planificación nueva generada (borrador): revísala y publícala.");
+      toast.push("Planificación nueva generada y ACTIVA para el objetivo nuevo — envíasela por WhatsApp.");
       setConfirming(false);
       setNewGoal("");
       setAnalysis(null);

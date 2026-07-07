@@ -830,6 +830,9 @@ def generate_client_plan(
         deep_analysis=deep_analysis,
         notes=adj_notes,
         tracking_history=history_block,
+        # "Motivo y objetivos" + estilo de vida en palabras del cliente: la IA
+        # debe entender qué pide exactamente y planificar para ese fin.
+        goal_in_own_words=client.lifestyle_notes,
     )
     try:
         generated = generate_monthly_plan(ctx, AIClient())
@@ -864,6 +867,11 @@ def generate_client_plan(
     log_event(db, "plan", plan.id, "plan_generated_ai", {
         "client_id": client_id, "version": version, "flags": flags,
     })
+    # La planificación queda ACTIVA al generarse (no hay botón "Publicar":
+    # el envío al cliente va por WhatsApp y el portal se actualiza solo).
+    from app.services.plan_activation import activate_plan
+
+    activate_plan(db, plan)
     db.commit()
     db.refresh(plan)
     return {
@@ -877,8 +885,8 @@ def generate_client_plan(
 def adapt_client_plan(client_id: int, db: Session = Depends(get_db)) -> dict:
     """Adapta el plan a la ÚLTIMA REVISIÓN QUINCENAL aplicando de forma
     determinista los ajustes ya calculados por la IA en el feedback (macros de
-    dieta + cargas de entreno). NO llama a la IA → funciona siempre. Crea una
-    nueva versión en borrador para que el coach la revise y publique."""
+    dieta + cargas de entreno). NO llama a la IA → funciona siempre. La versión
+    adaptada queda ACTIVA al momento (no hay paso de publicar)."""
     from app.services.adapt_plan import AdaptError, adapt_plan_from_feedback
 
     _client_or_404_docs(db, client_id)
