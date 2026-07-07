@@ -7,7 +7,7 @@
 
 // ===================================================== literales comunes ====
 export type Sex = "male" | "female";
-export type GoalType = "fat_loss" | "muscle_gain" | "recomp";
+export type GoalType = "fat_loss" | "muscle_gain" | "recomp" | "maintenance" | "injury_recovery";
 export type Level = "beginner" | "intermediate" | "advanced";
 export type TrainingPlace = "gym" | "home" | "outdoor";
 export type DietMode = "flexible_7" | "strict";

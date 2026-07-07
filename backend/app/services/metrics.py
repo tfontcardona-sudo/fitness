@@ -26,10 +26,18 @@ ACTIVITY_FACTORS = {
 }
 
 # Ajuste calórico por objetivo (fracción del TDEE). El signo lo aplica el caller.
+# Ajuste calórico por objetivo (rango basado en evidencia; se aplica el punto
+# medio). Referencias: déficit moderado 15-25% preserva masa magra y adherencia
+# (Helms 2014); superávit 5-12% minimiza ganancia de grasa (Iraki 2019);
+# recomposición ≈ mantenimiento con proteína alta (Barakat 2020); en lesión se
+# evita el déficit agresivo para no frenar la reparación de tejidos y se
+# trabaja entre mantenimiento y −5% (Tipton 2015).
 GOAL_ADJUSTMENT = {
-    "fat_loss": (0.15, 0.25),   # déficit 15–25%
-    "muscle_gain": (0.05, 0.12),  # superávit 5–12%
-    "recomp": (0.0, 0.05),       # mantenimiento ±5%
+    "fat_loss": (0.15, 0.25),      # déficit 15–25%
+    "muscle_gain": (0.05, 0.12),   # superávit 5–12%
+    "recomp": (0.0, 0.05),         # mantenimiento ±5%
+    "maintenance": (0.0, 0.0),     # mantenimiento estricto
+    "injury_recovery": (0.0, 0.05),  # mantenimiento a −5%
 }
 
 
@@ -106,7 +114,12 @@ def energy_targets(
     elif goal_type == "muscle_gain":
         target = t * (1 + mid)
         adj = mid
-    else:  # recomp
+    elif goal_type == "injury_recovery":
+        # Lesión: mantenimiento a déficit muy ligero — nunca superávit ni
+        # déficit fuerte (la reparación de tejidos necesita energía y proteína).
+        target = t * (1 - mid)
+        adj = -mid
+    else:  # recomp / maintenance → mantenimiento
         target = t
         adj = 0.0
     return EnergyTargets(
@@ -116,14 +129,23 @@ def energy_targets(
     )
 
 
+# Proteína (g/kg/día) por objetivo. Referencias: 1,6-2,2 maximiza síntesis
+# proteica (Morton 2018); en déficit conviene el rango alto 2,0-2,4 para
+# preservar masa (Helms 2014); recomposición 2,2-2,6 — la proteína alta es el
+# motor del proceso (Barakat 2020); en lesión 2,0-2,5 contra la atrofia por
+# desuso (Tipton 2015).
+PROTEIN_RANGE = {
+    "fat_loss": (2.0, 2.4),
+    "muscle_gain": (1.6, 2.2),
+    "recomp": (2.2, 2.6),
+    "maintenance": (1.6, 2.2),
+    "injury_recovery": (2.0, 2.5),
+}
+
+
 def protein_target_g(weight_kg: float, goal_type: str) -> tuple[float, float]:
     """Rango de proteína recomendado (g/día) según objetivo (E.2)."""
-    if goal_type == "fat_loss":
-        lo, hi = 2.0, 2.4
-    elif goal_type == "muscle_gain":
-        lo, hi = 1.6, 2.2
-    else:
-        lo, hi = 1.8, 2.2
+    lo, hi = PROTEIN_RANGE.get(goal_type, (1.8, 2.2))
     return round(weight_kg * lo, 1), round(weight_kg * hi, 1)
 
 

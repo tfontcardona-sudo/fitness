@@ -124,7 +124,7 @@ export function ClientAnamnesisTab({ client, onSaved }: { client: ClientOut; onS
 
       <Section title="Objetivo y nivel">
         <Select label="Objetivo" value={(current("goal_type") as string) ?? ""} onChange={(v) => set("goal_type", v as GoalType)}
-          options={[["", "—"], ["fat_loss", "Pérdida de grasa"], ["muscle_gain", "Ganancia muscular"], ["recomp", "Recomposición"]]} />
+          options={[["", "—"], ["fat_loss", "Pérdida de grasa"], ["muscle_gain", "Ganancia muscular"], ["recomp", "Recomposición"], ["maintenance", "Mantenimiento"], ["injury_recovery", "Recuperación de lesión"]]} />
         <Select label="Nivel" value={(current("level") as string) ?? ""} onChange={(v) => set("level", v as Level)}
           options={[["", "—"], ["beginner", "Principiante"], ["intermediate", "Intermedio"], ["advanced", "Avanzado"]]} />
       </Section>
@@ -144,10 +144,17 @@ export function ClientAnamnesisTab({ client, onSaved }: { client: ClientOut; onS
       <Section title="Dieta">
         <Select label="Modo de dieta" value={(current("diet_mode") as string) ?? ""} onChange={(v) => set("diet_mode", v as any)}
           options={[["", "—"], ["flexible_7", "Flexible (equivalencias)"], ["strict", "Menú cerrado"]]} />
-        <Num label="Comidas al día" value={current("meals_per_day") as number} onChange={(v) => set("meals_per_day", v as any)} />
         <CSV label="Alimentos que le gustan" value={current("food_likes") as string[]} onChange={(v) => set("food_likes", v as any)} />
         <CSV label="Alimentos que evita" value={current("food_dislikes") as string[]} onChange={(v) => set("food_dislikes", v as any)} />
         <CSV label="Alergias" value={current("food_allergies") as string[]} onChange={(v) => set("food_allergies", v as any)} />
+        <MealsPlanner
+          mealsPerDay={current("meals_per_day") as number | null}
+          schedule={current("meal_schedule") as { slot: number; name: string; time: string }[] | null}
+          onChange={(meals, schedule) => {
+            set("meals_per_day", meals as any);
+            set("meal_schedule", schedule as any);
+          }}
+        />
       </Section>
 
       <Section title="Historia clínica y salud">
@@ -173,6 +180,78 @@ export function ClientAnamnesisTab({ client, onSaved }: { client: ClientOut; onS
           {busy ? <Spinner /> : <Save size={15} />} Guardar cambios
         </button>
         {dirty && <span className="text-xs text-zinc-500">Tienes cambios sin guardar</span>}
+      </div>
+    </div>
+  );
+}
+
+/** Comidas del día: el cliente elige CUÁLES quiere (desayuno, media mañana,
+ *  pre-cama…) — el nº de comidas se deriva solo — o lo DELEGA en el equipo
+ *  ("lo decidimos nosotros" → la IA reparte el óptimo para su objetivo). */
+const MEAL_PRESETS: { name: string; time: string }[] = [
+  { name: "Desayuno", time: "08:00" },
+  { name: "Media mañana", time: "11:00" },
+  { name: "Comida", time: "14:00" },
+  { name: "Merienda", time: "18:00" },
+  { name: "Cena", time: "21:00" },
+  { name: "Pre-cama", time: "23:00" },
+];
+
+function MealsPlanner({ mealsPerDay, schedule, onChange }: {
+  mealsPerDay: number | null;
+  schedule: { slot: number; name: string; time: string }[] | null;
+  onChange: (meals: number | null, schedule: { slot: number; name: string; time: string }[] | null) => void;
+}) {
+  const delegated = mealsPerDay == null && !(schedule?.length);
+  const chosen = new Set((schedule ?? []).map((m) => m.name.toLowerCase()));
+
+  function toggle(preset: { name: string; time: string }) {
+    const key = preset.name.toLowerCase();
+    // Reconstruye el horario en el orden natural del día
+    const names = new Set(chosen);
+    if (names.has(key)) names.delete(key);
+    else names.add(key);
+    const next = MEAL_PRESETS.filter((p) => names.has(p.name.toLowerCase()))
+      .map((p, i) => ({ slot: i + 1, name: p.name, time: p.time }));
+    onChange(next.length ? next.length : null, next.length ? next : null);
+  }
+
+  return (
+    <div className="col-span-2">
+      <span className="mb-1 block text-xs text-zinc-500">Comidas del día</span>
+      <div className="rounded-xl border p-3" style={{ borderColor: "var(--line-strong)" }}>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => onChange(null, null)}
+            className="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
+            style={delegated
+              ? { borderColor: "var(--brand-accent-2)", background: "color-mix(in srgb, var(--brand-accent-2) 12%, transparent)", color: "var(--brand-accent-2)" }
+              : { borderColor: "var(--line-strong)", color: "var(--text-dim)" }}
+          >
+            Lo decidimos nosotros
+          </button>
+          <span className="self-center text-xs text-zinc-600">o elige cuáles:</span>
+          {MEAL_PRESETS.map((p) => {
+            const active = chosen.has(p.name.toLowerCase());
+            return (
+              <button
+                key={p.name}
+                onClick={() => toggle(p)}
+                className="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
+                style={active
+                  ? { borderColor: "var(--brand-accent)", background: "color-mix(in srgb, var(--brand-accent) 14%, transparent)", color: "var(--brand-accent)" }
+                  : { borderColor: "var(--line-strong)", color: "var(--text-dim)" }}
+              >
+                {p.name}
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-2 text-xs text-zinc-500">
+          {delegated
+            ? "El plan repartirá las comidas de forma óptima para su objetivo (3-5 al día)."
+            : `${chosen.size} comida${chosen.size === 1 ? "" : "s"} al día: ${(schedule ?? []).map((m) => m.name).join(", ")}.`}
+        </p>
       </div>
     </div>
   );

@@ -334,6 +334,34 @@ En `C:\Users\Usuari\.claude\projects\C--Users-Usuari-Desktop-fitness-system\memo
   saliendo de `brand_config` en BD (los fijó la migración 0006); si algún día hay que
   cambiarlos: UPDATE a `brand_config` o restaurar la página desde git.
 
+**Iteración 8 — Nutrición por objetivo (evidencia) + recálculo encadenado + comidas en anamnesis:**
+- **Objetivos ampliados** (backend Literal + tipos front + selector anamnesis +
+  avisos quincenales): fat_loss, muscle_gain, recomp, **maintenance**,
+  **injury_recovery**. Reglas por evidencia en `services/metrics.py`
+  (GOAL_ADJUSTMENT + PROTEIN_RANGE, con referencias: Helms 2014, Morton 2018,
+  Iraki 2019, Barakat 2020, Tipton 2015) y su ESPEJO front en
+  `lib/nutritionTargets.ts` (GOAL_RULES) — cambiar ambos a la vez.
+- **Editor del plan — recálculo ENCADENADO** (`ClientPlanEditor` + panel pasa
+  client y refWeightKg = último peso de cierre ?? inicial):
+  · cambiar CALORÍAS → macros óptimos del objetivo (proteína/grasa por kg,
+    carbos el resto, suelo de grasa 0,6 g/kg);
+  · cambiar un MACRO → kcal por 4/4/9;
+  · en AMBOS casos `rescaleNutrition` reescala los objetivos por comida (cada
+    eje por su ratio) y el banco de comidas (macros por opción + gramos de
+    ingredientes a múltiplos de 5).
+  · Tarjeta azul "Recomendado para <objetivo>" (peso real + TDEE del plan) con
+    botón "Aplicar recomendación".
+- **Anamnesis → "Comidas del día"** (`MealsPlanner`): chips Desayuno/Media
+  mañana/Comida/Merienda/Cena/Pre-cama — el nº de comidas se DERIVA de las
+  elegidas (meal_schedule con horas por defecto) — o botón azul "Lo decidimos
+  nosotros" (meals_per_day y meal_schedule → null). Backend: comidas ya NO son
+  obligatorias para generar (fuera de _REQUIRED_FIELDS y del check de horario);
+  el generador y el prompt dicen a la IA que elija el reparto óptimo (3-5) si
+  el cliente lo delega. AnamnesisSubmit relajado igual.
+- QA nuevos: `editor-test.mjs` (8 asserts: recomendación con peso real,
+  kcal→macros, macro→kcal, aplicar recomendación, PATCH con comidas y gramos
+  reescalados) y `anamnesis-test.mjs` (5 asserts del planificador de comidas).
+
 **Iteración 7 — Auditoría profunda del workflow + azul de marca:**
 - BUGS BACKEND arreglados (auditoría a fondo del ciclo):
   · `periods.ensure_open_period`: ya NO abre período nuevo con la revisión

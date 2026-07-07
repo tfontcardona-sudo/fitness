@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 # Literales compartidos
 Sex = Literal["male", "female"]
-GoalType = Literal["fat_loss", "muscle_gain", "recomp"]
+GoalType = Literal["fat_loss", "muscle_gain", "recomp", "maintenance", "injury_recovery"]
 Level = Literal["beginner", "intermediate", "advanced"]
 TrainingPlace = Literal["gym", "home", "outdoor"]
 DietMode = Literal["flexible_7", "strict"]
@@ -74,9 +74,10 @@ class AnamnesisSubmit(BaseModel):
     session_max_min: int = Field(ge=30, le=180)
     training_place: TrainingPlace
     equipment: list[str] = Field(default_factory=list)
-    # Nutrición
-    meals_per_day: int = Field(ge=2, le=6)
-    meal_schedule: list[MealScheduleItem] = Field(min_length=2)
+    # Nutrición — número/horario de comidas OPCIONALES: si el cliente lo
+    # delega ("lo decidís vosotros"), la IA elige el reparto óptimo.
+    meals_per_day: int | None = Field(default=None, ge=2, le=6)
+    meal_schedule: list[MealScheduleItem] = Field(default_factory=list)
     food_allergies: list[str] = Field(default_factory=list)
     food_dislikes: list[str] = Field(default_factory=list)
     food_likes: list[str] = Field(default_factory=list)

@@ -1,7 +1,10 @@
 import { useState } from "react";
-import { Save, X, Plus, Trash2, Utensils, Dumbbell } from "lucide-react";
+import { Save, X, Plus, Trash2, Utensils, Dumbbell, Target } from "lucide-react";
 import { api } from "../lib/api";
+import { GOAL_RULES, goalTargets, kcalOf, macrosForKcal, rescaleNutrition } from "../lib/nutritionTargets";
+import { GOAL_LABEL } from "../lib/format";
 import { Spinner, useToast } from "./ui";
+import type { ClientOut } from "../types";
 
 interface PlanData {
   id: number;
@@ -22,12 +25,14 @@ interface PlanData {
  * edición del coach bajo su criterio).
  */
 export function ClientPlanEditor({
-  plan, exMap, onSaved, onCancel,
+  plan, exMap, onSaved, onCancel, client, refWeightKg,
 }: {
   plan: PlanData;
   exMap: Record<number, string>;
   onSaved: (p: PlanData) => void;
   onCancel: () => void;
+  client?: ClientOut;
+  refWeightKg?: number | null;
 }) {
   const toast = useToast();
   const [draft, setDraft] = useState(() => ({
@@ -40,6 +45,49 @@ export function ClientPlanEditor({
   function mutate(fn: (d: typeof draft) => void) {
     setDraft((d) => { const n = structuredClone(d); fn(n); return n; });
   }
+
+  // ---- Nutrición ENCADENADA: tocar una pieza recalcula todo lo demás ------
+  // · Cambias CALORÍAS → macros óptimos para el objetivo (proteína y grasa por
+  //   kg según evidencia, carbohidratos el resto) + comidas y gramos del banco.
+  // · Cambias un MACRO → calorías reales (4/4/9) + comidas y gramos del banco.
+  const goal = client?.goal_type ?? null;
+  const weight = refWeightKg ?? client?.start_weight_kg ?? null;
+
+  function setKcal(v: number | null) {
+    mutate((d) => {
+      if (v == null || v <= 0) { d.nutrition.target_kcal = v; return; }
+      if (goal && weight) {
+        rescaleNutrition(d.nutrition, macrosForKcal(goal, weight, v));
+      } else {
+        // Sin objetivo/peso de referencia: se mantiene el mix actual de macros
+        const m = d.nutrition.macros ?? {};
+        const p = m.protein_g ?? 0, c = m.carbs_g ?? 0, f = m.fat_g ?? 0;
+        const old = kcalOf(p, c, f) || d.nutrition.target_kcal || v;
+        const r = v / old;
+        rescaleNutrition(d.nutrition, {
+          kcal: v, protein_g: Math.round(p * r), carbs_g: Math.round(c * r), fat_g: Math.round(f * r),
+        });
+      }
+    });
+  }
+
+  function setMacro(key: "protein_g" | "carbs_g" | "fat_g", v: number | null) {
+    mutate((d) => {
+      const m = d.nutrition.macros ?? {};
+      const next = {
+        protein_g: m.protein_g ?? 0, carbs_g: m.carbs_g ?? 0, fat_g: m.fat_g ?? 0,
+        [key]: v ?? 0,
+      } as { protein_g: number; carbs_g: number; fat_g: number };
+      rescaleNutrition(d.nutrition, {
+        kcal: kcalOf(next.protein_g, next.carbs_g, next.fat_g), ...next,
+      });
+    });
+  }
+
+  // Recomendación por objetivo (evidencia): TDEE del plan + peso de referencia
+  const rec = goal && weight && draft.nutrition.tdee_kcal
+    ? goalTargets(goal, weight, draft.nutrition.tdee_kcal)
+    : null;
 
   async function save() {
     if (saving) return;
@@ -87,12 +135,46 @@ export function ClientPlanEditor({
       {/* Nutrición */}
       <div className="card p-5">
         <Title icon={Utensils} text="Nutrición" />
+
+        {/* Recomendación por OBJETIVO (evidencia actual) con un clic */}
+        {rec && goal && (
+          <div
+            className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3"
+            style={{
+              background: "color-mix(in srgb, var(--brand-accent-2) 6%, transparent)",
+              borderColor: "color-mix(in srgb, var(--brand-accent-2) 25%, transparent)",
+            }}
+          >
+            <div className="flex items-start gap-2 text-xs text-zinc-400">
+              <Target size={14} className="mt-0.5 shrink-0" style={{ color: "var(--brand-accent-2)" }} />
+              <span>
+                <b className="text-zinc-200">Recomendado para {GOAL_LABEL[goal]}</b> ({weight} kg ·
+                TDEE {Math.round(draft.nutrition.tdee_kcal)} kcal):{" "}
+                <b className="text-zinc-200">{rec.kcal} kcal · P {rec.protein_g} · C {rec.carbs_g} · G {rec.fat_g}</b>
+                <span className="block text-zinc-500">{GOAL_RULES[goal].summary}</span>
+              </span>
+            </div>
+            <button
+              onClick={() => mutate((d) => rescaleNutrition(d.nutrition, rec))}
+              className="btn btn-ghost"
+            >
+              Aplicar recomendación
+            </button>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Num label="Calorías objetivo" value={nut.target_kcal} onChange={(v) => mutate((d) => (d.nutrition.target_kcal = v))} />
-          <Num label="Proteína (g)" value={nut.macros.protein_g} onChange={(v) => mutate((d) => (d.nutrition.macros.protein_g = v))} />
-          <Num label="Carbohidratos (g)" value={nut.macros.carbs_g} onChange={(v) => mutate((d) => (d.nutrition.macros.carbs_g = v))} />
-          <Num label="Grasas (g)" value={nut.macros.fat_g} onChange={(v) => mutate((d) => (d.nutrition.macros.fat_g = v))} />
+          <Num label="Calorías objetivo" value={nut.target_kcal} onChange={setKcal} />
+          <Num label="Proteína (g)" value={nut.macros.protein_g} onChange={(v) => setMacro("protein_g", v)} />
+          <Num label="Carbohidratos (g)" value={nut.macros.carbs_g} onChange={(v) => setMacro("carbs_g", v)} />
+          <Num label="Grasas (g)" value={nut.macros.fat_g} onChange={(v) => setMacro("fat_g", v)} />
         </div>
+        <p className="mt-2 text-xs text-zinc-500">
+          Todo se recalcula solo: al cambiar las <b className="text-zinc-400">calorías</b> se ajustan los
+          macros al objetivo del cliente; al cambiar un <b className="text-zinc-400">macro</b> se ajustan
+          las calorías (4/4/9). Los objetivos por comida y los gramos del banco de comidas se
+          reescalan automáticamente en ambos casos.
+        </p>
         <Area label="Justificación (rationale)" value={nut.rationale ?? ""} onChange={(v) => mutate((d) => (d.nutrition.rationale = v))} />
         <Area label="Reglas de flexibilidad (una por línea)" value={(nut.flexibility_rules ?? []).join("\n")}
           onChange={(v) => mutate((d) => (d.nutrition.flexibility_rules = v.split("\n").map((s) => s.trim()).filter(Boolean)))} />
