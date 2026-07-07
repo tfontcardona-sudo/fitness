@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Save, X, Plus, Trash2, Utensils, Dumbbell, Target } from "lucide-react";
 import { api } from "../lib/api";
-import { GOAL_RULES, goalTargets, kcalOf, macrosForKcal, rescaleNutrition } from "../lib/nutritionTargets";
+import { GOAL_RULES, goalTargets, kcalOf, macrosForKcal, rescaledFrom, type MacroTargets } from "../lib/nutritionTargets";
 import { GOAL_LABEL } from "../lib/format";
 import { Spinner, useToast } from "./ui";
 import type { ClientOut } from "../types";
@@ -50,21 +50,33 @@ export function ClientPlanEditor({
   // · Cambias CALORÍAS → macros óptimos para el objetivo (proteína y grasa por
   //   kg según evidencia, carbohidratos el resto) + comidas y gramos del banco.
   // · Cambias un MACRO → calorías reales (4/4/9) + comidas y gramos del banco.
+  // Las comidas y el banco se reescalan SIEMPRE desde la versión BASE (la que
+  // se abrió en el editor): así teclear cifras intermedias ("2" → "25" → 2500)
+  // nunca corrompe gramos ni raciones por redondeos acumulados.
   const goal = client?.goal_type ?? null;
   const weight = refWeightKg ?? client?.start_weight_kg ?? null;
+  const baseline = useRef<any>(structuredClone(plan.nutrition ?? {}));
+
+  function applyTotals(d: typeof draft, next: MacroTargets) {
+    const scaled = rescaledFrom(baseline.current, next);
+    d.nutrition.target_kcal = scaled.target_kcal;
+    d.nutrition.macros = scaled.macros;
+    d.nutrition.meals = scaled.meals;
+    d.nutrition.meal_bank = scaled.meal_bank;
+  }
 
   function setKcal(v: number | null) {
     mutate((d) => {
       if (v == null || v <= 0) { d.nutrition.target_kcal = v; return; }
       if (goal && weight) {
-        rescaleNutrition(d.nutrition, macrosForKcal(goal, weight, v));
+        applyTotals(d, macrosForKcal(goal, weight, v));
       } else {
-        // Sin objetivo/peso de referencia: se mantiene el mix actual de macros
-        const m = d.nutrition.macros ?? {};
+        // Sin objetivo/peso de referencia: se mantiene el mix de macros BASE
+        const m = baseline.current.macros ?? {};
         const p = m.protein_g ?? 0, c = m.carbs_g ?? 0, f = m.fat_g ?? 0;
-        const old = kcalOf(p, c, f) || d.nutrition.target_kcal || v;
+        const old = kcalOf(p, c, f) || baseline.current.target_kcal || v;
         const r = v / old;
-        rescaleNutrition(d.nutrition, {
+        applyTotals(d, {
           kcal: v, protein_g: Math.round(p * r), carbs_g: Math.round(c * r), fat_g: Math.round(f * r),
         });
       }
@@ -78,9 +90,7 @@ export function ClientPlanEditor({
         protein_g: m.protein_g ?? 0, carbs_g: m.carbs_g ?? 0, fat_g: m.fat_g ?? 0,
         [key]: v ?? 0,
       } as { protein_g: number; carbs_g: number; fat_g: number };
-      rescaleNutrition(d.nutrition, {
-        kcal: kcalOf(next.protein_g, next.carbs_g, next.fat_g), ...next,
-      });
+      applyTotals(d, { kcal: kcalOf(next.protein_g, next.carbs_g, next.fat_g), ...next });
     });
   }
 
@@ -155,7 +165,7 @@ export function ClientPlanEditor({
               </span>
             </div>
             <button
-              onClick={() => mutate((d) => rescaleNutrition(d.nutrition, rec))}
+              onClick={() => mutate((d) => applyTotals(d, rec))}
               className="btn btn-ghost"
             >
               Aplicar recomendación

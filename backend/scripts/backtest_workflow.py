@@ -7,10 +7,11 @@ de alertas; cualquier incumplimiento se registra y el script termina con
 código de error.
 
 Qué recorre (por cliente, objetivos distintos):
-  alta → anamnesis → generar plan (IA) → publicar → período 1 se abre solo →
-  diario+entreno en el portal → cierre quincenal (día 15) → alerta "generar
-  feedback" → feedback (IA) → alertas "enviar feedback" + "adaptar" → adaptar
-  → publicar borrador → enviar feedback → período siguiente se abre ESE día →
+  alta → anamnesis → generar plan (IA, queda ACTIVO al momento — sin botón
+  publicar) → período 1 se abre solo → diario+entreno en el portal → cierre
+  quincenal (día 15) → alerta "generar feedback" → feedback (IA) → alertas
+  "enviar feedback" + "adaptar" → adaptar (activo + comidas reescaladas) →
+  enviar feedback → período siguiente se abre ESE día →
   … × 6 quincenas. Día 45+: alerta de objetivo; un cliente CAMBIA de objetivo
   (regeneración completa + archivo del plan anterior), dos la POSPONEN (y se
   comprueba que reaparece a los 45 días), y uno deja de registrar (alerta de
@@ -206,8 +207,8 @@ def run() -> None:
     clients: list[dict] = []  # {id, token, goal, weight, changed_goal, snoozed_reappear_due}
 
     with freeze_time(START) as frozen:
-        # ---------------- Día 0: alta + anamnesis + plan + publicar ----------
-        print(f"— Día 0 ({START}): alta de 5 clientes, plan y publicación")
+        # ------- Día 0: alta + anamnesis + plan (ACTIVO al generarse) --------
+        print(f"— Día 0 ({START}): alta de 5 clientes, plan activo al generarse")
         for i, goal in enumerate(GOALS):
             r = tc.post("/api/clients", json={"full_name": f"Cliente {goal}", "email": f"c{i}@bt.com"})
             assert r.status_code in (200, 201), r.text
@@ -227,18 +228,16 @@ def run() -> None:
             r = tc.post(f"/api/clients/{cid}/generate-plan?month_index=1")
             check(r.status_code == 200, f"[{goal}] generar plan: {r.status_code} {r.text[:120]}")
             plan_id = r.json()["id"]
-            check("publish_plan" in alerts_by_kind(tc, cid), f"[{goal}] alerta de publicar borrador")
-            r = tc.post(f"/api/plans/{plan_id}/publish")
-            check(r.status_code == 200, f"[{goal}] publicar: {r.status_code}")
-            # Invariantes tras publicar
+            # SIN botón "Publicar": el plan queda ACTIVO en el momento de generarse
+            check(r.json().get("status") == "published", f"[{goal}] plan ACTIVO al generarse")
             aks = alerts_by_kind(tc, cid)
-            check(aks == set(), f"[{goal}] sin alertas tras publicar (hay: {aks})")
+            check(aks == set(), f"[{goal}] sin alertas tras generar (hay: {aks})")
             dbx = SessionLocal()
             per = dbx.scalar(select(Period).where(Period.client_id == cid))
             cl = dbx.get(Client, cid)
             check(per is not None and per.status == "open" and per.starts_on == START,
                   f"[{goal}] período 1 abierto hoy (per={per and (per.status, str(per.starts_on))})")
-            check(cl.goal_started_on == START, f"[{goal}] goal_started_on fijado al publicar")
+            check(cl.goal_started_on == START, f"[{goal}] goal_started_on fijado al activarse")
             pl = dbx.get(Plan, plan_id)
             check(pl.goal_type == goal, f"[{goal}] plan archiva su objetivo")
             check(pl.published_at is not None, f"[{goal}] published_at fijado")
@@ -326,22 +325,53 @@ def run() -> None:
                     dbx.close()
                     check(r2.status_code == 200 and n_docs == 1,
                           f"[{goal}] d{day} feedback regenerado sin duplicar ({n_docs} docs)")
-                    # Adaptar (y comprobar idempotencia: 2ª llamada rehace, no acumula)
+                    # Adaptar: la versión adaptada queda ACTIVA al momento y las
+                    # comidas/gramos del banco se REESCALAN a los totales nuevos
+                    dbx = SessionLocal()
+                    base_pub = dbx.scalar(select(Plan).where(
+                        Plan.client_id == cid, Plan.status == "published")
+                        .order_by(Plan.month_index.desc(), Plan.version.desc()).limit(1))
+                    base_m = base_pub.nutrition_json["macros"]
+                    base_prot = base_m["protein_g"]
+                    # Tras proteína +10 g, las kcal se recomputan COHERENTES
+                    # (4/4/9) desde los macros del plan adaptado.
+                    kcal_esperadas = round((base_prot + 10) * 4
+                                           + base_m["carbs_g"] * 4
+                                           + base_m["fat_g"] * 9)
+                    dbx.close()
                     r = tc.post(f"/api/clients/{cid}/adapt-plan")
                     check(r.status_code == 200, f"[{goal}] d{day} adaptar {r.status_code} {r.text[:100]}")
-                    draft_id = r.json()["id"]
+                    check(r.json().get("status") == "published",
+                          f"[{goal}] d{day} plan adaptado ACTIVO al momento")
+                    adapted_id = r.json()["id"]
                     dbx = SessionLocal()
-                    prot1 = dbx.get(Plan, draft_id).nutrition_json["macros"]["protein_g"]
+                    anut = dbx.get(Plan, adapted_id).nutrition_json
                     dbx.close()
+                    # Proteína +10 g → kcal coherentes (+40) y comidas cuadradas
+                    check(anut["macros"]["protein_g"] == base_prot + 10,
+                          f"[{goal}] d{day} proteína +10 g aplicada")
+                    check(anut["target_kcal"] == kcal_esperadas,
+                          f"[{goal}] d{day} kcal coherentes 4/4/9 tras el ajuste "
+                          f"({anut['target_kcal']} vs {kcal_esperadas})")
+                    meal_prot = sum(m["target"]["protein_g"] for m in anut.get("meals", []))
+                    check(meal_prot == anut["macros"]["protein_g"],
+                          f"[{goal}] d{day} comidas CUADRAN con el total "
+                          f"(P comidas {meal_prot} vs {anut['macros']['protein_g']})")
+                    meal_kcal = sum(m["target"]["kcal"] for m in anut.get("meals", []))
+                    check(meal_kcal == anut["target_kcal"],
+                          f"[{goal}] d{day} kcal de comidas cuadran "
+                          f"({meal_kcal} vs {anut['target_kcal']})")
+                    check(bool(anut.get("meal_bank", {}).get("slots")),
+                          f"[{goal}] d{day} banco de comidas presente tras reescalar")
+                    # Idempotencia: re-adaptar a la MISMA revisión → aviso claro, no acumula
                     r = tc.post(f"/api/clients/{cid}/adapt-plan")
-                    check(r.status_code == 200, f"[{goal}] d{day} re-adaptar {r.status_code}")
+                    check(r.status_code == 409 and "ya está adaptado" in r.text,
+                          f"[{goal}] d{day} re-adaptar avisa sin acumular ({r.status_code})")
                     dbx = SessionLocal()
-                    prot2 = dbx.get(Plan, r.json()["id"]).nutrition_json["macros"]["protein_g"]
+                    prot2 = dbx.get(Plan, adapted_id).nutrition_json["macros"]["protein_g"]
                     dbx.close()
-                    check(prot1 == prot2 and r.json()["id"] == draft_id,
-                          f"[{goal}] d{day} re-adaptar no acumula (P {prot1}→{prot2})")
-                    r = tc.post(f"/api/plans/{draft_id}/publish")
-                    check(r.status_code == 200, f"[{goal}] d{day} publicar adaptado")
+                    check(prot2 == base_prot + 10,
+                          f"[{goal}] d{day} macros intactos tras re-adaptar (P {prot2})")
                     r = tc.post(f"/api/feedback/{fb_id}/send")
                     check(r.status_code == 200, f"[{goal}] d{day} enviar feedback")
                     # Al enviar: ciclo nuevo abierto HOY y cero alertas
@@ -372,8 +402,8 @@ def run() -> None:
                         r = tc.post(f"/api/clients/{cid}/generate-plan?month_index=2")
                         check(r.status_code == 200, f"[{goal}] d{day} regenerar plan {r.text[:100]}")
                         new_plan = r.json()["id"]
-                        r = tc.post(f"/api/plans/{new_plan}/publish")
-                        check(r.status_code == 200, f"[{goal}] d{day} publicar plan nuevo")
+                        check(r.json().get("status") == "published",
+                              f"[{goal}] d{day} plan nuevo ACTIVO al regenerarse")
                         dbx = SessionLocal()
                         np_ = dbx.get(Plan, new_plan)
                         cl = dbx.get(Client, cid)

@@ -94,7 +94,13 @@ export default function DashboardPage() {
   const [clients, setClients] = useState<ClientOut[] | null>(null);
 
   useEffect(() => {
-    api.listClients().then(setClients).catch(() => setClients([]));
+    const load = () => api.listClients().then(setClients).catch(() => setClients((c) => c ?? []));
+    load();
+    // Refresco cada 30 s (solo con la pestaña visible): el panel siempre al día
+    const t = window.setInterval(() => {
+      if (!document.hidden) load();
+    }, 30000);
+    return () => window.clearInterval(t);
   }, []);
 
   const { acciones, alDia } = useMemo(() => {

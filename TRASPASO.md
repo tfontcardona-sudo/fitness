@@ -1,7 +1,7 @@
 # Documento de traspaso — Fitness System (DQ / David Quiceno)
 
 > Objetivo de este doc: que otra sesión de IA (Fable u otra) pueda **continuar el trabajo sin perder contexto**.
-> Última actualización: 2026-07-05. Autor del último tramo: Claude (rebrand DQ + flujo adaptar-revisión visible).
+> Última actualización: 2026-07-07. Autor del último tramo: Claude (sin botón Publicar + reescalado nutricional en bloque + anamnesis sin cortes).
 > **PRODUCCIÓN:** el sistema está desplegado en `https://app.dqrassessories.com` (VPS Hetzner
 > `46.225.57.25`, repo en `/root/fitness`, ver `DEPLOY.md`). Actualizar: `cd /root/fitness && git pull && docker compose up -d --build`.
 > Cliente/marca: **David Quiceno (DQ)** — asesoría de fitness. Colores marca: **vino `#8B1A2B`**, **azul `#4A7BA8`**.
@@ -556,6 +556,44 @@ En `C:\Users\Usuari\.claude\projects\C--Users-Usuari-Desktop-fitness-system\memo
 - **QA de comportamiento**: `ux-tests.mjs` (scratchpad) — 9 asserts Playwright
   (click-fuera, ESC, 1-tap con overlay abierto, botón atrás, aria-current,
   pointer-events del toast, 16px, safe-area, sin scroll horizontal) → 9/9 PASS.
+
+## 10.c Tramo 2026-07-07 (2ª parte) — Repaso integral de los prompts del día
+
+Cierre de los flecos detectados al revisar TODO lo pedido el 7 de julio:
+
+- **Recálculo kcal⇄macros en el editor (bug real)**: cambiar calorías no
+  adaptaba los 3 macros y teclear valores intermedios corrompía gramos.
+  Arreglado con `rescaledFrom()` (`lib/nutritionTargets.ts`): cada cambio se
+  reescala SIEMPRE desde la nutrición original (`baseline` ref en
+  `ClientPlanEditor.tsx`) → idempotente. La suma de las comidas ahora CUADRA
+  EXACTA con los totales (el resto de redondeo va a la comida mayor de cada eje).
+- **Reescalado también en el backend** (`services/nutrition_scale.py`, NUEVO,
+  espejo del frontend): la adaptación quincenal (`adapt_plan.py`) ya no cambia
+  solo los totales — si un ajuste toca kcal o macros, TODO se mueve en bloque
+  (kcal⇄macros coherentes 4/4/9 según objetivo/peso, objetivos por comida y
+  GRAMOS del banco a múltiplos de 5). El PDF de dieta queda coherente.
+- **SIN botón "Publicar"** (`services/plan_activation.py`, NUEVO): la
+  planificación queda ACTIVA al generarse, al adaptarse y al editarse (el envío
+  es por WhatsApp). `POST /plans/{id}/publish` queda como legado para borradores
+  antiguos (botón "Activar"). Etiquetas: "Activa" / "Borrador antiguo".
+  Re-adaptar a la misma revisión → 409 con aviso claro (no acumula).
+- **Anamnesis (PDF plantilla) sin cortes de página**: el título "MOTIVO Y
+  OBJETIVOS" quedaba huérfano al pie de la pág. 1 → movido al inicio de la
+  pág. 2 (parche quirúrgico con pypdf+reportlab, estilo idéntico). En pág. 6 se
+  añadió "¿Cuáles? (desayuno, media mañana, merienda, pre-cama…)" + casilla
+  "Lo decidís vosotros". `extraction.py` actualizado: si delega → 
+  `meals_per_day=null` y `meal_schedule=[]`.
+- **Objetivo en palabras del cliente → IA**: `ClientContext.goal_in_own_words`
+  (se alimenta de `lifestyle_notes`, la sección "Motivo y objetivos" de la
+  anamnesis) entra en el prompt de generación con la instrucción de diseñar
+  dieta y entreno para ESE fin concreto, no solo para la etiqueta del objetivo.
+- **Auto-refresco cada 30 s** (pestaña visible) en Dashboard, Clientes, perfil
+  del cliente y campana de alertas: la web se mantiene al día sola.
+- **Verificación**: backtest 5 clientes × 92 días → **1529 comprobaciones OK ·
+  0 fallos** (incluye: plan activo al generarse, kcal coherentes tras ajuste,
+  comidas que cuadran exactas, re-adaptar avisa 409, banco reescalado). Suite
+  pytest OK (2 fallos pre-existentes del mock IA, ya fallaban en main). Los 8
+  harnesses Playwright OK. Test unitario de `nutrition_scale` OK.
 
 ## 11. Mapa rápido de archivos tocados en el último tramo
 

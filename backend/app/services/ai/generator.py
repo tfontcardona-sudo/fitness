@@ -78,6 +78,10 @@ class ClientContext:
     # análisis cualitativo del coach/IA (lesiones, hábitos, contexto) — opcional
     deep_analysis: str | None = None
     notes: str = ""
+    # Objetivo EN PALABRAS DEL CLIENTE ("Motivo y objetivos" de la anamnesis +
+    # estilo de vida): la IA debe entender QUÉ pide exactamente y diseñar dieta
+    # y entrenamiento para ese fin, no solo para la etiqueta goal_type.
+    goal_in_own_words: str | None = None
     # Historial real de seguimiento (revisiones: peso/adherencia/fuerza) para
     # que la IA entienda el recorrido del cliente, no solo su anamnesis.
     tracking_history: dict | None = None
@@ -139,6 +143,10 @@ def _client_block(ctx: ClientContext) -> str:
             "horario_comidas": ctx.meal_schedule
             if ctx.meal_schedule
             else "lo delega: reparte tú las comidas (desayuno/comida/cena y añade media mañana, merienda o pre-cama si conviene)",
+            # Lo que el cliente ESCRIBIÓ sobre su objetivo y su vida: analízalo
+            # y diseña el plan para conseguir EXACTAMENTE lo que pide.
+            "objetivo_en_palabras_del_cliente": ctx.goal_in_own_words
+            or "no declarado: guíate por el objetivo estructurado",
             "alergias": ctx.food_allergies, "aversiones": ctx.food_dislikes,
             "preferencias": ctx.food_likes,
             "lesiones_contraindicaciones": sorted(ctx.contraindications),
@@ -182,6 +190,11 @@ def _core_user_prompt(ctx: ClientContext) -> str:
 DATOS DEL CLIENTE Y MÉTRICAS (ya calculadas por el backend, NO recalcules):
 {_client_block(ctx)}
 {_analysis_block(ctx)}
+IMPORTANTE: lee "objetivo_en_palabras_del_cliente" y entiende EXACTAMENTE qué
+quiere conseguir esta persona (y por qué). El plan de dieta Y el de
+entrenamiento deben estar diseñados para ESE fin concreto, no solo para la
+etiqueta genérica del objetivo. Refléjalo en rationale y split_rationale.
+
 BIBLIOTECA DE EJERCICIOS DISPONIBLE (usa SOLO estos exercise_id):
 {json.dumps(library, ensure_ascii=False)}
 

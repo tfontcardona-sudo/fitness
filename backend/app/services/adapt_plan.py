@@ -111,6 +111,8 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
     tr = copy.deepcopy(base.training_json or {})
     edu = copy.deepcopy(base.education_json or {})
     macros = nut.setdefault("macros", {})
+    # ¿Qué totales tocan los ajustes? (para la coherencia+reescalado de abajo)
+    kcal_touched = protein_touched = carbs_touched = fat_touched = False
 
     # Registro estructurado de cada ajuste (con antes→después cuando se aplica
     # automáticamente): lo consumen la pestaña Planificación del coach, el
@@ -136,14 +138,22 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
             if "proteina" in cn:
                 before = macros.get("protein_g")
                 macros["protein_g"] = _apply(before, mode, val)
+                protein_touched = True
                 details.append(f"Proteína: {round(before) if before else '—'} → {macros['protein_g']} g")
             if "hidrato" in cn or "carbo" in cn or re.search(r"\bch\b", cn):
                 before = macros.get("carbs_g")
                 macros["carbs_g"] = _apply(before, mode, val)
+                carbs_touched = True
                 details.append(f"Carbohidratos: {round(before) if before else '—'} → {macros['carbs_g']} g")
+            if "gras" in cn or "lipid" in cn:
+                before = macros.get("fat_g")
+                macros["fat_g"] = _apply(before, mode, val)
+                fat_touched = True
+                details.append(f"Grasas: {round(before) if before else '—'} → {macros['fat_g']} g")
             if "kcal" in cn or "calor" in cn:
                 before = nut.get("target_kcal")
                 nut["target_kcal"] = _apply(nut.get("target_kcal"), mode, val)
+                kcal_touched = True
                 details.append(f"Calorías: {round(before) if before else '—'} → {nut['target_kcal']} kcal")
         elif val is not None and "entren" in area:
             # En entreno solo aplicamos ajustes RELATIVOS de carga (+X kg): un
@@ -161,6 +171,43 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
             entry["applied"] = True
             entry["detail"] = " · ".join(details)
         items.append(entry)
+
+    # COHERENCIA + REESCALADO EN BLOQUE: si algún ajuste tocó calorías o
+    # macros, todo se mueve junto — kcal⇄macros coherentes (4/4/9, proteína y
+    # grasa por kg según el objetivo) y las COMIDAS y los GRAMOS del banco se
+    # reescalan a los totales nuevos (antes el PDF se quedaba con los gramos
+    # antiguos).
+    if kcal_touched or protein_touched or carbs_touched or fat_touched:
+        from app.services.nutrition_scale import kcal_of, macros_for_kcal, rescale_nutrition
+
+        client = db.get(Client, client_id)
+        latest_w = db.scalar(
+            select(Period.closing_weight_kg)
+            .where(Period.client_id == client_id, Period.closing_weight_kg.is_not(None))
+            .order_by(Period.period_index.desc()).limit(1)
+        )
+        weight = latest_w or (client.start_weight_kg if client else None) or 80.0
+        goal = client.goal_type if client else None
+        K = nut.get("target_kcal") or 0
+        P = macros.get("protein_g") or 0
+        C = macros.get("carbs_g") or 0
+        F = macros.get("fat_g") or 0
+        macro_touched = protein_touched or carbs_touched or fat_touched
+        if kcal_touched and not macro_touched:
+            t = macros_for_kcal(goal, weight, K)
+            P, C, F = t["protein_g"], t["carbs_g"], t["fat_g"]
+        elif macro_touched and not kcal_touched:
+            K = kcal_of(P, C, F)
+        else:  # tocaron ambos: los carbohidratos cuadran las kcal objetivo
+            C = max(0, round((K - P * 4 - F * 9) / 4))
+        rescale_nutrition(nut, base.nutrition_json or {}, K, P, C, F)
+        items.append({
+            "area": "dieta",
+            "change": "Comidas y gramos del banco reescalados a los totales nuevos",
+            "reason": "Coherencia automática: calorías, macros, raciones y gramos se mueven en bloque.",
+            "applied": True,
+            "detail": f"Totales finales: {round(K)} kcal · P {round(P)} / C {round(C)} / G {round(F)} g",
+        })
 
     # Siempre se sobreescribe (el plan base puede arrastrar el bloque de una
     # adaptación anterior tras el deepcopy).
@@ -203,6 +250,11 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
     log_event(db, "plan", plan.id, "plan_adapted",
               {"from_plan": base.id, "period_index": period.period_index,
                "redo": existing_draft is not None})
+    # La versión adaptada queda ACTIVA al momento (portal y PDF actualizados);
+    # el coach puede retocarla con Editar y enviarla por WhatsApp.
+    from app.services.plan_activation import activate_plan
+
+    activate_plan(db, plan)
     db.commit()
     db.refresh(plan)
     return plan

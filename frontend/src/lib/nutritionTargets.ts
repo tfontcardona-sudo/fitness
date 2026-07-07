@@ -108,6 +108,23 @@ export function rescaleNutrition(nut: any, next: MacroTargets): void {
       fat_g: scale(m.target.fat_g, rF),
     };
   }
+  // Resto de redondeo a la comida mayor de cada eje: la suma de las comidas
+  // CUADRA EXACTA con los totales (espejo de services/nutrition_scale.py).
+  const axes: [keyof MacroTargets, number][] = [
+    ["kcal", next.kcal], ["protein_g", next.protein_g],
+    ["carbs_g", next.carbs_g], ["fat_g", next.fat_g],
+  ];
+  for (const [key, total] of axes) {
+    const targets = (nut.meals ?? [])
+      .map((m: any) => m?.target)
+      .filter((t: any) => t && typeof t[key] === "number");
+    if (!targets.length) continue;
+    const diff = Math.round(total) - targets.reduce((s: number, t: any) => s + t[key], 0);
+    if (diff) {
+      const biggest = targets.reduce((a: any, b: any) => (b[key] > a[key] ? b : a));
+      biggest[key] = Math.max(0, biggest[key] + diff);
+    }
+  }
 
   const scaleDish = (o: any) => {
     if (!o) return;
@@ -130,4 +147,14 @@ export function rescaleNutrition(nut: any, next: MacroTargets): void {
   } else if (bank?.mode === "strict") {
     for (const d of bank.days ?? []) for (const m of d.meals ?? []) scaleDish(m?.dish);
   }
+}
+
+/** Copia de la nutrición BASE reescalada a los totales nuevos. El editor la usa
+ *  en cada cambio para que comidas y gramos se recalculen SIEMPRE desde la
+ *  versión original (idempotente): teclear "2" y luego "2500" no corrompe nada
+ *  porque nunca se reescala sobre valores intermedios ya redondeados. */
+export function rescaledFrom(baseNut: any, next: MacroTargets): any {
+  const n = structuredClone(baseNut ?? {});
+  rescaleNutrition(n, next);
+  return n;
 }

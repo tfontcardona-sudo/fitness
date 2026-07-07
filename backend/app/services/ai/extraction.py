@@ -170,10 +170,13 @@ adelgazar→"fat_loss"; ganar músculo/volumen→"muscle_gain"; recomposición/m
   · session_max_min ← "Duración media de la sesión", en minutos.
   · diet_mode ← bloque de dieta: si menciona equivalencias/flexibilidad→"flexible_7"; si pide \
 menú cerrado→"strict". Si no está claro, usa "flexible_7".
-  · meals_per_day ← "¿Cuántas comidas haces al día?".
-  · meal_schedule: deduce las tomas y sus horas. Cada toma DEBE ser un objeto con \
-"slot" (1,2,3…), "name" ("Desayuno","Comida","Merienda","Cena"…) y "time" ("HH:MM"). \
-Si no hay horas exactas, propón horarios razonables coherentes con el nº de comidas.
+  · meals_per_day ← "¿Cuántas comidas haces al día?". Si marca "Lo decidís vosotros" \
+o deja el bloque en blanco → meals_per_day=null y meal_schedule=[] (DELEGA el número y \
+reparto de comidas en el coach; la IA del plan elegirá el óptimo).
+  · meal_schedule: de "¿Cuáles?" (desayuno, media mañana, comida, merienda, cena, \
+pre-cama…) y del resto del documento, deduce las tomas y sus horas. Cada toma DEBE ser \
+un objeto con "slot" (1,2,3…), "name" ("Desayuno","Comida","Merienda","Cena"…) y "time" \
+("HH:MM"). Si no hay horas exactas, propón horarios razonables coherentes con el nº de comidas.
   · equipment: SOLO si entrena en casa/exterior, lista el material declarado (mancuernas, barra, \
 banco, jaula, gomas, máquinas…). Si entrena en gimnasio, deja la lista vacía.
   · food_likes / food_dislikes / food_allergies: de "Preferencias y aversiones" e "Historia \

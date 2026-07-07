@@ -124,6 +124,12 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
                 value = {**value, "applied_adjustments": plan.nutrition_json["applied_adjustments"]}
             setattr(plan, field, value)
     log_event(db, "plan", plan.id, "plan_edited", {"fields": list(changes.keys())})
+    # Editar también ACTIVA: si el coach retoca un borrador (legado), el plan
+    # queda vigente al guardar — no existe el paso "Publicar".
+    if plan.status == "draft":
+        from app.services.plan_activation import activate_plan
+
+        activate_plan(db, plan)
     db.commit()
     db.refresh(plan)
     return PlanOut.model_validate(plan)
@@ -141,48 +147,14 @@ def list_plans(client_id: int, db: Session = Depends(get_db)) -> list[PlanOut]:
 
 @router.post("/api/plans/{plan_id}/publish", response_model=PlanOut)
 def publish_plan(plan_id: int, db: Session = Depends(get_db)) -> PlanOut:
+    """LEGADO: activa un borrador antiguo. Los planes nuevos quedan ACTIVOS
+    al generarse o adaptarse (services/plan_activation) — sin paso de publicar."""
+    from app.services.plan_activation import activate_plan
+
     plan = db.get(Plan, plan_id)
     if not plan:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan no encontrado")
-    client = db.get(Client, plan.client_id)
-
-    # Las versiones anteriores del mismo mes quedan supersedidas
-    for older in db.scalars(
-        select(Plan).where(
-            Plan.client_id == plan.client_id, Plan.month_index == plan.month_index,
-            Plan.status == "published",
-        )
-    ):
-        older.status = "superseded"
-
-    plan.status = "published"
-    plan.published_at = datetime.now(timezone.utc)  # antes no se fijaba nunca
-    if plan.goal_type is None:
-        plan.goal_type = client.goal_type
-    is_new_month = plan.month_index > 1
-    if client.status == "onboarding":
-        client.status = "active"
-    # Arranque de la etapa del objetivo (para la alerta de los 45 días)
-    if client.goal_started_on is None:
-        client.goal_started_on = date.today()
-
-    log_event(db, "plan", plan.id, "plan_published", {"month_index": plan.month_index})
-
-    # Seguimiento AUTÓNOMO: publicar activa el período de 14 días si no hay
-    # ninguno abierto (el coach ya no lo inicia a mano).
-    from app.services.periods import ensure_open_period
-
-    ensure_open_period(db, client.id)
-
-    # Email de bienvenida / nuevo plan (G.5)
-    brand = brand_from_config(db)
-    portal_url = f"{settings.public_base_url}/p/{client.portal_token}"
-    subject, html = tpl.plan_published(
-        brand, client.full_name.split()[0], portal_url, is_new_month
-    )
-    EmailService(db).send(to=client.email, subject=subject, html=html,
-                          kind="plan_published", client=client)
-
+    activate_plan(db, plan)
     db.commit()
     db.refresh(plan)
     return PlanOut.model_validate(plan)

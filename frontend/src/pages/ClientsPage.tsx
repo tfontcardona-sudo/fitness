@@ -52,6 +52,14 @@ export default function ClientsPage() {
     return () => clearTimeout(t);
   }, [load]);
 
+  // Refresco cada 30 s (pestaña visible): carpetas y badges siempre al día
+  useEffect(() => {
+    const t = window.setInterval(() => {
+      if (!document.hidden) load();
+    }, 30000);
+    return () => window.clearInterval(t);
+  }, [load]);
+
   const counts = useMemo(() => {
     const all = clients ?? [];
     return Object.fromEntries(

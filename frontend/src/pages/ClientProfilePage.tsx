@@ -42,6 +42,14 @@ export default function ClientProfilePage() {
 
   useEffect(load, [load]);
 
+  // Refresco cada 30 s (pestaña visible): la ficha siempre al día
+  useEffect(() => {
+    const t = window.setInterval(() => {
+      if (!document.hidden) load();
+    }, 30000);
+    return () => window.clearInterval(t);
+  }, [load]);
+
   // La pestaña SIGUE a la URL: navegar desde una alerta (o el botón atrás)
   // cambia de pestaña aunque ya estemos en el perfil de este cliente.
   useEffect(() => {
