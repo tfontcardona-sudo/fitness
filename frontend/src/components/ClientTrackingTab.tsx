@@ -32,13 +32,18 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
   if (err) return <div className="card p-5 text-sm text-red-400">No se pudo cargar el seguimiento: {err}</div>;
   if (!data) return <div className="card p-5 text-sm opacity-60">Cargando seguimiento…</div>;
   if (!data.has_period)
-    return <div className="card p-5 text-sm opacity-60">El cliente aún no tiene un período activo. Créalo en Planificación.</div>;
+    return (
+      <div className="card p-5 text-sm opacity-60">
+        El cliente aún no tiene un período activo. Se abre solo al activarse la
+        planificación, al enviar el feedback o cuando el cliente entra en su portal.
+      </div>
+    );
 
   const p = data.period!;
   const daily = data.daily ?? [];
   const avg = data.daily_averages;
   const quincenals = data.quincenals ?? [];
-  const pct = Math.min(100, Math.round((p.days_elapsed / p.days_total) * 100));
+  const pct = p.days_total ? Math.min(100, Math.round((p.days_elapsed / p.days_total) * 100)) : 0;
 
   return (
     <div className="space-y-4">
@@ -149,7 +154,8 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
                 <section>
                   <MiniTitle>Medidas · antes → después</MiniTitle>
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                    <BeforeAfter label="Peso (kg)" before={q.weight_before} after={q.weight_after} lowerBetter />
+                    {/* Bajar peso solo es "bueno" si el objetivo lo pide */}
+                    <BeforeAfter label="Peso (kg)" before={q.weight_before} after={q.weight_after} lowerBetter={client.goal_type !== "muscle_gain"} />
                     <BeforeAfter label="Cintura (cm)" before={q.waist_before} after={q.waist_after} lowerBetter />
                     <BeforeAfter label="Cadera (cm)" before={q.hip_before} after={q.hip_after} lowerBetter />
                     <BeforeAfter label="Brazo (cm)" before={q.arm_before} after={q.arm_after} />

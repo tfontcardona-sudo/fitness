@@ -195,6 +195,14 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
             K = kcal_of(P, C, F)
         else:  # tocaron ambos: los carbohidratos cuadran las kcal objetivo
             C = max(0, round((K - P * 4 - F * 9) / 4))
+            # El detalle "Carbohidratos: X → Y" se escribió ANTES de cuadrar:
+            # se reescribe con el valor final para que Novedades y PDF cuadren.
+            for it in items:
+                if it.get("detail") and "Carbohidratos:" in it["detail"]:
+                    it["detail"] = re.sub(
+                        r"(Carbohidratos: [^→]*→ )\d+( g)",
+                        rf"\g<1>{int(round(C))}\g<2>", it["detail"],
+                    )
         rescale_nutrition(nut, base.nutrition_json or {}, K, P, C, F)
         items.append({
             "area": "dieta",

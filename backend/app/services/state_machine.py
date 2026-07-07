@@ -122,7 +122,7 @@ def evaluate_transition(facts: ClientFacts, today: date) -> TransitionDecision:
 # valid transitions for event-driven changes (validación defensiva)
 VALID_TRANSITIONS = {
     "onboarding": {"active", "inactive"},
-    "active": {"awaiting_feedback", "at_risk", "inactive"},
+    "active": {"awaiting_feedback", "review_pending", "at_risk", "inactive"},
     "awaiting_feedback": {"review_pending", "at_risk", "active", "inactive"},
     "at_risk": {"review_pending", "active", "inactive"},
     "review_pending": {"active", "inactive"},

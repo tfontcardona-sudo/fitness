@@ -850,6 +850,21 @@ def generate_client_plan(
 
     nutrition, training, education, flags = generated.to_persistable()
 
+    # La regeneración YA incorpora los ajustes de la última revisión analizada
+    # (van en el prompt): se SELLA applied_adjustments para que la alerta
+    # "sin adaptar" se apague y "Adaptar" no vuelva a aplicarlos encima.
+    if last_analyzed and (last_analyzed.ai_analysis_json or {}).get("plan_adjustments"):
+        nutrition["applied_adjustments"] = {
+            "period_index": last_analyzed.period_index,
+            "items": [{
+                "area": a.get("area") or "general",
+                "change": a.get("change") or "",
+                "reason": a.get("reason") or "",
+                "applied": True,
+                "detail": "Incorporado al regenerar el plan con IA",
+            } for a in last_analyzed.ai_analysis_json["plan_adjustments"]],
+        }
+
     # 5) Persistir como borrador (nueva versión del mes)
     last = db.scalar(
         select(Plan).where(Plan.client_id == client_id, Plan.month_index == month_index)

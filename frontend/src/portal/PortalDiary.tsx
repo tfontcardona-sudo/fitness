@@ -36,9 +36,14 @@ const EMPTY: DiaryForm = {
  * sueño, adherencia y cómo se siente); los ejercicios del día ya van en HOY.
  * Cada cambio se guarda con debounce para no perder nada (G.4: autosave).
  */
-export function PortalDiary({ api, brand }: { api: Api; brand: PortalBrand }) {
+export function PortalDiary({ api, brand, periodStatus = null }: {
+  api: Api; brand: PortalBrand; periodStatus?: string | null;
+}) {
   const toast = usePortalToast();
   const today = localToday();
+  // Revisión enviada (período cerrado): el backend rechazaría el guardado —
+  // se avisa y no se programan guardados.
+  const readOnly = periodStatus != null && periodStatus !== "open";
   const [form, setForm] = useState<DiaryForm | null>(null);
   const saveTimer = useRef<number | null>(null);
 
@@ -84,6 +89,7 @@ export function PortalDiary({ api, brand }: { api: Api; brand: PortalBrand }) {
   };
 
   function scheduleSave(next: DiaryForm) {
+    if (readOnly) return;
     pendingRef.current = next;
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => saveNowRef.current(), 800);
@@ -106,6 +112,15 @@ export function PortalDiary({ api, brand }: { api: Api; brand: PortalBrand }) {
 
   return (
     <div className="space-y-5">
+      {readOnly && (
+        <div className="portal-card border-l-4 p-3.5 text-sm" style={{ borderLeftColor: brand.color_primary }}>
+          <p className="font-semibold">Revisión enviada — diario en pausa</p>
+          <p className="mt-1 text-xs opacity-70">
+            Tu coach está preparando tu feedback. Con el nuevo período volverás a
+            registrar tu día a día aquí.
+          </p>
+        </div>
+      )}
       <div>
         <h2 className="text-lg font-semibold">Mi día</h2>
         <p className="mt-0.5 text-xs opacity-60">Un minuto al día: peso, sueño y cómo te ha ido. Se guarda solo.</p>

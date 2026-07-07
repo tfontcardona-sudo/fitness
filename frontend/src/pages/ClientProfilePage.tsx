@@ -84,6 +84,9 @@ export default function ClientProfilePage() {
 
   // "Dieta" de la info básica = la dieta GENERADA con IA (kcal y macros del
   // plan activo). Hasta que no hay planificación, el apartado queda vacío.
+  // Depende de `client` (objeto nuevo en cada load()): así CUALQUIER acción
+  // que llame a onClientChanged (generar, adaptar, editar…) la resincroniza,
+  // aunque la fila del cliente no cambie.
   const [planDiet, setPlanDiet] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
@@ -102,7 +105,7 @@ export default function ClientProfilePage() {
       })
       .catch(() => setPlanDiet(null));
     return () => { alive = false; };
-  }, [clientId, client?.updated_at]);
+  }, [clientId, client]);
 
   function openPortal() {
     if (!portalUrl) return;
@@ -194,6 +197,13 @@ export default function ClientProfilePage() {
               <span className="block text-sm font-semibold">Diario del cliente</span>
               <span className="block text-xs opacity-75">abrir y copiar el enlace de su app</span>
             </span>
+          </button>
+          {/* Seguridad: invalidar el enlace si se filtró (antes era inaccesible) */}
+          <button
+            onClick={() => setConfirmRegen(true)}
+            className="w-full text-center text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
+          >
+            Regenerar enlace del portal (el actual dejará de funcionar)
           </button>
 
           {/* Anamnesis: enviar enlace + subir PDF rellenado */}

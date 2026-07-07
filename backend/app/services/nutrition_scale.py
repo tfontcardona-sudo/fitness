@@ -153,6 +153,8 @@ def rescale_nutrition(nut: dict, base: dict, kcal: float, protein_g: float,
                            "fat_g": _scale(mm.get("fat_g"), r_f)}
         for ing in o.get("ingredients") or []:
             ing["grams"] = _scale_g(ing.get("grams"), r_k)
+            # La medida casera ("1 taza ≈ 80 g") también lleva gramos dentro
+            ing["household"] = _scale_amount_text(ing.get("household"), r_k)
 
     def scale_equivalences(eq: dict) -> None:
         """Sistema de equivalencias (comida/cena): las cantidades van en TEXTO

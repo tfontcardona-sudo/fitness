@@ -124,8 +124,8 @@ export default function PortalApp({ token }: { token: string }) {
           <PushBanner api={apiClient} accent={state.brand.color_primary} />
           {/* key={tab} → transición suave (animate-rise respeta reduced-motion) */}
           <div key={tab} className="animate-rise">
-            {tab === "entreno" && <PortalWorkout api={apiClient} brand={state.brand} />}
-            {tab === "diario" && <PortalDiary api={apiClient} brand={state.brand} />}
+            {tab === "entreno" && <PortalWorkout api={apiClient} brand={state.brand} periodStatus={state.period?.status ?? null} />}
+            {tab === "diario" && <PortalDiary api={apiClient} brand={state.brand} periodStatus={state.period?.status ?? null} />}
             {tab === "cierre" && (
               <PortalClose
                 api={apiClient}

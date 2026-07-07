@@ -35,8 +35,8 @@ function normalize(p: any): PlanData {
 /**
  * Planificación: genera el plan mensual con IA a partir de la anamnesis, lo
  * PERSISTE (al volver a la pestaña se recarga el último plan guardado), muestra
- * TODA la info (nutrición, banco de comidas, entrenamiento, educativo) y permite
- * publicarlo y descargarlo en Word.
+ * la info del plan (nutrición, entrenamiento, puntos del cliente, suplementos)
+ * y queda ACTIVO al generarse/adaptarse/editarse — sin paso de publicar.
  */
 export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut; onClientChanged?: () => void }) {
   const toast = useToast();
@@ -114,6 +114,9 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
       const pdfUrl = await planPdfUrl();
       const adaptedIdx = plan?.nutrition?.applied_adjustments?.period_index ?? null;
       openWhatsApp(phone, planMessage(client.full_name, pdfUrl, adaptedIdx, plan?.month_index ?? 1));
+      // El enlace genera el PDF al abrirse → el cliente recibe la versión
+      // vigente: el aviso de re-descarga queda resuelto.
+      setNeedsDownload(false);
       toast.push("WhatsApp abierto con el enlace del plan — dale a enviar");
     } catch {
       toast.push("No se pudo obtener el enlace del plan", "error");
@@ -133,6 +136,7 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
       const pdfUrl = await planPdfUrl();
       const adaptedIdx = plan?.nutrition?.applied_adjustments?.period_index ?? null;
       openWhatsApp(phone, planAndFeedbackMessage(client.full_name, fb.content, pdfUrl, adaptedIdx));
+      setNeedsDownload(false); // el enlace enviado sirve la versión vigente
       toast.push("WhatsApp abierto con el plan y el feedback — dale a enviar");
       if (!fb.sent) {
         await api.sendFeedback(fb.id).catch(() => {});
@@ -159,6 +163,9 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
       await api.updatePlan(plan.id, { nutrition_json: nutrition });
       setPlan({ ...plan, nutrition });
       setAdjDraft(null);
+      // Estos cambios también salen en el PDF ("Novedades de tu plan"):
+      // el descargado antes queda antiguo.
+      setNeedsDownload(true);
       toast.push("Cambios de la revisión actualizados");
     } catch {
       toast.push("No se pudieron guardar los cambios", "error");
@@ -175,6 +182,8 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
       const p = await api.generatePlan(client.id, plan?.month_index ?? 1);
       setPlan(normalize(p));
       setPeriods(await api.listPeriods(client.id).catch(() => periods));
+      setNeedsDownload(false); // versión nueva: el aviso de re-descarga ya no aplica
+      onClientChanged?.(); // resincroniza sidebar (Dieta), badges y carpetas
       toast.push("Planificación generada y ACTIVA — revísala y envíasela por WhatsApp");
     } catch (e: any) {
       const detail = e?.detail ?? e?.data?.detail;
@@ -195,6 +204,8 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
       const full = plans.find((pl) => pl.id === r.id) ?? plans[0]; // listPlans → más reciente primero
       if (full) setPlan(normalize(full));
       setPeriods(await api.listPeriods(client.id).catch(() => periods));
+      setNeedsDownload(false); // versión nueva activa: el aviso de la edición anterior caduca
+      onClientChanged?.(); // resincroniza sidebar (Dieta) y estados
       toast.push(`Plan adaptado y ACTIVO (v${r.version}): portal y PDF ya muestran la versión nueva.`);
     } catch (e: any) {
       const detail = e?.detail ?? e?.data?.detail;
@@ -213,6 +224,7 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
       await api.publishPlan(plan.id);
       setPlan({ ...plan, status: "published" });
       setPeriods(await api.listPeriods(client.id).catch(() => periods));
+      onClientChanged?.(); // el sidebar (Dieta) pasa a mostrar este plan
       toast.push("Planificación activada: el portal y el PDF ya muestran esta versión");
     } catch {
       toast.push("No se pudo activar", "error");
@@ -257,7 +269,8 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
             <h3 className="text-base font-semibold text-zinc-100">Planificación mensual</h3>
             <p className="mt-1 text-sm text-zinc-400">
               Genera el plan de dieta y entrenamiento con IA a partir de los datos de la
-              anamnesis. Podrás revisarlo, publicarlo y descargarlo.
+              anamnesis. Queda ACTIVO al momento: revísalo, edítalo si quieres y envíaselo
+              por WhatsApp.
             </p>
 
             {missing && (
@@ -389,8 +402,8 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
           </div>
         </div>
 
-        {/* Seguimiento AUTÓNOMO: el período de 14 días se abre al publicar y se
-            renueva solo tras cada cierre — el coach ya no inicia nada a mano. */}
+        {/* Seguimiento AUTÓNOMO: el período de 14 días se abre al activarse el
+            plan y se renueva solo tras cada feedback — nada manual. */}
         {plan.status === "published" && (
           // Azul de marca: información del ciclo (estructura), no una acción
           <div
@@ -538,6 +551,7 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
                     onChange={(e) => setAdjDraft(adjDraft.map((x, j) => (j === i ? { ...x, main: e.target.value } : x)))}
                     className="input w-full text-sm"
                     placeholder="Cambio"
+                    aria-label="Cambio"
                   />
                   <textarea
                     value={d.reason}
@@ -545,6 +559,7 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
                     rows={2}
                     className="input w-full resize-y text-xs"
                     placeholder="Por qué"
+                    aria-label="Por qué"
                   />
                 </div>
               ))}

@@ -436,6 +436,8 @@ class TodayExercise(BaseModel):
     rir: str
     rest_sec: int
     start_weight_hint_kg: float | None
+    # Peso sugerido AJUSTADO a la semana del mesociclo (espejo de types.ts)
+    week_weight_hint_kg: float | None = None
     technique_cue: str | None
     video_url: str | None
 

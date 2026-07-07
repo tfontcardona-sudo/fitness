@@ -252,7 +252,7 @@ function ClientsTable({ clients }: { clients: ClientOut[] }) {
                       <span
                         className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold text-white shadow"
                         style={{ background: "var(--brand-accent)" }}
-                        title={`Revisión quincenal #${c.pending_review_period ?? ""} pendiente de ver`}
+                        title={`Revisión quincenal #${c.review_period_index ?? c.pending_review_period ?? ""} pendiente de ver`}
                       >
                         !
                       </span>

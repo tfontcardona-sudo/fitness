@@ -60,6 +60,19 @@ export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDat
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
 
+  // Si cambia el período con la pestaña montada (rollover), se recarga SU
+  // borrador — sin volcar el del período anterior sobre la clave nueva.
+  useEffect(() => {
+    const d = loadDraft(closeDate);
+    setWeight(d.weight ?? ""); setWaist(d.waist ?? ""); setHip(d.hip ?? "");
+    setArm(d.arm ?? ""); setThigh(d.thigh ?? ""); setFeelings(d.feelings ?? {});
+    setAdhDiet(d.adhDiet ?? ""); setAdhTrain(d.adhTrain ?? "");
+    setFreeMeals(d.freeMeals ?? ""); setChanges(d.changes ?? "");
+    setHardest(d.hardest ?? ""); setNextGoal(d.nextGoal ?? "");
+    setQuestions(d.questions ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [closeDate]);
+
   // Cada cambio queda guardado en el móvil: volver a la pestaña lo restaura.
   useEffect(() => {
     if (done) return;
@@ -73,7 +86,22 @@ export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDat
       changes, hardest, nextGoal, questions, closeDate, done]);
 
   const allFeelings = FEELINGS.every((f) => feelings[f.key] > 0);
-  const canSubmit = Number(weight) > 30 && allFeelings && adhDiet !== "" && adhTrain !== "" && !busy;
+  // Validación de RANGOS en el móvil: si algo se sale (300 kg, 60 comidas
+  // libres…), se avisa del campo concreto ANTES de enviar — el backend
+  // rechazaría todo el cierre con un error genérico.
+  const rangeError = (() => {
+    const w = Number(weight);
+    if (weight !== "" && (w <= 30 || w >= 300)) return "Revisa el peso final (kg reales)";
+    const per = (v: string, name: string) =>
+      v !== "" && (Number(v) < 20 || Number(v) > 250) ? `Revisa ${name} (cm reales)` : null;
+    const perErr = per(waist, "la cintura") ?? per(hip, "la cadera") ?? per(arm, "el brazo") ?? per(thigh, "el muslo");
+    if (perErr) return perErr;
+    if (freeMeals !== "" && (Number(freeMeals) < 0 || Number(freeMeals) > 50))
+      return "Revisa las comidas libres (0-50)";
+    return null;
+  })();
+  const canSubmit = Number(weight) > 30 && allFeelings && adhDiet !== "" && adhTrain !== ""
+    && !rangeError && !busy;
 
   async function submit() {
     if (!canSubmit) return;
@@ -246,7 +274,9 @@ export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDat
         {busy ? "Enviando…" : "Enviar revisión a mi coach"}
       </button>
       {!canSubmit && !busy && (
-        <p className="text-center text-xs opacity-40">Completa peso, las 6 sensaciones y la adherencia.</p>
+        <p className="text-center text-xs opacity-40">
+          {rangeError ?? "Completa peso, las 6 sensaciones y la adherencia."}
+        </p>
       )}
     </div>
   );

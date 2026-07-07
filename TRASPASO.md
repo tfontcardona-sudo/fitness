@@ -1,7 +1,7 @@
 # Documento de traspaso — Fitness System (DQ / David Quiceno)
 
 > Objetivo de este doc: que otra sesión de IA (Fable u otra) pueda **continuar el trabajo sin perder contexto**.
-> Última actualización: 2026-07-07 (4ª parte). Autor del último tramo: Claude (pulido integral de la web, anamnesis visual, equivalencias reescaladas en el PDF).
+> Última actualización: 2026-07-07 (5ª parte). Autor del último tramo: Claude (auditoría exhaustiva a 0 fallos: 3 agentes + E2E real + 20 arreglos).
 > **PRODUCCIÓN:** el sistema está desplegado en `https://app.dqrassessories.com` (VPS Hetzner
 > `46.225.57.25`, repo en `/root/fitness`, ver `DEPLOY.md`). Actualizar: `cd /root/fitness && git pull && docker compose up -d --build`.
 > Cliente/marca: **David Quiceno (DQ)** — asesoría de fitness. Colores marca: **vino `#8B1A2B`**, **azul `#4A7BA8`**.
@@ -667,6 +667,62 @@ Cierre de los flecos detectados al revisar TODO lo pedido el 7 de julio:
 - **Verificación**: backtest 1529 OK · 0 fallos; pytest verde; 8 harnesses
   verdes (anamnesis-test ampliado: vista→Editar datos; editor-test cubre la
   proporcionalidad); captura visual de la pestaña Anamnesis nueva OK.
+
+## 10.f Tramo 2026-07-07 (5ª parte) — Auditoría exhaustiva a 0 fallos
+
+Barrido total: 3 agentes de auditoría estática (coach FE / portal FE+BE /
+backend) + un E2E NUEVO contra servidor real (uvicorn+Postgres, IA fake,
+navegador: login→anamnesis→generar→editar→PDF→objetivo→portal→series) en
+`scratchpad/e2e-full.mjs` + `qa-server.py` + `e2e-proxy.mjs` → 27/27 checks.
+Arreglos aplicados (todos verificados):
+
+**Críticos**
+- `plan_activation.activate_plan` ahora supersede TODOS los planes publicados
+  (también de otros meses): antes, tras cambiar objetivo y generar el mes+1
+  con período abierto, el portal/PDF servían el plan del MES VIEJO ~14 días.
+  Backtest nuevo invariante: "un único plan ACTIVO tras regenerar".
+- Sidebar "Dieta"/estado no se resincronizaba tras generar/adaptar/editar:
+  `planDiet` depende ahora del objeto `client` (cambia en cada load) y el
+  panel llama `onClientChanged` en generate/adapt/activateLegacy.
+
+**Medios**
+- Fecha del portal en zona Europe/Madrid (`portal.today_local()`): entre
+  las 00:00-02:00 el servidor UTC descuadraba días restantes/cierre/semana.
+- Emails: adaptar el plan ya NO reenvía "¡Bienvenido!" — usa
+  `plan_republished`; `coach_at_risk` enlazaba a /clients/ (404) → /clientes/;
+  `closing_due` (recordatorio de cierre día 14) por fin cableado en
+  `run_daily_maintenance` (idempotente por día).
+- Regenerar plan tras una revisión sella `applied_adjustments` (la IA ya
+  incorporó los ajustes): se apaga la alerta fantasma "sin adaptar" y
+  "Adaptar" no puede aplicar los mismos ajustes dos veces (409).
+- Colores del peso según objetivo en Feedback/Seguimiento/Resumen
+  (muscle_gain: subir = bueno); antes señal invertida.
+- `compute_period_summary`: comparación con períodos anteriores en UNA
+  consulta (join) en vez de 2×N.
+- Cierre quincenal del portal: validación de rangos en el móvil (peso 30-300,
+  perímetros 20-250, comidas libres 0-50) con aviso del campo concreto.
+- Portal con revisión enviada (período cerrado): Entreno y Diario muestran
+  "registro en pausa" y no aceptan datos que el backend rechazaría (409).
+
+**Leves**
+- needsDownload coherente: se limpia al enviar por WhatsApp/generar/adaptar y
+  se activa también al editar los "Cambios aplicados".
+- "Regenerar enlace del portal" accesible (estado/diálogo estaban muertos).
+- Textos obsoletos ("publicarlo", "créalo en Planificación", hint de
+  Feedback, docstrings) actualizados al flujo sin botón Publicar.
+- `household` ("1 taza (80 g)") también se reescala (back+front).
+- Detalle "Carbohidratos: X→Y" recuadrado cuando kcal+carbs se tocan a la vez.
+- `week_weight_hint_kg` añadido al schema TodayExercise (espejo types.ts);
+  `_session_for_today` aplica el factor de semana (coherencia de servicio).
+- Peso actual con la misma fuente/fallback en Resumen e Historial; nº de
+  revisión unificado en ClientsPage; aria-labels; guardas de división por 0;
+  borrador del cierre se recarga al cambiar de período; migración 0008
+  (published_at/strict_free_meal_enabled/option_feedback_json idempotentes);
+  state_machine admite active→review_pending (cierre directo).
+
+**Verificación final**: E2E real 27/27 · backtest 1530 OK/0 fallos · pytest
+verde · 8 harnesses verdes · tsc/vite OK. QA server E2E reutilizable:
+`qa-server.py` (patches IA del backtest + admin DQR/e2e-password-123).
 
 ## 11. Mapa rápido de archivos tocados en el último tramo
 

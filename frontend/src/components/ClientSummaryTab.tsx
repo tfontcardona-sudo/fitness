@@ -64,6 +64,9 @@ export function ClientSummaryTab({ client }: { client: ClientOut }) {
           }
           unit="kg"
           signed
+          // Bajar solo es "bueno" si el objetivo es perder; en ganancia
+          // muscular el color se invierte (subir = progreso).
+          lowerBetter={client.goal_type !== "muscle_gain"}
         />
       </div>
 
@@ -177,15 +180,18 @@ function Kpi({
   value,
   unit,
   signed,
+  lowerBetter = true,
 }: {
   label: string;
   value: number | null | undefined;
   unit: string;
   signed?: boolean;
+  lowerBetter?: boolean;
 }) {
   const display =
     value == null ? "—" : `${signed && value > 0 ? "+" : ""}${value} ${unit}`;
-  const tone = signed && value != null ? (value < 0 ? "#E8833A" : value > 0 ? "#9A6B15" : undefined) : undefined;
+  const improving = value != null && (lowerBetter ? value < 0 : value > 0);
+  const tone = signed && value != null && value !== 0 ? (improving ? "#E8833A" : "#9A6B15") : undefined;
   return (
     <div className="card p-4">
       <p className="text-xl font-semibold" style={{ color: tone ?? "#26211A" }}>

@@ -136,7 +136,7 @@ def coach_change_request(brand: Brand, client_name: str, message: str, dashboard
     body = (
         f"<p>El cliente <strong>{client_name}</strong> ha enviado una solicitud de "
         f"ajuste:</p><p style='background:#f4f4f7;border-radius:10px;padding:12px 14px'>"
-        f"{message}</p><p>Revísala y republica el plan cuando lo resuelvas.</p>"
+        f"{message}</p><p>Revísala y actualiza el plan cuando lo resuelvas (queda activo al guardar).</p>"
     )
     return subject, _shell(brand, "Solicitud de ajuste", body, dashboard_url, "Abrir panel")
 
