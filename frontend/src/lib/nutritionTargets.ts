@@ -93,6 +93,27 @@ export function macrosScaledToKcal(baseNut: any, kcal: number): MacroTargets {
 const scale = (v: any, f: number): any => (typeof v === "number" ? Math.round(v * f) : v);
 const scaleG = (v: any, f: number): any => (typeof v === "number" ? Math.max(0, Math.round((v * f) / 5) * 5) : v); // gramos a múltiplos de 5
 
+/** Reescala las cantidades DENTRO de un texto de equivalencias ("140 g crudo =
+ *  380 g cocido"). Solo números con unidad g/gr/ml; "2 huevos" queda igual.
+ *  Espejo de `_scale_amount_text` en services/nutrition_scale.py. */
+function scaleAmountText(text: any, f: number): any {
+  if (typeof text !== "string" || f === 1) return text;
+  return text.replace(/(\d+(?:[.,]\d+)?)\s*(g|gr|ml)\b/g, (_m, num: string, unit: string) => {
+    const v = parseFloat(num.replace(",", ".")) * f;
+    const scaled = v >= 25 ? Math.round(v / 5) * 5 : Math.max(1, Math.round(v));
+    return `${scaled} ${unit}`;
+  });
+}
+
+/** Ratio del eje que corresponde a un grupo de equivalencias por su nombre. */
+function equivRatio(name: any, rK: number, rP: number, rC: number, rF: number): number {
+  const n = String(name ?? "").toLowerCase();
+  if (n.includes("prote")) return rP;
+  if (n.includes("gras")) return rF;
+  if (["hidrat", "carb", "cereal", "almid", "frut"].some((k) => n.includes(k))) return rC;
+  return rK;
+}
+
 /** Reescala TODO el plan de nutrición a los totales nuevos: objetivos por
  *  comida (cada eje por su propio ratio, así los totales cuadran) y banco de
  *  comidas (macros de cada opción + gramos de cada ingrediente, por el ratio
@@ -158,7 +179,19 @@ export function rescaleNutrition(nut: any, next: MacroTargets): void {
   };
   const bank = nut.meal_bank;
   if (bank?.mode === "flexible_7") {
-    for (const slot of bank.slots ?? []) for (const o of slot.options ?? []) scaleDish(o);
+    for (const slot of bank.slots ?? []) {
+      for (const o of slot.options ?? []) scaleDish(o);
+      // Equivalencias (comida/cena): cantidades en TEXTO, cada grupo por su eje
+      const eq = slot.equivalences;
+      if (eq) {
+        eq.intro = scaleAmountText(eq.intro, rC);
+        for (const g of eq.groups ?? []) {
+          const r = equivRatio(g?.name, rK, rP, rC, rF);
+          g.note = scaleAmountText(g.note, r);
+          for (const it of g.items ?? []) it.amount = scaleAmountText(it.amount, r);
+        }
+      }
+    }
   } else if (bank?.mode === "strict") {
     for (const d of bank.days ?? []) for (const m of d.meals ?? []) scaleDish(m?.dish);
   }

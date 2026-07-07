@@ -233,34 +233,53 @@ export function ClientPlanEditor({
           </div>
         ))}
 
-        <Subhead text="Sesiones" />
+        <Subhead text="Sesiones (desplegables por día)" />
         {tr.sessions.map((s: any, si: number) => (
-          <div key={si} className="mt-2 rounded-lg p-3" style={{ background: "var(--surface-raised)" }}>
-            <div className="grid grid-cols-2 gap-2">
+          <details key={si} className="mt-2 rounded-lg p-3" style={{ background: "var(--surface-raised)" }}>
+            <summary className="flex cursor-pointer flex-wrap items-center gap-2 text-sm font-medium text-zinc-200">
+              <span
+                className="rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+                style={{ background: "color-mix(in srgb, var(--brand-accent-2) 15%, transparent)", color: "var(--brand-accent-2)" }}
+              >
+                {s.day || `Sesión ${si + 1}`}
+              </span>
+              {s.name}
+              <span className="text-xs font-normal text-zinc-500">{(s.exercises ?? []).length} ejercicios</span>
+            </summary>
+            <div className="mt-2 grid grid-cols-2 gap-2">
               <Text label="Día" value={s.day ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].day = v))} />
               <Text label="Nombre" value={s.name ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].name = v))} />
             </div>
             <Area label="Calentamiento" value={s.warmup ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].warmup = v))} />
             {(s.exercises ?? []).map((ex: any, ei: number) => (
-              <div key={ei} className="mt-2 rounded-md p-2" style={{ background: "var(--surface)" }}>
-                <div className="mb-1 flex items-center justify-between">
-                  <span className="text-xs font-medium text-zinc-200">{exMap[ex.exercise_id] ?? `Ejercicio #${ex.exercise_id}`}</span>
-                  <button onClick={() => mutate((d) => d.training.sessions[si].exercises.splice(ei, 1))} className="text-zinc-500 hover:text-red-400"><Trash2 size={14} /></button>
-                </div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <details key={ei} className="mt-2 rounded-md p-2" style={{ background: "var(--surface)" }}>
+                <summary className="flex cursor-pointer items-center justify-between">
+                  <span className="text-xs font-medium text-zinc-200">
+                    {exMap[ex.exercise_id] ?? `Ejercicio #${ex.exercise_id}`}
+                    <span className="ml-1.5 font-normal text-zinc-500">
+                      {ex.sets}×{ex.rep_range}{ex.rir ? ` · RIR ${ex.rir}` : ""}
+                    </span>
+                  </span>
+                  <button
+                    onClick={(e) => { e.preventDefault(); mutate((d) => d.training.sessions[si].exercises.splice(ei, 1)); }}
+                    aria-label="Quitar ejercicio"
+                    className="text-zinc-500 hover:text-red-400"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </summary>
+                <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
                   <Num label="Series" value={ex.sets} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].sets = v))} />
                   <Text label="Reps" value={ex.rep_range ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].rep_range = v))} />
                   <Text label="RIR" value={ex.rir ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].rir = v))} />
                   <Num label="Descanso (s)" value={ex.rest_sec} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].rest_sec = v))} />
-                  <Text label="Tempo" value={ex.tempo ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].tempo = v))} />
-                  <Num label="Peso sug. (kg)" value={ex.start_weight_hint_kg} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].start_weight_hint_kg = v))} />
                 </div>
                 <Text label="Progresión" value={ex.progression_rule ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].progression_rule = v))} />
                 <Text label="Cue técnica" value={ex.technique_cue ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].technique_cue = v))} />
-              </div>
+              </details>
             ))}
             <Area label="Vuelta a la calma" value={s.cooldown ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].cooldown = v))} />
-          </div>
+          </details>
         ))}
 
         <Subhead text="Cardio y descarga" />

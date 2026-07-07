@@ -240,18 +240,28 @@ function ActionCard({ a, quiet }: { a: Accion; quiet?: boolean }) {
   );
 }
 
+/** Avatar con la inicial: degradado de marca (naranja→azul) con un matiz
+ *  propio por cliente, brillo y volumen — nada plano. */
 export function Avatar({ name, size = 34 }: { name: string; size?: number }) {
+  const hash = Array.from(name).reduce((a, c) => a + c.charCodeAt(0), 0);
+  const angle = 115 + (hash % 130); // ángulo estable por nombre
   return (
     <span
-      className="flex shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+      className="relative flex shrink-0 select-none items-center justify-center overflow-hidden rounded-full font-bold text-white"
       style={{
         width: size,
         height: size,
-        background: "var(--surface-raised)",
-        color: "var(--brand-accent)",
-        border: "1px solid var(--line-strong)",
+        fontSize: Math.max(11, Math.round(size * 0.38)),
+        background: `linear-gradient(${angle}deg, var(--brand-accent) 0%, #D96F2E 45%, var(--brand-accent-2) 100%)`,
+        boxShadow:
+          "inset 0 1px 1px rgba(255,255,255,0.45), inset 0 -2px 4px rgba(0,0,0,0.18), 0 1px 3px rgba(38,33,26,0.25)",
+        textShadow: "0 1px 2px rgba(0,0,0,0.25)",
       }}
     >
+      <span
+        className="pointer-events-none absolute inset-x-0 top-0"
+        style={{ height: "48%", background: "linear-gradient(rgba(255,255,255,0.28), rgba(255,255,255,0))" }}
+      />
       {initials(name)}
     </span>
   );

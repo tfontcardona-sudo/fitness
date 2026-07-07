@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Dumbbell, Plus, Trash2, PlayCircle, Check, Sparkles, CalendarRange } from "lucide-react";
+import { Dumbbell, Trash2, PlayCircle, Check, Sparkles, CalendarRange } from "lucide-react";
 import type { PlanChanges, PortalBrand, TodaySession, TrainingWeek } from "../types";
 import { usePortalToast } from "./PortalToast";
 import { Loading, Empty, localToday } from "./PortalUi";
@@ -119,14 +119,6 @@ export function PortalWorkout({ api, brand }: { api: Api; brand: PortalBrand }) 
   function setRow(exId: number, idx: number, patch: Partial<SetRow>) {
     setSets((s) => {
       const next = { ...s, [exId]: s[exId].map((r, i) => (i === idx ? { ...r, ...patch } : r)) };
-      flush(next);
-      return next;
-    });
-  }
-  function addSet(exId: number) {
-    setSets((s) => {
-      if ((s[exId]?.length ?? 0) >= 20) return s;
-      const next = { ...s, [exId]: [...(s[exId] ?? []), { weight_kg: null, reps: null }] };
       flush(next);
       return next;
     });
@@ -307,9 +299,6 @@ export function PortalWorkout({ api, brand }: { api: Api; brand: PortalBrand }) 
                       </div>
                     );
                   })}
-                  <button onClick={() => addSet(ex.exercise_id)} className="tap mt-1 flex w-full items-center justify-center gap-1 rounded-xl border border-dashed py-2 text-xs opacity-70" style={{ borderColor: "rgba(128,128,128,0.3)" }}>
-                    <Plus size={13} /> Añadir serie
-                  </button>
                 </div>
                 {history[String(ex.exercise_id)]?.length ? (
                   // Azul: el historial es consulta de datos, no acción

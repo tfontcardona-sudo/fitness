@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { FileText, Save, Sparkles } from "lucide-react";
+import { Eye, FileText, Pencil, Save, Sparkles } from "lucide-react";
 import { api, ApiError, getToken } from "../lib/api";
 import type { ClientOut, GoalType, Level } from "../types";
 import { Spinner, useToast } from "./ui";
+import { ageFrom, DIET_LABEL, GOAL_LABEL, LEVEL_LABEL, PLACE_LABEL } from "../lib/format";
 
 /**
  * Tab Anamnesis: ficha estructurada del cliente. Es la fuente de datos que la
@@ -19,6 +20,9 @@ export function ClientAnamnesisTab({ client, onSaved }: { client: ClientOut; onS
   const [reading, setReading] = useState(false);
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [pdfName, setPdfName] = useState<string | null>(null);
+  // Por defecto la ficha se VE (ordenada por colores, sin campos editables);
+  // el formulario solo aparece si el coach pulsa "Editar datos".
+  const [editMode, setEditMode] = useState(false);
 
   // Nombre del PDF de anamnesis subido (para poder verlo/descargarlo desde aquí).
   useEffect(() => {
@@ -95,6 +99,10 @@ export function ClientAnamnesisTab({ client, onSaved }: { client: ClientOut; onS
               <FileText size={15} /> Ver PDF
             </button>
           )}
+          <button onClick={() => setEditMode((e) => !e)} className="btn btn-ghost">
+            {editMode ? <Eye size={15} /> : <Pencil size={15} />}
+            {editMode ? "Ver ficha" : "Editar datos"}
+          </button>
           <button onClick={readWithAI} disabled={reading} className="btn btn-primary">
             <Sparkles size={15} /> {reading ? "Leyendo PDF…" : "Leer con IA"}
           </button>
@@ -108,6 +116,9 @@ export function ClientAnamnesisTab({ client, onSaved }: { client: ClientOut; onS
         </div>
       )}
 
+      {!editMode && <AnamnesisView client={client} />}
+
+      {editMode && (<>
       <Section title="Datos personales">
         <Select label="Sexo" value={(current("sex") as string) ?? ""} onChange={(v) => set("sex", v as any)}
           options={[["", "—"], ["male", "Hombre"], ["female", "Mujer"]]} />
@@ -181,6 +192,131 @@ export function ClientAnamnesisTab({ client, onSaved }: { client: ClientOut; onS
         </button>
         {dirty && <span className="text-xs text-zinc-500">Tienes cambios sin guardar</span>}
       </div>
+      </>)}
+    </div>
+  );
+}
+
+// ------------------------- FICHA VISUAL (solo lectura) -----------------------
+// La anamnesis se LEE por secciones de color; no hay campos que tocar sin
+// querer. Cada color agrupa un tipo de dato (datos, cuerpo, entreno, dieta,
+// clínica en rojo/ámbar, vida). "Editar datos" abre el formulario clásico.
+
+const V_COLORS = {
+  datos: "#3D6E9E",      // azul: identidad
+  cuerpo: "#E8833A",     // naranja: cuerpo y objetivo
+  entreno: "#2E5E8C",    // azul marca: entrenamiento
+  dieta: "#3F7446",      // verde: alimentación
+  clinica: "#9A6B15",    // ámbar: salud
+  lesiones: "#B3261E",   // rojo: lo crítico
+  vida: "#63519E",       // morado: estilo de vida
+};
+
+function splitNote(text: string | null | undefined): string[] {
+  const t = (text ?? "").trim();
+  if (!t) return [];
+  return t.split(/\n+/).map((s) => s.replace(/^[-•*]\s*/, "").trim()).filter(Boolean);
+}
+
+function AnamnesisView({ client }: { client: ClientOut }) {
+  const age = ageFrom(client.birth_date);
+  const pairs = (rows: [string, string | null | undefined][]) =>
+    rows.filter(([, v]) => v != null && v !== "");
+  const meals = client.meal_schedule?.length
+    ? client.meal_schedule.map((m: any) => `${m.name} (${m.time})`).join(" · ")
+    : client.meals_per_day == null
+      ? "Lo decide el equipo (reparto óptimo para su objetivo)"
+      : `${client.meals_per_day} al día`;
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <VCard color={V_COLORS.datos} title="Datos personales" rows={pairs([
+        ["Sexo", client.sex === "male" ? "Hombre" : client.sex === "female" ? "Mujer" : null],
+        ["Nacimiento", client.birth_date],
+        ["Edad", age ? `${age} años` : null],
+      ])} />
+      <VCard color={V_COLORS.cuerpo} title="Antropometría y objetivo" rows={pairs([
+        ["Altura", client.height_cm ? `${client.height_cm} cm` : null],
+        ["Peso inicial", client.start_weight_kg ? `${client.start_weight_kg} kg` : null],
+        ["% graso", client.body_fat_pct ? `${client.body_fat_pct}%` : null],
+        ["Peso objetivo", client.goal_weight_kg ? `${client.goal_weight_kg} kg` : null],
+        ["Objetivo", client.goal_type ? GOAL_LABEL[client.goal_type] : null],
+        ["Nivel", client.level ? LEVEL_LABEL[client.level] : null],
+      ])} />
+      <VCard color={V_COLORS.entreno} title="Entrenamiento" rows={pairs([
+        ["Días / semana", client.training_days ? String(client.training_days) : null],
+        ["Duración sesión", client.session_max_min ? `${client.session_max_min} min` : null],
+        ["Dónde", client.training_place ? PLACE_LABEL[client.training_place] : null],
+        ["Material", client.equipment?.length ? client.equipment.join(", ") : null],
+      ])} note={client.sport_history} noteLabel="Experiencia y otros deportes" />
+      <VCard color={V_COLORS.dieta} title="Dieta" rows={pairs([
+        ["Modo", client.diet_mode ? DIET_LABEL[client.diet_mode] : null],
+        ["Comidas del día", meals],
+        ["Le gustan", client.food_likes?.length ? client.food_likes.join(", ") : null],
+        ["Evita", client.food_dislikes?.length ? client.food_dislikes.join(", ") : null],
+        ["Alergias", client.food_allergies?.length ? client.food_allergies.join(", ") : null],
+      ])} />
+      <VNotes color={V_COLORS.lesiones} title="Lesiones y movilidad" text={client.injuries_notes} />
+      <VNotes color={V_COLORS.clinica} title="Historia clínica y salud" text={client.medical_notes} />
+      <VNotes color={V_COLORS.datos} title="Medicación" text={client.medication_notes} />
+      <VNotes color={V_COLORS.clinica} title="Suplementación actual" text={client.current_supplements} />
+      <div className="sm:col-span-2">
+        <VNotes color={V_COLORS.vida} title="Estilo de vida, motivo y objetivos" text={client.lifestyle_notes} />
+      </div>
+    </div>
+  );
+}
+
+function VCard({ color, title, rows, note, noteLabel }: {
+  color: string; title: string; rows: [string, string | null | undefined][];
+  note?: string | null; noteLabel?: string;
+}) {
+  const noteLines = splitNote(note);
+  if (!rows.length && !noteLines.length) return null;
+  return (
+    <div className="card border-l-2 p-4" style={{ borderLeftColor: color }}>
+      <p
+        className="mb-2 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+        style={{ background: `color-mix(in srgb, ${color} 13%, transparent)`, color }}
+      >
+        {title}
+      </p>
+      <dl className="space-y-1.5 text-sm">
+        {rows.map(([k, v]) => (
+          <div key={k} className="flex items-start justify-between gap-3">
+            <dt className="shrink-0 text-zinc-500">{k}</dt>
+            <dd className="text-right font-medium text-zinc-200">{v}</dd>
+          </div>
+        ))}
+      </dl>
+      {noteLines.length > 0 && (
+        <>
+          {noteLabel && <p className="mt-2 text-xs text-zinc-500">{noteLabel}</p>}
+          <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-zinc-400">
+            {noteLines.map((l, i) => <li key={i}>{l}</li>)}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
+function VNotes({ color, title, text }: { color: string; title: string; text: string | null | undefined }) {
+  const lines = splitNote(text);
+  return (
+    <div className="card border-l-2 p-4" style={{ borderLeftColor: color }}>
+      <p
+        className="mb-2 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+        style={{ background: `color-mix(in srgb, ${color} 13%, transparent)`, color }}
+      >
+        {title}
+      </p>
+      {lines.length ? (
+        <ul className="list-disc space-y-0.5 pl-4 text-sm text-zinc-300">
+          {lines.map((l, i) => <li key={i}>{l}</li>)}
+        </ul>
+      ) : (
+        <p className="text-xs text-zinc-500">Sin datos.</p>
+      )}
     </div>
   );
 }

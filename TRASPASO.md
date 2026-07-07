@@ -1,7 +1,7 @@
 # Documento de traspaso — Fitness System (DQ / David Quiceno)
 
 > Objetivo de este doc: que otra sesión de IA (Fable u otra) pueda **continuar el trabajo sin perder contexto**.
-> Última actualización: 2026-07-07 (3ª parte). Autor del último tramo: Claude (macros proporcionales, semana del mesociclo en el portal, fuerza por grupo muscular).
+> Última actualización: 2026-07-07 (4ª parte). Autor del último tramo: Claude (pulido integral de la web, anamnesis visual, equivalencias reescaladas en el PDF).
 > **PRODUCCIÓN:** el sistema está desplegado en `https://app.dqrassessories.com` (VPS Hetzner
 > `46.225.57.25`, repo en `/root/fitness`, ver `DEPLOY.md`). Actualizar: `cd /root/fitness && git pull && docker compose up -d --build`.
 > Cliente/marca: **David Quiceno (DQ)** — asesoría de fitness. Colores marca: **vino `#8B1A2B`**, **azul `#4A7BA8`**.
@@ -630,6 +630,43 @@ Cierre de los flecos detectados al revisar TODO lo pedido el 7 de julio:
 - **Verificación**: backtest 5×92 días → 1529 OK · 0 fallos; pytest OK; los 8
   harnesses Playwright OK (editor-test ampliado: proporcionalidad + tabla en
   vivo; verify-portal con fixture de semana). Unit del espejo back OK.
+
+## 10.e Tramo 2026-07-07 (4ª parte) — Pulido integral + equivalencias del PDF
+
+- **BUG REAL del PDF**: el banco de comidas de comida/cena usa EQUIVALENCIAS con
+  cantidades en TEXTO ("140 g crudo = 380 g cocido") que el reescalado no
+  tocaba → tras editar kcal/macros el PDF salía con gramos viejos. Arreglado en
+  `nutrition_scale.py` + `nutritionTargets.ts`: `_scale_amount_text` escala los
+  números con unidad (g/gr/ml, múltiplos de 5 desde 25) y cada grupo escala por
+  SU eje (`_equiv_ratio`: proteína→r_p, hidratos/fruta→r_c, grasas→r_f).
+- **Aviso tras editar**: banner naranja + toast "descarga el PDF de nuevo"
+  (estado `needsDownload` en ClientPlanPanel; se limpia al descargar).
+- **Editor**: fuera los campos Tempo y Peso sug.; sesiones DESPLEGABLES por día
+  y cada ejercicio plegado (summary = nombre + series×reps).
+- **Panel planificación**: banco de comidas ELIMINADO de la web (solo PDF);
+  reglas de flexibilidad en desplegable; "Justificación de la nutrición"
+  estructurada por puntos con chips de color (`RationaleView` parsea
+  "- [Área] cambio — porqué"); Objetivo con "pulsa para cambiar"; Puntos
+  importantes con lo CRÍTICO EN ROJO (#B3261E, secciones lesiones/medicación/
+  alergias + palabras clave; negación pura no marca — ojo "no resuelta" SÍ).
+- **Ficha (sidebar)**: tarjeta Anamnesis en desplegable (abierta solo si falta);
+  botón azul destacado "Diario del cliente" (móvil+checklist) que copia/abre el
+  portal; fila Dieta = kcal/macros del PLAN ACTIVO (vacía hasta generar);
+  Avatar con degradado naranja→azul (ángulo estable por nombre) y brillo.
+- **Resumen**: Notas clínicas SOLO con lo relevante (fuera "No refiere…",
+  ": no.", "no aplica" — regex IRRELEVANT_LINE), secciones separadas con color
+  (lesiones rojo, salud ámbar, medicación azul, alergias rojo) + Medicación.
+- **Pestaña Anamnesis**: por defecto VISTA de solo lectura por secciones de
+  color (V_COLORS) — datos, cuerpo+objetivo, entreno, dieta, lesiones (rojo),
+  clínica, medicación, suplementos, vida; botón "Editar datos" abre el
+  formulario clásico (el PATCH/audit no cambia).
+- **Portal**: eliminado "Añadir serie" (las series objetivo ya vienen del plan;
+  borrar sí se puede); manifest PWA name="DQR · Assessories", short_name="DQR";
+  iconos regenerados (DQR grande + "assessories" naranja debajo) con
+  gen-icons.mjs (scratchpad).
+- **Verificación**: backtest 1529 OK · 0 fallos; pytest verde; 8 harnesses
+  verdes (anamnesis-test ampliado: vista→Editar datos; editor-test cubre la
+  proporcionalidad); captura visual de la pestaña Anamnesis nueva OK.
 
 ## 11. Mapa rápido de archivos tocados en el último tramo
 

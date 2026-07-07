@@ -587,10 +587,11 @@ def portal_manifest(
 
     brand = portal_svc.brand_payload(db)
     light = brand.get("portal_theme") == "light"
-    name = brand.get("name") or "Mi seguimiento"
+    # Identidad de la app instalada: "DQR" grande (etiqueta bajo el icono) y
+    # "Assessories" como subtítulo (nombre completo en splash/ajustes).
     manifest = {
-        "name": name,
-        "short_name": name[:12],
+        "name": "DQR · Assessories",
+        "short_name": "DQR",
         "description": "Tu portal de seguimiento: entreno, diario y revisión quincenal.",
         "lang": "es",
         "start_url": f"/p/{client.portal_token}",

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Check, ExternalLink, BellRing, Pencil } from "lucide-react";
+import { ArrowLeft, Check, BellRing, Pencil, Smartphone, ClipboardCheck } from "lucide-react";
 import { api } from "../lib/api";
 import type { ClientOut } from "../types";
 import {
@@ -17,7 +17,7 @@ import { ClientPlanPanel } from "../components/ClientPlanPanel";
 import { ClientFeedbackTab } from "../components/ClientFeedbackTab";
 import { ClientHistoryTab } from "../components/ClientHistoryTab";
 import { ClientTrackingTab } from "../components/ClientTrackingTab";
-import { ageFrom, DIET_LABEL, GOAL_LABEL, LEVEL_LABEL, PLACE_LABEL } from "../lib/format";
+import { ageFrom, GOAL_LABEL, LEVEL_LABEL, PLACE_LABEL } from "../lib/format";
 
 type Tab = "resumen" | "anamnesis" | "planificacion" | "seguimiento" | "feedback" | "historial";
 
@@ -81,6 +81,28 @@ export default function ClientProfilePage() {
       .then((l) => setPortalUrl(`${window.location.origin}/p/${l.portal_token}`))
       .catch(() => setPortalUrl(null));
   }, [clientId]);
+
+  // "Dieta" de la info básica = la dieta GENERADA con IA (kcal y macros del
+  // plan activo). Hasta que no hay planificación, el apartado queda vacío.
+  const [planDiet, setPlanDiet] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api.listPlans(clientId)
+      .then((plans: any[]) => {
+        if (!alive) return;
+        const active = plans.find((p) => p.status === "published");
+        const n = active?.nutrition_json;
+        if (n?.target_kcal) {
+          const m = n.macros ?? {};
+          setPlanDiet(
+            `${Math.round(n.target_kcal)} kcal · P${Math.round(m.protein_g ?? 0)} ` +
+            `C${Math.round(m.carbs_g ?? 0)} G${Math.round(m.fat_g ?? 0)}`,
+          );
+        } else setPlanDiet(null);
+      })
+      .catch(() => setPlanDiet(null));
+    return () => { alive = false; };
+  }, [clientId, client?.updated_at]);
 
   function openPortal() {
     if (!portalUrl) return;
@@ -148,15 +170,31 @@ export default function ClientProfilePage() {
               <Row label="Objetivo" value={client.goal_type ? GOAL_LABEL[client.goal_type] : "—"} />
               <Row label="Nivel" value={client.level ? LEVEL_LABEL[client.level] : "—"} />
               <Row label="Entreno" value={client.training_place ? PLACE_LABEL[client.training_place] : "—"} />
-              <Row label="Dieta" value={client.diet_mode ? DIET_LABEL[client.diet_mode] : "—"} />
+              {/* Dieta = la generada con IA; vacía hasta que exista planificación */}
+              <Row label="Dieta" value={planDiet ?? "—"} faint={planDiet == null ? "se llena al generar la planificación" : undefined} />
             </dl>
           </div>
 
-          {/* Portal del cliente: el enlace (dosier) que rellena el cliente.
-              Lo copia y lo abre para previsualizarlo. */}
-          <div className="card space-y-1 p-3">
-            <ActionRow icon={ExternalLink} label="Abrir / copiar enlace del portal" onClick={openPortal} />
-          </div>
+          {/* DIARIO DEL CLIENTE (su app del móvil): botón destacado y distinto
+              al resto — copia el enlace del portal y lo abre para previsualizar. */}
+          <button
+            onClick={openPortal}
+            className="flex w-full items-center gap-3 rounded-xl px-4 py-3.5 text-left text-white shadow-md transition-transform hover:brightness-110 active:scale-[0.98]"
+            style={{ background: "linear-gradient(135deg, var(--brand-accent-2) 0%, #234B72 100%)" }}
+          >
+            <span className="relative shrink-0">
+              <Smartphone size={26} />
+              <ClipboardCheck
+                size={14}
+                className="absolute -bottom-1 -right-1.5 rounded-full p-0.5"
+                style={{ background: "var(--brand-accent)", color: "white" }}
+              />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold">Diario del cliente</span>
+              <span className="block text-xs opacity-75">abrir y copiar el enlace de su app</span>
+            </span>
+          </button>
 
           {/* Anamnesis: enviar enlace + subir PDF rellenado */}
           <ClientDocuments client={client} onUploaded={load} />
@@ -262,23 +300,14 @@ function PhoneRow({ client, onSaved }: { client: ClientOut; onSaved: () => void 
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value, faint }: { label: string; value: string; faint?: string }) {
   return (
-    <div className="flex items-center justify-between">
+    <div className="flex items-center justify-between gap-2">
       <dt className="text-zinc-500">{label}</dt>
-      <dd className="font-medium text-zinc-200">{value}</dd>
+      <dd className="text-right font-medium text-zinc-200">
+        {value}
+        {faint && <span className="block text-[11px] font-normal text-zinc-500">{faint}</span>}
+      </dd>
     </div>
-  );
-}
-
-function ActionRow({ icon: Icon, label, onClick }: { icon: typeof ExternalLink; label: string; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm text-zinc-300 hover:bg-[var(--surface-raised)]"
-    >
-      <Icon size={15} className="text-zinc-500" />
-      {label}
-    </button>
   );
 }
