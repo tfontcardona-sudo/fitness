@@ -84,24 +84,23 @@ export function ClientDocuments({ client, onUploaded }: { client: ClientOut; onU
   }
 
   return (
-    <div className="card p-5">
-      <h3 className="mb-1 text-sm font-semibold text-zinc-200">Anamnesis</h3>
-      <p className="mb-4 text-xs text-zinc-500">
+    // DESPLEGABLE: abierto solo mientras falte la anamnesis (hay que actuar);
+    // una vez subida queda plegado y el check lo resume de un vistazo.
+    <details className="card p-5" open={!docs || docs.length === 0}>
+      <summary className="flex cursor-pointer items-center justify-between">
+        <h3 className="text-sm font-semibold text-zinc-200">Anamnesis</h3>
+        {docs && docs.length > 0 && (
+          <span
+            className="flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+            style={{ background: "color-mix(in srgb, var(--brand-accent) 12%, transparent)", color: "var(--brand-accent)" }}
+          >
+            <CheckCircle2 size={13} /> subida
+          </span>
+        )}
+      </summary>
+      <p className="mt-1 mb-4 text-xs text-zinc-500">
         Descarga la anamnesis, envíala por correo y sube aquí la versión rellenada.
       </p>
-
-      {/* Confirmación visual: anamnesis subida */}
-      {docs && docs.length > 0 && (
-        <div
-          className="mb-3 flex items-center gap-2 rounded-lg px-3 py-2.5"
-          style={{ background: "color-mix(in srgb, var(--brand-accent) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--brand-accent) 25%, transparent)" }}
-        >
-          <CheckCircle2 size={16} style={{ color: "var(--brand-accent)" }} />
-          <span className="text-sm font-medium" style={{ color: "var(--brand-accent)" }}>
-            Anamnesis subida
-          </span>
-        </div>
-      )}
 
       <button onClick={downloadTemplate} className="btn btn-ghost mb-3 w-full justify-start">
         <Download size={15} className="text-zinc-500" /> Descargar anamnesis (PDF)
@@ -164,6 +163,6 @@ export function ClientDocuments({ client, onUploaded }: { client: ClientOut; onU
           ))}
         </ul>
       )}
-    </div>
+    </details>
   );
 }

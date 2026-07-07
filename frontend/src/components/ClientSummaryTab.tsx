@@ -119,19 +119,55 @@ export function ClientSummaryTab({ client }: { client: ClientOut }) {
         )}
       </div>
 
-      {/* Notas de salud relevantes */}
-      {(client.injuries_notes || client.medical_notes || client.food_allergies?.length) && (
-        <div className="card p-5">
-          <h3 className="mb-3 text-sm font-semibold text-zinc-200">Notas clínicas</h3>
-          <div className="space-y-2.5 text-sm">
-            {client.injuries_notes && <NoteRow label="Lesiones" value={client.injuries_notes} />}
-            {client.medical_notes && <NoteRow label="Patologías" value={client.medical_notes} />}
-            {client.food_allergies?.length ? (
-              <NoteRow label="Alergias" value={client.food_allergies.join(", ")} />
-            ) : null}
+      {/* Notas clínicas: SOLO lo relevante (los "no/ninguna" fuera), por
+          secciones separadas y con el color de cada área. */}
+      <ClinicalNotesCard client={client} />
+    </div>
+  );
+}
+
+// Línea IRRELEVANTE (negación pura): "No refiere…", "Anticonceptivos: no.",
+// "Sin alergias", "no aplica". OJO: "lesión no resuelta" SÍ es relevante.
+const IRRELEVANT_LINE = /^(no|sin|ninguna?)\b|:\s*no\.?$|no aplica|\bniega\b/i;
+
+const NOTE_SECTIONS: { label: string; color: string; get: (c: ClientOut) => string | null | undefined }[] = [
+  { label: "Lesiones", color: "#B3261E", get: (c) => c.injuries_notes },
+  { label: "Patologías y salud", color: "#9A6B15", get: (c) => c.medical_notes },
+  { label: "Medicación", color: "#3D6E9E", get: (c) => c.medication_notes },
+  { label: "Alergias e intolerancias", color: "#B3261E", get: (c) => c.food_allergies?.length ? c.food_allergies.join(", ") : null },
+];
+
+function ClinicalNotesCard({ client }: { client: ClientOut }) {
+  const sections = NOTE_SECTIONS
+    .map((s) => ({
+      ...s,
+      items: toBullets(s.get(client) ?? "").filter((l) => !IRRELEVANT_LINE.test(l.trim())),
+    }))
+    .filter((s) => s.items.length > 0);
+  if (!sections.length) return null;
+  return (
+    <div className="card p-5">
+      <h3 className="mb-1 text-sm font-semibold text-zinc-200">Notas clínicas</h3>
+      <p className="mb-3 text-xs text-zinc-500">Solo lo relevante para el plan; el resto queda en la anamnesis.</p>
+      <div className="space-y-3 text-sm">
+        {sections.map((s) => (
+          <div
+            key={s.label}
+            className="rounded-lg border-l-2 px-3 py-2.5"
+            style={{ background: "var(--surface-raised)", borderLeftColor: s.color }}
+          >
+            <p
+              className="mb-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+              style={{ background: `color-mix(in srgb, ${s.color} 14%, transparent)`, color: s.color }}
+            >
+              {s.label}
+            </p>
+            <ul className="list-disc space-y-0.5 pl-5 text-zinc-300">
+              {s.items.map((it, i) => <li key={i}>{it}</li>)}
+            </ul>
           </div>
-        </div>
-      )}
+        ))}
+      </div>
     </div>
   );
 }
@@ -172,18 +208,3 @@ function toBullets(text: string): string[] {
   return parts;
 }
 
-function NoteRow({ label, value }: { label: string; value: string }) {
-  const items = toBullets(value);
-  return (
-    <div>
-      <p className="mb-1 text-xs uppercase tracking-wide text-zinc-600">{label}</p>
-      {items.length > 1 ? (
-        <ul className="list-disc space-y-0.5 pl-5 text-zinc-300">
-          {items.map((it, i) => <li key={i}>{it}</li>)}
-        </ul>
-      ) : (
-        <p className="text-zinc-300">{items[0] ?? value}</p>
-      )}
-    </div>
-  );
-}

@@ -15,6 +15,7 @@ quedaba con los gramos antiguos.
 from __future__ import annotations
 
 import copy
+import re
 
 from app.services.metrics import PROTEIN_RANGE
 
@@ -68,6 +69,35 @@ def _scale(v, f: float):
 def _scale_g(v, f: float):
     """Gramos de ingrediente: reescala y redondea a múltiplos de 5."""
     return max(0, round(v * f / 5) * 5) if isinstance(v, (int, float)) else v
+
+
+def _scale_amount_text(text, f: float):
+    """Reescala las cantidades DENTRO de un texto de equivalencias
+    ("140 g crudo = 380 g cocido" → ambos números). Solo toca números con
+    unidad de peso/volumen (g/gr/ml); '2 huevos' o '1 taza' se quedan igual.
+    Redondea a múltiplos de 5 a partir de 25 (raciones cocinables)."""
+    if not isinstance(text, str) or f == 1.0:
+        return text
+
+    def repl(m):
+        val = float(m.group(1).replace(",", "."))
+        scaled = val * f
+        scaled = round(scaled / 5) * 5 if scaled >= 25 else max(1, round(scaled))
+        return f"{int(scaled)} {m.group(2)}"
+
+    return re.sub(r"(\d+(?:[.,]\d+)?)\s*(g|gr|ml)\b", repl, text)
+
+
+def _equiv_ratio(group_name, r_k: float, r_p: float, r_c: float, r_f: float) -> float:
+    """Ratio del eje que corresponde a un grupo de equivalencias por su nombre."""
+    n = (group_name or "").lower()
+    if "prote" in n:
+        return r_p
+    if "gras" in n:
+        return r_f
+    if any(k in n for k in ("hidrat", "carb", "cereal", "almid", "frut")):
+        return r_c
+    return r_k
 
 
 def rescale_nutrition(nut: dict, base: dict, kcal: float, protein_g: float,
@@ -124,12 +154,26 @@ def rescale_nutrition(nut: dict, base: dict, kcal: float, protein_g: float,
         for ing in o.get("ingredients") or []:
             ing["grams"] = _scale_g(ing.get("grams"), r_k)
 
+    def scale_equivalences(eq: dict) -> None:
+        """Sistema de equivalencias (comida/cena): las cantidades van en TEXTO
+        ("140 g crudo = 380 g cocido") — cada grupo escala por SU eje (proteína,
+        hidratos, grasas…) para que el PDF salga en armonía con los macros."""
+        if not eq:
+            return
+        eq["intro"] = _scale_amount_text(eq.get("intro"), r_c)
+        for g in eq.get("groups") or []:
+            r = _equiv_ratio(g.get("name"), r_k, r_p, r_c, r_f)
+            g["note"] = _scale_amount_text(g.get("note"), r)
+            for it in g.get("items") or []:
+                it["amount"] = _scale_amount_text(it.get("amount"), r)
+
     bank = copy.deepcopy(base.get("meal_bank") or None)
     if bank:
         if bank.get("mode") == "flexible_7":
             for slot in bank.get("slots") or []:
                 for o in slot.get("options") or []:
                     scale_dish(o)
+                scale_equivalences(slot.get("equivalences") or {})
         elif bank.get("mode") == "strict":
             for d in bank.get("days") or []:
                 for m in d.get("meals") or []:

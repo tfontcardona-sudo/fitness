@@ -59,6 +59,9 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
   // Edición de los "Cambios aplicados" tras adaptar: texto/porqué o quitar filas.
   const [adjDraft, setAdjDraft] = useState<{ area: string; main: string; reason: string; orig: any }[] | null>(null);
   const [savingAdj, setSavingAdj] = useState(false);
+  // Tras EDITAR el plan: recordatorio de descargar el PDF de nuevo (la versión
+  // editada ya está guardada; el PDF descargado antes se queda antiguo).
+  const [needsDownload, setNeedsDownload] = useState(false);
 
   // Al montar: carga el último plan guardado + el mapa de ejercicios + los períodos.
   useEffect(() => {
@@ -229,6 +232,7 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
         a.download = `plan_${client.full_name.replace(/\s+/g, "_").toLowerCase()}_mes${plan.month_index}.pdf`;
         a.click();
         URL.revokeObjectURL(url);
+        setNeedsDownload(false); // ya tiene la versión actualizada
       })
       .catch(() => toast.push("No se pudo descargar", "error"));
   }
@@ -302,7 +306,14 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
         exMap={exMap}
         client={client}
         refWeightKg={lastClosing?.closing_weight_kg ?? client.start_weight_kg ?? null}
-        onSaved={(p) => { setPlan(p); setEditing(false); }}
+        onSaved={(p) => {
+          setPlan(p);
+          setEditing(false);
+          // El PDF descargado antes ya NO refleja esta edición: avisar hasta
+          // que el coach lo vuelva a descargar (o lo reenvíe por WhatsApp).
+          setNeedsDownload(true);
+          toast.push("Cambios guardados — descarga el PDF de nuevo para el cliente", "error");
+        }}
         onCancel={() => setEditing(false)}
       />
     );
@@ -312,7 +323,6 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
   const nut = plan.nutrition ?? {};
   const tr = plan.training ?? {};
   const macros = nut.macros ?? {};
-  const mealBank = nut.meal_bank ?? null;
   const exName = (id: number) => exMap[id] ?? `Ejercicio #${id}`;
   // El período abierto puede seguir anclado al plan anterior (adaptación a
   // mitad de ciclo): el seguimiento activo es el período ABIERTO, sea del plan
@@ -408,6 +418,27 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
           </div>
         )}
       </div>
+
+      {/* Tras editar: el PDF que se descargó antes queda ANTIGUO — recordatorio
+          claro hasta que se vuelva a descargar (la edición ya está guardada). */}
+      {needsDownload && (
+        <div
+          className="card flex flex-wrap items-center justify-between gap-3 border p-4"
+          style={{ borderColor: "var(--brand-accent)", background: "color-mix(in srgb, var(--brand-accent) 8%, transparent)" }}
+        >
+          <div className="flex items-start gap-2">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" style={{ color: "var(--brand-accent)" }} />
+            <p className="text-sm text-zinc-300">
+              <b className="text-zinc-100">Planificación editada y guardada.</b> El PDF descargado
+              antes ya no vale: descárgalo de nuevo (o reenvía el enlace por WhatsApp) para que el
+              cliente reciba la versión actualizada.
+            </p>
+          </div>
+          <button onClick={downloadPdf} className="btn btn-primary shrink-0">
+            <Download size={15} /> Descargar PDF actualizado
+          </button>
+        </div>
+      )}
 
       {/* ETAPA DEL OBJETIVO: a los 45 días la web sugiere valorarlo. Análisis
           automático profesional, mantener (pospone) o cambiar y regenerar TODO. */}
@@ -556,7 +587,7 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
         {nut.rationale && (
           <details className="mt-3 text-sm">
             <summary className="cursor-pointer font-medium text-zinc-400 hover:text-zinc-200">Justificación de la nutrición</summary>
-            <p className="mt-2 text-zinc-400">{nut.rationale}</p>
+            <RationaleView text={nut.rationale} />
           </details>
         )}
         {nut.refeed_or_break && (
@@ -580,48 +611,19 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
         )}
 
         {Array.isArray(nut.flexibility_rules) && nut.flexibility_rules.length > 0 && (
-          <div className="mt-3">
-            <h5 className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">Reglas de flexibilidad</h5>
-            <ul className="list-disc space-y-0.5 pl-5 text-xs text-zinc-400">
+          <details className="mt-3">
+            <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-zinc-500 hover:text-zinc-300">
+              Reglas de flexibilidad · {nut.flexibility_rules.length}
+            </summary>
+            <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs text-zinc-400">
               {nut.flexibility_rules.map((r: string, i: number) => <li key={i}>{r}</li>)}
             </ul>
-          </div>
+          </details>
         )}
       </div>
 
-      {/* Banco de comidas */}
-      {mealBank && (
-        <div className="card p-5">
-          <SectionTitle icon={Utensils} title={`Banco de comidas (${mealBank.mode === "strict" ? "menú cerrado" : "equivalencias"})`} />
-          {mealBank.mode === "flexible_7" && Array.isArray(mealBank.slots) ? (
-            <div className="space-y-3">
-              {mealBank.slots.map((slot: any) => (
-                <details key={slot.slot} className="rounded-lg" style={{ background: "var(--surface-raised)" }}>
-                  <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-zinc-200">
-                    Comida {slot.slot} · {slot.options?.length ?? 0} opciones
-                  </summary>
-                  <div className="space-y-2 px-3 pb-3">
-                    {slot.options?.map((o: any) => <MealOption key={o.key ?? o.title} o={o} />)}
-                  </div>
-                </details>
-              ))}
-            </div>
-          ) : mealBank.mode === "strict" && Array.isArray(mealBank.days) ? (
-            <div className="space-y-3">
-              {mealBank.days.map((d: any) => (
-                <details key={d.day} className="rounded-lg" style={{ background: "var(--surface-raised)" }}>
-                  <summary className="cursor-pointer px-3 py-2 text-sm font-medium capitalize text-zinc-200">{d.day}</summary>
-                  <div className="space-y-2 px-3 pb-3">
-                    {d.meals?.map((m: any, i: number) => <MealOption key={i} o={m.dish} prefix={`Comida ${m.slot}: `} />)}
-                  </div>
-                </details>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-zinc-500">Sin banco de comidas.</p>
-          )}
-        </div>
-      )}
+      {/* El BANCO DE COMIDAS ya no se muestra aquí (el coach no lo necesita en
+          pantalla): va completo en el PDF que recibe el cliente. */}
 
       {/* Entrenamiento — azul de marca (como sus chips de ajustes) */}
       <div className="card p-5">
@@ -824,13 +826,30 @@ function archivedPlans(all: any[], currentId: number): any[] {
     .reverse(); // más reciente primero
 }
 
+// Lo REALMENTE importante va en ROJO: en secciones críticas (lesiones,
+// medicación, alergias) cualquier dato no negado; en el resto, por palabra clave.
+const CRITICAL_SECTIONS = /lesion|medicaci|alergia/i;
+const CRITICAL_WORDS = /lesi[oó]n|hernia|protrusi|pinzamiento|rotura|cirug|operac|dolor|molesti|alerg|intoleran|celiac|diab|hipertens|tiroid|tirox|asma|card[ií]|epileps|anticoagul|embaraz|menopaus|trastorno alimentario|anorexia|bulimia|atracon/i;
+// Negación PURA ("No refiere…", "…: no.", "ya resuelta") — pero "no resuelta"
+// o "dolor sin tratar" siguen siendo críticos.
+const NEGATED = /^(no|sin|ninguna?)\b|:\s*no\.?$|no aplica|\bniega\b|(?<!no )\bresuelt[oa]\b/i;
+
+function isCriticalLine(line: string, sectionLabel: string) {
+  const l = line.trim();
+  if (!l) return false;
+  if (NEGATED.test(l)) return false;
+  if (CRITICAL_SECTIONS.test(sectionLabel)) return true;
+  return CRITICAL_WORDS.test(l);
+}
+
 /** Puntos IMPORTANTES del cliente (anamnesis) que condicionan la planificación:
- *  lesiones, salud, medicación, alergias, aversiones y objetivo en sus palabras. */
+ *  lesiones, salud, medicación, alergias, aversiones y objetivo en sus palabras.
+ *  Lo crítico se resalta EN ROJO para que no se pase por alto. */
 function ImportantPointsCard({ client }: { client: ClientOut }) {
-  const blocks: { label: string; text: string }[] = [];
+  const blocks: { label: string; lines: string[] }[] = [];
   const add = (label: string, v: string | string[] | null | undefined) => {
     const text = Array.isArray(v) ? v.filter(Boolean).join(", ") : (v ?? "").trim();
-    if (text) blocks.push({ label, text });
+    if (text) blocks.push({ label, lines: text.split("\n").filter((l) => l.trim()) });
   };
   add("Lesiones y movilidad", client.injuries_notes);
   add("Salud (clínica y digestiva)", client.medical_notes);
@@ -839,19 +858,47 @@ function ImportantPointsCard({ client }: { client: ClientOut }) {
   add("Alimentos que evita", client.food_dislikes);
   add("Objetivo y contexto en sus palabras", client.lifestyle_notes);
   if (!blocks.length) return null;
+  const RED = "#B3261E";
   return (
     <div className="card p-5">
       <SectionTitle icon={AlertTriangle} title="Puntos importantes del cliente" />
       <p className="mb-2 text-xs text-zinc-500">
-        De su anamnesis: lo que hay que respetar y tener en cuenta en dieta y entrenamiento.
+        De su anamnesis: lo que hay que respetar en dieta y entrenamiento.
+        <span className="font-medium" style={{ color: RED }}> Lo crítico, en rojo.</span>
       </p>
       <div className="space-y-2">
-        {blocks.map((b) => (
-          <details key={b.label} open={blocks.length <= 3} className="rounded-lg px-3 py-2" style={{ background: "var(--surface-raised)" }}>
-            <summary className="cursor-pointer text-xs font-semibold text-zinc-300">{b.label}</summary>
-            <div className="mt-1 whitespace-pre-line text-xs text-zinc-400">{b.text}</div>
-          </details>
-        ))}
+        {blocks.map((b) => {
+          const nCrit = b.lines.filter((l) => isCriticalLine(l, b.label)).length;
+          return (
+            <details
+              key={b.label}
+              open={blocks.length <= 3 || nCrit > 0}
+              className="rounded-lg border-l-2 px-3 py-2"
+              style={{
+                background: "var(--surface-raised)",
+                borderLeftColor: nCrit > 0 ? RED : "transparent",
+              }}
+            >
+              <summary className="cursor-pointer text-xs font-semibold text-zinc-300">
+                {b.label}
+                {nCrit > 0 && (
+                  <span className="ml-2 rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white" style={{ background: RED }}>
+                    {nCrit} a vigilar
+                  </span>
+                )}
+              </summary>
+              <div className="mt-1 space-y-0.5 text-xs">
+                {b.lines.map((l, i) =>
+                  isCriticalLine(l, b.label) ? (
+                    <p key={i} className="font-medium" style={{ color: RED }}>{l}</p>
+                  ) : (
+                    <p key={i} className="text-zinc-400">{l}</p>
+                  ),
+                )}
+              </div>
+            </details>
+          );
+        })}
       </div>
     </div>
   );
@@ -930,6 +977,7 @@ function GoalStageCard({ client, currentMonth, onClientChanged, onRegenerated }:
           <Flag size={15} style={{ color: "var(--brand-accent-2)" }} />
           Objetivo: {client.goal_type ? GOAL_LABEL[client.goal_type] : "—"}
           {days != null && <span className="text-xs font-normal text-zinc-500">{days} días en esta etapa</span>}
+          <span className="text-xs font-normal" style={{ color: "var(--brand-accent-2)" }}>· pulsa para cambiar</span>
         </span>
         {due != null && (
           <span className="rounded-full px-2 py-0.5 text-xs font-bold text-white" style={{ background: "var(--brand-accent)" }}>
@@ -1063,31 +1111,23 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function MealOption({ o, prefix = "" }: { o: any; prefix?: string }) {
-  if (!o) return null;
-  const m = o.macros ?? {};
+/** Justificación de la nutrición ESTRUCTURADA: si el texto viene de una
+ *  adaptación ("- [Área] cambio — porqué"), se renderiza por puntos con el chip
+ *  de color de cada área; si no, texto normal. Se entiende de un vistazo. */
+function RationaleView({ text }: { text: string }) {
+  const idx = text.indexOf("- [");
+  if (idx === -1) return <p className="mt-2 whitespace-pre-line text-sm text-zinc-400">{text}</p>;
+  const header = text.slice(0, idx).trim().replace(/:$/, "");
+  const items = [...text.slice(idx).matchAll(/- \[([^\]]+)\]\s*([\s\S]*?)(?=\n?\s*- \[|$)/g)].map((m) => {
+    const [main, ...rest] = m[2].split(" — ");
+    return { area: m[1], main: main.trim(), reason: rest.join(" — ").trim() };
+  });
   return (
-    <div className="rounded-md p-2 text-xs" style={{ background: "var(--surface)" }}>
-      <div className="flex flex-wrap items-baseline justify-between gap-1">
-        <span className="font-medium text-zinc-200">
-          {prefix}{o.key ? `${o.key}. ` : ""}{o.title}
-        </span>
-        <span className="text-zinc-500">
-          {Math.round(m.kcal ?? 0)} kcal · P{Math.round(m.protein_g ?? 0)} / C{Math.round(m.carbs_g ?? 0)} / G{Math.round(m.fat_g ?? 0)}
-          {o.prep_minutes != null ? ` · ${o.prep_minutes} min` : ""}
-        </span>
-      </div>
-      {Array.isArray(o.ingredients) && o.ingredients.length > 0 && (
-        <ul className="mt-1 list-disc space-y-0.5 pl-4 text-zinc-400">
-          {o.ingredients.map((ing: any, i: number) => (
-            <li key={i}>{ing.food} · {ing.grams} g <span className="text-zinc-500">({ing.household})</span></li>
-          ))}
-        </ul>
-      )}
-      {o.prep && <p className="mt-1 text-zinc-500">{o.prep}</p>}
-      {Array.isArray(o.tags) && o.tags.length > 0 && (
-        <p className="mt-0.5 text-zinc-600">{o.tags.join(" · ")}</p>
-      )}
+    <div className="mt-2 space-y-2">
+      {header && <p className="text-xs font-semibold text-zinc-300">{header}</p>}
+      {items.map((it, i) => (
+        <AdjustmentRow key={i} area={it.area} main={it.main} reason={it.reason} />
+      ))}
     </div>
   );
 }
