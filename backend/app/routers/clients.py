@@ -812,6 +812,20 @@ def generate_client_plan(
     except Exception:
         history_block = None
 
+    # Notas clínicas TEXTUALES (lesiones, patologías, medicación, suplementos):
+    # entran SIEMPRE y de forma explícita, no solo dentro de la síntesis, para
+    # que la IA adapte dieta y entrenamiento sin fallo a la salud del cliente.
+    clinical_parts: list[str] = []
+    for lbl, val in (
+        ("LESIONES / MOVILIDAD", client.injuries_notes),
+        ("HISTORIA CLÍNICA Y SALUD", client.medical_notes),
+        ("MEDICACIÓN", client.medication_notes),
+        ("SUPLEMENTACIÓN ACTUAL", client.current_supplements),
+    ):
+        if val and val.strip():
+            clinical_parts.append(f"{lbl}:\n{val.strip()}")
+    clinical_notes = "\n\n".join(clinical_parts) or None
+
     # 4) Construir el contexto y pedir el plan a la IA
     ctx = ClientContext(
         sex=client.sex, age=age, height_cm=client.height_cm,
@@ -833,6 +847,7 @@ def generate_client_plan(
         # "Motivo y objetivos" + estilo de vida en palabras del cliente: la IA
         # debe entender qué pide exactamente y planificar para ese fin.
         goal_in_own_words=client.lifestyle_notes,
+        clinical_notes=clinical_notes,
     )
     try:
         generated = generate_monthly_plan(ctx, AIClient())
@@ -893,6 +908,10 @@ def generate_client_plan(
         "id": plan.id, "month_index": plan.month_index, "version": plan.version,
         "status": plan.status, "guardrail_flags": flags or [],
         "nutrition": nutrition, "training": training, "education": education,
+        # Fechas: el título del plan ("Planificación · julio 2026") las necesita
+        # ya al generar, sin esperar a recargar la lista.
+        "created_at": plan.created_at.isoformat() if plan.created_at else None,
+        "published_at": plan.published_at.isoformat() if plan.published_at else None,
     }
 
 

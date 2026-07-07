@@ -82,6 +82,9 @@ class ClientContext:
     # estilo de vida): la IA debe entender QUÉ pide exactamente y diseñar dieta
     # y entrenamiento para ese fin, no solo para la etiqueta goal_type.
     goal_in_own_words: str | None = None
+    # Notas clínicas textuales (lesiones, patologías, medicación, suplementos):
+    # condicionan la seguridad del plan y NO se pueden ignorar.
+    clinical_notes: str | None = None
     # Historial real de seguimiento (revisiones: peso/adherencia/fuerza) para
     # que la IA entienda el recorrido del cliente, no solo su anamnesis.
     tracking_history: dict | None = None
@@ -162,14 +165,32 @@ def _client_block(ctx: ClientContext) -> str:
     )
 
 
+def _clinical_block(ctx: ClientContext) -> str:
+    """Bloque CLÍNICO obligatorio: lesiones, patologías, medicación y suplementos.
+    Es lo que condiciona la SEGURIDAD del plan — la IA no puede ignorarlo."""
+    if not ctx.clinical_notes:
+        return ""
+    return (
+        "\n⚠️ SALUD DEL CLIENTE — RESTRICCIONES OBLIGATORIAS (prioridad máxima; "
+        "el plan de dieta Y de entrenamiento DEBE adaptarse a esto sin excepción):\n"
+        f"{ctx.clinical_notes}\n"
+        "REGLAS DURAS: (1) NO incluyas ejercicios que carguen una zona lesionada o "
+        "con molestias; sustitúyelos por alternativas seguras del mismo patrón y "
+        "explica el motivo en technique_cue/biomech_cue. (2) La dieta debe EXCLUIR "
+        "por completo cualquier alimento con alergia o intolerancia declarada y "
+        "tener en cuenta patologías (p. ej. tiroides, digestivas) y la medicación. "
+        "(3) Si algo limita el volumen o la intensidad, refléjalo en la progresión.\n"
+    )
+
+
 def _analysis_block(ctx: ClientContext) -> str:
-    """Bloque opcional con el análisis cualitativo (lesiones, hábitos, contexto)."""
+    """Bloque opcional con el análisis cualitativo (hábitos, contexto)."""
     if not ctx.deep_analysis:
         return ""
     return (
         "\nANÁLISIS EN PROFUNDIDAD DE LA ANAMNESIS (tenlo MUY en cuenta para "
-        "personalizar dieta y entrenamiento: lesiones a respetar, hábitos, sueño, "
-        "estrés, conducta alimentaria, logística y contexto):\n"
+        "personalizar dieta y entrenamiento: hábitos, sueño, estrés, conducta "
+        "alimentaria, logística y contexto):\n"
         f"{ctx.deep_analysis}\n"
     )
 
@@ -189,6 +210,7 @@ def _core_user_prompt(ctx: ClientContext) -> str:
 
 DATOS DEL CLIENTE Y MÉTRICAS (ya calculadas por el backend, NO recalcules):
 {_client_block(ctx)}
+{_clinical_block(ctx)}
 {_analysis_block(ctx)}
 IMPORTANTE: lee "objetivo_en_palabras_del_cliente" y entiende EXACTAMENTE qué
 quiere conseguir esta persona (y por qué). El plan de dieta Y el de
@@ -239,8 +261,10 @@ def _meals_user_prompt(ctx: ClientContext, core: PlanCoreOutput) -> str:
 TOMAS DEL DÍA (slot, nombre, hora, macros objetivo del slot):
 {json.dumps(slot_info, ensure_ascii=False, indent=2)}
 
-RESTRICCIONES: alergias={ctx.food_allergies}, aversiones={ctx.food_dislikes}, \
-preferencias={ctx.food_likes}."""
+RESTRICCIONES ALIMENTARIAS (OBLIGATORIAS — ningún plato puede contenerlas): \
+alergias/intolerancias={ctx.food_allergies}, aversiones={ctx.food_dislikes}, \
+preferencias={ctx.food_likes}.\
+{(' SALUD A TENER EN CUENTA EN LA DIETA (patologías, medicación, digestivo): ' + ctx.clinical_notes.replace(chr(10), ' ')) if ctx.clinical_notes else ''}"""
 
     if ctx.diet_mode == "flexible_7":
         return common + """

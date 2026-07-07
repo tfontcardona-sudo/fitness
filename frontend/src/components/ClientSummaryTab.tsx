@@ -13,6 +13,7 @@ import { api } from "../lib/api";
 import type { ClientOut } from "../types";
 import { EmptyState } from "./ui";
 import { formatDate } from "../lib/format";
+import { isCriticalLine, isRelevantClinical } from "../lib/clinical";
 
 /**
  * Tab Resumen: KPIs del cliente y evolución de peso hacia el objetivo.
@@ -129,10 +130,6 @@ export function ClientSummaryTab({ client }: { client: ClientOut }) {
   );
 }
 
-// Línea IRRELEVANTE (negación pura): "No refiere…", "Anticonceptivos: no.",
-// "Sin alergias", "no aplica". OJO: "lesión no resuelta" SÍ es relevante.
-const IRRELEVANT_LINE = /^(no|sin|ninguna?)\b|:\s*no\.?$|no aplica|\bniega\b/i;
-
 const NOTE_SECTIONS: { label: string; color: string; get: (c: ClientOut) => string | null | undefined }[] = [
   { label: "Lesiones", color: "#B3261E", get: (c) => c.injuries_notes },
   { label: "Patologías y salud", color: "#9A6B15", get: (c) => c.medical_notes },
@@ -141,10 +138,12 @@ const NOTE_SECTIONS: { label: string; color: string; get: (c: ClientOut) => stri
 ];
 
 function ClinicalNotesCard({ client }: { client: ClientOut }) {
+  // Mismo clasificador que Puntos importantes: solo lo relevante, lo crítico
+  // resaltado. Coherencia total entre Resumen y Planificación.
   const sections = NOTE_SECTIONS
     .map((s) => ({
       ...s,
-      items: toBullets(s.get(client) ?? "").filter((l) => !IRRELEVANT_LINE.test(l.trim())),
+      items: toBullets(s.get(client) ?? "").filter((l) => isRelevantClinical(l)),
     }))
     .filter((s) => s.items.length > 0);
   if (!sections.length) return null;
@@ -166,7 +165,9 @@ function ClinicalNotesCard({ client }: { client: ClientOut }) {
               {s.label}
             </p>
             <ul className="list-disc space-y-0.5 pl-5 text-zinc-300">
-              {s.items.map((it, i) => <li key={i}>{it}</li>)}
+              {s.items.map((it, i) => (
+                <li key={i} className={isCriticalLine(it) ? "font-medium" : ""} style={isCriticalLine(it) ? { color: s.color } : undefined}>{it}</li>
+              ))}
             </ul>
           </div>
         ))}

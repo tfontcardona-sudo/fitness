@@ -58,6 +58,15 @@ export function formatDate(iso: string | null | undefined): string {
   return d.toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+/** Mes natural en que se hizo el plan ("julio 2026") a partir de su fecha de
+ *  activación (o creación). Es el TÍTULO de la planificación: el mes real, no
+ *  el número de asesoría. Primera letra en mayúscula. */
+export function planMonthLabel(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const s = new Date(iso).toLocaleDateString("es-ES", { month: "long", year: "numeric" });
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 export function relativeDays(iso: string | null | undefined): string {
   if (!iso) return "—";
   const diff = Math.round((Date.now() - new Date(iso).getTime()) / 86400000);

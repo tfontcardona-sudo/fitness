@@ -97,9 +97,11 @@ export default function ClientProfilePage() {
         const n = active?.nutrition_json;
         if (n?.target_kcal) {
           const m = n.macros ?? {};
+          const nMeals = Array.isArray(n.meals) ? n.meals.length : null;
           setPlanDiet(
             `${Math.round(n.target_kcal)} kcal · P${Math.round(m.protein_g ?? 0)} ` +
-            `C${Math.round(m.carbs_g ?? 0)} G${Math.round(m.fat_g ?? 0)}`,
+            `C${Math.round(m.carbs_g ?? 0)} G${Math.round(m.fat_g ?? 0)}` +
+            (nMeals ? ` · ${nMeals} comidas/día` : ""),
           );
         } else setPlanDiet(null);
       })
@@ -231,12 +233,15 @@ export default function ClientProfilePage() {
             ))}
           </div>
 
-          {tab === "resumen" && <ClientSummaryTab client={client} />}
-          {tab === "anamnesis" && <ClientAnamnesisTab client={client} onSaved={load} />}
-          {tab === "planificacion" && <ClientPlanPanel client={client} onClientChanged={load} />}
-          {tab === "seguimiento" && <ClientTrackingTab client={client} />}
-          {tab === "feedback" && <ClientFeedbackTab client={client} onClientChanged={load} onGoPlan={() => setTab("planificacion")} />}
-          {tab === "historial" && <ClientHistoryTab client={client} />}
+          {/* key=tab: el panel se re-monta y hace su micro-animación al cambiar */}
+          <div key={tab} className="tab-panel">
+            {tab === "resumen" && <ClientSummaryTab client={client} />}
+            {tab === "anamnesis" && <ClientAnamnesisTab client={client} onSaved={load} />}
+            {tab === "planificacion" && <ClientPlanPanel client={client} onClientChanged={load} />}
+            {tab === "seguimiento" && <ClientTrackingTab client={client} />}
+            {tab === "feedback" && <ClientFeedbackTab client={client} onClientChanged={load} onGoPlan={() => setTab("planificacion")} />}
+            {tab === "historial" && <ClientHistoryTab client={client} />}
+          </div>
         </div>
       </div>
 
