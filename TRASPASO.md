@@ -1,7 +1,7 @@
 # Documento de traspaso — Fitness System (DQ / David Quiceno)
 
 > Objetivo de este doc: que otra sesión de IA (Fable u otra) pueda **continuar el trabajo sin perder contexto**.
-> Última actualización: 2026-07-07 (5ª parte). Autor del último tramo: Claude (auditoría exhaustiva a 0 fallos: 3 agentes + E2E real + 20 arreglos).
+> Última actualización: 2026-07-07 (6ª parte). Autor del último tramo: Claude (diseño premium + clasificador clínico afinado + memoria de desplegables + super-auditoría).
 > **PRODUCCIÓN:** el sistema está desplegado en `https://app.dqrassessories.com` (VPS Hetzner
 > `46.225.57.25`, repo en `/root/fitness`, ver `DEPLOY.md`). Actualizar: `cd /root/fitness && git pull && docker compose up -d --build`.
 > Cliente/marca: **David Quiceno (DQ)** — asesoría de fitness. Colores marca: **vino `#8B1A2B`**, **azul `#4A7BA8`**.
@@ -723,6 +723,29 @@ Arreglos aplicados (todos verificados):
 **Verificación final**: E2E real 27/27 · backtest 1530 OK/0 fallos · pytest
 verde · 8 harnesses verdes · tsc/vite OK. QA server E2E reutilizable:
 `qa-server.py` (patches IA del backtest + admin DQR/e2e-password-123).
+
+## 10.g Tramo 2026-07-07 (6ª parte) — Premium + clasificador clínico + super-auditoría
+
+- **Clasificador clínico compartido** (lib/clinical.ts): arregla el bug de las
+  capturas (marcaba en rojo "Sin lesión de hombro", "Sin cirugías",
+  "Embarazos: 0"). Quita el guion antes de evaluar; negación al inicio gana;
+  valores nulos (":" interno también se limpia); "ya resuelta" no crítico pero
+  "no resuelta" sí; "suplement" FUERA de crítico (creatina no va en rojo).
+  Usado en Puntos importantes y Notas clínicas, coherentes.
+- **Números corruptos (36M kcal)**: topes en editor (kcal<=8000, macro<=800,
+  baseline saneado, inputs con max) + _sanitize_nutrition en update_plan.
+- **IA con contexto clínico fuerte** (generator._clinical_block +
+  ClientContext.clinical_notes): lesiones/patologías/medicación/suplementos
+  SIEMPRE explícitos con reglas duras; prompt de comidas también.
+- **Título por MES real** ("Planificación · Julio de 2026") + "Mes N de
+  asesoría"; sidebar Dieta con nº comidas/día. generate devuelve las fechas.
+- **MemoDetails**: desplegables con memoria (localStorage), animación grid,
+  no persiste en montaje (lo crítico se auto-expande).
+- **Diseño premium** (index.css): paleta con relieve, sombras por capas, textura
+  de papel, botones con gradiente/halo, pestañas animadas, Stat/SectionTitle
+  con relieve. Reparto por comida en tabla; equivalencias+household reescalados.
+- **Verificación**: E2E real 33/33 · 0 fallos; backtest 1530 OK/0; pytest verde;
+  8 harnesses verdes; agente de auditoría con 4 hallazgos, los 4 corregidos.
 
 ## 11. Mapa rápido de archivos tocados en el último tramo
 

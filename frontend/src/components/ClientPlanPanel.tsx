@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Pencil, Save, X, Flag, Copy, Archive } from "lucide-react";
 import { api, getToken } from "../lib/api";
 import { openWhatsApp, planAndFeedbackMessage, planMessage, waPhone } from "../lib/whatsapp";
-import { GOAL_LABEL, goalDays, goalReviewDue } from "../lib/format";
+import { GOAL_LABEL, goalDays, goalReviewDue, planMonthLabel } from "../lib/format";
+import { isCriticalLine } from "../lib/clinical";
 import { Spinner, useToast } from "./ui";
+import { MemoDetails } from "./MemoDetails";
 import { ClientPlanEditor } from "./ClientPlanEditor";
 import type { ClientOut, GoalType } from "../types";
 
@@ -16,6 +18,8 @@ interface PlanData {
   nutrition: any;
   training: any;
   education: any;
+  created_at?: string | null;
+  published_at?: string | null;
 }
 
 /** Normaliza un plan venga de generatePlan (nutrition/...) o de listPlans (nutrition_json/...). */
@@ -29,6 +33,8 @@ function normalize(p: any): PlanData {
     nutrition: p.nutrition ?? p.nutrition_json ?? null,
     training: p.training ?? p.training_json ?? null,
     education: p.education ?? p.education_json ?? null,
+    created_at: p.created_at ?? null,
+    published_at: p.published_at ?? null,
   };
 }
 
@@ -359,8 +365,16 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
       <div className="card p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-base font-semibold text-zinc-100">Planificación · Mes {plan.month_index}</h3>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-base font-semibold text-zinc-100">
+                Planificación · {planMonthLabel(plan.published_at ?? plan.created_at)}
+              </h3>
+              <span
+                className="rounded-full px-2 py-0.5 text-xs font-medium"
+                style={{ background: "color-mix(in srgb, var(--brand-accent-2) 14%, transparent)", color: "var(--brand-accent-2)" }}
+              >
+                Mes {plan.month_index} de asesoría
+              </span>
               <span
                 className="rounded-full px-2 py-0.5 text-xs font-medium"
                 style={
@@ -597,43 +611,81 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
           ))}
         </div>
         {nut.tdee_kcal != null && (
-          <p className="mt-2 text-xs text-zinc-500">TDEE estimado: {Math.round(nut.tdee_kcal)} kcal</p>
-        )}
-        {nut.rationale && (
-          <details className="mt-3 text-sm">
-            <summary className="cursor-pointer font-medium text-zinc-400 hover:text-zinc-200">Justificación de la nutrición</summary>
-            <RationaleView text={nut.rationale} />
-          </details>
-        )}
-        {nut.refeed_or_break && (
-          <p className="mt-2 text-xs text-zinc-400"><b className="text-zinc-300">Recarga / descanso:</b> {nut.refeed_or_break}</p>
+          <p className="mt-2 text-xs text-zinc-500">
+            TDEE estimado: {Math.round(nut.tdee_kcal)} kcal
+            {Array.isArray(nut.meals) && nut.meals.length > 0 ? ` · ${nut.meals.length} comidas/día` : ""}
+          </p>
         )}
 
+        {/* Objetivos por comida: TABLA clara con los macros correctos */}
         {Array.isArray(nut.meals) && nut.meals.length > 0 && (
           <div className="mt-4">
-            <h5 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Objetivos por comida</h5>
-            <div className="space-y-1.5">
-              {nut.meals.map((m: any) => (
-                <div key={m.slot} className="flex items-center justify-between rounded-lg px-3 py-2 text-xs" style={{ background: "var(--surface-raised)" }}>
-                  <span className="text-zinc-300">{m.time} · {m.name}</span>
-                  <span className="text-zinc-500">
-                    {Math.round(m.target?.kcal ?? 0)} kcal · P{Math.round(m.target?.protein_g ?? 0)} / C{Math.round(m.target?.carbs_g ?? 0)} / G{Math.round(m.target?.fat_g ?? 0)}
-                  </span>
-                </div>
-              ))}
+            <h5 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Reparto por comida</h5>
+            <div className="overflow-x-auto rounded-lg border" style={{ borderColor: "var(--line)" }}>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-zinc-500" style={{ background: "var(--surface-raised)" }}>
+                    <th className="px-3 py-1.5 font-medium">Comida</th>
+                    <th className="px-3 py-1.5 text-right font-medium">kcal</th>
+                    <th className="px-3 py-1.5 text-right font-medium">P</th>
+                    <th className="px-3 py-1.5 text-right font-medium">C</th>
+                    <th className="px-3 py-1.5 text-right font-medium">G</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {nut.meals.map((m: any, i: number) => (
+                    <tr key={m.slot ?? i} className="border-t text-zinc-300" style={{ borderColor: "var(--line)" }}>
+                      <td className="px-3 py-1.5">{m.time ? `${m.time} · ` : ""}{m.name}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums">{Math.round(m.target?.kcal ?? 0)}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums">{Math.round(m.target?.protein_g ?? 0)}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums">{Math.round(m.target?.carbs_g ?? 0)}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums">{Math.round(m.target?.fat_g ?? 0)}</td>
+                    </tr>
+                  ))}
+                  <tr className="border-t font-semibold text-zinc-200" style={{ borderColor: "var(--line)", background: "var(--surface-raised)" }}>
+                    <td className="px-3 py-1.5">Total día</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{Math.round(nut.target_kcal ?? 0)}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{Math.round(macros.protein_g ?? 0)}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{Math.round(macros.carbs_g ?? 0)}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{Math.round(macros.fat_g ?? 0)}</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         )}
 
+        {nut.rationale && (
+          <MemoDetails
+            memoKey={`nut-why:${client.id}`}
+            className="mt-3"
+            summaryClassName="py-1"
+            summary={<span className="text-sm font-medium text-zinc-400">Justificación de la nutrición</span>}
+          >
+            <RationaleView text={nut.rationale} />
+          </MemoDetails>
+        )}
+        {nut.refeed_or_break && (
+          <div className="mt-2 rounded-lg border-l-2 px-3 py-2 text-xs text-zinc-400" style={{ background: "var(--surface-raised)", borderLeftColor: "var(--brand-accent-2)" }}>
+            <b className="text-zinc-300">Recarga / descanso:</b> {nut.refeed_or_break}
+          </div>
+        )}
+
         {Array.isArray(nut.flexibility_rules) && nut.flexibility_rules.length > 0 && (
-          <details className="mt-3">
-            <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-zinc-500 hover:text-zinc-300">
-              Reglas de flexibilidad · {nut.flexibility_rules.length}
-            </summary>
-            <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs text-zinc-400">
-              {nut.flexibility_rules.map((r: string, i: number) => <li key={i}>{r}</li>)}
-            </ul>
-          </details>
+          <MemoDetails
+            memoKey={`nut-flex:${client.id}`}
+            className="mt-3"
+            summaryClassName="py-1"
+            summary={
+              <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Reglas de flexibilidad · {nut.flexibility_rules.length}
+              </span>
+            }
+          >
+            <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2">
+              {nut.flexibility_rules.map((r: string, i: number) => <FlexRule key={i} text={r} />)}
+            </div>
+          </MemoDetails>
         )}
       </div>
 
@@ -673,17 +725,24 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
 
         <div className="space-y-3">
           {(tr.sessions ?? []).map((s: any, i: number) => (
-            <details key={i} className="rounded-lg p-3" style={{ background: "var(--surface-raised)" }}>
-              <summary className="flex cursor-pointer flex-wrap items-center gap-2 text-sm font-medium text-zinc-200">
-                <span
-                  className="rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide"
-                  style={{ background: "color-mix(in srgb, var(--brand-accent-2) 15%, transparent)", color: "var(--brand-accent-2)" }}
-                >
-                  {s.day}
+            <MemoDetails
+              key={i}
+              memoKey={`tr-day:${client.id}:${i}`}
+              className="rounded-lg p-3"
+              style={{ background: "var(--surface-raised)" }}
+              summary={
+                <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-zinc-200">
+                  <span
+                    className="rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+                    style={{ background: "color-mix(in srgb, var(--brand-accent-2) 15%, transparent)", color: "var(--brand-accent-2)" }}
+                  >
+                    {s.day}
+                  </span>
+                  {s.name}
+                  <span className="text-xs font-normal text-zinc-500">{(s.exercises ?? []).length} ejercicios</span>
                 </span>
-                {s.name}
-                <span className="text-xs font-normal text-zinc-500">{(s.exercises ?? []).length} ejercicios</span>
-              </summary>
+              }
+            >
               {s.warmup && <p className="mt-1 text-xs text-zinc-500"><b>Calentamiento:</b> {s.warmup}</p>}
               <div className="mt-2 space-y-1.5">
                 {(s.exercises ?? []).map((ex: any, j: number) => {
@@ -710,7 +769,7 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
                 })}
               </div>
               {s.cooldown && <p className="mt-2 text-xs text-zinc-500"><b>Vuelta a la calma:</b> {s.cooldown}</p>}
-            </details>
+            </MemoDetails>
           ))}
         </div>
 
@@ -761,11 +820,13 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
               <details key={p.id} className="overflow-hidden rounded-lg border" style={{ borderColor: "var(--line)" }}>
                 <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-sm" style={{ background: "var(--surface-raised)" }}>
                   <span className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold text-zinc-100">
-                      {GOAL_LABEL[(p.goal_type as GoalType)] ?? "Objetivo no registrado"}
+                    <span className="font-semibold text-zinc-100">{p.monthLabel}</span>
+                    <span className="rounded-full px-1.5 py-0.5 text-[10px] font-medium" style={{ background: "color-mix(in srgb, var(--brand-accent-2) 12%, transparent)", color: "var(--brand-accent-2)" }}>
+                      Mes {p.month_index} de asesoría
                     </span>
                     <span className="text-xs text-zinc-500">
-                      {p.rangeLabel ? `${p.rangeLabel} · ` : ""}{p.durationLabel} · Mes {p.month_index} · v{p.version}
+                      {GOAL_LABEL[(p.goal_type as GoalType)] ?? "objetivo no registrado"}
+                      {" · "}{p.rangeLabel ? `${p.rangeLabel} · ` : ""}{p.durationLabel} · v{p.version}
                     </span>
                   </span>
                   <span className="rounded-full px-2 py-0.5 text-xs" style={{ background: "rgba(38,33,26,0.08)", color: "#7A7060" }}>
@@ -831,6 +892,7 @@ function archivedPlans(all: any[], currentId: number): any[] {
             : null;
       return {
         ...p,
+        monthLabel: planMonthLabel(p.published_at ?? p.created_at),
         durationLabel: days != null ? `${days} día${days === 1 ? "" : "s"}` : "—",
         rangeLabel: from ? `${fmtDay(from)} → ${fmtDay(next)}` : null,
         whyChanged,
@@ -841,25 +903,10 @@ function archivedPlans(all: any[], currentId: number): any[] {
     .reverse(); // más reciente primero
 }
 
-// Lo REALMENTE importante va en ROJO: en secciones críticas (lesiones,
-// medicación, alergias) cualquier dato no negado; en el resto, por palabra clave.
-const CRITICAL_SECTIONS = /lesion|medicaci|alergia/i;
-const CRITICAL_WORDS = /lesi[oó]n|hernia|protrusi|pinzamiento|rotura|cirug|operac|dolor|molesti|alerg|intoleran|celiac|diab|hipertens|tiroid|tirox|asma|card[ií]|epileps|anticoagul|embaraz|menopaus|trastorno alimentario|anorexia|bulimia|atracon/i;
-// Negación PURA ("No refiere…", "…: no.", "ya resuelta") — pero "no resuelta"
-// o "dolor sin tratar" siguen siendo críticos.
-const NEGATED = /^(no|sin|ninguna?)\b|:\s*no\.?$|no aplica|\bniega\b|(?<!no )\bresuelt[oa]\b/i;
-
-function isCriticalLine(line: string, sectionLabel: string) {
-  const l = line.trim();
-  if (!l) return false;
-  if (NEGATED.test(l)) return false;
-  if (CRITICAL_SECTIONS.test(sectionLabel)) return true;
-  return CRITICAL_WORDS.test(l);
-}
-
 /** Puntos IMPORTANTES del cliente (anamnesis) que condicionan la planificación:
  *  lesiones, salud, medicación, alergias, aversiones y objetivo en sus palabras.
- *  Lo crítico se resalta EN ROJO para que no se pase por alto. */
+ *  Lo crítico se resalta EN ROJO para que no se pase por alto (clasificador
+ *  compartido en lib/clinical — mismas reglas que las Notas clínicas). */
 function ImportantPointsCard({ client }: { client: ClientOut }) {
   const blocks: { label: string; lines: string[] }[] = [];
   const add = (label: string, v: string | string[] | null | undefined) => {
@@ -883,35 +930,37 @@ function ImportantPointsCard({ client }: { client: ClientOut }) {
       </p>
       <div className="space-y-2">
         {blocks.map((b) => {
-          const nCrit = b.lines.filter((l) => isCriticalLine(l, b.label)).length;
+          const nCrit = b.lines.filter(isCriticalLine).length;
           return (
-            <details
-              key={b.label}
-              open={blocks.length <= 3 || nCrit > 0}
+            <MemoDetails
+              memoKey={`imp:${client.id}:${b.label}`}
+              defaultOpen={nCrit > 0}
               className="rounded-lg border-l-2 px-3 py-2"
               style={{
                 background: "var(--surface-raised)",
                 borderLeftColor: nCrit > 0 ? RED : "transparent",
               }}
+              summary={
+                <span className="text-xs font-semibold text-zinc-300">
+                  {b.label}
+                  {nCrit > 0 && (
+                    <span className="ml-2 rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white" style={{ background: RED }}>
+                      {nCrit} a vigilar
+                    </span>
+                  )}
+                </span>
+              }
             >
-              <summary className="cursor-pointer text-xs font-semibold text-zinc-300">
-                {b.label}
-                {nCrit > 0 && (
-                  <span className="ml-2 rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white" style={{ background: RED }}>
-                    {nCrit} a vigilar
-                  </span>
-                )}
-              </summary>
               <div className="mt-1 space-y-0.5 text-xs">
                 {b.lines.map((l, i) =>
-                  isCriticalLine(l, b.label) ? (
+                  isCriticalLine(l) ? (
                     <p key={i} className="font-medium" style={{ color: RED }}>{l}</p>
                   ) : (
                     <p key={i} className="text-zinc-400">{l}</p>
                   ),
                 )}
               </div>
-            </details>
+            </MemoDetails>
           );
         })}
       </div>
@@ -1109,9 +1158,16 @@ function AdjustmentRow({ area, main, secondary, reason }: {
 }
 
 function SectionTitle({ icon: Icon, title, accent }: { icon: typeof Utensils; title: string; accent?: string }) {
+  const c = accent ?? "var(--brand-accent)";
   return (
-    <div className="mb-3 flex items-center gap-2">
-      <Icon size={16} style={{ color: accent ?? "var(--brand-accent)" }} />
+    <div className="mb-3 flex items-center gap-2.5">
+      {/* Icono en chip tintado: da jerarquía y quita el aspecto plano */}
+      <span
+        className="flex h-7 w-7 items-center justify-center rounded-lg"
+        style={{ background: `color-mix(in srgb, ${c} 14%, transparent)`, boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${c} 22%, transparent)` }}
+      >
+        <Icon size={15} style={{ color: c }} />
+      </span>
       <h4 className="text-sm font-semibold text-zinc-200">{title}</h4>
     </div>
   );
@@ -1119,9 +1175,16 @@ function SectionTitle({ icon: Icon, title, accent }: { icon: typeof Utensils; ti
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg p-3 text-center" style={{ background: "var(--surface-raised)" }}>
-      <div className="text-lg font-bold" style={{ color: "var(--brand-accent)" }}>{value}</div>
-      <div className="text-xs text-zinc-500">{label}</div>
+    <div
+      className="rounded-xl p-3 text-center"
+      style={{
+        background: "linear-gradient(180deg, #fffefb, var(--surface-raised))",
+        boxShadow: "var(--hairline-top), 0 1px 3px rgba(38,33,26,0.05)",
+        border: "1px solid var(--line)",
+      }}
+    >
+      <div className="text-lg font-bold tabular-nums" style={{ color: "var(--brand-accent)" }}>{value}</div>
+      <div className="mt-0.5 text-xs text-zinc-500">{label}</div>
     </div>
   );
 }
@@ -1130,19 +1193,46 @@ function Stat({ label, value }: { label: string; value: string }) {
  *  adaptación ("- [Área] cambio — porqué"), se renderiza por puntos con el chip
  *  de color de cada área; si no, texto normal. Se entiende de un vistazo. */
 function RationaleView({ text }: { text: string }) {
+  // Formato de ADAPTACIÓN ("- [Área] cambio — porqué"): chips de color.
   const idx = text.indexOf("- [");
-  if (idx === -1) return <p className="mt-2 whitespace-pre-line text-sm text-zinc-400">{text}</p>;
-  const header = text.slice(0, idx).trim().replace(/:$/, "");
-  const items = [...text.slice(idx).matchAll(/- \[([^\]]+)\]\s*([\s\S]*?)(?=\n?\s*- \[|$)/g)].map((m) => {
-    const [main, ...rest] = m[2].split(" — ");
-    return { area: m[1], main: main.trim(), reason: rest.join(" — ").trim() };
-  });
+  if (idx !== -1) {
+    const header = text.slice(0, idx).trim().replace(/:$/, "");
+    const items = [...text.slice(idx).matchAll(/- \[([^\]]+)\]\s*([\s\S]*?)(?=\n?\s*- \[|$)/g)].map((m) => {
+      const [main, ...rest] = m[2].split(" — ");
+      return { area: m[1], main: main.trim(), reason: rest.join(" — ").trim() };
+    });
+    return (
+      <div className="mt-2 space-y-2">
+        {header && <p className="text-xs font-semibold text-zinc-300">{header}</p>}
+        {items.map((it, i) => <AdjustmentRow key={i} area={it.area} main={it.main} reason={it.reason} />)}
+      </div>
+    );
+  }
+  // Prosa de un plan nuevo: se separa en frases-punto para leer rápido.
+  const points = text
+    .split(/\n+|(?<=[.;])\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/)
+    .map((s) => s.replace(/^[-•*]\s*/, "").trim())
+    .filter(Boolean);
+  if (points.length <= 1) return <p className="mt-2 whitespace-pre-line text-sm text-zinc-400">{text}</p>;
   return (
-    <div className="mt-2 space-y-2">
-      {header && <p className="text-xs font-semibold text-zinc-300">{header}</p>}
-      {items.map((it, i) => (
-        <AdjustmentRow key={i} area={it.area} main={it.main} reason={it.reason} />
+    <ul className="mt-2 space-y-1 text-sm text-zinc-400">
+      {points.map((p, i) => (
+        <li key={i} className="flex gap-2">
+          <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full" style={{ background: "var(--brand-accent-2)" }} />
+          <span>{p}</span>
+        </li>
       ))}
+    </ul>
+  );
+}
+
+/** Regla de flexibilidad como tarjeta: si tiene "tema: detalle", el tema va
+ *  en negrita para escanear rápido. */
+function FlexRule({ text }: { text: string }) {
+  const m = text.match(/^([^:]{2,32}):\s*(.+)$/s);
+  return (
+    <div className="rounded-lg border-l-2 px-3 py-2 text-xs text-zinc-400" style={{ background: "var(--surface-raised)", borderLeftColor: "color-mix(in srgb, var(--brand-accent) 55%, transparent)" }}>
+      {m ? (<><b className="text-zinc-200">{m[1]}:</b> {m[2]}</>) : text}
     </div>
   );
 }

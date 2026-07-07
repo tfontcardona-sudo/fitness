@@ -100,6 +100,28 @@ class PlanUpdateIn(BaseModel):
     education_json: dict | None = None
 
 
+def _sanitize_nutrition(nut: dict) -> None:
+    """Topes sanos (defensa en profundidad): un valor absurdo tecleado en el
+    editor —36.000.000 kcal— no debe llegar a la BD ni corromper el PDF."""
+    def clamp(v, hi):
+        return min(hi, max(0, v)) if isinstance(v, (int, float)) else v
+
+    if "target_kcal" in nut:
+        nut["target_kcal"] = clamp(nut.get("target_kcal"), 8000)
+    m = nut.get("macros")
+    if isinstance(m, dict):
+        for k in ("protein_g", "carbs_g", "fat_g"):
+            if k in m:
+                m[k] = clamp(m.get(k), 800)
+    for meal in nut.get("meals") or []:
+        t = meal.get("target") if isinstance(meal, dict) else None
+        if isinstance(t, dict):
+            t["kcal"] = clamp(t.get("kcal"), 8000)
+            for k in ("protein_g", "carbs_g", "fat_g"):
+                if k in t:
+                    t[k] = clamp(t.get(k), 800)
+
+
 @router.patch("/api/plans/{plan_id}", response_model=PlanOut)
 def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db)) -> PlanOut:
     """Guarda los cambios manuales del coach en el plan (núcleo/comidas/educativo).
@@ -117,11 +139,12 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
             # Red de seguridad: nutrition_json se reemplaza entero; si el editor
             # manda un objeto sin `applied_adjustments` pero el plan lo tenía,
             # se conserva (si no, el portal y el PDF perderían las "Novedades").
-            if (field == "nutrition_json" and isinstance(value, dict)
-                    and "applied_adjustments" not in value
-                    and isinstance(plan.nutrition_json, dict)
-                    and plan.nutrition_json.get("applied_adjustments")):
-                value = {**value, "applied_adjustments": plan.nutrition_json["applied_adjustments"]}
+            if field == "nutrition_json" and isinstance(value, dict):
+                _sanitize_nutrition(value)  # topes sanos (kcal/macros) antes de guardar
+                if ("applied_adjustments" not in value
+                        and isinstance(plan.nutrition_json, dict)
+                        and plan.nutrition_json.get("applied_adjustments")):
+                    value = {**value, "applied_adjustments": plan.nutrition_json["applied_adjustments"]}
             setattr(plan, field, value)
     log_event(db, "plan", plan.id, "plan_edited", {"fields": list(changes.keys())})
     # Editar también ACTIVA: si el coach retoca un borrador (legado), el plan

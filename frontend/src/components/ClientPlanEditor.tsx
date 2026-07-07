@@ -55,7 +55,24 @@ export function ClientPlanEditor({
   // nunca corrompe gramos ni raciones por redondeos acumulados.
   const goal = client?.goal_type ?? null;
   const weight = refWeightKg ?? client?.start_weight_kg ?? null;
-  const baseline = useRef<any>(structuredClone(plan.nutrition ?? {}));
+  // Baseline SANEADO: si el plan venía con cifras corruptas (p. ej. un kcal
+  // gigante tecleado antes de validar), se recorta al abrir el editor para que
+  // el reescalado parta de valores razonables.
+  const baseline = useRef<any>((() => {
+    const b = structuredClone(plan.nutrition ?? {});
+    if (typeof b.target_kcal === "number") b.target_kcal = Math.min(8000, Math.max(0, b.target_kcal));
+    if (b.macros) {
+      for (const k of ["protein_g", "carbs_g", "fat_g"] as const)
+        if (typeof b.macros[k] === "number") b.macros[k] = Math.min(800, Math.max(0, b.macros[k]));
+    }
+    return b;
+  })());
+
+  // Topes sanos: evitan que un valor absurdo (36.000.000 kcal, tecleado sin
+  // querer) reviente el reescalado y corrompa las comidas del plan.
+  const MAX_KCAL = 8000, MAX_MACRO = 800;
+  const clampKcal = (v: number) => Math.min(MAX_KCAL, Math.max(0, v));
+  const clampMacro = (v: number) => Math.min(MAX_MACRO, Math.max(0, v));
 
   function applyTotals(d: typeof draft, next: MacroTargets) {
     const scaled = rescaledFrom(baseline.current, next);
@@ -68,7 +85,7 @@ export function ClientPlanEditor({
   function setKcal(v: number | null) {
     mutate((d) => {
       if (v == null || v <= 0) { d.nutrition.target_kcal = v; return; }
-      applyTotals(d, macrosScaledToKcal(baseline.current, v));
+      applyTotals(d, macrosScaledToKcal(baseline.current, clampKcal(v)));
     });
   }
 
@@ -77,7 +94,7 @@ export function ClientPlanEditor({
       const m = d.nutrition.macros ?? {};
       const next = {
         protein_g: m.protein_g ?? 0, carbs_g: m.carbs_g ?? 0, fat_g: m.fat_g ?? 0,
-        [key]: v ?? 0,
+        [key]: clampMacro(v ?? 0),
       } as { protein_g: number; carbs_g: number; fat_g: number };
       applyTotals(d, { kcal: kcalOf(next.protein_g, next.carbs_g, next.fat_g), ...next });
     });
@@ -163,10 +180,10 @@ export function ClientPlanEditor({
         )}
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Num label="Calorías objetivo" value={nut.target_kcal} onChange={setKcal} />
-          <Num label="Proteína (g)" value={nut.macros.protein_g} onChange={(v) => setMacro("protein_g", v)} />
-          <Num label="Carbohidratos (g)" value={nut.macros.carbs_g} onChange={(v) => setMacro("carbs_g", v)} />
-          <Num label="Grasas (g)" value={nut.macros.fat_g} onChange={(v) => setMacro("fat_g", v)} />
+          <Num label="Calorías objetivo" value={nut.target_kcal} onChange={setKcal} max={MAX_KCAL} />
+          <Num label="Proteína (g)" value={nut.macros.protein_g} onChange={(v) => setMacro("protein_g", v)} max={MAX_MACRO} />
+          <Num label="Carbohidratos (g)" value={nut.macros.carbs_g} onChange={(v) => setMacro("carbs_g", v)} max={MAX_MACRO} />
+          <Num label="Grasas (g)" value={nut.macros.fat_g} onChange={(v) => setMacro("fat_g", v)} max={MAX_MACRO} />
         </div>
         <p className="mt-2 text-xs text-zinc-500">
           Todo se recalcula solo: al cambiar las <b className="text-zinc-400">calorías</b> los TRES
@@ -328,11 +345,11 @@ function Text({ label, value, onChange }: { label: string; value: string; onChan
     </label>
   );
 }
-function Num({ label, value, onChange }: { label: string; value: number | null | undefined; onChange: (v: number | null) => void }) {
+function Num({ label, value, onChange, max }: { label: string; value: number | null | undefined; onChange: (v: number | null) => void; max?: number }) {
   return (
     <label className="block">
       <span className="mb-0.5 block text-xs text-zinc-500">{label}</span>
-      <input type="number" value={value ?? ""} onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))} className="input w-full" />
+      <input type="number" min={0} max={max} value={value ?? ""} onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))} className="input w-full" />
     </label>
   );
 }
