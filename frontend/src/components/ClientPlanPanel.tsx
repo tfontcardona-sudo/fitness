@@ -286,10 +286,17 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
 
   // ---------- Modo edición ----------
   if (editing) {
+    // Peso de referencia para proteína/grasa por kg: el último cierre
+    // quincenal (peso real actual) o, si no hay, el peso inicial.
+    const lastClosing = periods
+      .filter((p: any) => p.closing_weight_kg != null)
+      .reduce<any>((a, b) => (!a || b.period_index > a.period_index ? b : a), null);
     return (
       <ClientPlanEditor
         plan={plan}
         exMap={exMap}
+        client={client}
+        refWeightKg={lastClosing?.closing_weight_kg ?? client.start_weight_kg ?? null}
         onSaved={(p) => { setPlan(p); setEditing(false); }}
         onCancel={() => setEditing(false)}
       />

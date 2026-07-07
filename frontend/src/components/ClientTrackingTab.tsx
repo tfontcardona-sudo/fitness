@@ -227,6 +227,14 @@ function avisosQuincenal(
     if (goal === "muscle_gain") {
       if (perWeek <= 0) out.push({ sev: "medio", text: `No sube de peso (${v}): revisa kcal si el objetivo es ganar músculo.` });
       else if (pct > 0.5) out.push({ sev: "medio", text: `Sube demasiado rápido (${v}): riesgo de acumular grasa.` });
+    } else if (goal === "recomp" || goal === "maintenance" || goal === "injury_recovery") {
+      // Objetivos de peso ESTABLE: recomposición, mantenimiento y lesión
+      if (pct > 0.5) {
+        const motivo = goal === "recomp" ? "recomponer con el peso estable"
+          : goal === "maintenance" ? "mantener el peso"
+          : "recuperarse sin perder masa";
+        out.push({ sev: "medio", text: `El peso se mueve rápido (${v}) y el objetivo es ${motivo}: revisa kcal.` });
+      }
     } else {
       if (perWeek >= 0) out.push({ sev: "alto", text: `Sin pérdida de peso en el período (${v}): revisa kcal y adherencia real.` });
       else if (pct > 1) out.push({ sev: "alto", text: `Ritmo de pérdida muy rápido (${v}, >1% del peso): protege masa muscular y energía.` });

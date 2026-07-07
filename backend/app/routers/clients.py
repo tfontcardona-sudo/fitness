@@ -648,13 +648,14 @@ def download_client_document(client_id: int, name: str, db: Session = Depends(ge
 # a la IA el plan mensual (núcleo + comidas + educativo), bajo guardrails. Lo
 # guarda como borrador para que el coach lo revise, publique y descargue.
 
-# Campos estructurados imprescindibles para poder generar
+# Campos estructurados imprescindibles para poder generar.
+# NOTA: meals_per_day y meal_schedule son OPCIONALES — si el cliente lo delega
+# ("lo decidís vosotros"), la IA elige el número y reparto óptimo de comidas.
 _REQUIRED_FIELDS = {
     "sex": "Sexo", "birth_date": "Fecha de nacimiento", "height_cm": "Altura",
     "start_weight_kg": "Peso inicial", "goal_type": "Objetivo", "level": "Nivel",
     "training_days": "Días de entrenamiento", "session_max_min": "Duración de sesión",
     "training_place": "Dónde entrena", "diet_mode": "Modo de dieta",
-    "meals_per_day": "Comidas al día",
 }
 
 
@@ -684,8 +685,6 @@ def generate_client_plan(
     for field, label in _REQUIRED_FIELDS.items():
         if getattr(client, field, None) in (None, "", []):
             missing.append(label)
-    if not client.meal_schedule:
-        missing.append("Horario de comidas")
     if missing:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,

@@ -37,6 +37,8 @@ MACROS Y DISTRIBUCIÓN
 - Proteína 1.6–2.2 g/kg (hasta 2.6 en déficit agresivo y sujeto magro); grasas mínimo 0.6–0.8 g/kg;
   carbohidratos el resto, priorizados peri-entrenamiento.
 - Reparto de proteína en tomas de 0.3–0.5 g/kg según número de comidas declarado.
+- Si el cliente DELEGA el número/horario de comidas, elige tú el reparto óptimo para su
+  objetivo y rutina (3-5 comidas; añade media mañana, merienda o pre-cama solo si aportan).
 - Fibra orientativa 25–40 g/día; agua 30–40 ml/kg como guía.
 
 FORMATO DEL PLAN (clave: facilidad de seguimiento)

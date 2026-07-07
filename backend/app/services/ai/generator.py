@@ -61,7 +61,7 @@ class ClientContext:
     session_max_min: int
     training_place: str
     diet_mode: str
-    meals_per_day: int
+    meals_per_day: int | None   # None = el cliente lo delega ("lo decidís vosotros")
     meal_schedule: list[dict]
     food_allergies: list[str]
     food_dislikes: list[str]
@@ -127,8 +127,15 @@ def _client_block(ctx: ClientContext) -> str:
             "dias_entrenamiento": ctx.training_days,
             "duracion_max_sesion_min": ctx.session_max_min,
             "lugar_entrenamiento": ctx.training_place,
-            "modo_dieta": ctx.diet_mode, "num_comidas": ctx.meals_per_day,
-            "horario_comidas": ctx.meal_schedule,
+            "modo_dieta": ctx.diet_mode,
+            # El cliente puede DELEGAR el reparto de comidas: si no declara
+            # número u horario, la IA elige el óptimo para su objetivo y rutina.
+            "num_comidas": ctx.meals_per_day
+            if ctx.meals_per_day
+            else "lo delega: elige tú el número óptimo (3-5 según preferencias y objetivo)",
+            "horario_comidas": ctx.meal_schedule
+            if ctx.meal_schedule
+            else "lo delega: reparte tú las comidas (desayuno/comida/cena y añade media mañana, merienda o pre-cama si conviene)",
             "alergias": ctx.food_allergies, "aversiones": ctx.food_dislikes,
             "preferencias": ctx.food_likes,
             "lesiones_contraindicaciones": sorted(ctx.contraindications),

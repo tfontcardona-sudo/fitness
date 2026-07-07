@@ -31,6 +31,8 @@ export const GOAL_LABEL: Record<GoalType, string> = {
   fat_loss: "Pérdida de grasa",
   muscle_gain: "Ganancia muscular",
   recomp: "Recomposición",
+  maintenance: "Mantenimiento",
+  injury_recovery: "Recuperación de lesión",
 };
 
 export const LEVEL_LABEL: Record<Level, string> = {
