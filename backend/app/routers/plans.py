@@ -15,7 +15,7 @@ publicación a una llamada de IA en vivo (que puede orquestarse aparte).
 """
 
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -53,6 +53,9 @@ class PlanOut(BaseModel):
     training_json: dict | None
     education_json: dict | None
     guardrail_flags: list[str] | None
+    goal_type: str | None = None
+    published_at: datetime | None = None
+    created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -74,11 +77,13 @@ def create_plan(client_id: int, body: PlanCreateIn, db: Session = Depends(get_db
         .order_by(Plan.version.desc()).limit(1)
     )
     version = (last.version + 1) if last else 1
+    client = _client_or_404(db, client_id)
     plan = Plan(
         client_id=client_id, month_index=body.month_index, version=version,
         status="draft", nutrition_json=body.nutrition_json,
         training_json=body.training_json, education_json=body.education_json,
         guardrail_flags=body.guardrail_flags, generated_by=body.generated_by,
+        goal_type=client.goal_type,
     )
     db.add(plan)
     db.flush()
@@ -151,9 +156,15 @@ def publish_plan(plan_id: int, db: Session = Depends(get_db)) -> PlanOut:
         older.status = "superseded"
 
     plan.status = "published"
+    plan.published_at = datetime.now(timezone.utc)  # antes no se fijaba nunca
+    if plan.goal_type is None:
+        plan.goal_type = client.goal_type
     is_new_month = plan.month_index > 1
     if client.status == "onboarding":
         client.status = "active"
+    # Arranque de la etapa del objetivo (para la alerta de los 45 días)
+    if client.goal_started_on is None:
+        client.goal_started_on = date.today()
 
     log_event(db, "plan", plan.id, "plan_published", {"month_index": plan.month_index})
 

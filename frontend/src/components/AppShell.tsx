@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useBrand } from "../hooks/useBrand";
+import { AlertsBell } from "./AlertsBell";
 
 const NAV = [
   { to: "/", label: "Hoy", icon: LayoutDashboard, end: true },
@@ -92,9 +93,11 @@ export default function AppShell() {
 
       <main
         onClick={!collapsed ? () => setCollapsed(true) : undefined}
-        className="flex-1 overflow-y-auto"
+        className="relative flex-1 overflow-y-auto"
         style={{ background: "var(--bg)" }}
       >
+        {/* Centro de alertas: preventivo, se autolimpia al resolver acciones */}
+        <AlertsBell />
         <Outlet />
       </main>
     </div>

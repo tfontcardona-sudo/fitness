@@ -85,3 +85,28 @@ export function initials(name: string): string {
     .map((p) => p[0]?.toUpperCase() ?? "")
     .join("");
 }
+
+// ---- Etapa del objetivo (45 días) ------------------------------------------
+export const GOAL_REVIEW_DAYS = 45;
+
+/** Días que lleva el cliente en su objetivo si TOCA valorarlo (≥45 y sin
+ *  posponer reciente); null si aún no toca. */
+export function goalReviewDue(c: {
+  goal_started_on: string | null;
+  goal_review_snoozed_on: string | null;
+}): number | null {
+  if (!c.goal_started_on) return null;
+  const days = Math.floor((Date.now() - new Date(c.goal_started_on + "T00:00:00").getTime()) / 86400000);
+  if (days < GOAL_REVIEW_DAYS) return null;
+  if (c.goal_review_snoozed_on) {
+    const sn = Math.floor((Date.now() - new Date(c.goal_review_snoozed_on + "T00:00:00").getTime()) / 86400000);
+    if (sn < GOAL_REVIEW_DAYS) return null;
+  }
+  return days;
+}
+
+/** Días transcurridos en el objetivo actual (para mostrar "X días"). */
+export function goalDays(c: { goal_started_on: string | null }): number | null {
+  if (!c.goal_started_on) return null;
+  return Math.floor((Date.now() - new Date(c.goal_started_on + "T00:00:00").getTime()) / 86400000);
+}

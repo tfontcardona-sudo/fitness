@@ -26,3 +26,4 @@ _render/
 
 # Caché incremental de TypeScript (artefacto de build)
 *.tsbuildinfo
+backend/storage/

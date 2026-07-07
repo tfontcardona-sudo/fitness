@@ -78,6 +78,9 @@ class ClientContext:
     # análisis cualitativo del coach/IA (lesiones, hábitos, contexto) — opcional
     deep_analysis: str | None = None
     notes: str = ""
+    # Historial real de seguimiento (revisiones: peso/adherencia/fuerza) para
+    # que la IA entienda el recorrido del cliente, no solo su anamnesis.
+    tracking_history: dict | None = None
 
 
 @dataclass
@@ -140,6 +143,8 @@ def _client_block(ctx: ClientContext) -> str:
             "preferencias": ctx.food_likes,
             "lesiones_contraindicaciones": sorted(ctx.contraindications),
             "notas": ctx.notes,
+            "historial_seguimiento": ctx.tracking_history
+            or "cliente nuevo: sin historial todavía",
             "metricas_backend": {
                 "bmr": ctx.bmr, "tdee": ctx.tdee,
                 "kcal_objetivo": ctx.target_kcal, "metodo": ctx.energy_method,

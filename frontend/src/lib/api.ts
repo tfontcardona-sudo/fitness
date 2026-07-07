@@ -8,6 +8,7 @@
 
 import type {
   BrandConfigOut,
+  CoachAlert,
   ChangeRequestOut,
   ClientCreate,
   ClientCreatedOut,
@@ -112,7 +113,17 @@ export const api = {
       id: number; month_index: number; version: number; status: string;
       nutrition_json: any; training_json: any; education_json: any;
       guardrail_flags: string[] | null;
+      goal_type: string | null; published_at: string | null; created_at: string | null;
     }[]>("GET", `/clients/${clientId}/plans`),
+  // ---- Etapa del objetivo (45 días) + alertas del coach ----
+  goalReviewAnalysis: (clientId: number) =>
+    request<{ text: string; options: string[] }>("POST", `/clients/${clientId}/goal-review/analysis`),
+  snoozeGoalReview: (clientId: number) =>
+    request<ClientOut>("POST", `/clients/${clientId}/goal-review/snooze`),
+  changeGoal: (clientId: number, body: { goal_type: string; goal_weight_kg?: number | null }) =>
+    request<ClientOut>("POST", `/clients/${clientId}/change-goal`, body),
+  listAlerts: () =>
+    request<{ alerts: CoachAlert[]; count: number; high: number }>("GET", "/alerts"),
   planDocumentUrl: (planId: number) => `/api/plans/${planId}/document`,
   listClientDocuments: (clientId: number) =>
     request<{ name: string; size_kb: number; uploaded_at: number }[]>(
