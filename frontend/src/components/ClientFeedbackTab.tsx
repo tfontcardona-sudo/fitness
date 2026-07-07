@@ -276,25 +276,55 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                   <Stat label="Δ peso corporal" value={fmtDelta(m.weight?.delta_kg, "kg")} />
                   <Stat label="Peso actual" value={m.body_weight_now_kg != null ? `${m.body_weight_now_kg} kg` : "—"} />
                   <Stat label="A su objetivo" value={m.distance_to_goal_kg != null ? `${Math.abs(m.distance_to_goal_kg)} kg` : "—"} />
-                  <Stat label="Adherencia dieta" value={`${m.adherence?.diet_pct ?? 0}%`} />
+                  <Stat
+                    label="Adherencia dieta"
+                    value={`${m.adherence?.diet_pct ?? 0}% · ${(m.adherence?.diet_days_yes ?? 0) + (m.adherence?.diet_days_partial ?? 0)} de ${m.adherence?.period_days ?? 0} días`}
+                  />
                   <Stat label="Días registrados" value={`${m.adherence?.days_logged ?? 0}/${m.adherence?.period_days ?? 0}`} />
                   <Stat label="Ritmo semanal" value={fmtDelta(m.weight?.weekly_rate_kg, "kg/sem")} />
                 </div>
                 {Array.isArray(m.strength) && m.strength.length > 0 && (
                   <div>
-                    <SubTitle icon={TrendingUp} text="Fuerza ganada (e1RM)" />
+                    <SubTitle icon={TrendingUp} text="Fuerza por grupo muscular (vs revisiones anteriores)" />
                     <ul className="space-y-1 text-sm">
                       {m.strength.map((s: any, i: number) => (
-                        <li key={i} className="flex items-center justify-between rounded-lg px-3 py-1.5" style={{ background: "var(--surface-raised)" }}>
-                          <span className="truncate text-zinc-300">{s.name}</span>
-                          <span className="whitespace-nowrap text-zinc-400">
-                            {Math.round(s.e1rm_kg)} kg
-                            {s.delta_kg != null && (
-                              <span style={{ color: s.delta_kg >= 0 ? "var(--brand-accent)" : "#C2453A" }}>
-                                {" "}{s.delta_kg >= 0 ? "▲" : "▼"} {Math.abs(s.delta_kg)}
-                              </span>
+                        <li key={i} className="rounded-lg px-3 py-2" style={{ background: "var(--surface-raised)" }}>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="flex min-w-0 items-center gap-2">
+                              {s.muscle && (
+                                <span
+                                  className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+                                  style={{ background: "color-mix(in srgb, var(--brand-accent-2) 15%, transparent)", color: "var(--brand-accent-2)" }}
+                                >
+                                  {s.muscle}
+                                </span>
+                              )}
+                              <span className="truncate text-zinc-300">{s.name}</span>
+                            </span>
+                            <span className="whitespace-nowrap text-zinc-400">
+                              e1RM {Math.round(s.e1rm_kg)} kg
+                              {s.delta_kg != null && (
+                                <span style={{ color: s.delta_kg >= 0 ? "var(--brand-accent)" : "#C2453A" }}>
+                                  {" "}{s.delta_kg >= 0 ? "▲" : "▼"} {Math.abs(s.delta_kg)} kg
+                                  {s.pct != null ? ` (${s.pct >= 0 ? "+" : ""}${s.pct}%)` : ""}
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                          <div className="mt-0.5 text-xs text-zinc-500">
+                            {s.avg_weight_kg != null && (
+                              <>
+                                Peso medio {s.avg_weight_kg} kg
+                                {s.avg_weight_delta_kg != null && (
+                                  <span style={{ color: s.avg_weight_delta_kg >= 0 ? "var(--brand-accent)" : "#C2453A" }}>
+                                    {" "}({s.avg_weight_delta_kg >= 0 ? "+" : ""}{s.avg_weight_delta_kg} kg)
+                                  </span>
+                                )}
+                              </>
                             )}
-                          </span>
+                            {s.avg_reps != null && <> · {s.avg_reps} reps de media</>}
+                            {s.delta_kg == null && <> · primera revisión con datos de este ejercicio</>}
+                          </div>
                         </li>
                       ))}
                     </ul>

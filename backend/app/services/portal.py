@@ -12,9 +12,10 @@ opciones por slot; estricto: el plato del día).
 
 from __future__ import annotations
 
+import re
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import BrandConfig, Client, DailyLog, Exercise, Period, Plan
@@ -50,6 +51,68 @@ def latest_published_plan(db: Session, client_id: int) -> Plan | None:
         .order_by(Plan.month_index.desc(), Plan.version.desc())
         .limit(1)
     )
+
+
+# Explicación de CADA fase del mesociclo (por qué haces lo que haces esta
+# semana) — periodización ondulante con descarga, estándar en la evidencia.
+_WEEK_WHY = [
+    ("deload|descarga|recuper", "Semana de DESCARGA a propósito: bajamos volumen e intensidad "
+     "para que el cuerpo absorba el trabajo de las semanas anteriores, recuperes "
+     "articulaciones y sistema nervioso, y vuelvas más fuerte al siguiente bloque."),
+    ("pico|intens", "Semana de PICO: la de mayor intensidad del bloque. Cargas arriba con "
+     "poco margen (RIR bajo) para dar el estímulo fuerte que dispara las adaptaciones. "
+     "Prioriza técnica, descansos completos y sueño."),
+    ("progres", "Semana de PROGRESIÓN: busca superar ligeramente la semana anterior — una "
+     "repetición más por serie o +2,5 kg si ya cerraste el rango alto — manteniendo la "
+     "técnica. La sobrecarga progresiva es lo que hace crecer fuerza y músculo."),
+    ("base|referencia|adapta", "Semana BASE: es tu punto de partida del bloque. Registra "
+     "cargas y repeticiones reales con técnica cómoda; las semanas siguientes progresan "
+     "sobre estos números."),
+]
+
+
+def current_training_week(db: Session, plan: Plan | None, today: date) -> dict | None:
+    """Semana del mesociclo (1-N) que el cliente vive HOY, con su fase, el
+    multiplicador de carga respecto a la semana base y el PORQUÉ.
+
+    Anclada al primer día con plan ACTIVO de este mes de entrenamiento
+    (mín. published_at del month_index): adaptar el plan a mitad de mes NO
+    reinicia la semana. Si el mes se alarga, el ciclo se repite en oleadas.
+    """
+    if plan is None:
+        return None
+    weeks = (plan.training_json or {}).get("weekly_progression") or []
+    if not weeks:
+        return None
+    start_dt = db.scalar(
+        select(func.min(Plan.published_at)).where(
+            Plan.client_id == plan.client_id,
+            Plan.month_index == plan.month_index,
+            Plan.published_at.is_not(None),
+        )
+    )
+    start = start_dt.date() if start_dt else today
+    n = len(weeks)
+    idx = (max(0, (today - start).days) // 7) % n
+    w = weeks[idx] or {}
+    base_pct = (weeks[0] or {}).get("load_pct") or 100
+    pct = w.get("load_pct") or base_pct
+    factor = (pct / base_pct) if base_pct else 1.0
+    intent = str(w.get("intent") or "")
+    why = next((txt for pat, txt in _WEEK_WHY if re.search(pat, intent, re.I)),
+               w.get("volume_note") or "Sigue la pauta de esta semana tal y como está "
+               "programada: cada fase del bloque tiene su función.")
+    return {
+        "week": w.get("week") or idx + 1,
+        "total_weeks": n,
+        "intent": intent or None,
+        "load_pct": pct,
+        "rir_target": w.get("rir_target"),
+        "volume_note": w.get("volume_note"),
+        "load_factor": round(factor, 3),
+        "started_on": start,
+        "why": why,
+    }
 
 
 def period_info(period: Period | None, today: date) -> dict | None:
@@ -135,9 +198,11 @@ def _meals_for_today(plan: Plan, client: Client, chosen: dict | None) -> list[di
     return slots_out
 
 
-def _resolve_session(db: Session, sess: dict) -> dict:
+def _resolve_session(db: Session, sess: dict, load_factor: float = 1.0) -> dict:
     """Convierte una sesión del plan (con exercise_id) en una sesión con nombres
-    de ejercicio y vídeo resueltos desde la biblioteca."""
+    de ejercicio y vídeo resueltos desde la biblioteca. `load_factor` ajusta el
+    peso sugerido a la SEMANA del mesociclo que vive el cliente (p. ej. 1.05 en
+    la semana de pico, 0.6 en la descarga), redondeado a 0,5 kg."""
     ex_ids = [e["exercise_id"] for e in sess.get("exercises", [])]
     lib = {
         ex.id: ex
@@ -146,12 +211,15 @@ def _resolve_session(db: Session, sess: dict) -> dict:
     exercises = []
     for e in sess.get("exercises", []):
         ex = lib.get(e["exercise_id"])
+        hint = e.get("start_weight_hint_kg")
+        week_hint = (round(hint * load_factor * 2) / 2) if isinstance(hint, (int, float)) else None
         exercises.append({
             "exercise_id": e["exercise_id"],
             "name": ex.canonical_name if ex else f"Ejercicio {e['exercise_id']}",
             "sets": e["sets"], "rep_range": e["rep_range"], "rir": e.get("rir", ""),
             "rest_sec": e.get("rest_sec", 90),
             "start_weight_hint_kg": e.get("start_weight_hint_kg"),
+            "week_weight_hint_kg": week_hint,
             "technique_cue": e.get("technique_cue"),
             "video_url": ex.video_url if ex and ex.video_url else None,
         })
@@ -177,7 +245,8 @@ def _session_for_today(db: Session, plan: Plan, today: date) -> dict | None:
 
 
 def build_training_sessions(db: Session, client: Client) -> list[dict]:
-    """TODAS las sesiones del plan vigente, con nombres de ejercicio resueltos.
+    """TODAS las sesiones del plan vigente, con nombres de ejercicio resueltos
+    y el peso sugerido AJUSTADO a la semana del mesociclo en curso.
 
     Para el selector de sesión del portal (el cliente registra la que ha hecho,
     no solo la del día)."""
@@ -185,8 +254,10 @@ def build_training_sessions(db: Session, client: Client) -> list[dict]:
     plan = published_plan_for_period(db, period) if period else latest_published_plan(db, client.id)
     if plan is None:
         return []
+    week = current_training_week(db, plan, date.today())
+    factor = (week or {}).get("load_factor") or 1.0
     training = plan.training_json or {}
-    return [_resolve_session(db, s) for s in training.get("sessions", [])]
+    return [_resolve_session(db, s, factor) for s in training.get("sessions", [])]
 
 
 def build_today_view(db: Session, client: Client, today: date) -> dict:

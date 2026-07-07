@@ -1,7 +1,7 @@
 # Documento de traspaso — Fitness System (DQ / David Quiceno)
 
 > Objetivo de este doc: que otra sesión de IA (Fable u otra) pueda **continuar el trabajo sin perder contexto**.
-> Última actualización: 2026-07-07. Autor del último tramo: Claude (sin botón Publicar + reescalado nutricional en bloque + anamnesis sin cortes).
+> Última actualización: 2026-07-07 (3ª parte). Autor del último tramo: Claude (macros proporcionales, semana del mesociclo en el portal, fuerza por grupo muscular).
 > **PRODUCCIÓN:** el sistema está desplegado en `https://app.dqrassessories.com` (VPS Hetzner
 > `46.225.57.25`, repo en `/root/fitness`, ver `DEPLOY.md`). Actualizar: `cd /root/fitness && git pull && docker compose up -d --build`.
 > Cliente/marca: **David Quiceno (DQ)** — asesoría de fitness. Colores marca: **vino `#8B1A2B`**, **azul `#4A7BA8`**.
@@ -594,6 +594,42 @@ Cierre de los flecos detectados al revisar TODO lo pedido el 7 de julio:
   comidas que cuadran exactas, re-adaptar avisa 409, banco reescalado). Suite
   pytest OK (2 fallos pre-existentes del mock IA, ya fallaban en main). Los 8
   harnesses Playwright OK. Test unitario de `nutrition_scale` OK.
+
+## 10.d Tramo 2026-07-07 (3ª parte) — Proporcionalidad, semana del mesociclo y métricas ricas
+
+- **Kcal → 3 macros EN PROPORCIÓN (bug)**: al editar calorías solo se movían los
+  carbohidratos (proteína/grasa iban ancladas por kg). Ahora los TRES macros
+  escalan en proporción al mix del plan y los carbohidratos cuadran el 4/4/9:
+  `macrosScaledToKcal` (front) ⇄ `macros_scaled_to_kcal` (back, usado por la
+  adaptación quincenal cuando el ajuste solo toca kcal). "Aplicar recomendación"
+  sigue usando la evidencia por kg (goalTargets). El editor muestra una TABLA de
+  comidas EN VIVO que se reescala al teclear.
+- **Pestaña Planificación reordenada**: nutrición (kcal/macros + comidas) →
+  banco → entrenamiento (sesiones DESPLEGABLES por día) → **Puntos importantes
+  del cliente** (lesiones/salud/medicación/alergias/aversiones/objetivo en sus
+  palabras, desde la ficha) → suplementación → planificaciones anteriores
+  ENRIQUECIDAS (fechas reales "5 jun → 20 jun", duración, objetivo, kcal/macros
+  y "Por qué se hizo/cambió" desde applied_adjustments/rationale).
+- **Portal: semana del mesociclo** (`current_training_week` en services/portal.py):
+  anclada al MIN(published_at) del mes (adaptar no reinicia la semana), cicla en
+  oleadas si el mes se alarga. GET /p/{token}/training devuelve `week` (fase,
+  carga, RIR, porqué didáctico por intent) y cada ejercicio lleva
+  `week_weight_hint_kg` (hint × load_pct/base, redondeado a 0,5 kg). El portal
+  muestra el banner "Semana X de Y · FASE" + explicación, y los pesos sugeridos
+  (placeholder incluido) ya van ajustados. Prompt del núcleo: periodización por
+  objetivo con evidencia (onda 100→102.5→105 + deload; lesión suave; etc.).
+- **Fuerza por grupo muscular** (`compute_period_summary`): por cada grupo el
+  ejercicio más relevante (mayor e1RM), con peso medio levantado y reps medias,
+  comparado con la ÚLTIMA revisión anterior CON DATOS de ese ejercicio (no solo
+  la inmediata): Δkg de media, Δe1RM y %. Adherencia ahora también en días:
+  "84% · 12 de 15 días" (diet_days_yes/partial).
+- **Análisis de cambio de objetivo**: 4 bloques — añade en cada opción QUÉ
+  GANARÍA el cliente frente a seguir con el plan actual, y un bloque
+  'Veredicto' (mantener vs cambiar, contando si aún no llegó al peso objetivo).
+  Respaldo determinista con _GOAL_GAIN + _goal_verdict_fallback.
+- **Verificación**: backtest 5×92 días → 1529 OK · 0 fallos; pytest OK; los 8
+  harnesses Playwright OK (editor-test ampliado: proporcionalidad + tabla en
+  vivo; verify-portal con fixture de semana). Unit del espejo back OK.
 
 ## 11. Mapa rápido de archivos tocados en el último tramo
 

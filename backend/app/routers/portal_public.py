@@ -237,8 +237,9 @@ def portal_training(
 ) -> dict:
     """Todas las sesiones del plan (con nombres de ejercicio) para el selector
     de la pantalla de registro de entreno. Incluye los cambios aplicados en la
-    última adaptación del plan (qué cambió, dónde y por qué) para el desplegable
-    "Novedades de tu plan"."""
+    última adaptación del plan ("Novedades de tu plan") y la SEMANA del
+    mesociclo que el cliente vive hoy (fase, carga, RIR y el porqué): los pesos
+    sugeridos de cada ejercicio ya vienen ajustados a esa semana."""
     period = portal_svc.active_period(db, client.id)
     plan = (
         portal_svc.published_plan_for_period(db, period)
@@ -248,7 +249,14 @@ def portal_training(
     changes = None
     if plan is not None and plan.status == "published":
         changes = (plan.nutrition_json or {}).get("applied_adjustments") or None
-    return {"sessions": portal_svc.build_training_sessions(db, client), "plan_changes": changes}
+    week = portal_svc.current_training_week(db, plan, _date.today())
+    if week:
+        week = {**week, "started_on": week["started_on"].isoformat()}
+    return {
+        "sessions": portal_svc.build_training_sessions(db, client),
+        "plan_changes": changes,
+        "week": week,
+    }
 
 
 @router.get("/{token}/plan", response_model=PortalPlanOut)

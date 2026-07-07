@@ -206,7 +206,14 @@ cada objeto son OBLIGATORIOS salvo los marcados como (null si no aplica). No omi
   flexibility_rules[] (strings), refeed_or_break (null si no aplica).
 - "training": split_name, split_rationale,
   weekly_progression[] (EXACTAMENTE 4 objetos para las semanas 1,2,3,4; cada uno con los 5
-  campos: week (1-4), intent (Base|Progresión|Pico|Deload), load_pct (número), rir_target, volume_note),
+  campos: week (1-4), intent (Base|Progresión|Pico|Deload), load_pct (número), rir_target, volume_note).
+  La PERIODIZACIÓN debe seguir la evidencia SEGÚN EL OBJETIVO del cliente (load_pct relativo a
+  la semana base = 100): ganancia muscular/recomposición → onda de sobrecarga progresiva
+  (100 → 102.5 → 105) con deload real (60-70, volumen −40/50%); pérdida de grasa → misma onda
+  conservando intensidad ALTA para retener masa (el volumen puede bajar algo en el déficit);
+  recuperación de lesión → progresión suave (100 → 102.5 máx.), RIR alto (3-4) y deload
+  temprano; mantenimiento → onda moderada. En volume_note explica QUÉ debe hacer esa semana y
+  con qué intención (el cliente lo lee en su portal).
   sessions[] (day, name, warmup, exercises[], cooldown),
   cardio{{daily_steps, sessions[] (cada uno: type "liss"|"hiit", minutes, times_per_week, notes)}},
   deload_instructions.

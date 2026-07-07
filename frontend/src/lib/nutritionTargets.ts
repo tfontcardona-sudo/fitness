@@ -75,6 +75,21 @@ export function goalTargets(goal: GoalType | null | undefined, weightKg: number,
   return macrosForKcal(goal, weightKg, tdee * r.kcalFactor);
 }
 
+/** Al EDITAR las calorías, los TRES macros suben o bajan EN PROPORCIÓN al mix
+ *  del plan (la dieta ya está adaptada al cliente; no se re-ancla nada): P y G
+ *  escalan por el ratio de calorías y los carbohidratos cuadran el 4/4/9
+ *  exacto. Espejo de `macros_scaled_to_kcal` en services/nutrition_scale.py. */
+export function macrosScaledToKcal(baseNut: any, kcal: number): MacroTargets {
+  const m = baseNut?.macros ?? {};
+  const p0 = m.protein_g ?? 0, c0 = m.carbs_g ?? 0, f0 = m.fat_g ?? 0;
+  const old = kcalOf(p0, c0, f0) || baseNut?.target_kcal || kcal;
+  const r = old > 0 ? kcal / old : 1;
+  const protein = Math.round(p0 * r);
+  const fat = Math.round(f0 * r);
+  const carbs = Math.max(0, Math.round((kcal - protein * 4 - fat * 9) / 4));
+  return { kcal: Math.round(kcal), protein_g: protein, carbs_g: carbs, fat_g: fat };
+}
+
 const scale = (v: any, f: number): any => (typeof v === "number" ? Math.round(v * f) : v);
 const scaleG = (v: any, f: number): any => (typeof v === "number" ? Math.max(0, Math.round((v * f) / 5) * 5) : v); // gramos a múltiplos de 5
 

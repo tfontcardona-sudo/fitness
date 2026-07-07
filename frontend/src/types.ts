@@ -469,8 +469,23 @@ export interface TodayExercise {
   rir: string;
   rest_sec: number;
   start_weight_hint_kg: number | null;
+  /** Peso sugerido AJUSTADO a la semana del mesociclo en curso (a 0,5 kg). */
+  week_weight_hint_kg?: number | null;
   technique_cue: string | null;
   video_url: string | null;
+}
+
+/** Semana del mesociclo que el cliente vive hoy: fase, carga, RIR y porqué. */
+export interface TrainingWeek {
+  week: number;
+  total_weeks: number;
+  intent: string | null;
+  load_pct: number;
+  rir_target: string | null;
+  volume_note: string | null;
+  load_factor: number;
+  started_on: string;
+  why: string;
 }
 
 export interface TodaySession {

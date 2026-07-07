@@ -44,6 +44,23 @@ def macros_for_kcal(goal: str | None, weight_kg: float, kcal: float) -> dict:
     return {"kcal": round(kcal), "protein_g": protein, "carbs_g": carbs, "fat_g": fat}
 
 
+def macros_scaled_to_kcal(base_nut: dict, kcal: float) -> dict:
+    """Al cambiar SOLO las calorías, los TRES macros suben/bajan EN PROPORCIÓN
+    al mix del plan (la dieta ya está adaptada al cliente; no se re-ancla por
+    kg): P y G escalan por el ratio y los carbohidratos cuadran el 4/4/9.
+    Espejo de `macrosScaledToKcal` en frontend lib/nutritionTargets.ts."""
+    m = (base_nut or {}).get("macros") or {}
+    p0 = m.get("protein_g") or 0
+    c0 = m.get("carbs_g") or 0
+    f0 = m.get("fat_g") or 0
+    old = kcal_of(p0, c0, f0) or (base_nut or {}).get("target_kcal") or kcal
+    r = (kcal / old) if old else 1.0
+    protein = round(p0 * r)
+    fat = round(f0 * r)
+    carbs = max(0, round((kcal - protein * 4 - fat * 9) / 4))
+    return {"kcal": round(kcal), "protein_g": protein, "carbs_g": carbs, "fat_g": fat}
+
+
 def _scale(v, f: float):
     return round(v * f) if isinstance(v, (int, float)) else v
 
