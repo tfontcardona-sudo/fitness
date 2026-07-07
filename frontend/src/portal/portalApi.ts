@@ -16,6 +16,7 @@ import type {
   PushPending,
   TodaySession,
   TodayView,
+  TrainingWeek,
 } from "../types";
 
 export class PortalError extends Error {
@@ -56,7 +57,7 @@ export function portalApi(token: string) {
   return {
     state: () => req<PortalState>("GET", `${base}/state`),
     today: () => req<TodayView>("GET", `${base}/today`),
-    training: () => req<{ sessions: TodaySession[]; plan_changes?: PlanChanges | null }>("GET", `${base}/training`),
+    training: () => req<{ sessions: TodaySession[]; plan_changes?: PlanChanges | null; week?: TrainingWeek | null }>("GET", `${base}/training`),
     workoutHistory: () =>
       req<{ history: Record<string, { date: string; sets: { set: number; weight_kg: number | null; reps: number | null }[] }[]> }>(
         "GET", `${base}/workout-history`,

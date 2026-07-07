@@ -127,22 +127,74 @@ def compute_period_summary(db: Session, period_id: int) -> dict:
         "energy_1_5": dl.energy_1_5, "mood_1_5": dl.mood_1_5, "fatigue_1_5": dl.fatigue_1_5,
     } for dl in logs], period_days)
 
-    # Fuerza: mejor e1RM por ejercicio este período vs el período anterior
+    # Fuerza POR GRUPO MUSCULAR: el ejercicio más relevante de cada grupo (mayor
+    # e1RM), con kg medios levantados y repes medias, comparado con la última
+    # revisión ANTERIOR que tenga datos de ese ejercicio (no solo la inmediata):
+    # kg subidos/bajados reales, Δe1RM y % de ganancia o pérdida de fuerza.
     sets = _workout_sets_for_logs(db, [dl.id for dl in logs])
-    progress = M.exercise_e1rm_progress(sets)[:6]
-    prev = _prev_period(db, period)
+    progress_all = M.exercise_e1rm_progress(sets)
+
+    def _avg_by_ex(ss: list[dict]) -> dict[int, tuple[float, float]]:
+        by: dict[int, list[dict]] = {}
+        for s in ss:
+            if s.get("weight_kg") and s.get("reps"):
+                by.setdefault(s["exercise_id"], []).append(s)
+        return {k: (sum(x["weight_kg"] for x in v) / len(v),
+                    sum(x["reps"] for x in v) / len(v)) for k, v in by.items()}
+
+    avg_now = _avg_by_ex(sets)
+    # Períodos anteriores, del más reciente al más antiguo: el primer dato que
+    # exista por ejercicio es la referencia de comparación.
     prev_best: dict[int, float] = {}
-    if prev:
-        prev_logs = list(db.scalars(select(DailyLog.id).where(DailyLog.period_id == prev.id)))
-        for p in M.exercise_e1rm_progress(_workout_sets_for_logs(db, list(prev_logs))):
-            prev_best[p.exercise_id] = p.best_e1rm_kg
-    ex_ids = {p.exercise_id for p in progress}
+    prev_avg: dict[int, tuple[float, float]] = {}
+    earlier = list(db.scalars(
+        select(Period).where(Period.client_id == period.client_id,
+                             Period.period_index < period.period_index)
+        .order_by(Period.period_index.desc())
+    ))
+    for prev_p in earlier:
+        prev_log_ids = list(db.scalars(select(DailyLog.id).where(DailyLog.period_id == prev_p.id)))
+        prev_sets = _workout_sets_for_logs(db, prev_log_ids)
+        for p in M.exercise_e1rm_progress(prev_sets):
+            prev_best.setdefault(p.exercise_id, p.best_e1rm_kg)
+        for ex_id, avg in _avg_by_ex(prev_sets).items():
+            prev_avg.setdefault(ex_id, avg)
+
+    ex_ids = {p.exercise_id for p in progress_all}
     ex_info = {e.id: e for e in db.scalars(select(Exercise).where(Exercise.id.in_(ex_ids)))} if ex_ids else {}
-    strength = [{
-        "name": ex_info[p.exercise_id].canonical_name if p.exercise_id in ex_info else f"#{p.exercise_id}",
-        "e1rm_kg": p.best_e1rm_kg,
-        "delta_kg": round(p.best_e1rm_kg - prev_best[p.exercise_id], 1) if p.exercise_id in prev_best else None,
-    } for p in progress]
+
+    # El más relevante de cada grupo muscular primero; luego completa hasta 8.
+    picked: list = []
+    seen_groups: set[str] = set()
+    for p in progress_all:  # ya viene ordenado por e1RM desc
+        g = ex_info[p.exercise_id].muscle_primary if p.exercise_id in ex_info else "otros"
+        if g not in seen_groups:
+            seen_groups.add(g)
+            picked.append(p)
+    for p in progress_all:
+        if len(picked) >= 8:
+            break
+        if p not in picked:
+            picked.append(p)
+    picked = picked[:8]
+
+    def _row(p) -> dict:
+        prev_rm = prev_best.get(p.exercise_id)
+        delta = round(p.best_e1rm_kg - prev_rm, 1) if prev_rm is not None else None
+        aw, ar = avg_now.get(p.exercise_id, (None, None))
+        paw = prev_avg.get(p.exercise_id, (None, None))[0]
+        return {
+            "name": ex_info[p.exercise_id].canonical_name if p.exercise_id in ex_info else f"#{p.exercise_id}",
+            "muscle": ex_info[p.exercise_id].muscle_primary if p.exercise_id in ex_info else None,
+            "e1rm_kg": p.best_e1rm_kg,
+            "delta_kg": delta,
+            "pct": round(delta / prev_rm * 100, 1) if (delta is not None and prev_rm) else None,
+            "avg_weight_kg": round(aw, 1) if aw is not None else None,
+            "avg_reps": round(ar, 1) if ar is not None else None,
+            "avg_weight_delta_kg": round(aw - paw, 1) if (aw is not None and paw is not None) else None,
+        }
+
+    strength = [_row(p) for p in picked]
 
     current = period.closing_weight_kg if period.closing_weight_kg is not None else (
         wt.end_kg if wt.end_kg is not None else client.start_weight_kg
@@ -164,6 +216,9 @@ def compute_period_summary(db: Session, period_id: int) -> dict:
             "diet_pct": round(adh.diet_adherence_ratio * 100),
             "log_pct": round(min(1.0, adh.log_ratio) * 100),
             "days_logged": adh.days_logged, "period_days": adh.period_days,
+            # Días que SIGUIÓ el plan (dieta): completos y a medias, para poder
+            # decir "12 de 15 días" además del porcentaje.
+            "diet_days_yes": adh.diet_yes, "diet_days_partial": adh.diet_partial,
         },
         "strength": strength,
     }

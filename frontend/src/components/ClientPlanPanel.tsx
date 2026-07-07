@@ -589,22 +589,6 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
         )}
       </div>
 
-      {/* Suplementación */}
-      {Array.isArray(nut.supplements) && nut.supplements.length > 0 && (
-        <div className="card p-5">
-          <SectionTitle icon={Pill} title="Suplementación" />
-          <div className="space-y-1.5">
-            {nut.supplements.map((s: any, i: number) => (
-              <div key={i} className="rounded-lg px-3 py-2 text-xs" style={{ background: "var(--surface-raised)" }}>
-                <span className="font-medium text-zinc-200">{s.name}</span>
-                <span className="text-zinc-500"> · {s.dose} · {s.timing}</span>
-                {s.evidence_note && <p className="mt-0.5 text-zinc-500">{s.evidence_note}</p>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Banco de comidas */}
       {mealBank && (
         <div className="card p-5">
@@ -672,8 +656,8 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
 
         <div className="space-y-3">
           {(tr.sessions ?? []).map((s: any, i: number) => (
-            <div key={i} className="rounded-lg p-3" style={{ background: "var(--surface-raised)" }}>
-              <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-zinc-200">
+            <details key={i} className="rounded-lg p-3" style={{ background: "var(--surface-raised)" }}>
+              <summary className="flex cursor-pointer flex-wrap items-center gap-2 text-sm font-medium text-zinc-200">
                 <span
                   className="rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide"
                   style={{ background: "color-mix(in srgb, var(--brand-accent-2) 15%, transparent)", color: "var(--brand-accent-2)" }}
@@ -682,7 +666,7 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
                 </span>
                 {s.name}
                 <span className="text-xs font-normal text-zinc-500">{(s.exercises ?? []).length} ejercicios</span>
-              </div>
+              </summary>
               {s.warmup && <p className="mt-1 text-xs text-zinc-500"><b>Calentamiento:</b> {s.warmup}</p>}
               <div className="mt-2 space-y-1.5">
                 {(s.exercises ?? []).map((ex: any, j: number) => {
@@ -709,7 +693,7 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
                 })}
               </div>
               {s.cooldown && <p className="mt-2 text-xs text-zinc-500"><b>Vuelta a la calma:</b> {s.cooldown}</p>}
-            </div>
+            </details>
           ))}
         </div>
 
@@ -726,6 +710,25 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
           <p className="mt-3 text-xs text-zinc-400"><b className="text-zinc-300">Descarga (deload):</b> {tr.deload_instructions}</p>
         )}
       </div>
+
+      {/* PUNTOS IMPORTANTES del cliente (anamnesis): lo que condiciona el plan */}
+      <ImportantPointsCard client={client} />
+
+      {/* Suplementación */}
+      {Array.isArray(nut.supplements) && nut.supplements.length > 0 && (
+        <div className="card p-5">
+          <SectionTitle icon={Pill} title="Suplementación" />
+          <div className="space-y-1.5">
+            {nut.supplements.map((s: any, i: number) => (
+              <div key={i} className="rounded-lg px-3 py-2 text-xs" style={{ background: "var(--surface-raised)" }}>
+                <span className="font-medium text-zinc-200">{s.name}</span>
+                <span className="text-zinc-500"> · {s.dose} · {s.timing}</span>
+                {s.evidence_note && <p className="mt-0.5 text-zinc-500">{s.evidence_note}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ARCHIVO: planificaciones anteriores, como las revisiones — plegadas,
           con el objetivo que servían y cuánto duraron. */}
@@ -744,10 +747,12 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
                     <span className="font-semibold text-zinc-100">
                       {GOAL_LABEL[(p.goal_type as GoalType)] ?? "Objetivo no registrado"}
                     </span>
-                    <span className="text-xs text-zinc-500">Mes {p.month_index} · v{p.version} · {p.durationLabel}</span>
+                    <span className="text-xs text-zinc-500">
+                      {p.rangeLabel ? `${p.rangeLabel} · ` : ""}{p.durationLabel} · Mes {p.month_index} · v{p.version}
+                    </span>
                   </span>
                   <span className="rounded-full px-2 py-0.5 text-xs" style={{ background: "rgba(38,33,26,0.08)", color: "#7A7060" }}>
-                    {p.status === "superseded" ? "sustituida" : p.status === "published" ? "publicada" : "borrador"}
+                    {p.status === "superseded" ? "sustituida" : p.status === "published" ? "publicada" : "borrador antiguo"}
                   </span>
                 </summary>
                 <div className="grid grid-cols-2 gap-2 px-3 py-3 text-xs text-zinc-400 sm:grid-cols-4">
@@ -760,6 +765,18 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
                   <span>Split: <b className="text-zinc-200">{p.training_json?.split_name ?? "—"}</b></span>
                   <span>Sesiones: <b className="text-zinc-200">{(p.training_json?.sessions ?? []).length}</b></span>
                 </div>
+                {/* Por qué se adaptó o cambió esta versión */}
+                {(p.whyChanged?.length || p.whyLabel) && (
+                  <div className="border-t px-3 py-3 text-xs" style={{ borderColor: "var(--line)" }}>
+                    <div className="mb-1 font-semibold uppercase tracking-wide text-zinc-500">Por qué se hizo / cambió</div>
+                    {p.whyLabel && <p className="text-zinc-400">{p.whyLabel}</p>}
+                    {(p.whyChanged ?? []).map((w: { change: string; reason: string }, i: number) => (
+                      <p key={i} className="mt-1 text-zinc-400">
+                        · {w.change}{w.reason ? <span className="text-zinc-500"> — {w.reason}</span> : null}
+                      </p>
+                    ))}
+                  </div>
+                )}
               </details>
             ))}
           </div>
@@ -770,8 +787,12 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
   );
 }
 
-/** Planes archivados (todos menos el vigente) con su duración aproximada:
- *  desde su creación hasta la creación del plan siguiente (o "en uso"). */
+const fmtDay = (d: Date) =>
+  d.toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" });
+
+/** Planes archivados (todos menos el vigente) con las fechas en que se usaron
+ *  (desde su creación hasta el plan siguiente), la duración y el PORQUÉ del
+ *  cambio (ajustes aplicados de la revisión o justificación del plan). */
 function archivedPlans(all: any[], currentId: number): any[] {
   const asc = [...all].sort((a, b) => String(a.created_at ?? "").localeCompare(String(b.created_at ?? "")));
   return asc
@@ -779,10 +800,61 @@ function archivedPlans(all: any[], currentId: number): any[] {
       const from = p.created_at ? new Date(p.created_at) : null;
       const next = asc[i + 1]?.created_at ? new Date(asc[i + 1].created_at) : new Date();
       const days = from ? Math.max(1, Math.round((next.getTime() - from.getTime()) / 86400000)) : null;
-      return { ...p, durationLabel: days != null ? `${days} día${days === 1 ? "" : "s"}` : "—" };
+      const applied = p.nutrition_json?.applied_adjustments?.items as any[] | undefined;
+      const whyChanged = (applied ?? [])
+        .filter((it) => it?.change || it?.detail)
+        .map((it) => ({ change: it.detail ?? it.change, reason: it.reason ?? "" }));
+      const rationale: string | null = p.nutrition_json?.rationale ?? null;
+      const whyLabel = whyChanged.length
+        ? `Adaptación a la revisión #${p.nutrition_json?.applied_adjustments?.period_index}:`
+        : rationale
+          ? rationale.split("\n")[0].slice(0, 180)
+          : p.generated_by === "ai"
+            ? "Plan generado con IA a partir de la anamnesis."
+            : null;
+      return {
+        ...p,
+        durationLabel: days != null ? `${days} día${days === 1 ? "" : "s"}` : "—",
+        rangeLabel: from ? `${fmtDay(from)} → ${fmtDay(next)}` : null,
+        whyChanged,
+        whyLabel,
+      };
     })
     .filter((p) => p.id !== currentId)
     .reverse(); // más reciente primero
+}
+
+/** Puntos IMPORTANTES del cliente (anamnesis) que condicionan la planificación:
+ *  lesiones, salud, medicación, alergias, aversiones y objetivo en sus palabras. */
+function ImportantPointsCard({ client }: { client: ClientOut }) {
+  const blocks: { label: string; text: string }[] = [];
+  const add = (label: string, v: string | string[] | null | undefined) => {
+    const text = Array.isArray(v) ? v.filter(Boolean).join(", ") : (v ?? "").trim();
+    if (text) blocks.push({ label, text });
+  };
+  add("Lesiones y movilidad", client.injuries_notes);
+  add("Salud (clínica y digestiva)", client.medical_notes);
+  add("Medicación", client.medication_notes);
+  add("Alergias e intolerancias", client.food_allergies);
+  add("Alimentos que evita", client.food_dislikes);
+  add("Objetivo y contexto en sus palabras", client.lifestyle_notes);
+  if (!blocks.length) return null;
+  return (
+    <div className="card p-5">
+      <SectionTitle icon={AlertTriangle} title="Puntos importantes del cliente" />
+      <p className="mb-2 text-xs text-zinc-500">
+        De su anamnesis: lo que hay que respetar y tener en cuenta en dieta y entrenamiento.
+      </p>
+      <div className="space-y-2">
+        {blocks.map((b) => (
+          <details key={b.label} open={blocks.length <= 3} className="rounded-lg px-3 py-2" style={{ background: "var(--surface-raised)" }}>
+            <summary className="cursor-pointer text-xs font-semibold text-zinc-300">{b.label}</summary>
+            <div className="mt-1 whitespace-pre-line text-xs text-zinc-400">{b.text}</div>
+          </details>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 /** Etapa del objetivo: días transcurridos, análisis automático profesional,

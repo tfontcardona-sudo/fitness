@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Dumbbell, Plus, Trash2, PlayCircle, Check, Sparkles } from "lucide-react";
-import type { PlanChanges, PortalBrand, TodaySession } from "../types";
+import { Dumbbell, Plus, Trash2, PlayCircle, Check, Sparkles, CalendarRange } from "lucide-react";
+import type { PlanChanges, PortalBrand, TodaySession, TrainingWeek } from "../types";
 import { usePortalToast } from "./PortalToast";
 import { Loading, Empty, localToday } from "./PortalUi";
 import { useDismiss } from "../lib/useDismiss";
@@ -22,6 +22,7 @@ export function PortalWorkout({ api, brand }: { api: Api; brand: PortalBrand }) 
   const today = localToday();
   const [sessions, setSessions] = useState<TodaySession[] | null>(null);
   const [planChanges, setPlanChanges] = useState<PlanChanges | null>(null);
+  const [week, setWeek] = useState<TrainingWeek | null>(null);
   const [newsOpen, setNewsOpen] = useState(false);
   const newsRef = useRef<HTMLDetailsElement>(null);
   useDismiss(newsRef, () => setNewsOpen(false), newsOpen); // fuera/ESC → se cierra
@@ -36,6 +37,7 @@ export function PortalWorkout({ api, brand }: { api: Api; brand: PortalBrand }) 
       const ss = tr.sessions ?? [];
       setSessions(ss);
       setPlanChanges(tr.plan_changes ?? null);
+      setWeek(tr.week ?? null);
       setHistory(hist.history ?? {});
       setTodayDay(t.session?.day ?? null);
       if (t.session) {
@@ -149,6 +151,37 @@ export function PortalWorkout({ api, brand }: { api: Api; brand: PortalBrand }) 
         <p className="mt-0.5 text-xs opacity-60">Elige la sesión que has hecho y anota tus series. Se guarda solo.</p>
       </div>
 
+      {/* SEMANA del mesociclo: en qué fase estás, qué toca y POR QUÉ. Los pesos
+          sugeridos de abajo ya vienen ajustados a esta semana. */}
+      {week && (
+        <div
+          className="portal-card overflow-hidden border-l-4 p-3.5"
+          style={{ borderLeftColor: brand.color_secondary }}
+        >
+          <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+            <CalendarRange size={16} style={{ color: brand.color_secondary }} />
+            Semana {week.week} de {week.total_weeks}
+            {week.intent && (
+              <span
+                className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white"
+                style={{ background: brand.color_secondary }}
+              >
+                {week.intent}
+              </span>
+            )}
+            <span className="ml-auto text-xs font-normal opacity-60">
+              Carga {week.load_pct}%{week.rir_target ? ` · RIR ${week.rir_target}` : ""}
+            </span>
+          </div>
+          <p className="mt-1.5 text-xs opacity-70">{week.why}</p>
+          {week.load_factor !== 1 && (
+            <p className="mt-1 text-[11px] opacity-50">
+              Los pesos sugeridos de tus ejercicios ya están ajustados a esta semana.
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Novedades del plan: qué cambió en la última revisión, dónde y por qué */}
       {planChanges?.items?.length ? (
         <details
@@ -232,7 +265,12 @@ export function PortalWorkout({ api, brand }: { api: Api; brand: PortalBrand }) 
                     <p className="truncate text-sm font-semibold">{ex.name}</p>
                     <p className="text-xs opacity-60">
                       Objetivo: {ex.sets} × {ex.rep_range} · RIR {ex.rir}
-                      {ex.start_weight_hint_kg ? ` · ~${ex.start_weight_hint_kg} kg` : ""}
+                      {(ex.week_weight_hint_kg ?? ex.start_weight_hint_kg)
+                        ? ` · ~${ex.week_weight_hint_kg ?? ex.start_weight_hint_kg} kg${
+                            week && ex.week_weight_hint_kg != null && ex.week_weight_hint_kg !== ex.start_weight_hint_kg
+                              ? ` (sem ${week.week})` : ""
+                          }`
+                        : ""}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -263,7 +301,7 @@ export function PortalWorkout({ api, brand }: { api: Api; brand: PortalBrand }) 
                     return (
                       <div key={i} className="grid grid-cols-[28px_1fr_1fr_40px] items-center gap-2">
                         <span className="text-center text-xs font-semibold tabular-nums" style={{ color: done ? brand.color_primary : undefined, opacity: done ? 1 : 0.5 }}>{i + 1}</span>
-                        <SetInput value={r.weight_kg} step={0.5} placeholder={ex.start_weight_hint_kg ? String(ex.start_weight_hint_kg) : "—"} accent={brand.color_secondary} onChange={(v) => setRow(ex.exercise_id, i, { weight_kg: v })} />
+                        <SetInput value={r.weight_kg} step={0.5} placeholder={(ex.week_weight_hint_kg ?? ex.start_weight_hint_kg) ? String(ex.week_weight_hint_kg ?? ex.start_weight_hint_kg) : "—"} accent={brand.color_secondary} onChange={(v) => setRow(ex.exercise_id, i, { weight_kg: v })} />
                         <SetInput value={r.reps} step={1} placeholder="—" accent={brand.color_secondary} onChange={(v) => setRow(ex.exercise_id, i, { reps: v })} />
                         <button onClick={() => removeSet(ex.exercise_id, i)} aria-label={`Borrar serie ${i + 1}`} className="flex h-11 w-11 items-center justify-center justify-self-center rounded-lg opacity-40 hover:opacity-100"><Trash2 size={15} /></button>
                       </div>

@@ -1084,16 +1084,20 @@ def goal_review_analysis(client_id: int, db: Session = Depends(get_db)) -> dict:
             system=(
                 "Eres el asistente de un equipo de asesoramiento fitness de élite. "
                 "Escribes en castellano, tono PROFESIONAL, serio y cercano, sin emojis "
-                "ni exageraciones. Redactas un análisis breve (150-220 palabras) para "
+                "ni exageraciones. Redactas un análisis breve (200-300 palabras) para "
                 "que el coach valore con su cliente un posible cambio de objetivo."
             ),
             user=(
-                "Con estos datos reales del cliente, redacta el análisis en 3 bloques con estos "
-                "títulos exactos: 'Lo conseguido hasta hoy' (punto de partida → actual, con cifras), "
-                "'Si continúa con el objetivo actual' (proyección realista a 4-6 semanas) y "
-                "'Opciones de objetivo a valorar' (2-3 opciones de esta lista con una frase de "
-                f"por qué encajarían: {', '.join(_GOAL_LABEL[g] for g in options)}). "
-                "No inventes datos que no estén aquí.\n\n"
+                "Con estos datos reales del cliente, redacta el análisis en 4 bloques con estos "
+                "títulos exactos: 'Lo conseguido hasta hoy' (punto de partida → actual, con cifras); "
+                "'Si continúa con el objetivo actual' (proyección realista a 4-6 semanas); "
+                "'Opciones de objetivo a valorar' (2-3 opciones de esta lista, y para CADA una "
+                "di QUÉ GANARÍA el cliente cambiando frente a seguir con su plan y objetivo "
+                f"actuales — beneficios concretos, no generalidades: {', '.join(_GOAL_LABEL[g] for g in options)}); "
+                "y 'Veredicto' (di con claridad qué es mejor AHORA: mantener el objetivo actual o "
+                "cambiar a una opción concreta, y por qué — si el objetivo inicial aún no se ha "
+                "alcanzado (mira le_quedan_kg) y el progreso es bueno, valora explícitamente si "
+                "compensa cambiar antes de llegar). No inventes datos que no estén aquí.\n\n"
                 f"DATOS: {json.dumps(resumen, ensure_ascii=False)}"
             ),
         ).strip()
@@ -1116,8 +1120,33 @@ def goal_review_analysis(client_id: int, db: Session = Depends(get_db)) -> dict:
             f"Manteniendo la adherencia actual, cabe esperar una progresión similar a la de "
             f"las últimas semanas durante las próximas 4-6, con ajustes quincenales del plan.\n\n"
             f"Opciones de objetivo a valorar\n"
-            + "\n".join(f"· {_GOAL_LABEL[g].capitalize()}" for g in options[:3])
-            + "\nLa decisión final es del coach y del cliente según prioridades y contexto."
+            + "\n".join(f"· {_GOAL_LABEL[g].capitalize()}: ganaría {_GOAL_GAIN.get(g, 'un enfoque distinto')} "
+                        f"frente a seguir con {goal_label}." for g in options[:3])
+            + "\n\nVeredicto\n" + _goal_verdict_fallback(h, goal_label, adh_media)
         )
 
     return {"text": text, "summary": resumen, "options": options}
+
+
+# Qué GANARÍA el cliente con cada objetivo (respaldo determinista del análisis)
+_GOAL_GAIN = {
+    "fat_loss": "acelerar la pérdida de grasa y la definición visible",
+    "muscle_gain": "aprovechar la mejora de fuerza para construir masa muscular con superávit ligero",
+    "recomp": "mantener el peso mientras mejora la composición (músculo arriba, grasa abajo)",
+    "maintenance": "consolidar lo logrado, descansar del déficit/superávit y proteger la adherencia",
+    "injury_recovery": "priorizar la recuperación de la lesión sin perder lo ganado",
+}
+
+
+def _goal_verdict_fallback(h: dict, goal_label: str, adh_media: int | None) -> str:
+    """Veredicto determinista: mantener vs cambiar, contando si el objetivo
+    inicial aún no se ha alcanzado."""
+    rem = h.get("remaining_to_goal_kg")
+    if rem is not None and abs(rem) > 1.5:
+        adh_txt = f" y la adherencia media es del {adh_media}%" if adh_media is not None else ""
+        return (f"Aún quedan {abs(rem)} kg para el peso objetivo{adh_txt}: salvo estancamiento "
+                f"claro o cambio de prioridades del cliente, lo más razonable es MANTENER "
+                f"{goal_label} y reevaluar en la próxima revisión quincenal.")
+    return ("El objetivo inicial está prácticamente conseguido: es buen momento para cambiar de "
+            "etapa. La primera opción de la lista es la transición más natural; coméntala con el "
+            "cliente y regenera la planificación al confirmar.")

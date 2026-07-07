@@ -173,28 +173,23 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
         items.append(entry)
 
     # COHERENCIA + REESCALADO EN BLOQUE: si algún ajuste tocó calorías o
-    # macros, todo se mueve junto — kcal⇄macros coherentes (4/4/9, proteína y
-    # grasa por kg según el objetivo) y las COMIDAS y los GRAMOS del banco se
-    # reescalan a los totales nuevos (antes el PDF se quedaba con los gramos
-    # antiguos).
+    # macros, todo se mueve junto — kcal⇄macros coherentes (4/4/9; con solo
+    # kcal, los TRES macros escalan en proporción al mix del plan) y las
+    # COMIDAS y los GRAMOS del banco se reescalan a los totales nuevos (antes
+    # el PDF se quedaba con los gramos antiguos).
     if kcal_touched or protein_touched or carbs_touched or fat_touched:
-        from app.services.nutrition_scale import kcal_of, macros_for_kcal, rescale_nutrition
-
-        client = db.get(Client, client_id)
-        latest_w = db.scalar(
-            select(Period.closing_weight_kg)
-            .where(Period.client_id == client_id, Period.closing_weight_kg.is_not(None))
-            .order_by(Period.period_index.desc()).limit(1)
+        from app.services.nutrition_scale import (
+            kcal_of, macros_scaled_to_kcal, rescale_nutrition,
         )
-        weight = latest_w or (client.start_weight_kg if client else None) or 80.0
-        goal = client.goal_type if client else None
+
         K = nut.get("target_kcal") or 0
         P = macros.get("protein_g") or 0
         C = macros.get("carbs_g") or 0
         F = macros.get("fat_g") or 0
         macro_touched = protein_touched or carbs_touched or fat_touched
         if kcal_touched and not macro_touched:
-            t = macros_for_kcal(goal, weight, K)
+            # Solo kcal → los TRES macros en proporción a la dieta del cliente
+            t = macros_scaled_to_kcal(base.nutrition_json or {}, K)
             P, C, F = t["protein_g"], t["carbs_g"], t["fat_g"]
         elif macro_touched and not kcal_touched:
             K = kcal_of(P, C, F)

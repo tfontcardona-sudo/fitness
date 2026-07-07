@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Save, X, Plus, Trash2, Utensils, Dumbbell, Target } from "lucide-react";
 import { api } from "../lib/api";
-import { GOAL_RULES, goalTargets, kcalOf, macrosForKcal, rescaledFrom, type MacroTargets } from "../lib/nutritionTargets";
+import { GOAL_RULES, goalTargets, kcalOf, macrosScaledToKcal, rescaledFrom, type MacroTargets } from "../lib/nutritionTargets";
 import { GOAL_LABEL } from "../lib/format";
 import { Spinner, useToast } from "./ui";
 import type { ClientOut } from "../types";
@@ -47,8 +47,8 @@ export function ClientPlanEditor({
   }
 
   // ---- Nutrición ENCADENADA: tocar una pieza recalcula todo lo demás ------
-  // · Cambias CALORÍAS → macros óptimos para el objetivo (proteína y grasa por
-  //   kg según evidencia, carbohidratos el resto) + comidas y gramos del banco.
+  // · Cambias CALORÍAS → los TRES macros suben/bajan EN PROPORCIÓN al mix del
+  //   plan (la dieta ya está adaptada al cliente) + comidas y gramos del banco.
   // · Cambias un MACRO → calorías reales (4/4/9) + comidas y gramos del banco.
   // Las comidas y el banco se reescalan SIEMPRE desde la versión BASE (la que
   // se abrió en el editor): así teclear cifras intermedias ("2" → "25" → 2500)
@@ -68,18 +68,7 @@ export function ClientPlanEditor({
   function setKcal(v: number | null) {
     mutate((d) => {
       if (v == null || v <= 0) { d.nutrition.target_kcal = v; return; }
-      if (goal && weight) {
-        applyTotals(d, macrosForKcal(goal, weight, v));
-      } else {
-        // Sin objetivo/peso de referencia: se mantiene el mix de macros BASE
-        const m = baseline.current.macros ?? {};
-        const p = m.protein_g ?? 0, c = m.carbs_g ?? 0, f = m.fat_g ?? 0;
-        const old = kcalOf(p, c, f) || baseline.current.target_kcal || v;
-        const r = v / old;
-        applyTotals(d, {
-          kcal: v, protein_g: Math.round(p * r), carbs_g: Math.round(c * r), fat_g: Math.round(f * r),
-        });
-      }
+      applyTotals(d, macrosScaledToKcal(baseline.current, v));
     });
   }
 
@@ -180,11 +169,39 @@ export function ClientPlanEditor({
           <Num label="Grasas (g)" value={nut.macros.fat_g} onChange={(v) => setMacro("fat_g", v)} />
         </div>
         <p className="mt-2 text-xs text-zinc-500">
-          Todo se recalcula solo: al cambiar las <b className="text-zinc-400">calorías</b> se ajustan los
-          macros al objetivo del cliente; al cambiar un <b className="text-zinc-400">macro</b> se ajustan
-          las calorías (4/4/9). Los objetivos por comida y los gramos del banco de comidas se
-          reescalan automáticamente en ambos casos.
+          Todo se recalcula solo: al cambiar las <b className="text-zinc-400">calorías</b> los TRES
+          macros suben o bajan en proporción a la dieta del cliente; al cambiar un{" "}
+          <b className="text-zinc-400">macro</b> se ajustan las calorías (4/4/9). Los objetivos por
+          comida y los gramos del banco se reescalan en tiempo real (tabla de abajo).
         </p>
+
+        {/* Reparto por comida EN VIVO: se ve cómo se adapta al teclear */}
+        {(nut.meals ?? []).length > 0 && (
+          <div className="mt-3 overflow-x-auto rounded-lg border border-zinc-500/15">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-zinc-500" style={{ background: "var(--surface-raised)" }}>
+                  <th className="px-3 py-1.5 font-medium">Comida</th>
+                  <th className="px-3 py-1.5 font-medium">kcal</th>
+                  <th className="px-3 py-1.5 font-medium">P (g)</th>
+                  <th className="px-3 py-1.5 font-medium">C (g)</th>
+                  <th className="px-3 py-1.5 font-medium">G (g)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(nut.meals ?? []).map((m: any, i: number) => (
+                  <tr key={i} className="border-t border-zinc-500/10 text-zinc-300">
+                    <td className="px-3 py-1.5">{m.name ?? `Toma ${m.slot ?? i + 1}`}{m.time ? ` · ${m.time}` : ""}</td>
+                    <td className="px-3 py-1.5 tabular-nums">{m.target?.kcal ?? "—"}</td>
+                    <td className="px-3 py-1.5 tabular-nums">{m.target?.protein_g ?? "—"}</td>
+                    <td className="px-3 py-1.5 tabular-nums">{m.target?.carbs_g ?? "—"}</td>
+                    <td className="px-3 py-1.5 tabular-nums">{m.target?.fat_g ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
         <Area label="Justificación (rationale)" value={nut.rationale ?? ""} onChange={(v) => mutate((d) => (d.nutrition.rationale = v))} />
         <Area label="Reglas de flexibilidad (una por línea)" value={(nut.flexibility_rules ?? []).join("\n")}
           onChange={(v) => mutate((d) => (d.nutrition.flexibility_rules = v.split("\n").map((s) => s.trim()).filter(Boolean)))} />
