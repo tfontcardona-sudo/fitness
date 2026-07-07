@@ -258,17 +258,30 @@ def list_clients(
 
     # Aviso "!": última revisión quincenal recibida y aún NO vista en Seguimiento.
     pending: dict[int, int] = {}
+    reviews: dict[int, int] = {}
+    with_plan: set[int] = set()
     if clients:
+        ids = [c.id for c in clients]
         rows = db.execute(
             select(Period.client_id, func.max(Period.period_index))
             .where(
-                Period.client_id.in_([c.id for c in clients]),
+                Period.client_id.in_(ids),
                 Period.status.in_(("closed", "analyzed")),
                 Period.coach_reviewed_at.is_(None),
             )
             .group_by(Period.client_id)
         ).all()
         pending = {cid: idx for cid, idx in rows}
+        # Nº de la última revisión recibida (para "Revisión #N pendiente")
+        reviews = {cid: idx for cid, idx in db.execute(
+            select(Period.client_id, func.max(Period.period_index))
+            .where(Period.client_id.in_(ids), Period.status.in_(("closed", "analyzed")))
+            .group_by(Period.client_id)
+        ).all()}
+        # ¿Planificación hecha? (carpetas Activos vs Pendientes de la cartera)
+        with_plan = set(db.scalars(
+            select(Plan.client_id).where(Plan.client_id.in_(ids), Plan.status == "published").distinct()
+        ))
 
     out = []
     for c in clients:
@@ -276,6 +289,8 @@ def list_clients(
         if c.id in pending:
             item.pending_review = True
             item.pending_review_period = pending[c.id]
+        item.review_period_index = reviews.get(c.id)
+        item.has_published_plan = c.id in with_plan
         out.append(item)
     return out
 

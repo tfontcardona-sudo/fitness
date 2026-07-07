@@ -334,6 +334,34 @@ En `C:\Users\Usuari\.claude\projects\C--Users-Usuari-Desktop-fitness-system\memo
   saliendo de `brand_config` en BD (los fijó la migración 0006); si algún día hay que
   cambiarlos: UPDATE a `brand_config` o restaurar la página desde git.
 
+**Iteración 10 — Carpetas de cartera por ciclo + móvil del coach:**
+- **Clientes → CARPETAS por punto del ciclo** (no por estado crudo):
+  Todos · Activos (plan publicado) · Pendientes (sin plan aún) · Revisión
+  pendiente (con su nº: "Revisión #N pendiente") · Objetivo 45 días (sale de
+  la carpeta al mantener/cambiar) · Inactivos. Con contadores por chip.
+  Backend: list_clients rellena `has_published_plan` y `review_period_index`
+  (ClientOut). Filtro en cliente (`inCategory`), búsqueda sigue en servidor.
+- **Badges de ciclo** (`CycleBadges`): "Revisión #N pendiente" (violeta,
+  punto pulsante) y "Objetivo · Xd" (azul) en tabla y tarjetas.
+- **Dashboard**: chip de CATEGORÍA con color+icono en cada acción (Revisión
+  morado, Riesgo rojo, Adaptar naranja, Pendiente índigo, Objetivo azul,
+  En espera ámbar); el título de revisión lleva su nº; onboarding SIN
+  anamnesis → botón "Abrir anamnesis" (tab anamnesis), con anamnesis →
+  "Crear planificación" (el botón lleva a LO QUE FALTA).
+- **MÓVIL del coach** (la web era incómoda en el teléfono):
+  · AppShell: en <768px desaparece la sidebar y hay NAV INFERIOR tipo app
+    (Hoy/Clientes/Salir, safe-area, useIsMobile con matchMedia).
+  · Clientes: la tabla se convierte en TARJETAS (avatar, objetivo, badges,
+    chevron, un toque = perfil).
+  · Dashboard: botón de acción a ancho completo (pulgar).
+  · Perfil: pestañas DESLIZABLES (.profile-tabs, sin cortar) y arreglo del
+    desbordamiento horizontal (min-w-0 en los hijos del grid — las pestañas
+    forzaban el ancho de página).
+  · CSS `.coach-mobile`: px-6→1rem, inputs a 16px (sin zoom iOS), campana
+    abajo a la derecha sobre la nav (no tapa cabeceras), panel de alertas
+    abre hacia arriba.
+  · QA: `MOBILE=1 node verify-coach.mjs` captura todo a 390px (m-*.png).
+
 **Iteración 9 — Etapas de objetivo (45 días), centro de alertas y BACKTEST:**
 - **Etapa del objetivo**: `clients.goal_started_on` (se fija al publicar el
   1er plan / al cambiar objetivo) y `goal_review_snoozed_on` (posponer);

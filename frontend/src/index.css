@@ -130,6 +130,47 @@ body {
   color: var(--brand-accent-2) !important;
 }
 
+/* ---- MÓVIL del coach: app fluida, no una web encogida -------------------- */
+.coach-bottom-nav {
+  padding-bottom: calc(0.375rem + env(safe-area-inset-bottom));
+  box-shadow: 0 -4px 18px rgba(38, 33, 26, 0.08);
+}
+@media (max-width: 640px) {
+  /* Menos margen lateral: el contenido respira sin desperdiciar pantalla */
+  .coach-mobile .px-6 {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  .coach-mobile .py-8 {
+    padding-top: 1.25rem;
+    padding-bottom: 1.25rem;
+  }
+  /* iOS hace zoom al enfocar campos <16px: también en la app del coach */
+  .coach-mobile input, .coach-mobile textarea, .coach-mobile select {
+    font-size: 16px;
+  }
+  /* La campana no tapa las cabeceras: baja a la esquina inferior derecha,
+     por encima de la navegación */
+  .coach-mobile .alerts-bell {
+    top: auto !important;
+    right: 1rem !important;
+    bottom: calc(4.75rem + env(safe-area-inset-bottom)) !important;
+  }
+}
+/* Pestañas del perfil deslizables en pantallas estrechas (sin cortar) */
+.profile-tabs {
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.profile-tabs::-webkit-scrollbar {
+  display: none;
+}
+.profile-tabs > button {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 /* ---- Skin crema de la app del coach ------------------------------------
    Los componentes usan la escala zinc pensada para fondo oscuro; aquí se
    remapea a tinta cálida sobre crema. (El portal no usa clases zinc.) */

@@ -4,6 +4,7 @@ import {
   ArrowRight,
   CheckCircle2,
   ClipboardCheck,
+  Flag,
   HeartPulse,
   Hourglass,
   Sparkles,
@@ -24,6 +25,7 @@ import { goalReviewDue, initials, relativeDays } from "../lib/format";
 interface Accion {
   client: ClientOut;
   prio: number;              // 1 = lo más urgente
+  category: string;          // etiqueta de la categoría (chip de color)
   title: string;             // qué ha pasado
   detail: string;            // qué hay que hacer
   cta: string;               // texto del botón
@@ -35,44 +37,52 @@ interface Accion {
 function nextAction(c: ClientOut): Accion | null {
   if (c.status === "review_pending")
     return {
-      client: c, prio: 1, tone: "#7B4FC9", icon: ClipboardCheck,
-      title: "Revisión quincenal subida",
+      client: c, prio: 1, tone: "#7B4FC9", icon: ClipboardCheck, category: "Revisión",
+      title: `Revisión quincenal #${c.review_period_index ?? c.pending_review_period ?? ""} subida`,
       detail: "El cliente ha cerrado sus 2 semanas: revisa los datos y genera su feedback.",
       cta: "Generar feedback", tab: "feedback",
     };
   if (c.status === "at_risk")
     return {
-      client: c, prio: 1, tone: "#C2453A", icon: HeartPulse,
+      client: c, prio: 1, tone: "#C2453A", icon: HeartPulse, category: "Riesgo",
       title: "Adherencia baja",
       detail: "Lleva días sin registrar o con adherencia baja: revisa su seguimiento y contáctalo.",
       cta: "Ver seguimiento", tab: "seguimiento",
     };
   if (c.pending_review)
     return {
-      client: c, prio: 2, tone: "#C96A1E", icon: Sparkles,
+      client: c, prio: 2, tone: "#C96A1E", icon: Sparkles, category: "Adaptar",
       title: `Feedback de la revisión #${c.pending_review_period ?? ""} listo`,
       detail: "Revisa los cambios propuestos (dieta y entreno) y adapta su planificación.",
       cta: "Adaptar planificación", tab: "planificacion",
     };
+  if (c.status === "onboarding" && !c.goal_type)
+    // Aún SIN anamnesis: el botón lleva a completarla/leerla (lo que falta)
+    return {
+      client: c, prio: 3, tone: "#4C66C9", icon: UserPlus, category: "Pendiente",
+      title: "Cliente nuevo · falta su anamnesis",
+      detail: "Reenvíale el enlace si hace falta y, cuando llegue el PDF, léelo con la IA.",
+      cta: "Abrir anamnesis", tab: "anamnesis",
+    };
   if (c.status === "onboarding")
     return {
-      client: c, prio: 3, tone: "#4C66C9", icon: UserPlus,
-      title: "Cliente nuevo en onboarding",
-      detail: "Cuando llegue su anamnesis, revísala y crea su primera planificación.",
+      client: c, prio: 3, tone: "#4C66C9", icon: UserPlus, category: "Pendiente",
+      title: "Anamnesis lista · falta su planificación",
+      detail: "Revisa los datos y genera su primera planificación con la IA.",
       cta: "Crear planificación", tab: "planificacion",
     };
   // 45 días en la misma etapa de objetivo → valorar cambio (posponible)
   const dueDays = goalReviewDue(c);
   if (dueDays != null)
     return {
-      client: c, prio: 3, tone: "#2E5E8C", icon: Sparkles,
+      client: c, prio: 3, tone: "#2E5E8C", icon: Flag, category: "Objetivo",
       title: `${dueDays} días con el mismo objetivo`,
       detail: "Genera el análisis de la etapa y valora con el cliente si toca cambiar de objetivo.",
       cta: "Valorar objetivo", tab: "planificacion",
     };
   if (c.status === "awaiting_feedback")
     return {
-      client: c, prio: 4, tone: "#9A6B15", icon: Hourglass,
+      client: c, prio: 4, tone: "#9A6B15", icon: Hourglass, category: "En espera",
       title: "Esperando su cierre quincenal",
       detail: "El período está en marcha: puedes seguir sus registros diarios en tiempo real.",
       cta: "Ver seguimiento", tab: "seguimiento",
@@ -193,7 +203,7 @@ function ActionCard({ a, quiet }: { a: Accion; quiet?: boolean }) {
   return (
     <Link
       to={`/clientes/${a.client.id}?tab=${a.tab}`}
-      className="card card-hover flex flex-wrap items-center gap-4 p-4"
+      className="card card-hover flex flex-wrap items-center gap-x-4 gap-y-2.5 p-4 active:scale-[0.995]"
       style={quiet ? undefined : { borderLeft: `3px solid ${a.tone}` }}
     >
       <span
@@ -202,15 +212,22 @@ function ActionCard({ a, quiet }: { a: Accion; quiet?: boolean }) {
       >
         <Icon size={19} />
       </span>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 basis-52">
         <p className="text-sm text-zinc-100">
+          <span
+            className="mr-1.5 inline-block rounded-full px-1.5 py-0.5 align-middle text-[10px] font-bold uppercase tracking-wide"
+            style={{ background: `${a.tone}18`, color: a.tone }}
+          >
+            {a.category}
+          </span>
           <b>{a.client.full_name}</b>
           <span className="mx-1.5 text-zinc-600">·</span>
           {a.title}
         </p>
         <p className="mt-0.5 text-xs text-zinc-500">{a.detail}</p>
       </div>
-      <span className={quiet ? "btn btn-ghost pointer-events-none px-3.5 py-2 text-xs" : "btn btn-primary pointer-events-none px-3.5 py-2 text-xs"}>
+      {/* En el móvil el botón ocupa toda la fila: pulsación fácil con el pulgar */}
+      <span className={`${quiet ? "btn btn-ghost" : "btn btn-primary"} pointer-events-none w-full justify-center px-3.5 py-2 text-xs sm:w-auto`}>
         {a.cta} <ArrowRight size={13} />
       </span>
     </Link>
