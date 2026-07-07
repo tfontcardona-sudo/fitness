@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Pencil, Save, X } from "lucide-react";
+import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Pencil, Save, X, Flag, Copy, Archive } from "lucide-react";
 import { api, getToken } from "../lib/api";
 import { openWhatsApp, planAndFeedbackMessage, planMessage, waPhone } from "../lib/whatsapp";
+import { GOAL_LABEL, goalDays, goalReviewDue } from "../lib/format";
 import { Spinner, useToast } from "./ui";
 import { ClientPlanEditor } from "./ClientPlanEditor";
-import type { ClientOut } from "../types";
+import type { ClientOut, GoalType } from "../types";
 
 interface PlanData {
   id: number;
@@ -51,6 +52,8 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
     feedback_id?: number | null;
     plan_adjustments?: { area: string; change: string; reason: string }[] | null;
   }[]>([]);
+  // Todas las versiones (archivo de planificaciones anteriores por objetivo)
+  const [allPlans, setAllPlans] = useState<any[]>([]);
   // Último feedback generado (para poder enviarlo junto al plan por WhatsApp).
   const [fb, setFb] = useState<{ id: number; content: any; sent: boolean } | null>(null);
   // Edición de los "Cambios aplicados" tras adaptar: texto/porqué o quitar filas.
@@ -71,6 +74,7 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
         exs.forEach((e) => (map[e.id] = e.canonical_name));
         setExMap(map);
         setPeriods(pds);
+        setAllPlans(plans);
         if (plans.length) setPlan(normalize(plans[0])); // [0] = versión más reciente
         // Feedback más reciente (si existe): habilita el envío conjunto.
         const withFb = pds
@@ -183,6 +187,7 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
     try {
       const r = await api.adaptPlan(client.id);
       const plans = await api.listPlans(client.id);
+      setAllPlans(plans);
       const full = plans.find((pl) => pl.id === r.id) ?? plans[0]; // listPlans → más reciente primero
       if (full) setPlan(normalize(full));
       toast.push(`Plan adaptado a la revisión (borrador v${r.version}). Revísalo y publícalo.`);
@@ -402,6 +407,22 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
           </div>
         )}
       </div>
+
+      {/* ETAPA DEL OBJETIVO: a los 45 días la web sugiere valorarlo. Análisis
+          automático profesional, mantener (pospone) o cambiar y regenerar TODO. */}
+      <GoalStageCard
+        client={client}
+        currentMonth={plan.month_index}
+        onClientChanged={onClientChanged}
+        onRegenerated={async () => {
+          const plans = await api.listPlans(client.id).catch(() => null);
+          if (plans) {
+            setAllPlans(plans);
+            if (plans.length) setPlan(normalize(plans[0]));
+          }
+          setPeriods(await api.listPeriods(client.id).catch(() => periods));
+        }}
+      />
 
       {/* Cambios PROPUESTOS por la última revisión quincenal: se ven ANTES de
           adaptar (qué cambia y por qué, dieta y entreno) y el botón va dentro. */}
@@ -705,7 +726,205 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
         )}
       </div>
 
+      {/* ARCHIVO: planificaciones anteriores, como las revisiones — plegadas,
+          con el objetivo que servían y cuánto duraron. */}
+      {allPlans.length > 1 && (
+        <details className="card p-5">
+          <summary className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-zinc-100">
+            <Archive size={15} style={{ color: "var(--brand-accent-2)" }} />
+            Planificaciones anteriores
+            <span className="text-xs font-normal text-zinc-500">{allPlans.length - 1}</span>
+          </summary>
+          <div className="mt-3 space-y-2">
+            {archivedPlans(allPlans, plan.id).map((p) => (
+              <details key={p.id} className="overflow-hidden rounded-lg border" style={{ borderColor: "var(--line)" }}>
+                <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-sm" style={{ background: "var(--surface-raised)" }}>
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-zinc-100">
+                      {GOAL_LABEL[(p.goal_type as GoalType)] ?? "Objetivo no registrado"}
+                    </span>
+                    <span className="text-xs text-zinc-500">Mes {p.month_index} · v{p.version} · {p.durationLabel}</span>
+                  </span>
+                  <span className="rounded-full px-2 py-0.5 text-xs" style={{ background: "rgba(38,33,26,0.08)", color: "#7A7060" }}>
+                    {p.status === "superseded" ? "sustituida" : p.status === "published" ? "publicada" : "borrador"}
+                  </span>
+                </summary>
+                <div className="grid grid-cols-2 gap-2 px-3 py-3 text-xs text-zinc-400 sm:grid-cols-4">
+                  <span>Calorías: <b className="text-zinc-200">{Math.round(p.nutrition_json?.target_kcal ?? 0)}</b></span>
+                  <span>P/C/G: <b className="text-zinc-200">
+                    {Math.round(p.nutrition_json?.macros?.protein_g ?? 0)}/
+                    {Math.round(p.nutrition_json?.macros?.carbs_g ?? 0)}/
+                    {Math.round(p.nutrition_json?.macros?.fat_g ?? 0)} g
+                  </b></span>
+                  <span>Split: <b className="text-zinc-200">{p.training_json?.split_name ?? "—"}</b></span>
+                  <span>Sesiones: <b className="text-zinc-200">{(p.training_json?.sessions ?? []).length}</b></span>
+                </div>
+              </details>
+            ))}
+          </div>
+        </details>
+      )}
+
     </div>
+  );
+}
+
+/** Planes archivados (todos menos el vigente) con su duración aproximada:
+ *  desde su creación hasta la creación del plan siguiente (o "en uso"). */
+function archivedPlans(all: any[], currentId: number): any[] {
+  const asc = [...all].sort((a, b) => String(a.created_at ?? "").localeCompare(String(b.created_at ?? "")));
+  return asc
+    .map((p, i) => {
+      const from = p.created_at ? new Date(p.created_at) : null;
+      const next = asc[i + 1]?.created_at ? new Date(asc[i + 1].created_at) : new Date();
+      const days = from ? Math.max(1, Math.round((next.getTime() - from.getTime()) / 86400000)) : null;
+      return { ...p, durationLabel: days != null ? `${days} día${days === 1 ? "" : "s"}` : "—" };
+    })
+    .filter((p) => p.id !== currentId)
+    .reverse(); // más reciente primero
+}
+
+/** Etapa del objetivo: días transcurridos, análisis automático profesional,
+ *  "Mantener objetivo" (pospone la alerta 45 días) y "Cambiar objetivo y
+ *  regenerar la planificación" (dieta + entreno nuevos; la antigua se archiva). */
+function GoalStageCard({ client, currentMonth, onClientChanged, onRegenerated }: {
+  client: ClientOut;
+  currentMonth: number;
+  onClientChanged?: () => void;
+  onRegenerated: () => Promise<void>;
+}) {
+  const toast = useToast();
+  const days = goalDays(client);
+  const due = goalReviewDue(client);
+  const [analysis, setAnalysis] = useState<string | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [newGoal, setNewGoal] = useState<string>("");
+  const [changing, setChanging] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  async function generateAnalysis() {
+    if (analyzing) return;
+    setAnalyzing(true);
+    try {
+      const r = await api.goalReviewAnalysis(client.id);
+      setAnalysis(r.text);
+    } catch {
+      toast.push("No se pudo generar el análisis", "error");
+    } finally {
+      setAnalyzing(false);
+    }
+  }
+
+  async function keepGoal() {
+    try {
+      await api.snoozeGoalReview(client.id);
+      toast.push("Objetivo mantenido: se volverá a valorar en 45 días");
+      onClientChanged?.();
+    } catch {
+      toast.push("No se pudo posponer", "error");
+    }
+  }
+
+  async function changeAndRegenerate() {
+    if (!newGoal || changing) return;
+    setChanging(true);
+    try {
+      await api.changeGoal(client.id, { goal_type: newGoal });
+      toast.push(`Objetivo cambiado a ${GOAL_LABEL[newGoal as GoalType]}. Generando la planificación nueva…`);
+      onClientChanged?.();
+      await api.generatePlan(client.id, currentMonth + 1);
+      await onRegenerated();
+      toast.push("Planificación nueva generada (borrador): revísala y publícala.");
+      setConfirming(false);
+      setNewGoal("");
+      setAnalysis(null);
+    } catch (e: any) {
+      const detail = e?.detail ?? e?.data?.detail;
+      toast.push([detail?.message ?? e?.message ?? "No se pudo completar el cambio", detail?.error].filter(Boolean).join(" — "), "error");
+    } finally {
+      setChanging(false);
+    }
+  }
+
+  return (
+    <details
+      open={due != null}
+      className="card p-5"
+      style={due != null ? { borderColor: "color-mix(in srgb, var(--brand-accent) 55%, transparent)" } : undefined}
+    >
+      <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 text-sm font-semibold text-zinc-100">
+        <span className="flex flex-wrap items-center gap-2">
+          <Flag size={15} style={{ color: "var(--brand-accent-2)" }} />
+          Objetivo: {client.goal_type ? GOAL_LABEL[client.goal_type] : "—"}
+          {days != null && <span className="text-xs font-normal text-zinc-500">{days} días en esta etapa</span>}
+        </span>
+        {due != null && (
+          <span className="rounded-full px-2 py-0.5 text-xs font-bold text-white" style={{ background: "var(--brand-accent)" }}>
+            Valorar cambio de objetivo
+          </span>
+        )}
+      </summary>
+
+      <div className="mt-3 space-y-3">
+        <p className="text-xs text-zinc-500">
+          {due != null
+            ? `Lleva ${due} días con este objetivo. Genera el análisis de la etapa para valorar con el cliente si toca cambiarlo, o mantenlo 45 días más.`
+            : "Cambia aquí el objetivo si el cliente lo pide o la etapa lo aconseja: el análisis resume lo conseguido y las opciones."}
+        </p>
+
+        {analysis === null ? (
+          <button onClick={generateAnalysis} disabled={analyzing} className="btn btn-ghost">
+            <Sparkles size={14} /> {analyzing ? "Generando análisis…" : "Generar análisis de la etapa"}
+          </button>
+        ) : (
+          <div className="rounded-lg border p-3" style={{ borderColor: "color-mix(in srgb, var(--brand-accent-2) 25%, transparent)", background: "color-mix(in srgb, var(--brand-accent-2) 5%, transparent)" }}>
+            <p className="whitespace-pre-line text-sm text-zinc-300">{analysis}</p>
+            <button
+              onClick={() => { navigator.clipboard.writeText(analysis).catch(() => {}); toast.push("Análisis copiado"); }}
+              className="mt-2 flex items-center gap-1 text-xs font-medium hover:opacity-80"
+              style={{ color: "var(--brand-accent-2)" }}
+            >
+              <Copy size={12} /> Copiar análisis
+            </button>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2 border-t pt-3" style={{ borderColor: "var(--line)" }}>
+          <select
+            value={newGoal}
+            onChange={(e) => { setNewGoal(e.target.value); setConfirming(false); }}
+            className="input w-auto"
+            aria-label="Nuevo objetivo"
+          >
+            <option value="">Nuevo objetivo…</option>
+            {(Object.keys(GOAL_LABEL) as GoalType[])
+              .filter((g) => g !== client.goal_type)
+              .map((g) => <option key={g} value={g}>{GOAL_LABEL[g]}</option>)}
+          </select>
+          {!confirming ? (
+            <button onClick={() => setConfirming(true)} disabled={!newGoal || changing} className="btn btn-primary">
+              <Sparkles size={14} /> Cambiar objetivo y regenerar plan
+            </button>
+          ) : (
+            <button onClick={changeAndRegenerate} disabled={changing} className="btn btn-primary">
+              {changing ? "Cambiando y generando… (1-2 min)" : `Confirmar: ${newGoal ? GOAL_LABEL[newGoal as GoalType] : ""} y regenerar TODO`}
+            </button>
+          )}
+          {due != null && (
+            <button onClick={keepGoal} disabled={changing} className="btn btn-ghost">
+              Mantener objetivo actual
+            </button>
+          )}
+        </div>
+        {confirming && !changing && (
+          <p className="text-xs text-zinc-500">
+            Se cambiará el objetivo, se generará una planificación completamente nueva (dieta y
+            entrenamiento) con todo su historial en cuenta, y la actual quedará archivada abajo
+            con su objetivo y duración.
+          </p>
+        )}
+      </div>
+    </details>
   );
 }
 

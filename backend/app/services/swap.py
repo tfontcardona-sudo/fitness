@@ -171,6 +171,7 @@ def apply_swap(
         client_id=client.id, month_index=plan.month_index, version=last.version + 1,
         status="draft", nutrition_json=plan.nutrition_json, training_json=training,
         education_json=plan.education_json, generated_by="swap",
+        goal_type=plan.goal_type or client.goal_type,
     )
     db.add(new_plan)
     db.flush()

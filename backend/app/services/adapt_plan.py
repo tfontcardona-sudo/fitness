@@ -15,7 +15,7 @@ import unicodedata
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Period, Plan
+from app.models import Client, Period, Plan
 from app.services.audit import log_event
 
 
@@ -190,11 +190,13 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
             select(Plan).where(Plan.client_id == client_id, Plan.month_index == base.month_index)
             .order_by(Plan.version.desc()).limit(1)
         )
+        client = db.get(Client, client_id)
         plan = Plan(
             client_id=client_id, month_index=base.month_index,
             version=(last.version if last else 0) + 1, status="draft",
             nutrition_json=nut, training_json=tr, education_json=edu,
             guardrail_flags=[], generated_by="adaptación quincenal",
+            goal_type=(client.goal_type if client else base.goal_type),
         )
         db.add(plan)
     db.flush()

@@ -12,7 +12,7 @@ import {
 import { api } from "../lib/api";
 import type { ClientOut } from "../types";
 import { PageLoader, StatusBadge } from "../components/ui";
-import { initials, relativeDays } from "../lib/format";
+import { goalReviewDue, initials, relativeDays } from "../lib/format";
 
 /**
  * Dashboard = "qué toca hacer AHORA con cada cliente". Cada cliente se traduce
@@ -60,6 +60,15 @@ function nextAction(c: ClientOut): Accion | null {
       title: "Cliente nuevo en onboarding",
       detail: "Cuando llegue su anamnesis, revísala y crea su primera planificación.",
       cta: "Crear planificación", tab: "planificacion",
+    };
+  // 45 días en la misma etapa de objetivo → valorar cambio (posponible)
+  const dueDays = goalReviewDue(c);
+  if (dueDays != null)
+    return {
+      client: c, prio: 3, tone: "#2E5E8C", icon: Sparkles,
+      title: `${dueDays} días con el mismo objetivo`,
+      detail: "Genera el análisis de la etapa y valora con el cliente si toca cambiar de objetivo.",
+      cta: "Valorar objetivo", tab: "planificacion",
     };
   if (c.status === "awaiting_feedback")
     return {

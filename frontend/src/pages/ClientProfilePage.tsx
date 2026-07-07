@@ -42,6 +42,14 @@ export default function ClientProfilePage() {
 
   useEffect(load, [load]);
 
+  // La pestaña SIGUE a la URL: navegar desde una alerta (o el botón atrás)
+  // cambia de pestaña aunque ya estemos en el perfil de este cliente.
+  useEffect(() => {
+    const t = searchParams.get("tab") as Tab | null;
+    const valid: Tab[] = ["resumen", "anamnesis", "planificacion", "seguimiento", "feedback", "historial"];
+    if (t && valid.includes(t)) setTab(t);
+  }, [searchParams]);
+
   useEffect(() => {
     if (client?.status !== "review_pending") {
       setFeedbackPending(false);

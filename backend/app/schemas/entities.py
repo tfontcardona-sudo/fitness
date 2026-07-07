@@ -154,6 +154,8 @@ class ClientOut(BaseModel):
     sport_history: str | None
     meals_per_day: int | None
     meal_schedule: list[MealScheduleItem] | None
+    goal_started_on: date | None = None
+    goal_review_snoozed_on: date | None = None
     food_allergies: list[str] | None
     food_dislikes: list[str] | None
     food_likes: list[str] | None

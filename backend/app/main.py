@@ -18,7 +18,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.db import engine
-from app.routers import auth, brand, clients, exercises, plans, portal_public
+from app.routers import alerts, auth, brand, clients, exercises, plans, portal_public
 
 APP_VERSION = "0.2.0"
 
@@ -94,6 +94,7 @@ app.include_router(clients.router)
 app.include_router(exercises.router)
 app.include_router(brand.router)
 app.include_router(plans.router)
+app.include_router(alerts.router)
 app.include_router(portal_public.router)
 
 

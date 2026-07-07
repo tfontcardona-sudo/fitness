@@ -24,6 +24,11 @@ PERIOD_DAYS = 14
 def ensure_open_period(db: Session, client_id: int, *, commit: bool = False) -> Period | None:
     """Abre el siguiente período si el cliente tiene plan publicado y ningún
     período abierto. Devuelve el período creado, o None si no tocaba."""
+    # La sesión va con autoflush=False: si el caller acaba de publicar un plan
+    # en esta misma transacción, hay que volcarlo antes de consultar (si no,
+    # el SELECT no ve el plan publicado y el período no se abriría hasta el
+    # día siguiente por el job nocturno).
+    db.flush()
     client = db.get(Client, client_id)
     if client is None or client.status in ("onboarding", "inactive"):
         return None

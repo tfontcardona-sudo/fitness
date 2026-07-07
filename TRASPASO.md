@@ -334,6 +334,46 @@ En `C:\Users\Usuari\.claude\projects\C--Users-Usuari-Desktop-fitness-system\memo
   saliendo de `brand_config` en BD (los fijó la migración 0006); si algún día hay que
   cambiarlos: UPDATE a `brand_config` o restaurar la página desde git.
 
+**Iteración 9 — Etapas de objetivo (45 días), centro de alertas y BACKTEST:**
+- **Etapa del objetivo**: `clients.goal_started_on` (se fija al publicar el
+  1er plan / al cambiar objetivo) y `goal_review_snoozed_on` (posponer);
+  `plans.goal_type` = snapshot del objetivo que servía cada plan (migración
+  0007, idempotente + backfill). A los 45 días → alerta "valorar cambio".
+- **Cambiar objetivo** (tarjeta en Planificación, `GoalStageCard`):
+  días en la etapa · botón "Generar análisis de la etapa" (IA con respaldo
+  determinista — POST /clients/{id}/goal-review/analysis: lo conseguido con
+  cifras, proyección si continúa, opciones de objetivo) · "Mantener objetivo
+  actual" (snooze 45 días) · selector + confirmación en 2 pasos "Cambiar
+  objetivo y regenerar plan" (POST change-goal → generate-plan mes+1 con TODO
+  el historial en contexto). Las planificaciones anteriores quedan ARCHIVADAS
+  en desplegable con su objetivo como título y su duración.
+- **Centro de ALERTAS** (`routers/alerts.py` + campana `AlertsBell` fija
+  arriba a la derecha): derivadas del estado real (se autolimpian al resolver)
+  — crear/publicar plan, generar feedback, feedback sin enviar, plan sin
+  adaptar, borrador sin publicar, sin registros 4+ días, 45 días de objetivo
+  (posponible desde la propia campana). Refresco al navegar + cada 2 min.
+  Dashboard añade la acción "Valorar objetivo". La pestaña del perfil SIGUE
+  la URL (?tab=) → las alertas navegan bien incluso dentro del mismo cliente.
+- **IA con contexto profundo**: la generación usa el peso ACTUAL (último
+  registro/cierre, no el inicial) para BMR/TDEE y añade al prompt
+  `historial_seguimiento` (revisiones: peso, adherencia, fuerza) — clave al
+  regenerar por cambio de objetivo.
+- **BACKTEST completo** (`scripts/backtest_workflow.py`): Postgres 16 local +
+  freezegun + IA mockeada; 5 clientes (un objetivo cada uno) × 92 días contra
+  la API real: 6 quincenas completas por cliente, cambio de objetivo (día 46),
+  posposiciones que reaparecen a los 45, alerta de inactividad que se apaga al
+  volver, adaptación idempotente verificada numéricamente, 1 feedback por
+  período, disciplina del ciclo (nunca período nuevo antes del feedback).
+  → **1.384 comprobaciones, 0 fallos.** BUG DE PRODUCCIÓN cazado y arreglado:
+  con autoflush=False, publicar NO abría el período (ensure_open_period no
+  veía el plan recién publicado; ahora hace db.flush() al entrar).
+  Cómo repetirlo: initdb PG local → `DATABASE_URL=... python -m
+  scripts.backtest_workflow` (sale 1 si algún invariante falla).
+- pytest del backend: los 11 fallos existentes son PREEXISTENTES en main
+  (fixtures ScriptedClient/push desactualizadas), verificado con worktree.
+- QA front nuevo: `goal-test.mjs` (15 asserts: campana, análisis, cambio en
+  2 pasos, archivo con título/duración, snooze) + todos los harnesses previos.
+
 **Iteración 8 — Nutrición por objetivo (evidencia) + recálculo encadenado + comidas en anamnesis:**
 - **Objetivos ampliados** (backend Literal + tipos front + selector anamnesis +
   avisos quincenales): fat_loss, muscle_gain, recomp, **maintenance**,

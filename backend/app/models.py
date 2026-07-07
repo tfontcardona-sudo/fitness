@@ -66,6 +66,10 @@ class Client(Base):
     goal_type: Mapped[str | None] = mapped_column(String(20))  # fat_loss|muscle_gain|recomp|maintenance|injury_recovery
     goal_weight_kg: Mapped[float | None] = mapped_column(Float)
     goal_deadline: Mapped[date | None] = mapped_column(Date)
+    # Etapa del objetivo: cuándo empezó (para la alerta de los 45 días) y hasta
+    # cuándo está pospuesta la revisión de objetivo ("mantener objetivo actual").
+    goal_started_on: Mapped[date | None] = mapped_column(Date)
+    goal_review_snoozed_on: Mapped[date | None] = mapped_column(Date)
     level: Mapped[str | None] = mapped_column(String(20))  # beginner|intermediate|advanced
     training_days: Mapped[int | None] = mapped_column(Integer)
     session_max_min: Mapped[int | None] = mapped_column(Integer)
@@ -116,6 +120,7 @@ class Plan(Base):
     education_json: Mapped[dict | None] = mapped_column(JSONB)
     guardrail_flags: Mapped[list[str] | None] = mapped_column(ARRAY(String))
     generated_by: Mapped[str | None] = mapped_column(String(80))  # modelo IA o "coach"
+    goal_type: Mapped[str | None] = mapped_column(String(20))  # objetivo que servía este plan (archivo)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

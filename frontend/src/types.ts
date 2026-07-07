@@ -271,6 +271,8 @@ export interface ClientOut {
   sport_history: string | null;
   meals_per_day: number | null;
   meal_schedule: MealScheduleItem[] | null;
+  goal_started_on: string | null;
+  goal_review_snoozed_on: string | null;
   food_allergies: string[] | null;
   food_dislikes: string[] | null;
   food_likes: string[] | null;
@@ -513,4 +515,15 @@ export interface FeedbackDocOut {
   kind: string;
   sent_at: string | null;
   content_json: Record<string, unknown> | null;
+}
+
+// Alerta del centro de notificaciones del coach (GET /api/alerts)
+export interface CoachAlert {
+  client_id: number;
+  client_name: string;
+  kind: string;
+  severity: "alta" | "media";
+  message: string;
+  tab: string;
+  action: string;
 }

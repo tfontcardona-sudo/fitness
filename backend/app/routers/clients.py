@@ -9,6 +9,7 @@ import zipfile
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
+from pydantic import BaseModel
 from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
@@ -696,8 +697,24 @@ def generate_client_plan(
 
     # 2) Métricas calculadas por el backend (la IA nunca calcula)
     age = age_from_birth(client.birth_date, date.today())
+    # Peso ACTUAL del cliente (último registro del portal o cierre quincenal):
+    # tras semanas de seguimiento —o al regenerar por cambio de objetivo— las
+    # calorías y macros deben partir del peso real de hoy, no del inicial.
+    latest_log_w = db.scalar(
+        select(DailyLog.weight_kg)
+        .join(Period, DailyLog.period_id == Period.id)
+        .where(Period.client_id == client_id, DailyLog.weight_kg.is_not(None))
+        .order_by(DailyLog.log_date.desc()).limit(1)
+    )
+    latest_close_w = db.scalar(
+        select(Period.closing_weight_kg)
+        .where(Period.client_id == client_id, Period.closing_weight_kg.is_not(None))
+        .order_by(Period.period_index.desc()).limit(1)
+    )
+    weight_now = latest_log_w or latest_close_w or client.current_weight_kg or client.start_weight_kg
+
     et = energy_targets(
-        sex=client.sex, weight_kg=client.start_weight_kg, height_cm=client.height_cm,
+        sex=client.sex, weight_kg=weight_now, height_cm=client.height_cm,
         age=age, goal_type=client.goal_type, training_days=client.training_days,
         body_fat_pct=client.body_fat_pct,
     )
@@ -760,10 +777,30 @@ def generate_client_plan(
             if objs:
                 adj_notes += "\nObjetivos próximos: " + "; ".join(str(o) for o in objs)
 
+    # Historial REAL de seguimiento (peso, adherencia y fuerza por revisión):
+    # la IA parte del recorrido completo del cliente, no solo de la anamnesis.
+    history_block = None
+    try:
+        h = client_history(client_id, db)
+        reviews = [{k: p.get(k) for k in ("period_index", "closing_weight_kg",
+                                          "weight_delta_kg", "adherence_pct",
+                                          "strength_gain_pct")}
+                   for p in h["periods"] if p["status"] != "open"]
+        if reviews:
+            history_block = {
+                "peso_inicial_kg": h.get("start_weight_kg"),
+                "peso_actual_kg": h.get("current_weight_kg"),
+                "fuerza_total_pct": h.get("total_strength_gain_pct"),
+                "medidas_antes_despues": h.get("measures"),
+                "revisiones_quincenales": reviews,
+            }
+    except Exception:
+        history_block = None
+
     # 4) Construir el contexto y pedir el plan a la IA
     ctx = ClientContext(
         sex=client.sex, age=age, height_cm=client.height_cm,
-        weight_kg=client.start_weight_kg, goal_type=client.goal_type,
+        weight_kg=weight_now, goal_type=client.goal_type,
         level=client.level, training_days=client.training_days,
         session_max_min=client.session_max_min, training_place=client.training_place,
         diet_mode=client.diet_mode, meals_per_day=client.meals_per_day,
@@ -777,6 +814,7 @@ def generate_client_plan(
         exercise_library=library,
         deep_analysis=deep_analysis,
         notes=adj_notes,
+        tracking_history=history_block,
     )
     try:
         generated = generate_monthly_plan(ctx, AIClient())
@@ -804,6 +842,7 @@ def generate_client_plan(
         client_id=client_id, month_index=month_index, version=version, status="draft",
         nutrition_json=nutrition, training_json=training, education_json=education,
         guardrail_flags=flags, generated_by="ai",
+        goal_type=client.goal_type,  # snapshot: objetivo que sirve este plan
     )
     db.add(plan)
     db.flush()
@@ -910,3 +949,152 @@ def read_anamnesis_with_ai(client_id: int, db: Session = Depends(get_db)) -> dic
         "deep_analysis": data.get("deep_analysis"),
         "message": "Anamnesis leída. Revisa los datos antes de generar el plan.",
     }
+
+
+# ------------------------------------------- etapa del objetivo (45 días) ----
+# El objetivo del cliente es una ETAPA: a los 45 días la web sugiere valorarlo.
+# "Mantener objetivo" pospone la alerta otros 45 días; "Cambiar objetivo"
+# arranca etapa nueva y la planificación se regenera entera para el objetivo
+# nuevo (la antigua queda archivada con su objetivo y duración).
+
+GOAL_REVIEW_DAYS = 45
+
+_GOAL_LABEL = {
+    "fat_loss": "pérdida de grasa", "muscle_gain": "ganancia muscular",
+    "recomp": "recomposición corporal", "maintenance": "mantenimiento",
+    "injury_recovery": "recuperación de lesión",
+}
+
+
+@router.post("/{client_id}/goal-review/snooze", response_model=ClientOut)
+def snooze_goal_review(client_id: int, db: Session = Depends(get_db)) -> ClientOut:
+    """"Mantener objetivo actual": apaga la alerta de los 45 días (se
+    reevaluará pasados otros 45)."""
+    from datetime import date as _date
+
+    client = db.get(Client, client_id)
+    if not client:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Cliente no encontrado")
+    client.goal_review_snoozed_on = _date.today()
+    log_event(db, "client", client.id, "goal_review_snoozed", {"goal": client.goal_type})
+    db.commit()
+    db.refresh(client)
+    return ClientOut.model_validate(client)
+
+
+class GoalChangeIn(BaseModel):
+    goal_type: str
+    goal_weight_kg: float | None = None
+
+
+@router.post("/{client_id}/change-goal", response_model=ClientOut)
+def change_goal(client_id: int, body: GoalChangeIn, db: Session = Depends(get_db)) -> ClientOut:
+    """Cambia el objetivo del cliente y arranca una etapa nueva. El plan
+    vigente queda como archivo (conserva su goal_type); el coach regenera
+    después la planificación completa para el objetivo nuevo."""
+    from datetime import date as _date
+
+    client = db.get(Client, client_id)
+    if not client:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Cliente no encontrado")
+    if body.goal_type not in _GOAL_LABEL:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Objetivo no válido")
+    if body.goal_type == client.goal_type:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "Ese ya es el objetivo actual del cliente")
+    old = client.goal_type
+    client.goal_type = body.goal_type
+    if body.goal_weight_kg is not None:
+        client.goal_weight_kg = body.goal_weight_kg
+    client.goal_started_on = _date.today()
+    client.goal_review_snoozed_on = None
+    log_event(db, "client", client.id, "goal_changed",
+              {"from": old, "to": body.goal_type})
+    db.commit()
+    db.refresh(client)
+    return ClientOut.model_validate(client)
+
+
+@router.post("/{client_id}/goal-review/analysis")
+def goal_review_analysis(client_id: int, db: Session = Depends(get_db)) -> dict:
+    """Texto PROFESIONAL generado automáticamente para valorar el cambio de
+    objetivo: qué se ha conseguido (punto de partida → actual), qué cabe
+    esperar si se continúa igual, y opciones de objetivo razonables según su
+    estado. IA con respaldo determinista (el botón funciona siempre)."""
+    from datetime import date as _date
+
+    client = db.get(Client, client_id)
+    if not client:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Cliente no encontrado")
+
+    h = client_history(client_id, db)
+    days = (_date.today() - client.goal_started_on).days if client.goal_started_on else None
+    goal_label = _GOAL_LABEL.get(client.goal_type or "", client.goal_type or "sin objetivo")
+    start_w, cur_w = h.get("start_weight_kg"), h.get("current_weight_kg")
+    delta_w = round(cur_w - start_w, 1) if (start_w is not None and cur_w is not None) else None
+    reviews = [p for p in h["periods"] if p["status"] in ("closed", "analyzed")]
+    adhs = [p["adherence_pct"] for p in reviews if p.get("adherence_pct") is not None]
+    adh_media = round(sum(adhs) / len(adhs)) if adhs else None
+
+    resumen = {
+        "objetivo_actual": goal_label,
+        "dias_en_el_objetivo": days,
+        "peso_inicial_kg": start_w, "peso_actual_kg": cur_w, "cambio_kg": delta_w,
+        "peso_objetivo_kg": h.get("goal_weight_kg"),
+        "le_quedan_kg": h.get("remaining_to_goal_kg"),
+        "fuerza_total_pct": h.get("total_strength_gain_pct"),
+        "medidas": h.get("measures"),
+        "revisiones_completadas": len(reviews),
+        "adherencia_media_pct": adh_media,
+    }
+
+    # Opciones de objetivo razonables según el estado (excluye el actual)
+    options = [g for g in _GOAL_LABEL if g != client.goal_type]
+
+    text: str | None = None
+    try:
+        from app.services.ai.client import AIClient
+
+        ai = AIClient()
+        text = ai._raw_call(
+            model=settings.model_light,
+            system=(
+                "Eres el asistente de un equipo de asesoramiento fitness de élite. "
+                "Escribes en castellano, tono PROFESIONAL, serio y cercano, sin emojis "
+                "ni exageraciones. Redactas un análisis breve (150-220 palabras) para "
+                "que el coach valore con su cliente un posible cambio de objetivo."
+            ),
+            user=(
+                "Con estos datos reales del cliente, redacta el análisis en 3 bloques con estos "
+                "títulos exactos: 'Lo conseguido hasta hoy' (punto de partida → actual, con cifras), "
+                "'Si continúa con el objetivo actual' (proyección realista a 4-6 semanas) y "
+                "'Opciones de objetivo a valorar' (2-3 opciones de esta lista con una frase de "
+                f"por qué encajarían: {', '.join(_GOAL_LABEL[g] for g in options)}). "
+                "No inventes datos que no estén aquí.\n\n"
+                f"DATOS: {json.dumps(resumen, ensure_ascii=False)}"
+            ),
+        ).strip()
+    except Exception:
+        text = None
+
+    if not text:
+        # Respaldo determinista con los mismos bloques y tono profesional
+        pes = (f"{start_w} kg → {cur_w} kg ({'+' if (delta_w or 0) > 0 else ''}{delta_w} kg)"
+               if delta_w is not None else "sin datos de peso suficientes")
+        fuerza = (f" La fuerza ha mejorado un {h['total_strength_gain_pct']}% en los básicos."
+                  if h.get("total_strength_gain_pct") else "")
+        adh = f" Adherencia media a la dieta del {adh_media}%." if adh_media else ""
+        dias_txt = f"{days} días" if days is not None else "esta etapa"
+        text = (
+            f"Lo conseguido hasta hoy\n"
+            f"Tras {dias_txt} trabajando {goal_label}, el peso ha pasado de {pes}."
+            f"{fuerza}{adh} Se han completado {len(reviews)} revisiones quincenales.\n\n"
+            f"Si continúa con el objetivo actual\n"
+            f"Manteniendo la adherencia actual, cabe esperar una progresión similar a la de "
+            f"las últimas semanas durante las próximas 4-6, con ajustes quincenales del plan.\n\n"
+            f"Opciones de objetivo a valorar\n"
+            + "\n".join(f"· {_GOAL_LABEL[g].capitalize()}" for g in options[:3])
+            + "\nLa decisión final es del coach y del cliente según prioridades y contexto."
+        )
+
+    return {"text": text, "summary": resumen, "options": options}
