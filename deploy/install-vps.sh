@@ -30,6 +30,12 @@ read -rp  "Usuario coach 2 [socio]: " A2U; A2U=${A2U:-socio}
 read -rsp "Contraseña coach 2: " A2P; echo
 read -rp  "ANTHROPIC_API_KEY (Enter para dejarla vacía de momento): " AKEY
 read -rp  "Email de contacto (para las notificaciones push): " PMAIL
+echo ""
+echo "Envío de correos al cliente (acceso al portal, plan, feedback): salen desde"
+echo "david.dqr57@gmail.com. Necesitas una CONTRASEÑA DE APLICACIÓN de Google (con la"
+echo "verificación en 2 pasos activada): Cuenta de Google → Seguridad → Contraseñas de"
+echo "aplicaciones. NO es la contraseña normal de Gmail (son 16 letras)."
+read -rsp "Contraseña de aplicación de Gmail (Enter = dejar los correos desactivados): " GMAILPASS; echo
 [ -n "$A1P" ] && [ -n "$A2P" ] || { echo "ERROR: las contraseñas no pueden estar vacías."; exit 1; }
 
 # --------------------------------------------------------------- chequeo DNS --
@@ -100,6 +106,21 @@ patch_env ADMIN_2_USER "$A2U"
 patch_env ADMIN_2_PASS "$A2P"
 [ -n "$AKEY" ]  && patch_env ANTHROPIC_API_KEY "$AKEY"
 [ -n "$PMAIL" ] && patch_env VAPID_SUBJECT "mailto:$PMAIL"
+
+# Correo real (Gmail) — con la contraseña de aplicación se envía DE VERDAD desde
+# david.dqr57@gmail.com; si no se dio, los correos quedan desactivados.
+if [ -n "${GMAILPASS:-}" ]; then
+  patch_env SMTP_HOST "smtp.gmail.com"
+  patch_env SMTP_PORT "587"
+  patch_env SMTP_USER "david.dqr57@gmail.com"
+  patch_env SMTP_PASS "$GMAILPASS"
+  patch_env SMTP_FROM "David Quiceno <david.dqr57@gmail.com>"
+  patch_env EMAILS_ENABLED "true"
+  echo "Correo configurado: se enviará desde david.dqr57@gmail.com."
+else
+  echo "AVISO: sin contraseña de aplicación, los correos quedan DESACTIVADOS."
+  echo "  Vuelve a ejecutar el instalador con la clave para activarlos."
+fi
 chmod 600 .env
 
 # ---------------------------------------------------------------- arranque --

@@ -1053,6 +1053,52 @@ bugs REALES corregidos, con tests de regresión.
 Playwright (borrar kcal → "Guardar" deshabilitado, sin errores de consola);
 22 checks de coherencia de edición.
 
+## 10.n Tramo 2026-07-08 (7ª) — Correo de acceso al portal + refresco de 3 s sin parpadeo
+
+Dos cosas que DQ pidió tras usar la web:
+
+**1) El correo de acceso al portal no llegaba.** El flujo del código ya era
+correcto (al subir la anamnesis se autoenvía el acceso — usuario = email +
+contraseña + enlace — una sola vez; `portal_access.send_portal_access`). El
+problema era de CONFIGURACIÓN de producción: `deploy/install-vps.sh` dejaba
+`EMAILS_ENABLED=false` porque no había SMTP real. Ahora:
+- El instalador pregunta la **contraseña de aplicación de Gmail** y, si se da,
+  configura el envío REAL desde **david.dqr57@gmail.com** (`SMTP_HOST/PORT/USER/
+  PASS/FROM` + `EMAILS_ENABLED=true`). Sin clave, avisa y los correos quedan
+  desactivados (se puede reejecutar el instalador para activarlos).
+- `config.py`: remitente por defecto `David Quiceno <david.dqr57@gmail.com>` y
+  `emails_enabled=True` por defecto. `.env.example` documenta que `SMTP_PASS` es
+  una contraseña de aplicación de Google (16 letras), NO la contraseña normal.
+- **La contraseña de aplicación es un SECRETO: no se commitea.** DQ la genera en
+  Cuenta de Google → Seguridad → Verificación en 2 pasos → Contraseñas de
+  aplicaciones, y la mete al instalar (o en el `.env` del VPS). Sin ella el correo
+  no sale (queda `disabled`).
+- **El coach ahora SE ENTERA del resultado.** Al subir la anamnesis y al pulsar
+  "Reenviar acceso", `ClientDocuments.tsx` muestra un aviso claro para CADA estado
+  (`sent` / `disabled` / `failed` / `error` / `no_email`) con la acción de
+  reenvío; antes `failed`/`error`/`no_email` se tragaban en silencio. En el
+  endpoint de subida, un fallo de envío marca `access_status="error"` (antes se
+  silenciaba). Verificado E2E: subir anamnesis → correo desde David con
+  usuario+contraseña+enlace y `portal_access_sent_at` sellado; reenvío `sent` y
+  `disabled` (muestra la clave para dictársela al cliente).
+
+**2) Refresco de 3 s sin parpadeo ni desincronización.** El polling reemplazaba
+el objeto entero cada 3 s aunque nada hubiera cambiado → re-render y re-fetch
+inútiles (la "Dieta" y el aviso de feedback se recargaban solos cada 3 s). Ahora:
+- Helper `keepIfSame`/`sameData` en `lib/api.ts`: los setState del polling solo
+  cambian la referencia si los datos cambiaron DE VERDAD. Aplicado en panel,
+  clientes, ficha, seguimiento y campana → sin parpadeo.
+- En la ficha, la recarga por ACCIÓN del coach (editar/adaptar/generar plan,
+  guardar anamnesis, subir doc) usa `reload` (sube un contador `reloadKey`) para
+  re-sincronizar "Dieta"/feedback aunque la fila del cliente no cambie; el
+  polling de 3 s NO sube ese contador (no re-consulta si nada cambió).
+- El polling de la ficha **se PAUSA mientras se edita la anamnesis** (borrador
+  sin guardar): así un refresco a media edición no puede despistar ni desincronizar.
+
+**Verificación:** pytest **113/113**; frontend `tsc -b` + `vite build` OK; envío
+de correo conducido E2E con transporte simulado (remitente David, contenido y
+enlace correctos, sellado y reenvío).
+
 ## 11. Mapa rápido de archivos tocados en el último tramo
 
 **Pulido §8.2 (2026-07-04)**

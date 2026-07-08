@@ -43,11 +43,14 @@ class Settings(BaseSettings):
     storage_path: str = "./storage"
 
     # --- Email ---
+    # Remitente por defecto: los correos del cliente (acceso al portal, plan,
+    # feedback…) salen a nombre de David. Para enviar DE VERDAD hay que rellenar
+    # smtp_user + smtp_pass (contraseña de aplicación de Gmail) y EMAILS_ENABLED=true.
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
     smtp_pass: str = ""
-    smtp_from: str = ""
+    smtp_from: str = "David Quiceno <david.dqr57@gmail.com>"
     emails_enabled: bool = True
 
     # --- Web Push (VAPID) ---

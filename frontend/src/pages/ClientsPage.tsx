@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Copy, Search, UserPlus, ChevronRight, Flag } from "lucide-react";
 import { useDismiss, useModalFocus } from "../lib/useDismiss";
-import { api, ApiError, REFRESH_MS } from "../lib/api";
+import { api, ApiError, keepIfSame, REFRESH_MS } from "../lib/api";
 import type { ClientOut, PortalLinkOut } from "../types";
 import { EmptyState, PageLoader, StatusBadge, useToast } from "../components/ui";
 import { Avatar } from "./DashboardPage";
@@ -43,7 +43,7 @@ export default function ClientsPage() {
   const load = useCallback(() => {
     api
       .listClients({ q: q.length >= 2 ? q : undefined })
-      .then(setClients)
+      .then((cs) => setClients((prev) => keepIfSame(prev, cs)))  // sin re-render si nada cambió
       .catch(() => setClients([]));
   }, [q]);
 

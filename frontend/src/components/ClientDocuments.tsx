@@ -59,9 +59,9 @@ export function ClientDocuments({ client, onUploaded }: { client: ClientOut; onU
       } else {
         toast.push("Anamnesis subida. Pulsa 'Leer con IA' en la pestaña Anamnesis.");
       }
-      // Acceso al portal enviado automáticamente la primera vez.
-      if (res.portal_access === "sent") toast.push("Acceso al portal enviado al cliente por email 📧");
-      else if (res.portal_access === "disabled") toast.push("Acceso generado (email desactivado). Usa 'Reenviar acceso' para ver la contraseña.");
+      // Acceso al portal: se envía automáticamente la primera vez que se
+      // registra la anamnesis. Informamos del resultado en todos los casos.
+      notifyPortalAccess(res.portal_access);
       onUploaded?.();
       load();
     } catch (e: any) {
@@ -71,15 +71,51 @@ export function ClientDocuments({ client, onUploaded }: { client: ClientOut; onU
     }
   }
 
+  // Traduce el estado del envío del acceso al portal en un aviso claro para el
+  // coach. Cubre todos los casos que puede devolver el backend.
+  function notifyPortalAccess(status: string | null) {
+    switch (status) {
+      case "sent":
+        toast.push("Acceso al portal enviado al cliente por email.");
+        break;
+      case "disabled":
+        toast.push(
+          "Acceso generado, pero el envío de correos está desactivado. Usa 'Reenviar acceso' para ver la contraseña.",
+          "error",
+        );
+        break;
+      case "failed":
+      case "error":
+        toast.push(
+          "El acceso se generó pero el email no salió. Revisa la configuración de correo y usa 'Reenviar acceso'.",
+          "error",
+        );
+        break;
+      case "no_email":
+        toast.push(
+          "El cliente no tiene email en su ficha; añádelo para poder enviarle el acceso al portal.",
+          "error",
+        );
+        break;
+      default:
+        // null = ya se había enviado antes; no hace falta avisar.
+        break;
+    }
+  }
+
   async function resendAccess() {
     if (sending) return;
     setSending(true);
     try {
       const res = await api.sendPortalAccess(client.id);
       if (res.status === "sent") {
-        toast.push("Acceso reenviado al cliente por email 📧");
+        toast.push("Acceso reenviado al cliente por email.");
+      } else if (res.status === "no_email") {
+        toast.push("El cliente no tiene email en su ficha; añádelo para enviarle el acceso.", "error");
       } else if (res.status === "disabled" && res.password) {
-        toast.push(`Email desactivado. Contraseña del cliente: ${res.password}`);
+        toast.push(`Envío de correos desactivado. Contraseña del cliente: ${res.password}`, "error");
+      } else if (res.status === "failed" && res.password) {
+        toast.push(`El email no salió (revisa la configuración de correo). Contraseña del cliente: ${res.password}`, "error");
       } else if (res.password) {
         toast.push(`Acceso generado. Contraseña: ${res.password}`);
       } else {
