@@ -125,6 +125,11 @@ if grep -q '^VAPID_PRIVATE_KEY=$' .env; then
   docker compose up -d
 fi
 
+# ----------------------------------------------------- backup automático --
+# Programa la copia de seguridad diaria (BD + ficheros). Idempotente.
+echo "Programando la copia de seguridad diaria…"
+bash "$(dirname "$(readlink -f "$0")")/install-backups.sh" || echo "AVISO: no se pudo programar el backup (revisa deploy/install-backups.sh)"
+
 # ----------------------------------------------------------------- resumen --
 echo ""
 echo "=================================================================="
@@ -141,5 +146,7 @@ echo "  El certificado HTTPS se emite solo en la primera visita (~30 s)."
 echo "  Guarda una copia segura de $(pwd)/.env — contiene los secretos."
 echo ""
 echo "  Actualizar más adelante:  cd $(pwd) && git pull && docker compose up -d --build"
-echo "  Backup diario de la BD:   docker compose exec db pg_dump -U fitness fitness > backup.sql"
+echo "  Copia de seguridad:       automática cada día -> /root/fitness-backups"
+echo "     lanzar una ahora:      bash $(pwd)/deploy/backup.sh"
+echo "     restaurar:             bash $(pwd)/deploy/restore.sh"
 echo "=================================================================="

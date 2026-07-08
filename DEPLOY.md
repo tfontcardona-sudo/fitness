@@ -142,12 +142,32 @@ docker compose up -d
 # Actualizar a la última versión del código
 cd ~/fitness && git pull && docker compose up -d --build
 
-# Copia de seguridad de la base de datos (recomendado programarla a diario)
-docker compose exec db pg_dump -U fitness fitness > backup-$(date +%F).sql
-
 # Ver logs si algo falla
 docker compose logs api --tail 100
 ```
+
+### Copias de seguridad (automáticas)
+
+El instalador programa una **copia diaria** (a las 04:00) de la base de datos
+**y** de los ficheros subidos (fotos de progreso, PDFs). Se guardan en
+`/root/fitness-backups` (fuera del repo) y se conservan las últimas 14, rotando
+solas. Si ya tenías el sistema instalado de antes, actívalas una vez con:
+
+```bash
+bash ~/fitness/deploy/install-backups.sh   # programa el cron diario
+bash ~/fitness/deploy/backup.sh            # y haz una copia ahora mismo
+```
+
+Restaurar una copia (DESTRUCTIVO: reemplaza los datos actuales):
+
+```bash
+bash ~/fitness/deploy/restore.sh                       # lista las copias
+bash ~/fitness/deploy/restore.sh /root/fitness-backups/db-2026-07-08_0400.sql.gz
+```
+
+> Recomendado: copia también `/root/fitness-backups` a otro sitio (otro
+> servidor, un bucket S3/Backblaze, o `scp` a tu PC) para no depender de un
+> único disco. El VPS puede fallar entero.
 
 ## Notas
 
