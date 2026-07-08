@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -238,6 +239,9 @@ def create_client(body: ClientCreate, db: Session = Depends(get_db)) -> ClientCr
     # Email normalizado a minúsculas: así el login (que compara en minúsculas) y
     # la unicidad usan la MISMA clave y no pueden crearse "A@x" y "a@x".
     email = (body.email or "").strip().lower()
+    # Comprobación rápida (caso común). La restricción UNIQUE de la BD es la
+    # autoridad final: cubre la carrera de doble clic / doble envío del formulario,
+    # que si no se traduce a 409 acabaría en un 500 (IntegrityError sin capturar).
     if db.scalar(select(Client).where(func.lower(Client.email) == email)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Ya existe un cliente con ese email")
 
@@ -250,12 +254,42 @@ def create_client(body: ClientCreate, db: Session = Depends(get_db)) -> ClientCr
         portal_token="pendiente",  # se firma con el id real tras el flush
     )
     db.add(client)
-    db.flush()
+    try:
+        db.flush()  # asigna el id; aquí salta la violación de email único (carrera)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, "Ya existe un cliente con ese email")
     client.portal_token = new_portal_token(client.id)
     log_event(db, "client", client.id, "client_created", {"by": "coach"})
     db.commit()
     db.refresh(client)
-    return ClientCreatedOut(client=ClientOut.model_validate(client), links=_links(client))
+
+    # Acceso al portal: al dar de alta al cliente se le envía AUTOMÁTICAMENTE por
+    # email su acceso (usuario = email + contraseña + enlace de login). El envío
+    # NUNCA bloquea el alta: si el email está desactivado o falla, el cliente
+    # queda creado igual y el coach puede reenviarlo desde la ficha. Como
+    # portal_access_sent_at solo se sella si el email SALE, si aquí no sale, el
+    # auto-envío al registrar la anamnesis lo reintentará.
+    access_status: str | None = None
+    try:
+        from app.services.portal_access import send_portal_access
+
+        access_status = send_portal_access(db, client)["status"]
+        db.commit()
+        db.refresh(client)
+    except Exception:
+        # Caso muy raro (el commit falla tras un envío correcto): la contraseña
+        # emitida no queda guardada, pero como sent_at tampoco se sella, el coach
+        # ve "error" y con "Reenviar acceso" (o al subir la anamnesis) se genera
+        # una contraseña nueva y válida. Se prefiere esto a bloquear el alta.
+        db.rollback()
+        access_status = "error"  # que el coach lo vea y pueda reenviarlo
+
+    return ClientCreatedOut(
+        client=ClientOut.model_validate(client),
+        links=_links(client),
+        portal_access=access_status,
+    )
 
 
 # --------------------------------------------------------------- listado ----
