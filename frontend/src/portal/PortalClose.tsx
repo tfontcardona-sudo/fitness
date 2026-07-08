@@ -35,9 +35,9 @@ const FEELINGS: { key: string; label: string }[] = [
  * cambios, qué cuesta, objetivo. Al enviar dispara el feedback de adaptación IA.
  * Las fotos de progreso se envían por WhatsApp (no se suben aquí).
  */
-export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDate }: {
+export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDate, periodStatus }: {
   api: Api; brand: PortalBrand; onClosed: () => void; canClose: boolean;
-  daysLeft: number | null; closeDate: string | null;
+  daysLeft: number | null; closeDate: string | null; periodStatus?: string | null;
 }) {
   const fechaCae = closeDate
     ? new Date(closeDate + "T00:00:00").toLocaleDateString("es-ES", { day: "2-digit", month: "long" })
@@ -144,6 +144,23 @@ export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDat
         <p className="mt-4 text-lg font-semibold">¡Revisión enviada!</p>
         <p className="mt-1 max-w-xs text-sm opacity-60">
           Tu coach analizará tus datos y te enviará el informe con el plan actualizado.
+        </p>
+      </div>
+    );
+  }
+
+  // Ya enviada (el período dejó de estar "abierto"): NO mostrar la cuenta atrás
+  // de "se desbloquea en 2 semanas", que contradecía al resto de pestañas ("en
+  // pausa"). Estado propio de "revisión enviada".
+  if (!canClose && periodStatus && periodStatus !== "open") {
+    return (
+      <div className="flex flex-col items-center py-20 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full" style={{ background: `${brand.color_primary}2a` }}>
+          <Check size={32} style={{ color: brand.color_primary }} />
+        </div>
+        <p className="mt-4 text-lg font-semibold">Revisión enviada</p>
+        <p className="mt-1 max-w-xs text-sm opacity-60">
+          Tu coach está analizando tus datos. Te avisará con tu informe y el plan actualizado.
         </p>
       </div>
     );

@@ -25,6 +25,7 @@ from app.models import (
     Period,
     Plan,
     ProgressPhoto,
+    PushSubscription,
     User,
     WorkoutLog,
 )
@@ -62,11 +63,24 @@ def _links(client: Client) -> PortalLinkOut:
 
 
 def _steps_num(text: str | None) -> float | None:
-    """Extrae un nº de pasos de un texto libre ('cardio + 4500' → 4500)."""
+    """Extrae un nº de pasos de un texto libre ('cardio + 4500' → 4500).
+
+    Robusto ante puntos como separador de miles ('10.000' → 10000, '1.234.567' →
+    1234567) y ante tokens no numéricos: nunca lanza (si `float` fallara, se salta
+    el token) — antes un '1.234.567' o una fecha '12.05.2026' reventaba la vista
+    de seguimiento del coach con un 500."""
     if not text:
         return None
-    nums = re.findall(r"\d[\d\.]*", text.replace(",", ""))
-    vals = [float(n) for n in nums if n.replace(".", "").isdigit()]
+    vals: list[float] = []
+    for tok in re.findall(r"\d[\d.]*", text.replace(",", "")):
+        cleaned = tok.strip(".")
+        # Puntos entre dígitos = separador de miles en castellano: se quitan.
+        if "." in cleaned and all(part.isdigit() for part in cleaned.split(".")):
+            cleaned = cleaned.replace(".", "")
+        try:
+            vals.append(float(cleaned))
+        except ValueError:
+            continue
     return max(vals) if vals else None
 
 
@@ -440,6 +454,9 @@ def delete_client(
             db.execute(delete(DailyLog).where(DailyLog.id.in_(daily_ids)))
         db.execute(delete(FeedbackDoc).where(FeedbackDoc.period_id.in_(period_ids)))
     db.execute(delete(ProgressPhoto).where(ProgressPhoto.client_id == client_id))
+    # push_subscriptions.client_id es NOT NULL sin ON DELETE: hay que borrarlas a
+    # mano o el commit falla con ForeignKeyViolation (RGPD: borrado completo).
+    db.execute(delete(PushSubscription).where(PushSubscription.client_id == client_id))
     db.execute(delete(Period).where(Period.client_id == client_id))
     db.execute(delete(Plan).where(Plan.client_id == client_id))
     db.execute(delete(ChangeRequest).where(ChangeRequest.client_id == client_id))
@@ -900,6 +917,12 @@ def generate_client_plan(
         ) from exc
 
     nutrition, training, education, flags = generated.to_persistable()
+
+    # El TDEE que se persiste y se MUESTRA (déficit/superávit del PDF, del panel
+    # del coach y del editor) es el AUTORITATIVO del backend (et.tdee), no el eco
+    # que devuelve la IA: si no, el % de ajuste mostrado podía contradecir al que
+    # valida el guardrail (p. ej. "Mantenimiento 0%" en un plan de pérdida real).
+    nutrition["tdee_kcal"] = round(et.tdee)
 
     # La regeneración YA incorpora los ajustes de la última revisión analizada
     # (van en el prompt): se SELLA applied_adjustments para que la alerta

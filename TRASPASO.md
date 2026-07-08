@@ -1,7 +1,8 @@
 # Documento de traspaso — Fitness System (DQ / David Quiceno)
 
 > Objetivo de este doc: que otra sesión de IA (Fable u otra) pueda **continuar el trabajo sin perder contexto**.
-> Última actualización: 2026-07-08 (5ª). Autor del último tramo: Claude (edición manual de nutrición ÍNTEGRA y coherente por objetivo: inputs sin dígito pegado, "cuadrar por objetivo", cualquier cambio recalcula todo con las kcal como ancla; y suite de tests a 108/108 arreglando 11 fallos + un bug real de períodos).
+> Última actualización: 2026-07-08 (6ª). Autor del último tramo: Claude (AUDITORÍA PROFUNDA con 4 agentes + conducción real de la web con Playwright: ~22 bugs reales corregidos — crashes de borrado RGPD y de "pasos", alérgeno que llegaba al cliente, TDEE/déficit mostrado incoherente, adaptación que corrompía macros, bloqueo de login del portal, pérdida de datos al salir, diario en pausa que engañaba, y varios más; tests 113/113).
+> Anterior (5ª): edición manual de nutrición íntegra por objetivo (inputs sin dígito pegado, "cuadrar por objetivo", kcal como ancla) + suite a 108/108.
 > Anterior (4ª): nivel de actividad diaria/NEAT en la anamnesis + TDEE; pautas de diabetes y tiroides en la IA; calidad de PDFs y textos IA (tono serio sin emojis, tablas que paginan sin recortar, escape del texto libre en emails).
 > **PRODUCCIÓN:** el sistema está desplegado en `https://app.dqrassessories.com` (VPS Hetzner
 > `46.225.57.25`, repo en `/root/fitness`, ver `DEPLOY.md`). Actualizar: `cd /root/fitness && git pull && docker compose up -d --build`.
@@ -985,6 +986,72 @@ de forma coherente (como la IA); (B) dejar la batería de tests en verde.
 
 **Verificación:** pytest **108/108**; **backtest 1530/0**; frontend `tsc -b` +
 `vite build` OK; 22 checks de coherencia de edición + simulación del input.
+
+## 10.m Tramo 2026-07-08 (6ª) — Auditoría profunda: 4 agentes + web real (Playwright)
+
+DQ seguía encontrando fallos "solo usando la web". Se lanzaron 4 auditores en
+paralelo (coach front, portal front, backend API, coherencia de flujo/docs) y
+además se CONDUJO la web de verdad con Playwright (login, editor, portal). ~22
+bugs REALES corregidos, con tests de regresión.
+
+**Crashes (500 / la web "se rompe"):**
+- Borrado RGPD de un cliente con suscripción push → 500 (faltaba borrar
+  `push_subscriptions`, FK NOT NULL). Corregido en `clients.delete_client`.
+- Vista de seguimiento del coach → 500 si "pasos" llevaba puntos de miles
+  ('1.234.567'): `_steps_num` ahora es a prueba de fallos y entiende los miles.
+- `create_period`: 500 por concurrencia y "huérfano" un período cerrado sin
+  feedback → ahora rechaza (409) si hay período abierto O cerrado + savepoint.
+- Job diario abortaba TODAS las transiciones si un cliente tenía el nombre en
+  blanco (`full_name.split()[0]`) → helper `_first_name` robusto (y en 2 sitios más).
+
+**Seguridad / coherencia clínica:**
+- **Alérgeno que llegaba al cliente:** la IA podía colar un alimento con alergia
+  y no se bloqueaba, ni se filtraba del PDF, ni lo veía el coach. Ahora el banco
+  se SANEA en generación (`_strip_allergens_from_bank` + `guardrails.option_allergen`
+  /`food_allergen`): se retira la opción/alimento con alérgeno si queda alternativa
+  segura; si no, el flag ⚠ ALÉRGENO queda para el coach.
+- **TDEE/déficit mostrado incoherente:** se persistía el `tdee_kcal` que ECHABA la
+  IA, no el real del backend → el PDF/panel podían decir "Mantenimiento 0%" en un
+  plan de pérdida. Ahora se fuerza `nutrition["tdee_kcal"] = round(et.tdee)`.
+- Etiqueta del PDF ("Superávit/Déficit") ahora la manda el SIGNO del delta, no el
+  objetivo (evita "Superávit +-150 kcal"). Barra de "adherencia entreno" del PDF
+  reetiquetada a "Registro" (era el ratio de registro, no de entreno).
+- `adapt_plan`: aplicaba el PRIMER número a TODOS los macros nombrados ("subir P a
+  180 y bajar grasa a 55" ponía 180 en ambos) → ahora parsea por cláusula; y honra
+  los carbohidratos si el coach los fija explícitamente.
+- Proteína de `injury_recovery` alineada front (2.25) ↔ back.
+
+**Portal del cliente (lo que sufre el cliente):**
+- **Bloqueo de login:** un token recordado ya caducado atrapaba al cliente en una
+  pantalla de error sin salida → botón "Volver a iniciar sesión" que limpia la
+  sesión.
+- **Pérdida del último dato al salir:** los autosaves usaban `fetch` sin
+  `keepalive` → al mandar la app a segundo plano se perdía lo tecleado. Ahora los
+  guardados JSON llevan `keepalive` (las fotos FormData no).
+- **Diario en pausa que engañaba:** con el período cerrado el diario aceptaba
+  escritura y decía "se guarda automáticamente" pero descartaba todo → ahora no
+  admite cambios ni muestra ese texto.
+- **Cierre** mostraba la cuenta atrás "se desbloquea en 2 semanas" tras enviar la
+  revisión (contradecía a las otras pestañas) → estado propio "Revisión enviada".
+- **Progreso** pedía registrar un peso ya registrado con 1 solo dato → vacío solo
+  si NO hay ningún dato.
+- **Entreno**: borrar la última serie dejaba el ejercicio irrecuperable (no hay
+  "añadir serie") → siempre queda al menos una fila.
+
+**Coach (edición):**
+- Botón "Enviar plan por WhatsApp" se abría tras un `await` → lo bloqueaba
+  Safari/iOS y parecía no hacer nada → ahora abre la pestaña dentro del gesto.
+- Calorías vacías/0 dejaban un plan incoherente que se podía guardar → "Guardar"
+  se deshabilita y el déficit muestra "—".
+- Cambiar de pestaña con cambios de anamnesis sin guardar los perdía → aviso de
+  confirmación. Cliente que no carga → antes spinner infinito, ahora mensaje con
+  vuelta a Clientes. Toast verde-rojo confuso al guardar corregido. Campos
+  numéricos de entreno ya no persisten `null`.
+
+**Verificación:** pytest **113/113** (108 + 5 de regresión de la auditoría);
+**backtest 1530/0**; frontend `tsc -b` + `vite build` OK; editor conducido con
+Playwright (borrar kcal → "Guardar" deshabilitado, sin errores de consola);
+22 checks de coherencia de edición.
 
 ## 11. Mapa rápido de archivos tocados en el último tramo
 

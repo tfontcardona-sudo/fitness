@@ -70,12 +70,22 @@ export default function PortalApp({ token }: { token: string }) {
   }, [token, apiClient]);
 
   if (error) {
+    // Si el token que falla es el GUARDADO (recordarme), lo limpiamos al volver
+    // para no quedar atrapados: sin esto, /portal vuelve a redirigir a este mismo
+    // token caducado y el cliente no podría iniciar sesión nunca más.
+    const savedIsStale = portalSession.token() === token;
     return (
       <Centered>
         <p className="text-lg font-semibold">Enlace no válido</p>
         <p className="mt-1 text-sm opacity-70">
-          Este enlace no funciona o ha caducado. Pide a tu coach uno nuevo.
+          Este enlace no funciona o ha caducado. {savedIsStale ? "Vuelve a iniciar sesión." : "Pide a tu coach uno nuevo."}
         </p>
+        <button
+          onClick={() => { portalSession.clear(); window.location.href = "/portal"; }}
+          className="portal-btn3d mt-4 rounded-xl px-4 py-2 text-sm font-semibold"
+        >
+          Volver a iniciar sesión
+        </button>
       </Centered>
     );
   }
@@ -149,6 +159,7 @@ export default function PortalApp({ token }: { token: string }) {
                 canClose={canClose}
                 daysLeft={state.period?.days_left ?? null}
                 closeDate={state.period?.ends_on ?? null}
+                periodStatus={state.period?.status ?? null}
               />
             )}
           </div>

@@ -370,6 +370,16 @@ def portal_diary_upsert(
     if period is None or period.status != "open":
         raise HTTPException(status.HTTP_409_CONFLICT, "No tienes un período abierto")
 
+    # La fecha debe caer DENTRO del período y no ser futura: si no, el cliente
+    # podría inflar su adherencia con días que no han pasado o registrar fuera de
+    # rango (falsea métricas, feedback y el disparador de "en riesgo").
+    upper = min(period.ends_on, portal_svc.today_local())
+    if not (period.starts_on <= body.log_date <= upper):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "La fecha del registro está fuera de tu período actual",
+        )
+
     log = db.scalar(
         select(DailyLog).where(
             DailyLog.period_id == period.id, DailyLog.log_date == body.log_date

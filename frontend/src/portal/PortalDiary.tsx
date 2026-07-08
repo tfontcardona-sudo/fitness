@@ -64,6 +64,9 @@ export function PortalDiary({ api, brand, periodStatus = null }: {
   }, [api, today]);
 
   function update(patch: Partial<DiaryForm>) {
+    // Con el período cerrado el diario está EN PAUSA: no aceptamos cambios (antes
+    // el campo cambiaba en pantalla pero no se guardaba, engañando al cliente).
+    if (readOnly) return;
     setForm((f) => {
       const next = { ...(f as DiaryForm), ...patch };
       scheduleSave(next);
@@ -185,7 +188,7 @@ export function PortalDiary({ api, brand, periodStatus = null }: {
         />
       </Field>
 
-      <p className="pb-2 text-center text-xs opacity-40">Se guarda automáticamente</p>
+      {!readOnly && <p className="pb-2 text-center text-xs opacity-40">Se guarda automáticamente</p>}
     </div>
   );
 }

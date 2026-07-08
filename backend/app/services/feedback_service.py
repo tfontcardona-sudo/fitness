@@ -365,7 +365,9 @@ def build_period_feedback(db: Session, period_id: int, ai=None) -> FeedbackDoc:
     if fb is not None:
         fb.content_json = content
         fb.docx_path = docx_rel
-        fb.sent_at = None  # el texto cambió: vuelve a estado borrador
+        # NO se fuerza a borrador: si el cliente YA había recibido este feedback,
+        # se conserva enviado (con el texto actualizado) para no ocultárselo al
+        # regenerar. Si seguía en borrador (sent_at None), continúa en borrador.
     else:
         fb = FeedbackDoc(period_id=period.id, kind="biweekly",
                          content_json=content, docx_path=docx_rel)

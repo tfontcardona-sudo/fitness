@@ -35,9 +35,25 @@ export default function ClientProfilePage() {
   // Aviso "revisión cerrada": solo mientras el feedback de la última revisión
   // NO exista todavía. En cuanto el coach lo genera, el aviso desaparece.
   const [feedbackPending, setFeedbackPending] = useState(false);
+  // La pestaña Anamnesis tiene edición local; avisamos si se sale con cambios sin
+  // guardar (el panel se re-monta al cambiar de pestaña y perdería el borrador).
+  const [anamnesisDirty, setAnamnesisDirty] = useState(false);
 
+  function changeTab(next: Tab) {
+    if (next === tab) return;
+    if (tab === "anamnesis" && anamnesisDirty &&
+        !window.confirm("Tienes cambios sin guardar en la anamnesis. ¿Descartarlos?")) {
+      return;
+    }
+    if (tab === "anamnesis") setAnamnesisDirty(false);
+    setTab(next);
+  }
+
+  const [loadError, setLoadError] = useState(false);
   const load = useCallback(() => {
-    api.getClient(clientId).then(setClient).catch(() => setClient(null));
+    api.getClient(clientId)
+      .then((c) => { setClient(c); setLoadError(false); })
+      .catch(() => setLoadError(true));
   }, [clientId]);
 
   useEffect(load, [load]);
@@ -127,6 +143,15 @@ export default function ClientProfilePage() {
     }
   }
 
+  if (loadError && client === null) {
+    return (
+      <div className="mx-auto max-w-2xl px-6 py-16 text-center">
+        <p className="text-lg font-semibold text-zinc-200">No se pudo cargar el cliente</p>
+        <p className="mt-1 text-sm text-zinc-500">Puede que se haya eliminado o que el enlace no sea válido.</p>
+        <Link to="/clientes" className="btn btn-ghost mt-4 inline-flex">Volver a Clientes</Link>
+      </div>
+    );
+  }
   if (client === null) return <PageLoader />;
 
   const age = ageFrom(client.birth_date);
@@ -148,7 +173,7 @@ export default function ClientProfilePage() {
             <BellRing size={18} style={{ color: "var(--brand-accent)" }} />
             <span><b>El cliente ha cerrado su período.</b> Revisa los datos y genera el feedback.</span>
           </div>
-          <button onClick={() => setTab("feedback")} className="btn btn-primary">
+          <button onClick={() => changeTab("feedback")} className="btn btn-primary">
             Ir a Feedback
           </button>
         </div>
@@ -226,7 +251,7 @@ export default function ClientProfilePage() {
             {(["resumen", "anamnesis", "planificacion", "seguimiento", "feedback", "historial"] as Tab[]).map((t) => (
               <button
                 key={t}
-                onClick={() => setTab(t)}
+                onClick={() => changeTab(t)}
                 className="tab-btn relative px-4 py-2.5 text-sm font-medium capitalize transition-colors"
                 style={{ color: tab === t ? "#26211A" : "var(--text-faint)" }}
               >
@@ -244,10 +269,10 @@ export default function ClientProfilePage() {
           {/* key=tab: el panel se re-monta y hace su micro-animación al cambiar */}
           <div key={tab} className="tab-panel">
             {tab === "resumen" && <ClientSummaryTab client={client} />}
-            {tab === "anamnesis" && <ClientAnamnesisTab client={client} onSaved={load} />}
+            {tab === "anamnesis" && <ClientAnamnesisTab client={client} onSaved={load} onDirtyChange={setAnamnesisDirty} />}
             {tab === "planificacion" && <ClientPlanPanel client={client} onClientChanged={load} />}
             {tab === "seguimiento" && <ClientTrackingTab client={client} />}
-            {tab === "feedback" && <ClientFeedbackTab client={client} onClientChanged={load} onGoPlan={() => setTab("planificacion")} />}
+            {tab === "feedback" && <ClientFeedbackTab client={client} onClientChanged={load} onGoPlan={() => changeTab("planificacion")} />}
             {tab === "historial" && <ClientHistoryTab client={client} />}
           </div>
         </div>

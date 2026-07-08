@@ -86,9 +86,13 @@ def weight_trend_chart(
 
 
 def adherence_chart(diet_pct: float, training_pct: float, accent: str) -> bytes:
-    """Barras horizontales de adherencia a dieta y entrenamiento (0–100%)."""
+    """Barras horizontales de adherencia: DIETA vs REGISTRO (0–100%).
+
+    La segunda barra es el ratio de REGISTRO (días con diario / días del período),
+    no una adherencia de entreno real: se etiqueta "Registro" para no engañar (el
+    caller pasa `log_ratio`)."""
     fig, ax = plt.subplots(figsize=(6.4, 2.0))
-    cats = ["Entrenamiento", "Dieta"]
+    cats = ["Registro", "Dieta"]
     vals = [training_pct, diet_pct]
     bars = ax.barh(cats, vals, color=[accent, "#8B9DF7"], height=0.55, zorder=3)
     ax.set_xlim(0, 100)

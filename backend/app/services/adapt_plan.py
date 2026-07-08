@@ -134,27 +134,39 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
         details: list[str] = []
         # "Mantener X" no es un cambio numérico: no debe tocar los macros
         # aunque el texto lleve un número ("mantener proteína en 180 g").
-        if val is not None and is_diet and "manten" not in cn:
-            if "proteina" in cn:
-                before = macros.get("protein_g")
-                macros["protein_g"] = _apply(before, mode, val)
-                protein_touched = True
-                details.append(f"Proteína: {round(before) if before else '—'} → {macros['protein_g']} g")
-            if "hidrato" in cn or "carbo" in cn or re.search(r"\bch\b", cn):
-                before = macros.get("carbs_g")
-                macros["carbs_g"] = _apply(before, mode, val)
-                carbs_touched = True
-                details.append(f"Carbohidratos: {round(before) if before else '—'} → {macros['carbs_g']} g")
-            if "gras" in cn or "lipid" in cn:
-                before = macros.get("fat_g")
-                macros["fat_g"] = _apply(before, mode, val)
-                fat_touched = True
-                details.append(f"Grasas: {round(before) if before else '—'} → {macros['fat_g']} g")
-            if "kcal" in cn or "calor" in cn:
-                before = nut.get("target_kcal")
-                nut["target_kcal"] = _apply(nut.get("target_kcal"), mode, val)
-                kcal_touched = True
-                details.append(f"Calorías: {round(before) if before else '—'} → {nut['target_kcal']} kcal")
+        if is_diet and "manten" not in cn:
+            # Cada CLÁUSULA se interpreta por separado: así "subir proteína a 180
+            # y bajar grasa a 55" aplica 180 a proteína y 55 a grasa (antes el
+            # primer número se aplicaba a TODOS los macros nombrados → corrupción).
+            clauses = [c for c in re.split(r"\s+y\s+|[,;]|\.", change) if c.strip()] or [change]
+            seen: set[str] = set()
+            for clause in clauses:
+                c_norm = _norm(clause)
+                if "manten" in c_norm:
+                    continue
+                c_mode, c_val = _parse_change(clause)
+                if c_val is None:
+                    continue
+                if "proteina" in c_norm and "protein_g" not in seen:
+                    before = macros.get("protein_g")
+                    macros["protein_g"] = _apply(before, c_mode, c_val)
+                    protein_touched = True; seen.add("protein_g")
+                    details.append(f"Proteína: {round(before) if before else '—'} → {macros['protein_g']} g")
+                if ("hidrato" in c_norm or "carbo" in c_norm or re.search(r"\bch\b", c_norm)) and "carbs_g" not in seen:
+                    before = macros.get("carbs_g")
+                    macros["carbs_g"] = _apply(before, c_mode, c_val)
+                    carbs_touched = True; seen.add("carbs_g")
+                    details.append(f"Carbohidratos: {round(before) if before else '—'} → {macros['carbs_g']} g")
+                if ("gras" in c_norm or "lipid" in c_norm) and "fat_g" not in seen:
+                    before = macros.get("fat_g")
+                    macros["fat_g"] = _apply(before, c_mode, c_val)
+                    fat_touched = True; seen.add("fat_g")
+                    details.append(f"Grasas: {round(before) if before else '—'} → {macros['fat_g']} g")
+                if ("kcal" in c_norm or "calor" in c_norm) and "target_kcal" not in seen:
+                    before = nut.get("target_kcal")
+                    nut["target_kcal"] = _apply(before, c_mode, c_val)
+                    kcal_touched = True; seen.add("target_kcal")
+                    details.append(f"Calorías: {round(before) if before else '—'} → {nut['target_kcal']} kcal")
         elif val is not None and "entren" in area:
             # En entreno solo aplicamos ajustes RELATIVOS de carga (+X kg): un
             # objetivo absoluto no se puede repartir entre todos los ejercicios.
@@ -193,7 +205,18 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
             P, C, F = t["protein_g"], t["carbs_g"], t["fat_g"]
         elif macro_touched and not kcal_touched:
             K = kcal_of(P, C, F)
-        else:  # tocaron ambos: los carbohidratos cuadran las kcal objetivo
+        elif carbs_touched:
+            # El coach fijó los carbohidratos A PROPÓSITO: se RESPETAN y las kcal
+            # objetivo se DERIVAN de los macros (4/4/9), en vez de sobrescribir un
+            # valor que el coach pidió y dejar el detalle contradiciendo el plan.
+            K = kcal_of(P, C, F)
+            for it in items:
+                if it.get("detail") and "Calorías:" in it["detail"]:
+                    it["detail"] = re.sub(
+                        r"(Calorías: [^→]*→ )\d+( kcal)",
+                        rf"\g<1>{int(round(K))}\g<2>", it["detail"],
+                    )
+        else:  # tocaron kcal + proteína/grasa: los carbohidratos cuadran las kcal
             C = max(0, round((K - P * 4 - F * 9) / 4))
             # El detalle "Carbohidratos: X → Y" se escribió ANTES de cuadrar:
             # se reescribe con el valor final para que Novedades y PDF cuadren.

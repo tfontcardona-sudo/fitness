@@ -209,13 +209,21 @@ export function ClientPlanEditor({
   tr.sessions = tr.sessions ?? [];
   tr.cardio = tr.cardio ?? { daily_steps: 0, sessions: [] };
 
+  // No se puede guardar con las calorías vacías o a 0: sería un plan incoherente
+  // (macros y comidas reales con "0 kcal"). El coach debe teclear un objetivo.
+  const kcalInvalid = !(nut.target_kcal && nut.target_kcal > 0);
+
   return (
     <div className="space-y-4">
       <div className="card sticky top-2 z-10 flex items-center justify-between p-4">
         <h3 className="text-base font-semibold text-zinc-100">Editar plan · Mes {plan.month_index}</h3>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          {kcalInvalid && (
+            <span className="hidden text-xs text-[#9A6B15] sm:inline">Pon las calorías objetivo para guardar</span>
+          )}
           <button onClick={onCancel} className="btn btn-ghost"><X size={15} /> Cancelar</button>
-          <button onClick={save} disabled={saving} className="btn btn-primary">
+          <button onClick={save} disabled={saving || kcalInvalid} className="btn btn-primary"
+            title={kcalInvalid ? "Introduce las calorías objetivo" : undefined}>
             {saving ? <Spinner /> : <Save size={15} />} Guardar cambios
           </button>
         </div>
@@ -387,7 +395,7 @@ export function ClientPlanEditor({
         {tr.weekly_progression.map((w: any, i: number) => (
           <div key={i} className="mt-2 grid grid-cols-2 gap-2 rounded-lg p-2 sm:grid-cols-4" style={{ background: "var(--surface-raised)" }}>
             <Text label={`Sem ${w.week ?? i + 1} · intención`} value={w.intent ?? ""} onChange={(v) => mutate((d) => (d.training.weekly_progression[i].intent = v))} />
-            <Num label="Carga %" value={w.load_pct} onChange={(v) => mutate((d) => (d.training.weekly_progression[i].load_pct = v))} />
+            <Num label="Carga %" value={w.load_pct} onChange={(v) => mutate((d) => (d.training.weekly_progression[i].load_pct = v ?? 0))} />
             <Text label="RIR" value={w.rir_target ?? ""} onChange={(v) => mutate((d) => (d.training.weekly_progression[i].rir_target = v))} />
             <Text label="Volumen" value={w.volume_note ?? ""} onChange={(v) => mutate((d) => (d.training.weekly_progression[i].volume_note = v))} />
           </div>
@@ -429,10 +437,10 @@ export function ClientPlanEditor({
                   </button>
                 </summary>
                 <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  <Num label="Series" value={ex.sets} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].sets = v))} />
+                  <Num label="Series" value={ex.sets} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].sets = v ?? 0))} />
                   <Text label="Reps" value={ex.rep_range ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].rep_range = v))} />
                   <Text label="RIR" value={ex.rir ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].rir = v))} />
-                  <Num label="Descanso (s)" value={ex.rest_sec} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].rest_sec = v))} />
+                  <Num label="Descanso (s)" value={ex.rest_sec} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].rest_sec = v ?? 0))} />
                 </div>
                 <Text label="Progresión" value={ex.progression_rule ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].progression_rule = v))} />
                 <Text label="Cue técnica" value={ex.technique_cue ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].technique_cue = v))} />
@@ -444,7 +452,7 @@ export function ClientPlanEditor({
 
         <Subhead text="Cardio y descarga" />
         <div className="grid grid-cols-2 gap-2">
-          <Num label="Pasos diarios" value={tr.cardio.daily_steps} onChange={(v) => mutate((d) => (d.training.cardio.daily_steps = v))} />
+          <Num label="Pasos diarios" value={tr.cardio.daily_steps} onChange={(v) => mutate((d) => (d.training.cardio.daily_steps = v ?? 0))} />
         </div>
         <Area label="Instrucciones de deload" value={tr.deload_instructions ?? ""} onChange={(v) => mutate((d) => (d.training.deload_instructions = v))} />
       </div>
