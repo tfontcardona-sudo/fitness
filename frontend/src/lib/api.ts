@@ -107,6 +107,9 @@ export const api = {
     request<PortalLinkOut>("GET", `/clients/${id}/portal-link`),
   regeneratePortalToken: (id: number) =>
     request<PortalLinkOut>("POST", `/clients/${id}/portal-token/regenerate`),
+  sendPortalAccess: (id: number) =>
+    request<{ status: string; email: string; password: string | null }>(
+      "POST", `/clients/${id}/send-portal-access`),
   exportClientUrl: (id: number) => `/api/clients/${id}/export`,
   listPlans: (clientId: number) =>
     request<{
@@ -131,7 +134,7 @@ export const api = {
   uploadClientDocument: (clientId: number, file: File) => {
     const fd = new FormData();
     fd.append("file", file);
-    return request<{ name: string; read_ok: boolean; read_error: string | null }>(
+    return request<{ name: string; read_ok: boolean; read_error: string | null; portal_access: string | null }>(
       "POST", `/clients/${clientId}/documents`, fd);
   },
   clientDocumentUrl: (clientId: number, name: string) =>

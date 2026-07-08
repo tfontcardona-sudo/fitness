@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle2, Download, FileText, Upload } from "lucide-react";
+import { CheckCircle2, Download, FileText, Send, Upload } from "lucide-react";
 import { api, getToken } from "../lib/api";
 import { useToast } from "./ui";
 import type { ClientOut } from "../types";
@@ -20,6 +20,7 @@ export function ClientDocuments({ client, onUploaded }: { client: ClientOut; onU
   const fileRef = useRef<HTMLInputElement>(null);
   const [docs, setDocs] = useState<DocItem[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const [sending, setSending] = useState(false);
   const [dragOver, setDragOver] = useState(false);
 
   function load() {
@@ -55,17 +56,40 @@ export function ClientDocuments({ client, onUploaded }: { client: ClientOut; onU
       const res = await api.uploadClientDocument(client.id, file);
       if (res.read_ok) {
         toast.push("Anamnesis subida y leída con IA. Revisa los datos.");
-        // La IA ya rellenó la ficha: refrescamos el cliente para que los campos
-        // de la pestaña Anamnesis aparezcan al instante, sin recargar la página.
-        onUploaded?.();
       } else {
         toast.push("Anamnesis subida. Pulsa 'Leer con IA' en la pestaña Anamnesis.");
       }
+      // Acceso al portal enviado automáticamente la primera vez.
+      if (res.portal_access === "sent") toast.push("Acceso al portal enviado al cliente por email 📧");
+      else if (res.portal_access === "disabled") toast.push("Acceso generado (email desactivado). Usa 'Reenviar acceso' para ver la contraseña.");
+      onUploaded?.();
       load();
     } catch (e: any) {
       toast.push(e?.message ?? "No se pudo subir el documento", "error");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function resendAccess() {
+    if (sending) return;
+    setSending(true);
+    try {
+      const res = await api.sendPortalAccess(client.id);
+      if (res.status === "sent") {
+        toast.push("Acceso reenviado al cliente por email 📧");
+      } else if (res.status === "disabled" && res.password) {
+        toast.push(`Email desactivado. Contraseña del cliente: ${res.password}`);
+      } else if (res.password) {
+        toast.push(`Acceso generado. Contraseña: ${res.password}`);
+      } else {
+        toast.push("No se pudo enviar el acceso", "error");
+      }
+      onUploaded?.();
+    } catch (e: any) {
+      toast.push(e?.message ?? "No se pudo enviar el acceso", "error");
+    } finally {
+      setSending(false);
     }
   }
 
@@ -163,6 +187,22 @@ export function ClientDocuments({ client, onUploaded }: { client: ClientOut; onU
           ))}
         </ul>
       )}
+
+      {/* Acceso al portal del cliente (usuario = su email + contraseña por email).
+          Se envía solo al subir la anamnesis; aquí el coach puede reenviarlo. */}
+      <div className="mt-4 border-t pt-3" style={{ borderColor: "var(--line)" }}>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs text-zinc-500">
+            {client.portal_access_sent_at
+              ? `Acceso enviado el ${new Date(client.portal_access_sent_at).toLocaleDateString("es-ES")}`
+              : "Aún no se ha enviado el acceso al portal"}
+          </span>
+          <button onClick={resendAccess} disabled={sending} className="btn btn-ghost shrink-0 text-xs">
+            <Send size={13} className="text-zinc-500" />
+            {sending ? "Enviando…" : client.portal_access_sent_at ? "Reenviar acceso" : "Enviar acceso"}
+          </button>
+        </div>
+      </div>
     </details>
   );
 }

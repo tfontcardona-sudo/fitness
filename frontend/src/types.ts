@@ -284,6 +284,7 @@ export interface ClientOut {
   auto_pilot: boolean;
   emails_enabled: boolean;
   consent_signed_at: string | null;
+  portal_access_sent_at?: string | null;
   created_at: string;
   updated_at: string;
   pending_review?: boolean;
@@ -532,6 +533,34 @@ export interface FeedbackDocOut {
   kind: string;
   sent_at: string | null;
   content_json: Record<string, unknown> | null;
+}
+
+// Progreso del cliente que ve él mismo en el portal (GET /api/p/{token}/progress)
+export interface PortalProgress {
+  weight: {
+    start_kg: number | null;
+    current_kg: number | null;
+    goal_kg: number | null;
+    delta_kg: number | null;
+    weekly_rate_kg: number | null;
+    series: { d: string; kg: number }[];
+  };
+  measurements: {
+    label: string;
+    weight_kg: number | null;
+    waist_cm: number | null;
+    hip_cm: number | null;
+    arm_cm: number | null;
+    thigh_cm: number | null;
+  }[];
+  adherence: { label: string; diet_0_10: number | null; training_0_10: number | null }[];
+  strength: { exercise: string; first_e1rm: number; best_e1rm: number; gain_pct: number; sessions: number }[];
+  photos: {
+    first: { id: number; kind: string }[];
+    last: { id: number; kind: string }[];
+    first_date: string | null;
+    last_date: string | null;
+  };
 }
 
 // Alerta del centro de notificaciones del coach (GET /api/alerts)

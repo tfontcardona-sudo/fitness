@@ -1,7 +1,7 @@
 # Documento de traspaso — Fitness System (DQ / David Quiceno)
 
 > Objetivo de este doc: que otra sesión de IA (Fable u otra) pueda **continuar el trabajo sin perder contexto**.
-> Última actualización: 2026-07-08. Autor del último tramo: Claude (cálculo de dieta directo: déficit/superávit % editable + % por macro estilo MyFitnessPal + repaso móvil + orden visual + IA por evidencia + auditoría 7-8 jul).
+> Última actualización: 2026-07-08 (2ª). Autor del último tramo: Claude (backups automáticos + "Mi progreso" del cliente en el portal + login del portal con email de acceso al registrar la anamnesis).
 > **PRODUCCIÓN:** el sistema está desplegado en `https://app.dqrassessories.com` (VPS Hetzner
 > `46.225.57.25`, repo en `/root/fitness`, ver `DEPLOY.md`). Actualizar: `cd /root/fitness && git pull && docker compose up -d --build`.
 > Cliente/marca: **David Quiceno (DQ)** — asesoría de fitness. Colores marca: **vino `#8B1A2B`**, **azul `#4A7BA8`**.
@@ -791,6 +791,37 @@ complejos, con el estilo de MyFitnessPal, y una web más ordenada y móvil.
   macro%) · 0 errores JS; **móvil sin overflow**; **backtest 1530 OK/0**; pytest
   sin fallos NUEVOS (los 11 rojos son previos: fixtures IA con JSON scripted +
   push, idénticos con `generator.py` a HEAD — verificado por stash).
+
+## 10.i Tramo 2026-07-08 (2ª) — Backups automáticos + progreso del cliente + login del portal
+
+Tres mejoras pedidas tras la del cálculo de dieta:
+
+- **Backups automáticos** (`deploy/backup.sh`, `restore.sh`, `install-backups.sh`):
+  copia diaria (cron 04:00) de la BD (pg_dump comprimido, con chequeo de sanidad
+  y rotación de 14) y de `./storage` (fotos/PDFs), a `/root/fitness-backups`
+  (fuera del repo). `install-vps.sh` lo programa solo en despliegues nuevos.
+  Restauración guiada y protegida. Round-trip verificado en local.
+- **Portal · "Mi progreso"** (`GET /p/{token}/progress` + `/photos/{id}` +
+  `PortalProgress.tsx`, nueva pestaña): el cliente ve su peso (gráfica), fuerza
+  (1RM primera vs mejor), medidas y adherencia por período, y sus fotos antes/
+  ahora. Deriva de lo que ya registra; seguro con datos vacíos.
+- **Login del portal + email de acceso** (usuario = email + contraseña):
+  - Modelo: `clients.portal_password_hash`, `portal_access_sent_at` (mig. 0009).
+  - Al subir el coach la anamnesis (`POST /clients/{id}/documents`) se genera la
+    contraseña y se envía por email el acceso (`portal_access` template) UNA vez
+    (`portal_access_sent_at`). Botón del coach "Reenviar acceso" (regenera y
+    devuelve la clave por si el email no llega). `send_portal_access` en
+    `services/portal_access.py`.
+  - Login `POST /api/p/login` {email, password} → devuelve el `portal_token` (el
+    mecanismo interno). Rate-limit 15/min, error genérico, email case-insensitive.
+  - Front: ruta `/portal` → `PortalLogin` (recordarme = guarda token+email en
+    localStorage y autoentra; logout en el portal). El enlace por token
+    (`/p/:token`) sigue funcionando en paralelo (retrocompat, WhatsApp).
+- **Verificación**: login backend 8/8 casos (ok, clave mala, email inexistente,
+  sin acceso, mayúsculas, reenvío invalida la anterior); auto-trigger fija hash+
+  fecha y no reenvía en re-subida; front 9/9 (login, error, redirección,
+  recordarme, autoentrada, logout) · 0 errores JS; plantilla de email OK;
+  E2E 50/50; mig. 0009 idempotente; pytest sin fallos nuevos.
 
 ## 11. Mapa rápido de archivos tocados en el último tramo
 
