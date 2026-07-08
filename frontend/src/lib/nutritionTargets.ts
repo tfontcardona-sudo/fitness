@@ -83,6 +83,35 @@ export function goalTargets(goal: GoalType | null | undefined, weightKg: number,
   return macrosForKcal(goal, weightKg, tdee * r.kcalFactor);
 }
 
+/** Redistribuye los macros al EDITAR uno de ellos MANTENIENDO FIJAS las calorías
+ *  objetivo — igual que la IA, donde las kcal son el ancla y un macro "colchón"
+ *  absorbe el cambio, de modo que P·4 + C·4 + G·9 siempre cuadra con las kcal.
+ *
+ *  Se edita `key` a `grams`. El colchón es CARBOHIDRATOS, salvo cuando se editan
+ *  los propios carbohidratos: entonces absorbe la GRASA. Así la proteína
+ *  (prioritaria por objetivo) se preserva siempre que se pueda. Si el colchón se
+ *  quedaría negativo, se fija a 0 y las kcal reales bajan (nunca hay macros que
+ *  declaren unas calorías que no cumplen). */
+export function redistributeMacro(
+  targetKcal: number,
+  cur: { protein_g: number; carbs_g: number; fat_g: number },
+  key: "protein_g" | "carbs_g" | "fat_g",
+  grams: number,
+): MacroTargets {
+  let p = cur.protein_g, c = cur.carbs_g, f = cur.fat_g;
+  if (key === "protein_g") {
+    p = grams;
+    c = Math.max(0, Math.round((targetKcal - p * 4 - f * 9) / 4));
+  } else if (key === "fat_g") {
+    f = grams;
+    c = Math.max(0, Math.round((targetKcal - p * 4 - f * 9) / 4));
+  } else {
+    c = grams;
+    f = Math.max(0, Math.round((targetKcal - p * 4 - c * 4) / 9));
+  }
+  return { kcal: kcalOf(p, c, f), protein_g: p, carbs_g: c, fat_g: f };
+}
+
 // ---- Déficit / superávit -----------------------------------------------------
 // El cálculo de la dieta parte del TDEE: kcal = TDEE ± un porcentaje. Aquí lo
 // exponemos de forma directa (nada de números complejos) para verlo y editarlo.

@@ -149,7 +149,7 @@ def test_full_portal_cycle(client, auth):
     todayv = client.get(f"/api/p/{token}/today").json()
     assert todayv["day_label"]
     assert len(todayv["meals"]) == 4
-    assert all(len(m["options"]) == 7 for m in todayv["meals"])  # flexible: 7 opciones
+    assert all(len(m["options"]) == 3 for m in todayv["meals"])  # flexible: 3 opciones por toma
     assert todayv["already_logged"] is False
 
     # 8) Plan completo navegable
@@ -204,9 +204,23 @@ def test_close_period_when_due(client, auth):
     }).json()
     client.post(f"/api/plans/{plan['id']}/publish", headers=auth)
 
-    start = date.today() - timedelta(days=14)
-    client.post(f"/api/clients/{cid}/periods", headers=auth,
-                json={"plan_id": plan["id"], "starts_on": start.isoformat(), "days": 14})
+    # Publicar ya abre el período 1 (empieza HOY). Para probar el cierre sin
+    # esperar 14 días reales, retrasamos su ventana en la BD (el endpoint de crear
+    # período es idempotente por el invariante de un solo período abierto).
+    from sqlalchemy import select as _select
+    from app.db import SessionLocal
+    from app.models import Period
+    _db = SessionLocal()
+    try:
+        _p = _db.scalar(
+            _select(Period).where(Period.client_id == cid, Period.status == "open")
+            .order_by(Period.period_index.desc()).limit(1)
+        )
+        _p.starts_on = date.today() - timedelta(days=14)
+        _p.ends_on = _p.starts_on + timedelta(days=13)
+        _db.commit()
+    finally:
+        _db.close()
 
     state = client.get(f"/api/p/{token}/state").json()
     assert state["period"]["can_close"] is True

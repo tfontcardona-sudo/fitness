@@ -1,7 +1,8 @@
 # Documento de traspaso — Fitness System (DQ / David Quiceno)
 
 > Objetivo de este doc: que otra sesión de IA (Fable u otra) pueda **continuar el trabajo sin perder contexto**.
-> Última actualización: 2026-07-08 (4ª). Autor del último tramo: Claude (nivel de actividad diaria/NEAT en la anamnesis + TDEE; pautas específicas de diabetes y tiroides en la IA; calidad de PDFs y textos IA: tono profesional/serio sin emojis, tablas que paginan sin recortar y con cabecera repetida, escape del texto libre en emails).
+> Última actualización: 2026-07-08 (5ª). Autor del último tramo: Claude (edición manual de nutrición ÍNTEGRA y coherente por objetivo: inputs sin dígito pegado, "cuadrar por objetivo", cualquier cambio recalcula todo con las kcal como ancla; y suite de tests a 108/108 arreglando 11 fallos + un bug real de períodos).
+> Anterior (4ª): nivel de actividad diaria/NEAT en la anamnesis + TDEE; pautas de diabetes y tiroides en la IA; calidad de PDFs y textos IA (tono serio sin emojis, tablas que paginan sin recortar, escape del texto libre en emails).
 > **PRODUCCIÓN:** el sistema está desplegado en `https://app.dqrassessories.com` (VPS Hetzner
 > `46.225.57.25`, repo en `/root/fitness`, ver `DEPLOY.md`). Actualizar: `cd /root/fitness && git pull && docker compose up -d --build`.
 > Cliente/marca: **David Quiceno (DQ)** — asesoría de fitness. Colores marca: **vino `#8B1A2B`**, **azul `#4A7BA8`**.
@@ -939,6 +940,51 @@ y `cantSplit` reducido (ya no recorta); saneo de emojis y escape de emails proba
 frontend `tsc -b` + `vite build` OK; **backtest 1530/0**; **pytest 97 pasan, 11 fallos
 PRE-EXISTENTES idénticos con y sin mis cambios** (fixtures IA scripted + timing de
 push, no relacionados); migración 0011 idempotente aplicada a head.
+
+## 10.l Tramo 2026-07-08 (5ª) — Edición manual de nutrición íntegra + suite a 108/108
+
+Dos frentes: (A) que TODO el ajuste manual de la dieta esté relacionado entre sí
+de forma coherente (como la IA); (B) dejar la batería de tests en verde.
+
+**A. Edición manual coherente (`ClientPlanEditor.tsx` + `nutritionTargets.ts`):**
+- **Bug del dígito pegado (0/1/3):** los inputs de kcal/macros/% saltaban a un
+  valor al borrar (el recálculo en cadena reescribía el campo a media edición).
+  Nuevo `NumberInput` con estado local `raw`: mientras editas muestra EXACTAMENTE
+  lo que tecleas (incluido vacío) y solo vuelve a seguir el modelo al salir del
+  campo (blur). Borrar deja el campo vacío; ya no hay que "hacer movimientos de
+  más". Usado en `Num` y `MacroField`.
+- **Las kcal son el ANCLA (igual que la IA):** al editar los GRAMOS o el % de un
+  macro se MANTIENEN las calorías objetivo y un "colchón" (carbohidratos, o grasa
+  si editas carbohidratos) absorbe la diferencia, preservando la proteína. Antes
+  editar % no tocaba nada más y el total se iba al 95/105% (incoherente). Nuevo
+  `redistributeMacro(target, cur, key, grams)` en `nutritionTargets.ts`. Editar
+  las kcal sigue escalando el mix; siempre se reescalan comidas y gramos del banco.
+- **"Cuadrar por objetivo":** el botón de cuadrar ahora rehace el reparto según la
+  EVIDENCIA del objetivo del cliente (proteína/grasa por kg, carbohidratos el
+  resto) — `macrosForKcal(goal, weight, target)` — en vez de combinaciones
+  ilógicas. Siempre disponible; sin objetivo/peso, rellena con carbohidratos.
+- Verificado con 22 comprobaciones de coherencia (kcal fija, total 100%, colchón
+  nunca negativo, split por objetivo válido para los 5 objetivos) + simulación del
+  input que prueba que el viejo se quedaba en "0" y el nuevo llega a vacío.
+
+**B. Suite de tests a 108/108 (antes 97 pasaban, 11 fallaban):**
+- **Fixtures obsoletas (10 tests):** `_flexible_meals_json` generaba 7 opciones por
+  slot pero el esquema exige 1-4 (objetivo 3). `tests/test_ai_service.py` "ABCDEFG"
+  → "ABC"; asserts que fijaban `== 7` → `== 3` en `test_portal.py` y
+  `test_integration_a3.py`. No se tocaron guardrails ni esquema (son estrictos a
+  propósito).
+- **Fecha fija (1 test):** `test_push` fijaba `datetime(2026,7,3,...)` cuando la
+  fixture es relativa a `date.today()`. Ahora deriva el "ahora" de hoy.
+- **BUG REAL de producción encontrado al pasar los tests:** el endpoint POST
+  `/clients/{id}/periods` (`create_period`) insertaba un período abierto sin
+  comprobar si ya había otro → violaba `uq_period_one_open` (índice único de un
+  solo período abierto, mig. 0010) con un **500**. Como publicar el plan ya abre
+  el período 1 solo, el endpoint ahora es IDEMPOTENTE: si hay uno abierto lo
+  devuelve. Los tests que retro-fechaban el período vía este endpoint ahora lo
+  hacen en la BD (helper `_backdate_open_period`).
+
+**Verificación:** pytest **108/108**; **backtest 1530/0**; frontend `tsc -b` +
+`vite build` OK; 22 checks de coherencia de edición + simulación del input.
 
 ## 11. Mapa rápido de archivos tocados en el último tramo
 

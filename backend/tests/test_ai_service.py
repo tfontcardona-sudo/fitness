@@ -142,7 +142,7 @@ def _flexible_meals_json() -> str:
     slots = []
     for slot, (kcal, p, c, f) in targets.items():
         options = []
-        for key in "ABCDEFG":
+        for key in "ABC":  # el esquema exige 1-4 opciones por slot (objetivo 3)
             options.append({
                 "key": key, "title": f"Opción {key} slot {slot}",
                 "ingredients": [{"food": "Pollo", "grams": 150, "household": "1 pechuga"}],
