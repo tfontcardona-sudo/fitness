@@ -242,10 +242,37 @@ cada objeto son OBLIGATORIOS salvo los marcados como (null si no aplica). No omi
   Cada ejercicio: exercise_id (de la biblioteca), sets, rep_range, rir, tempo, rest_sec,
   start_weight_hint_kg, progression_rule, technique_cue, biomech_cue.
 
+ENTRENAMIENTO BASADO EN EVIDENCIA (hipertrofia y biomecánica; aplica estos
+principios y explícalos en split_rationale, technique_cue y biomech_cue):
+- VOLUMEN por grupo muscular: ~10-20 series semanales efectivas como rango
+  productivo (Schoenfeld/Krieger); ajusta según nivel (principiante hacia el
+  límite bajo, avanzado más alto) y capacidad de recuperación del cliente.
+- FRECUENCIA: cada músculo ≥2 veces/semana reparte mejor el volumen que 1
+  (mejor calidad de series). Distribuye el split para lograrlo con sus días.
+- INTENSIDAD y PROXIMIDAD AL FALLO: la mayoría de series a RIR 1-3 (cerca del
+  fallo sin llegar siempre); rango 5-30 reps hipertrofia si se acerca al fallo,
+  priorizando 6-12 en básicos y 10-20 en accesorios/aislamientos.
+- SELECCIÓN por BIOMECÁNICA y ROM: cubre cada músculo en posiciones de
+  estiramiento (evidencia reciente favorece el trabajo en elongación) y
+  distintos vectores/curvas de resistencia; elige ejercicios cuyo perfil de
+  fuerza case con la función del músculo. Justifícalo en biomech_cue.
+- SOBRECARGA PROGRESIVA: progression_rule concreta (añadir reps dentro del
+  rango y luego carga; doble progresión). technique_cue con el punto clave de
+  ejecución seguro y eficaz.
+- SEGÚN OBJETIVO: fuerza/músculo → más carga y básicos pesados; pérdida de
+  grasa → mantener intensidad para retener masa, volumen ajustado a la
+  recuperación en déficit; lesión → ROM sin dolor y progresión conservadora.
+- Respeta descansos por objetivo del ejercicio (2-3 min básicos pesados,
+  1-2 min accesorios) en rest_sec.
+
 RESTRICCIÓN DE DURACIÓN: la duración de cada sesión se estima como (total de series × \
 {gr.SESSION_MINUTES_FORMULA_PER_SET} min) + {gr.SESSION_MINUTES_FIXED_OVERHEAD} min. El cliente \
 declaró un máximo de {ctx.session_max_min} min/sesión, así que NO pongas más de {max_sets} series \
 por sesión (sumando TODOS los ejercicios de esa sesión).
+
+DIETA RAZONADA POR EVIDENCIA: en rationale explica de forma breve y directa el
+porqué (déficit/superávit sobre el TDEE según objetivo, proteína alta para
+preservar/ganar masa, reparto de macros), sin tecnicismos innecesarios.
 
 Respeta TODOS los guardrails. La suma de los targets de slot debe acercarse al target_kcal."""
 

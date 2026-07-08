@@ -75,6 +75,89 @@ export function goalTargets(goal: GoalType | null | undefined, weightKg: number,
   return macrosForKcal(goal, weightKg, tdee * r.kcalFactor);
 }
 
+// ---- Déficit / superávit -----------------------------------------------------
+// El cálculo de la dieta parte del TDEE: kcal = TDEE ± un porcentaje. Aquí lo
+// exponemos de forma directa (nada de números complejos) para verlo y editarlo.
+
+/** % con signo aplicado sobre el TDEE: -20 = déficit del 20%, +8 = superávit. */
+export function signedDeficitPct(tdee: number, kcal: number): number {
+  if (!tdee) return 0;
+  return Math.round((kcal / tdee - 1) * 100);
+}
+
+/** Texto directo del cálculo aplicado ("Déficit del 20% sobre tu gasto"). */
+export function deficitLabel(tdee: number, kcal: number): string {
+  const p = signedDeficitPct(tdee, kcal);
+  if (p < 0) return `Déficit del ${-p}%`;
+  if (p > 0) return `Superávit del ${p}%`;
+  return "Mantenimiento (0%)";
+}
+
+/** kcal objetivo para un % con signo sobre el TDEE. */
+export function kcalFromDeficit(tdee: number, signedPct: number): number {
+  return Math.round(tdee * (1 + signedPct / 100));
+}
+
+/** Texto de un % con signo ("Déficit 20%" / "Superávit 10%" / "Mantenimiento"). */
+function deficitOptionLabel(p: number): string {
+  if (p < 0) return `Déficit ${-p}%`;
+  if (p > 0) return `Superávit ${p}%`;
+  return "Mantenimiento (0%)";
+}
+
+/** Opciones del desplegable: mantenimiento + déficit/superávit de 5 en 5%
+ *  (mín. 5%, máx. 50%). Si se pasa `current` y su % exacto no cae en la rejilla
+ *  de 5% (p. ej. un plan IA con +8%), se añade como opción para que el
+ *  desplegable no se desincronice ni "salte" al redondear. */
+export function deficitOptions(current?: number | null): { value: number; label: string }[] {
+  const opts: { value: number; label: string }[] = [];
+  for (let p = 50; p >= 5; p -= 5) opts.push({ value: -p, label: `Déficit ${p}%` });
+  opts.push({ value: 0, label: "Mantenimiento (0%)" });
+  for (let p = 5; p <= 50; p += 5) opts.push({ value: p, label: `Superávit ${p}%` });
+  if (current != null && Number.isFinite(current)) {
+    const c = Math.max(-95, Math.min(95, Math.round(current)));
+    if (!opts.some((o) => o.value === c)) {
+      opts.push({ value: c, label: deficitOptionLabel(c) });
+      opts.sort((a, b) => a.value - b.value);
+    }
+  }
+  return opts;
+}
+
+/** Valor del desplegable coherente con la etiqueta: el % exacto aplicado,
+ *  acotado a un rango con sentido (evita blancos si las kcal quedan a 0). */
+export function deficitSelectValue(tdee: number, kcal: number): number {
+  if (!tdee || !kcal) return 0;
+  return Math.max(-95, Math.min(95, signedDeficitPct(tdee, kcal)));
+}
+
+// ---- Porcentaje de cada macro (estilo MyFitnessPal) --------------------------
+export const KCAL_PER_G = { protein_g: 4, carbs_g: 4, fat_g: 9 } as const;
+
+/** Tolerancia (en puntos %) para dar los macros por "cuadrados" al 100%. Absorbe
+ *  el redondeo de cada macro por separado (p. ej. 30+40+31 = 101 es correcto).
+ *  Único origen: editor y vista usan el mismo umbral para no dar dos veredictos. */
+export const MACRO_TOTAL_TOLERANCE = 2;
+
+/** % que ocupa cada macro sobre las CALORÍAS OBJETIVO (no sobre la suma real):
+ *  así, si se editan gramos y no cuadran, el total sale 95%/105% y avisa. */
+export function macroPct(macros: { protein_g?: number; carbs_g?: number; fat_g?: number },
+                         targetKcal: number): { protein: number; carbs: number; fat: number; total: number } {
+  const k = targetKcal || 1;
+  const p = (macros.protein_g ?? 0) * 4, c = (macros.carbs_g ?? 0) * 4, f = (macros.fat_g ?? 0) * 9;
+  return {
+    protein: Math.round((p / k) * 100),
+    carbs: Math.round((c / k) * 100),
+    fat: Math.round((f / k) * 100),
+    total: Math.round(((p + c + f) / k) * 100),
+  };
+}
+
+/** Gramos de un macro para que ocupe cierto % de las calorías objetivo. */
+export function gramsFromPct(pct: number, targetKcal: number, key: keyof typeof KCAL_PER_G): number {
+  return Math.max(0, Math.round((pct / 100 * targetKcal) / KCAL_PER_G[key]));
+}
+
 /** Al EDITAR las calorías, los TRES macros suben o bajan EN PROPORCIÓN al mix
  *  del plan (la dieta ya está adaptada al cliente; no se re-ancla nada): P y G
  *  escalan por el ratio de calorías y los carbohidratos cuadran el 4/4/9
