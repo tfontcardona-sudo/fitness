@@ -154,9 +154,13 @@ export default function ClientProfilePage() {
         </div>
       )}
 
-      <div className="mt-4 grid gap-6 lg:grid-cols-[300px_1fr]">
-        {/* SIDEBAR del cliente (min-w-0: que nada fuerce el ancho en móvil) */}
-        <aside className="min-w-0 space-y-4">
+      {/* Rejilla con filas: en MÓVIL el orden es identidad → contenido →
+          extras (el coach llega a las pestañas sin scrollear toda la barra);
+          en ESCRITORIO la columna izquierda tiene la ficha arriba y las
+          tarjetas extra debajo, con el contenido a la derecha. */}
+      <div className="mt-4 grid gap-4 lg:gap-6 lg:grid-cols-[300px_1fr] lg:grid-rows-[auto_1fr] lg:items-start">
+        {/* 1) Identidad + info + Diario (arriba también en móvil) */}
+        <aside className="min-w-0 space-y-4 lg:col-start-1 lg:row-start-1">
           <div className="card p-5">
             <div className="flex items-center gap-3">
               <Avatar name={client.full_name} size={48} />
@@ -180,8 +184,7 @@ export default function ClientProfilePage() {
             </dl>
           </div>
 
-          {/* DIARIO DEL CLIENTE (su app del móvil): botón destacado y distinto
-              al resto — copia el enlace del portal y lo abre para previsualizar. */}
+          {/* DIARIO DEL CLIENTE (su app del móvil): botón destacado y distinto. */}
           <button
             onClick={openPortal}
             className="flex w-full items-center gap-3 rounded-xl px-4 py-3.5 text-left text-white shadow-md transition-transform hover:brightness-110 active:scale-[0.98]"
@@ -200,21 +203,26 @@ export default function ClientProfilePage() {
               <span className="block text-xs opacity-75">abrir y copiar el enlace de su app</span>
             </span>
           </button>
-          {/* Seguridad: invalidar el enlace si se filtró (antes era inaccesible) */}
+        </aside>
+
+        {/* 3) Extras: anamnesis + regenerar enlace (debajo del contenido en
+            móvil; columna izquierda-abajo en escritorio) */}
+        <aside className="order-last min-w-0 space-y-3 lg:order-none lg:col-start-1 lg:row-start-2">
+          {/* Anamnesis: enviar enlace + subir PDF rellenado */}
+          <ClientDocuments client={client} onUploaded={load} />
           <button
             onClick={() => setConfirmRegen(true)}
             className="w-full text-center text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
           >
             Regenerar enlace del portal (el actual dejará de funcionar)
           </button>
-
-          {/* Anamnesis: enviar enlace + subir PDF rellenado */}
-          <ClientDocuments client={client} onUploaded={load} />
         </aside>
 
-        {/* CONTENIDO con tabs */}
-        <div className="min-w-0">
-          <div className="profile-tabs mb-5 flex gap-1 border-b" style={{ borderColor: "var(--line)" }}>
+        {/* 2) CONTENIDO con tabs (a la derecha, ocupa ambas filas en desktop) */}
+        <div className="min-w-0 lg:col-start-2 lg:row-start-1 lg:row-span-2">
+          {/* Barra de pestañas PEGAJOSA: al hacer scroll de un plan largo, la
+              navegación entre secciones sigue siempre accesible. */}
+          <div className="profile-tabs mb-5 flex gap-1 border-b" style={{ borderColor: "var(--line)", position: "sticky", top: 0, zIndex: 10, background: "var(--bg)" }}>
             {(["resumen", "anamnesis", "planificacion", "seguimiento", "feedback", "historial"] as Tab[]).map((t) => (
               <button
                 key={t}

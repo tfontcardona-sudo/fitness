@@ -3,6 +3,7 @@ import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, Cale
 import { api, getToken } from "../lib/api";
 import { openWhatsApp, planAndFeedbackMessage, planMessage, waPhone } from "../lib/whatsapp";
 import { GOAL_LABEL, goalDays, goalReviewDue, planMonthLabel } from "../lib/format";
+import { deficitLabel, macroPct, MACRO_TOTAL_TOLERANCE } from "../lib/nutritionTargets";
 import { isCriticalLine } from "../lib/clinical";
 import { Spinner, useToast } from "./ui";
 import { MemoDetails } from "./MemoDetails";
@@ -342,6 +343,9 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
   const nut = plan.nutrition ?? {};
   const tr = plan.training ?? {};
   const macros = nut.macros ?? {};
+  // % de cada macro sobre las calorías objetivo (para verlo junto a los gramos)
+  const mp = macroPct(macros, nut.target_kcal ?? 0);
+  const mpTotalOff = (nut.target_kcal ?? 0) > 0 && Math.abs(mp.total - 100) > MACRO_TOTAL_TOLERANCE;
   const exName = (id: number) => exMap[id] ?? `Ejercicio #${id}`;
   // El período abierto puede seguir anclado al plan anterior (adaptación a
   // mitad de ciclo): el seguimiento activo es el período ABIERTO, sea del plan
@@ -391,7 +395,9 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
               quieres y envíasela por WhatsApp.
             </p>
           </div>
-          <div className="flex gap-2">
+          {/* Acciones: en móvil ocupan todo el ancho (2 columnas) sin cortarse;
+              en escritorio van en fila. */}
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
             <button onClick={() => setEditing(true)} className="btn btn-ghost">
               <Pencil size={15} /> Editar
             </button>
@@ -399,17 +405,17 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
               <Download size={15} /> Descargar PDF
             </button>
             {plan.status === "published" && (
-              <button onClick={sendPlanWhatsApp} className={fb ? "btn btn-ghost" : "btn btn-primary"}>
+              <button onClick={sendPlanWhatsApp} className={`${fb ? "btn btn-ghost" : "btn btn-primary"} col-span-2 sm:col-span-1`}>
                 <MessageCircle size={15} /> Enviar plan por WhatsApp
               </button>
             )}
             {plan.status === "published" && fb && (
-              <button onClick={sendPlanAndFeedbackWhatsApp} className="btn btn-primary">
+              <button onClick={sendPlanAndFeedbackWhatsApp} className="btn btn-primary col-span-2 sm:col-span-1">
                 <MessageCircle size={15} /> Enviar plan + feedback
               </button>
             )}
             {plan.status !== "published" && (
-              <button onClick={activateLegacy} disabled={publishing} className="btn btn-primary">
+              <button onClick={activateLegacy} disabled={publishing} className="btn btn-primary col-span-2 sm:col-span-1">
                 <Send size={15} /> {publishing ? "Activando…" : "Activar"}
               </button>
             )}
@@ -600,20 +606,33 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
       {/* Nutrición */}
       <div className="card p-5">
         <SectionTitle icon={Utensils} title="Nutrición" />
+        {/* Cálculo aplicado, directo: déficit/superávit sobre el TDEE */}
+        {nut.tdee_kcal ? (
+          <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+            <span
+              className="rounded-full px-2.5 py-1 font-semibold"
+              style={{ background: "color-mix(in srgb, var(--brand-accent) 14%, transparent)", color: "var(--brand-accent)" }}
+            >
+              {deficitLabel(nut.tdee_kcal, nut.target_kcal ?? 0)}
+            </span>
+            <span className="text-zinc-500">sobre tu gasto (TDEE {Math.round(nut.tdee_kcal)} kcal)</span>
+            {client.goal_type && <span className="text-zinc-500">· {GOAL_LABEL[client.goal_type]}</span>}
+          </div>
+        ) : null}
         <div className="grid grid-cols-4 gap-2">
-          {[
-            ["Calorías", `${Math.round(nut.target_kcal ?? 0)}`],
-            ["Proteína", `${Math.round(macros.protein_g ?? 0)} g`],
-            ["Carbohid.", `${Math.round(macros.carbs_g ?? 0)} g`],
-            ["Grasas", `${Math.round(macros.fat_g ?? 0)} g`],
-          ].map(([label, val]) => (
-            <Stat key={label} label={label} value={val} />
-          ))}
+          <Stat label="Calorías" value={`${Math.round(nut.target_kcal ?? 0)}`} />
+          <Stat label="Proteína" value={`${Math.round(macros.protein_g ?? 0)} g`} sub={(nut.target_kcal ?? 0) > 0 ? `${mp.protein}%` : undefined} />
+          <Stat label="Carbohid." value={`${Math.round(macros.carbs_g ?? 0)} g`} sub={(nut.target_kcal ?? 0) > 0 ? `${mp.carbs}%` : undefined} />
+          <Stat label="Grasas" value={`${Math.round(macros.fat_g ?? 0)} g`} sub={(nut.target_kcal ?? 0) > 0 ? `${mp.fat}%` : undefined} />
         </div>
+        {mpTotalOff && (
+          <p className="mt-1.5 text-xs" style={{ color: "#9A6B15" }}>
+            Los macros suman {mp.total}% de las calorías objetivo — al editar, usa "Cuadrar a 100%".
+          </p>
+        )}
         {nut.tdee_kcal != null && (
           <p className="mt-2 text-xs text-zinc-500">
-            TDEE estimado: {Math.round(nut.tdee_kcal)} kcal
-            {Array.isArray(nut.meals) && nut.meals.length > 0 ? ` · ${nut.meals.length} comidas/día` : ""}
+            {Array.isArray(nut.meals) && nut.meals.length > 0 ? `${nut.meals.length} comidas/día` : ""}
           </p>
         )}
 
@@ -642,12 +661,14 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
                       <td className="px-3 py-1.5 text-right tabular-nums">{Math.round(m.target?.fat_g ?? 0)}</td>
                     </tr>
                   ))}
+                  {/* "Total día" = suma REAL de las filas de comidas (siempre cuadra con
+                      lo que se ve arriba, tanto en el plan generado como tras editar). */}
                   <tr className="border-t font-semibold text-zinc-200" style={{ borderColor: "var(--line)", background: "var(--surface-raised)" }}>
                     <td className="px-3 py-1.5">Total día</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums">{Math.round(nut.target_kcal ?? 0)}</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums">{Math.round(macros.protein_g ?? 0)}</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums">{Math.round(macros.carbs_g ?? 0)}</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums">{Math.round(macros.fat_g ?? 0)}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{Math.round(nut.meals.reduce((s: number, m: any) => s + (m.target?.kcal ?? 0), 0))}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{Math.round(nut.meals.reduce((s: number, m: any) => s + (m.target?.protein_g ?? 0), 0))}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{Math.round(nut.meals.reduce((s: number, m: any) => s + (m.target?.carbs_g ?? 0), 0))}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{Math.round(nut.meals.reduce((s: number, m: any) => s + (m.target?.fat_g ?? 0), 0))}</td>
                   </tr>
                 </tbody>
               </table>
@@ -1173,7 +1194,7 @@ function SectionTitle({ icon: Icon, title, accent }: { icon: typeof Utensils; ti
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div
       className="rounded-xl p-3 text-center"
@@ -1184,7 +1205,14 @@ function Stat({ label, value }: { label: string; value: string }) {
       }}
     >
       <div className="text-lg font-bold tabular-nums" style={{ color: "var(--brand-accent)" }}>{value}</div>
-      <div className="mt-0.5 text-xs text-zinc-500">{label}</div>
+      <div className="mt-0.5 flex items-center justify-center gap-1.5 text-xs text-zinc-500">
+        <span>{label}</span>
+        {sub && (
+          <span className="rounded px-1 font-semibold tabular-nums" style={{ background: "color-mix(in srgb, var(--brand-accent-2) 12%, transparent)", color: "var(--brand-accent-2)" }}>
+            {sub}
+          </span>
+        )}
+      </div>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 # Documento de traspaso — Fitness System (DQ / David Quiceno)
 
 > Objetivo de este doc: que otra sesión de IA (Fable u otra) pueda **continuar el trabajo sin perder contexto**.
-> Última actualización: 2026-07-07 (6ª parte). Autor del último tramo: Claude (diseño premium + clasificador clínico afinado + memoria de desplegables + super-auditoría).
+> Última actualización: 2026-07-08. Autor del último tramo: Claude (cálculo de dieta directo: déficit/superávit % editable + % por macro estilo MyFitnessPal + repaso móvil + orden visual + IA por evidencia + auditoría 7-8 jul).
 > **PRODUCCIÓN:** el sistema está desplegado en `https://app.dqrassessories.com` (VPS Hetzner
 > `46.225.57.25`, repo en `/root/fitness`, ver `DEPLOY.md`). Actualizar: `cd /root/fitness && git pull && docker compose up -d --build`.
 > Cliente/marca: **David Quiceno (DQ)** — asesoría de fitness. Colores marca: **vino `#8B1A2B`**, **azul `#4A7BA8`**.
@@ -746,6 +746,51 @@ verde · 8 harnesses verdes · tsc/vite OK. QA server E2E reutilizable:
   con relieve. Reparto por comida en tabla; equivalencias+household reescalados.
 - **Verificación**: E2E real 33/33 · 0 fallos; backtest 1530 OK/0; pytest verde;
   8 harnesses verdes; agente de auditoría con 4 hallazgos, los 4 corregidos.
+
+## 10.h Tramo 2026-07-08 — Cálculo de dieta directo (déficit % + % por macro) + móvil + orden + IA por evidencia
+
+Objetivo: que el coach vea y edite el **cálculo** de la dieta sin números
+complejos, con el estilo de MyFitnessPal, y una web más ordenada y móvil.
+
+- **Déficit/superávit % editable** (`lib/nutritionTargets.ts`): `signedDeficitPct`
+  (kcal↔TDEE), `deficitLabel` ("Déficit del 20%"), `kcalFromDeficit`,
+  `deficitOptions(current?)` (mantenimiento + 5→50% ambos lados; si el % real no
+  es múltiplo de 5 —p. ej. un plan IA con +8%— **inyecta** su valor exacto para
+  que el desplegable no se desincronice), `deficitSelectValue` (valor del select
+  coherente con la etiqueta, acotado a ±95). En vista (`ClientPlanPanel`) chip
+  naranja "Déficit del X% · sobre tu gasto (TDEE)"; en editor (`ClientPlanEditor`)
+  desplegable de 5% que recalcula kcal y rehace macros óptimos por objetivo.
+- **% por macro estilo MyFitnessPal**: `macroPct` (% de cada macro sobre las
+  CALORÍAS OBJETIVO, no sobre la suma real → puede salir 95/105% y avisar),
+  `gramsFromPct`. En vista, badge azul con el % junto a cada macro. En editor,
+  cada macro tiene **gramos + %** editables; `setMacroPct` fija los gramos por %
+  sin tocar el objetivo (permite descuadre); badge total verde/ámbar y botón
+  **"Cuadrar a 100%"** (`cuadrar`) que rellena carbos con el resto y, si proteína
+  +grasa ya se pasan, baja P y G en proporción — **siempre** cuadra, nunca no-op.
+- **Tolerancia única** `MACRO_TOTAL_TOLERANCE = 2` (editor y vista) para no dar
+  dos veredictos con el redondeo (30+40+31 = 101% es correcto, no alarma).
+- **"Total día"** de la tabla suma las **filas reales** de comidas (siempre cuadra
+  con lo que se ve, con plan generado o tras editar; antes ponía el objetivo).
+- **Editor sin cifras cortadas**: "Calorías objetivo" en su fila y los 3 macros en
+  3 columnas anchas (los gramos de 3 dígitos ya no se recortan).
+- **Repaso móvil** (`ClientProfilePage`): grid con orden móvil identidad → Diario
+  → **pestañas** → contenido → extras (antes había que bajar toda la barra
+  lateral); pestañas **sticky**; sin overflow horizontal en ninguna vista
+  (clientes/plan/resumen/dashboard a 390px → scrollW == clientW).
+- **IA por evidencia** (`generator.py`): bloque de entrenamiento basado en
+  evidencia (volumen 10-20 series/grupo/sem — Schoenfeld/Krieger, frecuencia ≥2,
+  RIR 1-3, selección por biomecánica/ROM, sobrecarga progresiva, ajustes por
+  objetivo y descansos) + nota de dieta razonada. Solo texto del prompt: no toca
+  el contrato JSON (verificado con backtest y E2E, generación intacta).
+- **Auditoría 7-8 jul** (agente): 7 hallazgos; corregidos los 3 MEDIO (select sin
+  selección fuera de ±50 → `deficitOptions`+`deficitSelectValue`; "Cuadrar" no-op
+  → `cuadrar` reproporciona; kcal del total inconsistente → suma de filas) y 3
+  LEVE (dos tolerancias → una; etiqueta vs desplegable → coherentes; `sub`% sin
+  target → gateado). El nº7 (barra sticky bajo la campana) sin conflicto real.
+- **Verificación**: tsc/vite OK; **E2E real 48/48** (33 + 15 nuevos de déficit/
+  macro%) · 0 errores JS; **móvil sin overflow**; **backtest 1530 OK/0**; pytest
+  sin fallos NUEVOS (los 11 rojos son previos: fixtures IA con JSON scripted +
+  push, idénticos con `generator.py` a HEAD — verificado por stash).
 
 ## 11. Mapa rápido de archivos tocados en el último tramo
 
