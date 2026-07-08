@@ -72,6 +72,8 @@ Este mensaje es parte de tu asesoría personalizada con {brand.name}.{footer_con
 def portal_access(brand: Brand, first_name: str, login_url: str,
                   username: str, password: str) -> tuple[str, str]:
     """Email de bienvenida con el acceso personal al portal (usuario y clave)."""
+    from html import escape
+    first_name, username, password = escape(first_name), escape(username), escape(password)
     subject = f"Tu acceso personal a tu portal · {brand.name}"
     box = (
         f'<table role="presentation" cellpadding="0" cellspacing="0" width="100%" '

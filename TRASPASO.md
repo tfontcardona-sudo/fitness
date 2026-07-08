@@ -1,7 +1,7 @@
 # Documento de traspaso — Fitness System (DQ / David Quiceno)
 
 > Objetivo de este doc: que otra sesión de IA (Fable u otra) pueda **continuar el trabajo sin perder contexto**.
-> Última actualización: 2026-07-08 (2ª). Autor del último tramo: Claude (backups automáticos + "Mi progreso" del cliente en el portal + login del portal con email de acceso al registrar la anamnesis).
+> Última actualización: 2026-07-08 (3ª). Autor del último tramo: Claude (gran auditoría: lesiones→contraindicaciones reales, guardrail de alérgenos, suelo calórico, integridad de períodos, fechas locales y hardening de seguridad).
 > **PRODUCCIÓN:** el sistema está desplegado en `https://app.dqrassessories.com` (VPS Hetzner
 > `46.225.57.25`, repo en `/root/fitness`, ver `DEPLOY.md`). Actualizar: `cd /root/fitness && git pull && docker compose up -d --build`.
 > Cliente/marca: **David Quiceno (DQ)** — asesoría de fitness. Colores marca: **vino `#8B1A2B`**, **azul `#4A7BA8`**.
@@ -822,6 +822,54 @@ Tres mejoras pedidas tras la del cálculo de dieta:
   fecha y no reenvía en re-subida; front 9/9 (login, error, redirección,
   recordarme, autoentrada, logout) · 0 errores JS; plantilla de email OK;
   E2E 50/50; mig. 0009 idempotente; pytest sin fallos nuevos.
+
+## 10.j Tramo 2026-07-08 (3ª) — Gran auditoría: seguridad clínica, evidencia, integridad y hardening
+
+Cuatro auditores en paralelo (entrenamiento, nutrición, workflow, seguridad).
+Arreglados los reales (críticos + alto valor); verificado todo junto.
+
+**Seguridad del cliente (CRÍTICO):**
+- **Lesiones → contraindicaciones REALES** (`services/injuries.py` nuevo): las
+  lesiones de la anamnesis (texto libre, respetando negaciones/"resuelta") se
+  mapean a etiquetas articulares (`hombro`, `lumbar`, `rodilla`…). Antes
+  `client_contraindications=set()` fijo en 3 sitios → el filtro y el guardrail
+  NUNCA excluían por lesión. Ahora un cliente con hernia lumbar no recibe
+  sentadilla/peso muerto/remo (22 ejercicios excluidos, verificado). Cableado en
+  `clients.py` (filtro + ClientContext) y `swap.py` (alternativas + rechazo duro
+  del destino contraindicado).
+- **Guardrail de alérgenos** (`guardrails.check_meal_options`): comprueba los
+  ingredientes de cada comida contra `food_allergies` (con sinónimos: lactosa→
+  leche/yogur/queso…, gluten→trigo/pan…, frutos secos, marisco…) → violación
+  prominente. Antes NADA revisaba los ingredientes (solo el prompt).
+- **Suelo calórico en `energy_targets`** (`metrics.py`): nunca por debajo de
+  BMR/1600♂/1400♀. Antes una mujer ligera sedentaria en fat_loss recibía un
+  target < BMR que el guardrail rechazaba → NO se podía generar su plan.
+
+**Integridad de datos:**
+- **`periods`: índice único parcial** (un solo período abierto por cliente) +
+  `UNIQUE(client_id, period_index)` (migración 0010 con dedupe previo).
+  `ensure_open_period` usa savepoint y reutiliza el período si hay carrera.
+- **Fechas a hora local** (Europe/Madrid) en períodos, semana del mesociclo,
+  plato del día y `goal_started_on` (antes UTC → descuadres a medianoche).
+
+**Calidad por evidencia:**
+- Desplegable de déficit acotado a **≤30% / superávit ≤15%** (límites de los
+  guardrails) + aviso si se supera; el prompt de comidas ya no prohíbe los
+  alimentos que **gustan** al cliente; piso de volumen (aviso <6 series/grupo);
+  proteína reconciliada (los macros nunca declaran kcal que no cumplen);
+  `macroPct` con calorías vacías = 0% (no 60000%).
+
+**Hardening (seguridad del código nuevo):**
+- Rate-limit **por IP real** (Caddy `X-Real-IP` + `app/ratelimit.py`) en vez de
+  un cubo global; login en **tiempo constante** (anti-enumeración); acceso al
+  portal solo se sella si el email SALIÓ (reintenta si falla); email en
+  minúsculas al crear; `first_name` sin `IndexError`; escape HTML en el email;
+  backup con `KEEP`≥1, `chmod 700`, y snapshot previo a `restore`.
+- Alerta "objetivo cambiado sin regenerar" (`objetivo cliente ≠ plan activo`).
+
+**Verificación:** backend imports OK; **backtest 1530/0**; **E2E 51/51 · 0
+errores JS**; pytest sin fallos nuevos; migración 0010 idempotente; filtro de
+lesión y guardrail de alérgenos probados; login y unicidad de email OK.
 
 ## 11. Mapa rápido de archivos tocados en el último tramo
 

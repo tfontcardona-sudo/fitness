@@ -18,11 +18,11 @@ from typing import Annotated, List
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
 from pydantic import BaseModel
 from slowapi import Limiter
-from slowapi.util import get_remote_address
+from app.ratelimit import client_key
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.security import verify_password
+from app.security import hash_password, verify_password
 
 from app.config import settings
 from app.db import get_db
@@ -66,9 +66,18 @@ from app.services.metrics import epley_1rm, weight_trend
 from app.services.storage import PhotoValidationError, abs_path, save_photo
 
 router = APIRouter(prefix="/api/p", tags=["portal-public"])
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=client_key)
 
 MAX_INITIAL_PHOTOS = 4
+
+# Hash fijo para igualar el tiempo del login cuando el email no existe/sin clave.
+_DUMMY_HASH = hash_password("timing-equalizer-not-a-real-password")
+
+
+def _first_name(client: Client) -> str:
+    """Primer nombre seguro (nunca IndexError con nombre en blanco)."""
+    parts = (client.full_name or "").split()
+    return parts[0] if parts else (client.email or "Cliente")
 
 
 class PortalLoginIn(BaseModel):
@@ -84,14 +93,17 @@ def portal_login(request: Request, body: PortalLoginIn, db: Session = Depends(ge
     revelar si el email existe."""
     email = (body.email or "").strip().lower()
     client = db.scalar(select(Client).where(func.lower(Client.email) == email)) if email else None
-    if (
-        client is None
-        or not client.portal_password_hash
-        or not verify_password(body.password or "", client.portal_password_hash)
-    ):
+    # Tiempo constante: si no hay cliente/hash, se verifica igualmente contra un
+    # hash dummy para no filtrar por temporización qué emails son clientes.
+    if client is not None and client.portal_password_hash:
+        ok = verify_password(body.password or "", client.portal_password_hash)
+    else:
+        verify_password(body.password or "", _DUMMY_HASH)
+        ok = False
+    if not ok or client is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Email o contraseña incorrectos")
-    first = (client.full_name or client.email).split()[0]
-    return {"token": client.portal_token, "first_name": first}
+    name = (client.full_name or client.email or "").split()
+    return {"token": client.portal_token, "first_name": name[0] if name else client.email}
 
 
 def _photos_count(db: Session, client_id: int) -> int:
@@ -108,7 +120,7 @@ def _photos_count(db: Session, client_id: int) -> int:
 def _state(db: Session, client: Client) -> AnamnesisStateOut:
     brand = db.scalar(select(BrandConfig).limit(1)) or BrandConfig()
     return AnamnesisStateOut(
-        first_name=client.full_name.split()[0],
+        first_name=_first_name(client),
         anamnesis_done=client.consent_signed_at is not None,
         photos_count=_photos_count(db, client.id),
         brand_name=brand.name,
@@ -236,7 +248,7 @@ def portal_state_full(
         else portal_svc.latest_published_plan(db, client.id)
     )
     return PortalState(
-        first_name=client.full_name.split()[0],
+        first_name=_first_name(client),
         status=client.status,
         diet_mode=client.diet_mode,
         has_plan=plan is not None,

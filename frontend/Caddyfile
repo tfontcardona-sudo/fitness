@@ -4,7 +4,12 @@
 	encode gzip
 
 	handle /api/* {
-		reverse_proxy api:8000
+		# X-Real-IP = IP real del cliente que ve Caddy ({remote_host}); no es
+		# falseable por el cliente. El backend la usa para limitar por IP en
+		# lugar de un cubo global compartido (un pico dejaría sin login a todos).
+		reverse_proxy api:8000 {
+			header_up X-Real-IP {remote_host}
+		}
 	}
 
 	handle {

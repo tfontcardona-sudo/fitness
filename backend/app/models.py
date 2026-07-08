@@ -20,10 +20,12 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -134,6 +136,14 @@ class Plan(Base):
 # -------------------------------------------------------------- periods ----
 class Period(Base):
     __tablename__ = "periods"
+    # Un SOLO período abierto por cliente (índice único parcial) + no repetir
+    # índice de período. Evita que dos peticiones concurrentes creen períodos
+    # duplicados que corromperían el historial.
+    __table_args__ = (
+        UniqueConstraint("client_id", "period_index", name="uq_period_client_index"),
+        Index("uq_period_one_open", "client_id", unique=True,
+              postgresql_where=text("status = 'open'")),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)

@@ -38,9 +38,15 @@ def macros_for_kcal(goal: str | None, weight_kg: float, kcal: float) -> dict:
     protein = round(weight_kg * (lo + hi) / 2)
     fat = round(weight_kg * FAT_PER_KG.get(goal or "", 0.9))
     fat_min = round(weight_kg * 0.6)
+    protein_min = round(weight_kg * 1.6)
     carbs = round((kcal - protein * 4 - fat * 9) / 4)
     if carbs < 0:
         fat = max(fat_min, round((kcal - protein * 4) / 9))
+        carbs = round((kcal - protein * 4 - fat * 9) / 4)
+    if carbs < 0:
+        # proteína+grasa mínimas superan las kcal: recorta la proteína a su suelo
+        # para que los macros no declaren unas kcal que no cumplen.
+        protein = max(protein_min, round((kcal - fat * 9) / 4))
         carbs = max(0, round((kcal - protein * 4 - fat * 9) / 4))
     return {"kcal": round(kcal), "protein_g": protein, "carbs_g": carbs, "fat_g": fat}
 

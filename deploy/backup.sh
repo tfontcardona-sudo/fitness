@@ -15,6 +15,10 @@ set -euo pipefail
 REPO="${FITNESS_REPO:-/root/fitness}"
 DEST="${FITNESS_BACKUP_DIR:-/root/fitness-backups}"
 KEEP="${FITNESS_BACKUP_KEEP:-14}"     # cuántas copias diarias conservar
+# Nunca borrar TODAS las copias: un KEEP=0 o no numérico haría 'tail -n +1' y la
+# rotación se llevaría por delante hasta la copia recién creada.
+case "$KEEP" in ''|*[!0-9]*) KEEP=14 ;; esac
+[ "$KEEP" -ge 1 ] || KEEP=14
 cd "$REPO"
 
 # Credenciales de la BD desde el .env (con los mismos valores por defecto que
@@ -24,6 +28,7 @@ PGUSER="$(env_val POSTGRES_USER)"; PGUSER="${PGUSER:-fitness}"
 PGDB="$(env_val POSTGRES_DB)";     PGDB="${PGDB:-fitness}"
 
 mkdir -p "$DEST"
+chmod 700 "$DEST" 2>/dev/null || true   # datos de salud: solo root
 # Evita dos backups solapados (el volcado puede tardar).
 exec 9>"$DEST/.backup.lock"
 flock -n 9 || { echo "[$(date '+%F %T')] otro backup en curso, salto"; exit 0; }

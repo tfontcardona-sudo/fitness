@@ -52,7 +52,11 @@ def send_portal_access(db: Session, client: Client) -> dict:
         to=client.email, subject=subject, html=html, kind="portal_access", client=client,
     )
 
-    client.portal_access_sent_at = datetime.now(timezone.utc)
+    # Solo se sella como "enviado" si el email SALIÓ de verdad. Si estaba
+    # desactivado o falló, se deja sin sellar para que el auto-envío reintente en
+    # la siguiente subida de anamnesis (y el coach pueda reenviarlo a mano).
+    if status == "sent":
+        client.portal_access_sent_at = datetime.now(timezone.utc)
     log_event(db, "client", client.id, "portal_access_sent", {"status": status})
     # La contraseña en claro solo se devuelve para que el coach pueda verla en la
     # respuesta si el email está desactivado; nunca se persiste ni se loguea.

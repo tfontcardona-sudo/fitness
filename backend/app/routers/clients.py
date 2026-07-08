@@ -221,12 +221,15 @@ def _get_or_404(db: Session, client_id: int) -> Client:
 def create_client(body: ClientCreate, db: Session = Depends(get_db)) -> ClientCreatedOut:
     """Alta mínima: nombre + email (+ teléfono). El resto lo aporta el cliente
     en el wizard de anamnesis vía el link público que devuelve esta llamada."""
-    if db.scalar(select(Client).where(Client.email == body.email)):
+    # Email normalizado a minúsculas: así el login (que compara en minúsculas) y
+    # la unicidad usan la MISMA clave y no pueden crearse "A@x" y "a@x".
+    email = (body.email or "").strip().lower()
+    if db.scalar(select(Client).where(func.lower(Client.email) == email)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Ya existe un cliente con ese email")
 
     client = Client(
         full_name=body.full_name.strip(),
-        email=body.email,
+        email=email,
         phone=body.phone,
         status="onboarding",
         auto_pilot=settings.auto_pilot_default,
@@ -777,9 +780,13 @@ def generate_client_plan(
     # equipo (el cliente no tiene por qué listar banco, rack, etc.). En casa o
     # exterior sí se respeta el material declarado.
     equip = set() if client.training_place == "gym" else set(client.equipment or [])
+    # Lesiones (texto libre) → etiquetas de contraindicación articular, para que
+    # el filtro y el guardrail excluyan DE VERDAD los ejercicios peligrosos.
+    from app.services.injuries import injury_contra_tags
+    contra_tags = injury_contra_tags(client.injuries_notes, client.medical_notes)
     library = filter_exercises_for_client(
         ex_dicts,
-        client_contraindications=set(),
+        client_contraindications=contra_tags,
         excluded_ids=set(client.excluded_exercise_ids or []),
         equipment_available=equip,
         level_max=level_map.get(client.level, 2),
@@ -866,7 +873,7 @@ def generate_client_plan(
         food_allergies=client.food_allergies or [],
         food_dislikes=client.food_dislikes or [],
         food_likes=client.food_likes or [],
-        contraindications=set(),
+        contraindications=contra_tags,
         body_fat_pct=client.body_fat_pct,
         bmr=et.bmr, tdee=et.tdee, target_kcal=et.target_kcal, energy_method=et.method,
         exercise_library=library,

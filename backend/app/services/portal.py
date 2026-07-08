@@ -197,7 +197,7 @@ def _meals_for_today(plan: Plan, client: Client, chosen: dict | None) -> list[di
                     entry["equivalences"] = s.get("equivalences")
         elif mode == "strict":
             # plato del día = el del weekday actual en el menú cerrado
-            today_idx = date.today().weekday()
+            today_idx = today_local().weekday()
             slug = DAY_SLUGS[today_idx]
             for d in bank.get("days", []):
                 if d["day"] == slug:
@@ -273,7 +273,7 @@ def build_training_sessions(db: Session, client: Client) -> list[dict]:
     plan = published_plan_for_period(db, period) if period else latest_published_plan(db, client.id)
     if plan is None:
         return []
-    week = current_training_week(db, plan, date.today())
+    week = current_training_week(db, plan, today_local())
     factor = (week or {}).get("load_factor") or 1.0
     training = plan.training_json or {}
     return [_resolve_session(db, s, factor) for s in training.get("sessions", [])]

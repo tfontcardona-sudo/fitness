@@ -49,11 +49,11 @@ def _client_excluded(client: Client) -> set[int]:
 
 
 def _client_contraindications(client: Client) -> set[str]:
-    # La anamnesis guarda lesiones como texto libre (injuries_notes); no hay un
-    # conjunto estructurado de contraindicaciones articulares por cliente. El
-    # filtro por patrón/músculo/equipamiento/nivel ya acota fuerte; aquí
-    # devolvemos vacío y dejamos que el coach valide el caso clínico.
-    return set()
+    # Lesiones (texto libre) → etiquetas de contraindicación articular, para que
+    # las alternativas propuestas y el swap nunca ofrezcan un ejercicio que carga
+    # una zona lesionada.
+    from app.services.injuries import injury_contra_tags
+    return injury_contra_tags(client.injuries_notes, client.medical_notes)
 
 
 def propose_alternatives(
@@ -139,6 +139,11 @@ def apply_swap(
     new_ex = db.get(Exercise, new_exercise_id)
     if new_ex is None:
         raise ValueError("Ejercicio de destino no existe")
+    # Seguridad: nunca sustituir por un ejercicio que carga una zona lesionada.
+    contra = _client_contraindications(client)
+    if contra & set(new_ex.contraindications or []):
+        zonas = ", ".join(sorted(contra & set(new_ex.contraindications or [])))
+        raise ValueError(f"El ejercicio de destino está contraindicado para el cliente ({zonas})")
 
     training = copy.deepcopy(plan.training_json or {})
     sessions = training.get("sessions", [])
@@ -154,13 +159,10 @@ def apply_swap(
     target["exercise_id"] = new_exercise_id
     target["technique_cue"] = (new_ex.technique_notes or "")[:160]
     target["biomech_cue"] = (new_ex.biomechanics_notes or "")[:160]
-    # Ajuste proporcional del peso orientativo por nivel del ejercicio
-    old_ex = db.get(Exercise, old_exercise_id)
-    if target.get("start_weight_hint_kg") and old_ex:
-        factor = 1.0
-        if old_ex.level_min and new_ex.level_min:
-            factor = old_ex.level_min / max(1, new_ex.level_min)
-        target["start_weight_hint_kg"] = round(target["start_weight_hint_kg"] * factor, 1)
+    # El peso orientativo del ejercicio anterior no es transferible a otro
+    # ejercicio (biomecánica distinta): se deja que el coach/cliente lo calibre
+    # en la primera sesión en vez de aplicar un factor arbitrario engañoso.
+    target["start_weight_hint_kg"] = None
 
     # Nueva versión (borrador) del plan
     last = db.scalar(
