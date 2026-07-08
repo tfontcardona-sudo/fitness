@@ -962,6 +962,7 @@ function ImportantPointsCard({ client }: { client: ClientOut }) {
           const nCrit = b.lines.filter(isCriticalLine).length;
           return (
             <MemoDetails
+              key={b.label}
               memoKey={`imp:${client.id}:${b.label}`}
               defaultOpen={nCrit > 0}
               className="rounded-lg border-l-2 px-3 py-2"
