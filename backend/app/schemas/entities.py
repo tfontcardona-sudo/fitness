@@ -303,6 +303,9 @@ class PortalLinkOut(BaseModel):
 class ClientCreatedOut(BaseModel):
     client: ClientOut
     links: PortalLinkOut
+    # Resultado del envío automático del acceso al portal al dar de alta:
+    # sent | disabled | failed | error | no_email | None (no intentado).
+    portal_access: str | None = None
 
 
 class ExerciseUpdate(BaseModel):

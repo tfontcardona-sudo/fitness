@@ -399,6 +399,8 @@ export interface PortalLinkOut {
 export interface ClientCreatedOut {
   client: ClientOut;
   links: PortalLinkOut;
+  // Resultado del envío automático del acceso al portal al dar de alta.
+  portal_access: "sent" | "disabled" | "failed" | "error" | "no_email" | null;
 }
 
 export interface MeOut {

@@ -1099,6 +1099,31 @@ inútiles (la "Dieta" y el aviso de feedback se recargaban solos cada 3 s). Ahor
 de correo conducido E2E con transporte simulado (remitente David, contenido y
 enlace correctos, sellado y reenvío).
 
+## 10.o Tramo 2026-07-08 (8ª) — Acceso al portal enviado AL CREAR el cliente
+
+DQ pidió que, al dar de alta un cliente (nombre + email + teléfono), se le mande
+automáticamente su acceso al portal por email, y que el modal "Cliente creado" lo
+refleje. Antes el autoenvío solo ocurría al registrar la anamnesis.
+
+- **`create_client`** (`routers/clients.py`): tras crear y confirmar el cliente,
+  llama a `send_portal_access` en su PROPIO try/except (rollback → `error`); el
+  alta NUNCA se bloquea si el correo falla o está desactivado. Devuelve el estado
+  en `ClientCreatedOut.portal_access` (nuevo campo del schema).
+- Como `portal_access_sent_at` solo se sella si el correo SALE, el autoenvío al
+  subir la anamnesis sigue de **fallback** (reintenta si al crear no salió) y no
+  duplica el correo si ya salió.
+- **Modal "Cliente creado"** (`ClientsPage.tsx`): guarda la respuesta completa y
+  muestra `<PortalAccessResult>` (verde "enviado a {email}" / ámbar-rojo si
+  desactivado/falló/sin email) + botón **"Reenviar correo"** que, si el correo no
+  sale, revela la contraseña para dársela a mano. Se mantiene el enlace de la
+  anamnesis por si el coach quiere mandarlo también por WhatsApp.
+
+**Verificación:** pytest **113/113**; `tsc -b` + `vite build` OK; E2E: al crear
+un cliente sale el correo desde David (usuario+contraseña+enlace+CTA) y se sella
+`portal_access_sent_at`; la subida posterior de anamnesis NO reenvía (0 correos
+extra); con correo desactivado el alta sigue OK (`disabled`, sin sellar) y con
+SMTP caído el alta sigue OK (`failed`); email duplicado → 409.
+
 ## 11. Mapa rápido de archivos tocados en el último tramo
 
 **Pulido §8.2 (2026-07-04)**

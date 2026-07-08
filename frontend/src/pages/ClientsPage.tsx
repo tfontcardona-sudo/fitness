@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Copy, Search, UserPlus, ChevronRight, Flag } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, Search, Send, UserPlus, ChevronRight, Flag } from "lucide-react";
 import { useDismiss, useModalFocus } from "../lib/useDismiss";
 import { api, ApiError, keepIfSame, REFRESH_MS } from "../lib/api";
-import type { ClientOut, PortalLinkOut } from "../types";
+import type { ClientCreatedOut, ClientOut } from "../types";
 import { EmptyState, PageLoader, StatusBadge, useToast } from "../components/ui";
 import { Avatar } from "./DashboardPage";
 import { GOAL_LABEL, goalReviewDue, relativeDays } from "../lib/format";
@@ -285,7 +285,11 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [busy, setBusy] = useState(false);
-  const [created, setCreated] = useState<PortalLinkOut | null>(null);
+  const [created, setCreated] = useState<ClientCreatedOut | null>(null);
+  // Estado del correo de acceso enviado al crear (y actualizable con "Reenviar").
+  const [accessStatus, setAccessStatus] = useState<ClientCreatedOut["portal_access"]>(null);
+  const [password, setPassword] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
   useDismiss(dialogRef, onClose); // fuera + ESC, en una sola pulsación
   useModalFocus(dialogRef, true); // foco atrapado; al cerrar vuelve al botón
@@ -295,12 +299,42 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
     setBusy(true);
     try {
       const res = await api.createClient({ full_name: name, email, phone: phone || null });
-      setCreated(res.links);
+      setCreated(res);
+      setAccessStatus(res.portal_access);
       onCreated();
       toast.push("Cliente creado");
     } catch (e) {
       toast.push(e instanceof ApiError ? e.message : "No se pudo crear el cliente", "error");
       setBusy(false);
+    }
+  }
+
+  // (Re)envía el correo de acceso al portal al cliente. Si el correo está
+  // desactivado o falla, muestra la contraseña para que el coach pueda dársela.
+  async function resendEmail() {
+    if (!created || resending) return;
+    setResending(true);
+    try {
+      const r = await api.sendPortalAccess(created.client.id);
+      setAccessStatus(r.status as ClientCreatedOut["portal_access"]);
+      if (r.status === "sent") {
+        setPassword(null);
+        toast.push("Correo de acceso enviado al cliente por email.");
+      } else if (r.password) {
+        setPassword(r.password);
+        toast.push(
+          r.status === "disabled"
+            ? "Envío de correos desactivado: usa la contraseña para dársela tú."
+            : "El email no salió: usa la contraseña para dársela tú.",
+          "error",
+        );
+      } else {
+        toast.push("No se pudo enviar el acceso", "error");
+      }
+    } catch (e: any) {
+      toast.push(e?.message ?? "No se pudo enviar el acceso", "error");
+    } finally {
+      setResending(false);
     }
   }
 
@@ -323,7 +357,8 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
           <>
             <h3 className="text-base font-semibold text-zinc-100">Nuevo cliente</h3>
             <p className="mt-1 text-sm text-zinc-500">
-              Solo necesitas nombre y email. El cliente completará su anamnesis desde el enlace.
+              Al crearlo se le enviará por email su acceso al portal (usuario, contraseña
+              y enlace). Solo necesitas nombre y email; el teléfono es para WhatsApp.
             </p>
             <div className="mt-5 space-y-4">
               <div>
@@ -351,12 +386,24 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
         ) : (
           <>
             <h3 className="text-base font-semibold text-zinc-100">Cliente creado</h3>
-            <p className="mt-1 text-sm text-zinc-500">
-              Envía este enlace al cliente para que complete su anamnesis y consentimiento.
+
+            {/* Correo de acceso al portal, enviado AUTOMÁTICAMENTE al crear */}
+            <div className="mt-3">
+              <PortalAccessResult status={accessStatus} email={created.client.email} password={password} />
+              <button className="btn btn-ghost mt-2 text-xs" disabled={resending} onClick={resendEmail}>
+                <Send size={13} className="text-zinc-500" />
+                {resending ? "Enviando…" : accessStatus === "sent" ? "Reenviar correo" : "Enviar correo de nuevo"}
+              </button>
+            </div>
+
+            {/* Enlace de la anamnesis: por si el coach quiere enviarlo también
+                por WhatsApp además del correo automático. */}
+            <p className="mt-4 text-xs text-zinc-500">
+              Enlace de la anamnesis (para enviarlo también por WhatsApp, opcional):
             </p>
-            <div className="mt-4 flex items-center gap-2 rounded-xl border p-3" style={{ borderColor: "var(--line-strong)" }}>
-              <code className="flex-1 truncate text-xs text-zinc-300">{created.anamnesis_url}</code>
-              <button className="btn btn-ghost px-2.5 py-1.5" onClick={() => copy(created.anamnesis_url)}>
+            <div className="mt-1.5 flex items-center gap-2 rounded-xl border p-3" style={{ borderColor: "var(--line-strong)" }}>
+              <code className="flex-1 truncate text-xs text-zinc-300">{created.links.anamnesis_url}</code>
+              <button className="btn btn-ghost px-2.5 py-1.5" onClick={() => copy(created.links.anamnesis_url)}>
                 <Copy size={14} />
               </button>
             </div>
@@ -366,6 +413,43 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
               </button>
             </div>
           </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Resultado del envío del acceso al portal en el modal de alta: verde si salió,
+ *  ámbar/rojo si está desactivado o falló (con la contraseña para dictarla). */
+function PortalAccessResult({
+  status, email, password,
+}: { status: ClientCreatedOut["portal_access"]; email: string; password: string | null }) {
+  const ok = status === "sent";
+  const color = ok ? "var(--brand-accent)" : "#C2453A";
+  const Icon = ok ? CheckCircle2 : AlertTriangle;
+  const text = ok
+    ? `Acceso al portal enviado a ${email}: usuario, contraseña y enlace.`
+    : status === "disabled"
+    ? "El envío de correos está desactivado en el servidor. Pulsa 'Enviar correo de nuevo' para ver la contraseña y dársela tú."
+    : status === "no_email"
+    ? "El cliente no tiene email, así que no se pudo enviar el acceso."
+    : "El acceso se generó pero el email no salió. Reenvíalo o revisa la configuración de correo.";
+  return (
+    <div
+      className="flex items-start gap-2 rounded-xl border p-3"
+      style={{
+        borderColor: `color-mix(in srgb, ${color} 45%, var(--line-strong))`,
+        background: `color-mix(in srgb, ${color} 8%, transparent)`,
+      }}
+    >
+      <Icon size={16} style={{ color }} className="mt-0.5 shrink-0" />
+      <div className="min-w-0 text-xs text-zinc-300">
+        {text}
+        {password && (
+          <div className="mt-1.5">
+            Contraseña del cliente:{" "}
+            <code className="font-mono text-sm font-semibold text-zinc-100">{password}</code>
+          </div>
         )}
       </div>
     </div>
