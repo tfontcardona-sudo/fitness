@@ -138,7 +138,7 @@ export default function DashboardPage() {
             Qué toca hacer
           </h2>
           <span className="text-xs text-zinc-500">
-            {urgentes.length === 0 ? "nada pendiente" : `${urgentes.length} acción${urgentes.length === 1 ? "" : "es"}`}
+            {urgentes.length === 0 ? "nada pendiente" : `${urgentes.length} ${urgentes.length === 1 ? "acción" : "acciones"}`}
           </span>
         </div>
 
