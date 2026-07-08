@@ -763,7 +763,7 @@ def generate_client_plan(
     et = energy_targets(
         sex=client.sex, weight_kg=weight_now, height_cm=client.height_cm,
         age=age, goal_type=client.goal_type, training_days=client.training_days,
-        body_fat_pct=client.body_fat_pct,
+        body_fat_pct=client.body_fat_pct, daily_activity=client.daily_activity_level,
     )
 
     # 3) Biblioteca de ejercicios filtrada (solo aptos para este cliente)
@@ -1007,7 +1007,8 @@ def _do_read_anamnesis(client_id: int, db: Session) -> dict:
     data = extracted.model_dump()
     for f in [
         "sex", "birth_date", "height_cm", "start_weight_kg", "body_fat_pct",
-        "goal_type", "goal_weight_kg", "level", "training_days", "session_max_min",
+        "goal_type", "goal_weight_kg", "level", "training_days", "daily_activity_level",
+        "session_max_min",
         "training_place", "equipment", "diet_mode", "meals_per_day", "food_likes",
         "food_dislikes", "food_allergies", "injuries_notes", "medical_notes",
         "medication_notes", "current_supplements", "sport_history", "lifestyle_notes",

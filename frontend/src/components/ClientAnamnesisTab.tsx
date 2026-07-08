@@ -3,7 +3,7 @@ import { Eye, FileText, Pencil, Save, Sparkles } from "lucide-react";
 import { api, ApiError, getToken } from "../lib/api";
 import type { ClientOut, GoalType, Level } from "../types";
 import { Spinner, useToast } from "./ui";
-import { ageFrom, DIET_LABEL, GOAL_LABEL, LEVEL_LABEL, PLACE_LABEL } from "../lib/format";
+import { ACTIVITY_LABEL, ageFrom, DIET_LABEL, GOAL_LABEL, LEVEL_LABEL, PLACE_LABEL } from "../lib/format";
 
 /**
  * Tab Anamnesis: ficha estructurada del cliente. Es la fuente de datos que la
@@ -142,6 +142,14 @@ export function ClientAnamnesisTab({ client, onSaved }: { client: ClientOut; onS
 
       <Section title="Entrenamiento">
         <Num label="Días por semana" value={current("training_days") as number} onChange={(v) => set("training_days", v as any)} />
+        <Select label="Actividad diaria (fuera del entreno)" value={(current("daily_activity_level") as string) ?? ""} onChange={(v) => set("daily_activity_level", v as any)}
+          options={[
+            ["", "—"],
+            ["sedentary", "Sedentaria — oficina, sentado casi todo el día"],
+            ["light", "Ligera — de pie o caminando a ratos"],
+            ["active", "Activa — trabajo físico, muchos pasos"],
+            ["very_active", "Muy activa — trabajo físico intenso"],
+          ]} />
         <Num label="Duración sesión (min)" value={current("session_max_min") as number} onChange={(v) => set("session_max_min", v as any)} />
         <Select label="Dónde entrena" value={(current("training_place") as string) ?? ""} onChange={(v) => set("training_place", v as any)}
           options={[["", "—"], ["gym", "Gimnasio"], ["home", "Casa"], ["outdoor", "Exterior"]]} />
@@ -244,6 +252,7 @@ function AnamnesisView({ client }: { client: ClientOut }) {
       ])} />
       <VCard color={V_COLORS.entreno} title="Entrenamiento" rows={pairs([
         ["Días / semana", client.training_days ? String(client.training_days) : null],
+        ["Actividad diaria", client.daily_activity_level ? ACTIVITY_LABEL[client.daily_activity_level] ?? client.daily_activity_level : null],
         ["Duración sesión", client.session_max_min ? `${client.session_max_min} min` : null],
         ["Dónde", client.training_place ? PLACE_LABEL[client.training_place] : null],
         ["Material", client.equipment?.length ? client.equipment.join(", ") : null],

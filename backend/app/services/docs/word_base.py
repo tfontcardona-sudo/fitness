@@ -149,11 +149,30 @@ def _header_bg_image(paragraph, image_path: str, width) -> None:
 
 
 def _cant_split_rows(table) -> None:
-    """Evita que una fila se parta entre páginas (texto/celdas cortados)."""
+    """Evita que una fila se parta entre páginas (texto/celdas cortados).
+
+    OJO: úsalo solo en filas BAJAS. Una fila más alta que la página no puede
+    partirse y su contenido sobrante se RECORTA (se pierde texto). Para filas
+    potencialmente altas (cajas de equivalencias, listas largas, texto libre)
+    hay que dejar que la fila se parta entre páginas.
+    """
     for row in table.rows:
         trPr = row._tr.get_or_add_trPr()
         if trPr.find(qn("w:cantSplit")) is None:
             trPr.append(trPr.makeelement(qn("w:cantSplit"), {}))
+
+
+def _mark_header_repeat(table) -> None:
+    """Marca la fila 0 como cabecera repetible (w:tblHeader): si la tabla se
+    parte entre páginas, la cabecera de color se vuelve a dibujar arriba de la
+    página siguiente en lugar de dejar filas sin encabezado."""
+    if not table.rows:
+        return
+    trPr = table.rows[0]._tr.get_or_add_trPr()
+    if trPr.find(qn("w:tblHeader")) is None:
+        el = trPr.makeelement(qn("w:tblHeader"), {})
+        el.set(qn("w:val"), "true")
+        trPr.append(el)
 
 
 def _keep_with_next(paragraph) -> None:
@@ -172,9 +191,14 @@ def _keep_rows_together(table) -> None:
                 _keep_with_next(p)
 
 
-def open_box(doc: Document, fill: str = "F5F0E8"):
+def open_box(doc: Document, fill: str = "F5F0E8", cant_split: bool = False):
     """Crea una caja (cell) a todo el ancho con relleno y devuelve la celda para
-    rellenarla con párrafos. Sin bordes, no se parte entre páginas."""
+    rellenarla con párrafos. Sin bordes.
+
+    cant_split=False (por defecto): si el contenido no cabe en la página, la caja
+    SE PARTE entre páginas conservando el sombreado a ambos lados — nunca se
+    recorta texto. Solo pon cant_split=True para cajas cortas que quieras
+    mantener enteras (p. ej. una nota de una línea)."""
     table = doc.add_table(rows=1, cols=1)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = False
@@ -183,7 +207,8 @@ def open_box(doc: Document, fill: str = "F5F0E8"):
     _shade_cell(cell, fill)
     _set_cell_margins(cell, top=140, bottom=140, left=160, right=160)
     _no_table_borders(table)
-    _cant_split_rows(table)
+    if cant_split:
+        _cant_split_rows(table)
     return cell
 
 
@@ -304,11 +329,20 @@ def add_cards_row(doc: Document, brand: DocBrand, cards: list[tuple[str, str]]) 
 def clean_table(doc: Document, headers: list[str], rows: list[list[str]],
                 brand: DocBrand, col_widths: list[int] | None = None,
                 header_color: str | None = None, header_colors: list[str] | None = None,
-                header_text_color: str = "0A0A0F"):
+                header_text_color: str = "0A0A0F", font_pt: float = 9.5,
+                cant_split_rows: bool = True, keep_together: bool = True):
     """Tabla limpia con cabecera de color, ancho explícito y padding (skill).
 
     header_color: color único de la cabecera (por defecto el de marca).
-    header_colors: color por columna (p. ej. los 4 grupos de alimentos)."""
+    header_colors: color por columna (p. ej. los 4 grupos de alimentos).
+    font_pt: tamaño de fuente de las celdas (baja a 8 en tablas muy anchas).
+    cant_split_rows: True para filas bajas (no se parten a media fila). Ponlo a
+        False cuando alguna fila pueda ser MÁS ALTA que la página (celdas con
+        listas largas o texto libre): así la fila se parte entre páginas en vez
+        de recortarse y perder contenido.
+    keep_together: True intenta mantener la tabla entera en una página. Ponlo a
+        False en tablas potencialmente largas (semanal, grupos de alimentos,
+        cambios) para que paginen limpiamente repitiendo la cabecera."""
     table = doc.add_table(rows=1, cols=len(headers))
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = False
@@ -337,10 +371,15 @@ def clean_table(doc: Document, headers: list[str], rows: list[list[str]],
             _shade_cell(cells[i], "F5F0E8" if r_idx % 2 == 1 else "FFFFFF")
             p = cells[i].paragraphs[0]
             run = p.add_run(str(val))
-            run.font.size = Pt(9.5)
+            run.font.size = Pt(font_pt)
     _thin_borders(table)
-    _cant_split_rows(table)
-    _keep_rows_together(table)  # la tabla no se parte entre páginas
+    # Cabecera repetible: si la tabla se parte, la cabecera de color reaparece
+    # en la página siguiente (nunca filas huérfanas sin encabezado).
+    _mark_header_repeat(table)
+    if cant_split_rows:
+        _cant_split_rows(table)
+    if keep_together:
+        _keep_rows_together(table)  # tablas cortas: enteras en una página
     return table
 
 
@@ -371,8 +410,13 @@ def section_bar(doc: Document, text: str, color: str, text_color: str = "FFFFFF"
     _keep_with_next(p)  # la barra no se queda sola al pie de página
 
 
-def info_box(doc: Document, items, fill: str = "F5F0E8", label_color: str = "8B1A2B") -> None:
-    """Recuadro con fondo crema. items: str (línea) o (label, valor)."""
+def info_box(doc: Document, items, fill: str = "F5F0E8", label_color: str = "8B1A2B",
+             cant_split: bool = False) -> None:
+    """Recuadro con fondo crema. items: str (línea) o (label, valor).
+
+    cant_split=False (por defecto): si el recuadro no cabe en la página, se parte
+    entre páginas conservando el fondo — nunca recorta texto. Ponlo a True solo
+    en recuadros cortos que quieras mantener enteros."""
     table = doc.add_table(rows=1, cols=1)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = False
@@ -397,7 +441,8 @@ def info_box(doc: Document, items, fill: str = "F5F0E8", label_color: str = "8B1
             r = p.add_run(str(item))
             r.font.size = Pt(10)
     _no_table_borders(table)
-    _cant_split_rows(table)
+    if cant_split:
+        _cant_split_rows(table)
 
 
 def setup_branded_pages(doc: Document, banner_path: str | None = None,

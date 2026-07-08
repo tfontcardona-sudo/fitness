@@ -11,10 +11,37 @@ alguno, no se descarta todo el informe (el coach revisa antes de enviarlo).
 from __future__ import annotations
 
 import json
+import re
 
 from pydantic import BaseModel, Field
 
 from app.config import settings
+
+# Emojis y símbolos decorativos: aunque el prompt los prohíbe, saneamos por
+# defensa porque este texto va VERBATIM al PDF y a WhatsApp (donde algunos
+# móviles corrompen el mensaje con emojis). Rango de pictogramas Unicode +
+# variation selectors + zero-width joiners.
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001F000-\U0001FAFF"  # símbolos y pictogramas suplementarios
+    "\U00002600-\U000027BF"  # misceláneos y dingbats
+    "\U0001F1E6-\U0001F1FF"  # banderas regionales
+    "\U0000FE00-\U0000FE0F"  # variation selectors
+    "\U0000200D"             # zero-width joiner
+    "\U00002190-\U000021FF"  # flechas decorativas
+    "]+",
+    flags=re.UNICODE,
+)
+
+
+def _clean_text(s: str | None) -> str | None:
+    """Quita emojis y normaliza espacios sin tocar la puntuación normal."""
+    if not s:
+        return s
+    s = _EMOJI_RE.sub("", s)
+    # colapsa espacios dobles que deja el emoji quitado, respetando saltos de línea
+    s = re.sub(r"[ \t]{2,}", " ", s)
+    return s.strip()
 
 
 class PlanAdjustment(BaseModel):
@@ -63,7 +90,13 @@ class FeedbackAIOutput(BaseModel):
 
 
 _SYSTEM = """Eres el dietista-entrenador (marca DQ) redactando el FEEDBACK quincenal \
-para tu cliente, en castellano, con tono cercano, honesto y motivador (sin adular).
+para tu cliente, en castellano.
+
+TONO Y REDACCIÓN: profesional, serio y cercano, en castellano cuidado, con frases \
+completas y bien construidas. Honesto y constructivo (sin adular). NO uses emojis, \
+símbolos decorativos ni signos de exclamación en cadena. Evita tecnicismos innecesarios \
+y las muletillas; explica con claridad. Cada texto debe leerse redondo, sin frases \
+cortadas a medias.
 
 REGLA CRÍTICA: NO calcules ni inventes números. El backend ya te entrega las métricas \
 (cambio de peso, ritmo semanal, adherencia, energía/sueño, progresión de fuerza). \
@@ -97,9 +130,21 @@ def _user_prompt(payload: dict) -> str:
 
 def generate_feedback_analysis(payload: dict, ai) -> FeedbackAIOutput:
     """Pide a la IA la parte cualitativa del feedback a partir de las métricas."""
-    return ai.generate_json(
+    out = ai.generate_json(
         model=settings.model_heavy,
         system=_SYSTEM,
         user=_user_prompt(payload),
         schema=FeedbackAIOutput,
     )
+    # Saneo defensivo: este texto va verbatim al PDF y a WhatsApp.
+    out.natural_analysis = _clean_text(out.natural_analysis) or ""
+    out.closing_message = _clean_text(out.closing_message) or ""
+    out.answers = _clean_text(out.answers)
+    out.ai_photo_analysis = _clean_text(out.ai_photo_analysis)
+    out.changes_bullets = [c for c in (_clean_text(b) for b in out.changes_bullets) if c]
+    out.next_objectives = [o for o in (_clean_text(o) for o in out.next_objectives) if o]
+    for adj in out.plan_adjustments:
+        adj.area = _clean_text(adj.area) or ""
+        adj.change = _clean_text(adj.change) or ""
+        adj.reason = _clean_text(adj.reason) or ""
+    return out

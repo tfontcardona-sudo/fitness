@@ -165,6 +165,42 @@ def _client_block(ctx: ClientContext) -> str:
     )
 
 
+def _pathology_rules(clinical_notes: str) -> str:
+    """Pautas ESPECÍFICAS por patología detectada en las notas clínicas. Reglas
+    dietéticas concretas (no consejo médico) que la IA debe aplicar; el criterio
+    médico del cliente siempre prevalece."""
+    if not clinical_notes:
+        return ""
+    import unicodedata
+    t = unicodedata.normalize("NFKD", clinical_notes).encode("ascii", "ignore").decode("ascii").lower()
+    rules: list[str] = []
+    if any(k in t for k in ("diabet", "glucemia", "insulina", "metformina", "hba1c", "prediabet", "resistencia a la insulina")):
+        rules.append(
+            "DIABETES / control glucémico: prioriza carbohidratos de ÍNDICE GLUCÉMICO "
+            "BAJO (integrales, legumbres, avena, verduras, fruta entera); REPARTE los "
+            "carbohidratos entre las comidas (evita concentrarlos) y acompáñalos "
+            "siempre de proteína, grasa y fibra para amortiguar el pico; EVITA azúcares "
+            "y refinados de absorción rápida salvo indicación médica expresa; horarios "
+            "de comida regulares. No prescribas ayunos prolongados."
+        )
+    if any(k in t for k in ("hipotiroid", "levotirox", "eutirox", "tiroides", "tirox")):
+        rules.append(
+            "HIPOTIROIDISMO: el gasto puede ser algo menor y la adherencia cuesta más; "
+            "sé CONSERVADOR con el déficit (evita déficits agresivos) y prioriza "
+            "proteína alta y comida real; recuerda (nota educativa) tomar la "
+            "levotiroxina EN AYUNAS y separada ~30-60 min de café, calcio, hierro y "
+            "soja/derivados; asegura micronutrientes (selenio, zinc)."
+        )
+    if any(k in t for k in ("hipertiroid",)):
+        rules.append(
+            "HIPERTIROIDISMO: las necesidades energéticas pueden estar elevadas; no "
+            "apliques déficits agresivos y asegura suficiente energía y proteína."
+        )
+    if not rules:
+        return ""
+    return "\nPAUTAS ESPECÍFICAS POR PATOLOGÍA (aplícalas en la dieta):\n- " + "\n- ".join(rules) + "\n"
+
+
 def _clinical_block(ctx: ClientContext) -> str:
     """Bloque CLÍNICO obligatorio: lesiones, patologías, medicación y suplementos.
     Es lo que condiciona la SEGURIDAD del plan — la IA no puede ignorarlo."""
@@ -180,6 +216,7 @@ def _clinical_block(ctx: ClientContext) -> str:
         "por completo cualquier alimento con alergia o intolerancia declarada y "
         "tener en cuenta patologías (p. ej. tiroides, digestivas) y la medicación. "
         "(3) Si algo limita el volumen o la intensidad, refléjalo en la progresión.\n"
+        f"{_pathology_rules(ctx.clinical_notes)}"
     )
 
 

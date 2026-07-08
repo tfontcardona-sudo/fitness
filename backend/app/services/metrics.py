@@ -64,7 +64,8 @@ def bmr(
 
 
 def activity_factor_for_days(training_days: int) -> float:
-    """Mapea días de entrenamiento/semana a factor de actividad (E.1)."""
+    """Mapea días de entrenamiento/semana a factor de actividad (E.1). Retrocompat:
+    se usa cuando no se conoce la actividad DIARIA (NEAT) del cliente."""
     if training_days <= 1:
         return ACTIVITY_FACTORS["sedentary"]
     if training_days <= 2:
@@ -76,8 +77,31 @@ def activity_factor_for_days(training_days: int) -> float:
     return ACTIVITY_FACTORS["very_active"]
 
 
-def tdee(bmr_value: float, training_days: int) -> float:
-    return round(bmr_value * activity_factor_for_days(training_days), 1)
+# Actividad DIARIA fuera del entreno (NEAT: trabajo, pasos, tareas). Separarla de
+# los días de entreno evita el sesgo de contar solo el gimnasio: un oficinista
+# que entrena 6 días NO gasta como un mensajero que entrena 2. El entreno suma
+# aparte (~0,03 por sesión/semana). Referencia: NEAT domina la variabilidad del
+# gasto (Levine 2002); factores de ocupación tipo Tinsley/Trexler.
+NEAT_FACTORS = {
+    "sedentary": 1.25,    # oficina / sentado casi todo el día
+    "light": 1.40,        # de pie o caminando a ratos (comercio, docencia)
+    "active": 1.55,       # trabajo físico moderado, muchos pasos
+    "very_active": 1.70,  # trabajo físico intenso (obra, mensajería, campo)
+}
+_EXERCISE_PER_DAY = 0.03
+
+
+def activity_factor(training_days: int, daily_activity: str | None = None) -> float:
+    """Factor de actividad total = NEAT (ocupación diaria) + entreno. Si no se
+    conoce la actividad diaria, cae al mapeo por días (retrocompatible)."""
+    if not daily_activity:
+        return activity_factor_for_days(training_days)
+    base = NEAT_FACTORS.get(daily_activity, NEAT_FACTORS["light"])
+    return round(min(1.95, base + _EXERCISE_PER_DAY * max(0, training_days or 0)), 3)
+
+
+def tdee(bmr_value: float, training_days: int, daily_activity: str | None = None) -> float:
+    return round(bmr_value * activity_factor(training_days, daily_activity), 1)
 
 
 def age_from_birth(birth: date, today: date | None = None) -> int:
@@ -97,15 +121,17 @@ class EnergyTargets:
 def energy_targets(
     sex: str, weight_kg: float, height_cm: float, age: int, goal_type: str,
     training_days: int, body_fat_pct: float | None = None,
+    daily_activity: str | None = None,
 ) -> EnergyTargets:
     """Objetivo calórico de referencia que el backend entrega a la IA.
 
     La IA puede afinar dentro de los guardrails, pero parte de esta base
-    objetiva en lugar de inventarla.
+    objetiva en lugar de inventarla. El TDEE combina la actividad DIARIA
+    (ocupación/NEAT) con los días de entreno cuando se conoce.
     """
     use_katch = body_fat_pct is not None and 3 <= body_fat_pct <= 60
     b = bmr(sex, weight_kg, height_cm, age, body_fat_pct)
-    t = tdee(b, training_days)
+    t = tdee(b, training_days, daily_activity)
     lo, hi = GOAL_ADJUSTMENT.get(goal_type, (0.0, 0.05))
     mid = (lo + hi) / 2
     if goal_type == "fat_loss":

@@ -71,6 +71,7 @@ class AnamnesisSubmit(BaseModel):
     priority_zones: str | None = None  # se guarda en lifestyle_notes etiquetado
     # Entrenamiento
     training_days: int = Field(ge=2, le=6)
+    daily_activity_level: str | None = None  # sedentary|light|active|very_active
     session_max_min: int = Field(ge=30, le=180)
     training_place: TrainingPlace
     equipment: list[str] = Field(default_factory=list)
@@ -105,6 +106,7 @@ class ClientUpdate(BaseModel):
     goal_deadline: date | None = None
     level: Level | None = None
     training_days: int | None = Field(default=None, ge=2, le=6)
+    daily_activity_level: str | None = None  # sedentary|light|active|very_active
     session_max_min: int | None = Field(default=None, ge=30, le=180)
     training_place: TrainingPlace | None = None
     equipment: list[str] | None = None
@@ -144,6 +146,7 @@ class ClientOut(BaseModel):
     goal_deadline: date | None
     level: Level | None
     training_days: int | None
+    daily_activity_level: str | None = None
     session_max_min: int | None
     training_place: TrainingPlace | None
     equipment: list[str] | None

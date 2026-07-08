@@ -261,6 +261,7 @@ export interface ClientOut {
   goal_deadline: string | null;
   level: Level | null;
   training_days: number | null;
+  daily_activity_level: string | null;
   session_max_min: number | null;
   training_place: TrainingPlace | null;
   equipment: string[] | null;
