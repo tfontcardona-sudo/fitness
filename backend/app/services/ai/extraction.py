@@ -53,6 +53,10 @@ class AnamnesisExtraction(BaseModel):
     # --- Entrenamiento (PDF: "Experiencia con pesas" / "Entrenamiento actual y preferencias") ---
     level: str | None = Field(None, description="beginner|intermediate|advanced")
     training_days: int | None = Field(None, description="Días que puede entrenar por semana")
+    daily_activity_level: str | None = Field(
+        None, description="Actividad DIARIA fuera del entreno según el trabajo/estilo de "
+        "vida: sedentary (oficina/sentado), light (de pie o caminando a ratos), "
+        "active (trabajo físico, muchos pasos), very_active (trabajo físico intenso)")
     session_max_min: int | None = Field(None, description="Duración media/máxima de sesión en minutos")
     training_place: str | None = Field(None, description="gym|home|outdoor")
     equipment: list[str] = Field(
@@ -167,6 +171,10 @@ adelgazar→"fat_loss"; ganar músculo/volumen→"muscle_gain"; recomposición/m
 "intermediate"; Avanzado→"advanced".
   · training_place ← "Dónde entrenas": Gimnasio/gym→"gym"; Casa→"home"; Exterior→"outdoor".
   · training_days ← cuenta los días marcados en "Días que puedes entrenar" (L M X J V S D).
+  · daily_activity_level ← deduce la actividad DIARIA por el trabajo/estilo de vida: \
+oficina o sentado→"sedentary"; de pie o caminando a ratos (comercio, docencia)→"light"; \
+trabajo físico con muchos pasos→"active"; trabajo físico intenso (obra, mensajería, campo)→\
+"very_active". Si no hay información suficiente, déjalo en null.
   · session_max_min ← "Duración media de la sesión", en minutos.
   · diet_mode ← bloque de dieta: si menciona equivalencias/flexibilidad→"flexible_7"; si pide \
 menú cerrado→"strict". Si no está claro, usa "flexible_7".

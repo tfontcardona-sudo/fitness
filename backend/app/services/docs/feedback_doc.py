@@ -16,7 +16,7 @@ import os
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.shared import Inches, Pt
+from docx.shared import Inches, Pt, RGBColor
 
 from app.services.docs import charts
 from app.services.docs.word_base import (
@@ -27,6 +27,7 @@ from app.services.docs.word_base import (
     add_section_heading,
     clean_table,
     init_document,
+    _cant_split_rows,
 )
 
 
@@ -126,10 +127,13 @@ def generate_feedback_doc(
             [str(a.get("area", "")), str(a.get("change", "")), str(a.get("reason", ""))]
             for a in plan_adjustments
         ]
+        # "Cambio"/"Por qué" son texto libre y pueden ser largos: filas
+        # partibles y tabla paginable con cabecera repetida (no recorta texto).
         clean_table(
             doc, ["Área", "Cambio", "Por qué"], rows, brand,
             header_color=brand.color_primary, header_text_color="FFFFFF",
             col_widths=[1800, 3600, 3626],
+            cant_split_rows=False, keep_together=False,
         )
 
     # 6) Dudas + objetivos + cierre
@@ -159,7 +163,9 @@ def _add_photo_pair(doc: Document, before_path: str, after_path: str) -> None:
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run = p.add_run(label)
         run.font.size = Pt(9)
-        run.font.color.rgb = run.font.color.rgb  # mantiene color por defecto
+        run.font.color.rgb = RGBColor(0x6B, 0x6B, 0x76)  # gris para las etiquetas
+    # Etiquetas y fotos juntas: la fila de imágenes no se separa de su rótulo.
+    _cant_split_rows(table)
     cells = table.rows[1].cells
     for i, path in enumerate((before_path, after_path)):
         p = cells[i].paragraphs[0]

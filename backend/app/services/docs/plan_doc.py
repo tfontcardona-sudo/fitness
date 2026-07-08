@@ -325,9 +325,12 @@ def generate_plan_doc(
             it.get("detail") or it.get("change") or "",
             it.get("reason") or "",
         ] for it in aa_items]
+        # "Qué cambia"/"Por qué" son texto libre (IA/coach): pueden ser largos,
+        # así que las filas se parten y la tabla pagina con cabecera repetida.
         clean_table(doc, ["Área", "Qué cambia", "Por qué"], rows, brand,
                     header_color=WINE, header_text_color="FFFFFF",
-                    col_widths=[1400, 3800, 3826])
+                    col_widths=[1400, 3800, 3826],
+                    cant_split_rows=False, keep_together=False)
 
     if meals:
         section_bar(doc, "Estructura diaria", GOLD)
@@ -335,14 +338,18 @@ def generate_plan_doc(
                  _estrategia(m.get("name", ""))] for m in meals]
         clean_table(doc, ["Hora", "Toma", "Estrategia"], rows, brand,
                     header_color=WINE, header_text_color="FFFFFF",
-                    col_widths=[1500, 3000, 4526])
+                    col_widths=[1500, 3000, 4526], keep_together=False)
 
-    # Alimentos por grupos (plantilla, filtrada con precisión por alergias)
+    # Alimentos por grupos (plantilla, filtrada con precisión por alergias).
+    # Es UNA sola fila con listas largas: puede ser más alta que la página, así
+    # que la fila debe poder partirse (cant_split_rows=False) y la tabla paginar
+    # repitiendo la cabecera (keep_together=False) para no recortar alimentos.
     section_bar(doc, "Alimentos por grupos", WINE)
     names = list(FOOD_GROUPS.keys())
     clean_table(
         doc, names, [[_food_group_text(n, blocked) for n in names]],
         brand, header_colors=FOOD_GROUP_COLORS, header_text_color="FFFFFF",
+        cant_split_rows=False, keep_together=False,
     )
 
     # El plato saludable (plantilla + foto)
@@ -436,7 +443,7 @@ def generate_plan_doc(
                  f"RIR {w.get('rir_target','')}", w.get("volume_note", "")] for w in prog]
         clean_table(doc, ["Semana", "Enfoque", "Carga", "RIR", "Notas"], rows, brand,
                     header_color=WINE, header_text_color="FFFFFF",
-                    col_widths=[1100, 1800, 1100, 1100, 3926])
+                    col_widths=[1100, 1800, 1100, 1100, 3926], keep_together=False)
 
     for sess in training.get("sessions", []):
         section_bar(doc, f"{sess.get('day','')} · {sess.get('name','')}", WINE, size=10)
@@ -453,7 +460,7 @@ def generate_plan_doc(
         if rows:
             clean_table(doc, ["Ejercicio", "Series", "RIR", "Descanso", "Clave técnica"], rows,
                         brand, header_color=WINE, header_text_color="FFFFFF",
-                        col_widths=[2600, 1300, 1100, 1100, 2926])
+                        col_widths=[2600, 1300, 1100, 1100, 2926], keep_together=False)
         if sess.get("cooldown"):
             info_box(doc, [("Vuelta a la calma", sess["cooldown"])])
 
@@ -567,5 +574,8 @@ def _weekly_section(doc: Document, brand: DocBrand, diet_mode: str | None,
             rows.append([m.get("name", f"Comida {m.get('slot')}")] + cells)
 
     if rows:
+        # 8 columnas estrechas: fuente 8pt para que los nombres de plato no
+        # desborden, y paginación con cabecera repetida (keep_together=False)
+        # por si hay muchas tomas.
         clean_table(doc, headers, rows, brand, header_color=WINE, header_text_color="FFFFFF",
-                    col_widths=[1500] + [1075] * 7)
+                    col_widths=[1500] + [1075] * 7, font_pt=8, keep_together=False)

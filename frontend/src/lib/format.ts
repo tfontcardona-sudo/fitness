@@ -47,6 +47,13 @@ export const PLACE_LABEL: Record<TrainingPlace, string> = {
   outdoor: "Exterior",
 };
 
+export const ACTIVITY_LABEL: Record<string, string> = {
+  sedentary: "Sedentaria (oficina)",
+  light: "Ligera (de pie a ratos)",
+  active: "Activa (trabajo físico)",
+  very_active: "Muy activa (físico intenso)",
+};
+
 export const DIET_LABEL: Record<DietMode, string> = {
   flexible_7: "Flexible (7 opciones)",
   strict: "Estricta",

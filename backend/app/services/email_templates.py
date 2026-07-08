@@ -12,6 +12,22 @@ correo. El logo se referencia por URL pública si está disponible.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from html import escape
+
+
+def _esc(value: str | None) -> str:
+    """Escapa texto para insertarlo con seguridad en el HTML del email.
+
+    Sin esto, un nombre o un mensaje libre del cliente con `<`, `>` o `&`
+    rompería el maquetado del correo."""
+    return escape(value or "")
+
+
+def _esc_ml(value: str | None) -> str:
+    """Como _esc pero preserva los saltos de línea del texto libre convirtiéndolos
+    en <br> (el HTML colapsa los `\\n`, dejando ilegible un mensaje de varias
+    líneas escrito por el cliente)."""
+    return _esc(value).replace("\n", "<br>")
 
 
 @dataclass
@@ -100,6 +116,7 @@ def portal_access(brand: Brand, first_name: str, login_url: str,
 
 
 def plan_published(brand: Brand, first_name: str, portal_url: str, is_new_month: bool) -> tuple[str, str]:
+    first_name = _esc(first_name)
     if is_new_month:
         subject = f"Tu nuevo plan del mes ya está listo · {brand.name}"
         intro = (
@@ -118,6 +135,7 @@ def plan_published(brand: Brand, first_name: str, portal_url: str, is_new_month:
 
 
 def reminder_no_logs(brand: Brand, first_name: str, portal_url: str, days_left: int) -> tuple[str, str]:
+    first_name = _esc(first_name)
     subject = f"Un recordatorio rápido de tu seguimiento · {brand.name}"
     body = (
         f"<p>Hola {first_name}, hemos visto que llevas unos días sin registrar tu "
@@ -129,6 +147,7 @@ def reminder_no_logs(brand: Brand, first_name: str, portal_url: str, days_left: 
 
 
 def closing_due(brand: Brand, first_name: str, portal_url: str, period_index: int) -> tuple[str, str]:
+    first_name = _esc(first_name)
     subject = f"Es momento de cerrar tu período · {brand.name}"
     body = (
         f"<p>Hola {first_name}, tu período actual ha llegado a su fin. Para preparar "
@@ -140,6 +159,7 @@ def closing_due(brand: Brand, first_name: str, portal_url: str, period_index: in
 
 
 def feedback_ready(brand: Brand, first_name: str, portal_url: str) -> tuple[str, str]:
+    first_name = _esc(first_name)
     subject = f"Tu informe de progreso está listo · {brand.name}"
     body = (
         f"<p>Hola {first_name}, ya tienes tu informe de seguimiento con tus gráficas "
@@ -152,8 +172,8 @@ def feedback_ready(brand: Brand, first_name: str, portal_url: str) -> tuple[str,
 def plan_republished(brand: Brand, first_name: str, portal_url: str, change_summary: str) -> tuple[str, str]:
     subject = f"Tu planificación se ha actualizado · {brand.name}"
     body = (
-        f"<p>Hola {first_name}, hemos actualizado tu planificación:</p>"
-        f"<p style='background:#f4f4f7;border-radius:10px;padding:12px 14px'>{change_summary}</p>"
+        f"<p>Hola {_esc(first_name)}, hemos actualizado tu planificación:</p>"
+        f"<p style='background:#f4f4f7;border-radius:10px;padding:12px 14px'>{_esc_ml(change_summary)}</p>"
         "<p>Ya puedes ver los cambios en tu portal.</p>"
     )
     return subject, _shell(brand, "Plan actualizado", body, portal_url, "Ver cambios")
@@ -162,21 +182,23 @@ def plan_republished(brand: Brand, first_name: str, portal_url: str, change_summ
 # ------------------------------------------------------------ al coach ----
 
 def coach_change_request(brand: Brand, client_name: str, message: str, dashboard_url: str) -> tuple[str, str]:
+    name = _esc(client_name)
     subject = f"[Acción] {client_name} ha solicitado un ajuste"
     body = (
-        f"<p>El cliente <strong>{client_name}</strong> ha enviado una solicitud de "
+        f"<p>El cliente <strong>{name}</strong> ha enviado una solicitud de "
         f"ajuste:</p><p style='background:#f4f4f7;border-radius:10px;padding:12px 14px'>"
-        f"{message}</p><p>Revísala y actualiza el plan cuando lo resuelvas (queda activo al guardar).</p>"
+        f"{_esc_ml(message)}</p><p>Revísala y actualiza el plan cuando lo resuelvas (queda activo al guardar).</p>"
     )
     return subject, _shell(brand, "Solicitud de ajuste", body, dashboard_url, "Abrir panel")
 
 
 def coach_at_risk(brand: Brand, client_name: str, reason: str, dashboard_url: str) -> tuple[str, str]:
+    name = _esc(client_name)
     subject = f"[Aviso] {client_name} está en riesgo de abandono"
     body = (
-        f"<p>El cliente <strong>{client_name}</strong> ha pasado a estado "
+        f"<p>El cliente <strong>{name}</strong> ha pasado a estado "
         f"<strong>at_risk</strong>:</p>"
-        f"<p style='background:#fff4f4;border-radius:10px;padding:12px 14px'>{reason}</p>"
+        f"<p style='background:#fff4f4;border-radius:10px;padding:12px 14px'>{_esc_ml(reason)}</p>"
         "<p>Quizá convenga un contacto personal para recuperar la adherencia.</p>"
     )
     return subject, _shell(brand, "Cliente en riesgo", body, dashboard_url, "Abrir panel")

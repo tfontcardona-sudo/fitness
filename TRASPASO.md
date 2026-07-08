@@ -1,7 +1,7 @@
 # Documento de traspaso — Fitness System (DQ / David Quiceno)
 
 > Objetivo de este doc: que otra sesión de IA (Fable u otra) pueda **continuar el trabajo sin perder contexto**.
-> Última actualización: 2026-07-08 (3ª). Autor del último tramo: Claude (gran auditoría: lesiones→contraindicaciones reales, guardrail de alérgenos, suelo calórico, integridad de períodos, fechas locales y hardening de seguridad).
+> Última actualización: 2026-07-08 (4ª). Autor del último tramo: Claude (nivel de actividad diaria/NEAT en la anamnesis + TDEE; pautas específicas de diabetes y tiroides en la IA; calidad de PDFs y textos IA: tono profesional/serio sin emojis, tablas que paginan sin recortar y con cabecera repetida, escape del texto libre en emails).
 > **PRODUCCIÓN:** el sistema está desplegado en `https://app.dqrassessories.com` (VPS Hetzner
 > `46.225.57.25`, repo en `/root/fitness`, ver `DEPLOY.md`). Actualizar: `cd /root/fitness && git pull && docker compose up -d --build`.
 > Cliente/marca: **David Quiceno (DQ)** — asesoría de fitness. Colores marca: **vino `#8B1A2B`**, **azul `#4A7BA8`**.
@@ -60,6 +60,9 @@
 **Migraciones Alembic** (`backend/alembic/versions/`):
 - `0002_tracking_fields.py` — campos de tracking en DailyLog + Period.
 - `0003_coach_reviewed_at.py` — `periods.coach_reviewed_at`.
+- `0009_portal_login.py` — `clients.portal_password_hash`, `portal_access_sent_at`.
+- `0010_period_unique.py` — un solo período abierto por cliente + `UNIQUE(client_id, period_index)` (con dedupe previo).
+- `0011_daily_activity.py` — `clients.daily_activity_level` (NEAT: sedentary|light|active|very_active). **Idempotente.**
 - Se aplican solas al arrancar `api`. Manual: `docker compose exec api sh -c "cd /code && alembic upgrade head"`.
 
 ---
@@ -870,6 +873,72 @@ Arreglados los reales (críticos + alto valor); verificado todo junto.
 **Verificación:** backend imports OK; **backtest 1530/0**; **E2E 51/51 · 0
 errores JS**; pytest sin fallos nuevos; migración 0010 idempotente; filtro de
 lesión y guardrail de alérgenos probados; login y unicidad de email OK.
+
+## 10.k Tramo 2026-07-08 (4ª) — Actividad diaria (NEAT), diabetes/tiroides y calidad de PDFs/textos IA
+
+Tres frentes pedidos por DQ: (A) nivel de actividad DIARIA entendible en la
+anamnesis y que afine el TDEE; (B) pautas específicas de diabetes y tiroides en
+la generación IA; (C) que PDFs (anamnesi/planificación/revisión) y textos IA
+(revisión, planificación, feedback, WhatsApp, email del portal) queden bien
+escritos, con tono profesional/serio, sin cortar párrafos/tablas y limpios.
+
+**A. Nivel de actividad diaria (NEAT) → TDEE más real:**
+- `clients.daily_activity_level` (`sedentary|light|active|very_active`) — migración
+  `0011` idempotente. Antes el TDEE salía SOLO de los días de entreno; ahora
+  separa la actividad de la OCUPACIÓN (NEAT) del ejercicio.
+- `services/metrics.py`: `NEAT_FACTORS` (1.25/1.40/1.55/1.70) + `activity_factor()`
+  = base NEAT + 0.03 × días de entreno (tope 1.95). `tdee()` y `energy_targets()`
+  aceptan `daily_activity`. Si es nulo, cae al mapeo por días de siempre (retro-
+  compatible; el suelo calórico sigue vigente).
+- Anamnesis: `AnamnesisSubmit`/`ClientUpdate`/`ClientOut` + extracción IA
+  (`extraction.py`) + `ClientAnamnesisTab.tsx` (desplegable con descripciones
+  entendibles: "Sedentaria (oficina)"…, y fila en la ficha) + `format.ts`
+  (`ACTIVITY_LABEL`) + `types.ts`.
+
+**B. Diabetes y tiroides (IA):**
+- `services/ai/generator._pathology_rules(clinical_notes)` — normaliza el texto
+  (sin tildes) y detecta diabetes (`diabet`, `glucemia`, `insulina`, `metformina`,
+  `hba1c`, `prediabet`, `resistencia a la insulina`), hipotiroidismo (`hipotiroid`,
+  `levotirox`, `eutirox`, `tiroides`) e hipertiroidismo. Añade directivas concretas
+  al bloque clínico del prompt: diabetes → carbohidratos de IG bajo, repartidos y
+  acompañados de proteína/grasa/fibra, sin refinados, sin ayunos; hipotiroidismo →
+  déficit conservador, proteína alta, nota de levotiroxina en ayunas separada de
+  café/calcio/hierro/soja, micronutrientes; hipertiroidismo → sin déficits
+  agresivos. Integrado en `_clinical_block` (se suma a lesiones/medicación que ya
+  iban SIEMPRE).
+
+**C. Calidad de PDFs y textos IA** (auditoría a nivel de código + `document.xml`):
+- **Recorte de texto en cajas/tablas del PDF (era pérdida de contenido):** una
+  tabla de UNA fila con `w:cantSplit` que superaba el alto de página **recortaba**
+  el sobrante (no paginaba). `word_base.open_box`/`info_box` ahora **NO** marcan
+  `cantSplit` por defecto (se parten conservando el sombreado); `clean_table` gana
+  `cant_split_rows`/`keep_together`/`font_pt`. En `plan_doc`/`feedback_doc` las
+  tablas potencialmente altas (Alimentos por grupos, Cambios del plan, Estructura
+  diaria, semanal, progresión, ejercicios, cuadrícula de cambios) paginan sin
+  recortar.
+- **Cabecera repetida:** `clean_table` marca la fila 0 como `w:tblHeader` → si la
+  tabla se parte entre páginas, la cabecera de color reaparece (antes: 0 tablas la
+  repetían; filas huérfanas sin encabezado). Tabla semanal a `Pt(8)` para que 8
+  columnas no desborden.
+- **Tono profesional/serio + sin emojis:** `prompts.SYSTEM_BASE` y `feedback._SYSTEM`
+  refuerzan castellano cuidado, frases completas (no cortadas), sin emojis ni
+  símbolos decorativos (corrompen PDF/WhatsApp) ni exclamaciones en cadena. Saneo
+  DEFENSIVO de emojis en la salida de feedback (`feedback._clean_text`) porque va
+  verbatim a PDF y WhatsApp.
+- **Emails:** escape HTML del texto libre del cliente/coach + `\n`→`<br>` en
+  `email_templates` (`coach_change_request`, `plan_republished`, `coach_at_risk`) y
+  del nombre en todas las plantillas de cliente (antes un `<`/`&` o un mensaje de
+  varias líneas rompía el maquetado). Limpieza del no-op de color en la pareja de
+  fotos antes/después (gris real) + `cantSplit` para que rótulo y foto no se
+  separen.
+
+**Verificación:** backend imports OK; `activity_factor`/`energy_targets` con NEAT
+y `_pathology_rules` probados; **PDF de estrés** (6 comidas, equivalencias grandes,
+tabla semanal 8 col, cuadrículas de texto largo) → docx válido, `tblHeader` presente
+y `cantSplit` reducido (ya no recorta); saneo de emojis y escape de emails probados;
+frontend `tsc -b` + `vite build` OK; **backtest 1530/0**; **pytest 97 pasan, 11 fallos
+PRE-EXISTENTES idénticos con y sin mis cambios** (fixtures IA scripted + timing de
+push, no relacionados); migración 0011 idempotente aplicada a head.
 
 ## 11. Mapa rápido de archivos tocados en el último tramo
 

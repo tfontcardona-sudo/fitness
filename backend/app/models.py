@@ -74,6 +74,8 @@ class Client(Base):
     goal_review_snoozed_on: Mapped[date | None] = mapped_column(Date)
     level: Mapped[str | None] = mapped_column(String(20))  # beginner|intermediate|advanced
     training_days: Mapped[int | None] = mapped_column(Integer)
+    # Actividad DIARIA fuera del entreno (NEAT): sedentary|light|active|very_active
+    daily_activity_level: Mapped[str | None] = mapped_column(String(20))
     session_max_min: Mapped[int | None] = mapped_column(Integer)
     training_place: Mapped[str | None] = mapped_column(String(20))  # gym|home|outdoor
     equipment: Mapped[list[str] | None] = mapped_column(ARRAY(String))
