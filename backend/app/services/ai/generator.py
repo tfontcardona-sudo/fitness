@@ -114,6 +114,35 @@ def _exercise_lookup(library: list[dict]) -> dict[int, dict]:
     return {ex["id"]: ex for ex in library}
 
 
+def _strip_allergens_from_bank(meals, allergies: list[str] | None) -> int:
+    """Retira del banco flexible las OPCIONES y ALIMENTOS de equivalencias que
+    contengan un alérgeno declarado, siempre que quede una alternativa segura en
+    ese slot/grupo. Así un alérgeno no llega al portal ni al PDF (ambos leen el
+    banco). Si no queda alternativa segura, se conserva y el flag ⚠ ALÉRGENO
+    (violación) queda para que el coach lo resuelva. Devuelve cuántos retiró."""
+    if not allergies:
+        return 0
+    removed = 0
+    for s in meals.slots:
+        opts = s.options or []
+        if opts:
+            safe = [o for o in opts if gr.option_allergen(o.model_dump(), allergies) is None]
+            if safe and len(safe) < len(opts):
+                removed += len(opts) - len(safe)
+                s.options = safe
+        eq = s.equivalences
+        if eq and eq.groups:
+            for g in eq.groups:
+                items = g.items or []
+                if not items:
+                    continue
+                safe_i = [it for it in items if gr.food_allergen(it.food, allergies) is None]
+                if safe_i and len(safe_i) < len(items):
+                    removed += len(items) - len(safe_i)
+                    g.items = safe_i
+    return removed
+
+
 def _slot_targets(core: PlanCoreOutput) -> dict[int, dict]:
     """{slot: {kcal, protein_g, carbs_g, fat_g}} desde el núcleo, para validar
     opciones de comida con ±5%."""
@@ -450,6 +479,15 @@ def generate_monthly_plan(ctx: ClientContext, ai: AIClient) -> GeneratedPlan:
     # coach revise; no bloquean (re-pedir opción por opción se hace en Fase 4
     # cuando hay scheduler/SSE; aquí lo dejamos como flag accionable).
     flags += meal_report.as_flags()
+
+    # SEGURIDAD: retira del banco cualquier opción/alimento con un alérgeno
+    # declarado (cuando queda alternativa segura), para que un alérgeno NUNCA
+    # llegue al portal ni al PDF por un descuido de la IA. Si un slot quedara sin
+    # alternativa segura, se conserva y el flag "⚠ ALÉRGENO" avisa al coach.
+    if isinstance(meals, MealsFlexibleOutput):
+        removed = _strip_allergens_from_bank(meals, ctx.food_allergies)
+        if removed:
+            flags.append(f"seguridad: retiradas {removed} opción(es)/alimento(s) con alérgenos del banco")
 
     # ③ Educativo
     try:

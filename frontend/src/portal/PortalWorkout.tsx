@@ -70,7 +70,7 @@ export function PortalWorkout({ api, brand, periodStatus = null }: {
       let changed = false;
       const next = { ...s };
       for (const ex of selected.exercises) {
-        if (!next[ex.exercise_id]) {
+        if (!next[ex.exercise_id] || next[ex.exercise_id].length === 0) {
           next[ex.exercise_id] = Array.from({ length: Math.max(1, Math.min(20, ex.sets || 3)) }, () => ({ weight_kg: null, reps: null }));
           changed = true;
         }
@@ -132,7 +132,12 @@ export function PortalWorkout({ api, brand, periodStatus = null }: {
   function removeSet(exId: number, idx: number) {
     if (readOnly) return;
     setSets((s) => {
-      const next = { ...s, [exId]: s[exId].filter((_, i) => i !== idx) };
+      const filtered = (s[exId] ?? []).filter((_, i) => i !== idx);
+      // Nunca dejar el ejercicio SIN filas (no hay botón de "añadir serie"): al
+      // borrar la última se deja una fila vacía, así el registro sigue siendo
+      // posible y no queda un ejercicio irrecuperable en la sesión.
+      const rows = filtered.length ? filtered : [{ weight_kg: null, reps: null }];
+      const next = { ...s, [exId]: rows };
       flush(next);
       return next;
     });

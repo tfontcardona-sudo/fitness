@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Pencil, Save, X, Flag, Copy, Archive } from "lucide-react";
 import { api, getToken } from "../lib/api";
-import { openWhatsApp, planAndFeedbackMessage, planMessage, waPhone } from "../lib/whatsapp";
+import { openWhatsApp, planAndFeedbackMessage, planMessage, waPhone, waUrl } from "../lib/whatsapp";
 import { GOAL_LABEL, goalDays, goalReviewDue, planMonthLabel } from "../lib/format";
 import { deficitLabel, macroPct, MACRO_TOTAL_TOLERANCE } from "../lib/nutritionTargets";
 import { isCriticalLine } from "../lib/clinical";
@@ -117,15 +117,20 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
       toast.push("Añade el teléfono del cliente en su ficha para enviarlo por WhatsApp", "error");
       return;
     }
+    // Abrimos la pestaña YA, dentro del gesto de clic: si esperáramos al await de
+    // planPdfUrl(), Safari/iOS bloquearían el window.open y el botón no haría nada.
+    const win = window.open("", "_blank");
     try {
       const pdfUrl = await planPdfUrl();
       const adaptedIdx = plan?.nutrition?.applied_adjustments?.period_index ?? null;
-      openWhatsApp(phone, planMessage(client.full_name, pdfUrl, adaptedIdx, plan?.month_index ?? 1));
+      const url = waUrl(phone, planMessage(client.full_name, pdfUrl, adaptedIdx, plan?.month_index ?? 1));
+      if (win) win.location.href = url; else openWhatsApp(phone, planMessage(client.full_name, pdfUrl, adaptedIdx, plan?.month_index ?? 1));
       // El enlace genera el PDF al abrirse → el cliente recibe la versión
       // vigente: el aviso de re-descarga queda resuelto.
       setNeedsDownload(false);
       toast.push("WhatsApp abierto con el enlace del plan — dale a enviar");
     } catch {
+      if (win) win.close();
       toast.push("No se pudo obtener el enlace del plan", "error");
     }
   }
@@ -139,10 +144,12 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
       toast.push("Añade el teléfono del cliente en su ficha para enviarlo por WhatsApp", "error");
       return;
     }
+    const win = window.open("", "_blank"); // ver nota en sendPlanWhatsApp
     try {
       const pdfUrl = await planPdfUrl();
       const adaptedIdx = plan?.nutrition?.applied_adjustments?.period_index ?? null;
-      openWhatsApp(phone, planAndFeedbackMessage(client.full_name, fb.content, pdfUrl, adaptedIdx));
+      const url = waUrl(phone, planAndFeedbackMessage(client.full_name, fb.content, pdfUrl, adaptedIdx));
+      if (win) win.location.href = url; else openWhatsApp(phone, planAndFeedbackMessage(client.full_name, fb.content, pdfUrl, adaptedIdx));
       setNeedsDownload(false); // el enlace enviado sirve la versión vigente
       toast.push("WhatsApp abierto con el plan y el feedback — dale a enviar");
       if (!fb.sent) {
@@ -151,6 +158,7 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
         onClientChanged?.();
       }
     } catch {
+      if (win) win.close();
       toast.push("No se pudo preparar el envío", "error");
     }
   }
@@ -332,7 +340,7 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
           // El PDF descargado antes ya NO refleja esta edición: avisar hasta
           // que el coach lo vuelva a descargar (o lo reenvíe por WhatsApp).
           setNeedsDownload(true);
-          toast.push("Cambios guardados — descarga el PDF de nuevo para el cliente", "error");
+          toast.push("Cambios guardados — descarga el PDF de nuevo para el cliente");
         }}
         onCancel={() => setEditing(false)}
       />

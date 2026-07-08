@@ -20,6 +20,7 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -193,18 +194,26 @@ def create_period(client_id: int, body: PeriodCreateIn, db: Session = Depends(ge
     if plan.status != "published":
         raise HTTPException(status.HTTP_409_CONFLICT, "El plan debe estar publicado")
 
-    # Invariante: un solo período abierto por cliente (índice único parcial). La
-    # publicación del plan ya abre el primer período sola, así que este endpoint
-    # es IDEMPOTENTE: si ya hay uno abierto, lo devuelve en vez de insertar un
-    # duplicado (que violaría uq_period_one_open y daría un 500).
-    open_period = db.scalar(
-        select(Period).where(Period.client_id == client_id, Period.status == "open")
+    # Invariante: un solo período NO analizado por cliente. La publicación del
+    # plan ya abre el primer período sola. Este endpoint es IDEMPOTENTE:
+    # - si ya hay uno ABIERTO, lo devuelve (no inserta un duplicado que violaría
+    #   uq_period_one_open y daría un 500);
+    # - si hay uno CERRADO (revisión entregada, feedback pendiente), NO abre otro
+    #   —dejaría dos períodos sin analizar y "huérfano" el cierre sin feedback—:
+    #   responde 409 para que el coach genere el feedback primero.
+    pending = db.scalar(
+        select(Period).where(Period.client_id == client_id, Period.status.in_(("open", "closed")))
         .order_by(Period.period_index.desc()).limit(1)
     )
-    if open_period is not None:
-        return {"period_id": open_period.id, "period_index": open_period.period_index,
-                "starts_on": open_period.starts_on.isoformat(),
-                "ends_on": open_period.ends_on.isoformat()}
+    if pending is not None:
+        if pending.status == "open":
+            return {"period_id": pending.id, "period_index": pending.period_index,
+                    "starts_on": pending.starts_on.isoformat(),
+                    "ends_on": pending.ends_on.isoformat()}
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Hay una revisión pendiente de feedback: genera el feedback antes de abrir un período nuevo",
+        )
 
     last = db.scalar(
         select(Period).where(Period.client_id == client_id)
@@ -216,8 +225,22 @@ def create_period(client_id: int, body: PeriodCreateIn, db: Session = Depends(ge
         starts_on=body.starts_on, ends_on=body.starts_on + timedelta(days=body.days - 1),
         status="open",
     )
-    db.add(period)
-    db.flush()
+    # Savepoint + captura de IntegrityError por si dos peticiones corren a la vez
+    # (doble clic): una gana y la otra reutiliza el período abierto que quedó.
+    try:
+        with db.begin_nested():
+            db.add(period)
+            db.flush()
+    except IntegrityError:
+        existing = db.scalar(
+            select(Period).where(Period.client_id == client_id, Period.status == "open")
+            .order_by(Period.period_index.desc()).limit(1)
+        )
+        if existing is None:
+            raise
+        return {"period_id": existing.id, "period_index": existing.period_index,
+                "starts_on": existing.starts_on.isoformat(),
+                "ends_on": existing.ends_on.isoformat()}
     log_event(db, "period", period.id, "period_opened", {"index": period_index})
     db.commit()
     return {"period_id": period.id, "period_index": period_index,
@@ -396,7 +419,8 @@ def send_feedback(doc_id: int, db: Session = Depends(get_db)) -> dict:
         try:
             brand = brand_from_config(db)
             portal_url = f"{settings.public_base_url}/p/{client.portal_token}"
-            subject, html = tpl.feedback_ready(brand, client.full_name.split()[0], portal_url)
+            _first = ((client.full_name or "").split() or [(client.email or "cliente").split("@")[0]])[0]
+            subject, html = tpl.feedback_ready(brand, _first, portal_url)
             EmailService(db).send(to=client.email, subject=subject, html=html,
                                   kind="feedback_ready", client=client)
         except Exception:

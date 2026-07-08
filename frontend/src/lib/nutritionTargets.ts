@@ -38,7 +38,7 @@ export const GOAL_RULES: Record<GoalType, GoalRule> = {
     summary: "Mantenimiento: consolidar el peso y los hábitos actuales.",
   },
   injury_recovery: {
-    kcalFactor: 0.975, proteinPerKg: 2.2, fatPerKg: 1.0,
+    kcalFactor: 0.975, proteinPerKg: 2.25, fatPerKg: 1.0,
     summary: "Mantenimiento ligero y proteína alta: la reparación necesita energía.",
   },
 };
@@ -122,8 +122,11 @@ export function signedDeficitPct(tdee: number, kcal: number): number {
   return Math.round((kcal / tdee - 1) * 100);
 }
 
-/** Texto directo del cálculo aplicado ("Déficit del 20% sobre tu gasto"). */
+/** Texto directo del cálculo aplicado ("Déficit del 20% sobre tu gasto"). Sin
+ *  calorías objetivo (campo vacío) devuelve "—", para no mostrar "Déficit del
+ *  100%" cuando kcal=0 y contradecir al desplegable (que cae a Mantenimiento). */
 export function deficitLabel(tdee: number, kcal: number): string {
+  if (!kcal || kcal <= 0) return "—";
   const p = signedDeficitPct(tdee, kcal);
   if (p < 0) return `Déficit del ${-p}%`;
   if (p > 0) return `Superávit del ${p}%`;

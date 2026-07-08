@@ -229,13 +229,16 @@ def _ajuste_text(nutrition: dict, goal: str | None) -> str:
     """Celda 'Ajuste aplicado': el ajuste real sobre el TDEE estimado."""
     tdee = nutrition.get("tdee_kcal") or 0
     target = nutrition.get("target_kcal") or 0
-    delta = round(target - tdee)
     if not tdee:
         return _goal_label(goal)
+    delta = round(target - tdee)
     pct = round(abs(delta) / tdee * 100)
-    if goal == "muscle_gain" or delta > 0:
+    # La etiqueta la manda el SIGNO del delta real, no el objetivo: si el objetivo
+    # es "ganancia" pero las kcal quedaron por debajo del TDEE (tras editar o por
+    # el suelo calórico), decir "Superávit +-150" sería falso y contradictorio.
+    if delta > 0:
         return f"Superávit +{delta} kcal ({pct}%)"
-    if goal == "recomp" or delta == 0:
+    if delta == 0:
         return "Mantenimiento ±0 kcal"
     return f"Déficit {delta} kcal ({pct}%)"
 
@@ -248,8 +251,8 @@ def _concise_notas(nutrition: dict, goal: str | None, meals: list[dict]) -> list
     out: list = []
     if tdee and target:
         delta = target - tdee
-        word = ("Subida progresiva." if (goal == "muscle_gain" or delta > 0)
-                else "Mantenimiento." if (goal == "recomp" or delta == 0)
+        word = ("Subida progresiva." if delta > 0
+                else "Mantenimiento." if delta == 0
                 else "Bajada progresiva.")
         out.append(("Calorías totales",
                     f"{delta:+d} kcal sobre el TDEE estimado (≈ {tdee} → {target} kcal). {word}"))

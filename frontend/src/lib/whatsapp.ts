@@ -11,12 +11,12 @@ export function waPhone(phone: string | null | undefined): string | null {
 }
 
 /** Abre WhatsApp con el texto ya escrito para ese número. */
+export function waUrl(phoneDigits: string, text: string): string {
+  return `https://wa.me/${phoneDigits}?text=${encodeURIComponent(text)}`;
+}
+
 export function openWhatsApp(phoneDigits: string, text: string): void {
-  window.open(
-    `https://wa.me/${phoneDigits}?text=${encodeURIComponent(text)}`,
-    "_blank",
-    "noopener",
-  );
+  window.open(waUrl(phoneDigits, text), "_blank", "noopener");
 }
 
 /** Primer nombre con la inicial en mayúscula ("mohamadou diallo" → "Mohamadou"). */

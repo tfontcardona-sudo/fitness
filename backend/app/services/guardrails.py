@@ -215,6 +215,25 @@ def _match_term(terms: tuple[str, ...], texts: list[str]) -> str | None:
     return None
 
 
+def option_allergen(opt: dict, allergies: list[str] | None) -> str | None:
+    """El alérgeno declarado que contiene esta opción/plato (o None). Reutilizable
+    para FILTRAR el banco antes de que un alérgeno llegue al cliente."""
+    texts = _ingredient_texts(opt)
+    for al in allergies or []:
+        if _match_term(_terms_for(al), texts):
+            return al
+    return None
+
+
+def food_allergen(food: str | None, allergies: list[str] | None) -> str | None:
+    """Como `option_allergen` pero para un alimento suelto (equivalencias)."""
+    texts = [_norm_food(food)]
+    for al in allergies or []:
+        if _match_term(_terms_for(al), texts):
+            return al
+    return None
+
+
 def _check_option_restrictions(
     r: GuardrailReport, slot: int, opt: dict, allergies: list[str], dislikes: list[str], label: str = ""
 ) -> None:

@@ -45,12 +45,15 @@ export function PortalProgress({ api, brand }: { api: Api; brand: PortalBrand })
   const accent2 = brand.color_secondary;
   const w = data.weight;
   const series = w.series.map((p) => ({ label: shortDate(p.d), kg: p.kg }));
-  const hasWeight = series.length >= 2;
+  const hasWeight = series.length >= 2;   // la GRÁFICA necesita ≥2 puntos
+  const anyWeight = series.length >= 1;   // con 1 ya se muestra "Peso ahora"
   const bestLift = data.strength[0] ?? null;
   const meanAdh = adherenceMean(data.adherence);
 
+  // "Vacío" solo si NO hay NINGÚN dato: con un único peso del día 1 ya se enseñan
+  // las cajas (antes pedía registrar un peso que el cliente ya había puesto).
   const empty =
-    !hasWeight &&
+    !anyWeight &&
     data.measurements.length === 0 &&
     data.adherence.length === 0 &&
     data.strength.length === 0 &&

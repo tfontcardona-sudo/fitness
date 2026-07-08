@@ -33,6 +33,14 @@ from app.services.state_machine import (
 )
 
 
+def _first_name(client: Client) -> str:
+    """Primer nombre para el saludo, robusto ante nombre en blanco: sin esto un
+    `full_name` vacío/espacios reventaba el job diario con IndexError y abortaba
+    TODAS las transiciones y recordatorios de esa ejecución."""
+    parts = (client.full_name or "").split()
+    return parts[0] if parts else (client.email or "").split("@")[0] or "hola"
+
+
 def _already_sent_today(db: Session, client_id: int, kind: str, today: date) -> bool:
     start = datetime(today.year, today.month, today.day, tzinfo=timezone.utc)
     n = db.scalar(
@@ -118,7 +126,7 @@ def run_daily_maintenance(db: Session, today: date | None = None) -> dict:
             period = _active_period(db, client.id)
             days_left = max(0, (period.ends_on - today).days) if period else 0
             subject, html = tpl.reminder_no_logs(
-                brand, client.full_name.split()[0],
+                brand, _first_name(client),
                 f"{base}/p/{client.portal_token}", days_left,
             )
             emailer.send(to=client.email, subject=subject, html=html,
@@ -132,7 +140,7 @@ def run_daily_maintenance(db: Session, today: date | None = None) -> dict:
                 and today >= closing_period.ends_on
                 and not _already_sent_today(db, client.id, "closing_due", today)):
             subject, html = tpl.closing_due(
-                brand, client.full_name.split()[0],
+                brand, _first_name(client),
                 f"{base}/p/{client.portal_token}", closing_period.period_index,
             )
             emailer.send(to=client.email, subject=subject, html=html,

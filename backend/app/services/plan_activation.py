@@ -67,7 +67,7 @@ def activate_plan(db: Session, plan: Plan, *, notify: bool = True) -> None:
 
             brand = brand_from_config(db)
             portal_url = f"{settings.public_base_url}/p/{client.portal_token}"
-            first = client.full_name.split()[0]
+            first = ((client.full_name or "").split() or [(client.email or "cliente").split("@")[0]])[0]
             if same_month_replaced:
                 # ADAPTACIÓN/actualización del mes en curso: email de "plan
                 # actualizado", no otro "¡Bienvenido!" ni "nuevo mes".

@@ -13,7 +13,7 @@ import { ACTIVITY_LABEL, ageFrom, DIET_LABEL, GOAL_LABEL, LEVEL_LABEL, PLACE_LAB
  * En ambos casos el coach revisa y corrige antes de generar (seguridad). El
  * PATCH del backend registra el diff campo a campo (audit trail).
  */
-export function ClientAnamnesisTab({ client, onSaved }: { client: ClientOut; onSaved: () => void }) {
+export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client: ClientOut; onSaved: () => void; onDirtyChange?: (dirty: boolean) => void }) {
   const toast = useToast();
   const [draft, setDraft] = useState<Partial<ClientOut>>({});
   const [busy, setBusy] = useState(false);
@@ -50,6 +50,9 @@ export function ClientAnamnesisTab({ client, onSaved }: { client: ClientOut; onS
     return (key in draft ? draft[key] : client[key]) as ClientOut[K];
   }
   const dirty = Object.keys(draft).length > 0;
+  // Avisa al perfil de si hay cambios sin guardar, para que confirme antes de
+  // cambiar de pestaña (el panel se re-monta y perdería el borrador).
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
 
   async function save() {
     if (!dirty || busy) return;

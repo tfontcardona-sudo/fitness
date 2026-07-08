@@ -31,13 +31,20 @@ export class PortalError extends Error {
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = {};
   let payload: BodyInit | undefined;
+  let jsonBody = false;
   if (body instanceof FormData) {
     payload = body;
   } else if (body !== undefined) {
     headers["Content-Type"] = "application/json";
     payload = JSON.stringify(body);
+    jsonBody = true;
   }
-  const res = await fetch(`/api${path}`, { method, headers, body: payload });
+  // keepalive en los guardados con cuerpo JSON (diario, entreno): son pequeños y
+  // así el "guardar al salir" (visibilitychange/pagehide, móvil que pasa a
+  // segundo plano) LLEGA al servidor en vez de cancelarse — era la pérdida del
+  // último dato tecleado. En subidas FormData (fotos) NO se activa (superan el
+  // límite de 64 KB de keepalive).
+  const res = await fetch(`/api${path}`, { method, headers, body: payload, keepalive: jsonBody });
   if (!res.ok) {
     let detail = `Error ${res.status}`;
     try {
