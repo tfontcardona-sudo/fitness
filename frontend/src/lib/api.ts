@@ -6,6 +6,12 @@
  * types.ts (espejo de los schemas Pydantic).
  */
 
+/** Intervalo de refresco (polling) de las vistas del coach: la web se actualiza
+ *  sola cada 3 s (solo con la pestaña visible) para verlo todo casi en vivo.
+ *  Fuente única: cambiar aquí ajusta panel, clientes, ficha, seguimiento y
+ *  campana a la vez. */
+export const REFRESH_MS = 3000;
+
 import type {
   BrandConfigOut,
   CoachAlert,

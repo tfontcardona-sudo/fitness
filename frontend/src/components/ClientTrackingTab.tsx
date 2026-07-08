@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { api } from "../lib/api";
+import { api, REFRESH_MS } from "../lib/api";
 import type { ClientOut } from "../types";
 
 type Tracking = Awaited<ReturnType<typeof api.getClientTracking>>;
 
 /**
- * Seguimiento del cliente EN TIEMPO REAL para el coach. Hace polling cada 10 s:
+ * Seguimiento del cliente EN TIEMPO REAL para el coach. Hace polling cada 3 s:
  * lo que el cliente registra (diario con series, y revisión quincenal) aparece
  * en cuanto guarda; lo que falta se muestra como "pendiente".
  */
@@ -22,7 +22,7 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
         .then((d) => alive && setData(d))
         .catch((e) => alive && setErr(e?.message ?? "Error"));
     load();
-    timer.current = window.setInterval(load, 10000); // polling → tiempo real
+    timer.current = window.setInterval(load, REFRESH_MS); // polling → tiempo real
     return () => {
       alive = false;
       if (timer.current) window.clearInterval(timer.current);

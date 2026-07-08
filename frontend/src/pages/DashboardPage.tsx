@@ -10,7 +10,7 @@ import {
   Sparkles,
   UserPlus,
 } from "lucide-react";
-import { api } from "../lib/api";
+import { api, REFRESH_MS } from "../lib/api";
 import type { ClientOut } from "../types";
 import { PageLoader, StatusBadge } from "../components/ui";
 import { goalReviewDue, initials, relativeDays } from "../lib/format";
@@ -96,10 +96,10 @@ export default function DashboardPage() {
   useEffect(() => {
     const load = () => api.listClients().then(setClients).catch(() => setClients((c) => c ?? []));
     load();
-    // Refresco cada 30 s (solo con la pestaña visible): el panel siempre al día
+    // Refresco cada 3 s (solo con la pestaña visible): el panel siempre al día
     const t = window.setInterval(() => {
       if (!document.hidden) load();
-    }, 30000);
+    }, REFRESH_MS);
     return () => window.clearInterval(t);
   }, []);
 
