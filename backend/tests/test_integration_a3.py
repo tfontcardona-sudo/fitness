@@ -124,10 +124,34 @@ def _create_active_client(client, auth, *, diet_mode="flexible_7", start_days_ag
     }).json()
     client.post(f"/api/plans/{plan['id']}/publish", headers=auth)
 
-    start = date.today() - timedelta(days=start_days_ago)
-    client.post(f"/api/clients/{cid}/periods", headers=auth,
-                json={"plan_id": plan["id"], "starts_on": start.isoformat(), "days": 14})
+    # Publicar el plan ya abre el período 1 (empieza HOY). Para poder probar
+    # cierres sin esperar 14 días reales, retrasamos su ventana directamente en la
+    # BD (el endpoint de crear período es idempotente por el invariante "un solo
+    # período abierto por cliente", así que no serviría para retro-fechar).
+    if start_days_ago:
+        _backdate_open_period(cid, start_days_ago)
     return cid, token, plan["id"]
+
+
+def _backdate_open_period(client_id: int, days_ago: int) -> None:
+    """Retrasa la ventana del período abierto del cliente para simular el paso del
+    tiempo (starts_on = hoy − days_ago, ventana de 14 días)."""
+    from sqlalchemy import select
+    from app.db import SessionLocal
+    from app.models import Period
+
+    db = SessionLocal()
+    try:
+        p = db.scalar(
+            select(Period).where(Period.client_id == client_id, Period.status == "open")
+            .order_by(Period.period_index.desc()).limit(1)
+        )
+        if p is not None:
+            p.starts_on = date.today() - timedelta(days=days_ago)
+            p.ends_on = p.starts_on + timedelta(days=13)
+            db.commit()
+    finally:
+        db.close()
 
 
 # ============================================================ A.3 ====
@@ -178,9 +202,9 @@ def test_a3_meal_options_within_5pct(client, auth):
                2: {"kcal": 750, "protein_g": 60, "carbs_g": 72, "fat_g": 22},
                3: {"kcal": 350, "protein_g": 30, "carbs_g": 28, "fat_g": 11},
                4: {"kcal": 550, "protein_g": 41, "carbs_g": 58, "fat_g": 16}}
-    # Cada slot tiene exactamente 7 opciones
+    # Cada slot tiene exactamente 3 opciones (el esquema exige 1-4)
     for s in meals["slots"]:
-        assert len(s["options"]) == 7
+        assert len(s["options"]) == 3
 
 
 def test_a3_grams_have_household_measure(client, auth):

@@ -193,6 +193,19 @@ def create_period(client_id: int, body: PeriodCreateIn, db: Session = Depends(ge
     if plan.status != "published":
         raise HTTPException(status.HTTP_409_CONFLICT, "El plan debe estar publicado")
 
+    # Invariante: un solo período abierto por cliente (índice único parcial). La
+    # publicación del plan ya abre el primer período sola, así que este endpoint
+    # es IDEMPOTENTE: si ya hay uno abierto, lo devuelve en vez de insertar un
+    # duplicado (que violaría uq_period_one_open y daría un 500).
+    open_period = db.scalar(
+        select(Period).where(Period.client_id == client_id, Period.status == "open")
+        .order_by(Period.period_index.desc()).limit(1)
+    )
+    if open_period is not None:
+        return {"period_id": open_period.id, "period_index": open_period.period_index,
+                "starts_on": open_period.starts_on.isoformat(),
+                "ends_on": open_period.ends_on.isoformat()}
+
     last = db.scalar(
         select(Period).where(Period.client_id == client_id)
         .order_by(Period.period_index.desc()).limit(1)

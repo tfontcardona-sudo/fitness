@@ -246,7 +246,11 @@ def test_run_push_reminders_sends_and_respects_hours(db, client_with_plan, monke
     )
 
     tz = ZoneInfo(settings.tz)
-    noon = datetime(2026, 7, 3, 12, 0, tzinfo=tz)
+    # La fixture se construye relativa a date.today() (período abierto y sesión
+    # en el día de hoy), así que el "ahora" del job debe partir de hoy, no de una
+    # fecha fija que solo era válida el día en que se escribió el test.
+    today = date.today()
+    noon = datetime(today.year, today.month, today.day, 12, 0, tzinfo=tz)
 
     summary = push_svc.run_push_reminders(db, now=noon)
     assert summary["clients_notified"] >= 1
@@ -258,7 +262,7 @@ def test_run_push_reminders_sends_and_respects_hours(db, client_with_plan, monke
 
     # Fuera de horario (23:00) → no envía nada
     calls.clear()
-    late = datetime(2026, 7, 3, 23, 0, tzinfo=tz)
+    late = datetime(today.year, today.month, today.day, 23, 0, tzinfo=tz)
     summary = push_svc.run_push_reminders(db, now=late)
     assert "skipped" in summary and not calls
 
