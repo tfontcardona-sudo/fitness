@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Bell, CalendarCheck, Dumbbell, NotebookPen, X } from "lucide-react";
+import { Bell, CalendarCheck, Dumbbell, LineChart, NotebookPen, X } from "lucide-react";
 import { portalApi, PortalError } from "./portalApi";
 import type { PortalState } from "../types";
 import { PortalWorkout } from "./PortalWorkout";
 import { PortalDiary } from "./PortalDiary";
 import { PortalClose } from "./PortalClose";
+import { PortalProgress } from "./PortalProgress";
 import { PortalToastProvider, usePortalToast } from "./PortalToast";
 import {
   enablePush,
@@ -19,7 +20,7 @@ import {
 
 // El portal del cliente es SOLO seguimiento: 3 pestañas abajo (Entreno, Diario,
 // Quincenal). Nada más (ni Hoy, ni Plan, ni Feedback): la dieta va en el PDF.
-type Tab = "entreno" | "diario" | "cierre";
+type Tab = "entreno" | "diario" | "progreso" | "cierre";
 
 /**
  * Portal del cliente: mobile-first, sin login. El token sale de la URL
@@ -36,7 +37,8 @@ export default function PortalApp({ token }: { token: string }) {
   // cierran solos al cambiar de ruta (el contenido de la pestaña se desmonta).
   const [params, setParams] = useSearchParams();
   const rawTab = params.get("tab");
-  const tab: Tab = rawTab === "diario" || rawTab === "cierre" ? rawTab : "entreno";
+  const tab: Tab =
+    rawTab === "diario" || rawTab === "cierre" || rawTab === "progreso" ? rawTab : "entreno";
   const setTab = (t: Tab) => setParams(t === "entreno" ? {} : { tab: t });
 
   const reload = useCallback(() => {
@@ -92,6 +94,7 @@ export default function PortalApp({ token }: { token: string }) {
   const TABS: { id: Tab; label: string; icon: typeof Dumbbell }[] = [
     { id: "entreno", label: "Entreno", icon: Dumbbell },
     { id: "diario", label: "Diario", icon: NotebookPen },
+    { id: "progreso", label: "Progreso", icon: LineChart },
     { id: "cierre", label: "Quincenal", icon: CalendarCheck },
   ];
   const visibleTabs = TABS;
@@ -126,6 +129,7 @@ export default function PortalApp({ token }: { token: string }) {
           <div key={tab} className="animate-rise">
             {tab === "entreno" && <PortalWorkout api={apiClient} brand={state.brand} periodStatus={state.period?.status ?? null} />}
             {tab === "diario" && <PortalDiary api={apiClient} brand={state.brand} periodStatus={state.period?.status ?? null} />}
+            {tab === "progreso" && <PortalProgress api={apiClient} brand={state.brand} />}
             {tab === "cierre" && (
               <PortalClose
                 api={apiClient}

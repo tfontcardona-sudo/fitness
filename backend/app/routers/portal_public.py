@@ -15,7 +15,7 @@ El mínimo de 1 foto lo exige el wizard y, en Fase 3, la generación del plan.
 
 from datetime import datetime, timezone
 from typing import Annotated, List
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy import func, select
@@ -29,6 +29,7 @@ from app.models import (
     ChangeRequest,
     Client,
     DailyLog,
+    Exercise,
     FeedbackDoc,
     Period,
     ProgressPhoto,
@@ -58,7 +59,8 @@ from app.services.audit import log_event
 from app.services.consent_pdf import generate_consent_pdf
 from app.services.email_service import EmailService, brand_from_config
 from app.services import email_templates as tpl
-from app.services.storage import PhotoValidationError, save_photo
+from app.services.metrics import epley_1rm, weight_trend
+from app.services.storage import PhotoValidationError, abs_path, save_photo
 
 router = APIRouter(prefix="/api/p", tags=["portal-public"])
 limiter = Limiter(key_func=get_remote_address)
@@ -435,6 +437,149 @@ def portal_workout_history(
         for dt in sorted(by_date.keys(), reverse=True)[:5]:
             out.setdefault(str(ex_id), []).append({"date": dt, "sets": by_date[dt]})
     return {"history": out}
+
+
+@router.get("/{token}/progress", response_model=dict)
+@limiter.limit("120/minute")
+def portal_progress(
+    request: Request,
+    client: Client = Depends(get_client_by_token),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Progreso del cliente para que lo vea ÉL en el portal (motivación/retención):
+    evolución del peso, medidas y adherencia por período, progreso de fuerza y
+    fotos antes/después. Todo derivado de lo que ya registra; no expone nada del
+    coach ni otros clientes (autenticado por su token)."""
+    # --- Peso: serie diaria del propio diario -------------------------------
+    weight_rows = db.execute(
+        select(DailyLog.log_date, DailyLog.weight_kg)
+        .join(Period, Period.id == DailyLog.period_id)
+        .where(Period.client_id == client.id, DailyLog.weight_kg.isnot(None))
+        .order_by(DailyLog.log_date)
+    ).all()
+    series = [{"d": d.isoformat(), "kg": round(w, 1)} for d, w in weight_rows]
+    trend = weight_trend([(d, w) for d, w in weight_rows])
+    start_kg = client.start_weight_kg if client.start_weight_kg is not None else trend.start_kg
+    current_kg = (series[-1]["kg"] if series else None)
+    if current_kg is None:
+        current_kg = client.current_weight_kg
+
+    # --- Medidas y adherencia por período cerrado ---------------------------
+    periods = db.scalars(
+        select(Period)
+        .where(Period.client_id == client.id, Period.status.in_(("closed", "analyzed")))
+        .order_by(Period.period_index)
+    ).all()
+    measurements: list[dict] = []
+    adherence: list[dict] = []
+    for p in periods:
+        label = p.ends_on.isoformat()
+        if any(v is not None for v in (p.closing_waist_cm, p.closing_hip_cm,
+                                       p.closing_arm_cm, p.closing_thigh_cm, p.closing_weight_kg)):
+            measurements.append({
+                "label": label, "weight_kg": p.closing_weight_kg,
+                "waist_cm": p.closing_waist_cm, "hip_cm": p.closing_hip_cm,
+                "arm_cm": p.closing_arm_cm, "thigh_cm": p.closing_thigh_cm,
+            })
+        if p.adherence_diet_0_10 is not None or p.adherence_training_0_10 is not None:
+            adherence.append({
+                "label": label,
+                "diet_0_10": p.adherence_diet_0_10,
+                "training_0_10": p.adherence_training_0_10,
+            })
+
+    # --- Fuerza: mejor e1RM por ejercicio (primera sesión vs mejor) ----------
+    strength_rows = db.execute(
+        select(DailyLog.log_date, WorkoutLog.exercise_id, WorkoutLog.weight_kg,
+               WorkoutLog.reps, Exercise.canonical_name)
+        .join(WorkoutLog, WorkoutLog.daily_log_id == DailyLog.id)
+        .join(Period, Period.id == DailyLog.period_id)
+        .join(Exercise, Exercise.id == WorkoutLog.exercise_id)
+        .where(Period.client_id == client.id,
+               WorkoutLog.weight_kg.isnot(None), WorkoutLog.reps.isnot(None))
+        .order_by(DailyLog.log_date)
+    ).all()
+    by_ex: dict[int, dict] = {}
+    for log_date, ex_id, w, reps, name in strength_rows:
+        if not w or not reps:
+            continue
+        e = epley_1rm(w, reps)
+        rec = by_ex.setdefault(ex_id, {"name": name, "first": None,
+                                       "first_date": None, "best": 0.0, "sessions": set()})
+        rec["sessions"].add(log_date)
+        if rec["first"] is None:
+            rec["first"], rec["first_date"] = e, log_date
+        elif log_date == rec["first_date"] and e > rec["first"]:
+            rec["first"] = e  # mejor serie de la primera sesión
+        if e > rec["best"]:
+            rec["best"] = e
+    strength: list[dict] = []
+    for rec in by_ex.values():
+        if len(rec["sessions"]) < 2 or not rec["first"]:
+            continue  # hace falta progreso en ≥2 sesiones para que signifique algo
+        strength.append({
+            "exercise": rec["name"],
+            "first_e1rm": round(rec["first"], 1),
+            "best_e1rm": round(rec["best"], 1),
+            "gain_pct": round((rec["best"] - rec["first"]) / rec["first"] * 100, 1),
+            "sessions": len(rec["sessions"]),
+        })
+    strength.sort(key=lambda s: s["gain_pct"], reverse=True)
+    strength = strength[:5]
+
+    # --- Fotos: primera tanda vs última tanda (antes / después) -------------
+    photo_rows = db.scalars(
+        select(ProgressPhoto)
+        .where(ProgressPhoto.client_id == client.id)
+        .order_by(ProgressPhoto.taken_at)
+    ).all()
+    photos: dict = {"first": [], "last": [], "first_date": None, "last_date": None}
+    if photo_rows:
+        first_dt = photo_rows[0].taken_at.date()
+        last_dt = photo_rows[-1].taken_at.date()
+        photos["first_date"] = first_dt.isoformat()
+        photos["first"] = [{"id": p.id, "kind": p.kind} for p in photo_rows if p.taken_at.date() == first_dt]
+        if last_dt != first_dt:
+            photos["last_date"] = last_dt.isoformat()
+            photos["last"] = [{"id": p.id, "kind": p.kind} for p in photo_rows if p.taken_at.date() == last_dt]
+
+    return {
+        "weight": {
+            "start_kg": start_kg, "current_kg": current_kg, "goal_kg": client.goal_weight_kg,
+            "delta_kg": trend.delta_kg, "weekly_rate_kg": trend.weekly_rate_kg,
+            "series": series,
+        },
+        "measurements": measurements,
+        "adherence": adherence,
+        "strength": strength,
+        "photos": photos,
+    }
+
+
+@router.get("/{token}/photos/{photo_id}")
+@limiter.limit("240/minute")
+def portal_photo(
+    request: Request,
+    photo_id: int,
+    client: Client = Depends(get_client_by_token),
+    db: Session = Depends(get_db),
+):
+    """Sirve una foto de progreso del PROPIO cliente (por su token). Comprueba
+    que la foto le pertenece antes de entregarla."""
+    p = db.get(ProgressPhoto, photo_id)
+    if not p or p.client_id != client.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Foto no encontrada")
+    path = abs_path(p.file_path)
+    if not path.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Archivo no encontrado")
+    ext = path.suffix.lower()
+    media = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+             ".webp": "image/webp"}.get(ext, "application/octet-stream")
+    return Response(
+        content=path.read_bytes(), media_type=media,
+        headers={"Cache-Control": "private, max-age=86400",
+                 "Content-Disposition": f'inline; filename="progreso_{photo_id}{ext}"'},
+    )
 
 
 @router.post("/{token}/close", response_model=dict)

@@ -14,6 +14,7 @@ import type {
   PortalPlanOut,
   PortalState,
   PushPending,
+  PortalProgress,
   TodaySession,
   TodayView,
   TrainingWeek,
@@ -63,6 +64,8 @@ export function portalApi(token: string) {
         "GET", `${base}/workout-history`,
       ),
     plan: () => req<PortalPlanOut>("GET", `${base}/plan`),
+    progress: () => req<PortalProgress>("GET", `${base}/progress`),
+    photoUrl: (id: number) => `/api${base}/photos/${id}`,
     getDiary: (logDate: string) =>
       req<Record<string, any>>("GET", `${base}/diary/${logDate}`),
     saveDiary: (body: Partial<DailyLogUpsert> & { log_date: string }) =>
