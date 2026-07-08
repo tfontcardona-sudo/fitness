@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Check, BellRing, Pencil, Smartphone, ClipboardCheck } from "lucide-react";
-import { api, REFRESH_MS } from "../lib/api";
+import { api, keepIfSame, REFRESH_MS } from "../lib/api";
 import type { ClientOut } from "../types";
 import {
   ConfirmDialog,
@@ -52,19 +52,36 @@ export default function ClientProfilePage() {
   const [loadError, setLoadError] = useState(false);
   const load = useCallback(() => {
     api.getClient(clientId)
-      .then((c) => { setClient(c); setLoadError(false); })
+      // keepIfSame: solo cambia la referencia (y re-renderiza) si los datos han
+      // cambiado de verdad. Evita el parpadeo y el re-fetch de "Dieta"/feedback
+      // cada 3 s cuando la ficha no ha cambiado.
+      .then((c) => { setClient((prev) => keepIfSame(prev, c)); setLoadError(false); })
       .catch(() => setLoadError(true));
   }, [clientId]);
 
   useEffect(load, [load]);
 
-  // Refresco cada 3 s (pestaña visible): la ficha siempre al día
+  // Recarga EXPLÍCITA tras una acción del coach (editar/adaptar/generar plan,
+  // guardar anamnesis, subir documento…): además de refrescar la ficha, sube un
+  // contador que re-sincroniza la "Dieta" y el aviso de feedback aunque la fila
+  // del cliente no haya cambiado (el plan vive aparte). El polling de 3 s NO sube
+  // este contador, así que no re-consulta esos datos si nada cambió.
+  const [reloadKey, setReloadKey] = useState(0);
+  const reload = useCallback(() => {
+    load();
+    setReloadKey((k) => k + 1);
+  }, [load]);
+
+  // Refresco cada 3 s (pestaña visible): la ficha siempre al día. Se PAUSA
+  // mientras se edita la anamnesis (borrador sin guardar): un refresco en medio
+  // de la edición sería una fuente de desincronización y despiste.
   useEffect(() => {
+    if (anamnesisDirty) return;
     const t = window.setInterval(() => {
       if (!document.hidden) load();
     }, REFRESH_MS);
     return () => window.clearInterval(t);
-  }, [load]);
+  }, [load, anamnesisDirty]);
 
   // La pestaña SIGUE a la URL: navegar desde una alerta (o el botón atrás)
   // cambia de pestaña aunque ya estemos en el perfil de este cliente.
@@ -87,7 +104,7 @@ export default function ClientProfilePage() {
         setFeedbackPending(latest != null && !latest.feedback_id);
       })
       .catch(() => setFeedbackPending(true));
-  }, [client, clientId]);
+  }, [client, clientId, reloadKey]);
 
   // Precargamos el enlace del portal con el ORIGEN actual del navegador (en dev
   // :5173, en prod el dominio) para poder abrirlo de forma síncrona (sin que el
@@ -123,7 +140,7 @@ export default function ClientProfilePage() {
       })
       .catch(() => setPlanDiet(null));
     return () => { alive = false; };
-  }, [clientId, client]);
+  }, [clientId, client, reloadKey]);
 
   function openPortal() {
     if (!portalUrl) return;
@@ -199,7 +216,7 @@ export default function ClientProfilePage() {
             </div>
 
             <dl className="mt-5 space-y-2.5 text-sm">
-              <PhoneRow client={client} onSaved={load} />
+              <PhoneRow client={client} onSaved={reload} />
               <Row label="Edad" value={age ? `${age} años` : "—"} />
               <Row label="Objetivo" value={client.goal_type ? GOAL_LABEL[client.goal_type] : "—"} />
               <Row label="Nivel" value={client.level ? LEVEL_LABEL[client.level] : "—"} />
@@ -234,7 +251,7 @@ export default function ClientProfilePage() {
             móvil; columna izquierda-abajo en escritorio) */}
         <aside className="order-last min-w-0 space-y-3 lg:order-none lg:col-start-1 lg:row-start-2">
           {/* Anamnesis: enviar enlace + subir PDF rellenado */}
-          <ClientDocuments client={client} onUploaded={load} />
+          <ClientDocuments client={client} onUploaded={reload} />
           <button
             onClick={() => setConfirmRegen(true)}
             className="w-full text-center text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
@@ -269,10 +286,10 @@ export default function ClientProfilePage() {
           {/* key=tab: el panel se re-monta y hace su micro-animación al cambiar */}
           <div key={tab} className="tab-panel">
             {tab === "resumen" && <ClientSummaryTab client={client} />}
-            {tab === "anamnesis" && <ClientAnamnesisTab client={client} onSaved={load} onDirtyChange={setAnamnesisDirty} />}
-            {tab === "planificacion" && <ClientPlanPanel client={client} onClientChanged={load} />}
+            {tab === "anamnesis" && <ClientAnamnesisTab client={client} onSaved={reload} onDirtyChange={setAnamnesisDirty} />}
+            {tab === "planificacion" && <ClientPlanPanel client={client} onClientChanged={reload} />}
             {tab === "seguimiento" && <ClientTrackingTab client={client} />}
-            {tab === "feedback" && <ClientFeedbackTab client={client} onClientChanged={load} onGoPlan={() => changeTab("planificacion")} />}
+            {tab === "feedback" && <ClientFeedbackTab client={client} onClientChanged={reload} onGoPlan={() => changeTab("planificacion")} />}
             {tab === "historial" && <ClientHistoryTab client={client} />}
           </div>
         </div>

@@ -536,6 +536,7 @@ def upload_client_document(
             db.commit()
         except Exception:
             db.rollback()
+            access_status = "error"  # que el coach lo vea y pueda reenviarlo
 
     return {"name": name, "rel_path": rel, "read_ok": read_ok,
             "read_error": read_error, "portal_access": access_status}

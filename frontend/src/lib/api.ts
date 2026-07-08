@@ -12,6 +12,27 @@
  *  campana a la vez. */
 export const REFRESH_MS = 3000;
 
+/** Igualdad "por valor" de dos respuestas de la API (objetos JSON planos).
+ *  Se usa en el polling de 3 s: si los datos nuevos son idénticos a los que ya
+ *  hay en pantalla, NO se actualiza el estado. Así se evita el parpadeo y las
+ *  desincronizaciones (re-render y re-fetch inútiles cada 3 s cuando nada ha
+ *  cambiado). El orden de claves de FastAPI/Pydantic es estable, así que
+ *  comparar el JSON serializado es fiable para estos payloads. */
+export function sameData(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return false;
+  }
+}
+
+/** Ayuda para los setState del polling: conserva la referencia anterior si los
+ *  datos no han cambiado (evita re-render). Uso: `setX((prev) => keepIfSame(prev, next))`. */
+export function keepIfSame<T>(prev: T, next: T): T {
+  return sameData(prev, next) ? prev : next;
+}
+
 import type {
   BrandConfigOut,
   CoachAlert,

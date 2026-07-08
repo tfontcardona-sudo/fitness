@@ -10,7 +10,7 @@ import {
   Sparkles,
   UserPlus,
 } from "lucide-react";
-import { api, REFRESH_MS } from "../lib/api";
+import { api, keepIfSame, REFRESH_MS } from "../lib/api";
 import type { ClientOut } from "../types";
 import { PageLoader, StatusBadge } from "../components/ui";
 import { goalReviewDue, initials, relativeDays } from "../lib/format";
@@ -94,7 +94,9 @@ export default function DashboardPage() {
   const [clients, setClients] = useState<ClientOut[] | null>(null);
 
   useEffect(() => {
-    const load = () => api.listClients().then(setClients).catch(() => setClients((c) => c ?? []));
+    const load = () => api.listClients()
+      .then((cs) => setClients((prev) => keepIfSame(prev, cs)))  // sin re-render si nada cambió
+      .catch(() => setClients((c) => c ?? []));
     load();
     // Refresco cada 3 s (solo con la pestaña visible): el panel siempre al día
     const t = window.setInterval(() => {

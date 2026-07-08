@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Bell, Check } from "lucide-react";
-import { api, REFRESH_MS } from "../lib/api";
+import { api, keepIfSame, REFRESH_MS } from "../lib/api";
 import { useDismiss } from "../lib/useDismiss";
 import { useToast } from "./ui";
 import type { CoachAlert } from "../types";
@@ -21,7 +21,8 @@ export function AlertsBell() {
   useDismiss(panelRef, () => setOpen(false), open);
 
   const load = useCallback(() => {
-    api.listAlerts().then((r) => setAlerts(r.alerts)).catch(() => {});
+    // keepIfSame: no re-renderiza la campana cada 3 s si las alertas no cambian.
+    api.listAlerts().then((r) => setAlerts((prev) => keepIfSame(prev, r.alerts))).catch(() => {});
   }, []);
 
   // Al montar, al navegar (una acción resuelta debe apagar su alerta al

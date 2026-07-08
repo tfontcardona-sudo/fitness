@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, REFRESH_MS } from "../lib/api";
+import { api, keepIfSame, REFRESH_MS } from "../lib/api";
 import type { ClientOut } from "../types";
 
 type Tracking = Awaited<ReturnType<typeof api.getClientTracking>>;
@@ -19,7 +19,8 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
     const load = () =>
       api
         .getClientTracking(client.id)
-        .then((d) => alive && setData(d))
+        // keepIfSame: no re-renderiza la tabla cada 3 s si los datos son idénticos.
+        .then((d) => alive && setData((prev) => keepIfSame(prev, d)))
         .catch((e) => alive && setErr(e?.message ?? "Error"));
     load();
     timer.current = window.setInterval(load, REFRESH_MS); // polling → tiempo real
