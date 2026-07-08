@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Copy, Search, UserPlus, ChevronRight, Flag } from "lucide-react";
 import { useDismiss, useModalFocus } from "../lib/useDismiss";
-import { api, ApiError } from "../lib/api";
+import { api, ApiError, REFRESH_MS } from "../lib/api";
 import type { ClientOut, PortalLinkOut } from "../types";
 import { EmptyState, PageLoader, StatusBadge, useToast } from "../components/ui";
 import { Avatar } from "./DashboardPage";
@@ -52,11 +52,11 @@ export default function ClientsPage() {
     return () => clearTimeout(t);
   }, [load]);
 
-  // Refresco cada 30 s (pestaña visible): carpetas y badges siempre al día
+  // Refresco cada 3 s (pestaña visible): carpetas y badges siempre al día
   useEffect(() => {
     const t = window.setInterval(() => {
       if (!document.hidden) load();
-    }, 30000);
+    }, REFRESH_MS);
     return () => window.clearInterval(t);
   }, [load]);
 

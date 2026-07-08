@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Check, BellRing, Pencil, Smartphone, ClipboardCheck } from "lucide-react";
-import { api } from "../lib/api";
+import { api, REFRESH_MS } from "../lib/api";
 import type { ClientOut } from "../types";
 import {
   ConfirmDialog,
@@ -58,11 +58,11 @@ export default function ClientProfilePage() {
 
   useEffect(load, [load]);
 
-  // Refresco cada 30 s (pestaña visible): la ficha siempre al día
+  // Refresco cada 3 s (pestaña visible): la ficha siempre al día
   useEffect(() => {
     const t = window.setInterval(() => {
       if (!document.hidden) load();
-    }, 30000);
+    }, REFRESH_MS);
     return () => window.clearInterval(t);
   }, [load]);
 

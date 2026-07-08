@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Bell, Check } from "lucide-react";
-import { api } from "../lib/api";
+import { api, REFRESH_MS } from "../lib/api";
 import { useDismiss } from "../lib/useDismiss";
 import { useToast } from "./ui";
 import type { CoachAlert } from "../types";
@@ -30,7 +30,7 @@ export function AlertsBell() {
   useEffect(() => {
     const t = window.setInterval(() => {
       if (!document.hidden) load();
-    }, 30000);
+    }, REFRESH_MS);
     return () => window.clearInterval(t);
   }, [load]);
 
