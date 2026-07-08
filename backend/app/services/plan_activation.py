@@ -47,9 +47,10 @@ def activate_plan(db: Session, plan: Plan, *, notify: bool = True) -> None:
     if client is not None:
         if client.status == "onboarding":
             client.status = "active"
-        # Arranque de la etapa del objetivo (alerta de los 45 días)
+        # Arranque de la etapa del objetivo (alerta de los 45 días). Fecha local.
         if client.goal_started_on is None:
-            client.goal_started_on = date.today()
+            from app.services.portal import today_local
+            client.goal_started_on = today_local()
 
     log_event(db, "plan", plan.id, "plan_published", {"month_index": plan.month_index})
 

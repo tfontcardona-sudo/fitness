@@ -35,6 +35,18 @@ echo ""
 read -rp "Escribe 'RESTAURAR' (en mayúsculas) para continuar: " CONFIRM
 [ "$CONFIRM" = "RESTAURAR" ] || { echo "Cancelado."; exit 1; }
 
+# Red de seguridad: antes de sobrescribir, guardar un volcado del estado ACTUAL
+# por si el fichero elegido no es el correcto.
+SNAP="$DEST/pre-restore-$(date +%F_%H%M%S).sql.gz"
+echo "Guardando copia del estado actual en $SNAP …"
+if docker compose exec -T db pg_dump --clean --if-exists -U "$PGUSER" "$PGDB" | gzip > "$SNAP" 2>/dev/null && [ -s "$SNAP" ]; then
+  echo "Copia previa OK."
+else
+  rm -f "$SNAP"
+  read -rp "No se pudo guardar la copia previa. ¿Continuar igualmente? [escribe SI]: " C2
+  [ "$C2" = "SI" ] || { echo "Cancelado."; exit 1; }
+fi
+
 echo "Parando la API para restaurar sin conflictos…"
 docker compose stop api >/dev/null 2>&1 || true
 

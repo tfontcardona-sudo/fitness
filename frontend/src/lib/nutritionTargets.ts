@@ -58,12 +58,20 @@ export const kcalOf = (p: number, c: number, f: number): number =>
  *  hasta su mínimo saludable (0,6 g/kg) antes de recortar carbohidratos. */
 export function macrosForKcal(goal: GoalType | null | undefined, weightKg: number, kcal: number): MacroTargets {
   const r = GOAL_RULES[goal ?? "maintenance"] ?? GOAL_RULES.maintenance;
-  const protein = Math.round(weightKg * r.proteinPerKg);
+  let protein = Math.round(weightKg * r.proteinPerKg);
   let fat = Math.round(weightKg * r.fatPerKg);
   const fatMin = Math.round(weightKg * 0.6);
+  const proteinMin = Math.round(weightKg * 1.6);  // suelo de preservación de masa
   let carbs = Math.round((kcal - protein * 4 - fat * 9) / 4);
   if (carbs < 0) {
+    // 1º baja la grasa hasta su mínimo saludable
     fat = Math.max(fatMin, Math.round((kcal - protein * 4) / 9));
+    carbs = Math.round((kcal - protein * 4 - fat * 9) / 4);
+  }
+  if (carbs < 0) {
+    // 2º si proteína+grasa mínimas aún superan las kcal, recorta la proteína
+    // hasta su suelo: así los macros NUNCA declaran unas kcal que no cumplen.
+    protein = Math.max(proteinMin, Math.round((kcal - fat * 9) / 4));
     carbs = Math.max(0, Math.round((kcal - protein * 4 - fat * 9) / 4));
   }
   return { kcal: Math.round(kcal), protein_g: protein, carbs_g: carbs, fat_g: fat };
@@ -109,11 +117,16 @@ function deficitOptionLabel(p: number): string {
  *  (mín. 5%, máx. 50%). Si se pasa `current` y su % exacto no cae en la rejilla
  *  de 5% (p. ej. un plan IA con +8%), se añade como opción para que el
  *  desplegable no se desincronice ni "salte" al redondear. */
+// Límites de seguridad (mismos que los guardrails del backend): déficit máx 30%,
+// superávit máx 15%. No se ofrecen valores más agresivos en el desplegable.
+export const MAX_DEFICIT_PCT = 30;
+export const MAX_SURPLUS_PCT = 15;
+
 export function deficitOptions(current?: number | null): { value: number; label: string }[] {
   const opts: { value: number; label: string }[] = [];
-  for (let p = 50; p >= 5; p -= 5) opts.push({ value: -p, label: `Déficit ${p}%` });
+  for (let p = MAX_DEFICIT_PCT; p >= 5; p -= 5) opts.push({ value: -p, label: `Déficit ${p}%` });
   opts.push({ value: 0, label: "Mantenimiento (0%)" });
-  for (let p = 5; p <= 50; p += 5) opts.push({ value: p, label: `Superávit ${p}%` });
+  for (let p = 5; p <= MAX_SURPLUS_PCT; p += 5) opts.push({ value: p, label: `Superávit ${p}%` });
   if (current != null && Number.isFinite(current)) {
     const c = Math.max(-95, Math.min(95, Math.round(current)));
     if (!opts.some((o) => o.value === c)) {
@@ -143,7 +156,10 @@ export const MACRO_TOTAL_TOLERANCE = 2;
  *  así, si se editan gramos y no cuadran, el total sale 95%/105% y avisa. */
 export function macroPct(macros: { protein_g?: number; carbs_g?: number; fat_g?: number },
                          targetKcal: number): { protein: number; carbs: number; fat: number; total: number } {
-  const k = targetKcal || 1;
+  // Sin calorías objetivo (campo vacío) no hay porcentaje que calcular: 0, no
+  // porcentajes disparatados (150 g / 1 kcal = 60000%).
+  if (!targetKcal || targetKcal <= 0) return { protein: 0, carbs: 0, fat: 0, total: 0 };
+  const k = targetKcal;
   const p = (macros.protein_g ?? 0) * 4, c = (macros.carbs_g ?? 0) * 4, f = (macros.fat_g ?? 0) * 9;
   return {
     protein: Math.round((p / k) * 100),

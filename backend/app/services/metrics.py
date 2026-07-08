@@ -122,6 +122,14 @@ def energy_targets(
     else:  # recomp / maintenance → mantenimiento
         target = t
         adj = 0.0
+    # Suelo de seguridad: nunca por debajo del BMR ni de un mínimo por sexo (mismo
+    # criterio que el guardrail de nutrición). Sin esto, un cliente sedentario o
+    # ligero en pérdida de grasa recibía un target < BMR que el propio guardrail
+    # rechazaba → no se podía generar el plan. Se recalcula el % real aplicado.
+    floor = max(b, 1600.0 if sex == "male" else 1400.0)
+    if target < floor:
+        target = floor
+        adj = round((target / t - 1), 4) if t else 0.0
     return EnergyTargets(
         bmr=b, tdee=t, target_kcal=round(target, 1),
         method="katch" if use_katch else "mifflin",

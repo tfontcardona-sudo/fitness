@@ -17,6 +17,8 @@ decide reintentar (con el error inyectado) o escalar al coach.
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from dataclasses import dataclass, field
 
 # --- Constantes E.4 (nutrición) ---
@@ -31,6 +33,10 @@ MEAL_OPTION_TOLERANCE = 0.05   # ±5% macros del slot
 
 # --- Constantes F.4 (entrenamiento) ---
 SETS_MAX_PER_GROUP_WEEK = 25
+# Piso de volumen semanal por grupo entrenado: por debajo de ~6 series/semana el
+# estímulo hipertrófico suele ser insuficiente (Schoenfeld/Krieger). Aviso, no
+# bloqueo (el coach decide, p. ej. en un principiante o un grupo de mantenimiento).
+SETS_MIN_PER_GROUP_WEEK = 6
 LOAD_INCREMENT_MAX_PCT = 0.10  # +10% por ejercicio y recalibración
 SESSION_MINUTES_FORMULA_PER_SET = 3
 SESSION_MINUTES_FIXED_OVERHEAD = 10
@@ -151,27 +157,111 @@ def check_nutrition(
     return r
 
 
-def check_meal_options(slots: list[dict], day_targets: dict[int, dict]) -> GuardrailReport:
-    """Valida que cada opción de comida cumple los macros de su slot ±5% (E.4).
+# --- Alérgenos/aversiones: sinónimos frecuentes en castellano por alérgeno ---
+# La coincidencia es por término del cliente + expansión de sinónimos de alto
+# nivel de confianza. Un alérgeno detectado => VIOLACIÓN (seguridad); una
+# aversión => WARNING (preferencia).
+_ALLERGEN_SYNONYMS: dict[str, tuple[str, ...]] = {
+    "lactosa": ("lactosa", "leche", "yogur", "queso", "nata", "mantequilla", "lacteo",
+                "cuajada", "kefir", "requeson", "cremoso"),
+    "leche": ("leche", "lactosa", "yogur", "queso", "nata", "mantequilla", "lacteo", "requeson"),
+    "gluten": ("gluten", "trigo", "cebada", "centeno", "espelta", "\bpan\b", "pasta",
+               "harina", "cuscus", "seitan", "galleta", "biz cocho", "bizcocho"),
+    "frutos secos": ("fruto seco", "frutos secos", "nuez", "nueces", "almendra", "avellana",
+                     "anacardo", "pistacho", "cacahuete", "\bmani\b", "pinon", "piñon", "pesto"),
+    "cacahuete": ("cacahuete", "\bmani\b", "crema de cacahuete"),
+    "marisco": ("marisco", "gamba", "langostino", "mejillon", "almeja", "ostra", "calamar",
+                "pulpo", "cangrejo", "langosta", "sepia", "berberecho", "cigala"),
+    "crustaceos": ("gamba", "langostino", "cangrejo", "langosta", "cigala", "marisco"),
+    "pescado": ("pescado", "atun", "salmon", "merluza", "bacalao", "sardina", "caballa",
+                "trucha", "lubina", "dorada", "anchoa", "boqueron", "panga", "gallo"),
+    "huevo": ("huevo", "\bclara\b", "\byema\b", "tortilla", "mayonesa"),
+    "soja": ("\bsoja\b", "tofu", "edamame", "tempeh", "salsa de soja"),
+    "sesamo": ("sesamo", "tahini", "tahin"),
+    "fructosa": ("fructosa", "\bmiel\b", "sirope"),
+}
+
+
+def _norm_food(s: str | None) -> str:
+    return unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode("ascii").lower()
+
+
+def _terms_for(item: str) -> tuple[str, ...]:
+    key = _norm_food(item).strip()
+    for k, syns in _ALLERGEN_SYNONYMS.items():
+        if _norm_food(k) == key or key in syns:
+            return syns
+    return (key,) if key else ()
+
+
+def _ingredient_texts(opt: dict) -> list[str]:
+    texts: list[str] = []
+    for ing in opt.get("ingredients", []) or []:
+        texts.append(_norm_food(ing.get("food", "")) + " " + _norm_food(ing.get("household", "")))
+    # modo strict: el plato puede llevar 'ingredients' igual; si no, usa title
+    if not texts and opt.get("title"):
+        texts.append(_norm_food(opt.get("title")))
+    return texts
+
+
+def _match_term(terms: tuple[str, ...], texts: list[str]) -> str | None:
+    for text in texts:
+        for t in terms:
+            if not t:
+                continue
+            hit = re.search(t, text) if "\\b" in t else (t in text)
+            if hit:
+                return t.replace("\\b", "")
+    return None
+
+
+def _check_option_restrictions(
+    r: GuardrailReport, slot: int, opt: dict, allergies: list[str], dislikes: list[str], label: str = ""
+) -> None:
+    key = opt.get("key", opt.get("title", "?"))
+    texts = _ingredient_texts(opt)
+    for al in allergies or []:
+        found = _match_term(_terms_for(al), texts)
+        if found:
+            r.violations.append(
+                f"⚠ ALÉRGENO: opción {label}slot {slot} '{key}' contiene '{found}' "
+                f"(alergia/intolerancia del cliente: {al}) — reemplazar"
+            )
+    for dl in dislikes or []:
+        found = _match_term(_terms_for(dl), texts)
+        if found:
+            r.warnings.append(
+                f"aversión: opción {label}slot {slot} '{key}' contiene '{found}' ({dl})"
+            )
+
+
+def check_meal_options(
+    slots: list[dict], day_targets: dict[int, dict],
+    allergies: list[str] | None = None, dislikes: list[str] | None = None,
+) -> GuardrailReport:
+    """Valida macros ±5% (E.4) Y que ninguna opción contenga alérgenos/aversiones.
 
     `slots`: lista de FlexibleSlot serializados (slot + options[]).
     `day_targets`: {slot: {kcal, protein_g, carbs_g, fat_g}} del plan núcleo.
-    Devuelve violación por cada opción concreta fuera de tolerancia, indicando
-    slot y key para que el servicio de IA re-pida SOLO esa opción.
+    Un alérgeno detectado en los ingredientes => violación (flag prominente).
     """
     r = GuardrailReport()
     for slot_block in slots:
         slot = slot_block["slot"]
         target = day_targets.get(slot)
+        for opt in slot_block["options"]:
+            if target:
+                _check_single_option(r, slot, opt, target)
+            _check_option_restrictions(r, slot, opt, allergies or [], dislikes or [])
         if not target:
             r.warnings.append(f"slot {slot} sin target de referencia")
-            continue
-        for opt in slot_block["options"]:
-            _check_single_option(r, slot, opt, target)
     return r
 
 
-def check_strict_day_meals(days: list[dict], day_targets: dict[int, dict]) -> GuardrailReport:
+def check_strict_day_meals(
+    days: list[dict], day_targets: dict[int, dict],
+    allergies: list[str] | None = None, dislikes: list[str] | None = None,
+) -> GuardrailReport:
     """Igual que check_meal_options pero para el modo strict (un plato/slot/día)."""
     r = GuardrailReport()
     for day_block in days:
@@ -179,10 +269,11 @@ def check_strict_day_meals(days: list[dict], day_targets: dict[int, dict]) -> Gu
         for meal in day_block["meals"]:
             slot = meal["slot"]
             target = day_targets.get(slot)
-            if not target:
+            if target:
+                _check_single_option(r, slot, meal["dish"], target, label=f"{day_name}/")
+            else:
                 r.warnings.append(f"slot {slot} sin target de referencia")
-                continue
-            _check_single_option(r, slot, meal["dish"], target, label=f"{day_name}/")
+            _check_option_restrictions(r, slot, meal["dish"], allergies or [], dislikes or [], label=f"{day_name}/")
     return r
 
 
@@ -287,12 +378,17 @@ def check_training(
                 f"ligeramente el máximo declarado {session_max_min} min; revisa y recorta series si quieres"
             )
 
-    # 5) Volumen semanal máximo por grupo
+    # 5) Volumen semanal por grupo: techo (bloquea) y piso (avisa)
     for group, total in weekly_sets_by_group.items():
         if total > SETS_MAX_PER_GROUP_WEEK:
             r.violations.append(
                 f"grupo '{group}': {total:.0f} series/semana supera el máximo "
                 f"{SETS_MAX_PER_GROUP_WEEK}"
+            )
+        elif total < SETS_MIN_PER_GROUP_WEEK:
+            r.warnings.append(
+                f"grupo '{group}': solo {total:.0f} series/semana — por debajo del "
+                f"mínimo productivo ({SETS_MIN_PER_GROUP_WEEK}); revisa si es intencionado"
             )
     return r
 

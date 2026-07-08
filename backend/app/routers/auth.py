@@ -3,7 +3,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from slowapi import Limiter
-from slowapi.util import get_remote_address
+from app.ratelimit import client_key
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,7 +14,7 @@ from app.schemas.entities import LoginIn, TokenOut
 from app.security import create_access_token, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=client_key)
 
 
 @router.post("/login", response_model=TokenOut)

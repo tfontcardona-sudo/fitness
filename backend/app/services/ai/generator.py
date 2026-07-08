@@ -288,9 +288,9 @@ def _meals_user_prompt(ctx: ClientContext, core: PlanCoreOutput) -> str:
 TOMAS DEL DÍA (slot, nombre, hora, macros objetivo del slot):
 {json.dumps(slot_info, ensure_ascii=False, indent=2)}
 
-RESTRICCIONES ALIMENTARIAS (OBLIGATORIAS — ningún plato puede contenerlas): \
-alergias/intolerancias={ctx.food_allergies}, aversiones={ctx.food_dislikes}, \
-preferencias={ctx.food_likes}.\
+PROHIBIDO (NINGÚN plato puede contenerlo — seguridad): \
+alergias/intolerancias={ctx.food_allergies}, aversiones={ctx.food_dislikes}. \
+PREFERIR / INCLUIR cuando encaje en los macros (alimentos que le gustan): {ctx.food_likes}.\
 {(' SALUD A TENER EN CUENTA EN LA DIETA (patologías, medicación, digestivo): ' + ctx.clinical_notes.replace(chr(10), ' ')) if ctx.clinical_notes else ''}"""
 
     if ctx.diet_mode == "flexible_7":
@@ -401,11 +401,13 @@ def generate_monthly_plan(ctx: ClientContext, ai: AIClient) -> GeneratedPlan:
     targets = _slot_targets(core)
     if isinstance(meals, MealsFlexibleOutput):
         meal_report = gr.check_meal_options(
-            [s.model_dump() for s in meals.slots], targets
+            [s.model_dump() for s in meals.slots], targets,
+            allergies=ctx.food_allergies, dislikes=ctx.food_dislikes,
         )
     else:
         meal_report = gr.check_strict_day_meals(
-            [d.model_dump() for d in meals.days], targets
+            [d.model_dump() for d in meals.days], targets,
+            allergies=ctx.food_allergies, dislikes=ctx.food_dislikes,
         )
     # Las opciones fuera de ±5% son warnings recuperables: se marcan para que el
     # coach revise; no bloquean (re-pedir opción por opción se hace en Fase 4

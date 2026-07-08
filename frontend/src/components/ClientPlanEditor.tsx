@@ -4,7 +4,7 @@ import { api } from "../lib/api";
 import {
   GOAL_RULES, goalTargets, kcalOf, macrosForKcal, macrosScaledToKcal, rescaledFrom,
   deficitLabel, deficitOptions, deficitSelectValue, kcalFromDeficit, macroPct, gramsFromPct,
-  MACRO_TOTAL_TOLERANCE,
+  MACRO_TOTAL_TOLERANCE, MAX_DEFICIT_PCT, MAX_SURPLUS_PCT,
   type MacroTargets,
 } from "../lib/nutritionTargets";
 import { GOAL_LABEL } from "../lib/format";
@@ -264,6 +264,16 @@ export function ClientPlanEditor({
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
+            {(() => {
+              const p = deficitSelectValue(tdee, nut.target_kcal ?? 0);
+              if (p >= -MAX_DEFICIT_PCT && p <= MAX_SURPLUS_PCT) return null;
+              return (
+                <span className="inline-flex items-center gap-1 font-semibold" style={{ color: "#9A6B15" }}>
+                  <AlertTriangle size={12} />
+                  {p < 0 ? `déficit >${MAX_DEFICIT_PCT}%` : `superávit >${MAX_SURPLUS_PCT}%`}: agresivo, revisa
+                </span>
+              );
+            })()}
           </div>
         ) : null}
 

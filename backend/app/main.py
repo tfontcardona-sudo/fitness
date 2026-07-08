@@ -13,10 +13,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 from sqlalchemy import text
 
 from app.config import settings
+from app.ratelimit import client_key
 from app.db import engine
 from app.routers import alerts, auth, brand, clients, exercises, plans, portal_public
 
@@ -49,7 +49,7 @@ app = FastAPI(
 
 # Rate limiting compartido (los routers definen sus límites con su propio
 # Limiter; este objeto en app.state habilita el manejador global de errores).
-app.state.limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = Limiter(key_func=client_key)
 
 
 @app.exception_handler(RateLimitExceeded)

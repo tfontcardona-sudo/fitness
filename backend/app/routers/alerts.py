@@ -126,6 +126,17 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
                               f"Sin registros del cliente desde hace {gap} días.",
                               "seguimiento", "Ver seguimiento"))
 
+    # --- Objetivo cambiado sin regenerar el plan ----------------------------
+    # Tras cambiar el objetivo, si la IA falló al regenerar, el cliente seguiría
+    # sirviéndose el plan del objetivo anterior en silencio. Lo señalamos.
+    if (published.goal_type and client.goal_type
+            and published.goal_type != client.goal_type):
+        cur = _GOAL_LABEL.get(client.goal_type, client.goal_type)
+        old = _GOAL_LABEL.get(published.goal_type, published.goal_type)
+        out.append(_alert(client, "regenerate_goal", "alta",
+                          f"El objetivo es «{cur}» pero el plan activo sigue en «{old}»: regenéralo.",
+                          "planificacion", "Regenerar planificación"))
+
     # --- 45 días en la misma etapa de objetivo ------------------------------
     if client.goal_started_on is not None:
         days_goal = (today - client.goal_started_on).days
