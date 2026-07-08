@@ -95,6 +95,10 @@ class Client(Base):
     auto_pilot: Mapped[bool] = mapped_column(Boolean, default=False)
     emails_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     portal_token: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    # Acceso del cliente al portal con login (usuario = email). El hash y la
+    # marca de envío nacen nulos y se rellenan al enviar el acceso por email.
+    portal_password_hash: Mapped[str | None] = mapped_column(String(255))
+    portal_access_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     consent_signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(

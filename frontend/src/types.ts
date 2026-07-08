@@ -284,6 +284,7 @@ export interface ClientOut {
   auto_pilot: boolean;
   emails_enabled: boolean;
   consent_signed_at: string | null;
+  portal_access_sent_at?: string | null;
   created_at: string;
   updated_at: string;
   pending_review?: boolean;

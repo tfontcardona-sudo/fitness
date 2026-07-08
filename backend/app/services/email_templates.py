@@ -69,6 +69,34 @@ Este mensaje es parte de tu asesoría personalizada con {brand.name}.{footer_con
 
 # ---------------------------------------------------------- al cliente ----
 
+def portal_access(brand: Brand, first_name: str, login_url: str,
+                  username: str, password: str) -> tuple[str, str]:
+    """Email de bienvenida con el acceso personal al portal (usuario y clave)."""
+    subject = f"Tu acceso personal a tu portal · {brand.name}"
+    box = (
+        f'<table role="presentation" cellpadding="0" cellspacing="0" width="100%" '
+        f'style="margin:18px 0;border:1px solid #e6e6ee;border-radius:12px;background:#faf9fc">'
+        f'<tr><td style="padding:16px 18px;font-size:15px;color:#1a1a24">'
+        f'<div style="font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:#8a8a94">Usuario</div>'
+        f'<div style="font-weight:700;margin:2px 0 12px">{username}</div>'
+        f'<div style="font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:#8a8a94">Contraseña</div>'
+        f'<div style="font-weight:700;font-family:monospace;font-size:17px;letter-spacing:1px">{password}</div>'
+        f'</td></tr></table>'
+    )
+    body = (
+        f"<p>Hola {first_name}, ¡bienvenido/a! Ya tienes tu <strong>portal personal</strong>, "
+        f"el sitio donde vas a llevar tu día a día con {brand.name}.</p>"
+        f"<p>Desde el portal registras tus entrenamientos, tu diario y tu revisión "
+        f"quincenal, y ves <strong>tu progreso</strong> (peso, fuerza, medidas y fotos). "
+        f"Es tuyo y es privado: entra con estos datos.</p>"
+        f"{box}"
+        f"<p style=\"font-size:13px;color:#8a8a94\">Al entrar puedes marcar "
+        f"<em>«Recordarme»</em> para no tener que escribirlos cada vez. Guarda este correo "
+        f"por si acaso.</p>"
+    )
+    return subject, _shell(brand, "Tu portal ya está listo", body, login_url, "Entrar a mi portal")
+
+
 def plan_published(brand: Brand, first_name: str, portal_url: str, is_new_month: bool) -> tuple[str, str]:
     if is_new_month:
         subject = f"Tu nuevo plan del mes ya está listo · {brand.name}"

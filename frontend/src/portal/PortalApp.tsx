@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Bell, CalendarCheck, Dumbbell, LineChart, NotebookPen, X } from "lucide-react";
-import { portalApi, PortalError } from "./portalApi";
+import { Bell, CalendarCheck, Dumbbell, LineChart, LogOut, NotebookPen, X } from "lucide-react";
+import { portalApi, portalSession, PortalError } from "./portalApi";
 import type { PortalState } from "../types";
 import { PortalWorkout } from "./PortalWorkout";
 import { PortalDiary } from "./PortalDiary";
@@ -111,16 +111,27 @@ export default function PortalApp({ token }: { token: string }) {
               <h1 className="text-xl font-semibold">Hola, {state.first_name}</h1>
             </div>
           </div>
-          {state.period && (
-            <div className="text-right">
-              {/* Azul (secundario): es un dato del ciclo, no una acción.
-                  Nunca negativo (período vencido pendiente de cerrar → 0). */}
-              <p className="text-2xl font-bold" style={{ color: state.brand.color_secondary, textShadow: `0 0 12px ${state.brand.color_secondary}55` }}>
-                {Math.max(0, state.period.days_left)}
-              </p>
-              <p className="text-[11px] opacity-50">días restantes</p>
-            </div>
-          )}
+          <div className="flex items-center gap-3">
+            {state.period && (
+              <div className="text-right">
+                {/* Azul (secundario): es un dato del ciclo, no una acción.
+                    Nunca negativo (período vencido pendiente de cerrar → 0). */}
+                <p className="text-2xl font-bold" style={{ color: state.brand.color_secondary, textShadow: `0 0 12px ${state.brand.color_secondary}55` }}>
+                  {Math.max(0, state.period.days_left)}
+                </p>
+                <p className="text-[11px] opacity-50">días restantes</p>
+              </div>
+            )}
+            {portalSession.token() && (
+              <button
+                onClick={() => { portalSession.clear(); window.location.href = "/portal"; }}
+                aria-label="Cerrar sesión"
+                className="tap -m-1 rounded-lg p-1 opacity-40 hover:opacity-80"
+              >
+                <LogOut size={18} />
+              </button>
+            )}
+          </div>
         </header>
 
         <main className="relative z-[1] flex-1 px-5 pb-28 pt-2">

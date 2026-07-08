@@ -7,15 +7,18 @@ import DashboardPage from "./pages/DashboardPage";
 import ClientsPage from "./pages/ClientsPage";
 import ClientProfilePage from "./pages/ClientProfilePage";
 import PortalApp from "./portal/PortalApp";
+import PortalLogin from "./portal/PortalLogin";
 
 /**
- * Raíz. El portal del cliente (/p/:token) es público y se resuelve ANTES del
- * gate de autenticación del coach; el resto de rutas exigen sesión.
+ * Raíz. El portal del cliente (login en /portal y acceso por token en /p/:token)
+ * es público y se resuelve ANTES del gate de autenticación del coach; el resto
+ * de rutas exigen sesión.
  */
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/portal" element={<PortalLogin />} />
         <Route path="/p/:token" element={<PortalRoute />} />
         <Route path="/*" element={<CoachApp />} />
       </Routes>

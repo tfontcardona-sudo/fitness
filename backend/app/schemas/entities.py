@@ -167,6 +167,7 @@ class ClientOut(BaseModel):
     auto_pilot: bool
     emails_enabled: bool
     consent_signed_at: datetime | None
+    portal_access_sent_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
     # Aviso de revisión quincenal nueva sin ver por el coach (lista de clientes).

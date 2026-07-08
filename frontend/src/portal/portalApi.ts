@@ -53,6 +53,44 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   return res.json() as Promise<T>;
 }
 
+/** Login del cliente por email + contraseña (sin token todavía). Devuelve el
+ *  token de portal con el que se accede al resto del portal. */
+export async function portalLogin(email: string, password: string): Promise<{ token: string; first_name: string }> {
+  const res = await fetch(`/api/p/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    let detail = "Email o contraseña incorrectos";
+    try {
+      const d = await res.json();
+      if (typeof d.detail === "string") detail = d.detail;
+    } catch { /* sin cuerpo */ }
+    throw new PortalError(res.status, detail);
+  }
+  return res.json() as Promise<{ token: string; first_name: string }>;
+}
+
+// "Recordarme": guardamos el token (y el email para autorrellenar) para entrar
+// sin volver a teclear. Es el mecanismo interno; el token equivale a la sesión.
+const TOKEN_KEY = "dq_portal_token";
+const EMAIL_KEY = "dq_portal_email";
+export const portalSession = {
+  save(token: string, email: string) {
+    try { localStorage.setItem(TOKEN_KEY, token); localStorage.setItem(EMAIL_KEY, email); } catch { /* modo privado */ }
+  },
+  token(): string | null {
+    try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
+  },
+  email(): string | null {
+    try { return localStorage.getItem(EMAIL_KEY); } catch { return null; }
+  },
+  clear() {
+    try { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(EMAIL_KEY); } catch { /* noop */ }
+  },
+};
+
 export function portalApi(token: string) {
   const base = `/p/${token}`;
   return {

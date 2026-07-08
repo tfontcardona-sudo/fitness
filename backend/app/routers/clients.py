@@ -502,7 +502,23 @@ def upload_client_document(
     except Exception as exc:  # nunca dejar caer la subida por un fallo de lectura
         read_error = str(exc)
 
-    return {"name": name, "rel_path": rel, "read_ok": read_ok, "read_error": read_error}
+    # Acceso del cliente al portal: la PRIMERA vez que el coach registra la
+    # anamnesis del cliente, se le envía por email su acceso (usuario = email +
+    # contraseña + enlace de login). Solo una vez (portal_access_sent_at). Nunca
+    # bloquea la subida si el email falla.
+    access_status = None
+    client = db.get(Client, client_id)
+    if client is not None and client.portal_access_sent_at is None:
+        try:
+            from app.services.portal_access import send_portal_access
+
+            access_status = send_portal_access(db, client)["status"]
+            db.commit()
+        except Exception:
+            db.rollback()
+
+    return {"name": name, "rel_path": rel, "read_ok": read_ok,
+            "read_error": read_error, "portal_access": access_status}
 
 
 @router.get("/{client_id}/documents")
@@ -510,6 +526,19 @@ def get_client_documents(client_id: int, db: Session = Depends(get_db)) -> list[
     """Lista los documentos subidos del cliente."""
     _client_or_404_docs(db, client_id)
     return list_documents(client_id)
+
+
+@router.post("/{client_id}/send-portal-access")
+def resend_portal_access(client_id: int, db: Session = Depends(get_db)) -> dict:
+    """(Re)envía al cliente su acceso al portal por email, regenerando la
+    contraseña. Devuelve el status del email y la contraseña en claro (para que
+    el coach pueda dársela también él si el email no llega)."""
+    client = _client_or_404_docs(db, client_id)
+    from app.services.portal_access import send_portal_access
+
+    res = send_portal_access(db, client)
+    db.commit()
+    return {"status": res["status"], "email": client.email, "password": res["password"]}
 
 
 @router.get("/{client_id}/history")

@@ -16,10 +16,13 @@ El mínimo de 1 foto lo exige el wizard y, en Fase 3, la generación del plan.
 from datetime import datetime, timezone
 from typing import Annotated, List
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
+from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+
+from app.security import verify_password
 
 from app.config import settings
 from app.db import get_db
@@ -66,6 +69,29 @@ router = APIRouter(prefix="/api/p", tags=["portal-public"])
 limiter = Limiter(key_func=get_remote_address)
 
 MAX_INITIAL_PHOTOS = 4
+
+
+class PortalLoginIn(BaseModel):
+    email: str
+    password: str
+
+
+@router.post("/login", response_model=dict)
+@limiter.limit("15/minute")
+def portal_login(request: Request, body: PortalLoginIn, db: Session = Depends(get_db)) -> dict:
+    """Login del cliente por email + contraseña. Devuelve su token de portal (el
+    mecanismo interno de acceso). Mensaje genérico ante cualquier fallo para no
+    revelar si el email existe."""
+    email = (body.email or "").strip().lower()
+    client = db.scalar(select(Client).where(func.lower(Client.email) == email)) if email else None
+    if (
+        client is None
+        or not client.portal_password_hash
+        or not verify_password(body.password or "", client.portal_password_hash)
+    ):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Email o contraseña incorrectos")
+    first = (client.full_name or client.email).split()[0]
+    return {"token": client.portal_token, "first_name": first}
 
 
 def _photos_count(db: Session, client_id: int) -> int:
