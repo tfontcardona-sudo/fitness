@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle2, Download, FileText, Send, Upload } from "lucide-react";
+import { CheckCircle2, Download, FileText, MessageCircle, Send, Upload } from "lucide-react";
 import { api, getToken } from "../lib/api";
 import { useToast } from "./ui";
+import { openWhatsApp, portalAccessMessage, waPhone } from "../lib/whatsapp";
 import type { ClientOut } from "../types";
 
 interface DocItem {
@@ -15,7 +16,7 @@ interface DocItem {
  * cuando este la devuelve rellenada, la sube aquí para conservarla asociada a su
  * ficha. Luego pasa los datos clave a la pestaña "Anamnesis" editable.
  */
-export function ClientDocuments({ client, onUploaded }: { client: ClientOut; onUploaded?: () => void }) {
+export function ClientDocuments({ client, onUploaded, portalUrl }: { client: ClientOut; onUploaded?: () => void; portalUrl?: string | null }) {
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [docs, setDocs] = useState<DocItem[] | null>(null);
@@ -129,6 +130,22 @@ export function ClientDocuments({ client, onUploaded }: { client: ClientOut; onU
     }
   }
 
+  // Envía el acceso al portal por WhatsApp (alternativa/añadido al correo).
+  // Necesita el teléfono del cliente y el enlace del portal ya cargado.
+  function sendPortalWhatsApp() {
+    const digits = waPhone(client.phone);
+    if (!digits) {
+      toast.push("Añade el teléfono del cliente en su ficha para enviarlo por WhatsApp", "error");
+      return;
+    }
+    if (!portalUrl) {
+      toast.push("El enlace del portal aún se está cargando; inténtalo en un segundo", "error");
+      return;
+    }
+    openWhatsApp(digits, portalAccessMessage(client.full_name, portalUrl));
+    toast.push("WhatsApp abierto con el acceso al portal — dale a enviar");
+  }
+
   function openDoc(name: string) {
     // El endpoint exige JWT; abrimos con fetch→blob para adjuntar el header.
     fetch(api.clientDocumentUrl(client.id, name), {
@@ -225,17 +242,21 @@ export function ClientDocuments({ client, onUploaded }: { client: ClientOut; onU
       )}
 
       {/* Acceso al portal del cliente (usuario = su email + contraseña por email).
-          Se envía solo al subir la anamnesis; aquí el coach puede reenviarlo. */}
+          Se envía solo al subir la anamnesis; aquí el coach puede reenviarlo por
+          email o mandar el enlace del portal por WhatsApp. */}
       <div className="mt-4 border-t pt-3" style={{ borderColor: "var(--line)" }}>
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs text-zinc-500">
-            {client.portal_access_sent_at
-              ? `Acceso enviado el ${new Date(client.portal_access_sent_at).toLocaleDateString("es-ES")}`
-              : "Aún no se ha enviado el acceso al portal"}
-          </span>
+        <span className="text-xs text-zinc-500">
+          {client.portal_access_sent_at
+            ? `Acceso enviado el ${new Date(client.portal_access_sent_at).toLocaleDateString("es-ES")}`
+            : "Aún no se ha enviado el acceso al portal"}
+        </span>
+        <div className="mt-2 flex flex-wrap gap-2">
           <button onClick={resendAccess} disabled={sending} className="btn btn-ghost shrink-0 text-xs">
             <Send size={13} className="text-zinc-500" />
-            {sending ? "Enviando…" : client.portal_access_sent_at ? "Reenviar acceso" : "Enviar acceso"}
+            {sending ? "Enviando…" : client.portal_access_sent_at ? "Reenviar por email" : "Enviar por email"}
+          </button>
+          <button onClick={sendPortalWhatsApp} className="btn btn-ghost shrink-0 text-xs">
+            <MessageCircle size={13} style={{ color: "#25D366" }} /> Enviar por WhatsApp
           </button>
         </div>
       </div>

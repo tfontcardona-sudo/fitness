@@ -292,6 +292,11 @@ def portal_training(
     week = portal_svc.current_training_week(db, plan, portal_svc.today_local())
     if week:
         week = {**week, "started_on": week["started_on"].isoformat()}
+    # El cliente ha abierto su rutina: si tenía un plan nuevo sin ver, apaga el
+    # aviso (y con él el badge del icono de la PWA en la próxima sincronización).
+    if plan is not None and client.plan_notice_pending:
+        client.plan_notice_pending = False
+        db.commit()
     return {
         "sessions": portal_svc.build_training_sessions(db, client),
         "plan_changes": changes,
@@ -861,8 +866,14 @@ def push_pending(
     client: Client = Depends(get_client_by_token),
     db: Session = Depends(get_db),
 ) -> PushPendingOut:
-    """Pendientes de HOY (diario/entreno/quincenal) para que el portal
-    sincronice el badge del icono al abrirse (navigator.setAppBadge)."""
+    """Pendientes de HOY (diario/entreno/quincenal) + aviso de plan nuevo sin
+    ver, para que el portal sincronice el badge del icono al abrirse
+    (navigator.setAppBadge). El aviso de plan hace que el badge salga aunque el
+    cliente no haya aceptado notificaciones push."""
     from datetime import date as _d
 
-    return PushPendingOut(**push_svc.pending_for_client(db, client, _d.today()))
+    pending = push_svc.pending_for_client(db, client, _d.today())
+    plan_notice = bool(client.plan_notice_pending)
+    pending["plan"] = plan_notice
+    pending["count"] = pending["count"] + (1 if plan_notice else 0)
+    return PushPendingOut(**pending)

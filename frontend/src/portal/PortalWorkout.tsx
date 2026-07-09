@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Dumbbell, Trash2, PlayCircle, Check, Sparkles, CalendarRange } from "lucide-react";
+import { Trash2, PlayCircle, Check, Sparkles, CalendarRange } from "lucide-react";
 import type { PlanChanges, PortalBrand, TodaySession, TrainingWeek } from "../types";
 import { usePortalToast } from "./PortalToast";
-import { Loading, Empty, localToday } from "./PortalUi";
+import { Loading, localToday } from "./PortalUi";
 import { useDismiss } from "../lib/useDismiss";
 import type { portalApi } from "./portalApi";
 
@@ -145,7 +145,26 @@ export function PortalWorkout({ api, brand, periodStatus = null }: {
 
   if (sessions === null) return <Loading />;
   if (sessions.length === 0) {
-    return <Empty icon={Dumbbell} title="Aún no tienes plan" hint="Cuando tu coach publique tu plan, aquí registrarás tus entrenamientos." />;
+    // Aún sin plan publicado: en vez de un vacío seco, avisamos de que se está
+    // preparando y de que recibirá una notificación cuando esté listo.
+    return (
+      <div className="space-y-5">
+        <div>
+          <h2 className="text-lg font-semibold">Tu entreno</h2>
+        </div>
+        <div className="portal-card border-l-4 p-4" style={{ borderLeftColor: brand.color_primary }}>
+          <div className="flex items-center gap-2">
+            <Sparkles size={18} style={{ color: brand.color_primary }} />
+            <p className="text-sm font-semibold">Se está creando tu planificación</p>
+          </div>
+          <p className="mt-1.5 text-xs leading-relaxed opacity-70">
+            Tu coach está preparando tu plan de entrenamiento personalizado. En cuanto
+            esté listo, aquí podrás registrar tus entrenamientos. Te avisaremos con una
+            notificación en cuanto lo publique.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (

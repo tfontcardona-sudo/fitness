@@ -187,6 +187,37 @@ def build_reminder_payload(pending: dict, brand_name: str, portal_url: str) -> d
     }
 
 
+# -------------------------------------------------- push "plan publicado" ----
+
+def build_plan_published_payload(brand_name: str, portal_url: str, *, republished: bool) -> dict:
+    """Payload de la notificación al cliente cuando su plan queda publicado."""
+    body = (
+        "Tu planificación se ha actualizado tras tu revisión. Ábrela en tu portal."
+        if republished
+        else "Tu planificación ya está lista. Ábrela en tu portal para empezar."
+    )
+    return {
+        "title": brand_name or "Tu planificación",
+        "body": body,
+        "count": 1,
+        "url": portal_url,
+        "tag": "dq-plan",  # tag propia: no pisa la de los recordatorios
+    }
+
+
+def notify_plan_published(db: Session, client: Client, *, republished: bool = False) -> int:
+    """Avisa al cliente (push) de que su plan está publicado. No hace commit.
+    Silencioso si el push no está configurado o el cliente no tiene dispositivos."""
+    if not push_configured():
+        return 0
+    brand = portal_svc.brand_payload(db)
+    base = settings.public_base_url.rstrip("/")
+    payload = build_plan_published_payload(
+        brand.get("name", ""), f"{base}/p/{client.portal_token}", republished=republished
+    )
+    return send_to_client(db, client, payload)
+
+
 # --------------------------------------------------------------- envío ----
 
 def send_to_client(db: Session, client: Client, payload: dict) -> int:

@@ -52,6 +52,18 @@ export function feedbackMessage(fullName: string, content: any): string {
   ].join("\n\n");
 }
 
+/** Mensaje de acceso al PORTAL del cliente (su app): saludo + enlace directo.
+ *  Es el enlace de la web del cliente, donde primero rellena la anamnesis y
+ *  luego hace el seguimiento y ve su planificación. */
+export function portalAccessMessage(fullName: string, portalUrl: string): string {
+  return [
+    `Hola ${waFirstName(fullName)},`,
+    "Te doy acceso a tu portal, tu espacio para el seguimiento del día a día y para ver tu planificación. Ábrelo desde este enlace y guárdalo en tu móvil:",
+    portalUrl,
+    `Nada más entrar, completa tu cuestionario inicial para que pueda prepararte el plan. ${CIERRE}`,
+  ].join("\n\n");
+}
+
 /** Mensaje de la planificación (original o adaptada) con su enlace al PDF. */
 export function planMessage(
   fullName: string,

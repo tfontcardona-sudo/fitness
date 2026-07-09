@@ -445,6 +445,7 @@ export interface PushPending {
   diary: boolean;
   workout: boolean;
   quincenal: boolean;
+  plan?: boolean;
   count: number;
 }
 
