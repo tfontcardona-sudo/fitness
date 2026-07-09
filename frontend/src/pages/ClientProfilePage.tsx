@@ -268,19 +268,23 @@ export default function ClientProfilePage() {
             móvil; columna izquierda-abajo en escritorio) */}
         <aside className="order-last min-w-0 space-y-3 lg:order-none lg:col-start-1 lg:row-start-2">
           {/* Anamnesis: enviar enlace + subir PDF rellenado */}
-          <ClientDocuments client={client} onUploaded={reload} />
+          <ClientDocuments client={client} onUploaded={reload} portalUrl={portalUrl} />
           <button
             onClick={() => setConfirmRegen(true)}
             className="w-full text-center text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
           >
             Regenerar enlace del portal (el actual dejará de funcionar)
           </button>
-          {/* Zona peligrosa: borrado total del cliente. Separado del resto y en
-              rojo tenue para que no se pulse sin querer; el modal exige teclear
-              el nombre completo antes de confirmar. */}
+          {/* Zona peligrosa: borrado total del cliente. Botón claramente en ROJO
+              (borde + texto + fondo tenue) y separado del resto; el modal exige
+              teclear el nombre completo antes de confirmar, así que verse rojo no
+              lo hace peligroso de pulsar. */}
           <button
             onClick={() => setConfirmDelete(true)}
-            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-transparent py-2 text-xs font-medium text-[#C2453A] transition-colors hover:border-[#C2453A]/40 hover:bg-[#C2453A]/10"
+            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border py-2.5 text-xs font-semibold text-white transition-colors"
+            style={{ background: "#C2453A", borderColor: "#C2453A" }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#A93A30")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "#C2453A")}
           >
             <Trash2 size={13} /> Borrar cliente
           </button>

@@ -103,6 +103,12 @@ class Client(Base):
     # marca de envío nacen nulos y se rellenan al enviar el acceso por email.
     portal_password_hash: Mapped[str | None] = mapped_column(String(255))
     portal_access_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Aviso "tienes una planificación nueva sin ver": se pone al publicar/activar
+    # un plan y se apaga cuando el cliente abre su rutina. Alimenta el badge del
+    # icono de la PWA aunque NO haya aceptado notificaciones push.
+    plan_notice_pending: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"), nullable=False
+    )
     consent_signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(

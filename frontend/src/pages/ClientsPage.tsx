@@ -1,25 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
-import { AlertTriangle, CheckCircle2, Copy, Search, Send, UserPlus, ChevronRight, Flag } from "lucide-react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { AlertTriangle, CheckCircle2, Copy, MessageCircle, Search, Send, UserPlus, ChevronRight, Flag } from "lucide-react";
 import { useDismiss, useModalFocus } from "../lib/useDismiss";
 import { api, ApiError, keepIfSame, REFRESH_MS } from "../lib/api";
 import type { ClientCreatedOut, ClientOut } from "../types";
 import { EmptyState, PageLoader, StatusBadge, useToast } from "../components/ui";
 import { Avatar } from "./DashboardPage";
 import { GOAL_LABEL, goalReviewDue, relativeDays } from "../lib/format";
+import { openWhatsApp, portalAccessMessage, waPhone } from "../lib/whatsapp";
 
 /** CARPETAS de la cartera según el punto del ciclo (no solo el estado crudo):
  *  Activos = planificación publicada · Pendientes = aún sin planificación
  *  (solo anamnesis / alta) · Revisión pendiente = quincenal subida (con su nº)
  *  · Objetivo 45 días = toca valorar cambio (sale de la carpeta al mantener). */
-type Category = "all" | "activos" | "pendientes" | "revision" | "objetivo" | "inactivos";
+type Category = "all" | "activos" | "pendientes" | "revision" | "objetivo";
 const CATEGORIES: { id: Category; label: string }[] = [
   { id: "all", label: "Todos" },
   { id: "activos", label: "Activos" },
   { id: "pendientes", label: "Pendientes" },
   { id: "revision", label: "Revisión pendiente" },
   { id: "objetivo", label: "Objetivo 45 días" },
-  { id: "inactivos", label: "Inactivos" },
 ];
 
 function inCategory(c: ClientOut, cat: Category): boolean {
@@ -29,7 +29,6 @@ function inCategory(c: ClientOut, cat: Category): boolean {
     case "pendientes": return !c.has_published_plan && c.status !== "inactive";
     case "revision": return c.status === "review_pending";
     case "objetivo": return goalReviewDue(c) != null && c.status !== "inactive";
-    case "inactivos": return c.status === "inactive";
   }
 }
 
@@ -226,6 +225,7 @@ function ClientCard({ c }: { c: ClientOut }) {
 }
 
 function ClientsTable({ clients }: { clients: ClientOut[] }) {
+  const navigate = useNavigate();
   return (
     <div className="card overflow-hidden">
       <table className="w-full text-sm">
@@ -239,13 +239,23 @@ function ClientsTable({ clients }: { clients: ClientOut[] }) {
         </thead>
         <tbody>
           {clients.map((c, i) => (
+            // Toda la fila es clicable: pulsar en cualquier celda entra al perfil.
             <tr
               key={c.id}
-              className="border-t transition-colors hover:bg-[var(--surface-raised)]"
+              onClick={() => navigate(`/clientes/${c.id}?tab=seguimiento`)}
+              role="link"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  navigate(`/clientes/${c.id}?tab=seguimiento`);
+                }
+              }}
+              className="cursor-pointer border-t transition-colors hover:bg-[var(--surface-raised)]"
               style={{ borderColor: "var(--line)", background: i % 2 ? "rgba(38,33,26,0.02)" : undefined }}
             >
               <td className="px-4 py-3">
-                <Link to={`/clientes/${c.id}?tab=seguimiento`} className="flex items-center gap-3">
+                <div className="flex items-center gap-3">
                   <div className="relative">
                     <Avatar name={c.full_name} size={32} />
                     {c.pending_review && (
@@ -262,7 +272,7 @@ function ClientsTable({ clients }: { clients: ClientOut[] }) {
                     <p className="font-medium text-zinc-100">{c.full_name}</p>
                     <p className="text-xs text-zinc-500">{c.email}</p>
                   </div>
-                </Link>
+                </div>
               </td>
               <td className="px-4 py-3 text-zinc-400">
                 {c.goal_type ? GOAL_LABEL[c.goal_type] : <span className="text-zinc-600">—</span>}
@@ -343,6 +353,19 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
     toast.push("Enlace copiado");
   }
 
+  // Abre WhatsApp del cliente con el acceso al portal ya escrito. Necesita el
+  // teléfono (el que se puso en el alta); si no hay, avisa.
+  function sendPortalWhatsApp() {
+    if (!created) return;
+    const digits = waPhone(created.client.phone ?? phone);
+    if (!digits) {
+      toast.push("Añade el teléfono del cliente para enviarlo por WhatsApp", "error");
+      return;
+    }
+    openWhatsApp(digits, portalAccessMessage(created.client.full_name, created.links.portal_url));
+    toast.push("WhatsApp abierto con el acceso al portal — dale a enviar");
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div
@@ -396,17 +419,23 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
               </button>
             </div>
 
-            {/* Enlace de la anamnesis: por si el coach quiere enviarlo también
-                por WhatsApp además del correo automático. */}
+            {/* Enlace del PORTAL del cliente (su app / web): para enviarlo también
+                por WhatsApp además del correo automático. Es el enlace de la web,
+                donde el cliente primero rellena la anamnesis y luego hace el
+                seguimiento y ve su planificación. */}
             <p className="mt-4 text-xs text-zinc-500">
-              Enlace de la anamnesis (para enviarlo también por WhatsApp, opcional):
+              Enlace del portal del cliente (para enviarlo también por WhatsApp, opcional):
             </p>
             <div className="mt-1.5 flex items-center gap-2 rounded-xl border p-3" style={{ borderColor: "var(--line-strong)" }}>
-              <code className="flex-1 truncate text-xs text-zinc-300">{created.links.anamnesis_url}</code>
-              <button className="btn btn-ghost px-2.5 py-1.5" onClick={() => copy(created.links.anamnesis_url)}>
+              <code className="flex-1 truncate text-xs text-zinc-300">{created.links.portal_url}</code>
+              <button className="btn btn-ghost px-2.5 py-1.5" aria-label="Copiar enlace" onClick={() => copy(created.links.portal_url)}>
                 <Copy size={14} />
               </button>
             </div>
+            <button className="btn btn-ghost mt-2 w-full justify-center text-xs" onClick={sendPortalWhatsApp}>
+              <MessageCircle size={14} style={{ color: "#25D366" }} /> Enviar por WhatsApp
+            </button>
+
             <div className="mt-6 flex justify-end">
               <button className="btn btn-primary" onClick={onClose}>
                 Hecho

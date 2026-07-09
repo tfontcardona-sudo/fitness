@@ -60,6 +60,9 @@ def activate_plan(db: Session, plan: Plan, *, notify: bool = True) -> None:
     ensure_open_period(db, plan.client_id)
 
     if notify and client is not None:
+        # Aviso "plan nuevo sin ver": enciende el badge del icono de la PWA
+        # aunque el cliente no tenga push. Se apaga cuando abre su rutina.
+        client.plan_notice_pending = True
         try:
             from app.config import settings
             from app.services import email_templates as tpl
@@ -84,4 +87,13 @@ def activate_plan(db: Session, plan: Plan, *, notify: bool = True) -> None:
                                   kind=kind, client=client)
         except Exception:
             # El email nunca bloquea la activación del plan
+            pass
+
+        # Notificación push "tu planificación ya está lista" (independiente del
+        # email; también silenciosa si no bloquea nunca la activación).
+        try:
+            from app.services import push as push_svc
+
+            push_svc.notify_plan_published(db, client, republished=same_month_replaced)
+        except Exception:
             pass

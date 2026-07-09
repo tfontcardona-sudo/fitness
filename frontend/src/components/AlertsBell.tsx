@@ -38,6 +38,13 @@ export function AlertsBell() {
   const count = alerts?.length ?? 0;
   const high = alerts?.filter((a) => a.severity === "alta").length ?? 0;
 
+  // Navega a la pestaña exacta donde hay que actuar. La usan por igual el
+  // nombre del cliente, el mensaje y el botón de acción de cada alerta.
+  const go = useCallback((a: CoachAlert) => {
+    setOpen(false);
+    navigate(`/clientes/${a.client_id}?tab=${a.tab}`);
+  }, [navigate]);
+
   async function snooze(a: CoachAlert) {
     try {
       await api.snoozeGoalReview(a.client_id);
@@ -99,11 +106,15 @@ export function AlertsBell() {
                     style={{ background: a.severity === "alta" ? "#C2453A" : "var(--brand-accent-2)" }}
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-zinc-100">{a.client_name}</p>
-                    <p className="mt-0.5 text-xs text-zinc-400">{a.message}</p>
+                    {/* Nombre + mensaje clicables: llevan a la misma pestaña
+                        donde hay que actuar que el botón de acción. */}
+                    <button onClick={() => go(a)} className="group block w-full text-left">
+                      <span className="block text-sm font-medium text-zinc-100 group-hover:opacity-80">{a.client_name}</span>
+                      <span className="mt-0.5 block text-xs text-zinc-400 group-hover:text-zinc-300">{a.message}</span>
+                    </button>
                     <div className="mt-1.5 flex flex-wrap gap-2">
                       <button
-                        onClick={() => { setOpen(false); navigate(`/clientes/${a.client_id}?tab=${a.tab}`); }}
+                        onClick={() => go(a)}
                         className="text-xs font-semibold hover:opacity-80"
                         style={{ color: "var(--brand-accent)" }}
                       >

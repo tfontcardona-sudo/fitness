@@ -414,6 +414,7 @@ class PushPendingOut(BaseModel):
     diary: bool
     workout: bool
     quincenal: bool
+    plan: bool = False  # planificación nueva sin ver (suma 1 al badge)
     count: int
 
 
