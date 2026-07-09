@@ -130,6 +130,9 @@ export const api = {
     request<ClientCreatedOut>("POST", "/clients", body),
   updateClient: (id: number, patch: Partial<ClientOut>) =>
     request<ClientOut>("PATCH", `/clients/${id}`, patch),
+  // Borrado total (RGPD): el backend exige `confirm` == nombre completo exacto.
+  deleteClient: (id: number, confirm: string) =>
+    request<void>("DELETE", `/clients/${id}?confirm=${encodeURIComponent(confirm)}`),
   portalLink: (id: number) =>
     request<PortalLinkOut>("GET", `/clients/${id}/portal-link`),
   regeneratePortalToken: (id: number) =>

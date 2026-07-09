@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Check, BellRing, Pencil, Smartphone, ClipboardCheck } from "lucide-react";
+import { Link, useParams, useSearchParams, useNavigate } from "react-router-dom";
+import { ArrowLeft, Check, BellRing, Pencil, Smartphone, ClipboardCheck, Trash2 } from "lucide-react";
 import { api, keepIfSame, REFRESH_MS } from "../lib/api";
 import type { ClientOut } from "../types";
 import {
@@ -25,12 +25,15 @@ export default function ClientProfilePage() {
   const { id } = useParams();
   const clientId = Number(id);
   const toast = useToast();
+  const navigate = useNavigate();
   const [client, setClient] = useState<ClientOut | null>(null);
   const [searchParams] = useSearchParams();
   const initialTab = (["resumen", "anamnesis", "planificacion", "seguimiento", "feedback", "historial"] as Tab[])
     .includes(searchParams.get("tab") as Tab) ? (searchParams.get("tab") as Tab) : "resumen";
   const [tab, setTab] = useState<Tab>(initialTab);
   const [confirmRegen, setConfirmRegen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [portalUrl, setPortalUrl] = useState<string | null>(null);
   // Aviso "revisión cerrada": solo mientras el feedback de la última revisión
   // NO exista todavía. En cuanto el coach lo genera, el aviso desaparece.
@@ -160,6 +163,20 @@ export default function ClientProfilePage() {
     }
   }
 
+  async function deleteClient() {
+    if (!client || deleting) return;
+    setDeleting(true);
+    try {
+      await api.deleteClient(client.id, client.full_name);
+      setConfirmDelete(false);
+      toast.push(`${client.full_name} eliminado definitivamente`);
+      navigate("/clientes");
+    } catch {
+      toast.push("No se pudo borrar el cliente", "error");
+      setDeleting(false);
+    }
+  }
+
   if (loadError && client === null) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-16 text-center">
@@ -258,6 +275,15 @@ export default function ClientProfilePage() {
           >
             Regenerar enlace del portal (el actual dejará de funcionar)
           </button>
+          {/* Zona peligrosa: borrado total del cliente. Separado del resto y en
+              rojo tenue para que no se pulse sin querer; el modal exige teclear
+              el nombre completo antes de confirmar. */}
+          <button
+            onClick={() => setConfirmDelete(true)}
+            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-transparent py-2 text-xs font-medium text-[#C2453A] transition-colors hover:border-[#C2453A]/40 hover:bg-[#C2453A]/10"
+          >
+            <Trash2 size={13} /> Borrar cliente
+          </button>
         </aside>
 
         {/* 2) CONTENIDO con tabs (a la derecha, ocupa ambas filas en desktop) */}
@@ -302,6 +328,26 @@ export default function ClientProfilePage() {
         confirmLabel="Regenerar"
         onConfirm={regenerate}
         onCancel={() => setConfirmRegen(false)}
+      />
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Borrar cliente"
+        destructive
+        requireText={client.full_name}
+        body={
+          <>
+            Se borrará <b>para siempre</b> todo lo de <b>{client.full_name}</b>:
+            ficha, anamnesis, planificaciones, seguimiento, fotos y feedbacks.
+            <b> No se puede deshacer.</b>
+            <br />
+            <br />
+            Para confirmar, escribe el nombre completo del cliente:
+          </>
+        }
+        confirmLabel={deleting ? "Borrando…" : "Borrar definitivamente"}
+        onConfirm={deleteClient}
+        onCancel={() => !deleting && setConfirmDelete(false)}
       />
     </div>
   );
