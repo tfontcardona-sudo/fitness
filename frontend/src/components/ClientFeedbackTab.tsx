@@ -109,13 +109,13 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
   /** Un clic: abre WhatsApp del cliente con el feedback ya escrito (entrada,
    *  informe y cierre profesionales) y, la primera vez, lo marca como enviado
    *  (el ciclo avanza a "activo"). Se puede reenviar cuantas veces haga falta. */
-  async function sendWhatsApp(feedbackId: number, content: any, alreadySent: boolean) {
+  async function sendWhatsApp(feedbackId: number, content: any, alreadySent: boolean, periodIndex = 0) {
     const phone = waPhone(client.phone);
     if (!phone) {
       toast.push("Añade el teléfono del cliente en su ficha para enviarlo por WhatsApp", "error");
       return;
     }
-    openWhatsApp(phone, feedbackMessage(client.full_name, content));
+    openWhatsApp(phone, feedbackMessage(client.full_name, content, periodIndex));
     if (alreadySent) {
       toast.push("WhatsApp abierto con el feedback — dale a enviar");
       return;
@@ -218,7 +218,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
               </div>
               <div className="flex gap-2" onClick={(e) => e.preventDefault()}>
                 {p.feedback_id && content && !sent && (
-                  <button onClick={() => sendWhatsApp(p.feedback_id as number, content, false)} className="btn btn-primary">
+                  <button onClick={() => sendWhatsApp(p.feedback_id as number, content, false, p.period_index)} className="btn btn-primary">
                     <MessageCircle size={15} /> Enviar por WhatsApp
                   </button>
                 )}
@@ -353,7 +353,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                   <SubTitle icon={TrendingUp} text="Feedback" />
                   <div className="flex items-center gap-3">
                     <button
-                      onClick={() => sendWhatsApp(p.feedback_id as number, content, !!sent)}
+                      onClick={() => sendWhatsApp(p.feedback_id as number, content, !!sent, p.period_index)}
                       className="flex items-center gap-1 text-xs font-medium hover:opacity-80"
                       style={{ color: "var(--brand-accent)" }}
                     >
