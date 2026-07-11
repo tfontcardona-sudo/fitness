@@ -42,13 +42,105 @@ export function feedbackBody(content: any, opts?: { bold?: boolean }): string {
   return parts.join("\n\n");
 }
 
-/** Mensaje del feedback quincenal: entrada + informe + cierre profesional. */
-export function feedbackMessage(fullName: string, content: any): string {
+/** 5 "voces" distintas para los mensajes automáticos (feedback y plan): mismo
+ *  tono profesional y misma estructura (así la INFO del cliente siempre va
+ *  completa), pero cambian el saludo, la entrada, el cierre de frase y la
+ *  despedida. Se reparten entre clientes (y varían entre revisiones) para que
+ *  no reciban todos siempre el mismo texto. */
+interface Voice {
+  greet: (name: string) => string;
+  cierre: string;
+  fbIntro: string;
+  fbTail: string;
+  planIntro: (que: string) => string;
+  planTail: (adapted: boolean) => string;
+  cbIntro: string;
+  cbTail: string;
+}
+
+const VOICES: Voice[] = [
+  {
+    greet: (n) => `Hola ${n},`,
+    cierre: "Cualquier duda que te surja, escríbeme por aquí y la vemos.\n\nUn saludo.",
+    fbIntro: "Te envío el feedback de tu revisión quincenal, con el análisis de estas dos semanas:",
+    fbTail: "Léelo con calma.",
+    planIntro: (que) => `Te envío ${que}. Puedes consultarla y descargarla en PDF desde este enlace:`,
+    planTail: (a) => a
+      ? "Los cambios aplicados y su porqué vienen detallados en el propio documento."
+      : "Revísala con calma antes de empezar.",
+    cbIntro: "Te envío el cierre completo de tu revisión quincenal: el feedback de estas dos semanas y tu planificación.",
+    cbTail: "Léelo todo con calma.",
+  },
+  {
+    greet: (n) => `¡Hola ${n}!`,
+    cierre: "Si te queda cualquier duda, me escribes por aquí sin problema.\n\nUn abrazo.",
+    fbIntro: "Aquí tienes el resumen de estas dos semanas: he revisado tus datos y te dejo el análisis y los ajustes.",
+    fbTail: "Cuéntame qué te parece.",
+    planIntro: (que) => `Aquí tienes ${que}. La puedes ver y descargar en PDF en este enlace:`,
+    planTail: (a) => a
+      ? "En el documento tienes los cambios y el porqué de cada uno."
+      : "Échale un ojo con calma antes de arrancar.",
+    cbIntro: "Cerramos la quincena: te dejo el feedback de estas dos semanas junto con tu planificación.",
+    cbTail: "Míralo todo con calma.",
+  },
+  {
+    greet: (n) => `Buenas ${n},`,
+    cierre: "Para cualquier cosa que necesites, aquí me tienes.\n\nUn saludo.",
+    fbIntro: "Ya tengo lista la valoración de tu quincena. Te la detallo a continuación:",
+    fbTail: "Revísala con tranquilidad.",
+    planIntro: (que) => `Te comparto ${que}. Disponible para consultar y descargar en PDF aquí:`,
+    planTail: (a) => a
+      ? "Los ajustes realizados y su justificación están recogidos en el propio PDF."
+      : "Léela con calma antes de empezar.",
+    cbIntro: "Te paso el cierre de tu revisión quincenal: la valoración de estas dos semanas y tu nueva planificación.",
+    cbTail: "Revísalo todo con tranquilidad.",
+  },
+  {
+    greet: (n) => `${n}, ¿qué tal?`,
+    cierre: "Cualquier cosa que no veas clara, me lo dices y lo ajustamos.\n\nUn saludo grande.",
+    fbIntro: "Toca revisión quincenal. He mirado cómo ha ido todo y esto es lo que veo:",
+    fbTail: "Lo comentamos si quieres.",
+    planIntro: (que) => `Te mando ${que}. La tienes para ver y descargar en PDF en este enlace:`,
+    planTail: (a) => a
+      ? "Dentro del documento te explico qué he cambiado y por qué."
+      : "Dale un repaso con calma antes de ponerte.",
+    cbIntro: "Cerramos estas dos semanas: te dejo el feedback y, con él, tu planificación.",
+    cbTail: "Repásalo todo con calma.",
+  },
+  {
+    greet: (n) => `Hola de nuevo, ${n},`,
+    cierre: "Si surge alguna duda, hablamos por aquí cuando quieras.\n\nÁnimo y a por ello.",
+    fbIntro: "Te comparto la valoración de esta quincena, con lo conseguido y lo que ajustamos de cara a las próximas semanas:",
+    fbTail: "Tómate un momento para leerlo.",
+    planIntro: (que) => `Te hago llegar ${que}. Puedes consultarla y descargarla en PDF desde aquí:`,
+    planTail: (a) => a
+      ? "Todos los cambios y su motivo quedan explicados en el documento."
+      : "Léela con calma antes de empezar la etapa.",
+    cbIntro: "Cerramos la quincena con todo: el feedback de estas dos semanas y tu planificación actualizada.",
+    cbTail: "Léelo con calma.",
+  },
+];
+
+/** Elige una de las 5 voces de forma estable: mezcla el nombre del cliente con
+ *  un número de contexto (nº de período/mes) para que clientes distintos reciban
+ *  estilos distintos y, además, varíe entre una revisión y la siguiente. */
+function pickVoice(fullName: string, extra = 0): Voice {
+  let s = 0;
+  const name = fullName ?? "";
+  for (let i = 0; i < name.length; i++) s = (s + name.charCodeAt(i)) % 100000;
+  const e = Number.isFinite(extra) ? Math.trunc(Math.abs(extra)) : 0;
+  return VOICES[(s + e) % VOICES.length];
+}
+
+/** Mensaje del feedback quincenal: entrada + informe + cierre profesional.
+ *  `periodIndex` hace que la voz varíe entre una revisión y la siguiente. */
+export function feedbackMessage(fullName: string, content: any, periodIndex = 0): string {
+  const v = pickVoice(fullName, periodIndex);
   return [
-    `Hola ${waFirstName(fullName)},`,
-    "Te envío el feedback de tu revisión quincenal, con el análisis de estas dos semanas:",
+    v.greet(waFirstName(fullName)),
+    v.fbIntro,
     feedbackBody(content, { bold: true }),
-    `Léelo con calma. ${CIERRE}`,
+    `${v.fbTail} ${v.cierre}`,
   ].join("\n\n");
 }
 
@@ -64,23 +156,23 @@ export function portalAccessMessage(fullName: string, portalUrl: string): string
   ].join("\n\n");
 }
 
-/** Mensaje de la planificación (original o adaptada) con su enlace al PDF. */
+/** Mensaje de la planificación (original o adaptada) con su enlace al PDF.
+ *  La voz varía según el cliente y el mes/adaptación. */
 export function planMessage(
   fullName: string,
   pdfUrl: string,
   adaptedIdx: number | null,
   monthIndex: number,
 ): string {
+  const v = pickVoice(fullName, monthIndex + (adaptedIdx ?? 0));
   const que = adaptedIdx != null
     ? `tu planificación actualizada tras la revisión #${adaptedIdx}`
     : `tu planificación del mes ${monthIndex}`;
   return [
-    `Hola ${waFirstName(fullName)},`,
-    `Te envío ${que}. Puedes consultarla y descargarla en PDF desde este enlace:`,
+    v.greet(waFirstName(fullName)),
+    v.planIntro(que),
     pdfUrl,
-    adaptedIdx != null
-      ? `Los cambios aplicados y su porqué vienen detallados en el propio documento. ${CIERRE}`
-      : `Revísala con calma antes de empezar. ${CIERRE}`,
+    `${v.planTail(adaptedIdx != null)} ${v.cierre}`,
   ].join("\n\n");
 }
 
@@ -91,15 +183,16 @@ export function planAndFeedbackMessage(
   pdfUrl: string,
   adaptedIdx: number | null,
 ): string {
+  const v = pickVoice(fullName, (adaptedIdx ?? 0) + 1);
   return [
-    `Hola ${waFirstName(fullName)},`,
-    "Te envío el cierre completo de tu revisión quincenal: el feedback de estas dos semanas y tu planificación.",
+    v.greet(waFirstName(fullName)),
+    v.cbIntro,
     "*Feedback de la quincena*",
     feedbackBody(content, { bold: true }),
     adaptedIdx != null
       ? `*Tu planificación (actualizada tras la revisión #${adaptedIdx})*`
       : "*Tu planificación*",
     `Puedes consultarla y descargarla en PDF desde este enlace:\n${pdfUrl}`,
-    `Léelo todo con calma. ${CIERRE}`,
+    `${v.cbTail} ${v.cierre}`,
   ].join("\n\n");
 }
