@@ -115,7 +115,7 @@ def fake_generate_monthly_plan(ctx, ai, include_training=True):
     return FakeGenerated()
 
 
-def fake_feedback_analysis(payload: dict, ai) -> FeedbackAIOutput:
+def fake_feedback_analysis(payload: dict, ai, nutrition_only: bool = False) -> FeedbackAIOutput:
     """Feedback determinista con ajustes que la adaptación puede aplicar."""
     idx = payload.get("periodo_index", 1)
     return FeedbackAIOutput(

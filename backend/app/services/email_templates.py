@@ -86,10 +86,12 @@ Este mensaje es parte de tu asesoría personalizada con {brand.name}.{footer_con
 # ---------------------------------------------------------- al cliente ----
 
 def portal_access(brand: Brand, first_name: str, login_url: str,
-                  username: str, password: str) -> tuple[str, str]:
+                  username: str, password: str, has_training: bool = True) -> tuple[str, str]:
     """Email de bienvenida con el acceso personal al portal (usuario y clave)."""
     from html import escape
     first_name, username, password = escape(first_name), escape(username), escape(password)
+    registras = "tus entrenamientos, tu diario y tu revisión quincenal" if has_training else "tu diario y tu revisión quincenal"
+    progreso = "peso, fuerza, medidas y fotos" if has_training else "peso, medidas y fotos"
     subject = f"Tu acceso personal a tu portal · {brand.name}"
     box = (
         f'<table role="presentation" cellpadding="0" cellspacing="0" width="100%" '
@@ -104,9 +106,8 @@ def portal_access(brand: Brand, first_name: str, login_url: str,
     body = (
         f"<p>Hola {first_name}, ¡bienvenido/a! Ya tienes tu <strong>portal personal</strong>, "
         f"el sitio donde vas a llevar tu día a día con {brand.name}.</p>"
-        f"<p>Desde el portal registras tus entrenamientos, tu diario y tu revisión "
-        f"quincenal, y ves <strong>tu progreso</strong> (peso, fuerza, medidas y fotos). "
-        f"Es tuyo y es privado: entra con estos datos.</p>"
+        f"<p>Desde el portal registras {registras}, y ves <strong>tu progreso</strong> "
+        f"({progreso}). Es tuyo y es privado: entra con estos datos.</p>"
         f"{box}"
         f"<p style=\"font-size:13px;color:#8a8a94\">Al entrar puedes marcar "
         f"<em>«Recordarme»</em> para no tener que escribirlos cada vez. Guarda este correo "
@@ -115,7 +116,8 @@ def portal_access(brand: Brand, first_name: str, login_url: str,
     return subject, _shell(brand, "Tu portal ya está listo", body, login_url, "Entrar a mi portal")
 
 
-def plan_published(brand: Brand, first_name: str, portal_url: str, is_new_month: bool) -> tuple[str, str]:
+def plan_published(brand: Brand, first_name: str, portal_url: str, is_new_month: bool,
+                   has_training: bool = True) -> tuple[str, str]:
     first_name = _esc(first_name)
     if is_new_month:
         subject = f"Tu nuevo plan del mes ya está listo · {brand.name}"
@@ -124,23 +126,25 @@ def plan_published(brand: Brand, first_name: str, portal_url: str, is_new_month:
             "tus resultados y tu feedback. Encontrarás los ajustes en tu portal."
         )
     else:
+        que = "de nutrición y entrenamiento" if has_training else "de nutrición"
         subject = f"¡Bienvenido/a! Tu plan ya está disponible · {brand.name}"
         intro = (
-            f"Hola {first_name}, tu planificación personalizada de nutrición y "
-            "entrenamiento ya está lista. Entra en tu portal para verla y registrar "
-            "tu día a día."
+            f"Hola {first_name}, tu planificación personalizada {que} ya está lista. "
+            "Entra en tu portal para verla y registrar tu día a día."
         )
-    body = f"<p>{intro}</p><p>En la vista <strong>HOY</strong> verás qué comer y qué entrenar cada día, en menos de 30 segundos.</p>"
+    body = f"<p>{intro}</p>"
     return subject, _shell(brand, "Tu plan está listo", body, portal_url, "Abrir mi portal")
 
 
-def reminder_no_logs(brand: Brand, first_name: str, portal_url: str, days_left: int) -> tuple[str, str]:
+def reminder_no_logs(brand: Brand, first_name: str, portal_url: str, days_left: int,
+                     has_training: bool = True) -> tuple[str, str]:
     first_name = _esc(first_name)
     subject = f"Un recordatorio rápido de tu seguimiento · {brand.name}"
+    que = "tu peso, entrenos y adherencia" if has_training else "tu peso y adherencia"
     body = (
         f"<p>Hola {first_name}, hemos visto que llevas unos días sin registrar tu "
         f"seguimiento. Quedan <strong>{days_left} días</strong> para cerrar este "
-        "período.</p><p>Registrar tu peso, entrenos y adherencia nos permite ajustar "
+        f"período.</p><p>Registrar {que} nos permite ajustar "
         "tu plan con precisión. ¡Solo te lleva un minuto al día!</p>"
     )
     return subject, _shell(brand, "¿Cómo va tu seguimiento?", body, portal_url, "Registrar ahora")
@@ -158,13 +162,15 @@ def closing_due(brand: Brand, first_name: str, portal_url: str, period_index: in
     return subject, _shell(brand, "Cierra tu período", body, f"{portal_url}/cierre", "Completar cierre")
 
 
-def feedback_ready(brand: Brand, first_name: str, portal_url: str) -> tuple[str, str]:
+def feedback_ready(brand: Brand, first_name: str, portal_url: str,
+                   has_training: bool = True) -> tuple[str, str]:
     first_name = _esc(first_name)
     subject = f"Tu informe de progreso está listo · {brand.name}"
+    graficas = ("tus gráficas de progreso, evolución de fuerza y los cambios"
+                if has_training else "tus gráficas de progreso y los cambios")
     body = (
-        f"<p>Hola {first_name}, ya tienes tu informe de seguimiento con tus gráficas "
-        "de progreso, evolución de fuerza y los cambios que hemos hecho en tu plan "
-        "(y por qué).</p>"
+        f"<p>Hola {first_name}, ya tienes tu informe de seguimiento con {graficas} "
+        "que hemos hecho en tu plan (y por qué).</p>"
     )
     return subject, _shell(brand, "Tu progreso, en detalle", body, f"{portal_url}/feedback", "Ver mi informe")
 

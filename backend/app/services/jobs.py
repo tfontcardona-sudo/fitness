@@ -128,6 +128,7 @@ def run_daily_maintenance(db: Session, today: date | None = None) -> dict:
             subject, html = tpl.reminder_no_logs(
                 brand, _first_name(client),
                 f"{base}/p/{client.portal_token}", days_left,
+                has_training=getattr(client, "package_tier", None) != "start",
             )
             emailer.send(to=client.email, subject=subject, html=html,
                          kind="reminder_no_logs", client=client)

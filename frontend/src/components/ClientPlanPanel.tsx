@@ -224,7 +224,7 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
       setPeriods(await api.listPeriods(client.id).catch(() => periods));
       setNeedsDownload(false); // versión nueva: el aviso de re-descarga ya no aplica
       onClientChanged?.(); // resincroniza sidebar (Dieta), badges y carpetas
-      toast.push("Planificación generada y ACTIVA — revísala y envíasela por WhatsApp");
+      toast.push(`Planificación generada y ACTIVA — revísala y envíasela por ${byEmail ? "email" : "WhatsApp"}`);
     } catch (e: any) {
       const detail = e?.detail ?? e?.data?.detail;
       if (detail?.missing) setMissing(detail.missing);
@@ -425,7 +425,7 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
             </div>
             <p className="mt-0.5 text-xs text-zinc-500">
               La planificación queda ACTIVA al generarla o adaptarla: revísala, edítala si
-              quieres y envíasela por WhatsApp.
+              quieres y envíasela por {byEmail ? "email" : "WhatsApp"}.
             </p>
           </div>
           {/* Acciones: en móvil ocupan todo el ancho (2 columnas) sin cortarse;
@@ -501,7 +501,7 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
             <AlertTriangle size={16} className="mt-0.5 shrink-0" style={{ color: "var(--brand-accent)" }} />
             <p className="text-sm text-zinc-300">
               <b className="text-zinc-100">Planificación editada y guardada.</b> El PDF descargado
-              antes ya no vale: descárgalo de nuevo (o reenvía el enlace por WhatsApp) para que el
+              antes ya no vale: descárgalo de nuevo (o reenvía el enlace por {byEmail ? "email" : "WhatsApp"}) para que el
               cliente reciba la versión actualizada.
             </p>
           </div>
@@ -534,7 +534,7 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
           <summary className="cursor-pointer text-sm font-semibold text-zinc-100">
             Cambios propuestos por la revisión #{review.period_index}
             <span className="ml-2 text-xs font-normal text-zinc-500">
-              {review.plan_adjustments.length} ajustes · dieta y entrenamiento
+              {review.plan_adjustments.length} ajustes · {hasTraining ? "dieta y entrenamiento" : "dieta"}
             </span>
           </summary>
           <div className="mt-3 space-y-2">
@@ -546,7 +546,7 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
             <p className="text-xs text-zinc-500">
               Al adaptar, la versión nueva queda <b className="text-zinc-300">ACTIVA al momento</b> (portal y
               PDF actualizados), con calorías, macros, comidas y gramos reescalados en bloque.
-              Puedes editarla después y enviarla por WhatsApp.
+              Puedes editarla después y enviarla por {byEmail ? "email" : "WhatsApp"}.
             </p>
             <button onClick={adapt} disabled={generating} className="btn btn-primary">
               {generating ? "Adaptando…" : `Adaptar a la revisión #${review.period_index}`}
@@ -902,8 +902,8 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
                     {Math.round(p.nutrition_json?.macros?.carbs_g ?? 0)}/
                     {Math.round(p.nutrition_json?.macros?.fat_g ?? 0)} g
                   </b></span>
-                  <span>Split: <b className="text-zinc-200">{p.training_json?.split_name ?? "—"}</b></span>
-                  <span>Sesiones: <b className="text-zinc-200">{(p.training_json?.sessions ?? []).length}</b></span>
+                  {hasTraining && <span>Split: <b className="text-zinc-200">{p.training_json?.split_name ?? "—"}</b></span>}
+                  {hasTraining && <span>Sesiones: <b className="text-zinc-200">{(p.training_json?.sessions ?? []).length}</b></span>}
                 </div>
                 {/* Por qué se adaptó o cambió esta versión */}
                 {(p.whyChanged?.length || p.whyLabel) && (
@@ -983,11 +983,12 @@ function ImportantPointsCard({ client }: { client: ClientOut }) {
   add("Objetivo y contexto en sus palabras", client.lifestyle_notes);
   if (!blocks.length) return null;
   const RED = "#B3261E";
+  const hasTraining = pkg(client.package_tier).hasTraining;
   return (
     <div className="card p-5">
       <SectionTitle icon={AlertTriangle} title="Puntos importantes del cliente" />
       <p className="mb-2 text-xs text-zinc-500">
-        De su anamnesis: lo que hay que respetar en dieta y entrenamiento.
+        De su anamnesis: lo que hay que respetar en {hasTraining ? "dieta y entrenamiento" : "dieta"}.
         <span className="font-medium" style={{ color: RED }}> Lo crítico, en rojo.</span>
       </p>
       <div className="space-y-2">
@@ -1041,6 +1042,9 @@ function GoalStageCard({ client, currentMonth, onClientChanged, onRegenerated }:
   onRegenerated: () => Promise<void>;
 }) {
   const toast = useToast();
+  const info = pkg(client.package_tier);
+  const hasTraining = info.hasTraining;
+  const byEmail = info.delivery === "email";
   const days = goalDays(client);
   const due = goalReviewDue(client);
   const [analysis, setAnalysis] = useState<string | null>(null);
@@ -1081,7 +1085,7 @@ function GoalStageCard({ client, currentMonth, onClientChanged, onRegenerated }:
       onClientChanged?.();
       await api.generatePlan(client.id, currentMonth + 1);
       await onRegenerated();
-      toast.push("Planificación nueva generada y ACTIVA para el objetivo nuevo — envíasela por WhatsApp.");
+      toast.push(`Planificación nueva generada y ACTIVA para el objetivo nuevo — envíasela por ${byEmail ? "email" : "WhatsApp"}.`);
       setConfirming(false);
       setNewGoal("");
       setAnalysis(null);
@@ -1166,8 +1170,7 @@ function GoalStageCard({ client, currentMonth, onClientChanged, onRegenerated }:
         </div>
         {confirming && !changing && (
           <p className="text-xs text-zinc-500">
-            Se cambiará el objetivo, se generará una planificación completamente nueva (dieta y
-            entrenamiento) con todo su historial en cuenta, y la actual quedará archivada abajo
+            Se cambiará el objetivo, se generará una planificación completamente nueva ({hasTraining ? "dieta y entrenamiento" : "dieta"}) con todo su historial en cuenta, y la actual quedará archivada abajo
             con su objetivo y duración.
           </p>
         )}

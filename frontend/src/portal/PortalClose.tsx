@@ -19,12 +19,22 @@ function loadDraft(closeDate: string | null): Record<string, any> {
   }
 }
 
-// Sección 2 de la revisión quincenal: sensaciones (1 muy mal → 5 excelente)
-const FEELINGS: { key: string; label: string }[] = [
+// Sección 2 de la revisión quincenal: sensaciones (1 muy mal → 5 excelente).
+// Las claves se guardan y el coach las lee (lib FEELING_LABEL); en el paquete
+// solo-nutrición se quitan las de entreno ("Energía en el entreno" pasa a "en el
+// día" y desaparece "Recuperación muscular").
+const FEELINGS_TRAINING: { key: string; label: string }[] = [
   { key: "energia", label: "Energía en el entreno" },
   { key: "hambre", label: "Hambre / saciedad" },
   { key: "sueno", label: "Calidad del sueño" },
   { key: "recuperacion", label: "Recuperación muscular" },
+  { key: "animo", label: "Ánimo / estado general" },
+  { key: "digestiones", label: "Digestiones" },
+];
+const FEELINGS_NUTRITION: { key: string; label: string }[] = [
+  { key: "energia", label: "Energía en el día" },
+  { key: "hambre", label: "Hambre / saciedad" },
+  { key: "sueno", label: "Calidad del sueño" },
   { key: "animo", label: "Ánimo / estado general" },
   { key: "digestiones", label: "Digestiones" },
 ];
@@ -35,10 +45,15 @@ const FEELINGS: { key: string; label: string }[] = [
  * cambios, qué cuesta, objetivo. Al enviar dispara el feedback de adaptación IA.
  * Las fotos de progreso se envían por WhatsApp (no se suben aquí).
  */
-export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDate, periodStatus }: {
+export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDate, periodStatus, hasTraining = true, directContact = true }: {
   api: Api; brand: PortalBrand; onClosed: () => void; canClose: boolean;
   daysLeft: number | null; closeDate: string | null; periodStatus?: string | null;
+  // Paquete solo-nutrición (Start): sin adherencia ni sensaciones de entreno.
+  hasTraining?: boolean;
+  // Contacto directo (Pro): las fotos van por WhatsApp; si no, por email.
+  directContact?: boolean;
 }) {
+  const FEELINGS = hasTraining ? FEELINGS_TRAINING : FEELINGS_NUTRITION;
   const fechaCae = closeDate
     ? new Date(closeDate + "T00:00:00").toLocaleDateString("es-ES", { day: "2-digit", month: "long" })
     : null;
@@ -100,8 +115,8 @@ export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDat
       return "Revisa las comidas libres (0-50)";
     return null;
   })();
-  const canSubmit = Number(weight) > 30 && allFeelings && adhDiet !== "" && adhTrain !== ""
-    && !rangeError && !busy;
+  const canSubmit = Number(weight) > 30 && allFeelings && adhDiet !== ""
+    && (!hasTraining || adhTrain !== "") && !rangeError && !busy;
 
   async function submit() {
     if (!canSubmit) return;
@@ -239,15 +254,22 @@ export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDat
         </div>
       </Section>
 
-      {/* 3 · Adherencia */}
+      {/* 3 · Adherencia. En solo-nutrición no se pregunta la del entreno (el
+          cliente no tiene rutina): en su lugar van dieta + comidas libres. */}
       <Section n={3} title="Adherencia al plan">
         <div className="grid grid-cols-2 gap-3">
           <NumField label="Dieta (0-10)" value={adhDiet} onChange={setAdhDiet} min={0} max={10} required />
-          <NumField label="Entreno (0-10)" value={adhTrain} onChange={setAdhTrain} min={0} max={10} required />
+          {hasTraining ? (
+            <NumField label="Entreno (0-10)" value={adhTrain} onChange={setAdhTrain} min={0} max={10} required />
+          ) : (
+            <NumField label="Comidas libres (nº aprox.)" value={freeMeals} onChange={setFreeMeals} min={0} max={50} />
+          )}
         </div>
-        <div className="mt-3">
-          <NumField label="Comidas libres o saltadas (nº aprox.)" value={freeMeals} onChange={setFreeMeals} min={0} max={50} />
-        </div>
+        {hasTraining && (
+          <div className="mt-3">
+            <NumField label="Comidas libres o saltadas (nº aprox.)" value={freeMeals} onChange={setFreeMeals} min={0} max={50} />
+          </div>
+        )}
       </Section>
 
       {/* 4 · Cambios */}
@@ -261,14 +283,14 @@ export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDat
       <Section n={5} title="¿Qué te está costando más?">
         <textarea className="min-h-[64px] w-full rounded-xl border bg-transparent p-3 text-sm" style={{ borderColor: "rgba(128,128,128,0.2)" }}
           value={hardest} onChange={(e) => setHardest(e.target.value)}
-          placeholder="Comidas difíciles, ejercicios que no te convencen, momentos complicados…" />
+          placeholder={hasTraining ? "Comidas difíciles, ejercicios que no te convencen, momentos complicados…" : "Comidas difíciles, antojos, momentos complicados…"} />
       </Section>
 
       {/* 6 · Objetivo */}
       <Section n={6} title="Tu objetivo para las próximas 2 semanas">
         <textarea className="min-h-[56px] w-full rounded-xl border bg-transparent p-3 text-sm" style={{ borderColor: "rgba(128,128,128,0.2)" }}
           value={nextGoal} onChange={(e) => setNextGoal(e.target.value)}
-          placeholder='Algo concreto: "bajar 0,5 kg", "dormir 7 h", "mejorar técnica de sentadilla"…' />
+          placeholder={hasTraining ? 'Algo concreto: "bajar 0,5 kg", "dormir 7 h", "mejorar técnica de sentadilla"…' : 'Algo concreto: "bajar 0,5 kg", "dormir 7 h", "comer más verdura cada día"…'} />
       </Section>
 
       {/* 7 · Fotos (WhatsApp) — banner informativo en azul de marca */}
@@ -276,7 +298,7 @@ export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDat
         <div className="flex items-start gap-2 rounded-xl border p-3 text-sm" style={{ borderColor: `${brand.color_secondary}55`, background: `${brand.color_secondary}10` }}>
           <MessageCircle size={18} style={{ color: brand.color_secondary }} className="mt-0.5 shrink-0" />
           <p className="opacity-80">
-            Envía 3 fotos (<b>frontal</b>, <b>lateral</b> y <b>espalda</b>) a tu coach por <b>WhatsApp</b>.
+            Envía 3 fotos (<b>frontal</b>, <b>lateral</b> y <b>espalda</b>) a tu coach por <b>{directContact ? "WhatsApp" : "email"}</b>.
             Fondo neutro, buena luz, misma hora y lugar que la vez anterior, sin filtros.
           </p>
         </div>
@@ -292,7 +314,7 @@ export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDat
       </button>
       {!canSubmit && !busy && (
         <p className="text-center text-xs opacity-40">
-          {rangeError ?? "Completa peso, las 6 sensaciones y la adherencia."}
+          {rangeError ?? "Completa el peso, las sensaciones y la adherencia."}
         </p>
       )}
     </div>

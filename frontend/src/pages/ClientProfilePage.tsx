@@ -190,6 +190,8 @@ export default function ClientProfilePage() {
   if (client === null) return <PageLoader />;
 
   const age = ageFrom(client.birth_date);
+  // Paquete solo-nutrición (Start): sin nada de entreno en la ficha.
+  const hasTraining = pkg(client.package_tier).hasTraining;
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-6">
@@ -239,7 +241,9 @@ export default function ClientProfilePage() {
               <Row label="Edad" value={age ? `${age} años` : "—"} />
               <Row label="Objetivo" value={client.goal_type ? GOAL_LABEL[client.goal_type] : "—"} />
               <Row label="Nivel" value={client.level ? LEVEL_LABEL[client.level] : "—"} />
-              <Row label="Entreno" value={client.training_place ? PLACE_LABEL[client.training_place] : "—"} />
+              {hasTraining && (
+                <Row label="Entreno" value={client.training_place ? PLACE_LABEL[client.training_place] : "—"} />
+              )}
               {/* Dieta = la generada con IA; vacía hasta que exista planificación */}
               <Row label="Dieta" value={planDiet ?? "—"} faint={planDiet == null ? "se llena al generar la planificación" : undefined} />
             </dl>

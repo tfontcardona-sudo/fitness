@@ -431,7 +431,9 @@ def send_feedback(doc_id: int, db: Session = Depends(get_db)) -> dict:
         try:
             brand = brand_from_config(db)
             portal_url = f"{settings.public_base_url}/p/{client.portal_token}"
-            subject, html = tpl.feedback_ready(brand, _first_name_of(client), portal_url)
+            subject, html = tpl.feedback_ready(
+                brand, _first_name_of(client), portal_url,
+                has_training=client.package_tier != "start")
             EmailService(db).send(to=client.email, subject=subject, html=html,
                                   kind="feedback_ready", client=client)
         except Exception:

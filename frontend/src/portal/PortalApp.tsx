@@ -150,12 +150,12 @@ export default function PortalApp({ token }: { token: string }) {
         </header>
 
         <main className="relative z-[1] flex-1 px-5 pb-28 pt-2">
-          <PushBanner api={apiClient} accent={state.brand.color_primary} />
+          <PushBanner api={apiClient} accent={state.brand.color_primary} hasTraining={!isStart} />
           {/* key={effTab} → transición suave (animate-rise respeta reduced-motion) */}
           <div key={effTab} className="animate-rise">
             {effTab === "entreno" && <PortalWorkout api={apiClient} brand={state.brand} periodStatus={state.period?.status ?? null} />}
             {effTab === "diario" && <PortalDiary api={apiClient} brand={state.brand} periodStatus={state.period?.status ?? null} />}
-            {effTab === "progreso" && <PortalProgress api={apiClient} brand={state.brand} />}
+            {effTab === "progreso" && <PortalProgress api={apiClient} brand={state.brand} hasTraining={!isStart} />}
             {effTab === "cierre" && (
               <PortalClose
                 api={apiClient}
@@ -165,6 +165,8 @@ export default function PortalApp({ token }: { token: string }) {
                 daysLeft={state.period?.days_left ?? null}
                 closeDate={state.period?.ends_on ?? null}
                 periodStatus={state.period?.status ?? null}
+                hasTraining={!isStart}
+                directContact={state.package_tier === "pro"}
               />
             )}
           </div>
@@ -205,7 +207,7 @@ const PUSH_DISMISSED_KEY = "portal_push_dismissed";
  *   (en iOS el push solo funciona con la app instalada).
  * - Permiso ya concedido, denegado o descartado → no se muestra nada.
  */
-function PushBanner({ api, accent }: { api: ReturnType<typeof portalApi>; accent: string }) {
+function PushBanner({ api, accent, hasTraining = true }: { api: ReturnType<typeof portalApi>; accent: string; hasTraining?: boolean }) {
   const toast = usePortalToast();
   const [dismissed, setDismissed] = useState(
     () => localStorage.getItem(PUSH_DISMISSED_KEY) === "1"
@@ -259,7 +261,7 @@ function PushBanner({ api, accent }: { api: ReturnType<typeof portalApi>; accent
           <>
             <p className="text-sm font-semibold">¿Te aviso si te falta algo?</p>
             <p className="mt-0.5 text-xs opacity-70">
-              Un recordatorio si queda el diario, el entreno o la revisión sin rellenar.
+              Un recordatorio si queda {hasTraining ? "el diario, el entreno o la revisión" : "el diario o la revisión"} sin rellenar.
             </p>
             <button
               onClick={activate}
