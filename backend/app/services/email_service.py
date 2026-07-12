@@ -15,6 +15,7 @@ endpoints); solo CÓMO enviar y registrar.
 
 from __future__ import annotations
 
+import logging
 import smtplib
 from email.message import EmailMessage
 
@@ -24,6 +25,32 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models import BrandConfig, Client, EmailLog
 from app.services.email_templates import Brand
+
+_log = logging.getLogger("app.email")
+
+
+def email_config_status() -> dict:
+    """Resumen (sin secretos) de la configuración SMTP: qué está puesto y qué
+    falta. Sirve para diagnosticar por qué no salen los correos."""
+    missing = []
+    if not settings.emails_enabled:
+        missing.append("EMAILS_ENABLED (debe ser true)")
+    if not settings.smtp_host:
+        missing.append("SMTP_HOST")
+    if not settings.smtp_user:
+        missing.append("SMTP_USER")
+    if not settings.smtp_pass:
+        missing.append("SMTP_PASS (contraseña de aplicación de Gmail)")
+    return {
+        "emails_enabled": settings.emails_enabled,
+        "smtp_host": settings.smtp_host or None,
+        "smtp_port": settings.smtp_port,
+        "smtp_user": settings.smtp_user or None,
+        "smtp_from": settings.smtp_from or None,
+        "smtp_pass_set": bool(settings.smtp_pass),
+        "ready": not missing,
+        "missing": missing,
+    }
 
 
 def brand_from_config(db: Session) -> Brand:
@@ -47,6 +74,9 @@ class EmailService:
 
     def __init__(self, db: Session):
         self.db = db
+        # Último error de envío (tipo + mensaje), para que el caller lo pueda
+        # mostrar/devolver sin tener que mirar los logs del contenedor.
+        self.last_error: str | None = None
 
     # -- transporte (sobrescribible en tests) --
     def _transport(self, msg: EmailMessage) -> None:
@@ -66,8 +96,12 @@ class EmailService:
             s.login(settings.smtp_user, settings.smtp_pass)
         s.send_message(msg)
 
-    def _log(self, client_id: int | None, kind: str, subject: str, status: str) -> None:
-        self.db.add(EmailLog(client_id=client_id, kind=kind, subject=subject, status=status))
+    def _log(self, client_id: int | None, kind: str, subject: str, status: str,
+             error: str | None = None) -> None:
+        self.db.add(EmailLog(
+            client_id=client_id, kind=kind, subject=subject, status=status,
+            error=(error or None) and error[:500],
+        ))
 
     def send(
         self, *, to: str, subject: str, html: str, kind: str,
@@ -83,11 +117,24 @@ class EmailService:
         cambios de estado que lo motivan se confirman juntos o no).
         """
         client_id = client.id if client else None
+        self.last_error = None
 
         # Toggle global o por cliente desactivado → no enviar, pero registrar.
         if not settings.emails_enabled or (client is not None and not client.emails_enabled):
             self._log(client_id, kind, subject, "disabled")
             return "disabled"
+
+        # SMTP sin configurar: fallo claro (no un error de conexión críptico a
+        # localhost). El caso típico de "no llegan los correos" es SMTP_PASS vacío.
+        if not settings.smtp_host or not settings.smtp_user or not settings.smtp_pass:
+            self.last_error = (
+                "SMTP sin configurar: faltan " +
+                ", ".join(email_config_status()["missing"]) +
+                ". Rellénalos en el .env del servidor y reinicia."
+            )
+            _log.warning("Email '%s' no enviado a %s: %s", kind, to, self.last_error)
+            self._log(client_id, kind, subject, "failed", self.last_error)
+            return "failed"
 
         msg = EmailMessage()
         msg["From"] = settings.smtp_from or settings.smtp_user or "no-reply@fitness.local"
@@ -109,7 +156,12 @@ class EmailService:
         try:
             self._transport(msg)
             self._log(client_id, kind, subject, "sent")
+            _log.info("Email '%s' enviado a %s", kind, to)
             return "sent"
-        except Exception:
-            self._log(client_id, kind, subject, "failed")
+        except Exception as exc:
+            # Causa legible (SMTPAuthenticationError → app password mal; conexión
+            # rechazada → host/puerto; etc.). Se registra y se guarda.
+            self.last_error = f"{type(exc).__name__}: {exc}"
+            _log.warning("Email '%s' NO enviado a %s: %s", kind, to, self.last_error)
+            self._log(client_id, kind, subject, "failed", self.last_error)
             return "failed"

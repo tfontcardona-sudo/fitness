@@ -335,6 +335,9 @@ class EmailLog(Base):
     subject: Mapped[str] = mapped_column(String(255))
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     status: Mapped[str] = mapped_column(String(20))  # sent|failed|disabled
+    # Motivo del fallo (SMTPAuthenticationError, conexión rechazada…) para poder
+    # diagnosticar por qué un correo no salió sin bucear en los logs.
+    error: Mapped[str | None] = mapped_column(String(500))
 
 
 # ------------------------------------------------------ change_requests ----

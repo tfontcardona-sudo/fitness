@@ -18,13 +18,24 @@ from sqlalchemy import text
 from app.config import settings
 from app.ratelimit import client_key
 from app.db import engine
-from app.routers import alerts, auth, brand, clients, exercises, plans, portal_public
+from app.routers import alerts, auth, brand, clients, email, exercises, plans, portal_public
 
 APP_VERSION = "0.2.0"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Aviso claro en los logs si el email está activado pero sin configurar: es
+    # la causa nº1 de "no llegan los correos" (típicamente SMTP_PASS vacío).
+    from app.services.email_service import email_config_status
+
+    _cfg = email_config_status()
+    if settings.emails_enabled and not _cfg["ready"]:
+        logging.getLogger("app.email").warning(
+            "EMAIL SIN CONFIGURAR: no saldrán correos. Falta: %s. "
+            "Rellena el .env del servidor y reinicia.", ", ".join(_cfg["missing"]),
+        )
+
     # El scheduler se desactiva en tests/CI con SCHEDULER_ENABLED=false.
     scheduler_on = os.environ.get("SCHEDULER_ENABLED", "true").lower() == "true"
     if scheduler_on:
@@ -95,6 +106,7 @@ app.include_router(exercises.router)
 app.include_router(brand.router)
 app.include_router(plans.router)
 app.include_router(alerts.router)
+app.include_router(email.router)
 app.include_router(portal_public.router)
 
 
