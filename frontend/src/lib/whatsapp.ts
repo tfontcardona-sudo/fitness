@@ -132,6 +132,19 @@ function pickVoice(fullName: string, extra = 0): Voice {
   return VOICES[(s + e) % VOICES.length];
 }
 
+/** Mensaje para PROPONER la videollamada de revisión (paquete Pro): saludo +
+ *  propuesta directa. El coach lo envía por el WhatsApp del cliente y acuerdan
+ *  el día/hora en la conversación. */
+export function videoCallMessage(fullName: string): string {
+  return [
+    `Hola ${waFirstName(fullName)},`,
+    "Como parte de tu acompañamiento, vamos a hacer una videollamada de revisión "
+    + "para repasar tu progreso, resolver dudas y ajustar lo que haga falta.",
+    "¿Qué día y hora te vienen bien esta semana? Te paso el enlace en cuanto lo cerremos.",
+    "Un saludo.",
+  ].join("\n\n");
+}
+
 /** Mensaje del feedback quincenal: entrada + informe + cierre profesional.
  *  `periodIndex` hace que la voz varíe entre una revisión y la siguiente. */
 export function feedbackMessage(fullName: string, content: any, periodIndex = 0): string {

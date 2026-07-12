@@ -938,8 +938,11 @@ def generate_client_plan(
         goal_in_own_words=client.lifestyle_notes,
         clinical_notes=clinical_notes,
     )
+    # Paquete Start = solo nutrición: la IA no genera entrenamiento (ni el
+    # educativo de entreno). Full/Pro generan el plan completo.
+    include_training = client.package_tier != "start"
     try:
-        generated = generate_monthly_plan(ctx, AIClient())
+        generated = generate_monthly_plan(ctx, AIClient(), include_training=include_training)
     except PlanGenerationError as exc:
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY,

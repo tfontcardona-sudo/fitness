@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Pencil, Save, X, Flag, Copy, Archive } from "lucide-react";
+import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Mail, Pencil, Save, X, Flag, Copy, Archive } from "lucide-react";
 import { api, getToken } from "../lib/api";
 import { openWhatsApp, planAndFeedbackMessage, planMessage, waPhone, waUrl } from "../lib/whatsapp";
+import { pkg } from "../lib/packages";
 import { GOAL_LABEL, goalDays, goalReviewDue, planMonthLabel } from "../lib/format";
 import { deficitLabel, macroPct, MACRO_TOTAL_TOLERANCE } from "../lib/nutritionTargets";
 import { isCriticalLine } from "../lib/clinical";
@@ -47,6 +48,11 @@ function normalize(p: any): PlanData {
  */
 export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut; onClientChanged?: () => void }) {
   const toast = useToast();
+  // Paquete del cliente: Start es solo nutrición (sin entreno) y la entrega va
+  // por email; Full por email; Pro por WhatsApp.
+  const info = pkg(client.package_tier);
+  const hasTraining = info.hasTraining;
+  const byEmail = info.delivery === "email";
   const [plan, setPlan] = useState<PlanData | null>(null);
   const [exMap, setExMap] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
@@ -160,6 +166,25 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
     } catch {
       if (win) win.close();
       toast.push("No se pudo preparar el envío", "error");
+    }
+  }
+
+  /** Entrega la planificación POR EMAIL (paquetes Start/Full): el backend adjunta
+   *  el PDF y enlaza el portal. Equivale al envío por WhatsApp de Pro. */
+  async function sendPlanByEmail() {
+    if (!plan) return;
+    try {
+      const r = await api.sendPlanEmail(plan.id);
+      if (r.email_status === "sent") {
+        setNeedsDownload(false); // el cliente ya tiene la versión vigente
+        toast.push(r.attached_pdf ? "Plan enviado por email (PDF adjunto)" : "Plan enviado por email");
+      } else if (r.email_status === "disabled") {
+        toast.push("El email está desactivado para este cliente: no se envió", "error");
+      } else {
+        toast.push("No se pudo enviar el email al cliente", "error");
+      }
+    } catch {
+      toast.push("No se pudo enviar el plan por email", "error");
     }
   }
 
@@ -283,9 +308,9 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
           <div className="flex-1">
             <h3 className="text-base font-semibold text-zinc-100">Planificación mensual</h3>
             <p className="mt-1 text-sm text-zinc-400">
-              Genera el plan de dieta y entrenamiento con IA a partir de los datos de la
+              Genera el plan de {hasTraining ? "dieta y entrenamiento" : "dieta"} con IA a partir de los datos de la
               anamnesis. Queda ACTIVO al momento: revísalo, edítalo si quieres y envíaselo
-              por WhatsApp.
+              por {byEmail ? "email" : "WhatsApp"}.
             </p>
 
             {missing && (
@@ -412,12 +437,17 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
             <button onClick={downloadPdf} className="btn btn-ghost">
               <Download size={15} /> Descargar PDF
             </button>
-            {plan.status === "published" && (
+            {plan.status === "published" && byEmail && (
+              <button onClick={sendPlanByEmail} className="btn btn-primary col-span-2 sm:col-span-1">
+                <Mail size={15} /> Enviar plan por email
+              </button>
+            )}
+            {plan.status === "published" && !byEmail && (
               <button onClick={sendPlanWhatsApp} className={`${fb ? "btn btn-ghost" : "btn btn-primary"} col-span-2 sm:col-span-1`}>
                 <MessageCircle size={15} /> Enviar plan por WhatsApp
               </button>
             )}
-            {plan.status === "published" && fb && (
+            {plan.status === "published" && !byEmail && fb && (
               <button onClick={sendPlanAndFeedbackWhatsApp} className="btn btn-primary col-span-2 sm:col-span-1">
                 <MessageCircle size={15} /> Enviar plan + feedback
               </button>
@@ -721,7 +751,9 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
       {/* El BANCO DE COMIDAS ya no se muestra aquí (el coach no lo necesita en
           pantalla): va completo en el PDF que recibe el cliente. */}
 
-      {/* Entrenamiento — azul de marca (como sus chips de ajustes) */}
+      {/* Entrenamiento — azul de marca (como sus chips de ajustes).
+          El paquete Start es solo nutrición: no se muestra el entrenamiento. */}
+      {hasTraining && (
       <div className="card p-5">
         <SectionTitle icon={Dumbbell} title={`Entrenamiento${tr.split_name ? ` · ${tr.split_name}` : ""}`} accent="var(--brand-accent-2)" />
         {tr.split_rationale && (
@@ -815,6 +847,7 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
           <p className="mt-3 text-xs text-zinc-400"><b className="text-zinc-300">Descarga (deload):</b> {tr.deload_instructions}</p>
         )}
       </div>
+      )}
 
       {/* PUNTOS IMPORTANTES del cliente (anamnesis): lo que condiciona el plan */}
       <ImportantPointsCard client={client} />

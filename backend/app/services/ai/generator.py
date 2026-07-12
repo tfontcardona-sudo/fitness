@@ -30,7 +30,10 @@ from app.schemas.ai import (
     EducationOutput,
     MealsFlexibleOutput,
     MealsStrictOutput,
+    NutritionCore,
+    NutritionOnlyCoreOutput,
     PlanCoreOutput,
+    TrainingCore,
 )
 from app.services import guardrails as gr
 from app.services.ai.client import AIClient, AIGenerationError
@@ -38,6 +41,7 @@ from app.services.ai.prompts import (
     system_prompt_education,
     system_prompt_full,
     system_prompt_meals,
+    system_prompt_nutrition_only,
 )
 
 
@@ -92,20 +96,23 @@ class ClientContext:
 
 @dataclass
 class GeneratedPlan:
-    core: PlanCoreOutput
+    nutrition: NutritionCore
     meals: MealsFlexibleOutput | MealsStrictOutput
-    education: EducationOutput
+    # training/education son None en el paquete Start (solo-nutrición).
+    training: TrainingCore | None
+    education: EducationOutput | None
     guardrail_flags: list[str]
     generated_by: str
 
-    def to_persistable(self) -> tuple[dict, dict, dict, list[str]]:
-        """(nutrition_json, training_json, education_json, guardrail_flags)."""
-        nutrition = self.core.nutrition.model_dump()
+    def to_persistable(self) -> tuple[dict, dict | None, dict | None, list[str]]:
+        """(nutrition_json, training_json, education_json, guardrail_flags).
+        training_json/education_json van a None cuando el plan es solo-nutrición."""
+        nutrition = self.nutrition.model_dump()
         nutrition["meal_bank"] = self.meals.model_dump()
         return (
             nutrition,
-            self.core.training.model_dump(),
-            self.education.model_dump(),
+            self.training.model_dump() if self.training is not None else None,
+            self.education.model_dump() if self.education is not None else None,
             self.guardrail_flags,
         )
 
@@ -343,6 +350,38 @@ preservar/ganar masa, reparto de macros), sin tecnicismos innecesarios.
 Respeta TODOS los guardrails. La suma de los targets de slot debe acercarse al target_kcal."""
 
 
+def _core_user_prompt_nutrition_only(ctx: ClientContext) -> str:
+    """Núcleo SOLO-NUTRICIÓN (paquete Start): mismo bloque de datos clínicos y de
+    contexto que el completo, pero se pide EXCLUSIVAMENTE la nutrición (sin
+    entrenamiento ni biblioteca de ejercicios)."""
+    return f"""Genera el NÚCLEO DE NUTRICIÓN del plan mensual para este cliente.
+
+Este cliente tiene un paquete SOLO NUTRICIÓN: NO generes entrenamiento (ni split,
+ni sesiones, ni progresión, ni cardio). Céntrate al 100% en la dieta.
+
+DATOS DEL CLIENTE Y MÉTRICAS (ya calculadas por el backend, NO recalcules):
+{_client_block(ctx)}
+{_clinical_block(ctx)}
+{_analysis_block(ctx)}
+IMPORTANTE: lee "objetivo_en_palabras_del_cliente" y entiende EXACTAMENTE qué
+quiere conseguir esta persona (y por qué). La dieta debe estar diseñada para ESE
+fin concreto, no solo para la etiqueta genérica del objetivo. Refléjalo en rationale.
+
+Devuelve un JSON con esta forma EXACTA (sin texto fuera del JSON). TODOS los campos son
+OBLIGATORIOS salvo los marcados como (null si no aplica). No omitas NINGUNO:
+- "nutrition": tdee_kcal, target_kcal, rationale, macros{{protein_g,carbs_g,fat_g}},
+  meals[] (un objeto por comida del horario: slot, name, time, target{{kcal,protein_g,carbs_g,fat_g}}),
+  supplements[] (cada uno con los 4 campos: name, dose, timing, evidence_note),
+  flexibility_rules[] (strings), refeed_or_break (null si no aplica).
+
+DIETA RAZONADA POR EVIDENCIA: en rationale explica de forma breve y directa el
+porqué (déficit/superávit sobre el TDEE según objetivo, proteína alta para
+preservar/ganar masa, reparto de macros), sin tecnicismos innecesarios.
+
+Respeta TODOS los guardrails de nutrición. La suma de los targets de slot debe
+acercarse al target_kcal."""
+
+
 def _meals_user_prompt(ctx: ClientContext, core: PlanCoreOutput) -> str:
     targets = _slot_targets(core)
     slot_info = {
@@ -420,33 +459,57 @@ balance energético, sueño y recuperación, NEAT, hidratación, deload."""
 
 # --------------------------------------------------------------- pipeline ----
 
-def generate_monthly_plan(ctx: ClientContext, ai: AIClient) -> GeneratedPlan:
-    """Ejecuta las 3 llamadas con guardrails. Lanza PlanGenerationError si no
-    se puede producir un plan seguro."""
+def generate_monthly_plan(
+    ctx: ClientContext, ai: AIClient, include_training: bool = True
+) -> GeneratedPlan:
+    """Ejecuta las llamadas con guardrails y devuelve el plan.
+
+    - include_training=True (Full/Pro): núcleo (nutrición + entrenamiento) →
+      comidas → educativo.
+    - include_training=False (Start, solo-nutrición): núcleo de nutrición →
+      comidas. Sin entrenamiento ni educativo (que trata de entreno).
+
+    Lanza PlanGenerationError si no se puede producir un plan seguro."""
     flags: list[str] = []
     model = settings.model_heavy
 
     # ① Núcleo
-    try:
-        core = ai.generate_json(
-            model=model, system=system_prompt_full(),
-            user=_core_user_prompt(ctx), schema=PlanCoreOutput,
-        )
-    except AIGenerationError as exc:
-        raise PlanGenerationError(f"núcleo del plan: {exc}") from exc
+    if include_training:
+        try:
+            core = ai.generate_json(
+                model=model, system=system_prompt_full(),
+                user=_core_user_prompt(ctx), schema=PlanCoreOutput,
+            )
+        except AIGenerationError as exc:
+            raise PlanGenerationError(f"núcleo del plan: {exc}") from exc
+        training_core: TrainingCore | None = core.training
+    else:
+        # Solo-nutrición: ni entrenamiento ni biblioteca de ejercicios.
+        try:
+            core = ai.generate_json(
+                model=model, system=system_prompt_nutrition_only(),
+                user=_core_user_prompt_nutrition_only(ctx),
+                schema=NutritionOnlyCoreOutput,
+            )
+        except AIGenerationError as exc:
+            raise PlanGenerationError(f"núcleo de nutrición: {exc}") from exc
+        training_core = None
 
     nut_report = gr.check_nutrition(
         core.nutrition.model_dump(), sex=ctx.sex, weight_kg=ctx.weight_kg,
         bmr=ctx.bmr, tdee=ctx.tdee,
     )
-    tr_report = gr.check_training(
-        core.training.model_dump(),
-        training_days_declared=ctx.training_days,
-        session_max_min=ctx.session_max_min,
-        client_contraindications=ctx.contraindications,
-        exercise_lookup=_exercise_lookup(ctx.exercise_library),
-    )
-    core_report = nut_report.merge(tr_report)
+    if training_core is not None:
+        tr_report = gr.check_training(
+            training_core.model_dump(),
+            training_days_declared=ctx.training_days,
+            session_max_min=ctx.session_max_min,
+            client_contraindications=ctx.contraindications,
+            exercise_lookup=_exercise_lookup(ctx.exercise_library),
+        )
+        core_report = nut_report.merge(tr_report)
+    else:
+        core_report = nut_report
     if not core_report.ok:
         raise PlanGenerationError(
             "el núcleo viola guardrails: " + "; ".join(core_report.violations),
@@ -489,16 +552,19 @@ def generate_monthly_plan(ctx: ClientContext, ai: AIClient) -> GeneratedPlan:
         if removed:
             flags.append(f"seguridad: retiradas {removed} opción(es)/alimento(s) con alérgenos del banco")
 
-    # ③ Educativo
-    try:
-        education = ai.generate_json(
-            model=model, system=system_prompt_education(),
-            user=_education_user_prompt(core), schema=EducationOutput,
-        )
-    except AIGenerationError as exc:
-        raise PlanGenerationError(f"contenido educativo: {exc}") from exc
+    # ③ Educativo (solo con entrenamiento: las píldoras y la biomecánica giran
+    #    en torno al entreno; en solo-nutrición no aplica).
+    education: EducationOutput | None = None
+    if include_training:
+        try:
+            education = ai.generate_json(
+                model=model, system=system_prompt_education(),
+                user=_education_user_prompt(core), schema=EducationOutput,
+            )
+        except AIGenerationError as exc:
+            raise PlanGenerationError(f"contenido educativo: {exc}") from exc
 
     return GeneratedPlan(
-        core=core, meals=meals, education=education,
-        guardrail_flags=flags, generated_by=model,
+        nutrition=core.nutrition, meals=meals, training=training_core,
+        education=education, guardrail_flags=flags, generated_by=model,
     )

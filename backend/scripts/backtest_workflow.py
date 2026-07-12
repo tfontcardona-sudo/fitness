@@ -60,7 +60,7 @@ def check(cond: bool, msg: str) -> None:
 
 # ------------------------------------------------------------ IA simulada ----
 
-def fake_generate_monthly_plan(ctx, ai):
+def fake_generate_monthly_plan(ctx, ai, include_training=True):
     """Plan determinista coherente con el objetivo y las kcal del backend."""
     db = SessionLocal()
     ex_ids = [e.id for e in db.scalars(select(Exercise).limit(4))]

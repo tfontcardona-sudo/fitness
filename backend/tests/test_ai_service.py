@@ -182,6 +182,24 @@ def test_full_pipeline_generates_plan():
     assert not any(f.startswith("violation:") for f in flags)
 
 
+def _nutrition_only_core_json() -> str:
+    core = json.loads(_valid_core_json())
+    return json.dumps({"nutrition": core["nutrition"]})
+
+
+def test_nutrition_only_pipeline_skips_training():
+    # Paquete Start: núcleo de nutrición + comidas, SIN entreno ni educativo.
+    client = ScriptedClient([_nutrition_only_core_json(), _flexible_meals_json()])
+    plan = generate_monthly_plan(_ctx(), client, include_training=False)
+    assert len(client.calls) == 2  # 2 llamadas, no 3
+    nutrition_json, training_json, education_json, flags = plan.to_persistable()
+    assert nutrition_json["target_kcal"] == 2200
+    assert "meal_bank" in nutrition_json
+    assert training_json is None
+    assert education_json is None
+    assert not any(f.startswith("violation:") for f in flags)
+
+
 def test_pipeline_blocks_core_violating_guardrails():
     # Núcleo con kcal por debajo del suelo → guardrail de nutrición bloquea
     bad_core = json.loads(_valid_core_json())

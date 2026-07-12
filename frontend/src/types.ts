@@ -438,6 +438,7 @@ export interface PortalState {
   first_name: string;
   status: ClientStatus;
   diet_mode: DietMode | null;
+  package_tier: PackageTier;
   has_plan: boolean;
   period: PortalPeriodInfo | null;
   brand: PortalBrand;

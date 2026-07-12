@@ -259,6 +259,15 @@ export const api = {
       "GET", `/feedback/${docId}`),
   sendFeedback: (docId: number) =>
     request<{ sent: boolean; sent_at: string }>("POST", `/feedback/${docId}/send`),
+  // Entrega por EMAIL (paquetes Start/Full): el informe va en el propio correo
+  // y el ciclo avanza igual que con WhatsApp.
+  sendFeedbackEmail: (docId: number) =>
+    request<{ sent: boolean; sent_at: string; email_status: string }>(
+      "POST", `/feedback/${docId}/send-email`),
+  // Entrega de la planificación por EMAIL (adjunta el PDF).
+  sendPlanEmail: (planId: number) =>
+    request<{ sent: boolean; email_status: string; attached_pdf: boolean }>(
+      "POST", `/plans/${planId}/send-email`),
   editFeedback: (docId: number, patch: {
     natural_analysis?: string; changes_bullets?: string[]; answers?: string | null;
     next_objectives?: string[]; closing_message?: string;

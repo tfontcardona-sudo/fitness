@@ -72,8 +72,12 @@ class EmailService:
     def send(
         self, *, to: str, subject: str, html: str, kind: str,
         client: Client | None = None,
+        attachments: list[tuple[str, bytes, str]] | None = None,
     ) -> str:
         """Envía un email y registra el resultado. Devuelve el status final.
+
+        `attachments`: lista de (nombre_fichero, contenido, mime "tipo/subtipo"),
+        p. ej. el PDF del plan para los paquetes de entrega por email.
 
         No hace commit: el caller controla la transacción (así el envío y los
         cambios de estado que lo motivan se confirman juntos o no).
@@ -94,6 +98,13 @@ class EmailService:
             "Abre tu portal para ver el contenido."
         )
         msg.add_alternative(html, subtype="html")
+
+        for filename, content, mime in attachments or []:
+            maintype, _, subtype = mime.partition("/")
+            msg.add_attachment(
+                content, maintype=maintype or "application",
+                subtype=subtype or "octet-stream", filename=filename,
+            )
 
         try:
             self._transport(msg)

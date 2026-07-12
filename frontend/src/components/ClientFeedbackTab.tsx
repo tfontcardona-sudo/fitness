@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { Sparkles, AlertTriangle, MessageSquare, MessageCircle, Target, TrendingUp, BarChart3, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
+import { Sparkles, AlertTriangle, MessageSquare, MessageCircle, Mail, Video, Target, TrendingUp, BarChart3, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
 import { api } from "../lib/api";
-import { feedbackBody, feedbackMessage, openWhatsApp, waPhone } from "../lib/whatsapp";
+import { feedbackBody, feedbackMessage, openWhatsApp, videoCallMessage, waPhone } from "../lib/whatsapp";
+import { pkg } from "../lib/packages";
 import { Spinner, useToast } from "./ui";
 import type { ClientOut } from "../types";
 
@@ -36,6 +37,11 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
   const [editingFb, setEditingFb] = useState<number | null>(null);
   const [metrics, setMetrics] = useState<Record<number, any>>({});
   const [loadingMetrics, setLoadingMetrics] = useState<number | null>(null);
+  // Paquete del cliente: define cómo se entrega el feedback (email en Start/Full,
+  // WhatsApp en Pro) y si hay contacto directo (videollamada de revisión en Pro).
+  const info = pkg(client.package_tier);
+  const byEmail = info.delivery === "email";
+  const directContact = info.directContact;
 
   /** Carga el resumen de métricas de un período (se muestra SIEMPRE, sin botón:
    *  al cargar la pestaña para el período actual y al desplegar los antiguos). */
@@ -106,10 +112,23 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
       .catch(() => toast.push("No se pudo copiar", "error"));
   }
 
-  /** Un clic: abre WhatsApp del cliente con el feedback ya escrito (entrada,
-   *  informe y cierre profesionales) y, la primera vez, lo marca como enviado
-   *  (el ciclo avanza a "activo"). Se puede reenviar cuantas veces haga falta. */
-  async function sendWhatsApp(feedbackId: number, content: any, alreadySent: boolean, periodIndex = 0) {
+  /** Entrega el feedback al cliente según su paquete:
+   *  - Start/Full → por EMAIL (el informe va en el correo; el backend avanza el ciclo).
+   *  - Pro → por WhatsApp (abre el chat con el feedback ya escrito).
+   *  La primera vez marca el feedback como enviado (el ciclo avanza a "activo");
+   *  se puede reenviar cuantas veces haga falta. */
+  async function deliverFeedback(feedbackId: number, content: any, alreadySent: boolean, periodIndex = 0) {
+    if (byEmail) {
+      try {
+        await api.sendFeedbackEmail(feedbackId);
+        toast.push(alreadySent ? "Feedback reenviado por email" : "Feedback enviado por email al cliente");
+        load();
+        onClientChanged?.();
+      } catch {
+        toast.push("No se pudo enviar el email", "error");
+      }
+      return;
+    }
     const phone = waPhone(client.phone);
     if (!phone) {
       toast.push("Añade el teléfono del cliente en su ficha para enviarlo por WhatsApp", "error");
@@ -128,6 +147,17 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
     } catch {
       /* el WhatsApp ya está abierto; el marcado puede reintentarse */
     }
+  }
+
+  /** Pro: propone la videollamada de revisión abriendo el WhatsApp del cliente. */
+  function proposeVideoCall() {
+    const phone = waPhone(client.phone);
+    if (!phone) {
+      toast.push("Añade el teléfono del cliente en su ficha para la videollamada", "error");
+      return;
+    }
+    openWhatsApp(phone, videoCallMessage(client.full_name));
+    toast.push("WhatsApp abierto para acordar la videollamada");
   }
 
   if (periods === null) {
@@ -218,8 +248,13 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
               </div>
               <div className="flex gap-2" onClick={(e) => e.preventDefault()}>
                 {p.feedback_id && content && !sent && (
-                  <button onClick={() => sendWhatsApp(p.feedback_id as number, content, false, p.period_index)} className="btn btn-primary">
-                    <MessageCircle size={15} /> Enviar por WhatsApp
+                  <button onClick={() => deliverFeedback(p.feedback_id as number, content, false, p.period_index)} className="btn btn-primary">
+                    {byEmail ? <><Mail size={15} /> Enviar por email</> : <><MessageCircle size={15} /> Enviar por WhatsApp</>}
+                  </button>
+                )}
+                {directContact && p.feedback_id && (
+                  <button onClick={proposeVideoCall} className="btn btn-ghost" title="Proponer videollamada de revisión">
+                    <Video size={15} /> Videollamada
                   </button>
                 )}
                 {canGenerate && !p.feedback_id && (
@@ -353,11 +388,11 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                   <SubTitle icon={TrendingUp} text="Feedback" />
                   <div className="flex items-center gap-3">
                     <button
-                      onClick={() => sendWhatsApp(p.feedback_id as number, content, !!sent, p.period_index)}
+                      onClick={() => deliverFeedback(p.feedback_id as number, content, !!sent, p.period_index)}
                       className="flex items-center gap-1 text-xs font-medium hover:opacity-80"
                       style={{ color: "var(--brand-accent)" }}
                     >
-                      <MessageCircle size={13} /> Enviar por WhatsApp
+                      {byEmail ? <><Mail size={13} /> Enviar por email</> : <><MessageCircle size={13} /> Enviar por WhatsApp</>}
                     </button>
                     <button onClick={() => copyAll(content)} className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200">
                       <Copy size={13} /> Copiar todo
