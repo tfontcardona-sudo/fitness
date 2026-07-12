@@ -120,6 +120,12 @@ def system_prompt_full() -> str:
     return "\n\n".join([SYSTEM_BASE, METHODOLOGY_NUTRITION, METHODOLOGY_TRAINING])
 
 
+def system_prompt_nutrition_only() -> str:
+    """System prompt para el núcleo SOLO-NUTRICIÓN (paquete Start): base +
+    metodología de nutrición, sin la de entrenamiento (no se genera entreno)."""
+    return "\n\n".join([SYSTEM_BASE, METHODOLOGY_NUTRITION])
+
+
 def system_prompt_meals() -> str:
     """System prompt para la llamada ② (comidas): base + reglas de comida."""
     return "\n\n".join([SYSTEM_BASE, METHODOLOGY_NUTRITION_BRIEF])

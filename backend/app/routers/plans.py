@@ -392,18 +392,13 @@ def edit_feedback(doc_id: int, body: FeedbackEditIn, db: Session = Depends(get_d
     }
 
 
-@router.post("/api/feedback/{doc_id}/send")
-def send_feedback(doc_id: int, db: Session = Depends(get_db)) -> dict:
-    """Envía el feedback al cliente: lo hace visible en su portal (Progreso),
-    avanza el ciclo (review_pending → active, cierra la notificación) y le avisa
-    por email. Hasta este punto el feedback es un borrador que solo ve el coach."""
+def _advance_cycle_after_feedback(db: Session, fb: FeedbackDoc) -> Client | None:
+    """Marca el feedback como enviado y avanza el ciclo de la asesoría
+    (review_pending → active + abre el siguiente período). NO envía email ni
+    hace commit: eso lo decide cada endpoint (WhatsApp vs email)."""
     from datetime import datetime, timezone
 
-    fb = db.get(FeedbackDoc, doc_id)
-    if not fb:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Feedback no encontrado")
     fb.sent_at = datetime.now(timezone.utc)
-
     period = db.get(Period, fb.period_id)
     client = db.get(Client, period.client_id) if period else None
     if client and client.status == "review_pending":
@@ -412,21 +407,58 @@ def send_feedback(doc_id: int, db: Session = Depends(get_db)) -> dict:
         # alguien vuelva a abrir el portal: el ciclo queda determinista.
         from app.services.periods import ensure_open_period
         ensure_open_period(db, client.id)
-
     if client:
         log_event(db, "client", client.id, "feedback_sent", {"feedback_id": fb.id})
+    return client
+
+
+def _first_name_of(client: Client) -> str:
+    return ((client.full_name or "").split() or [(client.email or "cliente").split("@")[0]])[0]
+
+
+@router.post("/api/feedback/{doc_id}/send")
+def send_feedback(doc_id: int, db: Session = Depends(get_db)) -> dict:
+    """Envía el feedback al cliente: lo hace visible en su portal (Progreso),
+    avanza el ciclo (review_pending → active, cierra la notificación) y le avisa
+    por email. Hasta este punto el feedback es un borrador que solo ve el coach."""
+    fb = db.get(FeedbackDoc, doc_id)
+    if not fb:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Feedback no encontrado")
+    client = _advance_cycle_after_feedback(db, fb)
+
+    if client:
         # Aviso al cliente (si los emails están activos)
         try:
             brand = brand_from_config(db)
             portal_url = f"{settings.public_base_url}/p/{client.portal_token}"
-            _first = ((client.full_name or "").split() or [(client.email or "cliente").split("@")[0]])[0]
-            subject, html = tpl.feedback_ready(brand, _first, portal_url)
+            subject, html = tpl.feedback_ready(brand, _first_name_of(client), portal_url)
             EmailService(db).send(to=client.email, subject=subject, html=html,
                                   kind="feedback_ready", client=client)
         except Exception:
             pass
     db.commit()
     return {"sent": True, "sent_at": fb.sent_at.isoformat()}
+
+
+@router.post("/api/feedback/{doc_id}/send-email")
+def send_feedback_email(doc_id: int, db: Session = Depends(get_db)) -> dict:
+    """Entrega el feedback POR EMAIL (paquetes Start/Full): el informe completo
+    va en el propio correo y el ciclo avanza igual que con el envío por WhatsApp."""
+    fb = db.get(FeedbackDoc, doc_id)
+    if not fb:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Feedback no encontrado")
+    client = _advance_cycle_after_feedback(db, fb)
+    if client is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Cliente no encontrado")
+
+    brand = brand_from_config(db)
+    subject, html = tpl.feedback_delivery(brand, _first_name_of(client), fb.content_json or {})
+    email_status = EmailService(db).send(
+        to=client.email, subject=subject, html=html,
+        kind="feedback_delivery", client=client,
+    )
+    db.commit()
+    return {"sent": True, "sent_at": fb.sent_at.isoformat(), "email_status": email_status}
 
 
 @router.get("/api/feedback/{doc_id}/document")
@@ -495,6 +527,44 @@ def download_plan_document(plan_id: int, db: Session = Depends(get_db)):
         media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.post("/api/plans/{plan_id}/send-email")
+def send_plan_email(plan_id: int, db: Session = Depends(get_db)) -> dict:
+    """Entrega la planificación POR EMAIL (paquetes Start/Full): adjunta el PDF
+    del plan y enlaza el portal de seguimiento. Equivale al envío por WhatsApp
+    de los paquetes Pro, pero por correo."""
+    from app.services.plan_delivery import build_plan_pdf
+
+    plan = db.get(Plan, plan_id)
+    if not plan:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan no encontrado")
+    client = db.get(Client, plan.client_id)
+    if client is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Cliente no encontrado")
+
+    # El PDF es un extra: si su generación fallara, el email con el enlace al
+    # portal sigue siendo útil, así que no bloqueamos el envío por ello.
+    attachments: list[tuple[str, bytes, str]] = []
+    try:
+        content, _media, filename = build_plan_pdf(db, plan, client)
+        attachments.append((filename, content, "application/pdf"))
+    except Exception:
+        pass
+
+    is_adapted = bool((plan.nutrition_json or {}).get("applied_adjustments"))
+    brand = brand_from_config(db)
+    portal_url = f"{settings.public_base_url}/p/{client.portal_token}"
+    _first = ((client.full_name or "").split() or [(client.email or "cliente").split("@")[0]])[0]
+    subject, html = tpl.plan_delivery(brand, _first, portal_url, is_adapted, bool(attachments))
+    email_status = EmailService(db).send(
+        to=client.email, subject=subject, html=html, kind="plan_delivery",
+        client=client, attachments=attachments or None,
+    )
+    log_event(db, "plan", plan.id, "plan_sent_email", {"client_id": client.id, "status": email_status})
+    db.commit()
+    return {"sent": email_status != "failed", "email_status": email_status,
+            "attached_pdf": bool(attachments)}
 
 
 # ----------------------------------------------- swap de ejercicios (Fase 8, F.5) ----

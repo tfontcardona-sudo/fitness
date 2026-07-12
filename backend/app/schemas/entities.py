@@ -386,6 +386,8 @@ class PortalState(BaseModel):
     first_name: str
     status: ClientStatus
     diet_mode: DietMode | None
+    # Paquete del cliente: el portal se adapta (Start no tiene entreno).
+    package_tier: PackageTier
     has_plan: bool
     period: PortalPeriodInfo | None
     brand: PortalBrand

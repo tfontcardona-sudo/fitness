@@ -101,13 +101,18 @@ export default function PortalApp({ token }: { token: string }) {
   const light = state.brand.portal_theme === "light";
   const canClose = state.period?.can_close ?? false;
 
+  // Paquete Start = solo nutrición: sin pestaña de entreno. La vista por defecto
+  // pasa a ser el Diario (si la URL trae ?tab=entreno, se reencamina a diario).
+  const isStart = state.package_tier === "start";
+  const effTab: Tab = isStart && tab === "entreno" ? "diario" : tab;
+
   const TABS: { id: Tab; label: string; icon: typeof Dumbbell }[] = [
     { id: "entreno", label: "Entreno", icon: Dumbbell },
     { id: "diario", label: "Diario", icon: NotebookPen },
     { id: "progreso", label: "Progreso", icon: LineChart },
     { id: "cierre", label: "Quincenal", icon: CalendarCheck },
   ];
-  const visibleTabs = TABS;
+  const visibleTabs = isStart ? TABS.filter((t) => t.id !== "entreno") : TABS;
 
   return (
     <PortalToastProvider light={light}>
@@ -146,12 +151,12 @@ export default function PortalApp({ token }: { token: string }) {
 
         <main className="relative z-[1] flex-1 px-5 pb-28 pt-2">
           <PushBanner api={apiClient} accent={state.brand.color_primary} />
-          {/* key={tab} → transición suave (animate-rise respeta reduced-motion) */}
-          <div key={tab} className="animate-rise">
-            {tab === "entreno" && <PortalWorkout api={apiClient} brand={state.brand} periodStatus={state.period?.status ?? null} />}
-            {tab === "diario" && <PortalDiary api={apiClient} brand={state.brand} periodStatus={state.period?.status ?? null} />}
-            {tab === "progreso" && <PortalProgress api={apiClient} brand={state.brand} />}
-            {tab === "cierre" && (
+          {/* key={effTab} → transición suave (animate-rise respeta reduced-motion) */}
+          <div key={effTab} className="animate-rise">
+            {effTab === "entreno" && <PortalWorkout api={apiClient} brand={state.brand} periodStatus={state.period?.status ?? null} />}
+            {effTab === "diario" && <PortalDiary api={apiClient} brand={state.brand} periodStatus={state.period?.status ?? null} />}
+            {effTab === "progreso" && <PortalProgress api={apiClient} brand={state.brand} />}
+            {effTab === "cierre" && (
               <PortalClose
                 api={apiClient}
                 brand={state.brand}
@@ -169,7 +174,7 @@ export default function PortalApp({ token }: { token: string }) {
         <nav className="portal-nav fixed inset-x-0 bottom-0 z-40 mx-auto flex max-w-md justify-around px-2 py-2"
           style={{ backdropFilter: "blur(12px)" }}>
           {visibleTabs.map(({ id, label, icon: Icon }) => {
-            const active = tab === id;
+            const active = effTab === id;
             const alert = id === "cierre" && canClose;  // "!" el día que ya se puede rellenar
             return (
               <button

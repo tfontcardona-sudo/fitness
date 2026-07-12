@@ -251,6 +251,7 @@ def portal_state_full(
         first_name=_first_name(client),
         status=client.status,
         diet_mode=client.diet_mode,
+        package_tier=client.package_tier,
         has_plan=plan is not None,
         period=portal_svc.period_info(period, portal_svc.today_local()),
         brand=PortalBrand(**portal_svc.brand_payload(db)),

@@ -179,6 +179,65 @@ def plan_republished(brand: Brand, first_name: str, portal_url: str, change_summ
     return subject, _shell(brand, "Plan actualizado", body, portal_url, "Ver cambios")
 
 
+def plan_delivery(brand: Brand, first_name: str, portal_url: str,
+                  is_adapted: bool, attached: bool) -> tuple[str, str]:
+    """Entrega de la planificación por EMAIL (paquetes Start/Full). El PDF va
+    adjunto si `attached`; en cualquier caso se enlaza el portal de seguimiento."""
+    first_name = _esc(first_name)
+    if is_adapted:
+        subject = f"Tu planificación actualizada · {brand.name}"
+        intro = (
+            f"Hola {first_name}, he actualizado tu planificación tras tu última "
+            "revisión. Tienes los cambios y su porqué detallados en el documento."
+        )
+    else:
+        subject = f"Tu nueva planificación · {brand.name}"
+        intro = (
+            f"Hola {first_name}, aquí tienes tu planificación personalizada. "
+            "Revísala con calma antes de empezar."
+        )
+    pdf_line = (
+        "<p>Te adjunto tu plan en <strong>PDF</strong> para que lo tengas siempre a mano.</p>"
+        if attached else ""
+    )
+    body = (
+        f"<p>{intro}</p>{pdf_line}"
+        "<p>Desde tu portal registras tu día a día (peso, diario y revisión "
+        "quincenal) y ves tu progreso.</p>"
+    )
+    return subject, _shell(brand, "Tu plan está listo", body, portal_url, "Abrir mi portal")
+
+
+def feedback_delivery(brand: Brand, first_name: str, content: dict) -> tuple[str, str]:
+    """Entrega del feedback quincenal por EMAIL (paquetes Start/Full): el informe
+    completo (análisis, cambios, respuestas y objetivos) va en el propio correo."""
+    first_name = _esc(first_name)
+    subject = f"Tu feedback de la revisión quincenal · {brand.name}"
+    parts: list[str] = [f"<p>Hola {first_name}, aquí tienes el feedback de estas dos semanas.</p>"]
+
+    def _section(title: str, inner: str) -> str:
+        return (
+            f'<h2 style="font-size:15px;margin:20px 0 6px;color:#1a1a24">{_esc(title)}</h2>{inner}'
+        )
+
+    def _bullets(items: list) -> str:
+        lis = "".join(f"<li>{_esc(str(i))}</li>" for i in items if str(i).strip())
+        return f'<ul style="margin:4px 0;padding-left:20px">{lis}</ul>' if lis else ""
+
+    if content.get("natural_analysis"):
+        parts.append(f"<p>{_esc_ml(content['natural_analysis'])}</p>")
+    if content.get("changes_bullets"):
+        parts.append(_section("Cambios en el plan", _bullets(content["changes_bullets"])))
+    if content.get("answers"):
+        parts.append(_section("Respuesta a tus dudas", f"<p>{_esc_ml(content['answers'])}</p>"))
+    if content.get("next_objectives"):
+        parts.append(_section("Objetivos próximas 2 semanas", _bullets(content["next_objectives"])))
+    if content.get("closing_message"):
+        parts.append(f"<p style='font-style:italic;color:#555'>{_esc_ml(content['closing_message'])}</p>")
+
+    return subject, _shell(brand, "Tu progreso, en detalle", "".join(parts))
+
+
 # ------------------------------------------------------------ al coach ----
 
 def coach_change_request(brand: Brand, client_name: str, message: str, dashboard_url: str) -> tuple[str, str]:
