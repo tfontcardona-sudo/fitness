@@ -95,7 +95,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
     setGenerating(periodId);
     try {
       await api.generateFeedback(periodId);
-      toast.push("Feedback generado. Revísalo y envíalo por WhatsApp.");
+      toast.push(`Feedback generado. Revísalo y envíalo por ${byEmail ? "email" : "WhatsApp"}.`);
       load();
       onClientChanged?.(); // el aviso "Ir a Feedback" del perfil desaparece
     } catch (e: any) {
@@ -320,7 +320,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                   <Stat label="Días registrados" value={`${m.adherence?.days_logged ?? 0}/${m.adherence?.period_days ?? 0}`} />
                   <Stat label="Ritmo semanal" value={fmtDelta(m.weight?.weekly_rate_kg, "kg/sem")} />
                 </div>
-                {Array.isArray(m.strength) && m.strength.length > 0 && (
+                {info.hasTraining && Array.isArray(m.strength) && m.strength.length > 0 && (
                   <div>
                     <SubTitle icon={TrendingUp} text="Fuerza por grupo muscular (vs revisiones anteriores)" />
                     <ul className="space-y-1 text-sm">
@@ -367,7 +367,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                     </ul>
                   </div>
                 )}
-                {(!m.strength || m.strength.length === 0) && (
+                {info.hasTraining && (!m.strength || m.strength.length === 0) && (
                   <p className="mt-2 text-xs text-zinc-500">Sin series registradas aún para calcular la fuerza.</p>
                 )}
               </div>

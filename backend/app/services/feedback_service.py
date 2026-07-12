@@ -318,6 +318,8 @@ def build_period_feedback(db: Session, period_id: int, ai=None) -> FeedbackDoc:
     if period.status == "open":
         raise FeedbackError("El período aún no está cerrado por el cliente")
     client = db.get(Client, period.client_id)
+    # Paquete solo-nutrición (Start): el feedback no habla de entreno.
+    nutrition_only = getattr(client, "package_tier", None) == "start"
 
     inputs = _gather_doc_inputs(db, period, client)
     logs_q = list(db.scalars(
@@ -339,7 +341,8 @@ def build_period_feedback(db: Session, period_id: int, ai=None) -> FeedbackDoc:
                            "brazo": period.closing_arm_cm, "muslo": period.closing_thigh_cm},
             "sensaciones_1_5": period.closing_feelings_json,
             "adherencia_dieta_0_10": period.adherence_diet_0_10,
-            "adherencia_entreno_0_10": period.adherence_training_0_10,
+            # En solo-nutrición no hay adherencia de entreno que reportar.
+            **({} if nutrition_only else {"adherencia_entreno_0_10": period.adherence_training_0_10}),
             "comidas_libres": period.free_meals_count,
             "cambios_importantes": period.closing_changes,
             "lo_mas_dificil": period.closing_hardest,
@@ -350,7 +353,7 @@ def build_period_feedback(db: Session, period_id: int, ai=None) -> FeedbackDoc:
         "hay_fotos": bool(inputs["photo_pairs"]),
     }
     try:
-        ai_out = generate_feedback_analysis(payload, ai)
+        ai_out = generate_feedback_analysis(payload, ai, nutrition_only=nutrition_only)
     except AIGenerationError as exc:
         raise FeedbackError(f"La IA no devolvió un feedback válido: {exc}") from exc
 

@@ -47,7 +47,9 @@ def send_portal_access(db: Session, client: Client) -> dict:
     brand = brand_from_config(db)
     login_url = f"{settings.public_base_url}/portal"
     first = (client.full_name or client.email).split()[0]
-    subject, html = tpl.portal_access(brand, first, login_url, client.email, password)
+    subject, html = tpl.portal_access(
+        brand, first, login_url, client.email, password,
+        has_training=client.package_tier != "start")
     status = EmailService(db).send(
         to=client.email, subject=subject, html=html, kind="portal_access", client=client,
     )

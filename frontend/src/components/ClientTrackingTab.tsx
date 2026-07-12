@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, keepIfSame, REFRESH_MS } from "../lib/api";
+import { pkg } from "../lib/packages";
 import type { ClientOut } from "../types";
 
 type Tracking = Awaited<ReturnType<typeof api.getClientTracking>>;
@@ -40,6 +41,8 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
       </div>
     );
 
+  // Paquete solo-nutrición (Start): sin columnas ni métricas de entreno.
+  const hasTraining = pkg(client.package_tier).hasTraining;
   const p = data.period!;
   const daily = data.daily ?? [];
   const avg = data.daily_averages;
@@ -80,7 +83,7 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
               <thead className="text-zinc-500">
                 <tr className="text-left">
                   <th className="px-3 py-2">Fecha</th><th>Peso</th><th>Sueño</th>
-                  <th>Pasos</th><th>Sac.</th><th>Agua</th><th>Dieta</th><th>Series</th>
+                  <th>Pasos</th><th>Sac.</th><th>Agua</th><th>Dieta</th>{hasTraining && <th>Series</th>}
                 </tr>
               </thead>
               <tbody className="text-zinc-200">
@@ -93,7 +96,7 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
                     <td>{d.satiety_1_10 ?? "—"}</td>
                     <td>{fmt1(d.water_liters)}</td>
                     <td>{ADHERENCE_LABEL[d.diet_adherence ?? ""] ?? d.diet_adherence ?? "—"}</td>
-                    <td>{d.workout_sets || "—"}</td>
+                    {hasTraining && <td>{d.workout_sets || "—"}</td>}
                   </tr>
                 ))}
               </tbody>
@@ -107,7 +110,7 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
                     <td>{avg.satiety_1_10 ?? "—"}</td>
                     <td>{avg.water_liters ?? "—"}</td>
                     <td>{avg.diet_adherence_pct != null ? `${avg.diet_adherence_pct}%` : "—"}</td>
-                    <td>{avg.workout_sets ?? "—"}</td>
+                    {hasTraining && <td>{avg.workout_sets ?? "—"}</td>}
                   </tr>
                 </tfoot>
               )}
@@ -168,7 +171,7 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
                   <MiniTitle>Adherencia y valoración</MiniTitle>
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                     <ScoreStat label="Dieta" value={q.adherence_diet} />
-                    <ScoreStat label="Entreno" value={q.adherence_training} />
+                    {hasTraining && <ScoreStat label="Entreno" value={q.adherence_training} />}
                     <ScoreStat label="Sensaciones" value={q.feelings_score_10} />
                     <CountStat label="Comidas libres" value={q.free_meals} />
                   </div>

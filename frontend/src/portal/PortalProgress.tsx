@@ -21,7 +21,7 @@ type Api = ReturnType<typeof portalApi>;
  * registra: peso, medidas, adherencia, fuerza y sus fotos antes/ahora. Solo
  * lectura y solo lo suyo (autenticado por su token).
  */
-export function PortalProgress({ api, brand }: { api: Api; brand: PortalBrand }) {
+export function PortalProgress({ api, brand, hasTraining = true }: { api: Api; brand: PortalBrand; hasTraining?: boolean }) {
   const [data, setData] = useState<Progress | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -88,7 +88,7 @@ export function PortalProgress({ api, brand }: { api: Api; brand: PortalBrand })
           value={w.goal_kg != null ? `${round1(w.goal_kg)} kg` : "—"}
           sub={toGoalLabel(w.current_kg, w.goal_kg)}
         />
-        {bestLift && (
+        {hasTraining && bestLift && (
           <Stat
             accent={accent}
             label="Fuerza (mejor)"
@@ -139,8 +139,8 @@ export function PortalProgress({ api, brand }: { api: Api; brand: PortalBrand })
         </section>
       )}
 
-      {/* Fuerza: lo que más motiva ver subir */}
-      {data.strength.length > 0 && (
+      {/* Fuerza: lo que más motiva ver subir (solo si el paquete lleva entreno) */}
+      {hasTraining && data.strength.length > 0 && (
         <section className="portal-card p-4">
           <Header icon={Dumbbell} title="Tu fuerza sube" />
           <div className="space-y-2">

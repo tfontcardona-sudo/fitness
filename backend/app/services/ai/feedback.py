@@ -120,6 +120,18 @@ de forma prudente. Si no hay fotos, déjalo en null.
 Devuelve SOLO un objeto JSON válido conforme al esquema. Sin texto adicional."""
 
 
+# Añadido al system cuando el cliente es de paquete SOLO NUTRICIÓN (Start): no
+# tiene plan de entrenamiento, así que el feedback no puede mencionar entreno.
+_NUTRITION_ONLY_NOTE = """
+
+PAQUETE SOLO NUTRICIÓN (MUY IMPORTANTE): este cliente NO tiene plan de \
+entrenamiento. NO menciones entrenamiento, entreno, fuerza, series, ejercicios, \
+rutina, split ni progresión de cargas en NINGÚN campo. El análisis y los ajustes \
+son EXCLUSIVAMENTE de nutrición y hábitos. En natural_analysis cubre peso, \
+adherencia a la dieta, energía, sueño y digestiones (no fuerza). En plan_adjustments \
+usa solo las áreas "Dieta", "Cardio/NEAT" o "Hábitos" (NUNCA "Entrenamiento")."""
+
+
 def _user_prompt(payload: dict) -> str:
     return (
         "Redacta el feedback del período con estos DATOS YA CALCULADOS por el backend "
@@ -128,11 +140,13 @@ def _user_prompt(payload: dict) -> str:
     )
 
 
-def generate_feedback_analysis(payload: dict, ai) -> FeedbackAIOutput:
-    """Pide a la IA la parte cualitativa del feedback a partir de las métricas."""
+def generate_feedback_analysis(payload: dict, ai, nutrition_only: bool = False) -> FeedbackAIOutput:
+    """Pide a la IA la parte cualitativa del feedback a partir de las métricas.
+
+    nutrition_only=True (paquete Start): el feedback no menciona entrenamiento."""
     out = ai.generate_json(
         model=settings.model_heavy,
-        system=_SYSTEM,
+        system=_SYSTEM + (_NUTRITION_ONLY_NOTE if nutrition_only else ""),
         user=_user_prompt(payload),
         schema=FeedbackAIOutput,
     )

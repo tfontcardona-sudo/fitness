@@ -14,6 +14,7 @@ import { api, keepIfSame, REFRESH_MS } from "../lib/api";
 import type { ClientOut } from "../types";
 import { PageLoader, StatusBadge } from "../components/ui";
 import { goalReviewDue, initials, relativeDays } from "../lib/format";
+import { pkg } from "../lib/packages";
 
 /**
  * Dashboard = "qué toca hacer AHORA con cada cliente". Cada cliente se traduce
@@ -53,7 +54,7 @@ function nextAction(c: ClientOut): Accion | null {
     return {
       client: c, prio: 2, tone: "#C96A1E", icon: Sparkles, category: "Adaptar",
       title: `Feedback de la revisión #${c.pending_review_period ?? ""} listo`,
-      detail: "Revisa los cambios propuestos (dieta y entreno) y adapta su planificación.",
+      detail: `Revisa los cambios propuestos (${pkg(c.package_tier).hasTraining ? "dieta y entreno" : "dieta"}) y adapta su planificación.`,
       cta: "Adaptar planificación", tab: "planificacion",
     };
   if (c.status === "onboarding" && !c.goal_type)

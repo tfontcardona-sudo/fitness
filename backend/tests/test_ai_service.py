@@ -200,6 +200,27 @@ def test_nutrition_only_pipeline_skips_training():
     assert not any(f.startswith("violation:") for f in flags)
 
 
+def test_feedback_nutrition_only_prompt_excludes_training():
+    # Paquete Start: el system del feedback prohíbe mencionar entreno.
+    from app.services.ai.feedback import generate_feedback_analysis
+
+    resp = json.dumps({
+        "natural_analysis": "Buen ritmo de bajada.", "changes_bullets": [],
+        "plan_adjustments": [], "answers": None, "next_objectives": [],
+        "closing_message": "Sigue así.",
+    })
+    client = ScriptedClient([resp])
+    generate_feedback_analysis({"objetivo": "fat_loss"}, client, nutrition_only=True)
+    system = client.calls[0]["system"]
+    assert "SOLO NUTRICIÓN" in system
+    assert "NO menciones entrenamiento" in system
+
+    # Full/Pro: el system NO lleva ese añadido.
+    client2 = ScriptedClient([resp])
+    generate_feedback_analysis({"objetivo": "fat_loss"}, client2, nutrition_only=False)
+    assert "SOLO NUTRICIÓN" not in client2.calls[0]["system"]
+
+
 def test_pipeline_blocks_core_violating_guardrails():
     # Núcleo con kcal por debajo del suelo → guardrail de nutrición bloquea
     bad_core = json.loads(_valid_core_json())
