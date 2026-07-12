@@ -229,12 +229,15 @@ export const api = {
       }[];
     }>("GET", `/clients/${clientId}/tracking`),
   anamnesisTemplateUrl: () => `/api/anamnesis-template`,
-  generatePlan: (clientId: number, monthIndex = 1) =>
+  // meals (opcional): claves canónicas del reparto de comidas elegido por el
+  // coach en el selector; si viene, sustituye al de la anamnesis y se regenera.
+  generatePlan: (clientId: number, monthIndex = 1, meals?: string[]) =>
     request<{
       id: number; month_index: number; version: number; status: string;
       guardrail_flags: string[];
       nutrition: any; training: any; education: any;
-    }>("POST", `/clients/${clientId}/generate-plan?month_index=${monthIndex}`),
+    }>("POST", `/clients/${clientId}/generate-plan?month_index=${monthIndex}`,
+      meals && meals.length ? { meals } : undefined),
   adaptPlan: (clientId: number) =>
     request<{ id: number; month_index: number; version: number; status: string }>(
       "POST", `/clients/${clientId}/adapt-plan`),

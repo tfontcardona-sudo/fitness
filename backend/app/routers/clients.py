@@ -787,10 +787,18 @@ _REQUIRED_FIELDS = {
 }
 
 
+class GeneratePlanIn(BaseModel):
+    """Cuerpo opcional del generate-plan: reparto de comidas elegido por el coach
+    (claves canónicas: desayuno, media_manana, comida, snack, cena, precama). Si
+    viene, sustituye al de la anamnesis y se persiste en el cliente."""
+    meals: list[str] | None = None
+
+
 @router.post("/{client_id}/generate-plan")
 def generate_client_plan(
     client_id: int,
     month_index: int = Query(default=1, ge=1),
+    body: GeneratePlanIn | None = None,
     db: Session = Depends(get_db),
 ) -> dict:
     """Genera (con IA real) el plan mensual del cliente y lo guarda como borrador."""
@@ -807,6 +815,18 @@ def generate_client_plan(
     from app.services.metrics import age_from_birth, energy_targets
 
     client = _client_or_404_docs(db, client_id)
+
+    # 0) Reparto de comidas elegido por el coach en el selector: sustituye al de
+    # la anamnesis y se guarda en el cliente (para que persista en futuras
+    # regeneraciones). La IA reparte los macros entre estas tomas.
+    if body is not None and body.meals:
+        from app.services.meal_structure import meal_schedule_from_keys
+
+        sched = meal_schedule_from_keys(body.meals)
+        if sched:
+            client.meal_schedule = sched
+            client.meals_per_day = len(sched)
+            db.commit()
 
     # 1) Validar que la anamnesis estructurada está completa
     missing = []

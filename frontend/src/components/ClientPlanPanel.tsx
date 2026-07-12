@@ -3,6 +3,7 @@ import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, Cale
 import { api, getToken } from "../lib/api";
 import { openWhatsApp, planAndFeedbackMessage, planMessage, waPhone, waUrl } from "../lib/whatsapp";
 import { pkg } from "../lib/packages";
+import { CANONICAL_MEALS, mealKeysFromNames } from "../lib/meals";
 import { GOAL_LABEL, goalDays, goalReviewDue, planMonthLabel } from "../lib/format";
 import { deficitLabel, macroPct, MACRO_TOTAL_TOLERANCE } from "../lib/nutritionTargets";
 import { isCriticalLine } from "../lib/clinical";
@@ -214,12 +215,12 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
     }
   }
 
-  async function generate() {
+  async function generate(meals?: string[]) {
     if (generating) return;
     setGenerating(true);
     setMissing(null);
     try {
-      const p = await api.generatePlan(client.id, plan?.month_index ?? 1);
+      const p = await api.generatePlan(client.id, plan?.month_index ?? 1, meals);
       setPlan(normalize(p));
       setPeriods(await api.listPeriods(client.id).catch(() => periods));
       setNeedsDownload(false); // versión nueva: el aviso de re-descarga ya no aplica
@@ -331,7 +332,7 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
               </div>
             )}
 
-            <button onClick={generate} disabled={generating} className="btn btn-primary mt-4">
+            <button onClick={() => generate()} disabled={generating} className="btn btn-primary mt-4">
               <Sparkles size={16} />
               {generating ? "Generando… (puede tardar 1-2 min)" : "Generar planificación"}
             </button>
@@ -489,6 +490,16 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
           </div>
         )}
       </div>
+
+      {/* Estructura de comidas del día: desplegable para elegir qué tomas hace el
+          cliente (desayuno, media mañana, comida, snack, cena, pre-cama). Se
+          inicializa con las comidas del plan actual; al cambiarlas y regenerar,
+          toda la planificación (macros, estructura, PDF, portal) se readapta. */}
+      <MealStructureCard
+        currentNames={(Array.isArray(nut.meals) ? nut.meals : []).map((m: any) => m?.name ?? "")}
+        generating={generating}
+        onRegenerate={(keys) => generate(keys)}
+      />
 
       {/* Tras editar: el PDF que se descargó antes queda ANTIGUO — recordatorio
           claro hasta que se vuelva a descargar (la edición ya está guardada). */}
@@ -1029,6 +1040,105 @@ function ImportantPointsCard({ client }: { client: ClientOut }) {
         })}
       </div>
     </div>
+  );
+}
+
+/** Selector de la estructura de comidas del día. El cliente declara sus tomas en
+ *  la anamnesis y la IA reparte los macros entre ellas, pero desde aquí el coach
+ *  puede rehacer ese reparto: marca qué comidas quiere (mín. 2) y "Regenerar"
+ *  vuelve a generar el plan con esa estructura — toda la info (macros, comidas,
+ *  PDF y portal) se readapta. Se inicializa con las comidas del plan vigente. */
+function MealStructureCard({
+  currentNames,
+  generating,
+  onRegenerate,
+}: {
+  currentNames: string[];
+  generating: boolean;
+  onRegenerate: (keys: string[]) => void;
+}) {
+  const currentKeys = mealKeysFromNames(currentNames);
+  const [sel, setSel] = useState<string[]>(currentKeys);
+  // Al regenerar el plan cambian las comidas: resincroniza la selección con la
+  // estructura vigente para que el desplegable no quede desfasado.
+  const sig = currentKeys.join(",");
+  useEffect(() => {
+    setSel(currentKeys);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig]);
+
+  const orderedKeys = CANONICAL_MEALS.map((m) => m.key).filter((k) => sel.includes(k));
+  const changed = orderedKeys.join(",") !== sig;
+  const tooFew = orderedKeys.length < 2;
+
+  function toggle(key: string) {
+    setSel((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  }
+
+  return (
+    <details className="card p-5">
+      <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 text-sm font-semibold text-zinc-100">
+        <span className="flex items-center gap-2">
+          <Utensils size={16} style={{ color: "var(--brand-accent-2)" }} />
+          Estructura de comidas del día
+        </span>
+        <span className="text-xs font-normal text-zinc-500">
+          {orderedKeys.length} {orderedKeys.length === 1 ? "toma" : "tomas"}
+        </span>
+      </summary>
+
+      <p className="mt-2 text-xs text-zinc-500">
+        Marca qué comidas hace el cliente. Al regenerar, la IA reparte los macros
+        entre las tomas elegidas y toda la planificación se readapta.
+      </p>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        {CANONICAL_MEALS.map((m) => {
+          const on = sel.includes(m.key);
+          return (
+            <button
+              key={m.key}
+              type="button"
+              onClick={() => toggle(m.key)}
+              aria-pressed={on}
+              className="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
+              style={
+                on
+                  ? {
+                      background: "color-mix(in srgb, var(--brand-accent-2) 16%, transparent)",
+                      borderColor: "color-mix(in srgb, var(--brand-accent-2) 55%, transparent)",
+                      color: "var(--brand-accent-2)",
+                    }
+                  : { background: "var(--surface-raised)", borderColor: "var(--line)", color: "#8A8172" }
+              }
+            >
+              {m.name}
+              <span className="ml-1.5 opacity-60">{m.time}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => onRegenerate(orderedKeys)}
+          disabled={generating || tooFew || !changed}
+          className="btn btn-primary"
+        >
+          <Sparkles size={15} /> {generating ? "Regenerando…" : "Regenerar con estas comidas"}
+        </button>
+        {tooFew ? (
+          <span className="text-xs text-zinc-500">Selecciona al menos 2 comidas.</span>
+        ) : !changed ? (
+          <span className="text-xs text-zinc-500">Esta es la estructura del plan actual.</span>
+        ) : (
+          <span className="text-xs" style={{ color: "var(--brand-accent-2)" }}>
+            Regenerar volverá a crear el plan con estas {orderedKeys.length} tomas.
+          </span>
+        )}
+      </div>
+    </details>
   );
 }
 
