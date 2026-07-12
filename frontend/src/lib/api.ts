@@ -140,6 +140,15 @@ export const api = {
   sendPortalAccess: (id: number) =>
     request<{ status: string; email: string; password: string | null }>(
       "POST", `/clients/${id}/send-portal-access`),
+  // Pagos (Stripe)
+  // Registro personal: crea la sesión de pago del plan y devuelve la URL de Stripe.
+  publicCheckout: (tier: string) =>
+    request<{ url: string }>("POST", "/public/checkout", { tier }),
+  // Alta manual: envía por email el mensaje de arranque (pago + anamnesis).
+  sendOnboarding: (id: number) =>
+    request<{ status: string; email: string }>("POST", `/clients/${id}/send-onboarding`),
+  // Enlace ESTABLE de pago de un cliente (para mandarlo por WhatsApp/email).
+  payLinkUrl: (portalToken: string) => `${window.location.origin}/api/pay/${portalToken}`,
   exportClientUrl: (id: number) => `/api/clients/${id}/export`,
   listPlans: (clientId: number) =>
     request<{

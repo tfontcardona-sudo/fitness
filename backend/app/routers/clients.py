@@ -597,6 +597,33 @@ def resend_portal_access(client_id: int, db: Session = Depends(get_db)) -> dict:
     return {"status": res["status"], "email": client.email, "password": res["password"]}
 
 
+_TIER_LABEL = {"start": "DQR Start", "full": "DQR Full", "pro": "DQR Pro"}
+
+
+@router.post("/{client_id}/send-onboarding")
+def send_onboarding(client_id: int, db: Session = Depends(get_db)) -> dict:
+    """Envía al cliente (por email) el mensaje de arranque combinado: enlace de
+    pago de su plan + enlace a la anamnesis, con la instrucción EN MAYÚSCULAS de
+    enviar la anamnesis rellena. (En Pro el coach lo manda por WhatsApp desde la
+    web; este endpoint es la vía email para Start/Full.)"""
+    from app.services import email_templates as tpl
+    from app.services.email_service import EmailService, brand_from_config
+
+    client = _client_or_404_docs(db, client_id)
+    base = settings.public_base_url
+    pay_url = f"{base}/api/pay/{client.portal_token}"
+    portal_url = f"{base}/p/{client.portal_token}"
+    first = ((client.full_name or "").split() or [(client.email or "cliente").split("@")[0]])[0]
+    label = _TIER_LABEL.get(client.package_tier, "tu plan")
+    brand = brand_from_config(db)
+    subject, html = tpl.onboarding_pay_anamnesis(brand, first, label, pay_url, portal_url)
+    email_status = EmailService(db).send(
+        to=client.email, subject=subject, html=html, kind="onboarding", client=client)
+    log_event(db, "client", client.id, "onboarding_sent", {"status": email_status})
+    db.commit()
+    return {"status": email_status, "email": client.email}
+
+
 @router.get("/{client_id}/history")
 def client_history(client_id: int, db: Session = Depends(get_db)) -> dict:
     """Evolución del cliente en el tiempo: peso/adherencia/fuerza por período +

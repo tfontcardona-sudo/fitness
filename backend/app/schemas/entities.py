@@ -18,6 +18,7 @@ DietMode = Literal["flexible_7", "strict"]
 # Paquete/plan contratado por el cliente (define qué incluye y cómo se le entrega):
 #   start = solo nutrición · full = nutrición + entreno · pro = full + contacto directo
 PackageTier = Literal["start", "full", "pro"]
+PaymentStatus = Literal["pending", "paid"]
 ClientStatus = Literal[
     "onboarding", "active", "awaiting_feedback", "at_risk", "review_pending", "inactive"
 ]
@@ -100,6 +101,7 @@ class ClientUpdate(BaseModel):
     full_name: str | None = None
     phone: str | None = None
     package_tier: PackageTier | None = None
+    payment_status: PaymentStatus | None = None
     sex: Sex | None = None
     birth_date: date | None = None
     height_cm: float | None = Field(default=None, gt=80, lt=250)
@@ -141,6 +143,8 @@ class ClientOut(BaseModel):
     email: str
     phone: str | None
     package_tier: PackageTier = "pro"
+    payment_status: PaymentStatus = "paid"
+    paid_at: datetime | None = None
     sex: Sex | None
     birth_date: date | None
     height_cm: float | None

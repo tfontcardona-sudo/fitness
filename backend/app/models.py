@@ -105,6 +105,14 @@ class Client(Base):
     status: Mapped[str] = mapped_column(String(30), default="onboarding", index=True)
     auto_pilot: Mapped[bool] = mapped_column(Boolean, default=False)
     emails_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Estado del pago del plan (Stripe): "pending" | "paid". Se marca "paid"
+    # cuando Stripe confirma el cobro (registro personal del cliente al pagar, o
+    # pago del enlace enviado en el alta manual). Solo informativo: NO bloquea el
+    # trabajo del coach. Los clientes previos quedan como "paid" (ya activos).
+    payment_status: Mapped[str] = mapped_column(
+        String(12), default="pending", server_default=text("'paid'"), nullable=False
+    )
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     portal_token: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     # Acceso del cliente al portal con login (usuario = email). El hash y la
     # marca de envío nacen nulos y se rellenan al enviar el acceso por email.
