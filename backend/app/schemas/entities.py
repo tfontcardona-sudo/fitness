@@ -15,6 +15,9 @@ GoalType = Literal["fat_loss", "muscle_gain", "recomp", "maintenance", "injury_r
 Level = Literal["beginner", "intermediate", "advanced"]
 TrainingPlace = Literal["gym", "home", "outdoor"]
 DietMode = Literal["flexible_7", "strict"]
+# Paquete/plan contratado por el cliente (define qué incluye y cómo se le entrega):
+#   start = solo nutrición · full = nutrición + entreno · pro = full + contacto directo
+PackageTier = Literal["start", "full", "pro"]
 ClientStatus = Literal[
     "onboarding", "active", "awaiting_feedback", "at_risk", "review_pending", "inactive"
 ]
@@ -47,6 +50,7 @@ class ClientCreate(BaseModel):
     full_name: str = Field(min_length=2, max_length=160)
     email: EmailStr
     phone: str | None = None
+    package_tier: PackageTier = "full"
 
 
 class AnamnesisSubmit(BaseModel):
@@ -95,6 +99,7 @@ class ClientUpdate(BaseModel):
 
     full_name: str | None = None
     phone: str | None = None
+    package_tier: PackageTier | None = None
     sex: Sex | None = None
     birth_date: date | None = None
     height_cm: float | None = Field(default=None, gt=80, lt=250)
@@ -135,6 +140,7 @@ class ClientOut(BaseModel):
     full_name: str
     email: str
     phone: str | None
+    package_tier: PackageTier = "pro"
     sex: Sex | None
     birth_date: date | None
     height_cm: float | None

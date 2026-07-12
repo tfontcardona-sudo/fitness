@@ -57,6 +57,13 @@ class Client(Base):
     full_name: Mapped[str] = mapped_column(String(160))
     email: Mapped[str] = mapped_column(String(160), unique=True, index=True)
     phone: Mapped[str | None] = mapped_column(String(40))
+    # Paquete/plan contratado: start (solo dieta) | full (dieta+entreno) |
+    # pro (full + contacto directo). Define qué se genera, qué ve el cliente en
+    # el portal y cómo se le entrega. Los clientes previos quedan en 'pro' (el
+    # sistema completo que ya usaban).
+    package_tier: Mapped[str] = mapped_column(
+        String(10), default="full", server_default=text("'pro'"), nullable=False
+    )
 
     # Anamnesis — nullable hasta que el cliente la complete vía link público
     sex: Mapped[str | None] = mapped_column(String(10))  # male|female

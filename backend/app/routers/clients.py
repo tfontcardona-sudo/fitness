@@ -249,6 +249,7 @@ def create_client(body: ClientCreate, db: Session = Depends(get_db)) -> ClientCr
         full_name=body.full_name.strip(),
         email=email,
         phone=body.phone,
+        package_tier=body.package_tier,
         status="onboarding",
         auto_pilot=settings.auto_pilot_default,
         portal_token="pendiente",  # se firma con el id real tras el flush
