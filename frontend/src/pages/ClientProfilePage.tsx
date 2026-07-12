@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Check, BellRing, Pencil, Smartphone, ClipboardCheck, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, BellRing, Pencil, Smartphone, ClipboardCheck, Trash2, CreditCard } from "lucide-react";
 import { api, keepIfSame, REFRESH_MS } from "../lib/api";
 import type { ClientOut } from "../types";
 import {
@@ -36,6 +36,7 @@ export default function ClientProfilePage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [portalUrl, setPortalUrl] = useState<string | null>(null);
+  const [payUrl, setPayUrl] = useState<string | null>(null);
   // Aviso "revisión cerrada": solo mientras el feedback de la última revisión
   // NO exista todavía. En cuanto el coach lo genera, el aviso desaparece.
   const [feedbackPending, setFeedbackPending] = useState(false);
@@ -115,8 +116,11 @@ export default function ClientProfilePage() {
   // navegador bloquee la pestaña) y que el enlace funcione siempre.
   useEffect(() => {
     api.portalLink(clientId)
-      .then((l) => setPortalUrl(`${window.location.origin}/p/${l.portal_token}`))
-      .catch(() => setPortalUrl(null));
+      .then((l) => {
+        setPortalUrl(`${window.location.origin}/p/${l.portal_token}`);
+        setPayUrl(api.payLinkUrl(l.portal_token));
+      })
+      .catch(() => { setPortalUrl(null); setPayUrl(null); });
   }, [clientId]);
 
   // "Dieta" de la info básica = la dieta GENERADA con IA (kcal y macros del
@@ -237,6 +241,20 @@ export default function ClientProfilePage() {
 
             <dl className="mt-5 space-y-2.5 text-sm">
               <PlanRow client={client} onSaved={reload} />
+              <div className="flex items-center justify-between gap-2">
+                <dt className="text-zinc-500">Pago</dt>
+                <dd>
+                  <span
+                    className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                    style={{
+                      background: `color-mix(in srgb, ${client.payment_status === "paid" ? "#2E7D46" : "#C2453A"} 14%, transparent)`,
+                      color: client.payment_status === "paid" ? "#2E7D46" : "#C2453A",
+                    }}
+                  >
+                    {client.payment_status === "paid" ? "Pagado" : "Pago pendiente"}
+                  </span>
+                </dd>
+              </div>
               <PhoneRow client={client} onSaved={reload} />
               <Row label="Edad" value={age ? `${age} años` : "—"} />
               <Row label="Objetivo" value={client.goal_type ? GOAL_LABEL[client.goal_type] : "—"} />
@@ -268,6 +286,25 @@ export default function ClientProfilePage() {
               <span className="block text-xs opacity-75">abrir y copiar el enlace de su app</span>
             </span>
           </button>
+
+          {/* ENLACE DE PAGO (Stripe): color diferenciado (verde), debajo del
+              portal. Copia el enlace para mandárselo al cliente y que pague. */}
+          {payUrl && client.payment_status !== "paid" && (
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(payUrl).catch(() => {});
+                toast.push("Enlace de pago copiado — mándaselo al cliente");
+              }}
+              className="flex w-full items-center gap-3 rounded-xl border-2 px-4 py-3 text-left transition-transform active:scale-[0.98]"
+              style={{ borderColor: "#2E7D46", color: "#2E7D46", background: "color-mix(in srgb, #2E7D46 7%, transparent)" }}
+            >
+              <CreditCard size={22} className="shrink-0" />
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold">Enlace de pago</span>
+                <span className="block text-xs opacity-80">copiar y enviar al cliente para que pague su plan</span>
+              </span>
+            </button>
+          )}
         </aside>
 
         {/* 3) Extras: anamnesis + regenerar enlace (debajo del contenido en

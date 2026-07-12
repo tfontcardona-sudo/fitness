@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { AlertTriangle, CheckCircle2, Copy, MessageCircle, Search, Send, UserPlus, ChevronRight, Flag } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, Mail, MessageCircle, Search, Send, UserPlus, ChevronRight, Flag } from "lucide-react";
 import { useDismiss, useModalFocus } from "../lib/useDismiss";
 import { api, ApiError, keepIfSame, REFRESH_MS } from "../lib/api";
 import type { ClientCreatedOut, ClientOut } from "../types";
 import { EmptyState, PageLoader, StatusBadge, useToast } from "../components/ui";
 import { Avatar } from "./DashboardPage";
 import { GOAL_LABEL, goalReviewDue, relativeDays } from "../lib/format";
-import { openWhatsApp, portalAccessMessage, waPhone } from "../lib/whatsapp";
+import { onboardingMessage, openWhatsApp, portalAccessMessage, waPhone } from "../lib/whatsapp";
 import { PACKAGES, PACKAGE_ORDER, pkg } from "../lib/packages";
 import type { PackageTier } from "../types";
 
@@ -178,6 +178,21 @@ function PackageBadge({ tier }: { tier: string }) {
   );
 }
 
+/** Estado de pago del plan (Stripe): pagado / pendiente. */
+function PaymentBadge({ status }: { status: string }) {
+  const paid = status === "paid";
+  const color = paid ? "#2E7D46" : "#C2453A";
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold"
+      style={{ background: `color-mix(in srgb, ${color} 14%, transparent)`, color }}
+      title={paid ? "Pago realizado" : "Pago pendiente"}
+    >
+      {paid ? "Pagado" : "Pago pendiente"}
+    </span>
+  );
+}
+
 /** Estado con contexto del ciclo: nº de revisión pendiente y aviso de objetivo. */
 function CycleBadges({ c }: { c: ClientOut }) {
   const due = goalReviewDue(c);
@@ -230,6 +245,7 @@ function ClientCard({ c }: { c: ClientOut }) {
         <div className="flex items-center gap-1.5">
           <p className="truncate text-sm font-medium text-zinc-100">{c.full_name}</p>
           <PackageBadge tier={c.package_tier} />
+          <PaymentBadge status={c.payment_status} />
         </div>
         <p className="truncate text-xs text-zinc-500">
           {c.goal_type ? GOAL_LABEL[c.goal_type] : "Sin objetivo aún"} · {relativeDays(c.updated_at)}
@@ -291,6 +307,7 @@ function ClientsTable({ clients }: { clients: ClientOut[] }) {
                     <div className="flex items-center gap-1.5">
                       <p className="font-medium text-zinc-100">{c.full_name}</p>
                       <PackageBadge tier={c.package_tier} />
+                      <PaymentBadge status={c.payment_status} />
                     </div>
                     <p className="text-xs text-zinc-500">{c.email}</p>
                   </div>
@@ -389,6 +406,36 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
     toast.push("WhatsApp abierto con el acceso al portal — dale a enviar");
   }
 
+  const [sendingOnb, setSendingOnb] = useState(false);
+  // Envío combinado de ARRANQUE: enlace de pago + anamnesis en un solo mensaje,
+  // por WhatsApp (Pro) o email (Start/Full) según el plan del cliente.
+  async function sendOnboarding() {
+    if (!created || sendingOnb) return;
+    const info = pkg(created.client.package_tier);
+    const payUrl = api.payLinkUrl(created.links.portal_token);
+    if (info.delivery === "whatsapp") {
+      const digits = waPhone(created.client.phone ?? phone);
+      if (!digits) {
+        toast.push("Añade el teléfono del cliente para enviarlo por WhatsApp", "error");
+        return;
+      }
+      openWhatsApp(digits, onboardingMessage(created.client.full_name, info.label, payUrl, created.links.portal_url));
+      toast.push("WhatsApp abierto con el pago y la anamnesis — dale a enviar");
+      return;
+    }
+    setSendingOnb(true);
+    try {
+      const r = await api.sendOnboarding(created.client.id);
+      if (r.status === "sent") toast.push("Enviado por email: pago + anamnesis");
+      else if (r.status === "disabled") toast.push("El email está desactivado: no se envió", "error");
+      else toast.push("No se pudo enviar el email", "error");
+    } catch {
+      toast.push("No se pudo enviar", "error");
+    } finally {
+      setSendingOnb(false);
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div
@@ -468,6 +515,22 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
         ) : (
           <>
             <h3 className="text-base font-semibold text-zinc-100">Cliente creado</h3>
+
+            {/* Envío COMBINADO de arranque: pago del plan + anamnesis en un solo
+                mensaje, por WhatsApp (Pro) o email (Start/Full) según el plan. */}
+            <div className="mt-3 rounded-xl border p-3"
+              style={{ borderColor: "var(--brand-accent)", background: "color-mix(in srgb, var(--brand-accent) 8%, transparent)" }}>
+              <p className="text-sm font-semibold text-zinc-100">Enviar pago + anamnesis</p>
+              <p className="mt-0.5 text-xs text-zinc-500">
+                Un solo mensaje con el enlace de pago de su plan ({pkg(created.client.package_tier).short})
+                y el de la anamnesis, con la instrucción de devolverla rellena.
+              </p>
+              <button onClick={sendOnboarding} disabled={sendingOnb} className="btn btn-primary mt-2 w-full justify-center">
+                {pkg(created.client.package_tier).delivery === "whatsapp"
+                  ? <><MessageCircle size={15} /> Enviar por WhatsApp</>
+                  : <><Mail size={15} /> {sendingOnb ? "Enviando…" : "Enviar por email"}</>}
+              </button>
+            </div>
 
             {/* Correo de acceso al portal, enviado AUTOMÁTICAMENTE al crear */}
             <div className="mt-3">

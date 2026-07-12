@@ -8,6 +8,7 @@ import ClientsPage from "./pages/ClientsPage";
 import ClientProfilePage from "./pages/ClientProfilePage";
 import PortalApp from "./portal/PortalApp";
 import PortalLogin from "./portal/PortalLogin";
+import PlansPage, { PaymentOkPage } from "./pages/PlansPage";
 
 /**
  * Raíz. El portal del cliente (login en /portal y acceso por token en /p/:token)
@@ -20,6 +21,9 @@ export default function App() {
       <Routes>
         <Route path="/portal" element={<PortalLogin />} />
         <Route path="/p/:token" element={<PortalRoute />} />
+        {/* Registro personal del cliente: página pública de planes (Stripe). */}
+        <Route path="/planes" element={<PlansPage />} />
+        <Route path="/pago-ok" element={<PaymentOkPage />} />
         <Route path="/*" element={<CoachApp />} />
       </Routes>
     </BrowserRouter>

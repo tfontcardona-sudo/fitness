@@ -18,7 +18,9 @@ from sqlalchemy import text
 from app.config import settings
 from app.ratelimit import client_key
 from app.db import engine
-from app.routers import alerts, auth, brand, clients, email, exercises, plans, portal_public
+from app.routers import (
+    alerts, auth, brand, clients, email, exercises, plans, portal_public, stripe_router,
+)
 
 APP_VERSION = "0.2.0"
 
@@ -35,6 +37,18 @@ async def lifespan(app: FastAPI):
             "EMAIL SIN CONFIGURAR: no saldrán correos. Falta: %s. "
             "Rellena el .env del servidor y reinicia.", ", ".join(_cfg["missing"]),
         )
+
+    # Aviso si Stripe está a medias (clave puesta pero faltan precios/webhook).
+    if settings.stripe_enabled:
+        _missing = [n for n, v in (
+            ("STRIPE_WEBHOOK_SECRET", settings.stripe_webhook_secret),
+            ("STRIPE_PRICE_START", settings.stripe_price_start),
+            ("STRIPE_PRICE_FULL", settings.stripe_price_full),
+            ("STRIPE_PRICE_PRO", settings.stripe_price_pro),
+        ) if not v]
+        if _missing:
+            logging.getLogger("app.stripe").warning(
+                "STRIPE INCOMPLETO: los pagos pueden fallar. Falta: %s.", ", ".join(_missing))
 
     # El scheduler se desactiva en tests/CI con SCHEDULER_ENABLED=false.
     scheduler_on = os.environ.get("SCHEDULER_ENABLED", "true").lower() == "true"
@@ -107,6 +121,7 @@ app.include_router(brand.router)
 app.include_router(plans.router)
 app.include_router(alerts.router)
 app.include_router(email.router)
+app.include_router(stripe_router.router)
 app.include_router(portal_public.router)
 
 

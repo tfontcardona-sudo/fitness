@@ -145,6 +145,21 @@ export function videoCallMessage(fullName: string): string {
   ].join("\n\n");
 }
 
+/** Mensaje de ARRANQUE (alta manual): pagar el plan + rellenar la anamnesis, con
+ *  la instrucción EN MAYÚSCULAS de enviar la anamnesis rellena. Un solo mensaje. */
+export function onboardingMessage(
+  fullName: string, planLabel: string, payUrl: string, portalUrl: string,
+): string {
+  return [
+    `Hola ${waFirstName(fullName)},`,
+    "Para empezar tu asesoría necesito dos cosas:",
+    `1) Realiza el pago de tu plan (${planLabel}) desde este enlace:\n${payUrl}`,
+    `2) Entra en tu portal y rellena tu cuestionario inicial (anamnesis):\n${portalUrl}`,
+    "IMPORTANTE: RELLENA Y ENVÍAME TU ANAMNESIS COMPLETA PARA QUE PUEDA PREPARARTE EL PLAN.",
+    "Un saludo.",
+  ].join("\n\n");
+}
+
 /** Mensaje del feedback quincenal: entrada + informe + cierre profesional.
  *  `periodIndex` hace que la voz varíe entre una revisión y la siguiente. */
 export function feedbackMessage(fullName: string, content: any, periodIndex = 0): string {

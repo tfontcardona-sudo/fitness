@@ -116,6 +116,35 @@ def portal_access(brand: Brand, first_name: str, login_url: str,
     return subject, _shell(brand, "Tu portal ya está listo", body, login_url, "Entrar a mi portal")
 
 
+def onboarding_pay_anamnesis(brand: Brand, first_name: str, plan_label: str,
+                             pay_url: str, portal_url: str) -> tuple[str, str]:
+    """Mensaje de arranque (email): pagar el plan + rellenar la anamnesis, con la
+    instrucción EN MAYÚSCULAS de enviar la anamnesis rellena."""
+    first_name = _esc(first_name)
+    plan_label = _esc(plan_label)
+    subject = f"Tus primeros pasos con {brand.name}"
+    pay_btn = (
+        f'<table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0">'
+        f'<tr><td style="border-radius:10px;background:{brand.color_primary}">'
+        f'<a href="{pay_url}" style="display:inline-block;padding:13px 26px;font-weight:600;'
+        f'color:#0A0A0F;text-decoration:none;border-radius:10px">Pagar mi plan ({plan_label})</a>'
+        f'</td></tr></table>'
+    )
+    body = (
+        f"<p>Hola {first_name}, ¡bienvenido/a! Para empezar tu asesoría con "
+        f"{brand.name} necesito dos cosas:</p>"
+        f"<p><strong>1) Realiza el pago de tu plan {plan_label}:</strong></p>"
+        f"{pay_btn}"
+        f"<p><strong>2) Entra en tu portal y rellena tu cuestionario inicial "
+        f"(anamnesis):</strong></p>"
+        f'<p><a href="{portal_url}" style="color:{brand.color_primary};font-weight:600">'
+        f"Abrir mi portal y rellenar la anamnesis</a></p>"
+        f'<p style="background:#fff7e6;border-radius:10px;padding:12px 14px;font-weight:700">'
+        f"IMPORTANTE: RELLENA Y ENVÍAME TU ANAMNESIS COMPLETA PARA QUE PUEDA PREPARARTE EL PLAN.</p>"
+    )
+    return subject, _shell(brand, "Empecemos", body)
+
+
 def plan_published(brand: Brand, first_name: str, portal_url: str, is_new_month: bool,
                    has_training: bool = True) -> tuple[str, str]:
     first_name = _esc(first_name)

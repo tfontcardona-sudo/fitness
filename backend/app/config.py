@@ -61,6 +61,30 @@ class Settings(BaseSettings):
     vapid_subject: str = ""  # mailto:... (contacto para los servicios de push)
     push_enabled: bool = True
 
+    # --- Pagos (Stripe) ---
+    # secret_key: clave secreta (sk_live_… o sk_test_…) para crear las sesiones
+    # de pago y leer los webhooks. webhook_secret (whsec_…): valida que el aviso
+    # de pago viene DE VERDAD de Stripe. price_*: id del precio de cada plan
+    # (price_…) creado en el panel de Stripe. mode: "payment" (pago único) o
+    # "subscription" (cuota recurrente) según cómo hayas creado los precios.
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_price_start: str = ""
+    stripe_price_full: str = ""
+    stripe_price_pro: str = ""
+    stripe_mode: str = "payment"  # payment | subscription
+
+    @property
+    def stripe_enabled(self) -> bool:
+        return bool(self.stripe_secret_key)
+
+    def stripe_price_for(self, tier: str) -> str:
+        return {
+            "start": self.stripe_price_start,
+            "full": self.stripe_price_full,
+            "pro": self.stripe_price_pro,
+        }.get(tier, "")
+
     # --- Comportamiento ---
     auto_pilot_default: bool = False
     tz: str = "Europe/Madrid"
