@@ -153,3 +153,20 @@ def test_send_plan_by_email(client, auth, monkeypatch):
     r = client.post(f"/api/plans/{plan['id']}/send-email", headers=auth)
     assert r.status_code == 200
     assert r.json()["email_status"] == "disabled"
+
+
+def test_email_status_reports_missing_config(client, auth):
+    # En el entorno de test no hay SMTP configurado: el diagnóstico lo dice.
+    r = client.get("/api/email/status", headers=auth).json()
+    assert r["config"]["ready"] is False
+    assert any("SMTP_PASS" in m for m in r["config"]["missing"])
+
+
+def test_email_test_endpoint_reports_failure_reason(client, auth):
+    # Sin SMTP, el envío de prueba falla con una causa legible (no silencioso).
+    r = client.post("/api/email/test", headers=auth, json={"to": "x@example.com"}).json()
+    assert r["status"] == "failed"
+    assert r["error"] and "SMTP" in r["error"]
+    # El intento queda registrado con su motivo para diagnóstico posterior.
+    recent = client.get("/api/email/status", headers=auth).json()["recent"]
+    assert any(e["kind"] == "test" and e["error"] for e in recent)

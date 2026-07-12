@@ -238,6 +238,18 @@ def feedback_delivery(brand: Brand, first_name: str, content: dict) -> tuple[str
     return subject, _shell(brand, "Tu progreso, en detalle", "".join(parts))
 
 
+def test_email(brand: Brand) -> tuple[str, str]:
+    """Correo de PRUEBA para verificar que el SMTP entrega de verdad."""
+    subject = f"Prueba de correo · {brand.name}"
+    body = (
+        "<p>Si estás leyendo esto, el envío de correo de "
+        f"<strong>{_esc(brand.name)}</strong> funciona correctamente.</p>"
+        "<p>Los accesos al portal, planificaciones y feedbacks se entregarán "
+        "por email sin problema.</p>"
+    )
+    return subject, _shell(brand, "Correo configurado correctamente", body)
+
+
 # ------------------------------------------------------------ al coach ----
 
 def coach_change_request(brand: Brand, client_name: str, message: str, dashboard_url: str) -> tuple[str, str]:
