@@ -18,6 +18,7 @@ import { ClientFeedbackTab } from "../components/ClientFeedbackTab";
 import { ClientHistoryTab } from "../components/ClientHistoryTab";
 import { ClientTrackingTab } from "../components/ClientTrackingTab";
 import { ageFrom, GOAL_LABEL, LEVEL_LABEL, PLACE_LABEL } from "../lib/format";
+import { PACKAGES, PACKAGE_ORDER, pkg } from "../lib/packages";
 
 type Tab = "resumen" | "anamnesis" | "planificacion" | "seguimiento" | "feedback" | "historial";
 
@@ -228,11 +229,12 @@ export default function ClientProfilePage() {
                 <p className="truncate text-xs text-zinc-500">{client.email}</p>
               </div>
             </div>
-            <div className="mt-4">
+            <div className="mt-4 flex flex-wrap items-center gap-2">
               <StatusBadge status={client.status} />
             </div>
 
             <dl className="mt-5 space-y-2.5 text-sm">
+              <PlanRow client={client} onSaved={reload} />
               <PhoneRow client={client} onSaved={reload} />
               <Row label="Edad" value={age ? `${age} años` : "—"} />
               <Row label="Objetivo" value={client.goal_type ? GOAL_LABEL[client.goal_type] : "—"} />
@@ -353,6 +355,53 @@ export default function ClientProfilePage() {
         onConfirm={deleteClient}
         onCancel={() => !deleting && setConfirmDelete(false)}
       />
+    </div>
+  );
+}
+
+/** Plan/paquete del cliente: badge + desplegable para cambiarlo (upgrade/downgrade).
+ *  Cambiarlo adapta toda la app (portal, planificación, envíos) a ese plan. */
+function PlanRow({ client, onSaved }: { client: ClientOut; onSaved: () => void }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const info = pkg(client.package_tier);
+
+  async function change(next: string) {
+    if (busy || next === client.package_tier) return;
+    setBusy(true);
+    try {
+      await api.updateClient(client.id, { package_tier: next as ClientOut["package_tier"] });
+      toast.push(`Plan cambiado a ${PACKAGES[next as keyof typeof PACKAGES].label}`);
+      onSaved();
+    } catch {
+      toast.push("No se pudo cambiar el plan", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <dt className="text-zinc-500">Plan</dt>
+      <dd className="flex items-center gap-1.5">
+        <span
+          className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold"
+          style={{ background: `color-mix(in srgb, ${info.color} 14%, transparent)`, color: info.color }}
+        >
+          {info.label}
+        </span>
+        <select
+          aria-label="Cambiar plan del cliente"
+          disabled={busy}
+          value={client.package_tier}
+          onChange={(e) => change(e.target.value)}
+          className="input h-7 w-auto px-1.5 py-0 text-xs"
+        >
+          {PACKAGE_ORDER.map((t) => (
+            <option key={t} value={t}>{PACKAGES[t].short}</option>
+          ))}
+        </select>
+      </dd>
     </div>
   );
 }

@@ -11,6 +11,7 @@ export type GoalType = "fat_loss" | "muscle_gain" | "recomp" | "maintenance" | "
 export type Level = "beginner" | "intermediate" | "advanced";
 export type TrainingPlace = "gym" | "home" | "outdoor";
 export type DietMode = "flexible_7" | "strict";
+export type PackageTier = "start" | "full" | "pro";
 export type ClientStatus =
   | "onboarding"
   | "active"
@@ -212,6 +213,7 @@ export interface ClientCreate {
   full_name: string;
   email: string;
   phone?: string | null;
+  package_tier?: PackageTier;
 }
 
 export interface AnamnesisSubmit {
@@ -250,6 +252,7 @@ export interface ClientOut {
   full_name: string;
   email: string;
   phone: string | null;
+  package_tier: PackageTier;
   sex: Sex | null;
   birth_date: string | null;
   height_cm: number | null;

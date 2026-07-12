@@ -8,6 +8,8 @@ import { EmptyState, PageLoader, StatusBadge, useToast } from "../components/ui"
 import { Avatar } from "./DashboardPage";
 import { GOAL_LABEL, goalReviewDue, relativeDays } from "../lib/format";
 import { openWhatsApp, portalAccessMessage, waPhone } from "../lib/whatsapp";
+import { PACKAGES, PACKAGE_ORDER, pkg } from "../lib/packages";
+import type { PackageTier } from "../types";
 
 /** CARPETAS de la cartera según el punto del ciclo (no solo el estado crudo):
  *  Activos = planificación publicada · Pendientes = aún sin planificación
@@ -162,6 +164,20 @@ export default function ClientsPage() {
   );
 }
 
+/** Etiqueta del plan/paquete contratado por el cliente (Start/Full/Pro). */
+function PackageBadge({ tier }: { tier: string }) {
+  const p = pkg(tier);
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold"
+      style={{ background: `color-mix(in srgb, ${p.color} 14%, transparent)`, color: p.color }}
+      title={p.includes}
+    >
+      {p.short}
+    </span>
+  );
+}
+
 /** Estado con contexto del ciclo: nº de revisión pendiente y aviso de objetivo. */
 function CycleBadges({ c }: { c: ClientOut }) {
   const due = goalReviewDue(c);
@@ -211,7 +227,10 @@ function ClientCard({ c }: { c: ClientOut }) {
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-zinc-100">{c.full_name}</p>
+        <div className="flex items-center gap-1.5">
+          <p className="truncate text-sm font-medium text-zinc-100">{c.full_name}</p>
+          <PackageBadge tier={c.package_tier} />
+        </div>
         <p className="truncate text-xs text-zinc-500">
           {c.goal_type ? GOAL_LABEL[c.goal_type] : "Sin objetivo aún"} · {relativeDays(c.updated_at)}
         </p>
@@ -269,7 +288,10 @@ function ClientsTable({ clients }: { clients: ClientOut[] }) {
                     )}
                   </div>
                   <div>
-                    <p className="font-medium text-zinc-100">{c.full_name}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="font-medium text-zinc-100">{c.full_name}</p>
+                      <PackageBadge tier={c.package_tier} />
+                    </div>
                     <p className="text-xs text-zinc-500">{c.email}</p>
                   </div>
                 </div>
@@ -294,6 +316,7 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [tier, setTier] = useState<PackageTier>("full");
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState<ClientCreatedOut | null>(null);
   // Estado del correo de acceso enviado al crear (y actualizable con "Reenviar").
@@ -308,7 +331,7 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
     if (!name || !email || busy) return;
     setBusy(true);
     try {
-      const res = await api.createClient({ full_name: name, email, phone: phone || null });
+      const res = await api.createClient({ full_name: name, email, phone: phone || null, package_tier: tier });
       setCreated(res);
       setAccessStatus(res.portal_access);
       onCreated();
@@ -395,6 +418,42 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
               <div>
                 <label className="label">Teléfono (opcional)</label>
                 <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} />
+              </div>
+              <div>
+                <label className="label">Plan contratado</label>
+                <div className="mt-1 space-y-2">
+                  {PACKAGE_ORDER.map((t) => {
+                    const p = PACKAGES[t];
+                    const sel = tier === t;
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setTier(t)}
+                        aria-pressed={sel}
+                        className="flex w-full items-start gap-2.5 rounded-xl border p-3 text-left transition-colors"
+                        style={{
+                          borderColor: sel ? p.color : "var(--line-strong)",
+                          background: sel ? `color-mix(in srgb, ${p.color} 8%, transparent)` : "transparent",
+                        }}
+                      >
+                        <span
+                          className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
+                          style={{ borderColor: sel ? p.color : "var(--line-strong)" }}
+                        >
+                          {sel && <span className="h-2 w-2 rounded-full" style={{ background: p.color }} />}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="flex flex-wrap items-center gap-x-1.5">
+                            <span className="text-sm font-semibold text-zinc-100">{p.label}</span>
+                            <span className="text-xs text-zinc-500">· {p.tagline}</span>
+                          </span>
+                          <span className="mt-0.5 block text-xs text-zinc-500">{p.includes}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
             <div className="mt-6 flex justify-end gap-2">
