@@ -292,6 +292,15 @@ export function rescaleNutrition(nut: any, next: MacroTargets): void {
       biggest[key] = Math.max(0, biggest[key] + diff);
     }
   }
+  // Cada comida cuadra SOLA: sus kcal salen de sus propios macros (4/4/9). Como
+  // kcalOf es lineal, la suma sigue cuadrando con target_kcal. Deja la vista del
+  // editor idéntica a lo que persiste el backend (reconcile_nutrition): sin saltos
+  // al guardar.
+  for (const m of nut.meals ?? []) {
+    if (m?.target) {
+      m.target.kcal = kcalOf(m.target.protein_g ?? 0, m.target.carbs_g ?? 0, m.target.fat_g ?? 0);
+    }
+  }
 
   const scaleDish = (o: any) => {
     if (!o) return;

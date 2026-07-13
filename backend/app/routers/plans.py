@@ -142,6 +142,14 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
             # se conserva (si no, el portal y el PDF perderían las "Novedades").
             if field == "nutrition_json" and isinstance(value, dict):
                 _sanitize_nutrition(value)  # topes sanos (kcal/macros) antes de guardar
+                # Coherencia numérica: target_kcal ≡ macros ≡ suma de comidas. El
+                # editor ya la mantiene; esto es la red final para que un retoque
+                # manual de una comida no deje el plan descuadrado. Idempotente.
+                from app.services.nutrition_scale import reconcile_nutrition
+
+                cli = db.get(Client, plan.client_id)
+                w = (cli.current_weight_kg or cli.start_weight_kg) if cli else None
+                reconcile_nutrition(value, weight_kg=w)
                 if ("applied_adjustments" not in value
                         and isinstance(plan.nutrition_json, dict)
                         and plan.nutrition_json.get("applied_adjustments")):

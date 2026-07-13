@@ -495,6 +495,16 @@ def generate_monthly_plan(
             raise PlanGenerationError(f"núcleo de nutrición: {exc}") from exc
         training_core = None
 
+    # Coherencia numérica ANTES de nada: target_kcal ≡ macros (4/4/9) ≡ suma de
+    # los objetivos por comida. Así la IA nunca deja un plan donde un apartado
+    # diga X kcal y otro diga otro número, y el banco de comidas (paso ②) se pide
+    # contra unos objetivos por slot ya cuadrados. Es idempotente.
+    from app.services.nutrition_scale import reconcile_nutrition
+
+    core.nutrition = NutritionCore.model_validate(
+        reconcile_nutrition(core.nutrition.model_dump(), weight_kg=ctx.weight_kg)
+    )
+
     nut_report = gr.check_nutrition(
         core.nutrition.model_dump(), sex=ctx.sex, weight_kg=ctx.weight_kg,
         bmr=ctx.bmr, tdee=ctx.tdee,
