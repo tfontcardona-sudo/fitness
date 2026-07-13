@@ -235,6 +235,16 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
             "detail": f"Totales finales: {round(K)} kcal · P {round(P)} / C {round(C)} / G {round(F)} g",
         })
 
+    # Coherencia final garantizada: target_kcal ≡ macros (4/4/9) ≡ suma de los
+    # objetivos por comida — aunque la revisión no tocara nada de nutrición o el
+    # plan base venga de antes de esta invariante. Idempotente.
+    from app.services.nutrition_scale import reconcile_nutrition
+
+    _cli = db.get(Client, client_id)
+    reconcile_nutrition(
+        nut, weight_kg=(_cli.current_weight_kg or _cli.start_weight_kg) if _cli else None
+    )
+
     # Siempre se sobreescribe (el plan base puede arrastrar el bloque de una
     # adaptación anterior tras el deepcopy).
     if items:

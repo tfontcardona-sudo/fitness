@@ -52,18 +52,22 @@ def test_extract_json_from_braces():
 def _valid_core_json() -> str:
     return json.dumps({
         "nutrition": {
-            "tdee_kcal": 2759, "target_kcal": 2200,
+            # Núcleo COHERENTE (kcal ≡ macros 4/4/9 ≡ suma de comidas): así el
+            # pipeline no tiene que recuadrar nada y el banco scripted encaja con
+            # los objetivos por slot. La corrección de núcleos descuadrados se
+            # prueba en test_nutrition_coherence.py.
+            "tdee_kcal": 2759, "target_kcal": 2125,
             "rationale": "Déficit 20% sobre TDEE para fat_loss",
-            "macros": {"protein_g": 175, "carbs_g": 210, "fat_g": 65},
+            "macros": {"protein_g": 175, "carbs_g": 210, "fat_g": 65},  # =2125
             "meals": [
                 {"slot": 1, "name": "Desayuno", "time": "08:00",
-                 "target": {"kcal": 550, "protein_g": 44, "carbs_g": 52, "fat_g": 16}},
+                 "target": {"kcal": 528, "protein_g": 44, "carbs_g": 52, "fat_g": 16}},
                 {"slot": 2, "name": "Comida", "time": "14:00",
-                 "target": {"kcal": 750, "protein_g": 60, "carbs_g": 72, "fat_g": 22}},
+                 "target": {"kcal": 726, "protein_g": 60, "carbs_g": 72, "fat_g": 22}},
                 {"slot": 3, "name": "Merienda", "time": "18:00",
-                 "target": {"kcal": 350, "protein_g": 30, "carbs_g": 28, "fat_g": 11}},
+                 "target": {"kcal": 331, "protein_g": 30, "carbs_g": 28, "fat_g": 11}},
                 {"slot": 4, "name": "Cena", "time": "21:30",
-                 "target": {"kcal": 550, "protein_g": 41, "carbs_g": 58, "fat_g": 16}},
+                 "target": {"kcal": 540, "protein_g": 41, "carbs_g": 58, "fat_g": 16}},
             ],
             "supplements": [{"name": "Creatina", "dose": "5 g", "timing": "diario",
                              "evidence_note": "Evidencia sólida"}],
@@ -135,9 +139,11 @@ def _ctx() -> ClientContext:
 
 
 def _flexible_meals_json() -> str:
+    # kcal = kcal_of(macros) de cada slot, iguales a los objetivos del núcleo
+    # coherente de _valid_core_json (así el banco encaja dentro del ±5%).
     targets = {
-        1: (550, 44, 52, 16), 2: (750, 60, 72, 22),
-        3: (350, 30, 28, 11), 4: (550, 41, 58, 16),
+        1: (528, 44, 52, 16), 2: (726, 60, 72, 22),
+        3: (331, 30, 28, 11), 4: (540, 41, 58, 16),
     }
     slots = []
     for slot, (kcal, p, c, f) in targets.items():
@@ -174,7 +180,15 @@ def test_full_pipeline_generates_plan():
     plan = generate_monthly_plan(_ctx(), client)
     assert len(client.calls) == 3
     nutrition_json, training_json, education_json, flags = plan.to_persistable()
-    assert nutrition_json["target_kcal"] == 2200
+    # Coherencia garantizada por reconcile_nutrition: target_kcal ≡ suma de macros
+    # (4/4/9) ≡ suma de los objetivos por comida. Es la invariante que evita que un
+    # apartado diga X kcal y otro diga otro número.
+    m = nutrition_json["macros"]
+    assert nutrition_json["target_kcal"] == round(m["protein_g"] * 4 + m["carbs_g"] * 4 + m["fat_g"] * 9)
+    meals = nutrition_json["meals"]
+    assert sum(x["target"]["kcal"] for x in meals) == nutrition_json["target_kcal"]
+    for axis in ("protein_g", "carbs_g", "fat_g"):
+        assert sum(x["target"][axis] for x in meals) == m[axis]
     assert "meal_bank" in nutrition_json
     assert training_json["split_name"].startswith("Upper")
     assert len(education_json["pills"]) == 3
@@ -193,7 +207,10 @@ def test_nutrition_only_pipeline_skips_training():
     plan = generate_monthly_plan(_ctx(), client, include_training=False)
     assert len(client.calls) == 2  # 2 llamadas, no 3
     nutrition_json, training_json, education_json, flags = plan.to_persistable()
-    assert nutrition_json["target_kcal"] == 2200
+    # Coherencia garantizada: target_kcal ≡ suma de macros (4/4/9) ≡ suma de comidas.
+    m = nutrition_json["macros"]
+    assert nutrition_json["target_kcal"] == round(m["protein_g"] * 4 + m["carbs_g"] * 4 + m["fat_g"] * 9)
+    assert sum(x["target"]["kcal"] for x in nutrition_json["meals"]) == nutrition_json["target_kcal"]
     assert "meal_bank" in nutrition_json
     assert training_json is None
     assert education_json is None

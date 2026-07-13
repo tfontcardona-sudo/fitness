@@ -30,6 +30,105 @@ def kcal_of(p: float, c: float, f: float) -> int:
     return round(p * 4 + c * 4 + f * 9)
 
 
+def reconcile_nutrition(nut: dict, weight_kg: float | None = None) -> dict:
+    """Deja la nutrición internamente COHERENTE — una sola verdad numérica que
+    todos los apartados (resumen energético, macros, estructura diaria, PDF y
+    portal) comparten. Es la pieza que evita "aquí pone X kcal y allí otro número":
+
+      1) target_kcal ≡ suma de macros (4/4/9): se conserva la proteína y la grasa
+         (ancladas al objetivo por la IA/coach) y los carbohidratos hacen de
+         colchón; si no caben, cede la grasa hasta su suelo (0,6 g/kg) y luego la
+         proteína (1,6 g/kg). Después target_kcal se fija EXACTA a esa suma.
+      2) Σ(objetivo de cada comida) ≡ totales, eje por eje: los objetivos por
+         comida se reparten en proporción al plan y el redondeo restante va a la
+         comida mayor; las kcal de cada comida se recalculan de sus macros, así
+         cada comida cuadra sola y la suma cuadra con el total.
+
+    Idempotente: sobre datos ya coherentes no cambia nada. Muta y devuelve `nut`.
+    """
+    if not isinstance(nut, dict):
+        return nut
+    macros = nut.get("macros")
+    meals = [m for m in (nut.get("meals") or []) if isinstance(m, dict)]
+
+    # --- 1) target_kcal ⇄ macros ------------------------------------------------
+    target = nut.get("target_kcal")
+    target = float(target) if isinstance(target, (int, float)) and target > 0 else 0.0
+
+    if not isinstance(macros, dict) or not macros:
+        # Sin macros: dedúcelos de la suma de las comidas (plan antiguo/parcial).
+        if meals:
+            p = sum(float((m.get("target") or {}).get("protein_g") or 0) for m in meals)
+            c = sum(float((m.get("target") or {}).get("carbs_g") or 0) for m in meals)
+            f = sum(float((m.get("target") or {}).get("fat_g") or 0) for m in meals)
+            macros = {"protein_g": round(p), "carbs_g": round(c), "fat_g": round(f)}
+            nut["macros"] = macros
+        else:
+            return nut  # nada que cuadrar
+
+    p = float(macros.get("protein_g") or 0)
+    f = float(macros.get("fat_g") or 0)
+    c = float(macros.get("carbs_g") or 0)
+
+    if target <= 0:
+        # Sin objetivo declarado: el objetivo ES la suma de los macros que hay.
+        target = float(kcal_of(p, c, f))
+
+    # Carbohidratos = colchón para que P·4 + C·4 + G·9 == target.
+    c = round((target - p * 4 - f * 9) / 4)
+    if c < 0:
+        # 1º baja la grasa hasta su suelo saludable
+        fat_min = round((weight_kg or 0) * 0.6)
+        f = max(fat_min, round((target - p * 4) / 9))
+        c = round((target - p * 4 - f * 9) / 4)
+    if c < 0:
+        # 2º recorta la proteína hasta su suelo de preservación de masa
+        protein_min = round((weight_kg or 0) * 1.6)
+        p = max(protein_min, round((target - f * 9) / 4))
+        c = max(0, round((target - p * 4 - f * 9) / 4))
+
+    p, c, f = round(p), round(c), round(f)
+    nut["macros"] = {**macros, "protein_g": p, "carbs_g": c, "fat_g": f}
+    # Una sola verdad: el objetivo declarado ES exactamente la suma de sus macros.
+    nut["target_kcal"] = kcal_of(p, c, f)
+
+    # --- 2) objetivos por comida ⇄ totales -------------------------------------
+    if not meals:
+        return nut
+    with_target = [m for m in meals if isinstance(m.get("target"), dict)]
+    if not with_target:
+        return nut
+
+    def _distribute(axis: str, total: int) -> None:
+        vals = [float(m["target"].get(axis) or 0) for m in with_target]
+        cur = sum(vals)
+        if cur > 0:
+            r = total / cur
+            for m in with_target:
+                m["target"][axis] = max(0, round(float(m["target"].get(axis) or 0) * r))
+        elif total > 0:
+            # La IA no repartió este eje: dáselo entero a la primera comida.
+            for i, m in enumerate(with_target):
+                m["target"][axis] = total if i == 0 else 0
+        # Ajuste del redondeo a la comida mayor de este eje (suma EXACTA).
+        diff = total - sum(int(m["target"].get(axis) or 0) for m in with_target)
+        if diff:
+            biggest = max(with_target, key=lambda m: m["target"].get(axis) or 0)
+            biggest["target"][axis] = max(0, int(biggest["target"].get(axis) or 0) + diff)
+
+    _distribute("protein_g", p)
+    _distribute("carbs_g", c)
+    _distribute("fat_g", f)
+    # Las kcal de cada comida salen de SUS macros → cada comida cuadra sola y,
+    # como kcal_of es lineal, la suma cuadra con target_kcal sin más ajustes.
+    for m in with_target:
+        t = m["target"]
+        t["kcal"] = kcal_of(
+            float(t.get("protein_g") or 0), float(t.get("carbs_g") or 0), float(t.get("fat_g") or 0)
+        )
+    return nut
+
+
 def macros_for_kcal(goal: str | None, weight_kg: float, kcal: float) -> dict:
     """Macros óptimos para unas kcal: proteína (punto medio del rango por
     evidencia) y grasa por kg; carbohidratos = el resto (grasa cede hasta su
