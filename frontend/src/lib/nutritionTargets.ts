@@ -262,8 +262,13 @@ export function rescaleNutrition(nut: any, next: MacroTargets): void {
   const rC = ratio(next.carbs_g, prev.carbs_g);
   const rF = ratio(next.fat_g, prev.fat_g);
 
-  nut.target_kcal = next.kcal;
   nut.macros = { ...(nut.macros ?? {}), protein_g: next.protein_g, carbs_g: next.carbs_g, fat_g: next.fat_g };
+  // Una sola verdad numérica también en la vista en vivo del editor: el objetivo
+  // ES exactamente la suma de sus macros (4/4/9), igual que persiste el backend
+  // (reconcile_nutrition). Como los enteros no siempre alcanzan un objetivo
+  // redondo (p. ej. 1800), el objetivo cede ≤2 kcal antes que descuadrar. Las
+  // comidas ya recalculan sus kcal desde sus macros más abajo → todo cuadra.
+  nut.target_kcal = kcalOf(next.protein_g, next.carbs_g, next.fat_g);
 
   for (const m of nut.meals ?? []) {
     if (!m?.target) continue;
