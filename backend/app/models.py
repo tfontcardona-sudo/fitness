@@ -261,6 +261,10 @@ class Exercise(Base):
     equipment: Mapped[list[str] | None] = mapped_column(ARRAY(String))
     level_min: Mapped[int] = mapped_column(Integer, default=1)  # 1 princ. 2 inter. 3 avanz.
     video_url: Mapped[str | None] = mapped_column(String(500))  # editable por el coach
+    # Miniatura del ejercicio para la sección "Recursos" del portal (título +
+    # imagen + vídeo). Si está vacía y el vídeo es de YouTube, se deriva la
+    # portada automáticamente (portal.youtube_thumbnail).
+    image_url: Mapped[str | None] = mapped_column(String(500))
     technique_notes: Mapped[str | None] = mapped_column(Text)
     biomechanics_notes: Mapped[str | None] = mapped_column(Text)
     contraindications: Mapped[list[str] | None] = mapped_column(ARRAY(String))
@@ -309,6 +313,41 @@ class BrandConfig(Base):
     contact_web: Mapped[str | None] = mapped_column(String(200))
     docs_theme: Mapped[str] = mapped_column(String(10), default="light")  # light|dark
     portal_theme: Mapped[str] = mapped_column(String(10), default="light")  # light|dark
+
+
+# -------------------------------------------------- recommended_products ----
+class RecommendedProduct(Base):
+    """Producto recomendado por el coach (suplemento, material…) que se muestra
+    en la sección "Recursos" del portal del cliente.
+
+    Catálogo ÚNICO (single-tenant): todos los clientes ven los productos con
+    `active=True`, ordenados por `sort_order`. La imagen puede ser un archivo
+    subido (`image_path`, servido por la API) o una URL externa (`image_url`);
+    si hay archivo subido, tiene prioridad.
+    """
+
+    __tablename__ = "recommended_products"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(160))
+    description: Mapped[str | None] = mapped_column(String(300))
+    url: Mapped[str] = mapped_column(String(500))  # enlace de compra/afiliado
+    # suplemento | material | otro (informativo; agrupa las tarjetas del portal)
+    category: Mapped[str] = mapped_column(
+        String(20), default="suplemento", server_default=text("'suplemento'"), nullable=False
+    )
+    image_path: Mapped[str | None] = mapped_column(String(500))  # imagen subida (storage)
+    image_url: Mapped[str | None] = mapped_column(String(500))   # o URL externa
+    active: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=text("true"), nullable=False
+    )
+    sort_order: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
 
 
 # --------------------------------------------------- push_subscriptions ----

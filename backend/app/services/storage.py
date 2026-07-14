@@ -137,6 +137,55 @@ def save_brand_logo(raw: bytes, filename_hint: str) -> str:
     return str(dest.relative_to(storage_root()))
 
 
+def resources_dir() -> Path:
+    p = storage_root() / "resources"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def save_resource_image(raw: bytes, filename_hint: str = "") -> str:
+    """Valida y guarda la imagen de un producto recomendado, quitando EXIF al
+    re-codificar. Devuelve la ruta relativa. Nombre aleatorio único: cada subida
+    crea un archivo nuevo (la anterior se borra aparte para no dejar huérfanos)."""
+    if len(raw) > 5 * 1024 * 1024:
+        raise PhotoValidationError("La imagen supera 5 MB")
+    try:
+        img = Image.open(io.BytesIO(raw))
+        img.load()
+    except Image.DecompressionBombError as exc:
+        # Imagen pequeña que declara dimensiones enormes (bomba de descompresión).
+        raise PhotoValidationError("La imagen es demasiado grande") from exc
+    except (UnidentifiedImageError, OSError) as exc:
+        raise PhotoValidationError("El archivo no es una imagen válida") from exc
+    if img.format not in ALLOWED_FORMATS:
+        raise PhotoValidationError("Formato no soportado (usa JPG, PNG o WebP)")
+
+    fmt = img.format
+    clean = Image.new(img.mode, img.size)
+    clean.putdata(list(img.getdata()))  # píxeles sí, metadatos no
+    if fmt == "JPEG" and clean.mode not in ("RGB", "L"):
+        clean = clean.convert("RGB")
+
+    name = f"{secrets.token_hex(12)}.{_EXT[fmt]}"
+    dest = resources_dir() / name
+    params = {"quality": 88} if fmt == "JPEG" else {}
+    clean.save(dest, format=fmt, **params)
+    return str(dest.relative_to(storage_root()))
+
+
+def delete_storage_file(rel: str | None) -> None:
+    """Borra un archivo del storage por su ruta relativa (silencioso si falta).
+    Se usa al reemplazar/borrar la imagen de un producto para no acumular huérfanos."""
+    if not rel:
+        return
+    try:
+        p = abs_path(rel)
+        if p.is_file():
+            p.unlink()
+    except (PhotoValidationError, OSError):
+        pass
+
+
 def abs_path(rel: str) -> Path:
     """Ruta absoluta segura dentro del storage (evita path traversal)."""
     p = (storage_root() / rel).resolve()

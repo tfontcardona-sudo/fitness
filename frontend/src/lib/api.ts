@@ -44,6 +44,9 @@ import type {
   ExerciseOut,
   MeOut,
   PortalLinkOut,
+  RecommendedProductIn,
+  RecommendedProductOut,
+  RecommendedProductUpdate,
   TokenOut,
 } from "../types";
 
@@ -320,6 +323,21 @@ export const api = {
     request<ExerciseOut>("POST", `/exercises/${id}/restore`),
   updateExercise: (id: number, patch: Partial<ExerciseOut>) =>
     request<ExerciseOut>("PATCH", `/exercises/${id}`, patch),
+
+  // --- recursos: productos recomendados (sección Recursos del portal) ---
+  listProducts: () => request<RecommendedProductOut[]>("GET", "/resources/products"),
+  createProduct: (body: RecommendedProductIn) =>
+    request<RecommendedProductOut>("POST", "/resources/products", body),
+  updateProduct: (id: number, patch: RecommendedProductUpdate) =>
+    request<RecommendedProductOut>("PATCH", `/resources/products/${id}`, patch),
+  deleteProduct: (id: number) => request<void>("DELETE", `/resources/products/${id}`),
+  uploadProductImage: (id: number, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return request<RecommendedProductOut>("POST", `/resources/products/${id}/image`, fd);
+  },
+  removeProductImage: (id: number) =>
+    request<RecommendedProductOut>("DELETE", `/resources/products/${id}/image`),
 };
 
 export type { ChangeRequestOut };

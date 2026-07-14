@@ -310,10 +310,45 @@ export interface ExerciseOut {
   equipment: string[];
   level_min: 1 | 2 | 3;
   video_url: string | null;
+  image_url: string | null;
   technique_notes: string | null;
   biomechanics_notes: string | null;
   contraindications: string[];
   archived: boolean;
+}
+
+// --- Productos recomendados (sección Recursos del portal) ---
+export type ProductCategory = "suplemento" | "material" | "otro";
+
+export interface RecommendedProductOut {
+  id: number;
+  title: string;
+  description: string | null;
+  url: string;
+  category: string;
+  image_url: string | null; // URL efectiva (subida servida por la API o externa)
+  has_upload: boolean;
+  active: boolean;
+  sort_order: number;
+}
+
+export interface RecommendedProductIn {
+  title: string;
+  description?: string | null;
+  url: string;
+  category?: ProductCategory;
+  image_url?: string | null;
+  active?: boolean;
+}
+
+export interface RecommendedProductUpdate {
+  title?: string;
+  description?: string | null;
+  url?: string;
+  category?: ProductCategory;
+  image_url?: string | null;
+  active?: boolean;
+  sort_order?: number;
 }
 
 export interface BrandConfigOut {
@@ -544,6 +579,30 @@ export interface FeedbackDocOut {
   kind: string;
   sent_at: string | null;
   content_json: Record<string, unknown> | null;
+}
+
+// --- Sección Recursos del portal (GET /api/p/{token}/resources) ---
+export interface ResourceExerciseVideo {
+  exercise_id: number;
+  title: string;
+  muscle: string | null;
+  video_url: string;
+  image_url: string | null;
+  technique_notes: string | null;
+}
+
+export interface ResourceProduct {
+  id: number;
+  title: string;
+  description: string | null;
+  url: string;
+  category: string;
+  image_url: string | null;
+}
+
+export interface PortalResources {
+  exercise_videos: ResourceExerciseVideo[];
+  products: ResourceProduct[];
 }
 
 // Progreso del cliente que ve él mismo en el portal (GET /api/p/{token}/progress)

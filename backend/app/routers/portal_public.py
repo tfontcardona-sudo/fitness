@@ -49,6 +49,7 @@ from app.schemas.entities import (
     PhotoOut,
     PortalBrand,
     PortalPlanOut,
+    PortalResourcesOut,
     PortalState,
     PushKeyOut,
     PushPendingOut,
@@ -303,6 +304,18 @@ def portal_training(
         "plan_changes": changes,
         "week": week,
     }
+
+
+@router.get("/{token}/resources", response_model=PortalResourcesOut)
+@limiter.limit("120/minute")
+def portal_resources(
+    request: Request,
+    client: Client = Depends(get_client_by_token),
+    db: Session = Depends(get_db),
+) -> PortalResourcesOut:
+    """Sección "Recursos": vídeos de los ejercicios de su rutina (título + imagen
+    + vídeo) y productos recomendados (título + imagen + enlace)."""
+    return PortalResourcesOut(**portal_svc.build_resources(db, client))
 
 
 @router.get("/{token}/plan", response_model=PortalPlanOut)

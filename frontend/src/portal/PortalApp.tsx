@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Bell, CalendarCheck, Dumbbell, LineChart, LogOut, NotebookPen, X } from "lucide-react";
+import { Bell, CalendarCheck, Dumbbell, LineChart, Library, LogOut, NotebookPen, X } from "lucide-react";
 import { portalApi, portalSession, PortalError } from "./portalApi";
 import type { PortalState } from "../types";
 import { PortalWorkout } from "./PortalWorkout";
 import { PortalDiary } from "./PortalDiary";
 import { PortalClose } from "./PortalClose";
 import { PortalProgress } from "./PortalProgress";
+import { PortalResources } from "./PortalResources";
 import { PortalToastProvider, usePortalToast } from "./PortalToast";
 import {
   enablePush,
@@ -20,7 +21,7 @@ import {
 
 // El portal del cliente es SOLO seguimiento: 3 pestañas abajo (Entreno, Diario,
 // Quincenal). Nada más (ni Hoy, ni Plan, ni Feedback): la dieta va en el PDF.
-type Tab = "entreno" | "diario" | "progreso" | "cierre";
+type Tab = "entreno" | "recursos" | "diario" | "progreso" | "cierre";
 
 /**
  * Portal del cliente: mobile-first, sin login. El token sale de la URL
@@ -38,7 +39,9 @@ export default function PortalApp({ token }: { token: string }) {
   const [params, setParams] = useSearchParams();
   const rawTab = params.get("tab");
   const tab: Tab =
-    rawTab === "diario" || rawTab === "cierre" || rawTab === "progreso" ? rawTab : "entreno";
+    rawTab === "diario" || rawTab === "cierre" || rawTab === "progreso" || rawTab === "recursos"
+      ? rawTab
+      : "entreno";
   const setTab = (t: Tab) => setParams(t === "entreno" ? {} : { tab: t });
 
   const reload = useCallback(() => {
@@ -108,6 +111,7 @@ export default function PortalApp({ token }: { token: string }) {
 
   const TABS: { id: Tab; label: string; icon: typeof Dumbbell }[] = [
     { id: "entreno", label: "Entreno", icon: Dumbbell },
+    { id: "recursos", label: "Recursos", icon: Library },
     { id: "diario", label: "Diario", icon: NotebookPen },
     { id: "progreso", label: "Progreso", icon: LineChart },
     { id: "cierre", label: "Quincenal", icon: CalendarCheck },
@@ -154,6 +158,7 @@ export default function PortalApp({ token }: { token: string }) {
           {/* key={effTab} → transición suave (animate-rise respeta reduced-motion) */}
           <div key={effTab} className="animate-rise">
             {effTab === "entreno" && <PortalWorkout api={apiClient} brand={state.brand} periodStatus={state.period?.status ?? null} />}
+            {effTab === "recursos" && <PortalResources api={apiClient} brand={state.brand} />}
             {effTab === "diario" && <PortalDiary api={apiClient} brand={state.brand} periodStatus={state.period?.status ?? null} />}
             {effTab === "progreso" && <PortalProgress api={apiClient} brand={state.brand} hasTraining={!isStart} />}
             {effTab === "cierre" && (
