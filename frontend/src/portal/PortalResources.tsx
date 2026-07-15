@@ -11,7 +11,7 @@ type Api = ReturnType<typeof portalApi>;
  * y los productos que el coach recomienda (suplementos, material…), cada uno con
  * su título, imagen y enlace. Todo de solo lectura: se abre en una pestaña nueva.
  */
-export function PortalResources({ api, brand }: { api: Api; brand: PortalBrand }) {
+export function PortalResources({ api, brand, hasTraining = true }: { api: Api; brand: PortalBrand; hasTraining?: boolean }) {
   const [data, setData] = useState<Resources | null>(null);
   const [error, setError] = useState(false);
 
@@ -31,7 +31,10 @@ export function PortalResources({ api, brand }: { api: Api; brand: PortalBrand }
   }
   if (data === null) return <Loading />;
 
-  const { exercise_videos: videos, products } = data;
+  // Paquete Start = solo nutrición: CERO entreno visible. Ni la sección de
+  // vídeos de ejercicios ni ninguna mención a ellos en los textos.
+  const videos = hasTraining ? data.exercise_videos : [];
+  const { products } = data;
   const isEmpty = videos.length === 0 && products.length === 0;
 
   return (
@@ -39,15 +42,21 @@ export function PortalResources({ api, brand }: { api: Api; brand: PortalBrand }
       <div>
         <h2 className="text-lg font-semibold">Recursos</h2>
         <p className="mt-0.5 text-xs opacity-60">
-          Vídeos de tus ejercicios y productos recomendados por tu coach.
+          {hasTraining
+            ? "Vídeos de tus ejercicios y productos recomendados por tu coach."
+            : "Productos recomendados por tu coach."}
         </p>
       </div>
 
       {isEmpty && (
         <Empty
-          icon={PlayCircle}
+          icon={hasTraining ? PlayCircle : ShoppingBag}
           title="Aún no hay recursos"
-          hint="Cuando tu coach añada vídeos de tus ejercicios o productos recomendados, aparecerán aquí."
+          hint={
+            hasTraining
+              ? "Cuando tu coach añada vídeos de tus ejercicios o productos recomendados, aparecerán aquí."
+              : "Cuando tu coach añada productos recomendados, aparecerán aquí."
+          }
         />
       )}
 

@@ -222,3 +222,63 @@ def test_products_require_auth(client):
     assert client.get("/api/resources/products").status_code == 401
     assert client.post("/api/resources/products",
                        json={"title": "X", "url": "https://x.example.com"}).status_code == 401
+
+
+def test_start_client_resources_without_training(client, auth):
+    """Paquete Start (solo nutrición): sus recursos NO llevan vídeos de ejercicios
+    (no tiene rutina) pero SÍ los productos activos. El endpoint no revienta con
+    un plan sin training_json."""
+    from tests.test_package_tiers import _nutrition_only_plan_content
+
+    body = client.post("/api/clients", headers=auth, json={
+        "full_name": "Start Recursos",
+        "email": f"startrec-{uuid.uuid4().hex[:8]}@example.com",
+        "package_tier": "start",
+    }).json()
+    cid, token = body["client"]["id"], body["links"]["portal_token"]
+
+    # Sin plan todavía: vacío digno, no error.
+    res = client.get(f"/api/p/{token}/resources")
+    assert res.status_code == 200
+    assert res.json()["exercise_videos"] == []
+
+    # Con plan SOLO-NUTRICIÓN publicado: sigue sin vídeos, y ve los productos.
+    nutrition, training, education, flags = _nutrition_only_plan_content()
+    assert training is None
+    plan = client.post(f"/api/clients/{cid}/plans", headers=auth, json={
+        "month_index": 1, "nutrition_json": nutrition, "training_json": training,
+        "education_json": education, "guardrail_flags": flags, "generated_by": "test",
+    }).json()
+    client.post(f"/api/plans/{plan['id']}/publish", headers=auth)
+
+    prod = client.post("/api/resources/products", headers=auth, json={
+        "title": "Creatina", "url": "https://tienda.example.com/creatina",
+        "category": "suplemento",
+    }).json()
+    res = client.get(f"/api/p/{token}/resources").json()
+    assert res["exercise_videos"] == []
+    assert any(p["id"] == prod["id"] for p in res["products"])
+
+
+def test_upload_image_validation(client, auth):
+    """La subida rechaza lo que no es una imagen real y lo que pasa de 5 MB."""
+    prod = client.post("/api/resources/products", headers=auth, json={
+        "title": "Con imagen", "url": "https://tienda.example.com/img",
+        "category": "material",
+    }).json()
+    pid = prod["id"]
+
+    # Un fichero que NO es imagen (texto renombrado a .png) → 422
+    bad = client.post(f"/api/resources/products/{pid}/image", headers=auth,
+                      files=[("file", ("evil.png", b"<script>alert(1)</script>", "image/png"))])
+    assert bad.status_code == 422
+
+    # Más de 5 MB → 413 (la lectura acotada corta sin bufferizar el resto)
+    big = client.post(f"/api/resources/products/{pid}/image", headers=auth,
+                      files=[("file", ("big.png", b"\x89PNG" + b"0" * (5 * 1024 * 1024 + 10), "image/png"))])
+    assert big.status_code == 413
+
+    # Sin login del coach, la subida está prohibida
+    anon = client.post(f"/api/resources/products/{pid}/image",
+                       files=[("file", ("p.png", _png_bytes(), "image/png"))])
+    assert anon.status_code == 401

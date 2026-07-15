@@ -142,7 +142,22 @@ function ProductsManager() {
       const saved = draft.id
         ? await api.updateProduct(draft.id, { ...payload, active: draft.active })
         : await api.createProduct(payload);
-      if (draft.file) await api.uploadProductImage(saved.id, draft.file);
+      if (draft.file) {
+        try {
+          await api.uploadProductImage(saved.id, draft.file);
+        } catch (e) {
+          // El producto YA está guardado: ancla el borrador a su id (reintentar
+          // ACTUALIZA, nunca crea un duplicado) y explica que lo que falló fue
+          // solo la imagen. El editor queda abierto para corregirla.
+          setDraft({ ...draft, id: saved.id });
+          load();
+          toast.push(
+            `Producto guardado, pero la imagen no se pudo subir${e instanceof ApiError ? `: ${e.message}` : ""}`,
+            "error",
+          );
+          return;
+        }
+      }
       toast.push(draft.id ? "Producto actualizado" : "Producto añadido");
       setDraft(null);
       load();
