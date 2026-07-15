@@ -249,7 +249,8 @@ def test_start_client_resources_without_training(client, auth):
         "month_index": 1, "nutrition_json": nutrition, "training_json": training,
         "education_json": education, "guardrail_flags": flags, "generated_by": "test",
     }).json()
-    client.post(f"/api/plans/{plan['id']}/publish", headers=auth)
+    assert client.post(f"/api/plans/{plan['id']}/publish",
+                       headers=auth).json()["status"] == "published"
 
     prod = client.post("/api/resources/products", headers=auth, json={
         "title": "Creatina", "url": "https://tienda.example.com/creatina",
@@ -258,6 +259,82 @@ def test_start_client_resources_without_training(client, auth):
     res = client.get(f"/api/p/{token}/resources").json()
     assert res["exercise_videos"] == []
     assert any(p["id"] == prod["id"] for p in res["products"])
+
+
+def test_patch_product_null_explicito_no_rompe(client, auth):
+    """PATCH con null explícito en campos NOT NULL = 'sin cambio' (422/500 no)."""
+    prod = client.post("/api/resources/products", headers=auth, json={
+        "title": "Nulos", "url": "https://tienda.example.com/nulos", "category": "otro",
+    }).json()
+    r = client.patch(f"/api/resources/products/{prod['id']}", headers=auth, json={
+        "title": None, "url": None, "category": None, "active": None,
+        "description": None,  # este SÍ es anulable: se borra de verdad
+    })
+    assert r.status_code == 200
+    out = r.json()
+    assert out["title"] == "Nulos" and out["url"].endswith("/nulos")
+    assert out["description"] is None
+
+
+def test_upload_palette_png_no_se_corrompe(client, auth):
+    """Un PNG con PALETA (modo P) se guarda con sus colores reales — el rebuild
+    antiguo copiaba los índices sin la paleta y la imagen salía negra."""
+    prod = client.post("/api/resources/products", headers=auth, json={
+        "title": "Paleta", "url": "https://tienda.example.com/paleta", "category": "otro",
+    }).json()
+    img = Image.new("RGB", (32, 32), (200, 40, 40)).convert(
+        "P", palette=Image.Palette.ADAPTIVE
+    )
+    b = io.BytesIO()
+    img.save(b, format="PNG")
+    up = client.post(f"/api/resources/products/{prod['id']}/image", headers=auth,
+                     files=[("file", ("pal.png", b.getvalue(), "image/png"))])
+    assert up.status_code == 200
+    served = client.get(f"/api/resources/products/{prod['id']}/image")
+    assert served.status_code == 200
+    out = Image.open(io.BytesIO(served.content)).convert("RGB")
+    r, g, _ = out.getpixel((16, 16))
+    assert r > 150 and g < 100  # rojo, no negro
+
+
+def test_upload_rechaza_dimensiones_enormes(client, auth):
+    """Una 'bomba' (pequeña comprimida, enorme en píxeles) se corta ANTES de
+    decodificar: >25 MP → 422, aunque pese menos de 5 MB."""
+    prod = client.post("/api/resources/products", headers=auth, json={
+        "title": "Bomba", "url": "https://tienda.example.com/bomba", "category": "otro",
+    }).json()
+    big = Image.new("RGB", (6000, 6000), (250, 250, 250))  # 36 MP, comprime a ~KB
+    b = io.BytesIO()
+    big.save(b, format="PNG")
+    assert len(b.getvalue()) < 5 * 1024 * 1024
+    r = client.post(f"/api/resources/products/{prod['id']}/image", headers=auth,
+                    files=[("file", ("bomb.png", b.getvalue(), "image/png"))])
+    assert r.status_code == 422
+
+
+def test_url_legada_invalida_no_rompe_listado_ni_portal(client, auth):
+    """Un ejercicio con URL guardada ANTES del validador (sin http://) no puede
+    tumbar el GET de la biblioteca, y el portal lo filtra de los recursos."""
+    from sqlalchemy import update
+
+    from app.db import SessionLocal
+    from app.models import Exercise
+
+    _, token, ex_ids = _client_with_published_plan(client, auth)
+    eid = ex_ids[0]
+    db = SessionLocal()
+    try:  # se salta el validador de la API a propósito (dato legado)
+        db.execute(update(Exercise).where(Exercise.id == eid)
+                   .values(video_url="www.youtube.com/watch?v=dQw4w9WgXcQ"))
+        db.commit()
+    finally:
+        db.close()
+
+    r = client.get("/api/exercises", headers=auth)
+    assert r.status_code == 200  # la salida es tolerante con datos legados
+    res = client.get(f"/api/p/{token}/resources")
+    assert res.status_code == 200
+    assert all(v["exercise_id"] != eid for v in res.json()["exercise_videos"])
 
 
 def test_upload_image_validation(client, auth):

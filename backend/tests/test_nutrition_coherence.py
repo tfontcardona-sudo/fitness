@@ -161,6 +161,47 @@ def _incoherent_nutrition() -> dict:
     }
 
 
+def test_patch_plan_sincroniza_meal_schedule(client, auth):
+    """Si el coach cambia la ESTRUCTURA de comidas del plan en el editor (nº de
+    tomas), la anamnesis del cliente se sincroniza: futuras regeneraciones parten
+    de ese reparto, no del viejo."""
+    body = client.post("/api/clients", headers=auth, json={
+        "full_name": "Estructura", "email": f"estr-{uuid.uuid4().hex[:8]}@example.com",
+        "package_tier": "full",
+    }).json()
+    cid = body["client"]["id"]
+    plan = client.post(f"/api/clients/{cid}/plans", headers=auth, json={
+        "month_index": 1, "nutrition_json": _incoherent_nutrition(),
+        "training_json": None, "education_json": None,
+        "guardrail_flags": [], "generated_by": "test",
+    }).json()
+
+    # El editor guarda un plan con OTRA estructura: 5 tomas.
+    nut = _incoherent_nutrition()
+    nut["meals"] = [
+        {"slot": i, "name": n, "time": t,
+         "target": {"kcal": 400, "protein_g": 30, "carbs_g": 40, "fat_g": 12}}
+        for i, (n, t) in enumerate([("Desayuno", "08:00"), ("Media mañana", "11:00"),
+                                    ("Comida", "14:00"), ("Cena", "21:00"),
+                                    ("Pre-cama", "23:00")], start=1)
+    ]
+    assert client.patch(f"/api/plans/{plan['id']}", headers=auth,
+                        json={"nutrition_json": nut}).status_code == 200
+
+    from app.db import SessionLocal
+    from app.models import Client as ClientModel
+
+    db = SessionLocal()
+    try:
+        cli = db.get(ClientModel, cid)
+        assert cli.meals_per_day == 5
+        assert [m["name"] for m in cli.meal_schedule] == [
+            "Desayuno", "Media mañana", "Comida", "Cena", "Pre-cama"]
+        assert [m["slot"] for m in cli.meal_schedule] == [1, 2, 3, 4, 5]
+    finally:
+        db.close()
+
+
 def test_patch_plan_reconcilia_la_nutricion(client, auth):
     body = client.post("/api/clients", headers=auth, json={
         "full_name": "Coherencia", "email": f"coh-{uuid.uuid4().hex[:8]}@example.com",

@@ -344,9 +344,13 @@ class RecommendedProduct(Base):
     sort_order: Mapped[int] = mapped_column(
         Integer, default=0, server_default=text("0"), nullable=False
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # server_default alineado con la migración 0017: la columna es NOT NULL con
+    # default en BD, así ningún camino (ORM o SQL directo) puede dejarla nula.
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, server_default=text("now()")
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, server_default=text("now()")
     )
 
 

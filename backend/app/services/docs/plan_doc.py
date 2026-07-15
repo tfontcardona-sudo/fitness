@@ -392,6 +392,18 @@ def generate_plan_doc(
                     rl.font.bold = True
                     rl.font.color.rgb = _hex(WINE)
                     p.add_run(f"{opt.get('title','')} — {_ingredients_str(opt)}.")
+                if first:
+                    # Toma añadida a mano (sin recetario aún): guía digna en vez
+                    # de una caja vacía — sus macros están en Estructura diaria.
+                    t = m.get("target") or {}
+                    detail = ""
+                    if t.get("kcal"):
+                        detail = (f" (~{round(t['kcal'])} kcal · P {round(t.get('protein_g') or 0)} g · "
+                                  f"CH {round(t.get('carbs_g') or 0)} g · G {round(t.get('fat_g') or 0)} g)")
+                    cell.paragraphs[0].add_run(
+                        "Toma libre: elige alimentos de los grupos de arriba que cuadren "
+                        f"con los macros objetivo de esta comida{detail}."
+                    )
 
     # Ejemplo de dieta semanal
     _weekly_section(doc, brand, diet_mode, nutrition, bank)

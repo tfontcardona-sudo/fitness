@@ -150,6 +150,16 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
                 cli = db.get(Client, plan.client_id)
                 w = (cli.current_weight_kg or cli.start_weight_kg) if cli else None
                 reconcile_nutrition(value, weight_kg=w)
+                # Estructura de comidas: si el coach la cambió en el editor (nº de
+                # tomas), la anamnesis del cliente se sincroniza — las próximas
+                # regeneraciones/adaptaciones parten de ESTE reparto, no del viejo.
+                meals = [m for m in (value.get("meals") or []) if isinstance(m, dict) and m.get("name")]
+                if cli is not None and meals:
+                    sched = [{"slot": i + 1, "name": m.get("name"), "time": m.get("time") or ""}
+                             for i, m in enumerate(meals)]
+                    if sched != (cli.meal_schedule or []):
+                        cli.meal_schedule = sched
+                        cli.meals_per_day = len(sched)
                 if ("applied_adjustments" not in value
                         and isinstance(plan.nutrition_json, dict)
                         and plan.nutrition_json.get("applied_adjustments")):

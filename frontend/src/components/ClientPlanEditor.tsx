@@ -8,6 +8,7 @@ import {
   type MacroTargets,
 } from "../lib/nutritionTargets";
 import { GOAL_LABEL } from "../lib/format";
+import { CANONICAL_MEALS, mealKeysFromNames, restructureNutritionMeals } from "../lib/meals";
 import { Spinner, useToast } from "./ui";
 import type { ClientOut } from "../types";
 
@@ -176,6 +177,30 @@ export function ClientPlanEditor({
     ? goalTargets(goal, weight, draft.nutrition.tdee_kcal)
     : null;
 
+  // Estructura de comidas del día (nº de tomas) SIN regenerar: al marcar/quitar
+  // una toma se reparten las MISMAS kcal y macros del cliente entre las elegidas
+  // (las que se quedan conservan sus proporciones; la nueva entra con su peso
+  // típico) y el banco se renumera. La toma nueva no trae recetario: se crea con
+  // "Regenerar con estas comidas" en Planificación o se explica a mano.
+  const mealKeys = mealKeysFromNames(
+    (draft.nutrition.meals ?? []).map((m: any) => m?.name ?? ""),
+  );
+  function toggleMeal(key: string) {
+    const has = mealKeys.includes(key);
+    if (has && mealKeys.length <= 2) {
+      toast.push("El día necesita al menos 2 comidas", "error");
+      return;
+    }
+    const next = has ? mealKeys.filter((k) => k !== key) : [...mealKeys, key];
+    mutate((d) => {
+      restructureNutritionMeals(d.nutrition, next);
+      // Las ediciones de kcal/macros reescalan desde el baseline: tras cambiar
+      // la estructura, el baseline pasa a ser ESTA estructura (si no, teclear
+      // unas kcal desharía el cambio de comidas).
+      baseline.current = structuredClone(d.nutrition);
+    });
+  }
+
   async function save() {
     if (saving) return;
     setSaving(true);
@@ -342,6 +367,42 @@ export function ClientPlanEditor({
           (o la grasa) cuadran el resto, preservando la proteína. Los objetivos por comida y los gramos
           del banco se reescalan en tiempo real (tabla de abajo).
         </p>
+
+        {/* Nº de comidas del día SIN regenerar: mismas kcal/macros, otro reparto */}
+        <div className="mt-4">
+          <p className="text-xs font-medium text-zinc-400">Comidas del día</p>
+          <p className="mt-0.5 text-[11px] text-zinc-500">
+            Marca las tomas que hará: sus kcal y macros se reparten entre ellas al
+            momento (los totales no cambian). Una toma nueva entra con su peso típico
+            y sin recetario — créalo con “Regenerar con estas comidas” o explícalo a mano.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {CANONICAL_MEALS.map((m) => {
+              const on = mealKeys.includes(m.key);
+              return (
+                <button
+                  key={m.key}
+                  type="button"
+                  onClick={() => toggleMeal(m.key)}
+                  aria-pressed={on}
+                  className="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
+                  style={
+                    on
+                      ? {
+                          background: "color-mix(in srgb, var(--brand-accent-2) 16%, transparent)",
+                          borderColor: "color-mix(in srgb, var(--brand-accent-2) 55%, transparent)",
+                          color: "var(--brand-accent-2)",
+                        }
+                      : { background: "var(--surface-raised)", borderColor: "var(--line)", color: "#8A8172" }
+                  }
+                >
+                  {m.name}
+                  <span className="ml-1.5 opacity-60">{m.time}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
         {/* Reparto por comida EN VIVO: se ve cómo se adapta al teclear */}
         {(nut.meals ?? []).length > 0 && (

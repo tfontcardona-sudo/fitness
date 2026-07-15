@@ -229,8 +229,8 @@ class ExerciseIn(BaseModel):
     movement_pattern: str
     equipment: list[str] = Field(default_factory=list)
     level_min: int = Field(ge=1, le=3)
-    video_url: str | None = None
-    image_url: str | None = None
+    video_url: str | None = Field(default=None, max_length=500)
+    image_url: str | None = Field(default=None, max_length=500)
     technique_notes: str | None = None
     biomechanics_notes: str | None = None
     contraindications: list[str] = Field(default_factory=list)
@@ -240,11 +240,21 @@ class ExerciseIn(BaseModel):
     _v_urls = field_validator("video_url", "image_url")(_http_url_or_none)
 
 
+def _passthrough(v):
+    return v
+
+
 class ExerciseOut(ExerciseIn):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     archived: bool
+
+    # SALIDA tolerante: anula el validador http(s) heredado de ExerciseIn. Los
+    # datos LEGADOS (URLs guardadas antes de existir la validación) no pueden
+    # romper el GET de la biblioteca — la validación estricta es de ENTRADA; el
+    # portal además re-filtra las URLs al construir los recursos.
+    _v_urls = field_validator("video_url", "image_url")(_passthrough)
 
 
 # ---------------------------------------------------------------- brand ----
@@ -405,8 +415,8 @@ class ExerciseUpdate(BaseModel):
     movement_pattern: str | None = None
     equipment: list[str] | None = None
     level_min: int | None = Field(default=None, ge=1, le=3)
-    video_url: str | None = None
-    image_url: str | None = None
+    video_url: str | None = Field(default=None, max_length=500)
+    image_url: str | None = Field(default=None, max_length=500)
     technique_notes: str | None = None
     biomechanics_notes: str | None = None
     contraindications: list[str] | None = None
