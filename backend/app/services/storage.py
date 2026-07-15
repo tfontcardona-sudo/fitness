@@ -143,17 +143,29 @@ def resources_dir() -> Path:
     return p
 
 
+# Tope de PÍXELES de una imagen de producto (~25 MP): por debajo del umbral de la
+# DecompressionBombError de Pillow (~89-178 MP), que dejaba pasar imágenes de
+# <5 MB comprimidos pero cientos de MB descomprimidos.
+MAX_RESOURCE_IMAGE_PIXELS = 25_000_000
+
+
 def save_resource_image(raw: bytes, filename_hint: str = "") -> str:
-    """Valida y guarda la imagen de un producto recomendado, quitando EXIF al
+    """Valida y guarda la imagen de un producto recomendado, quitando metadatos al
     re-codificar. Devuelve la ruta relativa. Nombre aleatorio único: cada subida
     crea un archivo nuevo (la anterior se borra aparte para no dejar huérfanos)."""
     if len(raw) > 5 * 1024 * 1024:
         raise PhotoValidationError("La imagen supera 5 MB")
     try:
         img = Image.open(io.BytesIO(raw))
+        # Rechazo por DIMENSIONES antes de decodificar: Image.open solo lee la
+        # cabecera, así que una 'bomba' (pequeña comprimida, enorme en píxeles)
+        # se corta aquí sin llegar a ocupar memoria.
+        if img.width * img.height > MAX_RESOURCE_IMAGE_PIXELS:
+            raise PhotoValidationError("La imagen es demasiado grande (usa una de menos resolución)")
         img.load()
+    except PhotoValidationError:
+        raise
     except Image.DecompressionBombError as exc:
-        # Imagen pequeña que declara dimensiones enormes (bomba de descompresión).
         raise PhotoValidationError("La imagen es demasiado grande") from exc
     except (UnidentifiedImageError, OSError) as exc:
         raise PhotoValidationError("El archivo no es una imagen válida") from exc
@@ -161,10 +173,10 @@ def save_resource_image(raw: bytes, filename_hint: str = "") -> str:
         raise PhotoValidationError("Formato no soportado (usa JPG, PNG o WebP)")
 
     fmt = img.format
-    clean = Image.new(img.mode, img.size)
-    clean.putdata(list(img.getdata()))  # píxeles sí, metadatos no
-    if fmt == "JPEG" and clean.mode not in ("RGB", "L"):
-        clean = clean.convert("RGB")
+    # Re-codificación SIN metadatos con convert() (en C, sin listas de píxeles en
+    # memoria): resuelve además la PALETA de los PNG modo "P" — el rebuild por
+    # putdata copiaba los índices sin la paleta y la imagen salía corrupta/negra.
+    clean = img.convert("RGB") if fmt == "JPEG" else img.convert("RGBA")
 
     name = f"{secrets.token_hex(12)}.{_EXT[fmt]}"
     dest = resources_dir() / name

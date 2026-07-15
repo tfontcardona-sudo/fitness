@@ -109,6 +109,10 @@ def update_product(
 ) -> RecommendedProductOut:
     p = _get_or_404(db, product_id)
     changes = body.model_dump(exclude_unset=True)
+    # PATCH: un null EXPLÍCITO no puede vaciar un campo obligatorio (rompería el
+    # NOT NULL con un 500); en esos campos null = "sin cambio".
+    NOT_NULLABLE = {"title", "url", "category", "active", "sort_order"}
+    changes = {k: v for k, v in changes.items() if not (v is None and k in NOT_NULLABLE)}
     for field, value in changes.items():
         setattr(p, field, value)
     if changes:
@@ -125,10 +129,13 @@ def update_product(
 )
 def delete_product(product_id: int, db: Session = Depends(get_db)) -> Response:
     p = _get_or_404(db, product_id)
-    delete_storage_file(p.image_path)  # no dejar la imagen huérfana en el storage
+    old_image = p.image_path
     db.delete(p)
     log_event(db, "product", product_id, "product_deleted", None)
     db.commit()
+    # El archivo se borra DESPUÉS del commit: si el commit fallara, la fila
+    # seguiría existiendo y no puede quedarse apuntando a una imagen ya borrada.
+    delete_storage_file(old_image)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -154,10 +161,12 @@ def upload_product_image(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     old_rel = p.image_path
     p.image_path = new_rel
-    if old_rel and old_rel != new_rel:
-        delete_storage_file(old_rel)
     log_event(db, "product", p.id, "product_image_uploaded", None)
     db.commit()
+    # La imagen anterior se borra tras el commit: si este fallara, la fila
+    # conservaría la ruta antigua y el archivo debe seguir existiendo.
+    if old_rel and old_rel != new_rel:
+        delete_storage_file(old_rel)
     db.refresh(p)
     return _out(p)
 
@@ -171,10 +180,11 @@ def delete_product_image(product_id: int, db: Session = Depends(get_db)) -> Reco
     """Quita la imagen subida (vuelve a usarse la URL externa si la hay)."""
     p = _get_or_404(db, product_id)
     if p.image_path:
-        delete_storage_file(p.image_path)
+        old_rel = p.image_path
         p.image_path = None
         log_event(db, "product", p.id, "product_image_removed", None)
         db.commit()
+        delete_storage_file(old_rel)  # tras el commit (ver delete_product)
         db.refresh(p)
     return _out(p)
 

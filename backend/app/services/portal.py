@@ -280,13 +280,11 @@ def build_training_sessions(db: Session, client: Client) -> list[dict]:
 
 
 # ------------------------------------------------ recursos del portal ----
-# El host de YouTube debe ir en un límite real (inicio, tras "//" del esquema o
-# tras un punto de subdominio: www./m.), no como mera subcadena — así
-# "notyoutube.com/watch?v=…" o "example.com/youtu.be/…" NO se toman por YouTube.
-_YT_RE = re.compile(
-    r"(?:^|//|\.)(?:youtu\.be/|youtube\.com/(?:watch\?(?:.*&)?v=|embed/|shorts/|v/|live/))"
-    r"([A-Za-z0-9_-]{11})"
-)
+# Host de YouTube ANCLADO de verdad: se parsea la URL y se compara el hostname
+# entero (no subcadenas ni límites de regex, que también casaban dentro del path:
+# "example.com/x//youtu.be/…"). Solo estos hosts producen portada.
+_YT_HOSTS = {"youtu.be", "youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"}
+_YT_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
 
 
 def youtube_thumbnail(url: str | None) -> str | None:
@@ -294,8 +292,24 @@ def youtube_thumbnail(url: str | None) -> str | None:
     imagen por defecto de los vídeos de ejercicio cuando el coach no sube una."""
     if not url:
         return None
-    m = _YT_RE.search(url)
-    return f"https://img.youtube.com/vi/{m.group(1)}/hqdefault.jpg" if m else None
+    from urllib.parse import parse_qs, urlsplit
+
+    try:
+        parts = urlsplit(url.strip())
+    except ValueError:
+        return None
+    host = (parts.hostname or "").lower()
+    if host not in _YT_HOSTS:
+        return None
+    vid: str | None = None
+    segs = [s for s in parts.path.split("/") if s]
+    if host == "youtu.be":
+        vid = segs[0] if segs else None
+    elif segs and segs[0] == "watch":
+        vid = (parse_qs(parts.query).get("v") or [None])[0]
+    elif len(segs) >= 2 and segs[0] in ("embed", "shorts", "v", "live"):
+        vid = segs[1]
+    return f"https://img.youtube.com/vi/{vid}/hqdefault.jpg" if vid and _YT_ID.fullmatch(vid) else None
 
 
 def product_image_url(p: RecommendedProduct) -> str | None:
@@ -326,16 +340,23 @@ def build_resources(db: Session, client: Client) -> dict:
                     ordered_ids.append(eid)
     if ordered_ids:
         lib = {ex.id: ex for ex in db.scalars(select(Exercise).where(Exercise.id.in_(ordered_ids)))}
+        http = re.compile(r"^https?://", re.IGNORECASE)
         for eid in ordered_ids:
             ex = lib.get(eid)
-            if ex is None or not ex.video_url:
+            # Re-filtro de URLs aquí también: los datos LEGADOS (guardados antes
+            # del validador de entrada) no pueden llegar al portal como href/src
+            # sin esquema http(s) — un vídeo inválido se salta, una imagen
+            # inválida cae a la portada derivada.
+            video = (ex.video_url or "").strip() if ex else ""
+            if not video or not http.match(video):
                 continue
+            image = (ex.image_url or "").strip()
             videos.append({
                 "exercise_id": ex.id,
                 "title": ex.canonical_name,
                 "muscle": ex.muscle_primary,
-                "video_url": ex.video_url,
-                "image_url": ex.image_url or youtube_thumbnail(ex.video_url),
+                "video_url": video,
+                "image_url": (image if http.match(image) else None) or youtube_thumbnail(video),
                 "technique_notes": ex.technique_notes,
             })
 

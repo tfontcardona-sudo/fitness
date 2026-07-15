@@ -95,8 +95,11 @@ function ProductsManager() {
   const [saving, setSaving] = useState(false);
   const [toDelete, setToDelete] = useState<RecommendedProductOut | null>(null);
 
+  const [loadFailed, setLoadFailed] = useState(false);
   const load = useCallback(() => {
-    api.listProducts().then(setProducts).catch(() => setProducts([]));
+    setLoadFailed(false);
+    // Un fallo de red NO se disfraza de catálogo vacío: banner + Reintentar.
+    api.listProducts().then(setProducts).catch(() => { setProducts([]); setLoadFailed(true); });
   }, []);
   useEffect(load, [load]);
 
@@ -139,8 +142,15 @@ function ProductsManager() {
         description: draft.description.trim() || null,
         image_url: draft.image_url.trim() || null,
       };
+      // Con imagen SUBIDA y el campo de URL externa vacío (el editor lo muestra
+      // vacío a propósito), el PATCH NO manda image_url: conserva la URL externa
+      // guardada, que vuelve a usarse si un día se quita la subida.
+      const keepExternal = Boolean(draft.id && draft.uploaded && !draft.image_url.trim());
       const saved = draft.id
-        ? await api.updateProduct(draft.id, { ...payload, active: draft.active })
+        ? await api.updateProduct(draft.id, {
+            ...(keepExternal ? (({ image_url: _omit, ...rest }) => rest)(payload) : payload),
+            active: draft.active,
+          })
         : await api.createProduct(payload);
       if (draft.file) {
         try {
@@ -194,7 +204,20 @@ function ProductsManager() {
     }
   }
 
+  // Guard con ref (no estado): un doble clic en "Eliminar" del diálogo no puede
+  // disparar DOS DELETE (el segundo daría 404 y enseñaría un error falso).
+  const deletingRef = useRef(false);
   async function confirmDelete() {
+    if (deletingRef.current) return;
+    deletingRef.current = true;
+    try {
+      await doDelete();
+    } finally {
+      deletingRef.current = false;
+    }
+  }
+
+  async function doDelete() {
     if (!toDelete) return;
     try {
       await api.deleteProduct(toDelete.id);
@@ -210,6 +233,12 @@ function ProductsManager() {
 
   return (
     <div className="space-y-4">
+      {loadFailed && (
+        <div className="card flex flex-wrap items-center justify-between gap-3 p-3 text-sm text-zinc-300">
+          <span>No se pudieron cargar los productos.</span>
+          <button className="btn btn-ghost !px-3 !py-1.5 text-xs" onClick={load}>Reintentar</button>
+        </div>
+      )}
       {draft ? (
         <ProductEditor
           draft={draft}
@@ -332,6 +361,10 @@ function ProductEditor({
   const [preview, setPreview] = useState<string | null>(
     draft.image_url || draft.uploaded || null,
   );
+  // Si la URL externa no carga (rota, host caído), el hueco cae al icono en vez
+  // de quedarse con el "broken image" del navegador (mismo patrón que ProductThumb).
+  const [previewOk, setPreviewOk] = useState(true);
+  useEffect(() => setPreviewOk(true), [preview]);
   useEffect(() => {
     if (draft.file) {
       const url = URL.createObjectURL(draft.file);
@@ -363,8 +396,8 @@ function ProductEditor({
               className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-xl border"
               style={{ borderColor: "var(--line-strong)", background: "var(--surface-raised)" }}
             >
-              {preview ? (
-                <img src={preview} alt="" className="h-full w-full object-cover" />
+              {preview && previewOk ? (
+                <img src={preview} alt="" onError={() => setPreviewOk(false)} className="h-full w-full object-cover" />
               ) : (
                 <ImageIcon size={22} className="text-zinc-500" />
               )}
@@ -492,8 +525,10 @@ function ExerciseVideosManager() {
   const [q, setQ] = useState("");
   const [onlySet, setOnlySet] = useState(false);
 
+  const [loadFailed, setLoadFailed] = useState(false);
   const load = useCallback(() => {
-    api.listExercises().then(setAll).catch(() => setAll([]));
+    setLoadFailed(false);
+    api.listExercises().then(setAll).catch(() => { setAll([]); setLoadFailed(true); });
   }, []);
   useEffect(load, [load]);
 
@@ -517,6 +552,12 @@ function ExerciseVideosManager() {
 
   return (
     <div className="space-y-4">
+      {loadFailed && (
+        <div className="card flex flex-wrap items-center justify-between gap-3 p-3 text-sm text-zinc-300">
+          <span>No se pudieron cargar los ejercicios.</span>
+          <button className="btn btn-ghost !px-3 !py-1.5 text-xs" onClick={load}>Reintentar</button>
+        </div>
+      )}
       <p className="text-sm text-zinc-500">
         Añade el vídeo (y opcionalmente una imagen) de cada ejercicio. En el portal, el cliente verá
         los vídeos de los ejercicios de <strong>su</strong> rutina. Si el vídeo es de YouTube, la
@@ -630,10 +671,23 @@ function ExerciseVideoRow({
   );
 }
 
-/** Portada de YouTube para la vista previa del coach (el backend hace lo mismo). */
+/** Portada de YouTube para la vista previa del coach — host ANCLADO igual que el
+ *  backend (services/portal.py): la vista previa enseña EXACTAMENTE lo que verá
+ *  el cliente (una URL que solo contenga "youtube.com" en el path no cuela). */
+const YT_HOSTS = new Set(["youtu.be", "youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"]);
 function youtubeThumb(url: string): string | null {
-  const m = url.match(
-    /(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|v\/|live\/))([A-Za-z0-9_-]{11})/,
-  );
-  return m ? `https://img.youtube.com/vi/${m[1]}/hqdefault.jpg` : null;
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return null;
+  }
+  const host = u.hostname.toLowerCase();
+  if (!YT_HOSTS.has(host)) return null;
+  const segs = u.pathname.split("/").filter(Boolean);
+  let id: string | null | undefined;
+  if (host === "youtu.be") id = segs[0];
+  else if (segs[0] === "watch") id = u.searchParams.get("v");
+  else if (segs.length >= 2 && ["embed", "shorts", "v", "live"].includes(segs[0])) id = segs[1];
+  return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null;
 }
