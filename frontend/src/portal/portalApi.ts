@@ -12,6 +12,7 @@ import type {
   PeriodCloseIn,
   PlanChanges,
   PortalPlanOut,
+  PortalResources,
   PortalState,
   PushPending,
   PortalProgress,
@@ -109,6 +110,7 @@ export function portalApi(token: string) {
         "GET", `${base}/workout-history`,
       ),
     plan: () => req<PortalPlanOut>("GET", `${base}/plan`),
+    resources: () => req<PortalResources>("GET", `${base}/resources`),
     progress: () => req<PortalProgress>("GET", `${base}/progress`),
     photoUrl: (id: number) => `/api${base}/photos/${id}`,
     getDiary: (logDate: string) =>

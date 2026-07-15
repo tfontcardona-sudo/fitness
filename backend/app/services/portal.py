@@ -19,7 +19,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import BrandConfig, Client, DailyLog, Exercise, Period, Plan
+from app.models import BrandConfig, Client, DailyLog, Exercise, Period, Plan, RecommendedProduct
 
 DAY_LABELS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 DAY_SLUGS = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
@@ -277,6 +277,83 @@ def build_training_sessions(db: Session, client: Client) -> list[dict]:
     factor = (week or {}).get("load_factor") or 1.0
     training = plan.training_json or {}
     return [_resolve_session(db, s, factor) for s in training.get("sessions", [])]
+
+
+# ------------------------------------------------ recursos del portal ----
+# El host de YouTube debe ir en un límite real (inicio, tras "//" del esquema o
+# tras un punto de subdominio: www./m.), no como mera subcadena — así
+# "notyoutube.com/watch?v=…" o "example.com/youtu.be/…" NO se toman por YouTube.
+_YT_RE = re.compile(
+    r"(?:^|//|\.)(?:youtu\.be/|youtube\.com/(?:watch\?(?:.*&)?v=|embed/|shorts/|v/|live/))"
+    r"([A-Za-z0-9_-]{11})"
+)
+
+
+def youtube_thumbnail(url: str | None) -> str | None:
+    """Portada (hqdefault) si `url` es un vídeo de YouTube; si no, None. Sirve de
+    imagen por defecto de los vídeos de ejercicio cuando el coach no sube una."""
+    if not url:
+        return None
+    m = _YT_RE.search(url)
+    return f"https://img.youtube.com/vi/{m.group(1)}/hqdefault.jpg" if m else None
+
+
+def product_image_url(p: RecommendedProduct) -> str | None:
+    """URL efectiva de la imagen de un producto: la subida (servida por la API,
+    con cache-busting por updated_at) tiene prioridad; si no, la URL externa."""
+    if p.image_path:
+        ver = int(p.updated_at.timestamp()) if p.updated_at else 0
+        return f"/api/resources/products/{p.id}/image?v={ver}"
+    return p.image_url or None
+
+
+def build_resources(db: Session, client: Client) -> dict:
+    """Sección "Recursos" del portal: vídeos de los ejercicios de la rutina
+    vigente (solo los que tienen vídeo, en el orden en que aparecen en el plan,
+    sin duplicados) + catálogo de productos recomendados activos."""
+    period = active_period(db, client.id)
+    plan = published_plan_for_period(db, period) if period else latest_published_plan(db, client.id)
+
+    videos: list[dict] = []
+    ordered_ids: list[int] = []
+    if plan is not None:
+        seen: set[int] = set()
+        for sess in (plan.training_json or {}).get("sessions", []):
+            for e in sess.get("exercises", []):
+                eid = e.get("exercise_id")
+                if isinstance(eid, int) and eid not in seen:
+                    seen.add(eid)
+                    ordered_ids.append(eid)
+    if ordered_ids:
+        lib = {ex.id: ex for ex in db.scalars(select(Exercise).where(Exercise.id.in_(ordered_ids)))}
+        for eid in ordered_ids:
+            ex = lib.get(eid)
+            if ex is None or not ex.video_url:
+                continue
+            videos.append({
+                "exercise_id": ex.id,
+                "title": ex.canonical_name,
+                "muscle": ex.muscle_primary,
+                "video_url": ex.video_url,
+                "image_url": ex.image_url or youtube_thumbnail(ex.video_url),
+                "technique_notes": ex.technique_notes,
+            })
+
+    product_rows = db.scalars(
+        select(RecommendedProduct)
+        .where(RecommendedProduct.active.is_(True))
+        .order_by(RecommendedProduct.sort_order, RecommendedProduct.id)
+    ).all()
+    products = [{
+        "id": p.id,
+        "title": p.title,
+        "description": p.description,
+        "url": p.url,
+        "category": p.category,
+        "image_url": product_image_url(p),
+    } for p in product_rows]
+
+    return {"exercise_videos": videos, "products": products}
 
 
 def build_today_view(db: Session, client: Client, today: date) -> dict:

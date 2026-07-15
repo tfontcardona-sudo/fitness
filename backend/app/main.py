@@ -19,7 +19,8 @@ from app.config import settings
 from app.ratelimit import client_key
 from app.db import engine
 from app.routers import (
-    alerts, auth, brand, clients, email, exercises, plans, portal_public, stripe_router,
+    alerts, auth, brand, clients, email, exercises, plans, portal_public, resources,
+    stripe_router,
 )
 
 APP_VERSION = "0.2.0"
@@ -118,6 +119,7 @@ app.include_router(auth.router)
 app.include_router(clients.router)
 app.include_router(exercises.router)
 app.include_router(brand.router)
+app.include_router(resources.router)
 app.include_router(plans.router)
 app.include_router(alerts.router)
 app.include_router(email.router)

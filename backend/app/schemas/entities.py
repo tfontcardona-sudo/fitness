@@ -4,10 +4,37 @@ Espejados manualmente en frontend/src/types.ts (regla A.1.5).
 """
 
 
+import re
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+
+def _http_url_or_none(v: str | None) -> str | None:
+    """Normaliza una URL OPCIONAL exigiendo http/https (bloquea javascript:, data:…
+    que el portal renderizaría como enlace o imagen). Vacío → None (permite
+    'borrar' el campo, p. ej. quitar la imagen externa)."""
+    if v is None:
+        return None
+    v = v.strip()
+    if not v:
+        return None
+    if not re.match(r"^https?://", v, re.IGNORECASE):
+        raise ValueError("La URL debe empezar por http:// o https://")
+    return v
+
+
+def _http_url_required(v: str | None) -> str | None:
+    """Como `_http_url_or_none` pero para campos OBLIGATORIOS: un valor solo de
+    espacios NO se convierte en None (rompería un NOT NULL con un 500); se rechaza
+    con 422. None se conserva (en un PATCH = 'sin cambio')."""
+    if v is None:
+        return None
+    v = v.strip()
+    if not re.match(r"^https?://", v, re.IGNORECASE):
+        raise ValueError("La URL debe empezar por http:// o https://")
+    return v
 
 # Literales compartidos
 Sex = Literal["male", "female"]
@@ -203,9 +230,14 @@ class ExerciseIn(BaseModel):
     equipment: list[str] = Field(default_factory=list)
     level_min: int = Field(ge=1, le=3)
     video_url: str | None = None
+    image_url: str | None = None
     technique_notes: str | None = None
     biomechanics_notes: str | None = None
     contraindications: list[str] = Field(default_factory=list)
+
+    # El portal muestra el vídeo (enlace) y la imagen del ejercicio: exige http(s)
+    # para no guardar un javascript:/data: que se renderizaría como enlace/imagen.
+    _v_urls = field_validator("video_url", "image_url")(_http_url_or_none)
 
 
 class ExerciseOut(ExerciseIn):
@@ -236,6 +268,51 @@ class BrandConfigOut(BrandConfigIn):
     id: int
     logo_path: str | None
     contact_email: str | None  # relaja EmailStr al leer de DB
+
+
+# ------------------------------------------ productos recomendados (portal) ----
+# Catálogo único que el coach gestiona y el cliente ve en la sección "Recursos".
+ProductCategory = Literal["suplemento", "material", "otro"]
+
+
+class RecommendedProductIn(BaseModel):
+    title: str = Field(min_length=1, max_length=160)
+    description: str | None = Field(default=None, max_length=300)
+    url: str = Field(min_length=3, max_length=500)
+    category: ProductCategory = "suplemento"
+    image_url: str | None = Field(default=None, max_length=500)  # URL externa (opcional)
+    active: bool = True
+    # sort_order NO se pide al crear: el alta añade al final; se reordena por PATCH.
+
+    _v_url = field_validator("url")(_http_url_required)
+    _v_image = field_validator("image_url")(_http_url_or_none)
+
+
+class RecommendedProductUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=160)
+    description: str | None = Field(default=None, max_length=300)
+    url: str | None = Field(default=None, min_length=3, max_length=500)
+    category: ProductCategory | None = None
+    image_url: str | None = Field(default=None, max_length=500)
+    active: bool | None = None
+    sort_order: int | None = Field(default=None, ge=0, le=100000)
+
+    _v_url = field_validator("url")(_http_url_required)
+    _v_image = field_validator("image_url")(_http_url_or_none)
+
+
+class RecommendedProductOut(BaseModel):
+    """Salida con la imagen EFECTIVA ya resuelta (archivo subido o URL externa)."""
+
+    id: int
+    title: str
+    description: str | None
+    url: str
+    category: str
+    image_url: str | None  # URL para mostrar (servida si hay subida, si no la externa)
+    has_upload: bool        # ¿tiene imagen subida? (el formulario del coach lo necesita)
+    active: bool
+    sort_order: int
 
 
 # ----------------------------------------------------- diario del portal ----
@@ -329,9 +406,12 @@ class ExerciseUpdate(BaseModel):
     equipment: list[str] | None = None
     level_min: int | None = Field(default=None, ge=1, le=3)
     video_url: str | None = None
+    image_url: str | None = None
     technique_notes: str | None = None
     biomechanics_notes: str | None = None
     contraindications: list[str] | None = None
+
+    _v_urls = field_validator("video_url", "image_url")(_http_url_or_none)
 
 
 class AnamnesisStateOut(BaseModel):
@@ -489,6 +569,36 @@ class PortalPlanOut(BaseModel):
     training: dict | None
     education: dict | None
     diet_mode: DietMode | None
+
+
+# --------------------------------------------------- recursos del portal ----
+class ResourceExerciseVideo(BaseModel):
+    """Vídeo de un ejercicio de la rutina del cliente (título + imagen + vídeo)."""
+
+    exercise_id: int
+    title: str
+    muscle: str | None = None
+    video_url: str
+    image_url: str | None = None  # miniatura (subida por el coach o portada YouTube)
+    technique_notes: str | None = None
+
+
+class ResourceProduct(BaseModel):
+    """Producto recomendado (título + imagen + enlace)."""
+
+    id: int
+    title: str
+    description: str | None = None
+    url: str
+    category: str
+    image_url: str | None = None
+
+
+class PortalResourcesOut(BaseModel):
+    """GET /api/p/{token}/resources — vídeos de sus ejercicios + productos."""
+
+    exercise_videos: list[ResourceExerciseVideo]
+    products: list[ResourceProduct]
 
 
 class DailyLogOut(BaseModel):

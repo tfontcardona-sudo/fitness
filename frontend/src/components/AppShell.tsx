@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
+  Library,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
@@ -14,6 +15,7 @@ import { AlertsBell } from "./AlertsBell";
 const NAV = [
   { to: "/", label: "Hoy", icon: LayoutDashboard, end: true },
   { to: "/clientes", label: "Clientes", icon: Users, end: false },
+  { to: "/recursos", label: "Recursos", icon: Library, end: false },
 ];
 
 /** ¿Pantalla de móvil? (reactiva al girar el dispositivo) */
