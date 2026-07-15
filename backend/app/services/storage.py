@@ -45,23 +45,38 @@ class PhotoValidationError(ValueError):
     """Formato no soportado, archivo corrupto o demasiado grande."""
 
 
+# Tope de PÍXELES de una foto de progreso (~50 MP: por encima de cualquier móvil
+# actual). Corta las "bombas" (pequeñas comprimidas, enormes decodificadas) ANTES
+# de decodificar — este endpoint es alcanzable desde el PORTAL del cliente.
+MAX_PHOTO_PIXELS = 50_000_000
+
+
 def save_photo(client_id: int, raw: bytes, sub: str = "photos") -> str:
-    """Valida, elimina EXIF re-codificando y guarda. Devuelve la ruta relativa."""
+    """Valida, elimina metadatos re-codificando y guarda. Devuelve la ruta relativa."""
     if len(raw) > MAX_PHOTO_MB * 1024 * 1024:
         raise PhotoValidationError(f"La foto supera {MAX_PHOTO_MB} MB")
     try:
         img = Image.open(io.BytesIO(raw))
+        # Rechazo por DIMENSIONES antes de decodificar (Image.open solo lee la
+        # cabecera): una imagen de <15 MB comprimidos pero cientos de MP ya no
+        # infla la memoria del worker.
+        if img.width * img.height > MAX_PHOTO_PIXELS:
+            raise PhotoValidationError("La foto es demasiado grande (usa una de menos resolución)")
         img.load()
+    except PhotoValidationError:
+        raise
+    except Image.DecompressionBombError as exc:
+        raise PhotoValidationError("La foto es demasiado grande") from exc
     except (UnidentifiedImageError, OSError) as exc:
         raise PhotoValidationError("El archivo no es una imagen válida") from exc
     if img.format not in ALLOWED_FORMATS:
         raise PhotoValidationError("Formato no soportado (usa JPG, PNG o WebP)")
 
     fmt = img.format
-    clean = Image.new(img.mode, img.size)
-    clean.putdata(list(img.getdata()))  # píxeles sí, metadatos no
-    if fmt == "JPEG" and clean.mode not in ("RGB", "L"):
-        clean = clean.convert("RGB")
+    # convert() en C (sin listas de píxeles en Python) y resuelve la PALETA de los
+    # PNG modo "P" — el rebuild por putdata copiaba índices sin paleta (salían
+    # corruptos). Mismo criterio que save_resource_image.
+    clean = img.convert("RGB") if fmt == "JPEG" else img.convert("RGBA")
 
     name = f"{secrets.token_hex(12)}.{_EXT[fmt]}"
     dest = client_dir(client_id, sub) / name
