@@ -1,14 +1,16 @@
 import { useState } from "react";
 import { api } from "../lib/api";
-import { PACKAGES, PACKAGE_ORDER } from "../lib/packages";
-import type { PackageTier } from "../types";
+import { BILLING_PERIODS, PACKAGES, PACKAGE_ORDER } from "../lib/packages";
+import type { BillingPeriod, PackageTier } from "../types";
 
 /**
- * Página PÚBLICA de planes (registro personal del cliente). Muestra los 3 planes
- * y, al elegir uno, crea la sesión de pago de Stripe y redirige. Al pagar, el
- * webhook crea el perfil del cliente y le envía el acceso a su portal.
+ * Página PÚBLICA de planes (registro personal del cliente). El cliente elige la
+ * duración (mensual/trimestral/semestral) y el plan; se crea la sesión de pago
+ * de Stripe de esa combinación y se le redirige. Al pagar, el webhook crea el
+ * perfil del cliente y le envía el acceso a su portal.
  */
 export default function PlansPage() {
+  const [period, setPeriod] = useState<BillingPeriod>("1m");
   const [busy, setBusy] = useState<PackageTier | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -17,7 +19,7 @@ export default function PlansPage() {
     setBusy(tier);
     setError(null);
     try {
-      const { url } = await api.publicCheckout(tier);
+      const { url } = await api.publicCheckout(tier, period);
       window.location.href = url;
     } catch (e: any) {
       setError(e?.message ?? "No se pudo iniciar el pago. Inténtalo de nuevo en un momento.");
@@ -43,6 +45,30 @@ export default function PlansPage() {
             {error}
           </div>
         )}
+
+        {/* Duración: un conmutador común a los 3 planes (cada combinación tiene
+            su precio en Stripe; se muestra en la pantalla de pago). */}
+        <div className="mb-6 flex justify-center">
+          <div className="inline-flex rounded-xl border bg-white p-1 shadow-sm" style={{ borderColor: "#e6ddca" }}>
+            {BILLING_PERIODS.map((b) => {
+              const sel = period === b.value;
+              return (
+                <button
+                  key={b.value}
+                  type="button"
+                  onClick={() => setPeriod(b.value)}
+                  aria-pressed={sel}
+                  className="rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
+                  style={sel
+                    ? { background: "#2E5E8C", color: "white" }
+                    : { color: "#26211a", opacity: 0.65 }}
+                >
+                  {b.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
         <div className="grid gap-4 sm:grid-cols-3">
           {PACKAGE_ORDER.map((t) => {

@@ -12,6 +12,9 @@ export type Level = "beginner" | "intermediate" | "advanced";
 export type TrainingPlace = "gym" | "home" | "outdoor";
 export type DietMode = "flexible_7" | "strict";
 export type PackageTier = "start" | "full" | "pro";
+// Duración contratada del plan (decide el precio de Stripe que se cobra):
+// mensual, trimestral o semestral.
+export type BillingPeriod = "1m" | "3m" | "6m";
 export type PaymentStatus = "pending" | "paid";
 export type ClientStatus =
   | "onboarding"
@@ -217,6 +220,7 @@ export interface ClientCreate {
   email: string;
   phone?: string | null;
   package_tier?: PackageTier;
+  billing_period?: BillingPeriod;
 }
 
 export interface AnamnesisSubmit {
@@ -256,6 +260,7 @@ export interface ClientOut {
   email: string;
   phone: string | null;
   package_tier: PackageTier;
+  billing_period: BillingPeriod;
   payment_status: PaymentStatus;
   paid_at: string | null;
   sex: Sex | null;

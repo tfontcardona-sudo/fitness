@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.deps import get_client_by_token
 from app.models import Client
-from app.schemas.entities import PackageTier
+from app.schemas.entities import BillingPeriod, PackageTier
 from app.services.stripe_service import StripeError, create_checkout_url, handle_webhook
 
 router = APIRouter(tags=["stripe"])
@@ -26,23 +26,26 @@ router = APIRouter(tags=["stripe"])
 
 class CheckoutIn(BaseModel):
     tier: PackageTier
+    # Duración elegida: mensual (1m), trimestral (3m) o semestral (6m).
+    period: BillingPeriod = "1m"
 
 
 @router.post("/api/public/checkout")
 def public_checkout(body: CheckoutIn, db: Session = Depends(get_db)) -> dict:
     """Registro personal: crea la sesión de pago del plan elegido → URL de Stripe."""
     try:
-        return {"url": create_checkout_url(db, body.tier)}
+        return {"url": create_checkout_url(db, body.tier, body.period)}
     except StripeError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
 
 @router.get("/api/pay/{token}")
 def pay_link(client: Client = Depends(get_client_by_token), db: Session = Depends(get_db)):
-    """Enlace estable de pago del alta manual: redirige a Stripe con el plan del
-    cliente. El cliente lo abre desde el mensaje que le envía el coach."""
+    """Enlace estable de pago del alta manual: redirige a Stripe con el plan y la
+    duración de ESE cliente. Lo abre desde el mensaje que le envía el coach."""
     try:
-        url = create_checkout_url(db, client.package_tier, client=client)
+        url = create_checkout_url(db, client.package_tier, client.billing_period,
+                                  client=client)
     except StripeError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     return RedirectResponse(url, status_code=302)

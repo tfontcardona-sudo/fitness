@@ -8,8 +8,8 @@ import { EmptyState, PageLoader, StatusBadge, useToast } from "../components/ui"
 import { Avatar } from "./DashboardPage";
 import { GOAL_LABEL, goalReviewDue, relativeDays } from "../lib/format";
 import { onboardingMessage, openWhatsApp, portalAccessMessage, waPhone } from "../lib/whatsapp";
-import { PACKAGES, PACKAGE_ORDER, pkg } from "../lib/packages";
-import type { PackageTier } from "../types";
+import { BILLING_PERIODS, PACKAGES, PACKAGE_ORDER, billingLabel, pkg } from "../lib/packages";
+import type { BillingPeriod, PackageTier } from "../types";
 
 /** CARPETAS de la cartera según el punto del ciclo (no solo el estado crudo):
  *  Activos = planificación publicada · Pendientes = aún sin planificación
@@ -334,6 +334,7 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [tier, setTier] = useState<PackageTier>("full");
+  const [period, setPeriod] = useState<BillingPeriod>("1m");
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState<ClientCreatedOut | null>(null);
   // Estado del correo de acceso enviado al crear (y actualizable con "Reenviar").
@@ -348,7 +349,10 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
     if (!name || !email || busy) return;
     setBusy(true);
     try {
-      const res = await api.createClient({ full_name: name, email, phone: phone || null, package_tier: tier });
+      const res = await api.createClient({
+        full_name: name, email, phone: phone || null,
+        package_tier: tier, billing_period: period,
+      });
       setCreated(res);
       setAccessStatus(res.portal_access);
       onCreated();
@@ -497,6 +501,33 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
                           </span>
                           <span className="mt-0.5 block text-xs text-zinc-500">{p.includes}</span>
                         </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <label className="label">Duración</label>
+                <p className="text-xs text-zinc-500">
+                  Cómo contrata el plan: decide el precio que pagará en su enlace de pago.
+                </p>
+                <div className="mt-1.5 grid grid-cols-3 gap-2">
+                  {BILLING_PERIODS.map((b) => {
+                    const sel = period === b.value;
+                    return (
+                      <button
+                        key={b.value}
+                        type="button"
+                        onClick={() => setPeriod(b.value)}
+                        aria-pressed={sel}
+                        className="rounded-xl border px-2 py-2 text-sm font-medium transition-colors"
+                        style={{
+                          borderColor: sel ? "var(--brand-accent)" : "var(--line-strong)",
+                          background: sel ? "color-mix(in srgb, var(--brand-accent) 10%, transparent)" : "transparent",
+                          color: sel ? "var(--brand-accent)" : undefined,
+                        }}
+                      >
+                        {b.label}
                       </button>
                     );
                   })}

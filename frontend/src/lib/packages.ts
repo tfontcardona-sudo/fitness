@@ -5,7 +5,7 @@
  *  - full:  nutrición + entreno. Sin contacto directo. Entrega email.
  *  - pro:   full + contacto directo (WhatsApp + videollamada). Entrega WhatsApp.
  */
-import type { PackageTier } from "../types";
+import type { BillingPeriod, PackageTier } from "../types";
 
 export interface PackageInfo {
   tier: PackageTier;
@@ -60,4 +60,16 @@ export const PACKAGE_ORDER: PackageTier[] = ["start", "full", "pro"];
 /** Info del paquete de un cliente. Sin plan conocido → 'pro' (sistema completo). */
 export function pkg(tier: string | null | undefined): PackageInfo {
   return PACKAGES[(tier as PackageTier)] ?? PACKAGES.pro;
+}
+
+/** Duraciones contratables de cada plan (cada una con su precio en Stripe). */
+export const BILLING_PERIODS: { value: BillingPeriod; label: string }[] = [
+  { value: "1m", label: "Mensual" },
+  { value: "3m", label: "Trimestral" },
+  { value: "6m", label: "Semestral" },
+];
+
+/** Etiqueta de una duración ("1m" → "Mensual"). Desconocida → mensual. */
+export function billingLabel(period: string | null | undefined): string {
+  return BILLING_PERIODS.find((b) => b.value === period)?.label ?? "Mensual";
 }
