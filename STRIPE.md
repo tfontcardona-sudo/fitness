@@ -28,13 +28,16 @@ Piezas del código (por si hay que tocar algo):
 |-------|-------|
 | Página de planes + página "¡Pago recibido!" | `frontend/src/pages/PlansPage.tsx` (rutas `/planes` y `/pago-ok`) |
 | Crear sesión de pago (self-serve) | `POST /api/public/checkout` (`backend/app/routers/stripe_router.py`) |
-| Enlace de pago estable del alta manual | `GET /api/pay/{token}` (redirige a Stripe) |
+| Enlace de pago del alta manual (usa el token del portal) | `GET /api/pay/{token}` (redirige a Stripe) |
 | Webhook de cobro (verificado por firma) | `POST /api/stripe/webhook` |
 | Lógica (crear cliente, marcar pagado) | `backend/app/services/stripe_service.py` |
 | Variables de configuración | `backend/app/config.py` + `.env.example` |
 
-El estado de pago es **solo informativo**: aparece como "Pagado / Pendiente" en
-la lista de clientes y en la ficha, pero **no bloquea** el trabajo del coach.
+El estado de pago es **solo informativo**: aparece como etiqueta **"Pagado"** /
+**"Pago pendiente"** junto al nombre del cliente (en la lista y en su ficha),
+pero **no bloquea** el trabajo del coach. (No confundir con la carpeta
+"Pendientes" de la lista de clientes, que se refiere a clientes sin
+planificación, no al pago.)
 
 Lo ÚNICO que falta para que funcione: rellenar estas 6 variables del `.env`
 del servidor (hoy están vacías):
@@ -89,7 +92,15 @@ Con el conmutador en **modo de prueba**:
    > **primer** cobro. Los cobros mensuales siguientes los gestiona Stripe
    > (avisos, reintentos, cancelaciones se ven en su Dashboard); la app no
    > cambia el estado con cada renovación.
-4. Abre cada producto, pincha en su precio y **copia el ID del precio**: empieza
+4. **Métodos de pago — importante**: en Dashboard → **Configuración** →
+   **Pagos** → **Métodos de pago**, deja activos solo los **inmediatos**
+   (tarjeta, Apple Pay / Google Pay, Link). **No actives SEPA, transferencia
+   bancaria ni aplazados**: son pagos "diferidos" que se confirman días
+   después, y el sistema solo registra los cobros confirmados en el momento —
+   con un método diferido el cliente pagaría pero su ficha nunca se marcaría
+   como "Pagado" (habría que ampliar el código para escuchar el evento
+   `checkout.session.async_payment_succeeded`).
+5. Abre cada producto, pincha en su precio y **copia el ID del precio**: empieza
    por `price_...` (¡el del PRECIO, no el `prod_...` del producto!). Apunta los
    tres:
 
@@ -163,8 +174,13 @@ Comprobación: al arrancar, la API avisa en los logs si falta algo:
 ```bash
 docker compose logs api --tail 50 | grep -i stripe
 # Si sale "STRIPE INCOMPLETO: ... Falta: X" → revisa esa variable.
-# Si no sale nada de Stripe → configuración completa.
+# Con la clave puesta y sin ningún aviso → configuración completa.
 ```
+
+> Ojo: ese aviso solo se emite si `STRIPE_SECRET_KEY` está rellenada. Si la
+> clave está vacía (o el nombre de la variable mal escrito) no sale NINGUNA
+> línea de Stripe en los logs; lo notarás al probar, como
+> "Stripe no está configurado" al elegir un plan.
 
 > **Importante para el registro personal**: el acceso al portal se envía por
 > **email**. Si en el `.env` tienes `EMAILS_ENABLED=false` o el SMTP sin
@@ -204,6 +220,10 @@ futura (p. ej. 12/34), CVC cualquiera (p. ej. 123), cualquier nombre y CP.
   cada pago debe mostrar una entrega con respuesta **200**. Si sale 400, el
   cuerpo de la respuesta dice qué falta (Stripe **reintenta solo** durante
   horas, así que al corregir el `.env` los pagos "perdidos" acaban entrando).
+  Ojo: mira también el **cuerpo** de las entregas 200 — si contiene
+  `{"error": ...}` (p. ej. `client_not_found` porque el cliente se borró
+  después de enviarle el enlace), el aviso llegó pero no se aplicó, y esas
+  Stripe NO las reintenta.
 - Servidor: `docker compose logs api --tail 100 | grep -i stripe`.
 
 ---
@@ -236,8 +256,14 @@ Cuando el modo de prueba funcione entero y Stripe haya **activado** la cuenta
 
 ## 8. El día a día (ya enlazado)
 
-- **Dónde se ve**: columna/etiqueta "Pagado · Pendiente" en la lista de
-  Clientes y en la ficha. Recuerda: informativo, no bloquea nada.
+- **Dónde se ve**: etiqueta "Pagado" / "Pago pendiente" junto al nombre del
+  cliente, en la lista de Clientes y en su ficha. Recuerda: informativo, no
+  bloquea nada.
+- **No regenerar el enlace del portal a la ligera**: el enlace de pago usa el
+  mismo token que el portal del cliente. Si pulsas "Regenerar enlace del
+  portal" en la ficha, el enlace de pago ya enviado por WhatsApp/email **deja
+  de funcionar** (da "No encontrado"): copia el botón verde de nuevo y
+  reenvíalo.
 - **Reembolsos, recibos, facturas**: desde el Dashboard de Stripe (Pagos). Los
   recibos al cliente los envía Stripe si activas "Enviar recibos" en
   Configuración → Emails de clientes.
@@ -258,4 +284,6 @@ Cuando el modo de prueba funcione entero y Stripe haya **activado** la cuenta
 | Webhook responde "Firma del webhook inválida" | `whsec_...` de otro endpoint u otro modo (test/real cruzados). Copia el secreto del endpoint correcto. |
 | Error de Stripe al crear la sesión con `STRIPE_MODE=subscription` | Los precios se crearon como pago único (o al revés). El tipo del precio y `STRIPE_MODE` deben coincidir. |
 | El cliente self-serve no recibe el email de acceso | `EMAILS_ENABLED=false` o SMTP sin configurar. El cliente y su pago SÍ quedan registrados; envíale el acceso desde su ficha. |
+| El enlace de pago enviado da "No encontrado" (404) | Se regeneró el enlace del portal después de enviarlo (el pago usa el mismo token). Copia el botón verde otra vez y reenvíalo. |
+| El cliente pagó por SEPA/transferencia y no sale "Pagado" | El sistema solo registra métodos de cobro inmediato. Desactiva los métodos diferidos en Stripe (paso 2.4); el pago real está en el Dashboard de Stripe aunque la ficha siga "Pago pendiente". |
 | Probar en el PC (desarrollo local) | Stripe no puede llamar a `localhost`. Usa la CLI de Stripe: `stripe listen --forward-to localhost:8000/api/stripe/webhook` y pon en el `.env` local el `whsec_...` temporal que imprime. |
