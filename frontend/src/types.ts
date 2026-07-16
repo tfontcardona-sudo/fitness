@@ -332,6 +332,7 @@ export interface RecommendedProductOut {
   has_upload: boolean;
   active: boolean;
   sort_order: number;
+  discount_code: string | null;
 }
 
 export interface RecommendedProductIn {
@@ -340,6 +341,8 @@ export interface RecommendedProductIn {
   url: string;
   category?: ProductCategory;
   image_url?: string | null;
+  /** Código de descuento de la marca (afiliación), copiable en el portal. */
+  discount_code?: string | null;
   active?: boolean;
 }
 
@@ -351,6 +354,7 @@ export interface RecommendedProductUpdate {
   image_url?: string | null;
   active?: boolean;
   sort_order?: number;
+  discount_code?: string | null;
 }
 
 export interface BrandConfigOut {
@@ -602,6 +606,7 @@ export interface ResourceProduct {
   url: string;
   category: string;
   image_url: string | null;
+  discount_code?: string | null;
 }
 
 export interface PortalResources {

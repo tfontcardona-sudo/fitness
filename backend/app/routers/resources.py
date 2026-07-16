@@ -45,6 +45,7 @@ def _out(p: RecommendedProduct) -> RecommendedProductOut:
         url=p.url,
         category=p.category,
         image_url=product_image_url(p),
+        discount_code=p.discount_code,
         has_upload=bool(p.image_path),
         active=p.active,
         sort_order=p.sort_order,
@@ -88,6 +89,7 @@ def create_product(body: RecommendedProductIn, db: Session = Depends(get_db)) ->
         url=body.url,
         category=body.category,
         image_url=body.image_url,
+        discount_code=body.discount_code,
         active=body.active,
         sort_order=(max_order or 0) + 1,
     )
