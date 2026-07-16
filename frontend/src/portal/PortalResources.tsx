@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Dumbbell, ExternalLink, Package, Pill, PlayCircle, ShoppingBag } from "lucide-react";
+import { Check, Copy, Dumbbell, ExternalLink, Package, Pill, PlayCircle, ShoppingBag } from "lucide-react";
 import type { PortalBrand, PortalResources as Resources, ResourceProduct } from "../types";
 import { Empty, Loading } from "./PortalUi";
+import { usePortalToast } from "./PortalToast";
 import type { portalApi } from "./portalApi";
 
 type Api = ReturnType<typeof portalApi>;
@@ -126,6 +127,25 @@ const CAT: Record<string, { label: string; icon: typeof Pill }> = {
 
 function ProductCard({ product: p, accent }: { product: ResourceProduct; accent: string }) {
   const cat = CAT[p.category] ?? CAT.otro;
+  const toast = usePortalToast();
+  const [copied, setCopied] = useState(false);
+
+  // Copiar el código SIN abrir el enlace del producto (la tarjeta entera es un <a>).
+  async function copyCode(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!p.discount_code) return;
+    try {
+      await navigator.clipboard.writeText(p.discount_code);
+      setCopied(true);
+      toast.push(`Código ${p.discount_code} copiado — pégalo al pagar`);
+      window.setTimeout(() => setCopied(false), 2500);
+    } catch {
+      // Sin permiso de portapapeles (raro): el código está visible igualmente.
+      toast.push(`Usa el código ${p.discount_code} al pagar`);
+    }
+  }
+
   return (
     <a
       href={p.url}
@@ -143,6 +163,27 @@ function ProductCard({ product: p, accent }: { product: ResourceProduct; accent:
         <p className="mt-0.5 line-clamp-2 text-xs font-semibold leading-snug">{p.title}</p>
         {p.description && (
           <p className="mt-1 line-clamp-2 text-[11px] leading-snug opacity-60">{p.description}</p>
+        )}
+        {p.discount_code && (
+          // Código de descuento del coach: DESTACADO y copiable de un toque —
+          // el cliente lo pega al pagar en la web de la marca.
+          <button
+            type="button"
+            onClick={copyCode}
+            aria-label={`Copiar código de descuento ${p.discount_code}`}
+            className="tap mt-2 flex items-center justify-between gap-1 rounded-lg px-2 py-1.5 text-left"
+            style={{ background: `color-mix(in srgb, ${accent} 12%, transparent)` }}
+          >
+            <span className="min-w-0">
+              <span className="block text-[9px] uppercase tracking-wide opacity-60">Tu código de descuento</span>
+              <span className="block truncate text-[11px] font-bold tracking-wide" style={{ color: accent }}>
+                {p.discount_code}
+              </span>
+            </span>
+            {copied
+              ? <Check size={13} className="shrink-0" style={{ color: accent }} />
+              : <Copy size={13} className="shrink-0 opacity-60" />}
+          </button>
         )}
         <span
           className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold"

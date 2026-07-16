@@ -381,6 +381,7 @@ def build_resources(db: Session, client: Client) -> dict:
         "url": p.url,
         "category": p.category,
         "image_url": product_image_url(p),
+        "discount_code": p.discount_code,
     } for p in product_rows]
 
     return {"exercise_videos": videos, "products": products}

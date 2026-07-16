@@ -79,13 +79,14 @@ type Draft = {
   description: string;
   image_url: string;        // URL de imagen EXTERNA (input de texto)
   uploaded: string | null;  // URL servida de una imagen YA subida (modo edición)
+  discount_code: string;    // código de la marca (afiliación) — opcional
   active: boolean;
   file: File | null;        // nueva imagen elegida, pendiente de subir al guardar
 };
 
 const EMPTY_DRAFT: Draft = {
   id: null, title: "", category: "suplemento", url: "", description: "",
-  image_url: "", uploaded: null, active: true, file: null,
+  image_url: "", uploaded: null, discount_code: "", active: true, file: null,
 };
 
 function ProductsManager() {
@@ -112,6 +113,7 @@ function ProductsManager() {
       // (uploaded) y el input de URL externa queda vacío.
       image_url: p.has_upload ? "" : p.image_url ?? "",
       uploaded: p.has_upload ? p.image_url : null,
+      discount_code: p.discount_code ?? "",
       active: p.active, file: null,
     });
 
@@ -141,6 +143,7 @@ function ProductsManager() {
         url: draft.url.trim(),
         description: draft.description.trim() || null,
         image_url: draft.image_url.trim() || null,
+        discount_code: draft.discount_code.trim() || null,
       };
       // Con imagen SUBIDA y el campo de URL externa vacío (el editor lo muestra
       // vacío a propósito), el PATCH NO manda image_url: conserva la URL externa
@@ -291,6 +294,14 @@ function ProductsManager() {
                       <cat.icon size={12} /> {cat.label}
                     </span>
                     {!p.active && <span className="text-[11px] text-zinc-500">· Oculto</span>}
+                    {p.discount_code && (
+                      <span
+                        className="rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide"
+                        style={{ background: "color-mix(in srgb, var(--brand-accent) 12%, transparent)", color: "var(--brand-accent)" }}
+                      >
+                        código {p.discount_code}
+                      </span>
+                    )}
                   </div>
                   <p className="truncate text-sm font-semibold text-zinc-100">{p.title}</p>
                   <a
@@ -471,6 +482,20 @@ function ProductEditor({
               placeholder="https://tienda.com/producto"
               onChange={(e) => setDraft({ ...draft, url: e.target.value })}
             />
+          </div>
+          <div>
+            <span className="label">Código de descuento (opcional)</span>
+            <input
+              className="input mt-1"
+              value={draft.discount_code}
+              placeholder="CLASSICQUICE"
+              maxLength={40}
+              onChange={(e) => setDraft({ ...draft, discount_code: e.target.value })}
+            />
+            <p className="mt-1 text-[11px] text-zinc-500">
+              El cliente lo verá destacado en su portal con un botón de copiar, para
+              usarlo al pagar en la web de la marca (descuento de tu afiliación).
+            </p>
           </div>
           <div>
             <span className="label">…o URL de imagen externa (opcional)</span>

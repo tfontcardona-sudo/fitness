@@ -261,6 +261,27 @@ def test_start_client_resources_without_training(client, auth):
     assert any(p["id"] == prod["id"] for p in res["products"])
 
 
+def test_discount_code_fluye_a_coach_y_portal(client, auth):
+    """El código de afiliación (p. ej. ESN) se guarda, sale en el listado del
+    coach y llega al portal para que el cliente lo copie al pagar."""
+    _, token, _ = _client_with_published_plan(client, auth)
+    prod = client.post("/api/resources/products", headers=auth, json={
+        "title": "ESN Designer Whey", "url": "https://www.esn.com/products/designer-whey",
+        "category": "suplemento", "description": "10% de descuento + regalos con el código",
+        "discount_code": "  CLASSICQUICE  ",  # se recorta al guardar
+    }).json()
+    assert prod["discount_code"] == "CLASSICQUICE"
+
+    res = client.get(f"/api/p/{token}/resources").json()
+    mine = next(p for p in res["products"] if p["id"] == prod["id"])
+    assert mine["discount_code"] == "CLASSICQUICE"
+
+    # Vaciar el código en un PATCH lo borra (string vacío → None).
+    r = client.patch(f"/api/resources/products/{prod['id']}", headers=auth,
+                     json={"discount_code": "   "})
+    assert r.json()["discount_code"] is None
+
+
 def test_patch_product_null_explicito_no_rompe(client, auth):
     """PATCH con null explícito en campos NOT NULL = 'sin cambio' (422/500 no)."""
     prod = client.post("/api/resources/products", headers=auth, json={
