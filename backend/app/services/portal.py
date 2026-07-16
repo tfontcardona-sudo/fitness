@@ -236,6 +236,9 @@ def _resolve_session(db: Session, sess: dict, load_factor: float = 1.0) -> dict:
             "start_weight_hint_kg": e.get("start_weight_hint_kg"),
             "week_weight_hint_kg": week_hint,
             "technique_cue": e.get("technique_cue"),
+            # Indicaciones personalizadas del coach (capacidades/limitaciones):
+            # el portal las destaca junto al ejercicio.
+            "coach_notes": e.get("coach_notes"),
             "video_url": ex.video_url if ex and ex.video_url else None,
         })
     return {

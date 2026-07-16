@@ -347,6 +347,19 @@ export function PortalWorkout({ api, brand, periodStatus = null }: {
                   <ExHistory sessions={history[String(ex.exercise_id)]} accent={brand.color_secondary} />
                 ) : null}
                 {ex.technique_cue && <p className="mt-2 text-xs opacity-50">💡 {ex.technique_cue}</p>}
+                {ex.coach_notes && (
+                  // Indicación PERSONAL del coach (limitaciones/adaptación): destacada,
+                  // no un consejo genérico — el cliente debe leerla antes de la serie.
+                  <p
+                    className="mt-2 rounded-lg px-3 py-2 text-xs font-medium"
+                    style={{
+                      background: `color-mix(in srgb, ${brand.color_primary} 10%, transparent)`,
+                      color: brand.color_primary,
+                    }}
+                  >
+                    Indicación de tu coach: <span className="font-normal opacity-90">{ex.coach_notes}</span>
+                  </p>
+                )}
               </div>
             );
           })}

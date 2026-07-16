@@ -83,6 +83,10 @@ class PlannedExercise(BaseModel):
     progression_rule: str
     technique_cue: str
     biomech_cue: str
+    # Indicaciones PERSONALIZADAS del coach para ESTE cliente (capacidades,
+    # limitaciones, adaptación del ejercicio). Las escribe el coach en el editor;
+    # el cliente las ve destacadas en su portal y en el PDF.
+    coach_notes: str | None = None
 
 
 class TrainingSession(BaseModel):

@@ -85,6 +85,8 @@ export interface PlannedExercise {
   progression_rule: string;
   technique_cue: string;
   biomech_cue: string;
+  /** Indicaciones personalizadas del coach (capacidades/limitaciones). */
+  coach_notes?: string | null;
 }
 
 export interface TrainingSession {
@@ -519,6 +521,8 @@ export interface TodayExercise {
   /** Peso sugerido AJUSTADO a la semana del mesociclo en curso (a 0,5 kg). */
   week_weight_hint_kg?: number | null;
   technique_cue: string | null;
+  /** Indicaciones personalizadas del coach para este cliente. */
+  coach_notes?: string | null;
   video_url: string | null;
 }
 

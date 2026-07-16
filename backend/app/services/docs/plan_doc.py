@@ -468,9 +468,15 @@ def generate_plan_doc(
         rows = []
         for ex in sess.get("exercises", []):
             name = exercise_names.get(ex.get("exercise_id"), f"Ejercicio #{ex.get('exercise_id','')}")
+            cue = ex.get("technique_cue", "") or ""
+            # Indicaciones personalizadas del coach: en la misma celda, en línea
+            # aparte y con etiqueta, para que el cliente no se las salte.
+            notes = (ex.get("coach_notes") or "").strip()
+            if notes:
+                cue = f"{cue}\nIndicación para ti: {notes}" if cue else f"Indicación para ti: {notes}"
             rows.append([
                 name, f"{ex.get('sets','')}×{ex.get('rep_range','')}", f"RIR {ex.get('rir','')}",
-                f"{ex.get('rest_sec','')}s", ex.get("technique_cue", "") or "",
+                f"{ex.get('rest_sec','')}s", cue,
             ])
         if rows:
             clean_table(doc, ["Ejercicio", "Series", "RIR", "Descanso", "Clave técnica"], rows,
