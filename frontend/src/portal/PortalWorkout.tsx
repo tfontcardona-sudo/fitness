@@ -314,13 +314,18 @@ export function PortalWorkout({ api, brand, periodStatus = null }: {
                       </span>
                     )}
                     {ex.video_url && (
+                      // Botón VISIBLE (píldora con etiqueta), no un icono suelto:
+                      // el cliente debe ver de un vistazo que el ejercicio tiene vídeo.
                       <a
                         href={ex.video_url} target="_blank" rel="noreferrer"
-                        aria-label={`Vídeo de ${ex.name}`}
-                        className="tap flex items-center justify-center"
-                        style={{ color: brand.color_secondary }}
+                        aria-label={`Ver vídeo de ${ex.name}`}
+                        className="tap flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1.5 text-[11px] font-semibold"
+                        style={{
+                          background: `color-mix(in srgb, ${brand.color_secondary} 14%, transparent)`,
+                          color: brand.color_secondary,
+                        }}
                       >
-                        <PlayCircle size={18} />
+                        <PlayCircle size={14} /> Vídeo
                       </a>
                     )}
                   </div>
