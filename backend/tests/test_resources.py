@@ -335,6 +335,12 @@ def test_url_legada_invalida_no_rompe_listado_ni_portal(client, auth):
     res = client.get(f"/api/p/{token}/resources")
     assert res.status_code == 200
     assert all(v["exercise_id"] != eid for v in res.json()["exercise_videos"])
+    # La pestaña Entreno del cliente tampoco recibe la URL legada como href.
+    tr = client.get(f"/api/p/{token}/training").json()
+    for sess in tr["sessions"]:
+        for e in sess["exercises"]:
+            if e["exercise_id"] == eid:
+                assert e["video_url"] is None
 
 
 def test_upload_image_validation(client, auth):

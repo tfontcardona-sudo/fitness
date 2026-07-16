@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Save, X, Plus, Trash2, Utensils, Dumbbell, Target, AlertTriangle, Check } from "lucide-react";
+import { Save, X, Plus, Trash2, Utensils, Dumbbell, Target, AlertTriangle, Check, ChevronDown, ChevronUp, PlayCircle } from "lucide-react";
 import { api } from "../lib/api";
 import {
   GOAL_RULES, goalTargets, kcalOf, macrosForKcal, macrosScaledToKcal, rescaledFrom, redistributeMacro,
@@ -11,6 +11,10 @@ import { GOAL_LABEL } from "../lib/format";
 import { CANONICAL_MEALS, mealKeysFromNames, restructureNutritionMeals } from "../lib/meals";
 import { Spinner, useToast } from "./ui";
 import type { ClientOut, ExerciseOut } from "../types";
+
+let _uidCounter = 0;
+/** Id de fila SOLO del editor (no se persiste): estable ante reorden/borrado. */
+const newUid = () => `ex-${++_uidCounter}-${Date.now().toString(36)}`;
 
 interface PlanData {
   id: number;
@@ -41,21 +45,46 @@ export function ClientPlanEditor({
   refWeightKg?: number | null;
 }) {
   const toast = useToast();
-  const [draft, setDraft] = useState(() => ({
-    nutrition: structuredClone(plan.nutrition ?? {}),
-    training: structuredClone(plan.training ?? {}),
-    education: structuredClone(plan.education ?? {}),
-  }));
+  const [draft, setDraft] = useState(() => {
+    const d = {
+      nutrition: structuredClone(plan.nutrition ?? {}),
+      training: structuredClone(plan.training ?? {}),
+      education: structuredClone(plan.education ?? {}),
+    };
+    // Identidad ESTABLE por fila de ejercicio (_uid, solo del editor; se quita
+    // al guardar): con key por índice, reordenar/quitar dejaba el <details>
+    // abierto en la POSICIÓN y el formulario pasaba a mostrar OTRO ejercicio.
+    for (const sess of d.training?.sessions ?? []) {
+      for (const ex of sess?.exercises ?? []) {
+        if (ex && ex._uid == null) ex._uid = newUid();
+      }
+    }
+    return d;
+  });
   const [saving, setSaving] = useState(false);
-  // Biblioteca de ejercicios (activos) para el desplegable de variantes y el
-  // botón "+ Añadir ejercicio": agrupada por patrón/grupo muscular al elegir.
+  // Biblioteca de ejercicios para el desplegable de variantes, el vídeo y el
+  // botón "+ Añadir ejercicio". CON archivados: un plan puede referenciar un
+  // ejercicio ya archivado y su nombre/vídeo deben seguir resolviéndose; el
+  // desplegable y el alta, en cambio, solo ofrecen ACTIVOS.
   const [library, setLibrary] = useState<ExerciseOut[]>([]);
   useEffect(() => {
-    api.listExercises().then(setLibrary).catch(() => {});
+    api.listExercises({ include_archived: true }).then(setLibrary).catch(() => {});
   }, []);
+  const activeLibrary = library.filter((e) => !e.archived);
 
   function mutate(fn: (d: typeof draft) => void) {
     setDraft((d) => { const n = structuredClone(d); fn(n); return n; });
+  }
+
+  /** Reordena un ejercicio dentro de su sesión (↑/↓): el portal y el documento
+   *  siguen el orden del array, así que el cambio llega tal cual al cliente. */
+  function moveExercise(si: number, ei: number, dir: -1 | 1) {
+    mutate((d) => {
+      const list = d.training.sessions?.[si]?.exercises;
+      const j = ei + dir;
+      if (!Array.isArray(list) || j < 0 || j >= list.length) return;
+      [list[ei], list[j]] = [list[j], list[ei]];
+    });
   }
 
   // ---- Nutrición ENCADENADA: tocar una pieza recalcula todo lo demás ------
@@ -211,9 +240,16 @@ export function ClientPlanEditor({
     if (saving) return;
     setSaving(true);
     try {
+      // El _uid es identidad de fila SOLO del editor: fuera antes de persistir.
+      const training = structuredClone(draft.training);
+      for (const sess of training?.sessions ?? []) {
+        for (const ex of sess?.exercises ?? []) {
+          if (ex && "_uid" in ex) delete ex._uid;
+        }
+      }
       const r = await api.updatePlan(plan.id, {
         nutrition_json: draft.nutrition,
-        training_json: draft.training,
+        training_json: training,
         education_json: draft.education,
       });
       toast.push("Plan actualizado");
@@ -487,27 +523,65 @@ export function ClientPlanEditor({
             </div>
             <Area label="Calentamiento" value={s.warmup ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].warmup = v))} />
             {(s.exercises ?? []).map((ex: any, ei: number) => (
-              <details key={ei} className="mt-2 rounded-md p-2" style={{ background: "var(--surface)" }}>
-                <summary className="flex cursor-pointer items-center justify-between">
-                  <span className="text-xs font-medium text-zinc-200">
+              <details key={ex._uid ?? ei} className="mt-2 rounded-md p-2" style={{ background: "var(--surface)" }}>
+                <summary className="flex cursor-pointer items-center justify-between gap-2">
+                  <span className="min-w-0 text-xs font-medium text-zinc-200">
                     {exMap[ex.exercise_id] ?? library.find((e) => e.id === ex.exercise_id)?.canonical_name ?? `Ejercicio #${ex.exercise_id}`}
                     <span className="ml-1.5 font-normal text-zinc-500">
                       {ex.sets}×{ex.rep_range}{ex.rir ? ` · RIR ${ex.rir}` : ""}
                     </span>
                   </span>
-                  <button
-                    onClick={(e) => { e.preventDefault(); mutate((d) => d.training.sessions[si].exercises.splice(ei, 1)); }}
-                    aria-label="Quitar ejercicio"
-                    className="text-zinc-500 hover:text-red-400"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  {/* Acciones del ejercicio: reordenar (↑/↓), ver su vídeo y quitar.
+                      preventDefault: que el clic no pliegue/despliegue el detalle. */}
+                  <span className="flex shrink-0 items-center gap-1">
+                    <button
+                      onClick={(e) => { e.preventDefault(); moveExercise(si, ei, -1); }}
+                      disabled={ei === 0}
+                      aria-label="Subir ejercicio"
+                      className="p-0.5 text-zinc-500 hover:text-zinc-200 disabled:opacity-25"
+                    >
+                      <ChevronUp size={15} />
+                    </button>
+                    <button
+                      onClick={(e) => { e.preventDefault(); moveExercise(si, ei, 1); }}
+                      disabled={ei === (s.exercises ?? []).length - 1}
+                      aria-label="Bajar ejercicio"
+                      className="p-0.5 text-zinc-500 hover:text-zinc-200 disabled:opacity-25"
+                    >
+                      <ChevronDown size={15} />
+                    </button>
+                    {(() => {
+                      // Mismo re-filtro que el portal: una URL legada sin http(s)
+                      // no puede abrirse (se resolvería como ruta de la app o algo peor).
+                      const rawUrl = (library.find((e) => e.id === ex.exercise_id)?.video_url ?? "").trim();
+                      const video = /^https?:\/\//i.test(rawUrl) ? rawUrl : null;
+                      return video ? (
+                        <button
+                          onClick={(e) => { e.preventDefault(); window.open(video, "_blank", "noopener"); }}
+                          aria-label="Ver vídeo del ejercicio"
+                          title="Ver vídeo del ejercicio"
+                          className="p-0.5 hover:opacity-80"
+                          style={{ color: "var(--brand-accent-2)" }}
+                        >
+                          <PlayCircle size={15} />
+                        </button>
+                      ) : null;
+                    })()}
+                    <button
+                      onClick={(e) => { e.preventDefault(); mutate((d) => d.training.sessions[si].exercises.splice(ei, 1)); }}
+                      aria-label="Quitar ejercicio"
+                      className="p-0.5 text-zinc-500 hover:text-red-400"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </span>
                 </summary>
                 {/* Cambiar el ejercicio por una variante o por otro del mismo
                     grupo muscular — o por cualquiera de la biblioteca. */}
                 <div className="mt-2">
                   <ExerciseSelect
-                    library={library}
+                    library={activeLibrary}
+                    lookup={library}
                     value={ex.exercise_id}
                     fallbackName={exMap[ex.exercise_id] ?? `Ejercicio #${ex.exercise_id}`}
                     onChange={(id) => mutate((d) => (d.training.sessions[si].exercises[ei].exercise_id = id))}
@@ -533,12 +607,13 @@ export function ClientPlanEditor({
             <button
               type="button"
               className="btn btn-ghost mt-2 !px-3 !py-1.5 text-xs"
-              disabled={library.length === 0}
+              disabled={activeLibrary.length === 0}
               onClick={() =>
                 mutate((d) => {
                   const list = d.training.sessions[si].exercises ?? (d.training.sessions[si].exercises = []);
                   list.push({
-                    exercise_id: library[0]?.id ?? 1,
+                    _uid: newUid(),
+                    exercise_id: activeLibrary[0]?.id ?? 1,
                     sets: 3, rep_range: "8-12", rir: "2", tempo: null, rest_sec: 90,
                     start_weight_hint_kg: null,
                     progression_rule: "Añade repeticiones hasta el tope del rango y sube peso",
@@ -578,6 +653,16 @@ function NumberInput({ value, onChange, className, ariaLabel, min = 0, max, step
   className?: string; ariaLabel?: string; min?: number; max?: number; step?: number;
 }) {
   const [raw, setRaw] = useState<string | null>(null);
+  // Último valor EMITIDO por este input: si el prop `value` cambia sin pasar por
+  // aquí (reorden de filas, recálculo, tope aplicado), el buffer local ya no
+  // representa este campo y se descarta — en Safari/Firefox un clic en un botón
+  // no roba el foco, así que el blur no llega y el buffer sobreviviría pegado
+  // al ejercicio equivocado.
+  const lastEmitted = useRef<number | null | undefined>(undefined);
+  if (raw !== null && lastEmitted.current !== undefined && value !== lastEmitted.current) {
+    setRaw(null);
+    lastEmitted.current = undefined;
+  }
   const shown = raw !== null ? raw : (value ?? "");
   return (
     <input
@@ -586,11 +671,13 @@ function NumberInput({ value, onChange, className, ariaLabel, min = 0, max, step
       onChange={(e) => {
         const s = e.target.value;
         setRaw(s);
-        if (s === "") { onChange(null); return; }
+        if (s === "") { lastEmitted.current = null; onChange(null); return; }
         const n = Number(s);
-        onChange(Number.isFinite(n) ? n : null);
+        const emitted = Number.isFinite(n) ? n : null;
+        lastEmitted.current = emitted;
+        onChange(emitted);
       }}
-      onBlur={() => setRaw(null)}
+      onBlur={() => { setRaw(null); lastEmitted.current = undefined; }}
       className={className}
       aria-label={ariaLabel}
     />
@@ -673,14 +760,15 @@ function Area({ label, value, onChange }: { label: string; value: string; onChan
 /** Desplegable para CAMBIAR el ejercicio: primero las VARIANTES (mismo patrón de
  *  movimiento), luego el MISMO GRUPO MUSCULAR y por último el resto de la
  *  biblioteca — así el coach ajusta la rutina a su antojo sin salir del editor. */
-function ExerciseSelect({ library, value, fallbackName, onChange }: {
-  library: ExerciseOut[];
+function ExerciseSelect({ library, lookup, value, fallbackName, onChange }: {
+  library: ExerciseOut[];          // solo ACTIVOS: candidatos del desplegable
+  lookup?: ExerciseOut[];          // biblioteca completa (con archivados) para resolver el actual
   value: number;
   fallbackName: string;
   onChange: (id: number) => void;
 }) {
   const byName = (a: ExerciseOut, b: ExerciseOut) => a.canonical_name.localeCompare(b.canonical_name);
-  const cur = library.find((e) => e.id === value);
+  const cur = (lookup ?? library).find((e) => e.id === value);
   const variants = cur
     ? library.filter((e) => e.id !== value && e.movement_pattern === cur.movement_pattern).sort(byName)
     : [];
