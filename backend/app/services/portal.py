@@ -21,6 +21,10 @@ from sqlalchemy.orm import Session
 
 from app.models import BrandConfig, Client, DailyLog, Exercise, Period, Plan, RecommendedProduct
 
+# URLs que el portal renderiza como href/src: solo esquema http(s) — los datos
+# LEGADOS (guardados antes del validador de entrada) se re-filtran aquí.
+_HTTP_RE = re.compile(r"^https?://", re.IGNORECASE)
+
 DAY_LABELS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 DAY_SLUGS = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
 
@@ -226,6 +230,9 @@ def _resolve_session(db: Session, sess: dict, load_factor: float = 1.0) -> dict:
     exercises = []
     for e in sess.get("exercises", []):
         ex = lib.get(e["exercise_id"])
+        # Vídeo del ejercicio re-filtrado (solo http(s)): los datos legados sin
+        # esquema no pueden llegar al portal como href.
+        video = ((ex.video_url or "").strip()) if ex else ""
         hint = e.get("start_weight_hint_kg")
         week_hint = (round(hint * load_factor * 2) / 2) if isinstance(hint, (int, float)) else None
         exercises.append({
@@ -239,7 +246,7 @@ def _resolve_session(db: Session, sess: dict, load_factor: float = 1.0) -> dict:
             # Indicaciones personalizadas del coach (capacidades/limitaciones):
             # el portal las destaca junto al ejercicio.
             "coach_notes": e.get("coach_notes"),
-            "video_url": ex.video_url if ex and ex.video_url else None,
+            "video_url": video if _HTTP_RE.match(video) else None,
         })
     return {
         "day": sess.get("day", ""), "name": sess.get("name", ""),
@@ -343,7 +350,6 @@ def build_resources(db: Session, client: Client) -> dict:
                     ordered_ids.append(eid)
     if ordered_ids:
         lib = {ex.id: ex for ex in db.scalars(select(Exercise).where(Exercise.id.in_(ordered_ids)))}
-        http = re.compile(r"^https?://", re.IGNORECASE)
         for eid in ordered_ids:
             ex = lib.get(eid)
             # Re-filtro de URLs aquí también: los datos LEGADOS (guardados antes
@@ -351,7 +357,7 @@ def build_resources(db: Session, client: Client) -> dict:
             # sin esquema http(s) — un vídeo inválido se salta, una imagen
             # inválida cae a la portada derivada.
             video = (ex.video_url or "").strip() if ex else ""
-            if not video or not http.match(video):
+            if not video or not _HTTP_RE.match(video):
                 continue
             image = (ex.image_url or "").strip()
             videos.append({
@@ -359,7 +365,7 @@ def build_resources(db: Session, client: Client) -> dict:
                 "title": ex.canonical_name,
                 "muscle": ex.muscle_primary,
                 "video_url": video,
-                "image_url": (image if http.match(image) else None) or youtube_thumbnail(video),
+                "image_url": (image if _HTTP_RE.match(image) else None) or youtube_thumbnail(video),
                 "technique_notes": ex.technique_notes,
             })
 
@@ -375,6 +381,7 @@ def build_resources(db: Session, client: Client) -> dict:
         "url": p.url,
         "category": p.category,
         "image_url": product_image_url(p),
+        "discount_code": p.discount_code,
     } for p in product_rows]
 
     return {"exercise_videos": videos, "products": products}

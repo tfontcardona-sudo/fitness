@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Mail, Pencil, Save, X, Flag, Copy, Archive } from "lucide-react";
+import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Mail, Pencil, PlayCircle, Save, X, Flag, Copy, Archive } from "lucide-react";
 import { api, getToken } from "../lib/api";
 import { openWhatsApp, planAndFeedbackMessage, planMessage, waPhone, waUrl } from "../lib/whatsapp";
 import { pkg } from "../lib/packages";
@@ -56,6 +56,8 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
   const byEmail = info.delivery === "email";
   const [plan, setPlan] = useState<PlanData | null>(null);
   const [exMap, setExMap] = useState<Record<number, string>>({});
+  // Vídeo de cada ejercicio (biblioteca): botón directo en la rutina.
+  const [exVideo, setExVideo] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -88,8 +90,16 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
       .then(([plans, exs, pds]) => {
         if (!alive) return;
         const map: Record<number, string> = {};
-        exs.forEach((e) => (map[e.id] = e.canonical_name));
+        const vids: Record<number, string> = {};
+        exs.forEach((e) => {
+          map[e.id] = e.canonical_name;
+          // Solo URLs http(s): una legada sin esquema se renderizaría como
+          // ruta relativa de la app (mismo re-filtro que el portal).
+          const v = (e.video_url ?? "").trim();
+          if (/^https?:\/\//i.test(v)) vids[e.id] = v;
+        });
         setExMap(map);
+        setExVideo(vids);
         setPeriods(pds);
         setAllPlans(plans);
         if (plans.length) setPlan(normalize(plans[0])); // [0] = versión más reciente
@@ -828,6 +838,20 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
                           {ex.tempo ? ` · tempo ${ex.tempo}` : ""}
                           {ex.start_weight_hint_kg != null ? ` · ~${ex.start_weight_hint_kg} kg` : ""}
                         </span>
+                        {exVideo[ex.exercise_id] && (
+                          <a
+                            href={exVideo[ex.exercise_id]}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            aria-label={`Ver vídeo de ${exName(ex.exercise_id)}`}
+                            title="Ver vídeo del ejercicio"
+                            className="ml-1.5 inline-flex translate-y-[2px] hover:opacity-80"
+                            style={{ color: "var(--brand-accent-2)" }}
+                          >
+                            <PlayCircle size={14} />
+                          </a>
+                        )}
                       </summary>
                       {hasDetail && (
                         <div className="mt-1.5 space-y-0.5 border-t pt-1.5 pl-1 text-zinc-500" style={{ borderColor: "var(--line)" }}>

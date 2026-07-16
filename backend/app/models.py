@@ -344,6 +344,9 @@ class RecommendedProduct(Base):
     )
     image_path: Mapped[str | None] = mapped_column(String(500))  # imagen subida (storage)
     image_url: Mapped[str | None] = mapped_column(String(500))   # o URL externa
+    # Código de descuento del coach para esa marca (afiliación, p. ej. ESN):
+    # el cliente lo copia en el portal y lo usa al pagar en la web de la marca.
+    discount_code: Mapped[str | None] = mapped_column(String(40))
     active: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default=text("true"), nullable=False
     )

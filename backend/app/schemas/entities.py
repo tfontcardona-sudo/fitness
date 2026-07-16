@@ -291,17 +291,28 @@ class BrandConfigOut(BrandConfigIn):
 ProductCategory = Literal["suplemento", "material", "otro"]
 
 
+def _clean_discount_code(v: str | None) -> str | None:
+    """Recorta espacios; vacío → None (permite 'borrar' el código en un PATCH)."""
+    if v is None:
+        return None
+    v = v.strip()
+    return v or None
+
+
 class RecommendedProductIn(BaseModel):
     title: str = Field(min_length=1, max_length=160)
     description: str | None = Field(default=None, max_length=300)
     url: str = Field(min_length=3, max_length=500)
     category: ProductCategory = "suplemento"
     image_url: str | None = Field(default=None, max_length=500)  # URL externa (opcional)
+    # Código de descuento de la marca (afiliación): visible y copiable en el portal.
+    discount_code: str | None = Field(default=None, max_length=40)
     active: bool = True
     # sort_order NO se pide al crear: el alta añade al final; se reordena por PATCH.
 
     _v_url = field_validator("url")(_http_url_required)
     _v_image = field_validator("image_url")(_http_url_or_none)
+    _v_code = field_validator("discount_code")(_clean_discount_code)
 
 
 class RecommendedProductUpdate(BaseModel):
@@ -310,11 +321,13 @@ class RecommendedProductUpdate(BaseModel):
     url: str | None = Field(default=None, min_length=3, max_length=500)
     category: ProductCategory | None = None
     image_url: str | None = Field(default=None, max_length=500)
+    discount_code: str | None = Field(default=None, max_length=40)
     active: bool | None = None
     sort_order: int | None = Field(default=None, ge=0, le=100000)
 
     _v_url = field_validator("url")(_http_url_required)
     _v_image = field_validator("image_url")(_http_url_or_none)
+    _v_code = field_validator("discount_code")(_clean_discount_code)
 
 
 class RecommendedProductOut(BaseModel):
@@ -326,6 +339,7 @@ class RecommendedProductOut(BaseModel):
     url: str
     category: str
     image_url: str | None  # URL para mostrar (servida si hay subida, si no la externa)
+    discount_code: str | None
     has_upload: bool        # ¿tiene imagen subida? (el formulario del coach lo necesita)
     active: bool
     sort_order: int
@@ -600,7 +614,7 @@ class ResourceExerciseVideo(BaseModel):
 
 
 class ResourceProduct(BaseModel):
-    """Producto recomendado (título + imagen + enlace)."""
+    """Producto recomendado (título + imagen + enlace + código de descuento)."""
 
     id: int
     title: str
@@ -608,6 +622,7 @@ class ResourceProduct(BaseModel):
     url: str
     category: str
     image_url: str | None = None
+    discount_code: str | None = None
 
 
 class PortalResourcesOut(BaseModel):
