@@ -9,6 +9,7 @@ import {
 } from "../lib/nutritionTargets";
 import { GOAL_LABEL } from "../lib/format";
 import { CANONICAL_MEALS, mealKeysFromNames, restructureNutritionMeals } from "../lib/meals";
+import { useDismiss } from "../lib/useDismiss";
 import { Spinner, useToast } from "./ui";
 import type { ClientOut, ExerciseOut } from "../types";
 
@@ -757,55 +758,131 @@ function Area({ label, value, onChange }: { label: string; value: string; onChan
   );
 }
 
-/** Desplegable para CAMBIAR el ejercicio: primero las VARIANTES (mismo patrón de
- *  movimiento), luego el MISMO GRUPO MUSCULAR y por último el resto de la
- *  biblioteca — así el coach ajusta la rutina a su antojo sin salir del editor. */
+/** Selector de ejercicio con BUSCADOR y agrupado por GRUPO MUSCULAR: primero las
+ *  VARIANTES (mismo patrón de movimiento) y después toda la biblioteca separada
+ *  por músculo (orden alfabético). Teclear filtra por nombre o por músculo — el
+ *  coach encuentra y cambia cualquier ejercicio en segundos. */
 function ExerciseSelect({ library, lookup, value, fallbackName, onChange }: {
-  library: ExerciseOut[];          // solo ACTIVOS: candidatos del desplegable
+  library: ExerciseOut[];          // solo ACTIVOS: candidatos del selector
   lookup?: ExerciseOut[];          // biblioteca completa (con archivados) para resolver el actual
   value: number;
   fallbackName: string;
   onChange: (id: number) => void;
 }) {
-  const byName = (a: ExerciseOut, b: ExerciseOut) => a.canonical_name.localeCompare(b.canonical_name);
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const boxRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  useDismiss(boxRef, () => setOpen(false), open); // fuera/ESC → se cierra
+
+  // Al abrir: buscador limpio y con el foco puesto (a teclear directamente).
+  useEffect(() => {
+    if (open) {
+      setQ("");
+      searchRef.current?.focus();
+    }
+  }, [open]);
+
   const cur = (lookup ?? library).find((e) => e.id === value);
+  const currentName = cur?.canonical_name ?? fallbackName;
+
+  const norm = (s: string) =>
+    (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const nq = norm(q.trim());
+  const matches = (e: ExerciseOut) =>
+    !nq || norm(e.canonical_name).includes(nq) || norm(e.muscle_primary).includes(nq);
+  const byName = (a: ExerciseOut, b: ExerciseOut) => a.canonical_name.localeCompare(b.canonical_name);
+
+  // Variantes (mismo patrón) arriba del todo; el resto, POR GRUPO MUSCULAR.
   const variants = cur
-    ? library.filter((e) => e.id !== value && e.movement_pattern === cur.movement_pattern).sort(byName)
+    ? library.filter((e) => e.id !== value && e.movement_pattern === cur.movement_pattern && matches(e)).sort(byName)
     : [];
-  const sameMuscle = cur
-    ? library
-        .filter((e) => e.id !== value && e.movement_pattern !== cur.movement_pattern && e.muscle_primary === cur.muscle_primary)
-        .sort(byName)
-    : [];
-  const shown = new Set([value, ...variants.map((e) => e.id), ...sameMuscle.map((e) => e.id)]);
-  const rest = library.filter((e) => !shown.has(e.id)).sort(byName);
+  const variantIds = new Set(variants.map((e) => e.id));
+  const byMuscle = new Map<string, ExerciseOut[]>();
+  for (const e of library) {
+    if (e.id === value || variantIds.has(e.id) || !matches(e)) continue;
+    const g = e.muscle_primary || "otros";
+    if (!byMuscle.has(g)) byMuscle.set(g, []);
+    byMuscle.get(g)!.push(e);
+  }
+  const groups = [...byMuscle.entries()]
+    .map(([g, list]) => [g, list.sort(byName)] as const)
+    .sort((a, b) => a[0].localeCompare(b[0]));
+  const total = variants.length + groups.reduce((s, [, l]) => s + l.length, 0);
+
+  function pick(id: number) {
+    onChange(id);
+    setOpen(false);
+  }
+
+  const GroupHeader = ({ text }: { text: string }) => (
+    <div
+      className="sticky top-0 z-[1] px-3 py-1 text-[10px] font-bold uppercase tracking-wider"
+      style={{ background: "var(--surface-raised)", color: "var(--brand-accent-2)" }}
+    >
+      {text}
+    </div>
+  );
+  const Item = ({ e }: { e: ExerciseOut }) => (
+    <button
+      type="button"
+      onClick={() => pick(e.id)}
+      className="block w-full truncate px-3 py-1.5 text-left text-xs text-zinc-200 hover:bg-zinc-500/10"
+    >
+      {e.canonical_name}
+    </button>
+  );
+
   return (
-    <label className="block">
-      <span className="mb-0.5 block text-xs text-zinc-500">Ejercicio (elige variante o cámbialo)</span>
-      <select className="input w-full" value={value} onChange={(e) => onChange(Number(e.target.value))}>
-        <option value={value}>{cur ? cur.canonical_name : fallbackName}</option>
-        {variants.length > 0 && (
-          <optgroup label="Variantes — mismo patrón de movimiento">
-            {variants.map((e) => (
-              <option key={e.id} value={e.id}>{e.canonical_name}</option>
+    <div ref={boxRef} className="relative block">
+      <span className="mb-0.5 block text-xs text-zinc-500">Ejercicio (busca y cámbialo)</span>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="input flex w-full items-center justify-between gap-2 text-left"
+      >
+        <span className="truncate">{currentName}</span>
+        <ChevronDown size={14} className={`shrink-0 text-zinc-500 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div
+          className="absolute left-0 right-0 z-20 mt-1 overflow-hidden rounded-lg border shadow-xl"
+          style={{ background: "var(--surface)", borderColor: "var(--line-strong)" }}
+        >
+          <div className="border-b p-2" style={{ borderColor: "var(--line)" }}>
+            <input
+              ref={searchRef}
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Buscar por nombre o músculo…"
+              aria-label="Buscar ejercicio"
+              className="input w-full !py-1.5 text-xs"
+            />
+          </div>
+          <div className="max-h-64 overflow-y-auto overscroll-contain" role="listbox">
+            {variants.length > 0 && (
+              <>
+                <GroupHeader text="Variantes — mismo patrón" />
+                {variants.map((e) => <Item key={e.id} e={e} />)}
+              </>
+            )}
+            {groups.map(([g, list]) => (
+              <div key={g}>
+                <GroupHeader text={g} />
+                {list.map((e) => <Item key={e.id} e={e} />)}
+              </div>
             ))}
-          </optgroup>
-        )}
-        {sameMuscle.length > 0 && (
-          <optgroup label={`Mismo grupo muscular (${cur?.muscle_primary ?? ""})`}>
-            {sameMuscle.map((e) => (
-              <option key={e.id} value={e.id}>{e.canonical_name}</option>
-            ))}
-          </optgroup>
-        )}
-        {rest.length > 0 && (
-          <optgroup label="Resto de la biblioteca">
-            {rest.map((e) => (
-              <option key={e.id} value={e.id}>{e.canonical_name} · {e.muscle_primary}</option>
-            ))}
-          </optgroup>
-        )}
-      </select>
-    </label>
+            {total === 0 && (
+              <p className="px-3 py-3 text-xs text-zinc-500">
+                Sin resultados para «{q}».
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
