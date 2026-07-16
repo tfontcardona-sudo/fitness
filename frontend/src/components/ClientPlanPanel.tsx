@@ -818,7 +818,7 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
               {s.warmup && <p className="mt-1 text-xs text-zinc-500"><b>Calentamiento:</b> {s.warmup}</p>}
               <div className="mt-2 space-y-1.5">
                 {(s.exercises ?? []).map((ex: any, j: number) => {
-                  const hasDetail = ex.progression_rule || ex.technique_cue || ex.biomech_cue;
+                  const hasDetail = ex.progression_rule || ex.technique_cue || ex.biomech_cue || ex.coach_notes;
                   return (
                     <details key={j} className="rounded-md p-2 text-xs" style={{ background: "var(--surface)" }}>
                       <summary className="cursor-pointer">
@@ -834,6 +834,11 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
                           {ex.progression_rule && <p><b className="text-zinc-400">Progresión:</b> {ex.progression_rule}</p>}
                           {ex.technique_cue && <p><b className="text-zinc-400">Técnica:</b> {ex.technique_cue}</p>}
                           {ex.biomech_cue && <p><b className="text-zinc-400">Biomecánica:</b> {ex.biomech_cue}</p>}
+                          {ex.coach_notes && (
+                            <p style={{ color: "var(--brand-accent)" }}>
+                              <b>Indicaciones personalizadas:</b> {ex.coach_notes}
+                            </p>
+                          )}
                         </div>
                       )}
                     </details>

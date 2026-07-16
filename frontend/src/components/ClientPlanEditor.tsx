@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Save, X, Plus, Trash2, Utensils, Dumbbell, Target, AlertTriangle, Check } from "lucide-react";
 import { api } from "../lib/api";
 import {
@@ -10,7 +10,7 @@ import {
 import { GOAL_LABEL } from "../lib/format";
 import { CANONICAL_MEALS, mealKeysFromNames, restructureNutritionMeals } from "../lib/meals";
 import { Spinner, useToast } from "./ui";
-import type { ClientOut } from "../types";
+import type { ClientOut, ExerciseOut } from "../types";
 
 interface PlanData {
   id: number;
@@ -47,6 +47,12 @@ export function ClientPlanEditor({
     education: structuredClone(plan.education ?? {}),
   }));
   const [saving, setSaving] = useState(false);
+  // Biblioteca de ejercicios (activos) para el desplegable de variantes y el
+  // botón "+ Añadir ejercicio": agrupada por patrón/grupo muscular al elegir.
+  const [library, setLibrary] = useState<ExerciseOut[]>([]);
+  useEffect(() => {
+    api.listExercises().then(setLibrary).catch(() => {});
+  }, []);
 
   function mutate(fn: (d: typeof draft) => void) {
     setDraft((d) => { const n = structuredClone(d); fn(n); return n; });
@@ -484,7 +490,7 @@ export function ClientPlanEditor({
               <details key={ei} className="mt-2 rounded-md p-2" style={{ background: "var(--surface)" }}>
                 <summary className="flex cursor-pointer items-center justify-between">
                   <span className="text-xs font-medium text-zinc-200">
-                    {exMap[ex.exercise_id] ?? `Ejercicio #${ex.exercise_id}`}
+                    {exMap[ex.exercise_id] ?? library.find((e) => e.id === ex.exercise_id)?.canonical_name ?? `Ejercicio #${ex.exercise_id}`}
                     <span className="ml-1.5 font-normal text-zinc-500">
                       {ex.sets}×{ex.rep_range}{ex.rir ? ` · RIR ${ex.rir}` : ""}
                     </span>
@@ -497,6 +503,16 @@ export function ClientPlanEditor({
                     <Trash2 size={14} />
                   </button>
                 </summary>
+                {/* Cambiar el ejercicio por una variante o por otro del mismo
+                    grupo muscular — o por cualquiera de la biblioteca. */}
+                <div className="mt-2">
+                  <ExerciseSelect
+                    library={library}
+                    value={ex.exercise_id}
+                    fallbackName={exMap[ex.exercise_id] ?? `Ejercicio #${ex.exercise_id}`}
+                    onChange={(id) => mutate((d) => (d.training.sessions[si].exercises[ei].exercise_id = id))}
+                  />
+                </div>
                 <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
                   <Num label="Series" value={ex.sets} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].sets = v ?? 0))} />
                   <Text label="Reps" value={ex.rep_range ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].rep_range = v))} />
@@ -505,8 +521,34 @@ export function ClientPlanEditor({
                 </div>
                 <Text label="Progresión" value={ex.progression_rule ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].progression_rule = v))} />
                 <Text label="Cue técnica" value={ex.technique_cue ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].technique_cue = v))} />
+                <Area
+                  label="Indicaciones personalizadas (capacidades, limitaciones, adaptación)"
+                  value={ex.coach_notes ?? ""}
+                  onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].coach_notes = v.trim() ? v : null))}
+                />
               </details>
             ))}
+            {/* Rutina personalizable: añade el ejercicio que quieras y luego
+                cámbialo con el desplegable de variantes/grupo muscular. */}
+            <button
+              type="button"
+              className="btn btn-ghost mt-2 !px-3 !py-1.5 text-xs"
+              disabled={library.length === 0}
+              onClick={() =>
+                mutate((d) => {
+                  const list = d.training.sessions[si].exercises ?? (d.training.sessions[si].exercises = []);
+                  list.push({
+                    exercise_id: library[0]?.id ?? 1,
+                    sets: 3, rep_range: "8-12", rir: "2", tempo: null, rest_sec: 90,
+                    start_weight_hint_kg: null,
+                    progression_rule: "Añade repeticiones hasta el tope del rango y sube peso",
+                    technique_cue: "", biomech_cue: "", coach_notes: null,
+                  });
+                })
+              }
+            >
+              <Plus size={14} /> Añadir ejercicio
+            </button>
             <Area label="Vuelta a la calma" value={s.cooldown ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].cooldown = v))} />
           </details>
         ))}
@@ -624,6 +666,58 @@ function Area({ label, value, onChange }: { label: string; value: string; onChan
     <label className="mt-2 block">
       <span className="mb-0.5 block text-xs text-zinc-500">{label}</span>
       <textarea value={value ?? ""} onChange={(e) => onChange(e.target.value)} rows={2} className="input w-full resize-y" />
+    </label>
+  );
+}
+
+/** Desplegable para CAMBIAR el ejercicio: primero las VARIANTES (mismo patrón de
+ *  movimiento), luego el MISMO GRUPO MUSCULAR y por último el resto de la
+ *  biblioteca — así el coach ajusta la rutina a su antojo sin salir del editor. */
+function ExerciseSelect({ library, value, fallbackName, onChange }: {
+  library: ExerciseOut[];
+  value: number;
+  fallbackName: string;
+  onChange: (id: number) => void;
+}) {
+  const byName = (a: ExerciseOut, b: ExerciseOut) => a.canonical_name.localeCompare(b.canonical_name);
+  const cur = library.find((e) => e.id === value);
+  const variants = cur
+    ? library.filter((e) => e.id !== value && e.movement_pattern === cur.movement_pattern).sort(byName)
+    : [];
+  const sameMuscle = cur
+    ? library
+        .filter((e) => e.id !== value && e.movement_pattern !== cur.movement_pattern && e.muscle_primary === cur.muscle_primary)
+        .sort(byName)
+    : [];
+  const shown = new Set([value, ...variants.map((e) => e.id), ...sameMuscle.map((e) => e.id)]);
+  const rest = library.filter((e) => !shown.has(e.id)).sort(byName);
+  return (
+    <label className="block">
+      <span className="mb-0.5 block text-xs text-zinc-500">Ejercicio (elige variante o cámbialo)</span>
+      <select className="input w-full" value={value} onChange={(e) => onChange(Number(e.target.value))}>
+        <option value={value}>{cur ? cur.canonical_name : fallbackName}</option>
+        {variants.length > 0 && (
+          <optgroup label="Variantes — mismo patrón de movimiento">
+            {variants.map((e) => (
+              <option key={e.id} value={e.id}>{e.canonical_name}</option>
+            ))}
+          </optgroup>
+        )}
+        {sameMuscle.length > 0 && (
+          <optgroup label={`Mismo grupo muscular (${cur?.muscle_primary ?? ""})`}>
+            {sameMuscle.map((e) => (
+              <option key={e.id} value={e.id}>{e.canonical_name}</option>
+            ))}
+          </optgroup>
+        )}
+        {rest.length > 0 && (
+          <optgroup label="Resto de la biblioteca">
+            {rest.map((e) => (
+              <option key={e.id} value={e.id}>{e.canonical_name} · {e.muscle_primary}</option>
+            ))}
+          </optgroup>
+        )}
+      </select>
     </label>
   );
 }
