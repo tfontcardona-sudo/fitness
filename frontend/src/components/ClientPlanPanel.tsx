@@ -93,7 +93,10 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
         const vids: Record<number, string> = {};
         exs.forEach((e) => {
           map[e.id] = e.canonical_name;
-          if (e.video_url) vids[e.id] = e.video_url;
+          // Solo URLs http(s): una legada sin esquema se renderizaría como
+          // ruta relativa de la app (mismo re-filtro que el portal).
+          const v = (e.video_url ?? "").trim();
+          if (/^https?:\/\//i.test(v)) vids[e.id] = v;
         });
         setExMap(map);
         setExVideo(vids);

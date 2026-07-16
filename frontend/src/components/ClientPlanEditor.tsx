@@ -12,6 +12,10 @@ import { CANONICAL_MEALS, mealKeysFromNames, restructureNutritionMeals } from ".
 import { Spinner, useToast } from "./ui";
 import type { ClientOut, ExerciseOut } from "../types";
 
+let _uidCounter = 0;
+/** Id de fila SOLO del editor (no se persiste): estable ante reorden/borrado. */
+const newUid = () => `ex-${++_uidCounter}-${Date.now().toString(36)}`;
+
 interface PlanData {
   id: number;
   month_index: number;
@@ -41,11 +45,22 @@ export function ClientPlanEditor({
   refWeightKg?: number | null;
 }) {
   const toast = useToast();
-  const [draft, setDraft] = useState(() => ({
-    nutrition: structuredClone(plan.nutrition ?? {}),
-    training: structuredClone(plan.training ?? {}),
-    education: structuredClone(plan.education ?? {}),
-  }));
+  const [draft, setDraft] = useState(() => {
+    const d = {
+      nutrition: structuredClone(plan.nutrition ?? {}),
+      training: structuredClone(plan.training ?? {}),
+      education: structuredClone(plan.education ?? {}),
+    };
+    // Identidad ESTABLE por fila de ejercicio (_uid, solo del editor; se quita
+    // al guardar): con key por índice, reordenar/quitar dejaba el <details>
+    // abierto en la POSICIÓN y el formulario pasaba a mostrar OTRO ejercicio.
+    for (const sess of d.training?.sessions ?? []) {
+      for (const ex of sess?.exercises ?? []) {
+        if (ex && ex._uid == null) ex._uid = newUid();
+      }
+    }
+    return d;
+  });
   const [saving, setSaving] = useState(false);
   // Biblioteca de ejercicios para el desplegable de variantes, el vídeo y el
   // botón "+ Añadir ejercicio". CON archivados: un plan puede referenciar un
@@ -225,9 +240,16 @@ export function ClientPlanEditor({
     if (saving) return;
     setSaving(true);
     try {
+      // El _uid es identidad de fila SOLO del editor: fuera antes de persistir.
+      const training = structuredClone(draft.training);
+      for (const sess of training?.sessions ?? []) {
+        for (const ex of sess?.exercises ?? []) {
+          if (ex && "_uid" in ex) delete ex._uid;
+        }
+      }
       const r = await api.updatePlan(plan.id, {
         nutrition_json: draft.nutrition,
-        training_json: draft.training,
+        training_json: training,
         education_json: draft.education,
       });
       toast.push("Plan actualizado");
@@ -501,7 +523,7 @@ export function ClientPlanEditor({
             </div>
             <Area label="Calentamiento" value={s.warmup ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].warmup = v))} />
             {(s.exercises ?? []).map((ex: any, ei: number) => (
-              <details key={ei} className="mt-2 rounded-md p-2" style={{ background: "var(--surface)" }}>
+              <details key={ex._uid ?? ei} className="mt-2 rounded-md p-2" style={{ background: "var(--surface)" }}>
                 <summary className="flex cursor-pointer items-center justify-between gap-2">
                   <span className="min-w-0 text-xs font-medium text-zinc-200">
                     {exMap[ex.exercise_id] ?? library.find((e) => e.id === ex.exercise_id)?.canonical_name ?? `Ejercicio #${ex.exercise_id}`}
@@ -529,7 +551,10 @@ export function ClientPlanEditor({
                       <ChevronDown size={15} />
                     </button>
                     {(() => {
-                      const video = library.find((e) => e.id === ex.exercise_id)?.video_url;
+                      // Mismo re-filtro que el portal: una URL legada sin http(s)
+                      // no puede abrirse (se resolvería como ruta de la app o algo peor).
+                      const rawUrl = (library.find((e) => e.id === ex.exercise_id)?.video_url ?? "").trim();
+                      const video = /^https?:\/\//i.test(rawUrl) ? rawUrl : null;
                       return video ? (
                         <button
                           onClick={(e) => { e.preventDefault(); window.open(video, "_blank", "noopener"); }}
@@ -587,6 +612,7 @@ export function ClientPlanEditor({
                 mutate((d) => {
                   const list = d.training.sessions[si].exercises ?? (d.training.sessions[si].exercises = []);
                   list.push({
+                    _uid: newUid(),
                     exercise_id: activeLibrary[0]?.id ?? 1,
                     sets: 3, rep_range: "8-12", rir: "2", tempo: null, rest_sec: 90,
                     start_weight_hint_kg: null,
@@ -627,6 +653,16 @@ function NumberInput({ value, onChange, className, ariaLabel, min = 0, max, step
   className?: string; ariaLabel?: string; min?: number; max?: number; step?: number;
 }) {
   const [raw, setRaw] = useState<string | null>(null);
+  // Último valor EMITIDO por este input: si el prop `value` cambia sin pasar por
+  // aquí (reorden de filas, recálculo, tope aplicado), el buffer local ya no
+  // representa este campo y se descarta — en Safari/Firefox un clic en un botón
+  // no roba el foco, así que el blur no llega y el buffer sobreviviría pegado
+  // al ejercicio equivocado.
+  const lastEmitted = useRef<number | null | undefined>(undefined);
+  if (raw !== null && lastEmitted.current !== undefined && value !== lastEmitted.current) {
+    setRaw(null);
+    lastEmitted.current = undefined;
+  }
   const shown = raw !== null ? raw : (value ?? "");
   return (
     <input
@@ -635,11 +671,13 @@ function NumberInput({ value, onChange, className, ariaLabel, min = 0, max, step
       onChange={(e) => {
         const s = e.target.value;
         setRaw(s);
-        if (s === "") { onChange(null); return; }
+        if (s === "") { lastEmitted.current = null; onChange(null); return; }
         const n = Number(s);
-        onChange(Number.isFinite(n) ? n : null);
+        const emitted = Number.isFinite(n) ? n : null;
+        lastEmitted.current = emitted;
+        onChange(emitted);
       }}
-      onBlur={() => setRaw(null)}
+      onBlur={() => { setRaw(null); lastEmitted.current = undefined; }}
       className={className}
       aria-label={ariaLabel}
     />
