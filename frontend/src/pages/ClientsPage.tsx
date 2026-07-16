@@ -8,7 +8,7 @@ import { EmptyState, PageLoader, StatusBadge, useToast } from "../components/ui"
 import { Avatar } from "./DashboardPage";
 import { GOAL_LABEL, goalReviewDue, relativeDays } from "../lib/format";
 import { onboardingMessage, openWhatsApp, portalAccessMessage, waPhone } from "../lib/whatsapp";
-import { BILLING_PERIODS, PACKAGES, PACKAGE_ORDER, billingLabel, pkg } from "../lib/packages";
+import { BILLING_PERIODS, PACKAGES, PACKAGE_ORDER, pkg } from "../lib/packages";
 import type { BillingPeriod, PackageTier } from "../types";
 
 /** CARPETAS de la cartera según el punto del ciclo (no solo el estado crudo):

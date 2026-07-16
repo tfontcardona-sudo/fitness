@@ -13,14 +13,17 @@
 Dos formas de cobrar, ya funcionando en el código:
 
 1. **Registro personal (self-serve)** — página pública
-   `https://app.dqrassessories.com/planes`: el cliente elige plan, paga en
-   Stripe y **el sistema crea su ficha solo** (marcada como "Pagado"), le pide
-   el teléfono en la pantalla de pago y le envía por email el acceso a su
+   `https://app.dqrassessories.com/planes`: el cliente elige la **duración**
+   (mensual / trimestral / semestral) y el plan, paga en Stripe y **el sistema
+   crea su ficha solo** (marcada como "Pagado", con su plan y duración), le
+   pide el teléfono en la pantalla de pago y le envía por email el acceso a su
    portal para rellenar la anamnesis.
-2. **Alta manual** — el coach crea el cliente en la web y le manda su **enlace
-   de pago** (botón verde "Enlace de pago" en la ficha del cliente; se copia al
-   portapapeles y desaparece cuando ya ha pagado). Al pagar, la ficha pasa a
-   "Pagado".
+2. **Alta manual** — el coach crea el cliente en la web (eligiendo plan **y
+   duración**) y le manda su **enlace de pago** (botón verde "Enlace de pago"
+   en la ficha; se copia al portapapeles y desaparece cuando ya ha pagado). El
+   enlace cobra el plan × duración de ESA ficha; la duración se puede cambiar
+   en la fila "Duración" de la ficha antes de enviarlo. Al pagar, la ficha
+   pasa a "Pagado".
 
 Piezas del código (por si hay que tocar algo):
 
@@ -39,16 +42,23 @@ pero **no bloquea** el trabajo del coach. (No confundir con la carpeta
 "Pendientes" de la lista de clientes, que se refiere a clientes sin
 planificación, no al pago.)
 
-Lo ÚNICO que falta para que funcione: rellenar estas 6 variables del `.env`
-del servidor (hoy están vacías):
+Lo ÚNICO que falta para que funcione: rellenar estas 12 variables del `.env`
+del servidor (hoy están vacías). Cada plan tiene **3 precios** (uno por
+duración): 1M = mensual · 3M = trimestral · 6M = semestral.
 
 ```ini
-STRIPE_SECRET_KEY=      # paso 3
-STRIPE_WEBHOOK_SECRET=  # paso 4
-STRIPE_PRICE_START=     # paso 2
-STRIPE_PRICE_FULL=      # paso 2
-STRIPE_PRICE_PRO=       # paso 2
-STRIPE_MODE=payment     # paso 2 (payment = pago único · subscription = cuota mensual)
+STRIPE_SECRET_KEY=       # paso 3
+STRIPE_WEBHOOK_SECRET=   # paso 4
+STRIPE_PRICE_START_1M=   # paso 2 (los 9 precios)
+STRIPE_PRICE_START_3M=
+STRIPE_PRICE_START_6M=
+STRIPE_PRICE_FULL_1M=
+STRIPE_PRICE_FULL_3M=
+STRIPE_PRICE_FULL_6M=
+STRIPE_PRICE_PRO_1M=
+STRIPE_PRICE_PRO_3M=
+STRIPE_PRICE_PRO_6M=
+STRIPE_MODE=payment      # paso 2 (payment = pago único · subscription = cuota recurrente)
 ```
 
 ---
@@ -81,17 +91,21 @@ Con el conmutador en **modo de prueba**:
    - `Plan Start`
    - `Plan Full`
    - `Plan Pro`
-3. En cada producto, añade su **precio** en EUR y elige el tipo. Aquí hay una
-   **decisión importante** — los 3 precios deben ser del MISMO tipo:
-   - **Pago único** ("One-off"): el cliente paga una vez. → en el `.env`:
+3. A cada producto añádele **3 precios** en EUR, uno por duración (en el
+   producto: "Añadir otro precio"): **mensual**, **trimestral** y
+   **semestral**. Ponles una descripción/apodo para distinguirlos. Y una
+   **decisión importante** — los 9 precios deben ser del MISMO tipo:
+   - **Pago único** ("One-off"): el cliente paga esa cantidad una vez (tú le
+     reenvías el enlace cuando toque renovar). → en el `.env`:
      `STRIPE_MODE=payment`.
-   - **Recurrente mensual** ("Recurring / Monthly"): Stripe le cobra cada mes
-     solo. → en el `.env`: `STRIPE_MODE=subscription`.
+   - **Recurrente** ("Recurring"): Stripe cobra solo cada período — para eso
+     crea cada precio con su intervalo: mensual = cada 1 mes, trimestral =
+     cada 3 meses, semestral = cada 6 meses. → `STRIPE_MODE=subscription`.
 
    > Nota si eliges suscripción: el sistema marca la ficha como "Pagado" con el
-   > **primer** cobro. Los cobros mensuales siguientes los gestiona Stripe
-   > (avisos, reintentos, cancelaciones se ven en su Dashboard); la app no
-   > cambia el estado con cada renovación.
+   > **primer** cobro. Las renovaciones las gestiona Stripe (avisos,
+   > reintentos, cancelaciones se ven en su Dashboard); la app no cambia el
+   > estado con cada renovación.
 4. **Métodos de pago — importante**: en Dashboard → **Configuración** →
    **Pagos** → **Métodos de pago**, deja activos solo los **inmediatos**
    (tarjeta, Apple Pay / Google Pay, Link). **No actives SEPA, transferencia
@@ -100,14 +114,20 @@ Con el conmutador en **modo de prueba**:
    con un método diferido el cliente pagaría pero su ficha nunca se marcaría
    como "Pagado" (habría que ampliar el código para escuchar el evento
    `checkout.session.async_payment_succeeded`).
-5. Abre cada producto, pincha en su precio y **copia el ID del precio**: empieza
-   por `price_...` (¡el del PRECIO, no el `prod_...` del producto!). Apunta los
-   tres:
+5. Abre cada producto, pincha en CADA precio y **copia el ID del precio**:
+   empieza por `price_...` (¡el del PRECIO, no el `prod_...` del producto!).
+   Apunta los nueve:
 
    ```
-   Start → price_________________
-   Full  → price_________________
-   Pro   → price_________________
+   Start mensual    → price________________
+   Start trimestral → price________________
+   Start semestral  → price________________
+   Full  mensual    → price________________
+   Full  trimestral → price________________
+   Full  semestral  → price________________
+   Pro   mensual    → price________________
+   Pro   trimestral → price________________
+   Pro   semestral  → price________________
    ```
 
 ---
@@ -152,14 +172,21 @@ cd /root/fitness
 nano .env
 ```
 
-Rellena las 6 líneas de la sección `# --- Pagos (Stripe) ---`:
+Rellena las 12 líneas de la sección `# --- Pagos (Stripe) ---` (1M = mensual ·
+3M = trimestral · 6M = semestral):
 
 ```ini
 STRIPE_SECRET_KEY=sk_test_...      # paso 3
 STRIPE_WEBHOOK_SECRET=whsec_...    # paso 4
-STRIPE_PRICE_START=price_...       # paso 2
-STRIPE_PRICE_FULL=price_...        # paso 2
-STRIPE_PRICE_PRO=price_...         # paso 2
+STRIPE_PRICE_START_1M=price_...    # los 9 precios del paso 2
+STRIPE_PRICE_START_3M=price_...
+STRIPE_PRICE_START_6M=price_...
+STRIPE_PRICE_FULL_1M=price_...
+STRIPE_PRICE_FULL_3M=price_...
+STRIPE_PRICE_FULL_6M=price_...
+STRIPE_PRICE_PRO_1M=price_...
+STRIPE_PRICE_PRO_3M=price_...
+STRIPE_PRICE_PRO_6M=price_...
 STRIPE_MODE=payment                # o subscription, según el paso 2
 ```
 
@@ -199,8 +226,10 @@ futura (p. ej. 12/34), CVC cualquiera (p. ej. 123), cualquier nombre y CP.
 **Flujo A — registro personal:**
 
 1. Abre `https://app.dqrassessories.com/planes` (mejor en ventana de incógnito).
-2. Elige un plan → te lleva a la pantalla de pago de Stripe → paga con la
-   tarjeta de prueba (pon un email tuyo real para ver el correo de acceso).
+2. Elige una duración (mensual/trimestral/semestral) y un plan → te lleva a la
+   pantalla de pago de Stripe (comprueba que el precio es el de esa
+   combinación) → paga con la tarjeta de prueba (pon un email tuyo real para
+   ver el correo de acceso).
 3. Debe llevarte a la página **"¡Pago recibido!"** (`/pago-ok`).
 4. Entra como coach → **Clientes**: debe existir el cliente nuevo con estado de
    pago **"Pagado"** y su plan correcto. Si el email está activo, en tu buzón
@@ -208,7 +237,9 @@ futura (p. ej. 12/34), CVC cualquiera (p. ej. 123), cualquier nombre y CP.
 
 **Flujo B — alta manual:**
 
-1. Crea un cliente de prueba en la web (con su plan Start/Full/Pro).
+1. Crea un cliente de prueba en la web (eligiendo su plan Start/Full/Pro y su
+   duración; la duración se puede cambiar luego en la fila "Duración" de la
+   ficha).
 2. En su ficha, pulsa el botón verde **"Enlace de pago"** (se copia al
    portapapeles) y ábrelo en otra pestaña → paga con la tarjeta de prueba.
 3. Vuelve a su ficha: el estado debe pasar a **"Pagado"** y el botón verde
@@ -236,10 +267,10 @@ Cuando el modo de prueba funcione entero y Stripe haya **activado** la cuenta
 1. Quita el conmutador de **modo de prueba** en el Dashboard.
 2. **Repite en modo real** los pasos 2, 3 y 4 (los datos de test NO se copian
    solos; en muchos productos Stripe ofrece el botón "copiar al modo activo"):
-   - los 3 productos con sus precios → 3 `price_...` nuevos,
+   - los 3 productos con sus 3 precios cada uno → 9 `price_...` nuevos,
    - la clave secreta real → `sk_live_...`,
    - el webhook con la MISMA URL → `whsec_...` nuevo.
-3. Sustituye los 5 valores en el `.env` del servidor (los `price_...`, la
+3. Sustituye los 11 valores en el `.env` del servidor (los 9 `price_...`, la
    `sk_live_...` y el `whsec_...`; `STRIPE_MODE` no cambia) y reinicia:
 
    ```bash
@@ -279,7 +310,7 @@ Cuando el modo de prueba funcione entero y Stripe haya **activado** la cuenta
 | Síntoma | Causa / arreglo |
 |---------|-----------------|
 | Al pulsar un plan: "Stripe no está configurado" | Falta `STRIPE_SECRET_KEY` en el `.env` (o no se reinició la API). |
-| "Falta el precio de Stripe del plan X" | La variable `STRIPE_PRICE_X` está vacía o con el `prod_...` en vez del `price_...`. |
+| "Falta el precio de Stripe del plan X" | La variable `STRIPE_PRICE_{PLAN}_{1M/3M/6M}` de esa combinación está vacía o con el `prod_...` en vez del `price_...`. |
 | El cliente paga pero nunca sale "Pagado" | Webhook: URL mal escrita, evento `checkout.session.completed` sin marcar, o `STRIPE_WEBHOOK_SECRET` vacío/equivocado. Mira las entregas del webhook en Stripe. |
 | Webhook responde "Firma del webhook inválida" | `whsec_...` de otro endpoint u otro modo (test/real cruzados). Copia el secreto del endpoint correcto. |
 | Error de Stripe al crear la sesión con `STRIPE_MODE=subscription` | Los precios se crearon como pago único (o al revés). El tipo del precio y `STRIPE_MODE` deben coincidir. |
