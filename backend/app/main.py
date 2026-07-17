@@ -41,12 +41,12 @@ async def lifespan(app: FastAPI):
 
     # Aviso si Stripe está a medias (clave puesta pero faltan precios/webhook).
     if settings.stripe_enabled:
-        _missing = [n for n, v in (
-            ("STRIPE_WEBHOOK_SECRET", settings.stripe_webhook_secret),
-            ("STRIPE_PRICE_START", settings.stripe_price_start),
-            ("STRIPE_PRICE_FULL", settings.stripe_price_full),
-            ("STRIPE_PRICE_PRO", settings.stripe_price_pro),
-        ) if not v]
+        _missing = ["STRIPE_WEBHOOK_SECRET"] if not settings.stripe_webhook_secret else []
+        _missing += [
+            f"STRIPE_PRICE_{t.upper()}_{p.upper()}"
+            for t in ("start", "full", "pro") for p in ("1m", "3m", "6m")
+            if not settings.stripe_price_for(t, p)
+        ]
         if _missing:
             logging.getLogger("app.stripe").warning(
                 "STRIPE INCOMPLETO: los pagos pueden fallar. Falta: %s.", ", ".join(_missing))

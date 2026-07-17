@@ -1,7 +1,7 @@
 # Documento de traspaso — Fitness System (DQ / David Quiceno)
 
 > Objetivo de este doc: que otra sesión de IA (Fable u otra) pueda **continuar el trabajo sin perder contexto**.
-> Última actualización: 2026-07-16 (7ª). Autor del último tramo: Claude — (a) coherencia nutricional TOTAL: `reconcile_nutrition` (kcal ≡ macros 4/4/9 ≡ suma por comida) en generación IA, adaptación y guardado del editor + espejo bit-exacto en el frontend; comando `python -m app.maintenance.reconcile_plans` para planes antiguos. (b) Selector de estructura de comidas en Planificación (regenera con IA) Y en el editor (reparte al instante las MISMAS kcal/macros; sincroniza `client.meal_schedule` al guardar). (c) Pestaña Recursos del portal (vídeos de ejercicios + productos, rama del socio) revisada con workflow adversarial: 13 fallos confirmados y corregidos (PNG paleta corrupto, bomba de píxeles, ExerciseOut que rompía con URLs legadas, PATCH con null → 500, unlink antes del commit, host de YouTube por urlsplit, migración 0017 de remache…). (d) Stripe integrado (checkout + webhook `checkout.session.completed` + página /planes; claves en `.env`).
+> Última actualización: 2026-07-16 (7ª). Autor del último tramo: Claude — (a) coherencia nutricional TOTAL: `reconcile_nutrition` (kcal ≡ macros 4/4/9 ≡ suma por comida) en generación IA, adaptación y guardado del editor + espejo bit-exacto en el frontend; comando `python -m app.maintenance.reconcile_plans` para planes antiguos. (b) Selector de estructura de comidas en Planificación (regenera con IA) Y en el editor (reparte al instante las MISMAS kcal/macros; sincroniza `client.meal_schedule` al guardar). (c) Pestaña Recursos del portal (vídeos de ejercicios + productos, rama del socio) revisada con workflow adversarial: 13 fallos confirmados y corregidos (PNG paleta corrupto, bomba de píxeles, ExerciseOut que rompía con URLs legadas, PATCH con null → 500, unlink antes del commit, host de YouTube por urlsplit, migración 0017 de remache…). (d) Stripe integrado (checkout + webhook `checkout.session.completed` + página /planes; claves en `.env`). **(8ª, mismo día):** pagos por duración contratada — mensual/trimestral/semestral (9 precios `STRIPE_PRICE_{PLAN}_{1M,3M,6M}`, `clients.billing_period` + migración 0019, selector en /planes y en el alta, fila "Duración" editable en la ficha) + guía operativa **`STRIPE.md`** paso a paso (verificada contra el código). Ver §10.p.
 > Anterior (5ª): edición manual de nutrición íntegra por objetivo (inputs sin dígito pegado, "cuadrar por objetivo", kcal como ancla) + suite a 108/108.
 > Anterior (4ª): nivel de actividad diaria/NEAT en la anamnesis + TDEE; pautas de diabetes y tiroides en la IA; calidad de PDFs y textos IA (tono serio sin emojis, tablas que paginan sin recortar, escape del texto libre en emails).
 > **PRODUCCIÓN:** el sistema está desplegado en `https://app.dqrassessories.com` (VPS Hetzner
@@ -1123,6 +1123,35 @@ un cliente sale el correo desde David (usuario+contraseña+enlace+CTA) y se sell
 `portal_access_sent_at`; la subida posterior de anamnesis NO reenvía (0 correos
 extra); con correo desactivado el alta sigue OK (`disabled`, sin sellar) y con
 SMTP caído el alta sigue OK (`failed`); email duplicado → 409.
+
+## 10.p Tramo 2026-07-16 (8ª) — Stripe: duración contratada + guía STRIPE.md
+
+El coach vende cada plan (Start/Full/Pro) en 3 duraciones: **mensual,
+trimestral y semestral** → 3 × 3 = **9 precios de Stripe**.
+
+- **`.env`**: `STRIPE_PRICE_{START|FULL|PRO}_{1M|3M|6M}` (sustituyen a los 3
+  `STRIPE_PRICE_*` antiguos). `config.stripe_price_for(tier, period)`;
+  `main.py` avisa al arrancar de CUÁL de los 9 falta.
+- **`clients.billing_period`** ("1m"|"3m"|"6m", default "1m") — migración
+  **0019** (idempotente; la 0018 la ocupó el código de descuento de Recursos).
+  En `ClientCreate/Update/Out` (`BillingPeriod` en entities.py y types.ts).
+- **Checkout**: `create_checkout_url(db, tier, period, client=…)` valida ambos
+  y mete `billing_period` en la metadata; el webhook la guarda en la ficha
+  (alta manual Y self-serve; la duración pagada de verdad manda).
+- **`/planes`**: conmutador Mensual/Trimestral/Semestral común a las 3
+  tarjetas (`period` en `POST /api/public/checkout`).
+- **Alta manual**: selector de duración en el modal; `GET /api/pay/{token}`
+  cobra el plan × duración de la ficha; fila **"Duración"** editable en el
+  perfil (patrón PlanRow) y el botón verde indica qué cobra.
+- **Tests**: `test_stripe.py` cubre `billing_period` en metadata (3/3 OK);
+  suite completa comparada contra `main` en worktree → mismos fallos
+  preexistentes, 0 regresiones. `tsc` + `vite build` OK.
+- **`STRIPE.md`** (raíz): guía operativa completa para el coach (cuenta,
+  9 precios, webhook, .env del VPS, pruebas con tarjeta 4242, paso a live,
+  problemas típicos). Verificada afirmación-por-afirmación contra el código
+  con un workflow de 5 agentes adversariales (53 checks, 6 correcciones).
+  PENDIENTE del usuario: crear productos/precios en Stripe y rellenar el .env
+  del VPS (estaba en ello guiado por el chat).
 
 ## 11. Mapa rápido de archivos tocados en el último tramo
 

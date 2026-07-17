@@ -18,7 +18,7 @@ import { ClientFeedbackTab } from "../components/ClientFeedbackTab";
 import { ClientHistoryTab } from "../components/ClientHistoryTab";
 import { ClientTrackingTab } from "../components/ClientTrackingTab";
 import { ageFrom, GOAL_LABEL, LEVEL_LABEL, PLACE_LABEL } from "../lib/format";
-import { PACKAGES, PACKAGE_ORDER, pkg } from "../lib/packages";
+import { BILLING_PERIODS, PACKAGES, PACKAGE_ORDER, billingLabel, pkg } from "../lib/packages";
 
 type Tab = "resumen" | "anamnesis" | "planificacion" | "seguimiento" | "feedback" | "historial";
 
@@ -241,6 +241,7 @@ export default function ClientProfilePage() {
 
             <dl className="mt-5 space-y-2.5 text-sm">
               <PlanRow client={client} onSaved={reload} />
+              <BillingRow client={client} onSaved={reload} />
               <div className="flex items-center justify-between gap-2">
                 <dt className="text-zinc-500">Pago</dt>
                 <dd>
@@ -301,7 +302,9 @@ export default function ClientProfilePage() {
               <CreditCard size={22} className="shrink-0" />
               <span className="min-w-0">
                 <span className="block text-sm font-semibold">Enlace de pago</span>
-                <span className="block text-xs opacity-80">copiar y enviar al cliente para que pague su plan</span>
+                <span className="block text-xs opacity-80">
+                  copiar y enviar al cliente — cobra su plan {billingLabel(client.billing_period).toLowerCase()}
+                </span>
               </span>
             </button>
           )}
@@ -440,6 +443,47 @@ function PlanRow({ client, onSaved }: { client: ClientOut; onSaved: () => void }
         >
           {PACKAGE_ORDER.map((t) => (
             <option key={t} value={t}>{PACKAGES[t].short}</option>
+          ))}
+        </select>
+      </dd>
+    </div>
+  );
+}
+
+/** Duración contratada (mensual/trimestral/semestral): decide el precio de
+ *  Stripe que abre el enlace de pago del cliente. Cambiarla aquí y reenviar el
+ *  enlace basta para cobrar la duración nueva. */
+function BillingRow({ client, onSaved }: { client: ClientOut; onSaved: () => void }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+
+  async function change(next: string) {
+    if (busy || next === client.billing_period) return;
+    setBusy(true);
+    try {
+      await api.updateClient(client.id, { billing_period: next as ClientOut["billing_period"] });
+      toast.push(`Duración cambiada a ${billingLabel(next)} — su enlace de pago ya cobra ese precio`);
+      onSaved();
+    } catch {
+      toast.push("No se pudo cambiar la duración", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <dt className="text-zinc-500">Duración</dt>
+      <dd>
+        <select
+          aria-label="Cambiar duración del plan del cliente"
+          disabled={busy}
+          value={client.billing_period}
+          onChange={(e) => change(e.target.value)}
+          className="input h-7 w-auto px-1.5 py-0 text-xs"
+        >
+          {BILLING_PERIODS.map((b) => (
+            <option key={b.value} value={b.value}>{b.label}</option>
           ))}
         </select>
       </dd>

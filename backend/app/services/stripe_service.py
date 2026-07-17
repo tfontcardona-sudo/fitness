@@ -25,6 +25,8 @@ from app.services.audit import log_event
 _log = logging.getLogger("app.stripe")
 
 _TIERS = {"start", "full", "pro"}
+# Duraciones contratables de cada plan: mensual, trimestral, semestral.
+_PERIODS = {"1m", "3m", "6m"}
 
 
 class StripeError(RuntimeError):
@@ -38,8 +40,10 @@ def _stripe():
     return stripe
 
 
-def create_checkout_url(db: Session, tier: str, *, client: Client | None = None) -> str:
-    """Crea una Checkout Session de Stripe para `tier` y devuelve su URL de pago.
+def create_checkout_url(db: Session, tier: str, period: str = "1m", *,
+                        client: Client | None = None) -> str:
+    """Crea una Checkout Session de Stripe para `tier` × `period` (duración
+    mensual/trimestral/semestral) y devuelve su URL de pago.
 
     Si `client` viene dado (alta manual), el pago queda asociado a ese cliente
     (client_id en metadata). Si no (registro personal), Stripe recoge email,
@@ -48,14 +52,17 @@ def create_checkout_url(db: Session, tier: str, *, client: Client | None = None)
         raise StripeError("Stripe no está configurado (falta STRIPE_SECRET_KEY en el .env).")
     if tier not in _TIERS:
         raise StripeError(f"Plan desconocido: {tier}")
-    price = settings.stripe_price_for(tier)
+    if period not in _PERIODS:
+        raise StripeError(f"Duración desconocida: {period}")
+    price = settings.stripe_price_for(tier, period)
     if not price:
         raise StripeError(
-            f"Falta el precio de Stripe del plan {tier} (STRIPE_PRICE_{tier.upper()} en el .env).")
+            f"Falta el precio de Stripe del plan {tier} {period} "
+            f"(STRIPE_PRICE_{tier.upper()}_{period.upper()} en el .env).")
 
     stripe = _stripe()
     base = settings.public_base_url
-    metadata = {"tier": tier}
+    metadata = {"tier": tier, "billing_period": period}
     extra: dict = {}
     if client is not None:
         metadata["client_id"] = str(client.id)
@@ -79,21 +86,26 @@ def create_checkout_url(db: Session, tier: str, *, client: Client | None = None)
 
 # --------------------------------------------------------------- webhook ----
 
-def _mark_paid(db: Session, client: Client) -> None:
+def _mark_paid(db: Session, client: Client, period: str | None = None) -> None:
+    # La duración que el cliente pagó de verdad manda sobre la de la ficha.
+    if period in _PERIODS and client.billing_period != period:
+        client.billing_period = period
     if client.payment_status != "paid":
         client.payment_status = "paid"
         client.paid_at = datetime.now(timezone.utc)
-        log_event(db, "client", client.id, "payment_received", {"tier": client.package_tier})
+        log_event(db, "client", client.id, "payment_received",
+                  {"tier": client.package_tier, "billing_period": client.billing_period})
 
 
 def _create_selfserve_client(db: Session, *, name: str, email: str,
-                             phone: str | None, tier: str) -> Client:
+                             phone: str | None, tier: str, period: str | None) -> Client:
     """Crea el perfil de un cliente que se ha registrado y pagado por su cuenta."""
     client = Client(
         full_name=(name or email.split("@")[0]).strip(),
         email=email,
         phone=phone,
         package_tier=tier if tier in _TIERS else "full",
+        billing_period=period if period in _PERIODS else "1m",
         status="onboarding",
         auto_pilot=settings.auto_pilot_default,
         portal_token="pendiente",
@@ -103,8 +115,11 @@ def _create_selfserve_client(db: Session, *, name: str, email: str,
     db.add(client)
     db.flush()
     client.portal_token = new_portal_token(client.id)
-    log_event(db, "client", client.id, "client_created", {"by": "stripe", "tier": client.package_tier})
-    log_event(db, "client", client.id, "payment_received", {"tier": client.package_tier})
+    log_event(db, "client", client.id, "client_created",
+              {"by": "stripe", "tier": client.package_tier,
+               "billing_period": client.billing_period})
+    log_event(db, "client", client.id, "payment_received",
+              {"tier": client.package_tier, "billing_period": client.billing_period})
     db.commit()
     db.refresh(client)
 
@@ -142,6 +157,7 @@ def handle_webhook(db: Session, payload: bytes, sig_header: str | None) -> dict:
 
     meta = session.get("metadata") or {}
     tier = meta.get("tier")
+    period = meta.get("billing_period")
     client_id = meta.get("client_id") or session.get("client_reference_id")
 
     # Alta manual: marcar ese cliente como pagado.
@@ -150,7 +166,7 @@ def handle_webhook(db: Session, payload: bytes, sig_header: str | None) -> dict:
         if not client:
             _log.warning("Webhook Stripe: cliente %s no encontrado", client_id)
             return {"error": "client_not_found", "client_id": client_id}
-        _mark_paid(db, client)
+        _mark_paid(db, client, period)
         db.commit()
         return {"marked_paid": client.id}
 
@@ -162,11 +178,11 @@ def handle_webhook(db: Session, payload: bytes, sig_header: str | None) -> dict:
         return {"error": "no_email"}
     existing = db.scalar(select(Client).where(func.lower(Client.email) == email))
     if existing:  # ya existía (o webhook reenviado): idempotente
-        _mark_paid(db, existing)
+        _mark_paid(db, existing, period)
         db.commit()
         return {"marked_paid": existing.id, "existing": True}
 
     client = _create_selfserve_client(
         db, name=details.get("name") or "", email=email,
-        phone=details.get("phone"), tier=tier or "full")
+        phone=details.get("phone"), tier=tier or "full", period=period)
     return {"created": client.id}

@@ -144,9 +144,10 @@ export const api = {
     request<{ status: string; email: string; password: string | null }>(
       "POST", `/clients/${id}/send-portal-access`),
   // Pagos (Stripe)
-  // Registro personal: crea la sesión de pago del plan y devuelve la URL de Stripe.
-  publicCheckout: (tier: string) =>
-    request<{ url: string }>("POST", "/public/checkout", { tier }),
+  // Registro personal: crea la sesión de pago del plan × duración elegidos y
+  // devuelve la URL de Stripe.
+  publicCheckout: (tier: string, period: string) =>
+    request<{ url: string }>("POST", "/public/checkout", { tier, period }),
   // Alta manual: envía por email el mensaje de arranque (pago + anamnesis).
   sendOnboarding: (id: number) =>
     request<{ status: string; email: string }>("POST", `/clients/${id}/send-onboarding`),
