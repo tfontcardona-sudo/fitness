@@ -109,10 +109,13 @@ export function PortalResources({ api, brand, hasTraining = true }: { api: Api; 
             {inPlan.length > 0 && (
               <section className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <Pill size={16} style={{ color: brand.color_primary }} />
+                  <Pill size={16} style={{ color: "#16A34A" }} />
                   <h3 className="text-sm font-semibold">De tu planificación</h3>
                   <span className="rounded-full px-2 py-0.5 text-[10px] font-bold"
-                    style={{ background: `color-mix(in srgb, ${brand.color_primary} 14%, transparent)`, color: brand.color_primary }}>
+                    style={{
+                      background: "rgba(57, 255, 20, 0.14)", color: "#16A34A",
+                      boxShadow: "0 0 8px rgba(57, 255, 20, 0.4)",
+                    }}>
                     pautado
                   </span>
                 </div>
@@ -127,7 +130,7 @@ export function PortalResources({ api, brand, hasTraining = true }: { api: Api; 
               <section className="space-y-3">
                 <div className="flex items-center gap-2">
                   <ShoppingBag size={16} style={{ color: brand.color_secondary }} />
-                  <h3 className="text-sm font-semibold">Productos recomendados</h3>
+                  <h3 className="text-sm font-semibold">Productos seleccionados por {brand.name}</h3>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   {rest.map((p) => (
@@ -195,9 +198,13 @@ function ProductCard({ product: p, accent }: { product: ResourceProduct; accent:
           <cat.icon size={11} />
           {cat.label}
           {p.in_plan && (
+            // Verde NEÓN: este producto está pautado en SU planificación.
             <span className="ml-auto rounded px-1.5 py-0.5 text-[9px] font-bold normal-case tracking-normal"
-              style={{ background: `color-mix(in srgb, ${accent} 14%, transparent)`, color: accent }}>
-              En tu plan
+              style={{
+                background: "rgba(57, 255, 20, 0.14)", color: "#16A34A",
+                boxShadow: "0 0 8px rgba(57, 255, 20, 0.45), inset 0 0 0 1px rgba(57, 255, 20, 0.35)",
+              }}>
+              En tu planificación
             </span>
           )}
         </div>

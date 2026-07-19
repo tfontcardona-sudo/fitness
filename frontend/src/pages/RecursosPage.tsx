@@ -74,7 +74,9 @@ function LinksPageManager() {
   const [code, setCode] = useState("");
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadingPlans, setUploadingPlans] = useState(false);
   const photoRef = useRef<HTMLInputElement>(null);
+  const plansPhotoRef = useRef<HTMLInputElement>(null);
   const publicUrl = `${window.location.origin}/dq`;
 
   useEffect(() => {
@@ -118,6 +120,20 @@ function LinksPageManager() {
       toast.push(e instanceof ApiError ? e.message : "No se pudo subir la foto", "error");
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function uploadPlansPhoto(file: File | undefined) {
+    if (!file || uploadingPlans) return;
+    setUploadingPlans(true);
+    try {
+      const updated = await api.uploadPlansPhoto(file);
+      setBrand(updated);
+      toast.push("Foto de los planes actualizada");
+    } catch (e) {
+      toast.push(e instanceof ApiError ? e.message : "No se pudo subir la foto", "error");
+    } finally {
+      setUploadingPlans(false);
     }
   }
 
@@ -166,6 +182,25 @@ function LinksPageManager() {
         <button className="btn btn-ghost mt-3" disabled={uploading} onClick={() => photoRef.current?.click()}>
           <Upload size={15} className="text-zinc-500" />
           {uploading ? "Subiendo…" : brand.links_photo_path ? "Cambiar foto" : "Subir foto"}
+        </button>
+      </div>
+
+      {/* Segunda foto: fondo de la página de PLANES (a donde va "Trabaja conmigo") */}
+      <div className="card p-5">
+        <h3 className="text-sm font-semibold text-zinc-200">Foto de fondo de los planes</h3>
+        <p className="mt-1 text-sm text-zinc-500">
+          Segunda foto, para la página de contratación de planes (/planes). JPG/PNG, máx. 5 MB.
+        </p>
+        {api.mediaUrl(brand.plans_photo_path) && (
+          <img src={api.mediaUrl(brand.plans_photo_path)!} alt="Foto de los planes actual"
+            className="mt-3 h-28 w-44 rounded-xl border object-cover"
+            style={{ borderColor: "var(--line-strong)" }} />
+        )}
+        <input ref={plansPhotoRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+          onChange={(e) => uploadPlansPhoto(e.target.files?.[0])} />
+        <button className="btn btn-ghost mt-3" disabled={uploadingPlans} onClick={() => plansPhotoRef.current?.click()}>
+          <Upload size={15} className="text-zinc-500" />
+          {uploadingPlans ? "Subiendo…" : brand.plans_photo_path ? "Cambiar foto" : "Subir foto"}
         </button>
       </div>
 

@@ -333,6 +333,9 @@ class BrandConfig(Base):
     partner_discount_code: Mapped[str | None] = mapped_column(String(40))
     # Portada única para TODOS los vídeos de ejercicios (media/…).
     video_cover_path: Mapped[str | None] = mapped_column(String(500))
+    # Foto de fondo de la página pública de PLANES (/planes), independiente de
+    # la de la landing /dq (media/…).
+    plans_photo_path: Mapped[str | None] = mapped_column(String(500))
 
 
 # -------------------------------------------------- recommended_products ----

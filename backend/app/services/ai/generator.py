@@ -506,8 +506,11 @@ def generate_monthly_plan(
     # contra unos objetivos por slot ya cuadrados. Es idempotente.
     from app.services.nutrition_scale import reconcile_nutrition
 
+    # clamp=False: los guardrails de abajo deben ver los números REALES de la
+    # IA y bloquear si son peligrosos (no corregirlos en silencio).
     core.nutrition = NutritionCore.model_validate(
-        reconcile_nutrition(core.nutrition.model_dump(), weight_kg=ctx.weight_kg)
+        reconcile_nutrition(core.nutrition.model_dump(), weight_kg=ctx.weight_kg,
+                            clamp=False)
     )
 
     nut_report = gr.check_nutrition(

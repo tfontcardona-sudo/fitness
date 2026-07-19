@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { AlertTriangle, CheckCircle2, Copy, Mail, MessageCircle, Search, Send, UserPlus, ChevronRight, Flag } from "lucide-react";
+import { AlertTriangle, CalendarPlus, CheckCircle2, ClipboardList, Copy, CreditCard, Mail, MessageCircle, Search, Send, UserPlus, ChevronRight, Flag } from "lucide-react";
 import { useDismiss, useModalFocus } from "../lib/useDismiss";
 import { api, ApiError, keepIfSame, REFRESH_MS } from "../lib/api";
 import type { ClientCreatedOut, ClientOut } from "../types";
@@ -11,26 +11,38 @@ import { onboardingMessage, openWhatsApp, portalAccessMessage, waPhone } from ".
 import { BILLING_PERIODS, PACKAGES, PACKAGE_ORDER, pkg } from "../lib/packages";
 import type { BillingPeriod, PackageTier } from "../types";
 
-/** CARPETAS de la cartera según el punto del ciclo (no solo el estado crudo):
- *  Activos = planificación publicada · Pendientes = aún sin planificación
- *  (solo anamnesis / alta) · Revisión pendiente = quincenal subida (con su nº)
- *  · Objetivo 45 días = toca valorar cambio (sale de la carpeta al mantener). */
-type Category = "all" | "activos" | "pendientes" | "revision" | "objetivo";
-const CATEGORIES: { id: Category; label: string }[] = [
-  { id: "all", label: "Todos" },
-  { id: "activos", label: "Activos" },
-  { id: "pendientes", label: "Pendientes" },
-  { id: "revision", label: "Revisión pendiente" },
-  { id: "objetivo", label: "Objetivo 45 días" },
+/** CARPETAS de la cartera según LO QUE FALTA de cada cliente (agrupado como
+ *  las alertas): un lugar con todos y luego por la acción que requieren. Cada
+ *  carpeta tiene su color e icono propios. Un cliente puede estar en varias
+ *  (p. ej. falta pago Y falta anamnesis). */
+type Category = "all" | "anamnesis" | "plan" | "revision" | "pago" | "aldia";
+const CATEGORIES: {
+  id: Category; label: string; color: string; icon: typeof UserPlus | null;
+}[] = [
+  { id: "all", label: "Todos", color: "var(--brand-accent)", icon: null },
+  { id: "anamnesis", label: "Falta anamnesis", color: "#6366F1", icon: ClipboardList },
+  { id: "plan", label: "Falta planificación", color: "#E8833A", icon: CalendarPlus },
+  { id: "revision", label: "Falta revisión", color: "#8B5CF6", icon: Flag },
+  { id: "pago", label: "Falta pago", color: "#2E7D46", icon: CreditCard },
+  { id: "aldia", label: "Al día", color: "#2E5E8C", icon: CheckCircle2 },
 ];
 
 function inCategory(c: ClientOut, cat: Category): boolean {
+  if (c.status === "inactive") return cat === "all";
   switch (cat) {
     case "all": return true;
-    case "activos": return !!c.has_published_plan && c.status !== "inactive" && c.status !== "review_pending";
-    case "pendientes": return !c.has_published_plan && c.status !== "inactive";
+    // Sin anamnesis registrada (sin objetivo = el wizard/PDF no ha entrado aún)
+    case "anamnesis": return !c.goal_type;
+    // Anamnesis lista pero sin planificación activa
+    case "plan": return !!c.goal_type && !c.has_published_plan;
+    // Revisión quincenal recibida, pendiente de feedback/adaptación
     case "revision": return c.status === "review_pending";
-    case "objetivo": return goalReviewDue(c) != null && c.status !== "inactive";
+    // Pago del plan pendiente (informativo, del enlace de Stripe)
+    case "pago": return c.payment_status === "pending";
+    // Nada pendiente: plan activo, sin revisión por atender y pago al día
+    case "aldia":
+      return !!c.has_published_plan && c.status !== "review_pending"
+        && c.payment_status !== "pending";
   }
 }
 
@@ -96,20 +108,25 @@ export default function ClientsPage() {
           />
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {CATEGORIES.map(({ id, label }) => (
+          {CATEGORIES.map(({ id, label, color, icon: Icon }) => (
             <button
               key={id}
               onClick={() => setFilter(id)}
-              className="tap rounded-lg px-3 py-1.5 text-xs font-medium transition-colors"
+              className="tap flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors"
               style={
                 filter === id
-                  ? { background: "var(--brand-accent)", color: "#221407" }
-                  : { background: "var(--surface)", color: "var(--text-dim)" }
+                  ? { background: color, color: "#fff" }
+                  : {
+                      background: `color-mix(in srgb, ${color} 9%, var(--surface))`,
+                      color,
+                      boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${color} 25%, transparent)`,
+                    }
               }
             >
+              {Icon && <Icon size={12} />}
               {label}
               {clients !== null && counts[id] > 0 && (
-                <span className="ml-1 opacity-70">{counts[id]}</span>
+                <span className="opacity-75">{counts[id]}</span>
               )}
             </button>
           ))}

@@ -61,6 +61,7 @@ def public_landing(request: Request, db: Session = Depends(get_db)) -> LandingOu
         # /storage/... no pasa por Caddy en producción, así que no se promete.
         logo_url=None,
         links_photo_url=media_url(brand.links_photo_path),
+        plans_photo_url=media_url(brand.plans_photo_path),
         partner_store_url=brand.partner_store_url,
         partner_discount_code=brand.partner_discount_code,
         products=[LandingProductOut(

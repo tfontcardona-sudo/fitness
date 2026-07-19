@@ -297,6 +297,7 @@ class BrandConfigOut(BrandConfigIn):
     logo_path: str | None
     links_photo_path: str | None = None
     video_cover_path: str | None = None
+    plans_photo_path: str | None = None
     contact_email: str | None  # relaja EmailStr al leer de DB
 
 
@@ -330,6 +331,7 @@ class LandingOut(BaseModel):
     color_bg: str
     logo_url: str | None
     links_photo_url: str | None
+    plans_photo_url: str | None = None
     partner_store_url: str | None
     partner_discount_code: str | None
     # Catálogo de productos recomendados (comprables con el código de arriba).
