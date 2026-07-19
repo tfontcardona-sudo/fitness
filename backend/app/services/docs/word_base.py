@@ -20,8 +20,10 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
 
-# Ancho de contenido en EMU/twips para A4 con márgenes de 2 cm
-CONTENT_WIDTH_DXA = 9026  # A4 menos márgenes
+# Ancho de contenido en twips: A4 (11906) menos los márgenes reales de
+# init_document (56 pt = 1120 twips por lado). Debe cuadrar con ellos para que
+# barras (párrafo sombreado con sangría) y cajas (tablas) queden alineadas.
+CONTENT_WIDTH_DXA = 9666
 
 
 @dataclass
@@ -227,8 +229,12 @@ def init_document(brand: DocBrand) -> Document:
         st.font.bold = True
         st.font.color.rgb = _hex("#1A1A24")
 
-    # Márgenes de 2 cm
+    # A4 explícito (python-docx crea Letter por defecto) + márgenes de 2 cm.
+    # CONTENT_WIDTH_DXA depende de estas medidas: 11906 − 2×1120 = 9666.
+    from docx.shared import Mm
     for section in doc.sections:
+        section.page_width = Mm(210)
+        section.page_height = Mm(297)
         section.top_margin = section.bottom_margin = Pt(56)
         section.left_margin = section.right_margin = Pt(56)
 
@@ -430,30 +436,53 @@ def spacer(doc: Document, pt: float = SPACE_SECTION, keep_next: bool = True) -> 
 
 def section_bar(doc: Document, text: str, color: str, text_color: str = "FFFFFF",
                 size: float = 11) -> None:
-    """Barra de sección a todo el ancho con fondo de color y texto centrado.
+    """Barra de sección a ancho de contenido con fondo de color y texto centrado.
     SIEMPRE con su aire por delante: cada título abre una tarjeta nueva separada
-    de la anterior (regla del diseño de referencia)."""
+    de la anterior (regla del diseño de referencia).
+
+    Es un PÁRRAFO sombreado, no una tabla: keepNext en un párrafo sí ancla la
+    barra al bloque siguiente en Word Y LibreOffice, mientras que una barra-tabla
+    se queda huérfana al pie de página (LibreOffice ignora keepNext entre
+    tablas). El grosor vertical lo dan bordes del mismo color que el fondo."""
     spacer(doc, SPACE_SECTION)
-    table = doc.add_table(rows=1, cols=1)
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    table.autofit = False
-    cell = table.rows[0].cells[0]
-    cell.width = Pt(CONTENT_WIDTH_DXA / 20)
-    _shade_cell(cell, color)
-    _set_cell_margins(cell, top=80, bottom=80, left=120, right=120)
-    p = cell.paragraphs[0]
+    fill = color.lstrip("#")
+    p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    pf = p.paragraph_format
+    pf.space_before = Pt(0)
+    pf.space_after = Pt(0)
+    # el sombreado de párrafo va de margen a margen: sangrar para alinear la
+    # barra con las cajas/tablas (que miden CONTENT_WIDTH_DXA centradas)
+    sec = doc.sections[0]
+    usable_emu = int(sec.page_width) - int(sec.left_margin) - int(sec.right_margin)
+    indent_emu = (usable_emu - int(Pt(CONTENT_WIDTH_DXA / 20))) // 2
+    if indent_emu > 0:
+        pf.left_indent = indent_emu
+        pf.right_indent = indent_emu
     r = p.add_run(text.upper())
     r.font.bold = True
     r.font.size = Pt(size)
     r.font.color.rgb = _hex(text_color)
-    _no_table_borders(table)
-    _cant_split_rows(table)
     _keep_with_next(p)  # la barra no se queda sola al pie de página
+    pPr = p._p.get_or_add_pPr()
+    # bordes superior/inferior del color del fondo = "relleno" vertical de la
+    # barra; sin bordes laterales para que el ancho coincida EXACTO con las cajas
+    pbdr = pPr.makeelement(qn("w:pBdr"), {})
+    for edge in ("top", "bottom"):
+        e = pbdr.makeelement(qn(f"w:{edge}"), {
+            qn("w:val"): "single", qn("w:sz"): "32",
+            qn("w:space"): "0", qn("w:color"): fill,
+        })
+        pbdr.append(e)
+    pPr.append(pbdr)
+    shd = pPr.makeelement(qn("w:shd"), {
+        qn("w:val"): "clear", qn("w:color"): "auto", qn("w:fill"): fill,
+    })
+    pPr.append(shd)
 
 
 def info_box(doc: Document, items, fill: str = "F5F0E8", label_color: str = "8B1A2B",
-             cant_split: bool = False) -> None:
+             cant_split: bool = False, image_path: str | None = None) -> None:
     """Recuadro con fondo crema. items: str (línea) o (label, valor).
 
     cant_split=False (por defecto): si el recuadro no cabe en la página, se parte
@@ -482,9 +511,79 @@ def info_box(doc: Document, items, fill: str = "F5F0E8", label_color: str = "8B1
         else:
             r = p.add_run(str(item))
             r.font.size = Pt(10)
+    if image_path:
+        import os
+
+        from docx.shared import Inches
+
+        if os.path.exists(image_path):
+            pimg = cell.add_paragraph()
+            pimg.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            pimg.paragraph_format.space_before = Pt(6)
+            try:
+                pimg.add_run().add_picture(image_path, width=Inches(2.4))
+            except Exception:
+                pass
     _box_border(table)  # marco gris fino, como la referencia
     if cant_split:
         _cant_split_rows(table)
+
+
+def setup_reference_pages(doc: Document, logo_path: str | None,
+                          right_title: str, right_sub: str | None = None,
+                          footer_text: str | None = None) -> None:
+    """Cabecera COMPACTA del plan de referencia, en TODAS las páginas: logo a la
+    izquierda y "PLAN NUTRICIONAL | Cliente" (+ año debajo) a la derecha, sobre
+    blanco. Sin banda de fondo: el contenido NUNCA se superpone a una imagen y
+    todas las páginas empiezan a la misma altura."""
+    import os
+
+    from docx.enum.table import WD_TABLE_ALIGNMENT
+    from docx.shared import Inches
+
+    # Pie reutilizado (texto + nº de página); sin banda.
+    setup_branded_pages(doc, banner_path=None, footer_text=footer_text)
+
+    section = doc.sections[0]
+    section.different_first_page_header_footer = False  # misma cabecera SIEMPRE
+    section.top_margin = Inches(1.15)
+    section.header_distance = Inches(0.35)
+
+    header = section.header
+    ht = header.add_table(rows=1, cols=2, width=Pt(CONTENT_WIDTH_DXA / 20))
+    ht.alignment = WD_TABLE_ALIGNMENT.CENTER
+    ht.autofit = False
+    left, right = ht.rows[0].cells
+    left.width = Pt(CONTENT_WIDTH_DXA / 40)
+    right.width = Pt(CONTENT_WIDTH_DXA / 40)
+    lp = left.paragraphs[0]
+    lp.paragraph_format.space_after = Pt(0)
+    if logo_path and os.path.exists(logo_path):
+        try:
+            lp.add_run().add_picture(logo_path, height=Inches(0.42))
+        except Exception:
+            pass
+    rp = right.paragraphs[0]
+    rp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    rp.paragraph_format.space_after = Pt(0)
+    rr = rp.add_run(right_title)
+    rr.font.size = Pt(10)
+    rr.font.bold = True
+    if right_sub:
+        rp2 = right.add_paragraph()
+        rp2.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        rp2.paragraph_format.space_after = Pt(0)
+        r2 = rp2.add_run(right_sub)
+        r2.font.size = Pt(10)
+    _no_table_borders(ht)
+    # El párrafo vacío por defecto del header queda DESPUÉS de la tabla con
+    # altura mínima (los headers OOXML deben terminar en párrafo).
+    hp = header.paragraphs[0]
+    hp._p.getparent().remove(hp._p)
+    tail = header.add_paragraph()
+    tail.paragraph_format.space_before = Pt(0)
+    tail.paragraph_format.space_after = Pt(0)
+    tail.paragraph_format.line_spacing = Pt(2)
 
 
 def setup_branded_pages(doc: Document, banner_path: str | None = None,
@@ -515,14 +614,10 @@ def setup_branded_pages(doc: Document, banner_path: str | None = None,
 
         fp = section.footer.paragraphs[0]
         fp.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        # tab a la derecha (ancho de contenido) para empujar el nº de página
+        # Como la referencia: nº de página a la IZQUIERDA y lema CENTRADO
         fp.paragraph_format.tab_stops.add_tab_stop(
-            Pt(CONTENT_WIDTH_DXA / 20), WD_TAB_ALIGNMENT.RIGHT
+            Pt(CONTENT_WIDTH_DXA / 40), WD_TAB_ALIGNMENT.CENTER
         )
-        r = fp.add_run(footer_text)
-        r.font.size = Pt(8)
-        r.font.color.rgb = _hex("#9A9AA6")
-        fp.add_run("\t")
         # campo PAGE (Word/LibreOffice lo numeran solos)
         pr = fp.add_run()
         pr.font.size = Pt(8)
@@ -531,6 +626,10 @@ def setup_branded_pages(doc: Document, banner_path: str | None = None,
         ins = OxmlElement("w:instrText"); ins.set(qn("xml:space"), "preserve"); ins.text = "PAGE"
         end = OxmlElement("w:fldChar"); end.set(qn("w:fldCharType"), "end")
         pr._r.append(beg); pr._r.append(ins); pr._r.append(end)
+        fp.add_run("\t")
+        r = fp.add_run(footer_text)
+        r.font.size = Pt(8)
+        r.font.color.rgb = _hex("#9A9AA6")
 
 
 def branded_cover(doc: Document, cover_path: str | None) -> None:
