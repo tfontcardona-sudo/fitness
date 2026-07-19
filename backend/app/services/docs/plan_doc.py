@@ -24,14 +24,13 @@ from docx.shared import Inches, Pt
 
 from app.services.docs.word_base import (
     DocBrand,
-    branded_cover,
     clean_table,
     float_image_right,
     info_box,
     init_document,
     open_box,
     section_bar,
-    setup_branded_pages,
+    setup_reference_pages,
     _hex,
 )
 
@@ -291,9 +290,17 @@ def generate_plan_doc(
             doc.styles[_sname].font.name = "Calibri"
         except Exception:
             pass
-    setup_branded_pages(doc, banner_path=str(ASSETS / "header_banner.png"),
-                        footer_text="David Quiceno · Dietista & Entrenador Personal")
-    branded_cover(doc, str(ASSETS / "cover.png"))
+    # Cabecera de la REFERENCIA (logo + "PLAN NUTRICIONAL | Cliente" y año) en
+    # todas las páginas; sin banda de fondo ni portada — el documento empieza
+    # directamente con el contenido, como la copia del coach.
+    from datetime import date as _date
+
+    setup_reference_pages(
+        doc, logo_path=str(ASSETS / "dq_logo.png"),
+        right_title=f"PLAN NUTRICIONAL | {client_name}",
+        right_sub=str(_date.today().year),
+        footer_text="David Quiceno · Dietista & Entrenador Personal",
+    )
 
     # ======================= NUTRICIÓN =======================
     _title(doc, "PLAN NUTRICIONAL", client_name)
@@ -357,15 +364,11 @@ def generate_plan_doc(
 
     # El plato saludable (plantilla + foto)
     section_bar(doc, "El plato saludable", BLUE)
-    info_box(doc, PLATO_TEXT, fill=CREAM, label_color=WINE)
-    plate = ASSETS / "plate.png"
-    if plate.exists():
-        p = doc.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        try:
-            p.add_run().add_picture(str(plate), width=Inches(2.6))
-        except Exception:
-            pass
+    # La foto del plato va DENTRO de la caja y la caja entera es indivisible
+    # (cant_split): si no cabe, la tarjeta completa salta a la página siguiente
+    # con su barra — la foto nunca queda sola en un fragmento de caja.
+    info_box(doc, PLATO_TEXT, fill=CREAM, label_color=WINE,
+             cant_split=True, image_path=str(ASSETS / "plate.png"))
 
     # Comidas detalladas (flexible) — como el ejemplo: comida/cena con sistema de
     # equivalencias por grupos; el resto, 3 opciones numeradas en prosa (sin kcal).
@@ -377,7 +380,12 @@ def generate_plan_doc(
         for m in meals:
             section_bar(doc, f"{m.get('name','Comida')} · {m.get('time','')}", WINE, size=10)
             sb = blocks.get(m.get("slot"), {})
-            cell = open_box(doc, CREAM)
+            # Cajas de opciones (máx. 3) y de "toma libre": tamaño acotado, la
+            # tarjeta viaja ENTERA a la página siguiente si no cabe — nunca se
+            # parte dejando una línea suelta. Las equivalencias (contenido sin
+            # cota) sí pueden partirse para no recortar texto.
+            is_equiv = bool(sb.get("fmt") == "equivalences" and sb.get("equivalences"))
+            cell = open_box(doc, CREAM, cant_split=not is_equiv)
             if sb.get("fmt") == "equivalences" and sb.get("equivalences"):
                 # foto redonda flotante en la cena (como el ejemplo del coach)
                 img = str(ASSETS / "food_round.png") if "cena" in _norm(m.get("name", "")) else None
@@ -408,25 +416,29 @@ def generate_plan_doc(
     # Ejemplo de dieta semanal
     _weekly_section(doc, brand, diet_mode, nutrition, bank)
 
+    # Tarjetas informativas de cierre: contenido FIJO y acotado (menos de media
+    # página cada una), así que cada tarjeta viaja entera a la página siguiente
+    # si no cabe — nunca se parte dejando líneas sueltas (diseño de referencia).
+
     # Ideas rápidas
     section_bar(doc, "Ideas rápidas de desayunos, snacks y meriendas", WINE)
-    info_box(doc, [f"• {x}" for x in IDEAS_RAPIDAS], fill=CREAM)
+    info_box(doc, [f"• {x}" for x in IDEAS_RAPIDAS], fill=CREAM, cant_split=True)
 
     # Salsas recomendables
     section_bar(doc, "Salsas recomendables", BLUE)
-    info_box(doc, SALSAS_TEXT, fill=CREAM)
+    info_box(doc, SALSAS_TEXT, fill=CREAM, cant_split=True)
 
     # Yogures recomendables
     section_bar(doc, "Yogures recomendables", BLUE)
-    info_box(doc, YOGURES_TEXT, fill=CREAM)
+    info_box(doc, YOGURES_TEXT, fill=CREAM, cant_split=True)
 
     # Quesos recomendables
     section_bar(doc, "Quesos recomendables", BLUE)
-    info_box(doc, QUESOS_TEXT, fill=CREAM)
+    info_box(doc, QUESOS_TEXT, fill=CREAM, cant_split=True)
 
     # Recomendaciones generales
     section_bar(doc, "Recomendaciones generales", WINE)
-    info_box(doc, RECOMENDACIONES, fill=CREAM)
+    info_box(doc, RECOMENDACIONES, fill=CREAM, cant_split=True)
 
     # Suplementación
     section_bar(doc, "Suplementación recomendada", BLUE)
@@ -435,7 +447,7 @@ def generate_plan_doc(
         items = [f"{s.get('name','')} — {s.get('dose','')} ({s.get('timing','')})" for s in supps]
     else:
         items = SUPLEMENTACION_DEFAULT
-    info_box(doc, items, fill=CREAM)
+    info_box(doc, items, fill=CREAM, cant_split=True)
 
     if not include_training or not training:
         buf = io.BytesIO()
@@ -516,7 +528,17 @@ def _render_equivalences(container, eq: dict, image_path: str | None = None) -> 
             float_image_right(p, image_path, Inches(1.5))
         except Exception:
             pass
-    txt = "Elige una opción de cada grupo." + (f" {intro}:" if intro else "")
+    # Frase guía sin duplicados: si el intro del plan ya empieza por "Elige una
+    # opción..." no se antepone otra vez, y se normaliza el cierre a un solo ":".
+    base = "Elige una opción de cada grupo."
+    if intro:
+        low = intro.lower()
+        if low.startswith("elige una opción") or low.startswith("elige una opcion"):
+            txt = intro.rstrip(".:") + ":"
+        else:
+            txt = f"{base} {intro.rstrip('.:')}:"
+    else:
+        txt = base
     r = p.add_run(txt)
     r.font.italic = True
     r.font.size = Pt(9.5)
