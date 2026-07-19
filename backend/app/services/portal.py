@@ -326,6 +326,30 @@ def youtube_thumbnail(url: str | None) -> str | None:
     return f"https://img.youtube.com/vi/{vid}/hqdefault.jpg" if vid and _YT_ID.fullmatch(vid) else None
 
 
+def discount_buy_url(product_url: str | None, code: str | None,
+                     store_url: str | None) -> str | None:
+    """URL de compra con el código de descuento PRE-APLICADO al carrito, usando
+    el patrón universal de las tiendas Shopify (/discount/CODE?redirect=…),
+    como la del partner (ESN). Solo se construye cuando el producto es de la
+    tienda del partner (mismo dominio) — en otros dominios no sabemos si el
+    patrón existe y se devuelve el enlace normal del producto."""
+    from urllib.parse import quote, urlsplit
+
+    if not product_url or not code or not store_url:
+        return product_url
+    try:
+        pu, su = urlsplit(product_url), urlsplit(store_url)
+    except ValueError:
+        return product_url
+    if not pu.netloc or pu.netloc.lower() != su.netloc.lower():
+        return product_url
+    path = pu.path or "/"
+    if pu.query:
+        path += "?" + pu.query
+    return (f"{pu.scheme}://{pu.netloc}/discount/{quote(code, safe='')}"
+            f"?redirect={quote(path, safe='')}")
+
+
 def product_image_url(p: RecommendedProduct) -> str | None:
     """URL efectiva de la imagen de un producto: la subida (servida por la API,
     con cache-busting por updated_at) tiene prioridad; si no, la URL externa."""
@@ -391,15 +415,30 @@ def build_resources(db: Session, client: Client) -> dict:
         .where(RecommendedProduct.active.is_(True))
         .order_by(RecommendedProduct.sort_order, RecommendedProduct.id)
     ).all()
+
+    # Productos DE SU PLANIFICACIÓN primero: los que corresponden a los
+    # suplementos pautados en su plan van destacados (in_plan) y arriba.
+    from app.services.product_match import match_products, plan_supplement_names
+
+    supplements = plan_supplement_names(plan.nutrition_json if plan else None)
+    covered = match_products(supplements, [p.title for p in product_rows])["covered_titles"]
+
+    store_url = (brand.partner_store_url or "").strip() if brand else ""
     products = [{
         "id": p.id,
         "title": p.title,
         "description": p.description,
         "url": p.url,
+        # URL de COMPRA: si la tienda lo soporta (patrón /discount/ de las
+        # tiendas Shopify, como la del partner), abre el producto con el código
+        # ya aplicado al carrito; si no aplica, el enlace normal del producto.
+        "buy_url": discount_buy_url(p.url, global_code or p.discount_code, store_url),
         "category": p.category,
         "image_url": product_image_url(p),
         "discount_code": global_code or p.discount_code,
+        "in_plan": p.title in covered,
     } for p in product_rows]
+    products.sort(key=lambda x: (not x["in_plan"]))
 
     return {"exercise_videos": videos, "products": products}
 

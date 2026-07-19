@@ -1239,6 +1239,41 @@ El link del perfil de Instagram de David lleva TODO el embudo: landing → plane
   ≡ banco, §10.p/§10.c) y `week_weight_hint` derivado en vivo en el portal.
 - Tests 7/7 (público+Stripe) · migración 0021 aplicada · tsc + vite build OK.
 
+## 10.s Tramo 2026-07-19 (3ª) — Portal conectado a la planificación + cambios manuales explicados
+
+- **Portal, desplegable de PRIMERA VISITA** (`WelcomeSetup` en PortalApp,
+  sustituye a PushBanner): cerrado por defecto ("Configura tu portal (1 min)"),
+  con 2 pasos con check: instalar como app (instrucciones según iPhone/Android,
+  detecta si ya está instalada) y activar notificaciones (en iOS exige paso 1).
+  Desaparece al completarse o con "No volver a mostrar" (compat con el
+  `portal_push_dismissed` antiguo).
+- **Productos ⇄ planificación** (`services/product_match.py`: normalización +
+  sinónimos ES⇄EN — creatina/creatine, proteína/whey…):
+  · Portal: sección "**De tu planificación**" (productos que corresponden a los
+    suplementos pautados, chip "En tu plan") y luego "Recomendados".
+  · Clic en producto → `buy_url`: patrón **/discount/CODE?redirect=** (tiendas
+    Shopify como ESN) con el código YA aplicado — solo si el producto es del
+    dominio de la tienda del partner; además el código se copia solo al abrir.
+    En la landing /dq el código se muestra pero NO se aplica (pedido así).
+  · **Alerta al coach** (alerts.py, kind `missing_products`): suplementos del
+    plan activo sin producto en Recursos → "súbelo para que le salga".
+- **Cambios manuales del plan DETECTADOS y explicados**
+  (`services/plan_diff.py`, determinista — no depende de crédito IA):
+  al guardar el editor, PATCH compara antes/después (kcal, macros, comidas,
+  suplementos, ejercicios añadidos/quitados, series×reps, peso, descanso, RIR)
+  y ACUMULA frases humanas en `nutrition_json.manual_changes` (se preservan
+  entre ediciones; tope 20). El panel muestra el aviso con la lista y botones:
+  **WhatsApp** (`manualUpdateMessage`: "he ajustado: …" + PDF) · **email**
+  (`POST /plans/{id}/send-update-email`, plantilla `plan_manual_update`, adjunta
+  PDF, limpia el aviso al enviarse) · descartar (`POST …/manual-changes/ack`).
+- **Edición POR BLOQUE**: botón "Editar" en las cabeceras Nutrición /
+  Entrenamiento / Suplementación del panel → el editor abre con **scroll y
+  destello** en ese bloque (`initialFocus` en ClientPlanEditor).
+- Tests nuevos `tests/test_today_features.py` (match, buy_url, diff) → 10/10
+  con público+Stripe; suite completa = fallos idénticos a main (0 regresiones);
+  tsc + vite build OK. Fix de auditoría: los pendientes de manual_changes se
+  leen del plan ANTERIOR (una 2ª edición ya no borra los no enviados).
+
 ## 11. Mapa rápido de archivos tocados en el último tramo
 
 **Pulido §8.2 (2026-07-04)**

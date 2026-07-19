@@ -161,6 +161,21 @@ export function onboardingMessage(
   ].join("\n\n");
 }
 
+/** Mensaje de AJUSTE MANUAL de la planificación: explica exactamente qué se
+ *  cambió (lista del diff detectado al editar) + enlace al PDF actualizado. */
+export function manualUpdateMessage(
+  fullName: string, items: string[], pdfUrl: string,
+): string {
+  const lista = items.map((i) => `- ${i}`).join("\n");
+  return [
+    `Hola ${waFirstName(fullName)},`,
+    "He hecho unos ajustes en tu planificación para que siga siendo la óptima para ti. En concreto:",
+    lista,
+    `El resto se mantiene igual. Tienes tu plan ya actualizado aquí:\n${pdfUrl}`,
+    "Cualquier duda me dices. Un saludo.",
+  ].join("\n\n");
+}
+
 /** Mensaje del feedback quincenal: entrada + informe + cierre profesional.
  *  `periodIndex` hace que la voz varíe entre una revisión y la siguiente. */
 export function feedbackMessage(fullName: string, content: any, periodIndex = 0): string {

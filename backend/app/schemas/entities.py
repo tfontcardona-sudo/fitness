@@ -673,6 +673,10 @@ class ResourceProduct(BaseModel):
     category: str
     image_url: str | None = None
     discount_code: str | None = None
+    # URL de compra con el código pre-aplicado (tiendas Shopify del partner).
+    buy_url: str | None = None
+    # True si corresponde a un suplemento pautado EN SU planificación.
+    in_plan: bool = False
 
 
 class PortalResourcesOut(BaseModel):

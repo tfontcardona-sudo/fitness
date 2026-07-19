@@ -126,6 +126,28 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
                               f"Sin registros del cliente desde hace {gap} días.",
                               "seguimiento", "Ver seguimiento"))
 
+    # --- Suplementos del plan SIN producto en Recursos ----------------------
+    # El portal del cliente destaca los productos de SU planificación (con el
+    # código del coach). Si un suplemento pautado no tiene producto subido, el
+    # cliente no lo verá comprable → aviso para subirlo a Recursos.
+    from app.models import RecommendedProduct
+    from app.services.product_match import match_products, plan_supplement_names
+
+    sups = plan_supplement_names(published.nutrition_json)
+    if sups:
+        titles = list(db.scalars(
+            select(RecommendedProduct.title).where(RecommendedProduct.active.is_(True))
+        ))
+        missing = match_products(sups, titles)["missing"]
+        if missing:
+            listado = ", ".join(missing[:4]) + ("…" if len(missing) > 4 else "")
+            out.append(_alert(
+                client, "missing_products", "media",
+                f"Suplementos de su plan sin producto en Recursos: {listado}. "
+                "Súbelos en Recursos → Productos para que le salgan en su portal "
+                "con tu código.",
+                "planificacion", "Ver planificación"))
+
     # --- Objetivo cambiado sin regenerar el plan ----------------------------
     # Tras cambiar el objetivo, si la IA falló al regenerar, el cliente seguiría
     # sirviéndose el plan del objetivo anterior en silencio. Lo señalamos.

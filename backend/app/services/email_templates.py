@@ -252,6 +252,27 @@ def plan_delivery(brand: Brand, first_name: str, portal_url: str,
     return subject, _shell(brand, "Tu plan está listo", body, portal_url, "Abrir mi portal")
 
 
+def plan_manual_update(brand: Brand, first_name: str, items: list[str],
+                       portal_url: str, attached: bool) -> tuple[str, str]:
+    """Aviso de AJUSTE MANUAL del plan: el coach retocó la planificación y el
+    mensaje EXPLICA exactamente qué cambió (lista del diff detectado)."""
+    first_name = _esc(first_name)
+    subject = f"He ajustado tu planificación · {brand.name}"
+    lis = "".join(f'<li style="margin:4px 0">{_esc(i)}</li>' for i in items)
+    pdf_line = (
+        "<p>Te adjunto tu plan en <strong>PDF</strong> ya actualizado.</p>"
+        if attached else ""
+    )
+    body = (
+        f"<p>Hola {first_name}, he hecho unos ajustes en tu planificación para "
+        "que siga siendo la óptima para ti. En concreto:</p>"
+        f'<ul style="padding-left:18px">{lis}</ul>'
+        f"{pdf_line}"
+        "<p>El resto se mantiene igual. Cualquier duda, escríbeme.</p>"
+    )
+    return subject, _shell(brand, "Planificación ajustada", body, portal_url, "Abrir mi portal")
+
+
 def feedback_delivery(brand: Brand, first_name: str, content: dict) -> tuple[str, str]:
     """Entrega del feedback quincenal por EMAIL (paquetes Start/Full): el informe
     completo (análisis, cambios, respuestas y objetivos) va en el propio correo."""

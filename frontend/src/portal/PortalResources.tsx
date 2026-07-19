@@ -99,22 +99,50 @@ export function PortalResources({ api, brand, hasTraining = true }: { api: Api; 
         </section>
       )}
 
-      {products.length > 0 && (
-        <section className="space-y-3">
-          <div className="flex items-center gap-2">
-            <ShoppingBag size={16} style={{ color: brand.color_primary }} />
-            <h3 className="text-sm font-semibold">Productos recomendados</h3>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            {products.map((p) => (
-              <ProductCard key={p.id} product={p} accent={brand.color_primary} />
-            ))}
-          </div>
-          <p className="text-[11px] opacity-40">
-            Recomendaciones de tu coach. Los enlaces se abren fuera de la app.
-          </p>
-        </section>
-      )}
+      {products.length > 0 && (() => {
+        // Los productos que salen EN su planificación (suplementos pautados)
+        // van primero y destacados; el resto, como recomendaciones generales.
+        const inPlan = products.filter((p) => p.in_plan);
+        const rest = products.filter((p) => !p.in_plan);
+        return (
+          <>
+            {inPlan.length > 0 && (
+              <section className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Pill size={16} style={{ color: brand.color_primary }} />
+                  <h3 className="text-sm font-semibold">De tu planificación</h3>
+                  <span className="rounded-full px-2 py-0.5 text-[10px] font-bold"
+                    style={{ background: `color-mix(in srgb, ${brand.color_primary} 14%, transparent)`, color: brand.color_primary }}>
+                    pautado
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {inPlan.map((p) => (
+                    <ProductCard key={p.id} product={p} accent={brand.color_primary} />
+                  ))}
+                </div>
+              </section>
+            )}
+            {rest.length > 0 && (
+              <section className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <ShoppingBag size={16} style={{ color: brand.color_secondary }} />
+                  <h3 className="text-sm font-semibold">Productos recomendados</h3>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {rest.map((p) => (
+                    <ProductCard key={p.id} product={p} accent={brand.color_primary} />
+                  ))}
+                </div>
+              </section>
+            )}
+            <p className="text-[11px] opacity-40">
+              Recomendaciones de tu coach. Al abrir un producto tu código de
+              descuento se copia solo, para pegarlo al pagar.
+            </p>
+          </>
+        );
+      })()}
     </div>
   );
 }
@@ -146,11 +174,18 @@ function ProductCard({ product: p, accent }: { product: ResourceProduct; accent:
     }
   }
 
+  // Al abrir el producto: se copia el código SOLO (mejor esfuerzo) y, si la
+  // tienda del partner lo soporta, buy_url ya lo lleva aplicado al carrito.
+  function onOpen() {
+    if (p.discount_code) navigator.clipboard.writeText(p.discount_code).catch(() => {});
+  }
+
   return (
     <a
-      href={p.url}
+      href={p.buy_url || p.url}
       target="_blank"
       rel="noreferrer"
+      onClick={onOpen}
       className="portal-card tap group flex flex-col overflow-hidden"
       aria-label={`Ver ${p.title}`}
     >
@@ -159,6 +194,12 @@ function ProductCard({ product: p, accent }: { product: ResourceProduct; accent:
         <div className="flex items-center gap-1 text-[10px] uppercase tracking-wide opacity-50">
           <cat.icon size={11} />
           {cat.label}
+          {p.in_plan && (
+            <span className="ml-auto rounded px-1.5 py-0.5 text-[9px] font-bold normal-case tracking-normal"
+              style={{ background: `color-mix(in srgb, ${accent} 14%, transparent)`, color: accent }}>
+              En tu plan
+            </span>
+          )}
         </div>
         <p className="mt-0.5 line-clamp-2 text-xs font-semibold leading-snug">{p.title}</p>
         {p.description && (
