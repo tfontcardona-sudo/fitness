@@ -184,6 +184,16 @@ def _keep_with_next(paragraph) -> None:
         pPr.append(pPr.makeelement(qn("w:keepNext"), {}))
 
 
+def _keep_lines(paragraph) -> None:
+    """Mantiene TODAS las líneas del párrafo juntas (w:keepLines): cuando una
+    caja fluye entre páginas, el corte cae ENTRE párrafos (entre opciones o
+    entre líneas etiquetadas), nunca a mitad de una — así una opción no queda
+    partida con un fragmento suelto arriba de la página siguiente."""
+    pPr = paragraph._p.get_or_add_pPr()
+    if pPr.find(qn("w:keepLines")) is None:
+        pPr.append(pPr.makeelement(qn("w:keepLines"), {}))
+
+
 def _keep_rows_together(table) -> None:
     """Mantiene TODAS las filas juntas (la tabla no se corta entre páginas)."""
     rows = table.rows
@@ -500,6 +510,9 @@ def info_box(doc: Document, items, fill: str = "F5F0E8", label_color: str = "8B1
         p = cell.paragraphs[0] if first else cell.add_paragraph()
         first = False
         p.paragraph_format.space_after = Pt(3)
+        # si la caja fluye entre páginas, el corte cae ENTRE ítems, nunca a
+        # mitad de una línea etiquetada (evita fragmentos sueltos al pie/cabeza)
+        _keep_lines(p)
         if isinstance(item, (tuple, list)):
             label, value = item
             rl = p.add_run(f"{label}: ")
