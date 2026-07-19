@@ -78,7 +78,7 @@ export function ClientHistoryTab({ client }: { client: ClientOut }) {
         ) : (
           <div className="mt-3 space-y-2">
             {h.periods.slice().reverse().map((p) => (
-              <details key={p.period_index} className="overflow-hidden rounded-lg border" style={{ borderColor: "var(--line)" }}>
+              <details key={p.period_index} name="historial-periodos" className="overflow-hidden rounded-lg border" style={{ borderColor: "var(--line)" }}>
                 <summary className="flex cursor-pointer items-center justify-between px-3 py-2.5 text-sm" style={{ background: "var(--surface-raised)" }}>
                   <span className="flex items-center gap-2">
                     <span className="font-semibold text-zinc-100">Período #{p.period_index}</span>

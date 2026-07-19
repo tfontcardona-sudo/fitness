@@ -23,13 +23,15 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import get_db
-from app.models import BrandConfig, Client
+from app.models import BrandConfig, Client, RecommendedProduct
 from app.ratelimit import client_key
-from app.schemas.entities import LandingOut, PublicRegisterIn
+from app.schemas.entities import LandingOut, LandingProductOut, PublicRegisterIn
 from app.security import new_portal_token
 from app.services.audit import log_event
 from app.services.onboarding import send_onboarding_email
-from app.services.stripe_service import StripeError, create_checkout_url
+from app.services.portal import product_image_url
+from app.services.storage import media_url
+from app.services.stripe_service import StripeError, create_checkout_url, get_plan_prices
 
 router = APIRouter(prefix="/api/public", tags=["public-site"])
 limiter = Limiter(key_func=client_key)
@@ -39,23 +41,41 @@ _log = logging.getLogger("app.public")
 @router.get("/landing", response_model=LandingOut)
 @limiter.limit("60/minute")
 def public_landing(request: Request, db: Session = Depends(get_db)) -> LandingOut:
-    """Datos públicos de la página de enlaces (/dq): marca, foto y afiliación."""
+    """Datos públicos de la página de enlaces (/dq): marca, foto, afiliación y
+    catálogo de productos (comprables con el código único del coach)."""
     brand = db.scalar(select(BrandConfig).limit(1))
-    base = settings.public_base_url
     if brand is None:  # BD recién creada sin seed: valores por defecto
         brand = BrandConfig()
+    products = db.scalars(
+        select(RecommendedProduct)
+        .where(RecommendedProduct.active.is_(True))
+        .order_by(RecommendedProduct.sort_order, RecommendedProduct.id)
+    ).all()
     return LandingOut(
         name=brand.name,
         tagline=brand.tagline,
         color_primary=brand.color_primary,
         color_secondary=brand.color_secondary,
         color_bg=brand.color_bg,
-        logo_url=f"{base}/storage/{brand.logo_path}" if brand.logo_path else None,
-        links_photo_url=(f"{base}/storage/{brand.links_photo_path}"
-                         if brand.links_photo_path else None),
+        # El logo servible es el empaquetado en el frontend (/dq-logo.png):
+        # /storage/... no pasa por Caddy en producción, así que no se promete.
+        logo_url=None,
+        links_photo_url=media_url(brand.links_photo_path),
         partner_store_url=brand.partner_store_url,
         partner_discount_code=brand.partner_discount_code,
+        products=[LandingProductOut(
+            title=p.title, url=p.url, category=p.category,
+            image_url=product_image_url(p),
+        ) for p in products],
     )
+
+
+@router.get("/plan-prices")
+@limiter.limit("60/minute")
+def public_plan_prices(request: Request) -> dict:
+    """Importes reales de cada plan × duración (leídos de Stripe, con caché)
+    para que /planes muestre el total y el equivalente al mes."""
+    return get_plan_prices()
 
 
 @router.post("/register")

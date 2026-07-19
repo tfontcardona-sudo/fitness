@@ -267,9 +267,13 @@ class Exercise(Base):
     equipment: Mapped[list[str] | None] = mapped_column(ARRAY(String))
     level_min: Mapped[int] = mapped_column(Integer, default=1)  # 1 princ. 2 inter. 3 avanz.
     video_url: Mapped[str | None] = mapped_column(String(500))  # editable por el coach
+    # Vídeo SUBIDO como archivo (relativo al storage, bajo media/): tiene
+    # prioridad sobre video_url. Se sirve por /api/media (StaticFiles con Range).
+    video_path: Mapped[str | None] = mapped_column(String(500))
     # Miniatura del ejercicio para la sección "Recursos" del portal (título +
     # imagen + vídeo). Si está vacía y el vídeo es de YouTube, se deriva la
-    # portada automáticamente (portal.youtube_thumbnail).
+    # portada automáticamente (portal.youtube_thumbnail). Con vídeo subido se
+    # usa la PORTADA GLOBAL (brand_config.video_cover_path).
     image_url: Mapped[str | None] = mapped_column(String(500))
     technique_notes: Mapped[str | None] = mapped_column(Text)
     biomechanics_notes: Mapped[str | None] = mapped_column(Text)
@@ -323,7 +327,12 @@ class BrandConfig(Base):
     # fondo + afiliación del partner (tienda ESN y código de descuento del coach).
     links_photo_path: Mapped[str | None] = mapped_column(String(500))
     partner_store_url: Mapped[str | None] = mapped_column(String(300))
+    # Código de descuento ÚNICO del coach (afiliación): se muestra en la landing
+    # /dq, en los productos del portal y en Recursos. Cambiarlo aquí lo cambia
+    # en TODOS los sitios a la vez.
     partner_discount_code: Mapped[str | None] = mapped_column(String(40))
+    # Portada única para TODOS los vídeos de ejercicios (media/…).
+    video_cover_path: Mapped[str | None] = mapped_column(String(500))
 
 
 # -------------------------------------------------- recommended_products ----

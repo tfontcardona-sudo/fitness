@@ -152,11 +152,23 @@ def save_brand_logo(raw: bytes, filename_hint: str) -> str:
     return str(dest.relative_to(storage_root()))
 
 
-def save_links_photo(raw: bytes, filename_hint: str) -> str:
-    """Foto de fondo de la página pública de enlaces (/dq). Mismas reglas que
-    el logo (imagen válida, ≤5 MB) pero con su propio archivo."""
+# --------------------------------------------------------------- media ----
+# Archivos PÚBLICOS (foto de la landing, portada y vídeos de ejercicios).
+# Viven bajo storage/media y se sirven montados en /api/media (StaticFiles):
+# Caddy solo proxyea /api/* al backend, así que /storage/... NO llega en
+# producción — todo lo público debe colgar de aquí.
+
+def media_dir(sub: str = "") -> Path:
+    p = storage_root() / "media" / sub if sub else storage_root() / "media"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _save_public_image(raw: bytes, dest_dir: Path, stem: str, what: str) -> str:
+    """Valida una imagen (≤5 MB, JPG/PNG/WebP) y la guarda con nombre fijo
+    (reemplaza la anterior aunque cambie la extensión)."""
     if len(raw) > 5 * 1024 * 1024:
-        raise PhotoValidationError("La foto supera 5 MB")
+        raise PhotoValidationError(f"{what} supera 5 MB")
     try:
         img = Image.open(io.BytesIO(raw))
         img.load()
@@ -164,9 +176,86 @@ def save_links_photo(raw: bytes, filename_hint: str) -> str:
         raise PhotoValidationError("El archivo no es una imagen válida") from exc
     if img.format not in ALLOWED_FORMATS:
         raise PhotoValidationError("Formato no soportado (usa JPG, PNG o WebP)")
-    dest = brand_dir() / f"links-photo.{_EXT[img.format]}"
+    for old in dest_dir.glob(f"{stem}.*"):
+        try:
+            old.unlink()
+        except Exception:
+            pass
+    dest = dest_dir / f"{stem}.{_EXT[img.format]}"
     img.save(dest, format=img.format)
     return str(dest.relative_to(storage_root()))
+
+
+def save_links_photo(raw: bytes, filename_hint: str) -> str:
+    """Foto de fondo de la página pública de enlaces (/dq)."""
+    return _save_public_image(raw, media_dir("brand"), "links-photo", "La foto")
+
+
+def save_video_cover(raw: bytes, filename_hint: str) -> str:
+    """Portada ÚNICA para todos los vídeos de ejercicios."""
+    return _save_public_image(raw, media_dir("brand"), "video-cover", "La portada")
+
+
+MAX_VIDEO_MB = 300
+# Formatos de vídeo habituales; el navegador reproduce mp4/webm/mov nativamente.
+_VIDEO_EXTS = {".mp4", ".mov", ".webm", ".m4v", ".avi", ".mkv", ".wmv", ".3gp"}
+
+
+class VideoValidationError(ValueError):
+    """Vídeo no soportado o demasiado grande."""
+
+
+def save_exercise_video(exercise_id: int, fileobj, original_name: str) -> str:
+    """Guarda el vídeo SUBIDO de un ejercicio (reemplaza el anterior). Escribe a
+    disco en trozos (los vídeos no caben cómodos en RAM). Devuelve la ruta
+    relativa al storage (media/exercises/…)."""
+    import shutil
+
+    ext = ("." + original_name.rsplit(".", 1)[-1].lower()) if "." in (original_name or "") else ""
+    if ext not in _VIDEO_EXTS:
+        raise VideoValidationError(
+            "Formato de vídeo no soportado (usa MP4, MOV, WebM, AVI, MKV…)")
+    folder = media_dir("exercises")
+    for old in folder.glob(f"ex{exercise_id}_*"):
+        try:
+            old.unlink()
+        except Exception:
+            pass
+    dest = folder / f"ex{exercise_id}_{secrets.token_hex(4)}{ext}"
+    written = 0
+    limit = MAX_VIDEO_MB * 1024 * 1024
+    with dest.open("wb") as out:
+        while True:
+            chunk = fileobj.read(1024 * 1024)
+            if not chunk:
+                break
+            written += len(chunk)
+            if written > limit:
+                out.close()
+                dest.unlink(missing_ok=True)
+                raise VideoValidationError(f"El vídeo supera {MAX_VIDEO_MB} MB")
+            out.write(chunk)
+    if written == 0:
+        dest.unlink(missing_ok=True)
+        raise VideoValidationError("El archivo está vacío")
+    return str(dest.relative_to(storage_root()))
+
+
+def delete_exercise_video(exercise_id: int) -> None:
+    for old in media_dir("exercises").glob(f"ex{exercise_id}_*"):
+        try:
+            old.unlink()
+        except Exception:
+            pass
+
+
+def media_url(rel_path: str | None) -> str | None:
+    """URL pública de un archivo bajo media/ (None si no aplica)."""
+    if not rel_path or not rel_path.startswith("media/"):
+        return None
+    from app.config import settings
+
+    return f"{settings.public_base_url}/api/media/{rel_path[len('media/'):]}"
 
 
 def resources_dir() -> Path:

@@ -1,8 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, X } from "lucide-react";
 import { api } from "../lib/api";
 import { BILLING_PERIODS, PACKAGES, PACKAGE_ORDER, billingLabel } from "../lib/packages";
-import type { BillingPeriod, PackageTier } from "../types";
+import type { BillingPeriod, PackageTier, PlanPricesOut } from "../types";
+
+/** "49" o "49,50" — precios sin decimales de relleno. */
+function euros(n: number): string {
+  return (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(".", ",")) + " €";
+}
 
 /**
  * Página PÚBLICA de planes (registro personal del cliente). El cliente elige la
@@ -13,6 +18,8 @@ import type { BillingPeriod, PackageTier } from "../types";
  */
 export default function PlansPage() {
   const [period, setPeriod] = useState<BillingPeriod>("1m");
+  // Importes reales leídos de Stripe (total + equivalente al mes).
+  const [prices, setPrices] = useState<PlanPricesOut | null>(null);
   // Plan elegido → abre el mini-formulario de datos antes del pago.
   const [formTier, setFormTier] = useState<PackageTier | null>(null);
   const [name, setName] = useState("");
@@ -23,6 +30,10 @@ export default function PlansPage() {
   // Registro hecho pero sin URL de pago (Stripe caído/incompleto): el email de
   // arranque ya lleva su enlace de pago, se lo decimos y no se pierde nada.
   const [registeredNoPay, setRegisteredNoPay] = useState(false);
+
+  useEffect(() => {
+    api.publicPlanPrices().then(setPrices).catch(() => setPrices(null));
+  }, []);
 
   function choose(tier: PackageTier) {
     setError(null);
@@ -119,6 +130,28 @@ export default function PlansPage() {
                 </span>
                 <p className="mt-3 text-sm font-medium">{p.tagline}</p>
                 <p className="mt-1 flex-1 text-sm opacity-70">{p.includes}</p>
+                {/* Precio REAL de la combinación elegida (leído de Stripe):
+                    total del pago y, en trimestral/semestral, a cuánto sale
+                    el mes. */}
+                {(() => {
+                  const pr = prices?.tiers?.[t]?.[period];
+                  if (!pr) return null;
+                  return (
+                    <div className="mt-3">
+                      <p className="text-2xl font-bold" style={{ color: p.color }}>
+                        {euros(pr.total)}
+                        <span className="ml-1 text-sm font-medium opacity-60">
+                          / {billingLabel(period).toLowerCase()}
+                        </span>
+                      </p>
+                      {pr.months > 1 && (
+                        <p className="text-xs font-medium opacity-60">
+                          sale a {euros(pr.per_month)} al mes
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
                 <button
                   onClick={() => choose(t)}
                   className="mt-4 rounded-xl px-4 py-3 text-sm font-semibold text-white transition-transform active:scale-[0.98]"
@@ -133,7 +166,9 @@ export default function PlansPage() {
         )}
 
         <p className="mt-8 text-center text-xs opacity-50">
-          Pago seguro con Stripe. El precio de cada plan se muestra en la pantalla de pago.
+          {prices
+            ? "Pago seguro con Stripe."
+            : "Pago seguro con Stripe. El precio de cada plan se muestra en la pantalla de pago."}
         </p>
       </div>
 
@@ -148,6 +183,14 @@ export default function PlansPage() {
               <div>
                 <h2 className="text-lg font-bold">
                   {PACKAGES[formTier].label} · {billingLabel(period)}
+                  {(() => {
+                    const pr = prices?.tiers?.[formTier]?.[period];
+                    return pr ? (
+                      <span className="ml-2" style={{ color: PACKAGES[formTier].color }}>
+                        {euros(pr.total)}
+                      </span>
+                    ) : null;
+                  })()}
                 </h2>
                 <p className="mt-0.5 text-sm opacity-70">
                   Déjanos tus datos: te enviamos tu cuestionario inicial por email

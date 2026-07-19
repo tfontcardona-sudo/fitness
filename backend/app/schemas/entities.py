@@ -255,6 +255,8 @@ class ExerciseOut(ExerciseIn):
 
     id: int
     archived: bool
+    # Vídeo SUBIDO como archivo (media/…): tiene prioridad sobre video_url.
+    video_path: str | None = None
 
     # SALIDA tolerante: anula el validador http(s) heredado de ExerciseIn. Los
     # datos LEGADOS (URLs guardadas antes de existir la validación) no pueden
@@ -294,6 +296,7 @@ class BrandConfigOut(BrandConfigIn):
     id: int
     logo_path: str | None
     links_photo_path: str | None = None
+    video_cover_path: str | None = None
     contact_email: str | None  # relaja EmailStr al leer de DB
 
 
@@ -308,6 +311,15 @@ class PublicRegisterIn(BaseModel):
     period: BillingPeriod = "1m"
 
 
+class LandingProductOut(BaseModel):
+    """Producto recomendado tal y como se muestra en la landing pública."""
+
+    title: str
+    url: str
+    category: str
+    image_url: str | None
+
+
 class LandingOut(BaseModel):
     """GET /api/public/landing — datos públicos de la página de enlaces (/dq)."""
 
@@ -320,6 +332,8 @@ class LandingOut(BaseModel):
     links_photo_url: str | None
     partner_store_url: str | None
     partner_discount_code: str | None
+    # Catálogo de productos recomendados (comprables con el código de arriba).
+    products: list[LandingProductOut] = []
 
 
 # ------------------------------------------ productos recomendados (portal) ----

@@ -1199,6 +1199,46 @@ El link del perfil de Instagram de David lleva TODO el embudo: landing → plane
   a través del wrapper y FastAPI convierte el body Pydantic en query param
   (422 "Field required in query"). public_site.py lo documenta.
 
+## 10.r Tramo 2026-07-19 (2ª) — Precios reales, código único, vídeos subidos, hipermedia
+
+- **Precios REALES en /planes** (`GET /api/public/plan-prices`,
+  `stripe_service.get_plan_prices` con caché 10 min): cada tarjeta muestra el
+  TOTAL de la combinación elegida y, en trimestral/semestral, "sale a X €/mes".
+  También en el mini-formulario. Sin Stripe → la página funciona sin precios.
+- **Código de descuento ÚNICO** (brand.partner_discount_code): manda sobre el
+  de cada producto en el portal (`build_resources`), sale en la landing /dq y
+  en los productos de la landing. El form de producto ya no pide código (nota:
+  "se configura en Página de enlaces"). Fallback: sin código global, se usa el
+  del producto (compat con datos existentes).
+- **Landing /dq con casi-tienda**: catálogo de productos activos (imagen, título,
+  Comprar · código X) debajo de los botones. `LandingOut.products`.
+- **Vídeos de ejercicios SUBIDOS como archivo** (cualquier formato habitual):
+  `exercises.video_path` + `POST/DELETE /api/exercises/{id}/video`
+  (storage.save_exercise_video, escritura por trozos, 300 MB máx). PRIORIDAD
+  sobre video_url en portal y rutina. **Portada GLOBAL** única
+  (brand.video_cover_path, `POST /api/brand/video-cover`) como miniatura de
+  todos los vídeos. Migración **0021**. Recursos → Vídeos: tarjeta "Portada"
+  arriba + botón "Subir vídeo"/“Cambiar”/“Quitar” por ejercicio (chip verde).
+- **GOTCHA de producción**: Caddy solo proxyea `/api/*` → los archivos bajo
+  `/storage/...` NO se sirven en producción. Todo lo público nuevo vive en
+  `storage/media/**` montado como **StaticFiles en `/api/media`** (con soporte
+  Range → el vídeo se puede adelantar). La foto de la landing pasó a media/
+  (re-subir si se subió antes de este tramo); `storage.media_url()` construye
+  la URL pública.
+- **Hipermedia**: en la ficha del cliente, las filas Objetivo/Nivel/Entreno/
+  Dieta son CLICABLES (chevron + hover) y llevan a su pestaña (Planificación /
+  Anamnesis). Dashboard y alertas ya navegaban.
+- **Desplegables EXCLUSIVOS** (abrir uno cierra el hermano) con el atributo
+  nativo `name` de `<details>`: quincenales (Seguimiento), períodos de
+  Feedback, historial, secciones de Planificación ("plan-secciones": cambios
+  propuestos, plan, comidas, objetivo, archivo), planes anteriores, sesiones y
+  ejercicios del editor. Ojo: 2 `open` con el mismo name → el navegador deja
+  solo el primero.
+- **Coherencia entreno⇄dieta**: auditada — sigue garantizada por
+  `reconcile_nutrition` en PATCH de plan + adaptación (kcal ≡ macros ≡ comidas
+  ≡ banco, §10.p/§10.c) y `week_weight_hint` derivado en vivo en el portal.
+- Tests 7/7 (público+Stripe) · migración 0021 aplicada · tsc + vite build OK.
+
 ## 11. Mapa rápido de archivos tocados en el último tramo
 
 **Pulido §8.2 (2026-07-04)**

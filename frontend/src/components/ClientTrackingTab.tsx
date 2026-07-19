@@ -128,7 +128,7 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
           <div className="card p-4 text-xs text-amber-400">Aún no hay revisiones quincenales (pendiente).</div>
         ) : (
           quincenals.map((q, i) => (
-            <details key={q.period_index} className="card overflow-hidden p-0" open={i === 0}>
+            <details key={q.period_index} name="quincenales" className="card overflow-hidden p-0" open={i === 0}>
               <summary className="flex cursor-pointer items-center justify-between px-4 py-3 text-sm">
                 <span className="font-semibold text-zinc-100">
                   Revisión #{q.period_index} · <span className="text-zinc-400">{q.starts_on} → {q.ends_on}</span>
