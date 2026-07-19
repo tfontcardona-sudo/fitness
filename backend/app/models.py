@@ -319,6 +319,11 @@ class BrandConfig(Base):
     contact_web: Mapped[str | None] = mapped_column(String(200))
     docs_theme: Mapped[str] = mapped_column(String(10), default="light")  # light|dark
     portal_theme: Mapped[str] = mapped_column(String(10), default="light")  # light|dark
+    # Página pública de enlaces (link del perfil de Instagram, /dq): foto de
+    # fondo + afiliación del partner (tienda ESN y código de descuento del coach).
+    links_photo_path: Mapped[str | None] = mapped_column(String(500))
+    partner_store_url: Mapped[str | None] = mapped_column(String(300))
+    partner_discount_code: Mapped[str | None] = mapped_column(String(40))
 
 
 # -------------------------------------------------- recommended_products ----

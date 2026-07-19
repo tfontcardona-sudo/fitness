@@ -376,6 +376,23 @@ export interface BrandConfigOut {
   contact_web: string | null;
   docs_theme: Theme;
   portal_theme: Theme;
+  // Página pública de enlaces (/dq): foto de fondo + afiliación del partner.
+  links_photo_path: string | null;
+  partner_store_url: string | null;
+  partner_discount_code: string | null;
+}
+
+/** GET /api/public/landing — datos públicos de la página de enlaces (/dq). */
+export interface LandingOut {
+  name: string;
+  tagline: string | null;
+  color_primary: string;
+  color_secondary: string;
+  color_bg: string;
+  logo_url: string | null;
+  links_photo_url: string | null;
+  partner_store_url: string | null;
+  partner_discount_code: string | null;
 }
 
 export interface WorkoutSetIn {

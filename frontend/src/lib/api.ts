@@ -42,6 +42,7 @@ import type {
   ClientOut,
   ClientStatus,
   ExerciseOut,
+  LandingOut,
   MeOut,
   PortalLinkOut,
   RecommendedProductIn,
@@ -300,13 +301,27 @@ export const api = {
 
   // --- brand ---
   getBrand: () => request<BrandConfigOut>("GET", "/brand"),
-  updateBrand: (body: Omit<BrandConfigOut, "id" | "logo_path">) =>
+  updateBrand: (body: Omit<BrandConfigOut, "id" | "logo_path" | "links_photo_path">) =>
     request<BrandConfigOut>("PUT", "/brand", body),
   uploadLogo: (file: File) => {
     const fd = new FormData();
     fd.append("file", file);
     return request<BrandConfigOut>("POST", "/brand/logo", fd);
   },
+  // Foto de fondo de la página pública de enlaces (/dq).
+  uploadLinksPhoto: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return request<BrandConfigOut>("POST", "/brand/links-photo", fd);
+  },
+
+  // --- página pública de enlaces + registro self-serve ---
+  publicLanding: () => request<LandingOut>("GET", "/public/landing"),
+  // Registro personal desde /planes: crea la ficha, envía el email de arranque
+  // (pago + anamnesis) y devuelve la URL de pago de Stripe (o null si no está).
+  publicRegister: (body: {
+    full_name: string; email: string; phone: string; tier: string; period: string;
+  }) => request<{ url: string | null; email_status: string }>("POST", "/public/register", body),
 
   // --- exercises ---
   listExercises: (params: { q?: string; pattern?: string; muscle?: string; include_archived?: boolean } = {}) => {

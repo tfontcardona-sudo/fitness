@@ -117,9 +117,10 @@ def portal_access(brand: Brand, first_name: str, login_url: str,
 
 
 def onboarding_pay_anamnesis(brand: Brand, first_name: str, plan_label: str,
-                             pay_url: str, portal_url: str) -> tuple[str, str]:
-    """Mensaje de arranque (email): pagar el plan + rellenar la anamnesis, con la
-    instrucción EN MAYÚSCULAS de enviar la anamnesis rellena."""
+                             pay_url: str, anamnesis_url: str) -> tuple[str, str]:
+    """Mensaje de arranque (email): pagar el plan + descargar/rellenar/subir la
+    anamnesis (PDF editable, página pública /anamnesis/{token}), con la
+    instrucción EN MAYÚSCULAS de enviarla completa."""
     first_name = _esc(first_name)
     plan_label = _esc(plan_label)
     subject = f"Tus primeros pasos con {brand.name}"
@@ -130,15 +131,23 @@ def onboarding_pay_anamnesis(brand: Brand, first_name: str, plan_label: str,
         f'color:#0A0A0F;text-decoration:none;border-radius:10px">Pagar mi plan ({plan_label})</a>'
         f'</td></tr></table>'
     )
+    anamnesis_btn = (
+        f'<table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0">'
+        f'<tr><td style="border-radius:10px;background:{brand.color_secondary}">'
+        f'<a href="{anamnesis_url}" style="display:inline-block;padding:13px 26px;font-weight:600;'
+        f'color:#FFFFFF;text-decoration:none;border-radius:10px">Rellenar mi anamnesis</a>'
+        f'</td></tr></table>'
+    )
     body = (
         f"<p>Hola {first_name}, ¡bienvenido/a! Para empezar tu asesoría con "
         f"{brand.name} necesito dos cosas:</p>"
         f"<p><strong>1) Realiza el pago de tu plan {plan_label}:</strong></p>"
         f"{pay_btn}"
-        f"<p><strong>2) Entra en tu portal y rellena tu cuestionario inicial "
-        f"(anamnesis):</strong></p>"
-        f'<p><a href="{portal_url}" style="color:{brand.color_primary};font-weight:600">'
-        f"Abrir mi portal y rellenar la anamnesis</a></p>"
+        f"<p><strong>2) Descarga tu cuestionario inicial (anamnesis), réllenalo "
+        f"y súbelo desde este enlace:</strong></p>"
+        f"{anamnesis_btn}"
+        f"<p>En esa página puedes descargar el PDF editable, rellenarlo con calma "
+        f"desde el móvil o el ordenador y subirlo cuando lo tengas.</p>"
         f'<p style="background:#fff7e6;border-radius:10px;padding:12px 14px;font-weight:700">'
         f"IMPORTANTE: RELLENA Y ENVÍAME TU ANAMNESIS COMPLETA PARA QUE PUEDA PREPARARTE EL PLAN.</p>"
     )

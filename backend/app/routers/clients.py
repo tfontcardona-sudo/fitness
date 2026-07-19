@@ -518,14 +518,14 @@ def _client_or_404_docs(db: Session, client_id: int) -> Client:
     return c
 
 
-@router.post("/{client_id}/documents")
-def upload_client_document(
-    client_id: int,
-    file: UploadFile = File(..., description="PDF de la anamnesis rellenada"),
-    db: Session = Depends(get_db),
-) -> dict:
-    """Sube un documento (PDF) y lo asocia al cliente."""
-    _client_or_404_docs(db, client_id)
+def ingest_anamnesis_pdf(db: Session, client_id: int, content: bytes,
+                         filename: str, *, by: str = "coach") -> dict:
+    """Ingesta COMPLETA de la anamnesis en PDF: guarda el archivo (reemplaza el
+    anterior), lo lee con IA para pre-rellenar la ficha y envía al cliente su
+    acceso al portal la primera vez. Compartida por la subida del coach (ficha)
+    y la subida del PROPIO cliente (página pública /anamnesis/{token}).
+
+    Lanza DocumentValidationError si el archivo no es un PDF válido."""
     # Una sola anamnesis por cliente: borrar las anteriores antes de guardar
     from app.services.storage import client_dir
     folder = client_dir(client_id, "documents")
@@ -535,11 +535,8 @@ def upload_client_document(
                 old.unlink()
             except Exception:
                 pass
-    try:
-        rel = save_document(client_id, file.file.read(), file.filename or "anamnesis.pdf")
-    except DocumentValidationError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
-    log_event(db, "client", client_id, "document_uploaded", {"path": rel})
+    rel = save_document(client_id, content, filename or "anamnesis.pdf")
+    log_event(db, "client", client_id, "document_uploaded", {"path": rel, "by": by})
     db.commit()
     name = rel.rsplit("/", 1)[-1]
 
@@ -558,10 +555,9 @@ def upload_client_document(
     except Exception as exc:  # nunca dejar caer la subida por un fallo de lectura
         read_error = str(exc)
 
-    # Acceso del cliente al portal: la PRIMERA vez que el coach registra la
-    # anamnesis del cliente, se le envía por email su acceso (usuario = email +
-    # contraseña + enlace de login). Solo una vez (portal_access_sent_at). Nunca
-    # bloquea la subida si el email falla.
+    # Acceso del cliente al portal: la PRIMERA vez que se registra la anamnesis
+    # se le envía por email su acceso (usuario = email + contraseña + enlace de
+    # login). Solo una vez (portal_access_sent_at). Nunca bloquea la subida.
     access_status = None
     client = db.get(Client, client_id)
     if client is not None and client.portal_access_sent_at is None:
@@ -576,6 +572,21 @@ def upload_client_document(
 
     return {"name": name, "rel_path": rel, "read_ok": read_ok,
             "read_error": read_error, "portal_access": access_status}
+
+
+@router.post("/{client_id}/documents")
+def upload_client_document(
+    client_id: int,
+    file: UploadFile = File(..., description="PDF de la anamnesis rellenada"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Sube un documento (PDF) y lo asocia al cliente."""
+    _client_or_404_docs(db, client_id)
+    try:
+        return ingest_anamnesis_pdf(db, client_id, file.file.read(),
+                                    file.filename or "anamnesis.pdf", by="coach")
+    except DocumentValidationError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
 
 
 @router.get("/{client_id}/documents")
@@ -598,29 +609,17 @@ def resend_portal_access(client_id: int, db: Session = Depends(get_db)) -> dict:
     return {"status": res["status"], "email": client.email, "password": res["password"]}
 
 
-_TIER_LABEL = {"start": "DQR Start", "full": "DQR Full", "pro": "DQR Pro"}
-
 
 @router.post("/{client_id}/send-onboarding")
 def send_onboarding(client_id: int, db: Session = Depends(get_db)) -> dict:
     """Envía al cliente (por email) el mensaje de arranque combinado: enlace de
-    pago de su plan + enlace a la anamnesis, con la instrucción EN MAYÚSCULAS de
-    enviar la anamnesis rellena. (En Pro el coach lo manda por WhatsApp desde la
-    web; este endpoint es la vía email para Start/Full.)"""
-    from app.services import email_templates as tpl
-    from app.services.email_service import EmailService, brand_from_config
+    pago de su plan + enlace a la anamnesis (página pública del PDF editable),
+    con la instrucción EN MAYÚSCULAS de enviarla rellena. (En Pro el coach lo
+    manda por WhatsApp desde la web; este endpoint es la vía email.)"""
+    from app.services.onboarding import send_onboarding_email
 
     client = _client_or_404_docs(db, client_id)
-    base = settings.public_base_url
-    pay_url = f"{base}/api/pay/{client.portal_token}"
-    portal_url = f"{base}/p/{client.portal_token}"
-    first = ((client.full_name or "").split() or [(client.email or "cliente").split("@")[0]])[0]
-    label = _TIER_LABEL.get(client.package_tier, "tu plan")
-    brand = brand_from_config(db)
-    subject, html = tpl.onboarding_pay_anamnesis(brand, first, label, pay_url, portal_url)
-    email_status = EmailService(db).send(
-        to=client.email, subject=subject, html=html, kind="onboarding", client=client)
-    log_event(db, "client", client.id, "onboarding_sent", {"status": email_status})
+    email_status = send_onboarding_email(db, client)
     db.commit()
     return {"status": email_status, "email": client.email}
 

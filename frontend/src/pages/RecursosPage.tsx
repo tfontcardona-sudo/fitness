@@ -28,7 +28,7 @@ import { ConfirmDialog, EmptyState, PageLoader, Spinner, useToast } from "../com
  * se configura es lo que el cliente ve en la pestaña "Recursos" de su portal.
  */
 export default function RecursosPage() {
-  const [tab, setTab] = useState<"productos" | "videos">("productos");
+  const [tab, setTab] = useState<"productos" | "videos" | "enlaces">("productos");
   return (
     <div className="mx-auto max-w-4xl px-4 py-6 md:px-8 md:py-8">
       <header className="mb-6">
@@ -39,7 +39,7 @@ export default function RecursosPage() {
       </header>
 
       <div className="mb-6 inline-flex rounded-xl border p-1" style={{ borderColor: "var(--line-strong)" }}>
-        {([["productos", "Productos", Package], ["videos", "Vídeos de ejercicios", Video]] as const).map(
+        {([["productos", "Productos", Package], ["videos", "Vídeos de ejercicios", Video], ["enlaces", "Página de enlaces", ExternalLink]] as const).map(
           ([id, label, Icon]) => (
             <button
               key={id}
@@ -58,7 +58,140 @@ export default function RecursosPage() {
         )}
       </div>
 
-      {tab === "productos" ? <ProductsManager /> : <ExerciseVideosManager />}
+      {tab === "productos" ? <ProductsManager /> : tab === "videos" ? <ExerciseVideosManager /> : <LinksPageManager />}
+    </div>
+  );
+}
+
+/* ============================================ Página de enlaces (Instagram) ============================================ */
+
+/** Gestión de la landing pública /dq (el link del perfil de Instagram): foto de
+ *  fondo del coach + tienda del partner (ESN) con su código de descuento. */
+function LinksPageManager() {
+  const toast = useToast();
+  const [brand, setBrand] = useState<import("../types").BrandConfigOut | null>(null);
+  const [storeUrl, setStoreUrl] = useState("");
+  const [code, setCode] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const photoRef = useRef<HTMLInputElement>(null);
+  const publicUrl = `${window.location.origin}/dq`;
+
+  useEffect(() => {
+    api.getBrand()
+      .then((b) => {
+        setBrand(b);
+        setStoreUrl(b.partner_store_url ?? "");
+        setCode(b.partner_discount_code ?? "");
+      })
+      .catch(() => toast.push("No se pudo cargar la configuración", "error"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function save() {
+    if (!brand || saving) return;
+    setSaving(true);
+    try {
+      const { id, logo_path, links_photo_path, ...body } = brand;
+      const updated = await api.updateBrand({
+        ...body,
+        partner_store_url: storeUrl.trim() || null,
+        partner_discount_code: code.trim() || null,
+      });
+      setBrand(updated);
+      toast.push("Página de enlaces guardada");
+    } catch (e) {
+      toast.push(e instanceof ApiError ? e.message : "No se pudo guardar", "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function uploadPhoto(file: File | undefined) {
+    if (!file || uploading) return;
+    setUploading(true);
+    try {
+      const updated = await api.uploadLinksPhoto(file);
+      setBrand(updated);
+      toast.push("Foto de fondo actualizada");
+    } catch (e) {
+      toast.push(e instanceof ApiError ? e.message : "No se pudo subir la foto", "error");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  if (!brand) return <PageLoader />;
+
+  return (
+    <div className="max-w-2xl space-y-4">
+      {/* El enlace público para el perfil de Instagram */}
+      <div className="card p-5">
+        <h3 className="text-sm font-semibold text-zinc-200">Tu enlace para Instagram</h3>
+        <p className="mt-1 text-sm text-zinc-500">
+          Pon esta dirección en el perfil de Instagram. El cliente verá tu foto,
+          el botón "Trabaja conmigo" (planes con pago) y la tienda ESN con tu código.
+        </p>
+        <div className="mt-3 flex items-center gap-2">
+          <code className="flex-1 truncate rounded-lg border px-3 py-2 text-sm"
+            style={{ borderColor: "var(--line-strong)" }}>{publicUrl}</code>
+          <button
+            className="btn btn-primary shrink-0"
+            onClick={() => {
+              navigator.clipboard.writeText(publicUrl).catch(() => {});
+              toast.push("Enlace copiado — pégalo en tu perfil de Instagram");
+            }}
+          >
+            Copiar
+          </button>
+          <a className="btn btn-ghost shrink-0" href={publicUrl} target="_blank" rel="noopener noreferrer">
+            <ExternalLink size={15} /> Ver
+          </a>
+        </div>
+      </div>
+
+      {/* Foto de fondo */}
+      <div className="card p-5">
+        <h3 className="text-sm font-semibold text-zinc-200">Foto de fondo</h3>
+        <p className="mt-1 text-sm text-zinc-500">
+          Una foto tuya en vertical (como fondo de pantalla). JPG/PNG, máx. 5 MB.
+        </p>
+        {brand.links_photo_path && (
+          <img src={`/storage/${brand.links_photo_path}`} alt="Foto de fondo actual"
+            className="mt-3 h-40 w-28 rounded-xl border object-cover"
+            style={{ borderColor: "var(--line-strong)" }} />
+        )}
+        <input ref={photoRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+          onChange={(e) => uploadPhoto(e.target.files?.[0])} />
+        <button className="btn btn-ghost mt-3" disabled={uploading} onClick={() => photoRef.current?.click()}>
+          <Upload size={15} className="text-zinc-500" />
+          {uploading ? "Subiendo…" : brand.links_photo_path ? "Cambiar foto" : "Subir foto"}
+        </button>
+      </div>
+
+      {/* Afiliación ESN */}
+      <div className="card p-5">
+        <h3 className="text-sm font-semibold text-zinc-200">Tienda ESN (afiliación)</h3>
+        <p className="mt-1 text-sm text-zinc-500">
+          Enlace al catálogo de ESN y tu código de descuento. Si los dejas vacíos,
+          la landing solo muestra "Trabaja conmigo".
+        </p>
+        <div className="mt-3 space-y-3">
+          <div>
+            <label className="label">Enlace de la tienda</label>
+            <input className="input" placeholder="https://www.esn.com/..." value={storeUrl}
+              onChange={(e) => setStoreUrl(e.target.value)} />
+          </div>
+          <div>
+            <label className="label">Código de descuento</label>
+            <input className="input" placeholder="DAVIDQUICENO" value={code}
+              onChange={(e) => setCode(e.target.value)} />
+          </div>
+        </div>
+        <button className="btn btn-primary mt-4" disabled={saving} onClick={save}>
+          {saving ? "Guardando…" : "Guardar"}
+        </button>
+      </div>
     </div>
   );
 }

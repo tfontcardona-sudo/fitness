@@ -10,7 +10,7 @@ from app.deps import get_current_user
 from app.models import BrandConfig
 from app.schemas.entities import BrandConfigIn, BrandConfigOut
 from app.services.audit import log_event
-from app.services.storage import PhotoValidationError, save_brand_logo
+from app.services.storage import PhotoValidationError, save_brand_logo, save_links_photo
 
 router = APIRouter(prefix="/api/brand", tags=["brand"], dependencies=[Depends(get_current_user)])
 
@@ -49,6 +49,20 @@ def upload_logo(file: UploadFile = File(...), db: Session = Depends(get_db)) -> 
     except PhotoValidationError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     log_event(db, "brand", brand.id, "brand_logo_updated", None)
+    db.commit()
+    db.refresh(brand)
+    return BrandConfigOut.model_validate(brand)
+
+
+@router.post("/links-photo", response_model=BrandConfigOut)
+def upload_links_photo(file: UploadFile = File(...), db: Session = Depends(get_db)) -> BrandConfigOut:
+    """Foto de fondo de la página pública de enlaces (/dq, link de Instagram)."""
+    brand = _brand(db)
+    try:
+        brand.links_photo_path = save_links_photo(file.file.read(), file.filename or "foto")
+    except PhotoValidationError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    log_event(db, "brand", brand.id, "brand_links_photo_updated", None)
     db.commit()
     db.refresh(brand)
     return BrandConfigOut.model_validate(brand)

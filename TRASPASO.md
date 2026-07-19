@@ -1,7 +1,7 @@
 # Documento de traspaso — Fitness System (DQ / David Quiceno)
 
 > Objetivo de este doc: que otra sesión de IA (Fable u otra) pueda **continuar el trabajo sin perder contexto**.
-> Última actualización: 2026-07-16 (7ª). Autor del último tramo: Claude — (a) coherencia nutricional TOTAL: `reconcile_nutrition` (kcal ≡ macros 4/4/9 ≡ suma por comida) en generación IA, adaptación y guardado del editor + espejo bit-exacto en el frontend; comando `python -m app.maintenance.reconcile_plans` para planes antiguos. (b) Selector de estructura de comidas en Planificación (regenera con IA) Y en el editor (reparte al instante las MISMAS kcal/macros; sincroniza `client.meal_schedule` al guardar). (c) Pestaña Recursos del portal (vídeos de ejercicios + productos, rama del socio) revisada con workflow adversarial: 13 fallos confirmados y corregidos (PNG paleta corrupto, bomba de píxeles, ExerciseOut que rompía con URLs legadas, PATCH con null → 500, unlink antes del commit, host de YouTube por urlsplit, migración 0017 de remache…). (d) Stripe integrado (checkout + webhook `checkout.session.completed` + página /planes; claves en `.env`). **(8ª, mismo día):** pagos por duración contratada — mensual/trimestral/semestral (9 precios `STRIPE_PRICE_{PLAN}_{1M,3M,6M}`, `clients.billing_period` + migración 0019, selector en /planes y en el alta, fila "Duración" editable en la ficha) + guía operativa **`STRIPE.md`** paso a paso (verificada contra el código). Ver §10.p.
+> Última actualización: 2026-07-19 (9ª): **embudo de Instagram completo** — landing pública /dq + registro self-serve con datos antes del pago + anamnesis PDF subida por el propio cliente (§10.q). Anterior (8ª y 7ª): Autor del último tramo: Claude — (a) coherencia nutricional TOTAL: `reconcile_nutrition` (kcal ≡ macros 4/4/9 ≡ suma por comida) en generación IA, adaptación y guardado del editor + espejo bit-exacto en el frontend; comando `python -m app.maintenance.reconcile_plans` para planes antiguos. (b) Selector de estructura de comidas en Planificación (regenera con IA) Y en el editor (reparte al instante las MISMAS kcal/macros; sincroniza `client.meal_schedule` al guardar). (c) Pestaña Recursos del portal (vídeos de ejercicios + productos, rama del socio) revisada con workflow adversarial: 13 fallos confirmados y corregidos (PNG paleta corrupto, bomba de píxeles, ExerciseOut que rompía con URLs legadas, PATCH con null → 500, unlink antes del commit, host de YouTube por urlsplit, migración 0017 de remache…). (d) Stripe integrado (checkout + webhook `checkout.session.completed` + página /planes; claves en `.env`). **(8ª, mismo día):** pagos por duración contratada — mensual/trimestral/semestral (9 precios `STRIPE_PRICE_{PLAN}_{1M,3M,6M}`, `clients.billing_period` + migración 0019, selector en /planes y en el alta, fila "Duración" editable en la ficha) + guía operativa **`STRIPE.md`** paso a paso (verificada contra el código). Ver §10.p.
 > Anterior (5ª): edición manual de nutrición íntegra por objetivo (inputs sin dígito pegado, "cuadrar por objetivo", kcal como ancla) + suite a 108/108.
 > Anterior (4ª): nivel de actividad diaria/NEAT en la anamnesis + TDEE; pautas de diabetes y tiroides en la IA; calidad de PDFs y textos IA (tono serio sin emojis, tablas que paginan sin recortar, escape del texto libre en emails).
 > **PRODUCCIÓN:** el sistema está desplegado en `https://app.dqrassessories.com` (VPS Hetzner
@@ -1152,6 +1152,52 @@ trimestral y semestral** → 3 × 3 = **9 precios de Stripe**.
   con un workflow de 5 agentes adversariales (53 checks, 6 correcciones).
   PENDIENTE del usuario: crear productos/precios en Stripe y rellenar el .env
   del VPS (estaba en ello guiado por el chat).
+
+## 10.q Tramo 2026-07-19 — Landing de Instagram + registro self-serve completo
+
+El link del perfil de Instagram de David lleva TODO el embudo: landing → planes
+→ datos → email con anamnesis (PDF editable) → pago Stripe → ingesta automática.
+
+- **Landing pública `/dq`** (`pages/LinksPage.tsx`): foto del coach de fondo
+  (con velo para legibilidad; sin foto, degradado de marca), logo/nombre/tagline
+  y 2 accesos: "Trabaja conmigo" → `/planes` y "Suplementos ESN" (tienda del
+  partner) + chip del código de descuento (toca para copiar). Datos de
+  `GET /api/public/landing` (routers/public_site.py, rate-limited).
+- **Config de la landing** en `brand_config` (migración **0020**):
+  `links_photo_path` (POST /api/brand/links-photo), `partner_store_url`,
+  `partner_discount_code` (validados en BrandConfigIn). Se gestiona en
+  **Recursos → pestaña "Página de enlaces"** (`LinksPageManager` en
+  RecursosPage): copiar el enlace /dq, subir la foto y guardar tienda+código.
+- **Registro self-serve ANTES del pago** (`POST /api/public/register`):
+  en `/planes`, al elegir plan+duración se abre un mini-formulario (nombre,
+  email, teléfono) → crea el cliente (payment pending, token firmado, evento
+  `client_created by:self`), envía el **email de arranque** y devuelve la URL
+  de Stripe ligada al client_id (StripeError → url null y aviso suave: el
+  email ya lleva su enlace de pago). Reintento con mismo email → actualiza la
+  MISMA ficha; email ya pagado → 409. El webhook marca el pago (flujo alta
+  manual); el alta por webhook sin registro previo sigue existiendo (fallback).
+- **Anamnesis en PDF por el PROPIO cliente**: el email/WhatsApp de arranque ya
+  NO enlaza al portal sino a **`/anamnesis/{token}`** (`pages/AnamnesisPage.tsx`):
+  paso 1 descargar la plantilla editable (`GET /api/p/{token}/anamnesis-template`),
+  paso 2 subir el PDF relleno (`POST /api/p/{token}/anamnesis-pdf`, 5/min).
+  La subida usa la MISMA ingesta que el coach — `ingest_anamnesis_pdf()`
+  extraída en routers/clients.py (guardar reemplazando, leer con IA, enviar
+  acceso al portal 1ª vez) — y solo se permite en estado `onboarding` (después,
+  409 "escribe a tu coach"). El coach ve al cliente con anamnesis lista →
+  dashboard "Crear planificación" (flujo existente); en Pro el envío por
+  WhatsApp sigue siendo el botón del coach.
+- **Emails/WhatsApp**: `onboarding_pay_anamnesis` reescrito (botón azul
+  "Rellenar mi anamnesis" → página del PDF); servicio compartido
+  `services/onboarding.py::send_onboarding_email` (coach + registro público);
+  `whatsapp.onboardingMessage` enlaza a /anamnesis/{token}.
+- **Tests**: `tests/test_public_register.py` (registro pendiente + reuso sin
+  duplicar + 409 pagado + plantilla y subida públicas + 422 no-PDF + cierre
+  post-onboarding + landing). Suite completa = mismos fallos preexistentes que
+  main (0 regresiones); tsc + vite build OK.
+- **GOTCHA**: en un router con `@limiter.limit(...)` de slowapi NO usar
+  `from __future__ import annotations` — las anotaciones-string no se resuelven
+  a través del wrapper y FastAPI convierte el body Pydantic en query param
+  (422 "Field required in query"). public_site.py lo documenta.
 
 ## 11. Mapa rápido de archivos tocados en el último tramo
 
