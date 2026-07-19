@@ -150,6 +150,16 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
                 cli = db.get(Client, plan.client_id)
                 w = (cli.current_weight_kg or cli.start_weight_kg) if cli else None
                 reconcile_nutrition(value, weight_kg=w)
+                # Ninguna toma sin contenido: si el coach añadió comidas en el
+                # editor, los slots nuevos reciben 3 opciones por defecto
+                # escaladas a sus macros (el cliente nunca ve una "toma libre").
+                from app.services.meal_fallback import ensure_bank_slots
+
+                ensure_bank_slots(
+                    value,
+                    allergies=(cli.food_allergies or []) if cli else [],
+                    dislikes=(cli.food_dislikes or []) if cli else [],
+                )
                 # Estructura de comidas: si el coach la cambió en el editor (nº de
                 # tomas), la anamnesis del cliente se sincroniza — las próximas
                 # regeneraciones/adaptaciones parten de ESTE reparto, no del viejo.

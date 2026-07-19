@@ -283,6 +283,18 @@ def generate_plan_doc(
     exercise_names = exercise_names or {}
     blocked = {_norm(x) for x in (food_allergies or []) + (food_dislikes or []) if x}
 
+    # Ninguna toma sin contenido en el PDF: los planes antiguos (guardados antes
+    # del relleno automático) reciben aquí sus 3 opciones por defecto escaladas
+    # a los macros de la toma — el cliente nunca lee una "toma libre". Sobre una
+    # copia: el dict del caller (posible fila de BD en sesión) no se muta.
+    import copy as _copy
+
+    from app.services.meal_fallback import ensure_bank_slots
+
+    nutrition = _copy.deepcopy(nutrition)
+    ensure_bank_slots(nutrition, allergies=food_allergies or [],
+                      dislikes=food_dislikes or [])
+
     doc = init_document(brand)
     # El ejemplo usa Calibri (en el contenedor se sustituye por Carlito, idéntico).
     for _sname in ("Normal", "Heading 1", "Heading 2", "Heading 3"):
