@@ -200,6 +200,18 @@ def _meals_for_today(plan: Plan, client: Client, chosen: dict | None) -> list[di
                         for o in s.get("options", [])
                     ]
                     entry["equivalences"] = s.get("equivalences")
+            if not entry["options"] and not entry.get("equivalences"):
+                # Plan antiguo con una toma sin banco: el cliente ve igualmente
+                # 3 opciones por defecto escaladas a sus macros, nunca un hueco.
+                from app.services.meal_fallback import build_fallback_options
+
+                entry["options"] = [
+                    {"key": o["key"], "title": o["title"], "macros": o["macros"],
+                     "prep_minutes": o.get("prep_minutes"), "tags": o.get("tags", [])}
+                    for o in build_fallback_options(
+                        mdef, allergies=client.food_allergies or [],
+                        dislikes=client.food_dislikes or [])
+                ]
         elif mode == "strict":
             # plato del día = el del weekday actual en el menú cerrado
             today_idx = today_local().weekday()

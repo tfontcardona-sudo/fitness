@@ -411,14 +411,19 @@ FORMATO POR TOMA (réplica EXACTA del método del coach):
       "Proteína (magra o semi-grasa)" según corresponda).
     - note: ración/guía breve ("1 ración moderada (200 g aprox), mejor cocida"; en grasas
       indica AOVE y qué evitar; en fruta, piezas recomendadas).
-    - items: 5-9 alimentos INTERCAMBIABLES; cada uno con su cantidad EQUIVALENTE en macros
-      para cubrir el objetivo de ESE grupo en el slot. amount en CRUDO, con cocido si aplica
-      ("140 g crudo = 380 g cocido"; "150 g"; "350 ml + 1 huevo entero"). El grupo Vegetales
-      puede ir solo con note (items vacío).
+    - items: alimentos INTERCAMBIABLES, cada uno con su cantidad EQUIVALENTE en macros
+      para cubrir el objetivo de ESE grupo en el slot. VARIEDAD AMPLIA — el cliente debe
+      poder elegir: Hidratos de carbono 9-12 alimentos; Proteína 7-10; Grasas 4-6; Fruta 4-6.
+      amount en CRUDO, con cocido si aplica ("140 g crudo = 380 g cocido"; "150 g";
+      "350 ml + 1 huevo entero"). El grupo Vegetales puede ir solo con note (items vacío).
   intro del slot: "Equivalencias calculadas para aportar ~<carbs_g del slot> g de CH del cereal".
 
 • DESAYUNO, MEDIA MAÑANA, MERIENDA, SNACK, etc. → fmt="options": EXACTAMENTE 3 opciones
   (combos cerrados) que cumplan los macros del slot ±5%, con ingredients (food/grams/household).
+
+• OBLIGATORIO: TODAS las tomas del listado deben aparecer en slots CON contenido (opciones o
+  equivalencias). Ninguna toma puede quedar vacía o "libre": al cliente siempre se le dan
+  opciones concretas, no se le complica la vida.
 
 • weekly_examples (TODOS los slots): 7 nombres CORTOS de plato, uno por día, variados, para la
   tabla "Ejemplo de dieta semanal" (p. ej. "Pollo con arroz y brócoli", "Salmón con patata").

@@ -244,6 +244,15 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
     reconcile_nutrition(
         nut, weight_kg=(_cli.current_weight_kg or _cli.start_weight_kg) if _cli else None
     )
+    # Ninguna toma sin contenido tras adaptar: los slots que quedaran vacíos
+    # reciben 3 opciones por defecto escaladas a sus macros (nunca "toma libre").
+    from app.services.meal_fallback import ensure_bank_slots
+
+    ensure_bank_slots(
+        nut,
+        allergies=(_cli.food_allergies or []) if _cli else [],
+        dislikes=(_cli.food_dislikes or []) if _cli else [],
+    )
 
     # Siempre se sobreescribe (el plan base puede arrastrar el bloque de una
     # adaptación anterior tras el deepcopy).

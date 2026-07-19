@@ -1004,6 +1004,14 @@ def generate_client_plan(
 
     nutrition, training, education, flags = generated.to_persistable()
 
+    # Ninguna toma sin contenido: si la IA omitió un slot (o el filtrado de
+    # alérgenos lo vació), recibe 3 opciones por defecto escaladas a sus macros —
+    # el cliente siempre ve opciones concretas, nunca una "toma libre".
+    from app.services.meal_fallback import ensure_bank_slots
+
+    ensure_bank_slots(nutrition, allergies=client.food_allergies or [],
+                      dislikes=client.food_dislikes or [])
+
     # El TDEE que se persiste y se MUESTRA (déficit/superávit del PDF, del panel
     # del coach y del editor) es el AUTORITATIVO del backend (et.tdee), no el eco
     # que devuelve la IA: si no, el % de ajuste mostrado podía contradecir al que
