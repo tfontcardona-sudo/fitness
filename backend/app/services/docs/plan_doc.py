@@ -32,6 +32,7 @@ from app.services.docs.word_base import (
     section_bar,
     setup_reference_pages,
     _hex,
+    _keep_lines,
 )
 
 ASSETS = Path(__file__).resolve().parent.parent.parent / "assets" / "plan"
@@ -392,12 +393,11 @@ def generate_plan_doc(
         for m in meals:
             section_bar(doc, f"{m.get('name','Comida')} · {m.get('time','')}", WINE, size=10)
             sb = blocks.get(m.get("slot"), {})
-            # Cajas de opciones (máx. 3) y de "toma libre": tamaño acotado, la
-            # tarjeta viaja ENTERA a la página siguiente si no cabe — nunca se
-            # parte dejando una línea suelta. Las equivalencias (contenido sin
-            # cota) sí pueden partirse para no recortar texto.
-            is_equiv = bool(sb.get("fmt") == "equivalences" and sb.get("equivalences"))
-            cell = open_box(doc, CREAM, cant_split=not is_equiv)
+            # La caja FLUYE: si no cabe en lo que queda de página, se parte
+            # limpiamente conservando la crema a ambos lados (nunca recorta
+            # texto) y llena la página en vez de saltar entera dejando un hueco
+            # blanco. La barra viaja pegada a su contenido (keepNext).
+            cell = open_box(doc, CREAM)
             if sb.get("fmt") == "equivalences" and sb.get("equivalences"):
                 # foto redonda flotante en la cena (como el ejemplo del coach)
                 img = str(ASSETS / "food_round.png") if "cena" in _norm(m.get("name", "")) else None
@@ -408,6 +408,7 @@ def generate_plan_doc(
                     p = cell.paragraphs[0] if first else cell.add_paragraph()
                     first = False
                     p.paragraph_format.space_after = Pt(4)
+                    _keep_lines(p)  # una opción nunca se parte entre páginas
                     rl = p.add_run(f"Opción {n}. ")
                     rl.font.bold = True
                     rl.font.color.rgb = _hex(WINE)
@@ -428,29 +429,30 @@ def generate_plan_doc(
     # Ejemplo de dieta semanal
     _weekly_section(doc, brand, diet_mode, nutrition, bank)
 
-    # Tarjetas informativas de cierre: contenido FIJO y acotado (menos de media
-    # página cada una), así que cada tarjeta viaja entera a la página siguiente
-    # si no cabe — nunca se parte dejando líneas sueltas (diseño de referencia).
+    # Tarjetas informativas de cierre: FLUYEN para llenar la página. Si una no
+    # cabe entera en lo que queda, se parte limpiamente conservando la crema a
+    # ambos lados (nunca recorta texto) en vez de saltar entera dejando hueco
+    # blanco al pie. La barra viaja pegada a su contenido (keepNext).
 
     # Ideas rápidas
     section_bar(doc, "Ideas rápidas de desayunos, snacks y meriendas", WINE)
-    info_box(doc, [f"• {x}" for x in IDEAS_RAPIDAS], fill=CREAM, cant_split=True)
+    info_box(doc, [f"• {x}" for x in IDEAS_RAPIDAS], fill=CREAM)
 
     # Salsas recomendables
     section_bar(doc, "Salsas recomendables", BLUE)
-    info_box(doc, SALSAS_TEXT, fill=CREAM, cant_split=True)
+    info_box(doc, SALSAS_TEXT, fill=CREAM)
 
     # Yogures recomendables
     section_bar(doc, "Yogures recomendables", BLUE)
-    info_box(doc, YOGURES_TEXT, fill=CREAM, cant_split=True)
+    info_box(doc, YOGURES_TEXT, fill=CREAM)
 
     # Quesos recomendables
     section_bar(doc, "Quesos recomendables", BLUE)
-    info_box(doc, QUESOS_TEXT, fill=CREAM, cant_split=True)
+    info_box(doc, QUESOS_TEXT, fill=CREAM)
 
     # Recomendaciones generales
     section_bar(doc, "Recomendaciones generales", WINE)
-    info_box(doc, RECOMENDACIONES, fill=CREAM, cant_split=True)
+    info_box(doc, RECOMENDACIONES, fill=CREAM)
 
     # Suplementación
     section_bar(doc, "Suplementación recomendada", BLUE)
@@ -459,7 +461,7 @@ def generate_plan_doc(
         items = [f"{s.get('name','')} — {s.get('dose','')} ({s.get('timing','')})" for s in supps]
     else:
         items = SUPLEMENTACION_DEFAULT
-    info_box(doc, items, fill=CREAM, cant_split=True)
+    info_box(doc, items, fill=CREAM)
 
     if not include_training or not training:
         buf = io.BytesIO()
@@ -558,6 +560,7 @@ def _render_equivalences(container, eq: dict, image_path: str | None = None) -> 
     for g in eq.get("groups", []):
         p = container.add_paragraph()
         p.paragraph_format.space_after = Pt(3)
+        _keep_lines(p)  # un grupo de equivalencias no se parte entre páginas
         rl = p.add_run(f"{g.get('name','')}: ")
         rl.font.bold = True
         rl.font.color.rgb = _hex(WINE)
