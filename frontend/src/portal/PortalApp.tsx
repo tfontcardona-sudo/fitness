@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Bell, CalendarCheck, Dumbbell, LineChart, Library, LogOut, NotebookPen, X } from "lucide-react";
+import { Bell, CalendarCheck, Check, ChevronDown, Dumbbell, LineChart, Library, LogOut, NotebookPen, Share, Smartphone, X } from "lucide-react";
 import { portalApi, portalSession, PortalError } from "./portalApi";
 import type { PortalState } from "../types";
 import { PortalWorkout } from "./PortalWorkout";
@@ -154,7 +154,8 @@ export default function PortalApp({ token }: { token: string }) {
         </header>
 
         <main className="relative z-[1] flex-1 px-5 pb-28 pt-2">
-          <PushBanner api={apiClient} accent={state.brand.color_primary} hasTraining={!isStart} />
+          <WelcomeSetup api={apiClient} accent={state.brand.color_primary}
+            secondary={state.brand.color_secondary} hasTraining={!isStart} />
           {/* key={effTab} → transición suave (animate-rise respeta reduced-motion) */}
           <div key={effTab} className="animate-rise">
             {effTab === "entreno" && <PortalWorkout api={apiClient} brand={state.brand} periodStatus={state.period?.status ?? null} />}
@@ -203,30 +204,42 @@ export default function PortalApp({ token }: { token: string }) {
   );
 }
 
+const WELCOME_DONE_KEY = "portal_welcome_done";
+// Compat con el banner antiguo: quien ya lo descartó no vuelve a verlo.
 const PUSH_DISMISSED_KEY = "portal_push_dismissed";
 
 /**
- * Banner de activación de recordatorios (§8.1). Tres estados:
- * - Android/escritorio sin permiso → botón "Activar" (pide permiso + suscribe).
- * - iOS en Safari sin instalar → instrucciones de "Añadir a pantalla de inicio"
- *   (en iOS el push solo funciona con la app instalada).
- * - Permiso ya concedido, denegado o descartado → no se muestra nada.
+ * DESPLEGABLE de primera visita: configura el portal en 2 pasos sin ocupar
+ * espacio (cerrado por defecto, con resumen de una línea):
+ *  1) instalar el portal como APP en la pantalla de inicio (instrucciones según
+ *     iPhone o Android; en iOS es requisito para los avisos), y
+ *  2) activar las notificaciones/recordatorios.
+ * Desaparece al pulsar "Listo" o solo cuando ambos pasos están hechos.
  */
-function PushBanner({ api, accent, hasTraining = true }: { api: ReturnType<typeof portalApi>; accent: string; hasTraining?: boolean }) {
+function WelcomeSetup({ api, accent, secondary, hasTraining = true }: {
+  api: ReturnType<typeof portalApi>; accent: string; secondary: string; hasTraining?: boolean;
+}) {
   const toast = usePortalToast();
   const [dismissed, setDismissed] = useState(
-    () => localStorage.getItem(PUSH_DISMISSED_KEY) === "1"
+    () => localStorage.getItem(WELCOME_DONE_KEY) === "1"
+      || localStorage.getItem(PUSH_DISMISSED_KEY) === "1"
   );
   const [granted, setGranted] = useState(
     () => isPushSupported() && Notification.permission === "granted"
   );
   const [busy, setBusy] = useState(false);
 
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const installed = window.matchMedia("(display-mode: standalone)").matches
+    || (navigator as unknown as { standalone?: boolean }).standalone === true;
   const installFirst = needsInstallFirst();
-  if (dismissed || granted || (!isPushSupported() && !installFirst)) return null;
 
-  const dismiss = () => {
-    localStorage.setItem(PUSH_DISMISSED_KEY, "1");
+  // Todo hecho (o nada que ofrecer en este navegador) → no molestar más.
+  if (dismissed || (granted && installed)) return null;
+  if (!isPushSupported() && !installFirst && installed) return null;
+
+  const done = () => {
+    localStorage.setItem(WELCOME_DONE_KEY, "1");
     setDismissed(true);
   };
 
@@ -239,50 +252,91 @@ function PushBanner({ api, accent, hasTraining = true }: { api: ReturnType<typeo
       toast.push("Recordatorios activados 🔔");
     } catch (e) {
       toast.push(e instanceof Error ? e.message : "No se pudo activar");
-      if (isPushSupported() && Notification.permission === "denied") dismiss();
     } finally {
       setBusy(false);
     }
   };
 
-  return (
-    <div className="portal-card mb-4 flex items-start gap-3 p-3">
-      {/* Azul: banner informativo, no acción principal */}
-      <span className="mt-0.5 shrink-0" style={{ color: "var(--p-accent-2)" }}>
-        <Bell size={18} />
+  const Step = ({ n, done: stepDone, children }: {
+    n: number; done: boolean; children: React.ReactNode;
+  }) => (
+    <div className="flex items-start gap-2.5">
+      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
+        style={stepDone
+          ? { background: "#2E7D46", color: "#fff" }
+          : { background: `color-mix(in srgb, ${secondary} 16%, transparent)`, color: secondary }}>
+        {stepDone ? <Check size={12} /> : n}
       </span>
-      <div className="min-w-0 flex-1">
-        {installFirst ? (
-          <>
-            <p className="text-sm font-semibold">Recibe recordatorios</p>
-            <p className="mt-0.5 text-xs opacity-70">
-              Instala la app para no olvidar tus registros: toca{" "}
-              <span className="font-medium">Compartir</span> y luego{" "}
-              <span className="font-medium">"Añadir a pantalla de inicio"</span>.
-              Después actívalos desde aquí.
-            </p>
-          </>
-        ) : (
-          <>
-            <p className="text-sm font-semibold">¿Te aviso si te falta algo?</p>
-            <p className="mt-0.5 text-xs opacity-70">
-              Un recordatorio si queda {hasTraining ? "el diario, el entreno o la revisión" : "el diario o la revisión"} sin rellenar.
-            </p>
-            <button
-              onClick={activate}
-              disabled={busy}
-              className="portal-btn3d mt-2 min-h-[40px] px-4 py-2 text-xs font-semibold"
-              style={{ background: accent, color: "#fff" }}
-            >
-              {busy ? "Activando…" : "Activar recordatorios"}
-            </button>
-          </>
-        )}
-      </div>
-      <button onClick={dismiss} aria-label="Cerrar" className="-m-2 shrink-0 p-2 opacity-40 hover:opacity-80">
-        <X size={16} />
-      </button>
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
+  );
+
+  return (
+    <details className="portal-card mb-4 overflow-hidden">
+      <summary className="tap flex cursor-pointer items-center gap-2.5 p-3">
+        <span className="shrink-0" style={{ color: accent }}><Bell size={18} /></span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold">Configura tu portal (1 min)</span>
+          <span className="block text-[11px] opacity-60">
+            Ponlo como app en tu móvil y activa tus avisos
+          </span>
+        </span>
+        <ChevronDown size={16} className="shrink-0 opacity-50" />
+      </summary>
+      <div className="space-y-3.5 px-3 pb-3.5 pt-1">
+        {/* Paso 1 — instalar como app (instrucciones según el móvil) */}
+        <Step n={1} done={installed}>
+          <p className="flex items-center gap-1.5 text-xs font-semibold">
+            <Smartphone size={13} /> Pon el portal en tu pantalla de inicio
+          </p>
+          {installed ? (
+            <p className="mt-0.5 text-[11px] opacity-60">¡Hecho! Ya lo tienes como app.</p>
+          ) : isIOS ? (
+            <p className="mt-0.5 text-[11px] leading-relaxed opacity-70">
+              En Safari: toca <span className="font-semibold">Compartir</span>{" "}
+              <Share size={11} className="inline" /> y elige{" "}
+              <span className="font-semibold">"Añadir a pantalla de inicio"</span>.
+            </p>
+          ) : (
+            <p className="mt-0.5 text-[11px] leading-relaxed opacity-70">
+              En Chrome: toca el menú <span className="font-semibold">⋮</span> (arriba a la
+              derecha) y elige <span className="font-semibold">"Añadir a pantalla de inicio"</span>{" "}
+              o <span className="font-semibold">"Instalar aplicación"</span>.
+            </p>
+          )}
+        </Step>
+
+        {/* Paso 2 — notificaciones (en iOS, tras instalar) */}
+        <Step n={2} done={granted}>
+          <p className="text-xs font-semibold">Activa tus recordatorios</p>
+          {granted ? (
+            <p className="mt-0.5 text-[11px] opacity-60">¡Hecho! Te avisaré si te falta algo.</p>
+          ) : installFirst ? (
+            <p className="mt-0.5 text-[11px] opacity-70">
+              Primero haz el paso 1; después abre la app y activa aquí los avisos.
+            </p>
+          ) : (
+            <>
+              <p className="mt-0.5 text-[11px] opacity-70">
+                Un aviso si queda {hasTraining ? "el diario, el entreno o la revisión" : "el diario o la revisión"} sin rellenar.
+              </p>
+              <button
+                onClick={activate}
+                disabled={busy}
+                className="portal-btn3d mt-1.5 min-h-[38px] px-4 py-1.5 text-xs font-semibold"
+                style={{ background: accent, color: "#fff" }}
+              >
+                {busy ? "Activando…" : "Activar recordatorios"}
+              </button>
+            </>
+          )}
+        </Step>
+
+        <button onClick={done} className="tap flex items-center gap-1 text-[11px] font-medium opacity-50 hover:opacity-80">
+          <X size={12} /> No volver a mostrar
+        </button>
+      </div>
+    </details>
   );
 }
 

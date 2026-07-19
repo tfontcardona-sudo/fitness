@@ -299,6 +299,13 @@ export const api = {
       strength: { name: string; e1rm_kg: number; delta_kg: number | null }[];
     }>("GET", `/periods/${periodId}/metrics`),
   feedbackDocumentUrl: (docId: number) => `/api/feedback/${docId}/document`,
+  // Cambios manuales del plan: marcarlos como enviados/atendidos, o enviarlos
+  // por email con la lista de lo que se cambió (detectada al editar).
+  ackManualChanges: (planId: number) =>
+    request<{ cleared: number }>("POST", `/plans/${planId}/manual-changes/ack`),
+  sendPlanUpdateEmail: (planId: number) =>
+    request<{ sent: boolean; email_status: string; attached_pdf: boolean }>(
+      "POST", `/plans/${planId}/send-update-email`),
 
   // --- brand ---
   getBrand: () => request<BrandConfigOut>("GET", "/brand"),

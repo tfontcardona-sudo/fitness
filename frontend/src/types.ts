@@ -641,6 +641,10 @@ export interface ResourceProduct {
   category: string;
   image_url: string | null;
   discount_code?: string | null;
+  // URL de compra con el código pre-aplicado (tienda Shopify del partner).
+  buy_url?: string | null;
+  // True si corresponde a un suplemento pautado en SU planificación.
+  in_plan?: boolean;
 }
 
 export interface PortalResources {

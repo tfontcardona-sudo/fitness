@@ -135,6 +135,11 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
     if not plan:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan no encontrado")
     changes = body.model_dump(exclude_unset=True)
+    # Foto del plan ANTES de aplicar la edición: al final se calcula el diff
+    # (determinista) de lo que el coach cambió a mano, para avisar y para el
+    # mensaje al cliente ("he ajustado X → Y").
+    old_nutrition = dict(plan.nutrition_json) if isinstance(plan.nutrition_json, dict) else None
+    old_training = dict(plan.training_json) if isinstance(plan.training_json, dict) else None
     for field, value in changes.items():
         if value is not None:
             # Red de seguridad: nutrition_json se reemplaza entero; si el editor
@@ -175,7 +180,32 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
                         and plan.nutrition_json.get("applied_adjustments")):
                     value = {**value, "applied_adjustments": plan.nutrition_json["applied_adjustments"]}
             setattr(plan, field, value)
-    log_event(db, "plan", plan.id, "plan_edited", {"fields": list(changes.keys())})
+    # Cambios manuales DETECTADOS (diff exacto antes/después): se ACUMULAN en
+    # nutrition_json.manual_changes hasta que el coach los envía al cliente
+    # (WhatsApp/email) o los descarta — el panel muestra el aviso mientras tanto.
+    from app.services.plan_diff import manual_change_summary
+
+    diff_items = manual_change_summary(
+        db,
+        old_nutrition=old_nutrition, new_nutrition=plan.nutrition_json,
+        old_training=old_training, new_training=plan.training_json,
+    )
+    if diff_items:
+        nut = dict(plan.nutrition_json) if isinstance(plan.nutrition_json, dict) else {}
+        # Los pendientes previos viven en el plan ANTES de la edición (el editor
+        # no reenvía manual_changes): se acumulan hasta que el coach los envía.
+        pending = (old_nutrition or {}).get("manual_changes") or {}
+        seen = list(pending.get("items") or [])
+        for it in diff_items:
+            if it not in seen:
+                seen.append(it)
+        nut["manual_changes"] = {
+            "at": datetime.now(timezone.utc).isoformat(), "items": seen[:20],
+        }
+        plan.nutrition_json = nut
+
+    log_event(db, "plan", plan.id, "plan_edited",
+              {"fields": list(changes.keys()), "diff": diff_items[:20]})
     # Editar también ACTIVA: si el coach retoca un borrador (legado), el plan
     # queda vigente al guardar — no existe el paso "Publicar".
     if plan.status == "draft":
@@ -594,6 +624,70 @@ def send_plan_email(plan_id: int, db: Session = Depends(get_db)) -> dict:
     log_event(db, "plan", plan.id, "plan_sent_email", {"client_id": client.id, "status": email_status})
     db.commit()
     return {"sent": email_status != "failed", "email_status": email_status,
+            "attached_pdf": bool(attachments)}
+
+
+# --------------------------------- cambios manuales del plan (aviso + envío) ----
+
+def _clear_manual_changes(plan: Plan) -> list[str]:
+    """Quita el aviso de cambios manuales del plan y devuelve los items."""
+    nut = dict(plan.nutrition_json) if isinstance(plan.nutrition_json, dict) else {}
+    items = list((nut.pop("manual_changes", None) or {}).get("items") or [])
+    plan.nutrition_json = nut
+    return items
+
+
+@router.post("/api/plans/{plan_id}/manual-changes/ack")
+def ack_manual_changes(plan_id: int, db: Session = Depends(get_db)) -> dict:
+    """Marca los cambios manuales como ENVIADOS/atendidos (los quita del aviso).
+    Lo llama la web tras abrir el WhatsApp con el mensaje, o al descartarlos."""
+    plan = db.get(Plan, plan_id)
+    if not plan:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan no encontrado")
+    items = _clear_manual_changes(plan)
+    log_event(db, "plan", plan.id, "manual_changes_acked", {"items": items[:20]})
+    db.commit()
+    return {"cleared": len(items)}
+
+
+@router.post("/api/plans/{plan_id}/send-update-email")
+def send_plan_update_email(plan_id: int, db: Session = Depends(get_db)) -> dict:
+    """Envía al cliente POR EMAIL la actualización manual del plan: el mensaje
+    EXPLICA qué se cambió (diff detectado al editar) y adjunta el PDF al día.
+    Al enviarse, el aviso de cambios pendientes se apaga."""
+    from app.services.plan_delivery import build_plan_pdf
+
+    plan = db.get(Plan, plan_id)
+    if not plan:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan no encontrado")
+    client = db.get(Client, plan.client_id)
+    if client is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Cliente no encontrado")
+    items = list(((plan.nutrition_json or {}).get("manual_changes") or {}).get("items") or [])
+    if not items:
+        raise HTTPException(status.HTTP_409_CONFLICT, "No hay cambios manuales pendientes de enviar")
+
+    attachments: list[tuple[str, bytes, str]] = []
+    try:
+        content, _media, filename = build_plan_pdf(db, plan, client)
+        attachments.append((filename, content, "application/pdf"))
+    except Exception:
+        pass
+
+    brand = brand_from_config(db)
+    portal_url = f"{settings.public_base_url}/p/{client.portal_token}"
+    _first = ((client.full_name or "").split() or [(client.email or "cliente").split("@")[0]])[0]
+    subject, html = tpl.plan_manual_update(brand, _first, items, portal_url, bool(attachments))
+    email_status = EmailService(db).send(
+        to=client.email, subject=subject, html=html, kind="plan_update",
+        client=client, attachments=attachments or None,
+    )
+    if email_status == "sent":
+        _clear_manual_changes(plan)
+    log_event(db, "plan", plan.id, "plan_update_sent_email",
+              {"client_id": client.id, "status": email_status, "items": items[:20]})
+    db.commit()
+    return {"sent": email_status == "sent", "email_status": email_status,
             "attached_pdf": bool(attachments)}
 
 

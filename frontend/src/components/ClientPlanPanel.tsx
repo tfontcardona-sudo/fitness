@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Mail, Pencil, PlayCircle, Save, X, Flag, Copy, Archive } from "lucide-react";
 import { api, getToken } from "../lib/api";
-import { openWhatsApp, planAndFeedbackMessage, planMessage, waPhone, waUrl } from "../lib/whatsapp";
+import { manualUpdateMessage, openWhatsApp, planAndFeedbackMessage, planMessage, waPhone, waUrl } from "../lib/whatsapp";
 import { pkg } from "../lib/packages";
 import { CANONICAL_MEALS, mealKeysFromNames } from "../lib/meals";
 import { GOAL_LABEL, goalDays, goalReviewDue, planMonthLabel } from "../lib/format";
@@ -62,6 +62,9 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
   const [generating, setGenerating] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [editing, setEditing] = useState(false);
+  // Bloque desde el que se pulsó "Editar": el editor abre enfocado en él.
+  const [editFocus, setEditFocus] = useState<"nutrition" | "training" | "supplements" | null>(null);
+  const [sendingUpd, setSendingUpd] = useState(false);
   const [missing, setMissing] = useState<string[] | null>(null);
   const [periods, setPeriods] = useState<{
     id: number; period_index: number; plan_id: number | null; starts_on: string; ends_on: string; status: string;
@@ -370,15 +373,17 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
         exMap={exMap}
         client={client}
         refWeightKg={lastClosing?.closing_weight_kg ?? client.start_weight_kg ?? null}
+        initialFocus={editFocus}
         onSaved={(p) => {
           setPlan(p);
           setEditing(false);
+          setEditFocus(null);
           // El PDF descargado antes ya NO refleja esta edición: avisar hasta
           // que el coach lo vuelva a descargar (o lo reenvíe por WhatsApp).
           setNeedsDownload(true);
-          toast.push("Cambios guardados — descarga el PDF de nuevo para el cliente");
+          toast.push("Cambios guardados — envíale la actualización al cliente");
         }}
-        onCancel={() => setEditing(false)}
+        onCancel={() => { setEditing(false); setEditFocus(null); }}
       />
     );
   }
@@ -511,9 +516,98 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
         onRegenerate={(keys) => generate(keys)}
       />
 
+      {/* CAMBIOS MANUALES detectados al editar (diff exacto): el sistema sabe
+          que esta versión es un ajuste esporádico del coach → aviso con la
+          lista de lo cambiado y envío por WhatsApp/email que LO EXPLICA. */}
+      {(() => {
+        const manualItems: string[] = ((nut as any)?.manual_changes?.items ?? []) as string[];
+        if (!manualItems.length) return null;
+        const refreshPlans = () =>
+          api.listPlans(client.id).then((plans) => {
+            setAllPlans(plans);
+            if (plans.length) setPlan(normalize(plans[0]));
+          }).catch(() => {});
+        const sendWa = async () => {
+          const phone = waPhone(client.phone);
+          if (!phone) {
+            toast.push("Añade el teléfono del cliente para enviarlo por WhatsApp", "error");
+            return;
+          }
+          const win = window.open("", "_blank"); // anti-bloqueo de popups en iOS
+          try {
+            const pdfUrl = await planPdfUrl();
+            const url = waUrl(phone, manualUpdateMessage(client.full_name, manualItems, pdfUrl));
+            if (win) win.location.href = url;
+            else openWhatsApp(phone, manualUpdateMessage(client.full_name, manualItems, pdfUrl));
+            await api.ackManualChanges(plan.id);
+            setNeedsDownload(false);
+            refreshPlans();
+            toast.push("WhatsApp abierto con los cambios explicados — dale a enviar");
+          } catch {
+            win?.close();
+            toast.push("No se pudo preparar el envío", "error");
+          }
+        };
+        const sendEmail = async () => {
+          if (sendingUpd) return;
+          setSendingUpd(true);
+          try {
+            const r = await api.sendPlanUpdateEmail(plan.id);
+            if (r.sent) {
+              toast.push("Email enviado con los cambios explicados y el PDF al día");
+              setNeedsDownload(false);
+              refreshPlans();
+            } else {
+              toast.push("El email no salió (revisa la configuración de correo)", "error");
+            }
+          } catch (e: any) {
+            toast.push(e?.message ?? "No se pudo enviar", "error");
+          } finally {
+            setSendingUpd(false);
+          }
+        };
+        const dismiss = async () => {
+          await api.ackManualChanges(plan.id).catch(() => {});
+          refreshPlans();
+        };
+        return (
+          <div className="card border p-4"
+            style={{ borderColor: "var(--brand-accent)", background: "color-mix(in srgb, var(--brand-accent) 8%, transparent)" }}>
+            <div className="flex items-start gap-2">
+              <AlertTriangle size={16} className="mt-0.5 shrink-0" style={{ color: "var(--brand-accent)" }} />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-zinc-100">
+                  Planificación modificada a mano — envíasela actualizada
+                </p>
+                <ul className="mt-1.5 space-y-0.5 text-xs text-zinc-400">
+                  {manualItems.slice(0, 6).map((it, i) => <li key={i}>· {it}</li>)}
+                  {manualItems.length > 6 && (
+                    <li className="text-zinc-500">…y {manualItems.length - 6} cambios más</li>
+                  )}
+                </ul>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button onClick={sendWa} className="btn btn-primary !px-3 !py-1.5 text-xs">
+                    <MessageCircle size={13} /> Enviar por WhatsApp
+                  </button>
+                  <button onClick={sendEmail} disabled={sendingUpd} className="btn btn-ghost !px-3 !py-1.5 text-xs">
+                    <Mail size={13} /> {sendingUpd ? "Enviando…" : "Enviar por email"}
+                  </button>
+                  <button onClick={downloadPdf} className="btn btn-ghost !px-3 !py-1.5 text-xs">
+                    <Download size={13} /> PDF actualizado
+                  </button>
+                  <button onClick={dismiss} className="ml-auto text-xs text-zinc-500 underline-offset-2 hover:underline">
+                    Descartar aviso
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Tras editar: el PDF que se descargó antes queda ANTIGUO — recordatorio
           claro hasta que se vuelva a descargar (la edición ya está guardada). */}
-      {needsDownload && (
+      {needsDownload && !((nut as any)?.manual_changes?.items?.length) && (
         <div
           className="card flex flex-wrap items-center justify-between gap-3 border p-4"
           style={{ borderColor: "var(--brand-accent)", background: "color-mix(in srgb, var(--brand-accent) 8%, transparent)" }}
@@ -664,7 +758,8 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
 
       {/* Nutrición */}
       <div className="card p-5">
-        <SectionTitle icon={Utensils} title="Nutrición" />
+        <SectionTitle icon={Utensils} title="Nutrición"
+          onEdit={() => { setEditFocus("nutrition"); setEditing(true); }} />
         {/* Cálculo aplicado, directo: déficit/superávit sobre el TDEE */}
         {nut.tdee_kcal ? (
           <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
@@ -776,7 +871,8 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
           El paquete Start es solo nutrición: no se muestra el entrenamiento. */}
       {hasTraining && (
       <div className="card p-5">
-        <SectionTitle icon={Dumbbell} title={`Entrenamiento${tr.split_name ? ` · ${tr.split_name}` : ""}`} accent="var(--brand-accent-2)" />
+        <SectionTitle icon={Dumbbell} title={`Entrenamiento${tr.split_name ? ` · ${tr.split_name}` : ""}`} accent="var(--brand-accent-2)"
+          onEdit={() => { setEditFocus("training"); setEditing(true); }} />
         {tr.split_rationale && (
           <details className="mb-3 text-sm">
             <summary className="cursor-pointer font-medium text-zinc-400 hover:text-zinc-200">Sobre esta estructura</summary>
@@ -895,7 +991,8 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
       {/* Suplementación */}
       {Array.isArray(nut.supplements) && nut.supplements.length > 0 && (
         <div className="card p-5">
-          <SectionTitle icon={Pill} title="Suplementación" />
+          <SectionTitle icon={Pill} title="Suplementación"
+            onEdit={() => { setEditFocus("supplements"); setEditing(true); }} />
           <div className="space-y-1.5">
             {nut.supplements.map((s: any, i: number) => (
               <div key={i} className="rounded-lg px-3 py-2 text-xs" style={{ background: "var(--surface-raised)" }}>
@@ -1363,10 +1460,23 @@ function AdjustmentRow({ area, main, secondary, reason }: {
   );
 }
 
-function SectionTitle({ icon: Icon, title, accent }: { icon: typeof Utensils; title: string; accent?: string }) {
+function SectionTitle({ icon: Icon, title, accent, onEdit }: {
+  icon: typeof Utensils; title: string; accent?: string;
+  /** Edición POR BLOQUE: abre el editor enfocado y resaltado en esta sección. */
+  onEdit?: () => void;
+}) {
   const c = accent ?? "var(--brand-accent)";
   return (
     <div className="mb-3 flex items-center gap-2.5">
+      {onEdit && (
+        <button
+          onClick={onEdit}
+          className="btn btn-ghost order-last ml-auto !px-2.5 !py-1 text-xs"
+          title={`Editar ${title.toLowerCase()}`}
+        >
+          <Pencil size={12} /> Editar
+        </button>
+      )}
       {/* Icono en chip tintado: da jerarquía y quita el aspecto plano */}
       <span
         className="flex h-7 w-7 items-center justify-center rounded-lg"

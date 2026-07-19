@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Save, X, Plus, Trash2, Utensils, Dumbbell, Target, AlertTriangle, Check, ChevronDown, ChevronUp, PlayCircle } from "lucide-react";
 import { api } from "../lib/api";
 import {
@@ -36,7 +36,7 @@ interface PlanData {
  * edición del coach bajo su criterio).
  */
 export function ClientPlanEditor({
-  plan, exMap, onSaved, onCancel, client, refWeightKg,
+  plan, exMap, onSaved, onCancel, client, refWeightKg, initialFocus,
 }: {
   plan: PlanData;
   exMap: Record<number, string>;
@@ -44,8 +44,32 @@ export function ClientPlanEditor({
   onCancel: () => void;
   client?: ClientOut;
   refWeightKg?: number | null;
+  /** Bloque desde el que se abrió el editor (botón Editar de ese bloque):
+   *  se hace scroll hasta él y se resalta un instante para saber QUÉ se edita. */
+  initialFocus?: "nutrition" | "training" | "supplements" | null;
 }) {
   const toast = useToast();
+  // Foco por bloque: refs de cada sección + destello al abrir.
+  const focusRefs = {
+    nutrition: useRef<HTMLDivElement>(null),
+    training: useRef<HTMLDivElement>(null),
+    supplements: useRef<HTMLDivElement>(null),
+  };
+  const [flash, setFlash] = useState<string | null>(null);
+  useEffect(() => {
+    if (!initialFocus) return;
+    const el = focusRefs[initialFocus]?.current;
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    setFlash(initialFocus);
+    const t = window.setTimeout(() => setFlash(null), 1800);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFocus]);
+  const flashStyle = (key: string): CSSProperties =>
+    flash === key
+      ? { boxShadow: "0 0 0 2px var(--brand-accent), 0 0 24px color-mix(in srgb, var(--brand-accent) 35%, transparent)", transition: "box-shadow .3s" }
+      : { transition: "box-shadow .6s" };
   const [draft, setDraft] = useState(() => {
     const d = {
       nutrition: structuredClone(plan.nutrition ?? {}),
@@ -298,7 +322,7 @@ export function ClientPlanEditor({
       </div>
 
       {/* Nutrición */}
-      <div className="card p-5">
+      <div ref={focusRefs.nutrition} className="card p-5" style={flashStyle("nutrition")}>
         <Title icon={Utensils} text="Nutrición" />
 
         {/* Recomendación por OBJETIVO (evidencia actual) con un clic */}
@@ -478,19 +502,21 @@ export function ClientPlanEditor({
         <Area label="Reglas de flexibilidad (una por línea)" value={(nut.flexibility_rules ?? []).join("\n")}
           onChange={(v) => mutate((d) => (d.nutrition.flexibility_rules = v.split("\n").map((s) => s.trim()).filter(Boolean)))} />
 
-        <Subhead text="Suplementos" onAdd={() => mutate((d) => d.nutrition.supplements.push({ name: "", dose: "", timing: "", evidence_note: "" }))} />
-        {nut.supplements.map((s: any, i: number) => (
-          <Row key={i} onRemove={() => mutate((d) => d.nutrition.supplements.splice(i, 1))}>
-            <Text label="Nombre" value={s.name} onChange={(v) => mutate((d) => (d.nutrition.supplements[i].name = v))} />
-            <Text label="Dosis" value={s.dose} onChange={(v) => mutate((d) => (d.nutrition.supplements[i].dose = v))} />
-            <Text label="Momento" value={s.timing} onChange={(v) => mutate((d) => (d.nutrition.supplements[i].timing = v))} />
-            <Text label="Nota" value={s.evidence_note ?? ""} onChange={(v) => mutate((d) => (d.nutrition.supplements[i].evidence_note = v))} />
-          </Row>
-        ))}
+        <div ref={focusRefs.supplements} style={flashStyle("supplements")} className="rounded-lg">
+          <Subhead text="Suplementos" onAdd={() => mutate((d) => d.nutrition.supplements.push({ name: "", dose: "", timing: "", evidence_note: "" }))} />
+          {nut.supplements.map((s: any, i: number) => (
+            <Row key={i} onRemove={() => mutate((d) => d.nutrition.supplements.splice(i, 1))}>
+              <Text label="Nombre" value={s.name} onChange={(v) => mutate((d) => (d.nutrition.supplements[i].name = v))} />
+              <Text label="Dosis" value={s.dose} onChange={(v) => mutate((d) => (d.nutrition.supplements[i].dose = v))} />
+              <Text label="Momento" value={s.timing} onChange={(v) => mutate((d) => (d.nutrition.supplements[i].timing = v))} />
+              <Text label="Nota" value={s.evidence_note ?? ""} onChange={(v) => mutate((d) => (d.nutrition.supplements[i].evidence_note = v))} />
+            </Row>
+          ))}
+        </div>
       </div>
 
       {/* Entrenamiento */}
-      <div className="card p-5">
+      <div ref={focusRefs.training} className="card p-5" style={flashStyle("training")}>
         <Title icon={Dumbbell} text="Entrenamiento" />
         <Text label="Nombre del split" value={tr.split_name ?? ""} onChange={(v) => mutate((d) => (d.training.split_name = v))} />
         <Area label="Justificación del split" value={tr.split_rationale ?? ""} onChange={(v) => mutate((d) => (d.training.split_rationale = v))} />
