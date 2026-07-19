@@ -14,6 +14,7 @@ from app.services.storage import (
     PhotoValidationError,
     save_brand_logo,
     save_links_photo,
+    save_plans_photo,
     save_video_cover,
 )
 
@@ -68,6 +69,20 @@ def upload_links_photo(file: UploadFile = File(...), db: Session = Depends(get_d
     except PhotoValidationError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     log_event(db, "brand", brand.id, "brand_links_photo_updated", None)
+    db.commit()
+    db.refresh(brand)
+    return BrandConfigOut.model_validate(brand)
+
+
+@router.post("/plans-photo", response_model=BrandConfigOut)
+def upload_plans_photo(file: UploadFile = File(...), db: Session = Depends(get_db)) -> BrandConfigOut:
+    """Foto de fondo de la página pública de planes (/planes)."""
+    brand = _brand(db)
+    try:
+        brand.plans_photo_path = save_plans_photo(file.file.read(), file.filename or "foto")
+    except PhotoValidationError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    log_event(db, "brand", brand.id, "brand_plans_photo_updated", None)
     db.commit()
     db.refresh(brand)
     return BrandConfigOut.model_validate(brand)

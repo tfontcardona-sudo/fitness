@@ -322,6 +322,12 @@ export const api = {
     fd.append("file", file);
     return request<BrandConfigOut>("POST", "/brand/links-photo", fd);
   },
+  // Foto de fondo de la página pública de planes (/planes).
+  uploadPlansPhoto: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return request<BrandConfigOut>("POST", "/brand/plans-photo", fd);
+  },
   // Portada única de todos los vídeos de ejercicios.
   uploadVideoCover: (file: File) => {
     const fd = new FormData();

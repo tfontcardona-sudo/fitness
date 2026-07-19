@@ -249,7 +249,34 @@ function equivRatio(name: any, rK: number, rP: number, rC: number, rF: number): 
  *  comida (cada eje por su propio ratio, así los totales cuadran) y banco de
  *  comidas (macros de cada opción + gramos de cada ingrediente, por el ratio
  *  de calorías, redondeados a 5 g para que las raciones sean cocinables). */
-export function rescaleNutrition(nut: any, next: MacroTargets): void {
+/** Topes FISIOLÓGICOS de los objetivos (ESPEJO de nutrition_scale.clamp_targets
+ *  del backend — cambiar ambos a la vez): una edición absurda (CH 800 g, grasa
+ *  0 g, +77% de superávit) se corrige al momento, en vivo y al guardar. */
+export function clampTargets(next: MacroTargets, tdee?: number | null, weightKg?: number | null): MacroTargets {
+  const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+  const w = weightKg && weightKg > 0 ? weightKg : 0;
+  const pLo = w ? Math.round(w * 1.2) : 60;
+  const pHi = w ? Math.round(w * 3.0) : 280;
+  const fLo = w ? Math.max(20, Math.round(w * 0.6)) : 20;
+  const fHi = w ? Math.round(w * 2.0) : 160;
+  const p = Math.round(clamp(next.protein_g || 0, pLo, pHi));
+  const f = Math.round(clamp(next.fat_g || 0, fLo, fHi));
+  let kLo = 1100;
+  let kHi = 4500;
+  if (tdee && tdee > 0) {
+    kLo = Math.max(1100, tdee * (1 - MAX_DEFICIT_PCT / 100));
+    kHi = Math.min(4500, tdee * (1 + MAX_SURPLUS_PCT / 100));
+    if (kLo > kHi) { kLo = 1100; kHi = 4500; }
+  }
+  const kcal = Math.round(clamp(next.kcal || kcalOf(p, next.carbs_g || 0, f), kLo, kHi));
+  // Los carbohidratos cuadran el 4/4/9 con los valores ya acotados.
+  const carbs = Math.max(0, Math.round((kcal - p * 4 - f * 9) / 4));
+  return { kcal, protein_g: p, carbs_g: carbs, fat_g: f };
+}
+
+export function rescaleNutrition(nut: any, next: MacroTargets, weightKg?: number | null): void {
+  // Topes sanos SIEMPRE, vengan de donde vengan los objetivos.
+  next = clampTargets(next, nut?.tdee_kcal, weightKg);
   const prev: MacroTargets = {
     kcal: nut.target_kcal ?? 0,
     protein_g: nut.macros?.protein_g ?? 0,
@@ -348,8 +375,8 @@ export function rescaleNutrition(nut: any, next: MacroTargets): void {
  *  en cada cambio para que comidas y gramos se recalculen SIEMPRE desde la
  *  versión original (idempotente): teclear "2" y luego "2500" no corrompe nada
  *  porque nunca se reescala sobre valores intermedios ya redondeados. */
-export function rescaledFrom(baseNut: any, next: MacroTargets): any {
+export function rescaledFrom(baseNut: any, next: MacroTargets, weightKg?: number | null): any {
   const n = structuredClone(baseNut ?? {});
-  rescaleNutrition(n, next);
+  rescaleNutrition(n, next, weightKg);
   return n;
 }

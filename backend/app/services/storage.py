@@ -196,6 +196,11 @@ def save_video_cover(raw: bytes, filename_hint: str) -> str:
     return _save_public_image(raw, media_dir("brand"), "video-cover", "La portada")
 
 
+def save_plans_photo(raw: bytes, filename_hint: str) -> str:
+    """Foto de fondo de la página pública de planes (/planes)."""
+    return _save_public_image(raw, media_dir("brand"), "plans-photo", "La foto")
+
+
 MAX_VIDEO_MB = 300
 # Formatos de vídeo habituales; el navegador reproduce mp4/webm/mov nativamente.
 _VIDEO_EXTS = {".mp4", ".mov", ".webm", ".m4v", ".avi", ".mkv", ".wmv", ".3gp"}

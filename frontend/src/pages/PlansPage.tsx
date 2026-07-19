@@ -20,6 +20,8 @@ export default function PlansPage() {
   const [period, setPeriod] = useState<BillingPeriod>("1m");
   // Importes reales leídos de Stripe (total + equivalente al mes).
   const [prices, setPrices] = useState<PlanPricesOut | null>(null);
+  // Marca pública: foto de fondo propia de esta página.
+  const [landing, setLanding] = useState<import("../types").LandingOut | null>(null);
   // Plan elegido → abre el mini-formulario de datos antes del pago.
   const [formTier, setFormTier] = useState<PackageTier | null>(null);
   const [name, setName] = useState("");
@@ -33,7 +35,17 @@ export default function PlansPage() {
 
   useEffect(() => {
     api.publicPlanPrices().then(setPrices).catch(() => setPrices(null));
+    api.publicLanding().then(setLanding).catch(() => setLanding(null));
   }, []);
+
+  /** % de ahorro del período elegido frente a pagar mes a mes. */
+  function savingsPct(tier: PackageTier): number | null {
+    const pr = prices?.tiers?.[tier]?.[period];
+    const monthly = prices?.tiers?.[tier]?.["1m"];
+    if (!pr || !monthly || pr.months <= 1 || monthly.per_month <= 0) return null;
+    const pct = Math.round((1 - pr.per_month / monthly.per_month) * 100);
+    return pct >= 3 ? pct : null;
+  }
 
   function choose(tier: PackageTier) {
     setError(null);
@@ -66,15 +78,33 @@ export default function PlansPage() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f6f1e7", color: "#26211a" }}>
-      <div className="mx-auto max-w-4xl px-5 py-10">
-        <header className="mb-8 flex flex-col items-center text-center">
+    <div className="relative" style={{ minHeight: "100vh", background: "#f6f1e7", color: "#26211a" }}>
+      {/* Foto de fondo propia (Recursos → Página de enlaces → Foto de los
+          planes) con velo crema para que todo se lea. */}
+      {landing?.plans_photo_url && (
+        <>
+          <img src={landing.plans_photo_url} alt=""
+            className="pointer-events-none fixed inset-0 h-full w-full object-cover" />
+          <div className="pointer-events-none fixed inset-0"
+            style={{ background: "linear-gradient(180deg, rgba(246,241,231,.82) 0%, rgba(246,241,231,.94) 45%, rgba(246,241,231,.98) 100%)" }} />
+        </>
+      )}
+      <div className="relative mx-auto max-w-4xl px-5 py-10">
+        <header className="mb-6 flex flex-col items-center text-center">
           <img src="/dq-logo.png" alt="" className="h-14 w-auto rounded-xl shadow-sm" />
-          <h1 className="mt-4 text-2xl font-bold">Elige tu plan</h1>
+          <h1 className="mt-4 text-3xl font-extrabold tracking-tight">
+            Empieza tu cambio <span style={{ color: "#E8833A" }}>hoy</span>
+          </h1>
           <p className="mt-1 max-w-lg text-sm opacity-70">
-            Escoge el acompañamiento que mejor encaje contigo. Tras el pago recibirás
-            en tu correo el acceso a tu portal para empezar.
+            Plan de dieta y entreno 100 % a tu medida, con seguimiento real de tu coach.
           </p>
+          {/* Gancho de confianza: qué incluye SIEMPRE, de un vistazo */}
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs font-medium">
+            <span style={{ color: "#2E7D46" }}>✓ Plan personalizado</span>
+            <span style={{ color: "#2E7D46" }}>✓ Revisión quincenal</span>
+            <span style={{ color: "#2E7D46" }}>✓ App de seguimiento</span>
+            <span style={{ color: "#2E7D46" }}>✓ Pago seguro</span>
+          </div>
         </header>
 
         {error && (
@@ -121,43 +151,59 @@ export default function PlansPage() {
         <div className="grid gap-4 sm:grid-cols-3">
           {PACKAGE_ORDER.map((t) => {
             const p = PACKAGES[t];
+            const destacado = t === "full"; // el equilibrio dieta+entreno: el más elegido
+            const pr = prices?.tiers?.[t]?.[period];
+            const ahorro = savingsPct(t);
             return (
-              <div key={t} className="flex flex-col rounded-2xl border bg-white p-5 shadow-sm"
-                style={{ borderColor: `color-mix(in srgb, ${p.color} 40%, #e6ddca)` }}>
+              <div key={t}
+                className={`relative flex flex-col rounded-2xl border bg-white p-5 shadow-sm ${destacado ? "shadow-lg sm:-mt-2 sm:mb-[-8px]" : ""}`}
+                style={{
+                  borderColor: destacado ? p.color : `color-mix(in srgb, ${p.color} 40%, #e6ddca)`,
+                  borderWidth: destacado ? 2 : 1,
+                }}>
+                {destacado && (
+                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full px-3 py-0.5 text-[11px] font-bold text-white shadow"
+                    style={{ background: p.color }}>
+                    ⭐ El más elegido
+                  </span>
+                )}
                 <span className="inline-flex w-fit items-center rounded-full px-2.5 py-0.5 text-xs font-semibold"
                   style={{ background: `color-mix(in srgb, ${p.color} 14%, transparent)`, color: p.color }}>
                   {p.label}
                 </span>
                 <p className="mt-3 text-sm font-medium">{p.tagline}</p>
                 <p className="mt-1 flex-1 text-sm opacity-70">{p.includes}</p>
-                {/* Precio REAL de la combinación elegida (leído de Stripe):
-                    total del pago y, en trimestral/semestral, a cuánto sale
-                    el mes. */}
-                {(() => {
-                  const pr = prices?.tiers?.[t]?.[period];
-                  if (!pr) return null;
-                  return (
-                    <div className="mt-3">
-                      <p className="text-2xl font-bold" style={{ color: p.color }}>
+                {/* Precio REAL siempre visible (leído de Stripe): total del pago,
+                    equivalente al mes y % de ahorro frente a mensual. */}
+                {pr && (
+                  <div className="mt-3">
+                    <div className="flex items-baseline gap-2">
+                      <p className="text-3xl font-extrabold" style={{ color: p.color }}>
                         {euros(pr.total)}
-                        <span className="ml-1 text-sm font-medium opacity-60">
-                          / {billingLabel(period).toLowerCase()}
-                        </span>
                       </p>
-                      {pr.months > 1 && (
-                        <p className="text-xs font-medium opacity-60">
-                          sale a {euros(pr.per_month)} al mes
-                        </p>
+                      <span className="text-xs font-medium opacity-60">
+                        / {billingLabel(period).toLowerCase()}
+                      </span>
+                      {ahorro && (
+                        <span className="ml-auto rounded-full px-2 py-0.5 text-[11px] font-bold text-white"
+                          style={{ background: "#2E7D46" }}>
+                          Ahorra {ahorro}%
+                        </span>
                       )}
                     </div>
-                  );
-                })()}
+                    {pr.months > 1 && (
+                      <p className="text-xs font-semibold" style={{ color: "#2E7D46" }}>
+                        sale a {euros(pr.per_month)} al mes
+                      </p>
+                    )}
+                  </div>
+                )}
                 <button
                   onClick={() => choose(t)}
-                  className="mt-4 rounded-xl px-4 py-3 text-sm font-semibold text-white transition-transform active:scale-[0.98]"
+                  className="mt-4 rounded-xl px-4 py-3.5 text-sm font-bold text-white shadow-md transition-transform hover:brightness-110 active:scale-[0.98]"
                   style={{ background: p.color }}
                 >
-                  Contratar y pagar
+                  Empezar ahora →
                 </button>
               </div>
             );

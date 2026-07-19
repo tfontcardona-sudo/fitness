@@ -54,6 +54,11 @@ export function ClientPlanEditor({
     training: useRef<HTMLDivElement>(null),
     supplements: useRef<HTMLDivElement>(null),
   };
+  // Modo UN SOLO BLOQUE: abierto desde el "Editar" de un bloque, solo se ve
+  // ese bloque en pantalla hasta salir (o ampliar a "ver plan completo").
+  const [only, setOnly] = useState<"nutrition" | "training" | null>(
+    initialFocus === "training" ? "training" : initialFocus ? "nutrition" : null,
+  );
   const [flash, setFlash] = useState<string | null>(null);
   useEffect(() => {
     if (!initialFocus) return;
@@ -140,7 +145,7 @@ export function ClientPlanEditor({
   const clampMacro = (v: number) => Math.min(MAX_MACRO, Math.max(0, v));
 
   function applyTotals(d: typeof draft, next: MacroTargets) {
-    const scaled = rescaledFrom(baseline.current, next);
+    const scaled = rescaledFrom(baseline.current, next, refWeightKg);
     d.nutrition.target_kcal = scaled.target_kcal;
     d.nutrition.macros = scaled.macros;
     d.nutrition.meals = scaled.meals;
@@ -306,8 +311,19 @@ export function ClientPlanEditor({
 
   return (
     <div className="space-y-4">
-      <div className="card sticky top-2 z-10 flex items-center justify-between p-4">
-        <h3 className="text-base font-semibold text-zinc-100">Editar plan · Mes {plan.month_index}</h3>
+      {/* Cabecera FIJA por encima de la barra de pestañas (z-20 > z-10) y a
+          top-0: sin hueco por el que se vea contenido cortado al hacer scroll. */}
+      <div className="card sticky top-0 z-20 flex flex-wrap items-center justify-between gap-2 p-4">
+        <h3 className="text-base font-semibold text-zinc-100">
+          {only === "training" ? "Editar entrenamiento" : only ? "Editar nutrición" : "Editar plan"} · Mes {plan.month_index}
+          {only && (
+            <button onClick={() => setOnly(null)}
+              className="ml-2 text-xs font-normal underline-offset-2 hover:underline"
+              style={{ color: "var(--brand-accent-2)" }}>
+              ver plan completo
+            </button>
+          )}
+        </h3>
         <div className="flex items-center gap-2">
           {kcalInvalid && (
             <span className="hidden text-xs text-[#9A6B15] sm:inline">Pon las calorías objetivo para guardar</span>
@@ -321,6 +337,7 @@ export function ClientPlanEditor({
       </div>
 
       {/* Nutrición */}
+      {only !== "training" && (
       <div ref={focusRefs.nutrition} className="card p-5" style={flashStyle("nutrition")}>
         <Title icon={Utensils} text="Nutrición" />
 
@@ -513,8 +530,10 @@ export function ClientPlanEditor({
           ))}
         </div>
       </div>
+      )}
 
       {/* Entrenamiento */}
+      {only !== "nutrition" && (
       <div ref={focusRefs.training} className="card p-5" style={flashStyle("training")}>
         <Title icon={Dumbbell} text="Entrenamiento" />
         <Text label="Nombre del split" value={tr.split_name ?? ""} onChange={(v) => mutate((d) => (d.training.split_name = v))} />
@@ -660,6 +679,7 @@ export function ClientPlanEditor({
         </div>
         <Area label="Instrucciones de deload" value={tr.deload_instructions ?? ""} onChange={(v) => mutate((d) => (d.training.deload_instructions = v))} />
       </div>
+      )}
 
       <p className="text-xs text-zinc-500">
         El banco de comidas no se edita aquí; para cambiar un ejercicio por otro usa el "swap" de la biblioteca.

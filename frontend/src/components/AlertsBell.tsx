@@ -94,7 +94,36 @@ export function AlertsBell() {
                 <Check size={16} style={{ color: "var(--brand-accent)" }} /> Nada pendiente con tus clientes.
               </div>
             ) : (
-              (alerts ?? []).map((a, i) => (
+              // AGRUPADAS por ámbito: primero el total (cabecera) y aquí cada
+              // clase de alerta con su color, para escanearlas de un vistazo.
+              GROUPS.map((g) => {
+                const known = new Set(GROUPS.flatMap((x) => x.kinds));
+                const items = (alerts ?? []).filter((a) =>
+                  g.id === "otras" ? !known.has(a.kind) : g.kinds.includes(a.kind));
+                if (!items.length) return null;
+                return (
+                  <div key={g.id}>
+                    <div className="flex items-center gap-2 px-4 pb-1 pt-2.5"
+                      style={{ background: `color-mix(in srgb, ${g.color} 6%, transparent)` }}>
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: g.color }} />
+                      <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: g.color }}>
+                        {g.label}
+                      </span>
+                      <span className="text-[11px] text-zinc-500">{items.length}</span>
+                    </div>
+                    {items.map((a, i) => renderAlert(a, i))}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  function renderAlert(a: CoachAlert, i: number) {
+    return (
                 <div
                   key={`${a.client_id}-${a.kind}-${i}`}
                   className="flex items-start gap-2.5 border-b px-4 py-3 last:border-b-0"
@@ -128,11 +157,18 @@ export function AlertsBell() {
                     </div>
                   </div>
                 </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
+    );
+  }
 }
+
+/** Clases de alerta (ámbitos) para agruparlas en la campana, cada una con su
+ *  color. Un kind no listado cae en "Otras". */
+const GROUPS: { id: string; label: string; color: string; kinds: string[] }[] = [
+  { id: "arranque", label: "Arranque / alta", color: "#6366F1", kinds: ["create_plan", "publish_plan"] },
+  { id: "revision", label: "Revisión quincenal", color: "#8B5CF6", kinds: ["generate_feedback", "send_feedback"] },
+  { id: "adaptacion", label: "Planificación", color: "#E8833A", kinds: ["adapt_plan", "regenerate_goal"] },
+  { id: "seguimiento", label: "Seguimiento", color: "#C2453A", kinds: ["no_logs"] },
+  { id: "objetivo", label: "Objetivo", color: "#2E5E8C", kinds: ["goal_review"] },
+  { id: "recursos", label: "Recursos / productos", color: "#28707C", kinds: ["missing_products"] },
+  { id: "otras", label: "Otras", color: "#7A7A7A", kinds: [] },
+];

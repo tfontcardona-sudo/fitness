@@ -1274,6 +1274,48 @@ El link del perfil de Instagram de David lleva TODO el embudo: landing → plane
   tsc + vite build OK. Fix de auditoría: los pendientes de manual_changes se
   leen del plan ANTERIOR (una 2ª edición ya no borra los no enviados).
 
+## 10.t Tramo 2026-07-19 (4ª) — FIX CRÍTICO de coherencia + venta y organización
+
+- **FIX CRÍTICO (caso real: PDF con CH 800 g / grasa 0 g / +77% superávit y
+  comidas que no cuadraban con los totales)**, cerrado en la RAÍZ
+  (`nutrition_scale.py`):
+  · `clamp_targets()` — topes FISIOLÓGICOS antes de reconciliar: proteína
+    1,2–3,0 g/kg, grasa 0,6–2,0 g/kg (suelo 20 g), kcal ∈ [TDEE−30%, TDEE+15%]
+    (espejo de MAX_DEFICIT/SURPLUS del editor) y siempre 1100–4500.
+  · `reconcile_nutrition()` ahora también reescala el **BANCO** (recetario +
+    equivalencias) por los mismos ratios que las comidas — CUALQUIER camino de
+    edición deja PDF/portal/web en armonía; con datos coherentes es no-op.
+  · Espejo frontend: `clampTargets()` en nutritionTargets.ts, aplicado en
+    `rescaleNutrition` (el editor enseña en vivo los valores ya acotados).
+  · **`clamp=False` SOLO en la generación IA pre-guardrails** (generator.py):
+    los guardrails deben VER los números reales de la IA y bloquear, no
+    recibirlos corregidos en silencio (lo cazó `test_pipeline_blocks_core…`).
+  · Tests: `test_reconcile_edicion_extrema_queda_sana_y_coherente` (el caso del
+    PDF roto: topes + comidas ≡ totales ≡ banco + idempotencia) y
+    `test_reconcile_no_toca_un_plan_sano`.
+- **/planes vendedora**: foto de fondo PROPIA (brand.plans_photo_path,
+  migración **0022**, se sube en Recursos → Página de enlaces → "Foto de los
+  planes"), precios SIEMPRE visibles en grande, chip verde "Ahorra N%"
+  (trimestral/semestral vs mensual), plan Full destacado "⭐ El más elegido",
+  fila de confianza (✓ personalizado ✓ revisión quincenal ✓ app ✓ pago seguro)
+  y CTA "Empezar ahora".
+- **Portal**: chip verde NEÓN "En tu planificación" (con glow) en los productos
+  pautados; el resto bajo "Productos seleccionados por {marca}".
+- **Campana de alertas AGRUPADA por ámbito** (AlertsBell.GROUPS): Arranque /
+  Revisión quincenal / Planificación / Seguimiento / Objetivo / Recursos +
+  "Otras" (kinds no mapeados), cabecera de grupo con color y contador.
+- **Carpetas de clientes por LO QUE FALTA** (ClientsPage): Todos · Falta
+  anamnesis (índigo) · Falta planificación (naranja) · Falta revisión
+  (violeta) · Falta pago (verde) · Al día (azul), cada una con icono y color;
+  un cliente puede estar en varias.
+- **Editor**: modo **UN SOLO BLOQUE** — al entrar por el "Editar" de un bloque
+  solo se ve ese bloque (con "ver plan completo" para ampliar); cabecera del
+  editor sticky top-0 z-20 (ya no se descuadra con la barra de pestañas).
+- Verificación: 21/21 (ai_service + features + público + Stripe); los fallos
+  restantes son los preexistentes de main. tsc + vite build OK. OJO entorno de
+  pruebas local: el PG temporal en /tmp muere entre runs — rearrancar antes de
+  fiarse de skips masivos "Requiere PostgreSQL".
+
 ## 11. Mapa rápido de archivos tocados en el último tramo
 
 **Pulido §8.2 (2026-07-04)**

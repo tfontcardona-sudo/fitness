@@ -384,6 +384,8 @@ export interface BrandConfigOut {
   partner_discount_code: string | null;
   // Portada única de todos los vídeos de ejercicios.
   video_cover_path: string | null;
+  // Foto de fondo de la página pública de planes (/planes).
+  plans_photo_path: string | null;
 }
 
 /** GET /api/public/landing — datos públicos de la página de enlaces (/dq). */
@@ -395,6 +397,7 @@ export interface LandingOut {
   color_bg: string;
   logo_url: string | null;
   links_photo_url: string | null;
+  plans_photo_url: string | null;
   partner_store_url: string | null;
   partner_discount_code: string | null;
   products: { title: string; url: string; category: string; image_url: string | null }[];
