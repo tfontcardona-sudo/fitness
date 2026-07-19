@@ -205,24 +205,24 @@ def _food_blocked(food: str, blocked: set[str]) -> bool:
     return any(b and (b == nf or b in nf.split() or nf in b) for b in blocked)
 
 
-def _food_group_text(column: str, blocked: set[str]) -> str:
-    """Construye el texto de una columna de 'Alimentos por grupos' a partir de la
-    estructura [(etiqueta, [alimentos])], quitando SOLO los alimentos bloqueados
-    y conservando etiquetas y alimentos contiguos (arregla el bug del filtro)."""
-    chunks: list[str] = []
+def _food_group_lines(column: str, blocked: set[str]) -> list[tuple[str, str]]:
+    """Líneas de una columna de 'Alimentos por grupos': [(etiqueta, alimentos)],
+    cada subgrupo en SU línea con la etiqueta en negrita (como la referencia),
+    quitando SOLO los alimentos bloqueados y conservando etiquetas y alimentos
+    contiguos (arregla el bug del filtro)."""
+    lines: list[tuple[str, str]] = []
     for label, foods in FOOD_GROUPS[column]:
         kept = [f for f in foods if not _food_blocked(f, blocked)]
         if not kept:
             continue
         body = ", ".join(kept)
-        chunks.append(f"{label}: {body}" if label else body)
-    text = ". ".join(chunks)
-    if text and not text.endswith("."):
-        text += "."
+        if not body.endswith("."):
+            body += "."
+        lines.append((label, body))
     foot = FOOD_GROUP_FOOTNOTE.get(column)
     if foot:
-        text = f"{text} {foot}"
-    return text or "—"
+        lines.append(("", foot))
+    return lines or [("", "—")]
 
 
 def _ajuste_text(nutrition: dict, goal: str | None) -> str:
@@ -350,7 +350,7 @@ def generate_plan_doc(
     section_bar(doc, "Alimentos por grupos", WINE)
     names = list(FOOD_GROUPS.keys())
     clean_table(
-        doc, names, [[_food_group_text(n, blocked) for n in names]],
+        doc, names, [[_food_group_lines(n, blocked) for n in names]],
         brand, header_colors=FOOD_GROUP_COLORS, header_text_color="FFFFFF",
         cant_split_rows=False, keep_together=False,
     )
