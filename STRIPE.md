@@ -225,15 +225,18 @@ futura (p. ej. 12/34), CVC cualquiera (p. ej. 123), cualquier nombre y CP.
 
 **Flujo A — registro personal:**
 
-1. Abre `https://app.dqrassessories.com/planes` (mejor en ventana de incógnito).
-2. Elige una duración (mensual/trimestral/semestral) y un plan → te lleva a la
-   pantalla de pago de Stripe (comprueba que el precio es el de esa
-   combinación) → paga con la tarjeta de prueba (pon un email tuyo real para
-   ver el correo de acceso).
-3. Debe llevarte a la página **"¡Pago recibido!"** (`/pago-ok`).
-4. Entra como coach → **Clientes**: debe existir el cliente nuevo con estado de
-   pago **"Pagado"** y su plan correcto. Si el email está activo, en tu buzón
-   estará el correo con el acceso al portal.
+1. Abre `https://app.dqrassessories.com/planes` (mejor en ventana de incógnito),
+   o llega desde la landing pública `/dq` (el link del perfil de Instagram) con
+   el botón "Trabaja conmigo".
+2. Elige una duración (mensual/trimestral/semestral) y un plan → **deja tus
+   datos** (nombre, email real y teléfono). Al continuar: se crea la ficha en
+   el sistema (pago pendiente), te llega el **email de arranque** (pago +
+   anamnesis en PDF editable) y pasas directo a la pantalla de pago de Stripe.
+3. Paga con la tarjeta de prueba → página **"¡Pago recibido!"** (`/pago-ok`).
+4. Entra como coach → **Clientes**: el cliente debe estar con **"Pagado"** y su
+   plan/duración correctos. En el email de arranque, el enlace de la anamnesis
+   lleva a `/anamnesis/{token}`: descarga el PDF, súbelo relleno y comprueba que
+   la ficha se rellena sola y le llega su acceso al portal.
 
 **Flujo B — alta manual:**
 

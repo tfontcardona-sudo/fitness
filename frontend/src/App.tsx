@@ -10,6 +10,8 @@ import RecursosPage from "./pages/RecursosPage";
 import PortalApp from "./portal/PortalApp";
 import PortalLogin from "./portal/PortalLogin";
 import PlansPage, { PaymentOkPage } from "./pages/PlansPage";
+import LinksPage from "./pages/LinksPage";
+import AnamnesisPage from "./pages/AnamnesisPage";
 
 /**
  * Raíz. El portal del cliente (login en /portal y acceso por token en /p/:token)
@@ -25,6 +27,10 @@ export default function App() {
         {/* Registro personal del cliente: página pública de planes (Stripe). */}
         <Route path="/planes" element={<PlansPage />} />
         <Route path="/pago-ok" element={<PaymentOkPage />} />
+        {/* Link del perfil de Instagram (landing pública de enlaces). */}
+        <Route path="/dq" element={<LinksPage />} />
+        {/* Anamnesis del cliente: descarga del PDF editable + subida (por token). */}
+        <Route path="/anamnesis/:token" element={<AnamnesisPage />} />
         <Route path="/*" element={<CoachApp />} />
       </Routes>
     </BrowserRouter>

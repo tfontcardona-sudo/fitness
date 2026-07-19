@@ -276,6 +276,16 @@ class BrandConfigIn(BaseModel):
     contact_web: str | None = None
     docs_theme: Theme = "light"
     portal_theme: Theme = "light"
+    # Página pública de enlaces (/dq): tienda del partner y código de descuento.
+    partner_store_url: str | None = Field(default=None, max_length=300)
+    partner_discount_code: str | None = Field(default=None, max_length=40)
+
+    _v_partner_url = field_validator("partner_store_url")(_http_url_or_none)
+
+    @field_validator("partner_discount_code")
+    @classmethod
+    def _v_partner_code(cls, v: str | None) -> str | None:
+        return _clean_discount_code(v)
 
 
 class BrandConfigOut(BrandConfigIn):
@@ -283,7 +293,33 @@ class BrandConfigOut(BrandConfigIn):
 
     id: int
     logo_path: str | None
+    links_photo_path: str | None = None
     contact_email: str | None  # relaja EmailStr al leer de DB
+
+
+# ------------------------------------------------- registro público (landing) ----
+class PublicRegisterIn(BaseModel):
+    """Registro self-serve desde /planes: datos mínimos antes de ir al pago."""
+
+    full_name: str = Field(min_length=2, max_length=160)
+    email: EmailStr
+    phone: str = Field(min_length=6, max_length=40)
+    tier: PackageTier
+    period: BillingPeriod = "1m"
+
+
+class LandingOut(BaseModel):
+    """GET /api/public/landing — datos públicos de la página de enlaces (/dq)."""
+
+    name: str
+    tagline: str | None
+    color_primary: str
+    color_secondary: str
+    color_bg: str
+    logo_url: str | None
+    links_photo_url: str | None
+    partner_store_url: str | None
+    partner_discount_code: str | None
 
 
 # ------------------------------------------ productos recomendados (portal) ----

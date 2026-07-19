@@ -222,6 +222,58 @@ files: Annotated[List[UploadFile], File(description="1–4 fotos corporales")], 
     return [PhotoOut.model_validate(p) for p in created]
 
 
+# ------------------------------------------- anamnesis en PDF (página pública) ----
+# El cliente recibe por email el enlace /anamnesis/{token}: descarga la plantilla
+# oficial (PDF editable), la rellena y la sube AQUÍ. La ingesta es la MISMA que
+# la subida del coach (guardar + leer con IA + enviar acceso al portal).
+
+@router.get("/{token}/anamnesis-template")
+@limiter.limit("20/minute")
+def portal_anamnesis_template(
+    request: Request,
+    client: Client = Depends(get_client_by_token),
+):
+    """Descarga de la plantilla oficial de anamnesis (PDF editable en blanco)."""
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parent.parent / "assets" / "anamnesis_template.pdf"
+    if not path.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plantilla no encontrada")
+    return Response(
+        content=path.read_bytes(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="anamnesis.pdf"'},
+    )
+
+
+@router.post("/{token}/anamnesis-pdf")
+@limiter.limit("5/minute")
+def portal_upload_anamnesis_pdf(
+    request: Request,
+    file: UploadFile = File(..., description="PDF de la anamnesis rellenada"),
+    client: Client = Depends(get_client_by_token),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Sube la anamnesis rellenada por el PROPIO cliente y la ingiere: se guarda
+    en su ficha, se lee con IA y se le envía su acceso al portal (email). Solo
+    durante el onboarding; después, los cambios los gestiona el coach."""
+    if client.status != "onboarding":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Tu anamnesis ya está registrada; escribe a tu coach para cambios.")
+
+    from app.routers.clients import ingest_anamnesis_pdf
+    from app.services.storage import DocumentValidationError
+
+    try:
+        res = ingest_anamnesis_pdf(db, client.id, file.file.read(),
+                                   file.filename or "anamnesis.pdf", by="client")
+    except DocumentValidationError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    # Al cliente solo le contamos lo que le afecta (nada de detalles internos).
+    return {"ok": True, "portal_access": res.get("portal_access")}
+
+
 # ============================================================ portal (Fase 6) ====
 # Vistas del cliente: estado, HOY, plan, diario, cierre, feedback, ajuste.
 # Todas autenticadas por el token firmado (get_client_by_token).

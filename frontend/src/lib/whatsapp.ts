@@ -145,16 +145,17 @@ export function videoCallMessage(fullName: string): string {
   ].join("\n\n");
 }
 
-/** Mensaje de ARRANQUE (alta manual): pagar el plan + rellenar la anamnesis, con
- *  la instrucción EN MAYÚSCULAS de enviar la anamnesis rellena. Un solo mensaje. */
+/** Mensaje de ARRANQUE (alta manual): pagar el plan + rellenar la anamnesis
+ *  (página del PDF editable), con la instrucción EN MAYÚSCULAS de enviarla
+ *  rellena. Un solo mensaje. */
 export function onboardingMessage(
-  fullName: string, planLabel: string, payUrl: string, portalUrl: string,
+  fullName: string, planLabel: string, payUrl: string, anamnesisUrl: string,
 ): string {
   return [
     `Hola ${waFirstName(fullName)},`,
     "Para empezar tu asesoría necesito dos cosas:",
     `1) Realiza el pago de tu plan (${planLabel}) desde este enlace:\n${payUrl}`,
-    `2) Entra en tu portal y rellena tu cuestionario inicial (anamnesis):\n${portalUrl}`,
+    `2) Descarga tu cuestionario inicial (anamnesis), réllenalo y súbelo desde este enlace:\n${anamnesisUrl}`,
     "IMPORTANTE: RELLENA Y ENVÍAME TU ANAMNESIS COMPLETA PARA QUE PUEDA PREPARARTE EL PLAN.",
     "Un saludo.",
   ].join("\n\n");

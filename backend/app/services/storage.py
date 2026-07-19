@@ -152,6 +152,23 @@ def save_brand_logo(raw: bytes, filename_hint: str) -> str:
     return str(dest.relative_to(storage_root()))
 
 
+def save_links_photo(raw: bytes, filename_hint: str) -> str:
+    """Foto de fondo de la página pública de enlaces (/dq). Mismas reglas que
+    el logo (imagen válida, ≤5 MB) pero con su propio archivo."""
+    if len(raw) > 5 * 1024 * 1024:
+        raise PhotoValidationError("La foto supera 5 MB")
+    try:
+        img = Image.open(io.BytesIO(raw))
+        img.load()
+    except (UnidentifiedImageError, OSError) as exc:
+        raise PhotoValidationError("El archivo no es una imagen válida") from exc
+    if img.format not in ALLOWED_FORMATS:
+        raise PhotoValidationError("Formato no soportado (usa JPG, PNG o WebP)")
+    dest = brand_dir() / f"links-photo.{_EXT[img.format]}"
+    img.save(dest, format=img.format)
+    return str(dest.relative_to(storage_root()))
+
+
 def resources_dir() -> Path:
     p = storage_root() / "resources"
     p.mkdir(parents=True, exist_ok=True)

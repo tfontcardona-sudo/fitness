@@ -423,7 +423,9 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
         toast.push("Añade el teléfono del cliente para enviarlo por WhatsApp", "error");
         return;
       }
-      openWhatsApp(digits, onboardingMessage(created.client.full_name, info.label, payUrl, created.links.portal_url));
+      openWhatsApp(digits, onboardingMessage(
+        created.client.full_name, info.label, payUrl,
+        `${window.location.origin}/anamnesis/${created.links.portal_token}`));
       toast.push("WhatsApp abierto con el pago y la anamnesis — dale a enviar");
       return;
     }
