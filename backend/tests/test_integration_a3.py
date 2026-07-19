@@ -337,4 +337,6 @@ def test_a3_documents_generate_with_brand(client, auth):
     """Word del plan y feedback se generan con marca y gráficas sin errores."""
     cid, token, plan_id = _create_active_client(client, auth)
     r = client.get(f"/api/plans/{plan_id}/document", headers=auth)
-    assert r.status_code == 200 and r.content[:2] == b"PK"
+    # Con LibreOffice disponible (producción) el documento sale como PDF; sin él,
+    # el fallback es el .docx (zip "PK"). Ambos son correctos.
+    assert r.status_code == 200 and (r.content[:4] == b"%PDF" or r.content[:2] == b"PK")

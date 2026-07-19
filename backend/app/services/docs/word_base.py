@@ -206,7 +206,7 @@ def open_box(doc: Document, fill: str = "F5F0E8", cant_split: bool = False):
     cell.width = Pt(CONTENT_WIDTH_DXA / 20)
     _shade_cell(cell, fill)
     _set_cell_margins(cell, top=140, bottom=140, left=160, right=160)
-    _no_table_borders(table)
+    _box_border(table)  # marco gris fino, como la referencia
     if cant_split:
         _cant_split_rows(table)
     return cell
@@ -343,6 +343,7 @@ def clean_table(doc: Document, headers: list[str], rows: list[list[str]],
     keep_together: True intenta mantener la tabla entera en una página. Ponlo a
         False en tablas potencialmente largas (semanal, grupos de alimentos,
         cambios) para que paginen limpiamente repitiendo la cabecera."""
+    spacer(doc, SPACE_INNER)
     table = doc.add_table(rows=1, cols=len(headers))
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = False
@@ -356,6 +357,7 @@ def clean_table(doc: Document, headers: list[str], rows: list[list[str]],
         _shade_cell(hdr[i], (header_colors[i] if header_colors else base_hdr).lstrip("#"))
         _set_cell_margins(hdr[i])
         p = hdr[i].paragraphs[0]
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER  # cabeceras centradas (referencia)
         run = p.add_run(h)
         run.font.bold = True
         run.font.size = Pt(9.5)
@@ -369,9 +371,26 @@ def clean_table(doc: Document, headers: list[str], rows: list[list[str]],
             # SIEMPRE relleno opaco (blanco/crema) para que el texto sea legible
             # aunque la fila quede sobre la banda de comida de la cabecera.
             _shade_cell(cells[i], "F5F0E8" if r_idx % 2 == 1 else "FFFFFF")
-            p = cells[i].paragraphs[0]
-            run = p.add_run(str(val))
-            run.font.size = Pt(font_pt)
+            # Valor LISTA = varias líneas en la celda, cada una su párrafo, con
+            # etiqueta opcional en negrita: [("Cereales", "avena, arroz…"), …]
+            # — el formato de subgrupos del plan de referencia.
+            if isinstance(val, (list, tuple)):
+                first = True
+                for item in val:
+                    p = cells[i].paragraphs[0] if first else cells[i].add_paragraph()
+                    first = False
+                    p.paragraph_format.space_after = Pt(3)
+                    label, text = (item if isinstance(item, (list, tuple)) else ("", item))
+                    if label:
+                        rl = p.add_run(f"{label}: ")
+                        rl.font.bold = True
+                        rl.font.size = Pt(font_pt)
+                    rt = p.add_run(str(text))
+                    rt.font.size = Pt(font_pt)
+            else:
+                p = cells[i].paragraphs[0]
+                run = p.add_run(str(val))
+                run.font.size = Pt(font_pt)
     _thin_borders(table)
     # Cabecera repetible: si la tabla se parte, la cabecera de color reaparece
     # en la página siguiente (nunca filas huérfanas sin encabezado).
@@ -389,9 +408,32 @@ def add_bullets(doc: Document, items: list[str]) -> None:
         doc.add_paragraph(it, style="List Bullet")
 
 
+# Aire vertical del diseño (medido del plan de referencia del coach): ~19 pt
+# entre tarjeta y tarjeta; ~8 pt entre una barra y una tabla de contenido.
+SPACE_SECTION = 18
+SPACE_INNER = 8
+
+
+def spacer(doc: Document, pt: float = SPACE_SECTION, keep_next: bool = True) -> None:
+    """Aire vertical EXACTO entre bloques (párrafo vacío con altura de línea
+    exacta): invisible, estable en Word y LibreOffice, y de paso evita que dos
+    tablas contiguas se fusionen al editar el .docx. keep_next: el aire viaja
+    con el bloque siguiente (no se queda huérfano al pie de página)."""
+    p = doc.add_paragraph()
+    pf = p.paragraph_format
+    pf.space_before = Pt(0)
+    pf.space_after = Pt(0)
+    pf.line_spacing = Pt(pt)
+    if keep_next:
+        _keep_with_next(p)
+
+
 def section_bar(doc: Document, text: str, color: str, text_color: str = "FFFFFF",
                 size: float = 11) -> None:
-    """Barra de sección a todo el ancho con fondo de color y texto centrado."""
+    """Barra de sección a todo el ancho con fondo de color y texto centrado.
+    SIEMPRE con su aire por delante: cada título abre una tarjeta nueva separada
+    de la anterior (regla del diseño de referencia)."""
+    spacer(doc, SPACE_SECTION)
     table = doc.add_table(rows=1, cols=1)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = False
@@ -440,7 +482,7 @@ def info_box(doc: Document, items, fill: str = "F5F0E8", label_color: str = "8B1
         else:
             r = p.add_run(str(item))
             r.font.size = Pt(10)
-    _no_table_borders(table)
+    _box_border(table)  # marco gris fino, como la referencia
     if cant_split:
         _cant_split_rows(table)
 
@@ -518,6 +560,24 @@ def _thin_borders(table) -> None:
             qn("w:val"): "single", qn("w:sz"): "4",
             qn("w:space"): "0", qn("w:color"): "E0E0E6",
         })
+        borders.append(e)
+    _insert_tbl_borders(tblPr, borders)
+
+
+def _box_border(table, color: str = "999999") -> None:
+    """Borde EXTERIOR fino (gris de la referencia) sin líneas interiores:
+    el marco de las cajas de contenido (info_box / open_box)."""
+    tbl = table._tbl
+    tblPr = tbl.tblPr
+    borders = tblPr.makeelement(qn("w:tblBorders"), {})
+    for edge in ("top", "left", "bottom", "right"):
+        e = borders.makeelement(qn(f"w:{edge}"), {
+            qn("w:val"): "single", qn("w:sz"): "4",
+            qn("w:space"): "0", qn("w:color"): color,
+        })
+        borders.append(e)
+    for edge in ("insideH", "insideV"):
+        e = borders.makeelement(qn(f"w:{edge}"), {qn("w:val"): "none"})
         borders.append(e)
     _insert_tbl_borders(tblPr, borders)
 
