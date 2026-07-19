@@ -44,6 +44,7 @@ import type {
   ExerciseOut,
   LandingOut,
   MeOut,
+  PlanPricesOut,
   PortalLinkOut,
   RecommendedProductIn,
   RecommendedProductOut,
@@ -314,9 +315,27 @@ export const api = {
     fd.append("file", file);
     return request<BrandConfigOut>("POST", "/brand/links-photo", fd);
   },
+  // Portada única de todos los vídeos de ejercicios.
+  uploadVideoCover: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return request<BrandConfigOut>("POST", "/brand/video-cover", fd);
+  },
+  // Vídeo del ejercicio subido como archivo (tiene prioridad sobre el enlace).
+  uploadExerciseVideo: (id: number, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return request<ExerciseOut>("POST", `/exercises/${id}/video`, fd);
+  },
+  deleteExerciseVideo: (id: number) =>
+    request<ExerciseOut>("DELETE", `/exercises/${id}/video`),
 
   // --- página pública de enlaces + registro self-serve ---
   publicLanding: () => request<LandingOut>("GET", "/public/landing"),
+  publicPlanPrices: () => request<PlanPricesOut>("GET", "/public/plan-prices"),
+  // URL pública de un archivo bajo media/ (foto de landing, portada de vídeos…).
+  mediaUrl: (path: string | null | undefined) =>
+    path && path.startsWith("media/") ? `/api/media/${path.slice(6)}` : null,
   // Registro personal desde /planes: crea la ficha, envía el email de arranque
   // (pago + anamnesis) y devuelve la URL de pago de Stripe (o null si no está).
   publicRegister: (body: {

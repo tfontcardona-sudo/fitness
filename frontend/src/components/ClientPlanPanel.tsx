@@ -551,7 +551,7 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
       {/* Cambios PROPUESTOS por la última revisión quincenal: se ven ANTES de
           adaptar (qué cambia y por qué, dieta y entreno) y el botón va dentro. */}
       {review?.plan_adjustments?.length && !alreadyAdapted ? (
-        <details open className="card p-5" style={{ borderColor: "color-mix(in srgb, var(--brand-accent) 55%, transparent)" }}>
+        <details open name="plan-secciones" className="card p-5" style={{ borderColor: "color-mix(in srgb, var(--brand-accent) 55%, transparent)" }}>
           <summary className="cursor-pointer text-sm font-semibold text-zinc-100">
             Cambios propuestos por la revisión #{review.period_index}
             <span className="ml-2 text-xs font-normal text-zinc-500">
@@ -580,7 +580,7 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
           Queda visible también una vez publicado, como registro de la versión, y
           es EDITABLE por si el coach quiere matizar el texto o quitar un ajuste. */}
       {appliedBlock?.items?.length ? (
-        <details open={plan.status !== "published"} className="card p-5">
+        <details open={plan.status !== "published"} name="plan-secciones" className="card p-5">
           <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 text-sm font-semibold text-zinc-100">
             <span>
               Cambios aplicados en esta versión
@@ -830,7 +830,7 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
                 {(s.exercises ?? []).map((ex: any, j: number) => {
                   const hasDetail = ex.progression_rule || ex.technique_cue || ex.biomech_cue || ex.coach_notes;
                   return (
-                    <details key={j} className="rounded-md p-2 text-xs" style={{ background: "var(--surface)" }}>
+                    <details key={j} name="plan-vista-sesiones" className="rounded-md p-2 text-xs" style={{ background: "var(--surface)" }}>
                       <summary className="cursor-pointer">
                         <span className="font-medium text-zinc-200">{exName(ex.exercise_id)}</span>
                         <span className="ml-1 text-zinc-400">
@@ -911,7 +911,7 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
       {/* ARCHIVO: planificaciones anteriores, como las revisiones — plegadas,
           con el objetivo que servían y cuánto duraron. */}
       {allPlans.length > 1 && (
-        <details className="card p-5">
+        <details name="plan-secciones" className="card p-5">
           <summary className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-zinc-100">
             <Archive size={15} style={{ color: "var(--brand-accent-2)" }} />
             Planificaciones anteriores
@@ -919,7 +919,7 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
           </summary>
           <div className="mt-3 space-y-2">
             {archivedPlans(allPlans, plan.id).map((p) => (
-              <details key={p.id} className="overflow-hidden rounded-lg border" style={{ borderColor: "var(--line)" }}>
+              <details key={p.id} name="planes-anteriores" className="overflow-hidden rounded-lg border" style={{ borderColor: "var(--line)" }}>
                 <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-sm" style={{ background: "var(--surface-raised)" }}>
                   <span className="flex flex-wrap items-center gap-2">
                     <span className="font-semibold text-zinc-100">{p.monthLabel}</span>
@@ -1105,7 +1105,7 @@ function MealStructureCard({
   }
 
   return (
-    <details className="card p-5">
+    <details name="plan-secciones" className="card p-5">
       <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 text-sm font-semibold text-zinc-100">
         <span className="flex items-center gap-2">
           <Utensils size={16} style={{ color: "var(--brand-accent-2)" }} />
@@ -1239,6 +1239,7 @@ function GoalStageCard({ client, currentMonth, onClientChanged, onRegenerated }:
   return (
     <details
       open={due != null}
+      name="plan-secciones"
       className="card p-5"
       style={due != null ? { borderColor: "color-mix(in srgb, var(--brand-accent) 55%, transparent)" } : undefined}
     >

@@ -84,6 +84,51 @@ def create_checkout_url(db: Session, tier: str, period: str = "1m", *,
     return session.url
 
 
+# ---------------------------------------------------------------- precios ----
+
+_PERIOD_MONTHS = {"1m": 1, "3m": 3, "6m": 6}
+_prices_cache: dict = {"at": 0.0, "data": None}
+_PRICES_TTL_S = 600  # los precios cambian poco; 10 min de caché evita latencia
+
+
+def get_plan_prices() -> dict:
+    """Importes REALES de los 9 precios (plan × duración) leídos de Stripe, para
+    mostrarlos en la página de planes (total + equivalente al mes). Con caché.
+
+    Devuelve {"currency": "eur", "tiers": {tier: {period: {"total": €, "months": n,
+    "per_month": €}}}}; una combinación sin precio configurado o con error → None.
+    """
+    import time
+
+    if _prices_cache["data"] is not None and time.time() - _prices_cache["at"] < _PRICES_TTL_S:
+        return _prices_cache["data"]
+
+    tiers: dict = {t: {p: None for p in _PERIOD_MONTHS} for t in _TIERS}
+    currency = "eur"
+    if settings.stripe_enabled:
+        stripe = _stripe()
+        for tier in _TIERS:
+            for period, months in _PERIOD_MONTHS.items():
+                price_id = settings.stripe_price_for(tier, period)
+                if not price_id:
+                    continue
+                try:
+                    pr = stripe.Price.retrieve(price_id)
+                    amount = (pr.get("unit_amount") or 0) / 100.0
+                    currency = pr.get("currency") or currency
+                    tiers[tier][period] = {
+                        "total": amount,
+                        "months": months,
+                        "per_month": round(amount / months, 2),
+                    }
+                except Exception as exc:  # precio borrado/ID malo: no rompe la página
+                    _log.warning("Precio %s (%s %s) ilegible: %s", price_id, tier, period, exc)
+
+    data = {"currency": currency, "tiers": tiers}
+    _prices_cache.update(at=time.time(), data=data)
+    return data
+
+
 # --------------------------------------------------------------- webhook ----
 
 def _mark_paid(db: Session, client: Client, period: str | None = None) -> None:

@@ -506,7 +506,7 @@ export function ClientPlanEditor({
 
         <Subhead text="Sesiones (desplegables por día)" />
         {tr.sessions.map((s: any, si: number) => (
-          <details key={si} className="mt-2 rounded-lg p-3" style={{ background: "var(--surface-raised)" }}>
+          <details key={si} name="editor-sesiones" className="mt-2 rounded-lg p-3" style={{ background: "var(--surface-raised)" }}>
             <summary className="flex cursor-pointer flex-wrap items-center gap-2 text-sm font-medium text-zinc-200">
               <span
                 className="rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide"
@@ -523,7 +523,7 @@ export function ClientPlanEditor({
             </div>
             <Area label="Calentamiento" value={s.warmup ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].warmup = v))} />
             {(s.exercises ?? []).map((ex: any, ei: number) => (
-              <details key={ex._uid ?? ei} className="mt-2 rounded-md p-2" style={{ background: "var(--surface)" }}>
+              <details key={ex._uid ?? ei} name={`editor-ejercicios-${si}`} className="mt-2 rounded-md p-2" style={{ background: "var(--surface)" }}>
                 <summary className="flex cursor-pointer items-center justify-between gap-2">
                   <span className="min-w-0 text-xs font-medium text-zinc-200">
                     {exMap[ex.exercise_id] ?? library.find((e) => e.id === ex.exercise_id)?.canonical_name ?? `Ejercicio #${ex.exercise_id}`}

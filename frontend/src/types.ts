@@ -317,6 +317,8 @@ export interface ExerciseOut {
   equipment: string[];
   level_min: 1 | 2 | 3;
   video_url: string | null;
+  // Vídeo SUBIDO como archivo (media/…): tiene prioridad sobre video_url.
+  video_path: string | null;
   image_url: string | null;
   technique_notes: string | null;
   biomechanics_notes: string | null;
@@ -380,6 +382,8 @@ export interface BrandConfigOut {
   links_photo_path: string | null;
   partner_store_url: string | null;
   partner_discount_code: string | null;
+  // Portada única de todos los vídeos de ejercicios.
+  video_cover_path: string | null;
 }
 
 /** GET /api/public/landing — datos públicos de la página de enlaces (/dq). */
@@ -393,6 +397,14 @@ export interface LandingOut {
   links_photo_url: string | null;
   partner_store_url: string | null;
   partner_discount_code: string | null;
+  products: { title: string; url: string; category: string; image_url: string | null }[];
+}
+
+/** GET /api/public/plan-prices — importes reales de cada plan × duración. */
+export interface PlanPricesOut {
+  currency: string;
+  tiers: Record<PackageTier, Record<BillingPeriod,
+    { total: number; months: number; per_month: number } | null>>;
 }
 
 export interface WorkoutSetIn {

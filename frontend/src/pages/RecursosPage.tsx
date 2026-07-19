@@ -156,8 +156,8 @@ function LinksPageManager() {
         <p className="mt-1 text-sm text-zinc-500">
           Una foto tuya en vertical (como fondo de pantalla). JPG/PNG, máx. 5 MB.
         </p>
-        {brand.links_photo_path && (
-          <img src={`/storage/${brand.links_photo_path}`} alt="Foto de fondo actual"
+        {api.mediaUrl(brand.links_photo_path) && (
+          <img src={api.mediaUrl(brand.links_photo_path)!} alt="Foto de fondo actual"
             className="mt-3 h-40 w-28 rounded-xl border object-cover"
             style={{ borderColor: "var(--line-strong)" }} />
         )}
@@ -616,20 +616,13 @@ function ProductEditor({
               onChange={(e) => setDraft({ ...draft, url: e.target.value })}
             />
           </div>
-          <div>
-            <span className="label">Código de descuento (opcional)</span>
-            <input
-              className="input mt-1"
-              value={draft.discount_code}
-              placeholder="CLASSICQUICE"
-              maxLength={40}
-              onChange={(e) => setDraft({ ...draft, discount_code: e.target.value })}
-            />
-            <p className="mt-1 text-[11px] text-zinc-500">
-              El cliente lo verá destacado en su portal con un botón de copiar, para
-              usarlo al pagar en la web de la marca (descuento de tu afiliación).
-            </p>
-          </div>
+          <p className="rounded-lg border px-3 py-2 text-[11px] text-zinc-500"
+            style={{ borderColor: "var(--line-strong)" }}>
+            El <strong>código de descuento es ÚNICO y global</strong>: se configura una
+            sola vez en la pestaña <strong>Página de enlaces</strong> y se aplica solo
+            a todos los productos (portal del cliente y landing de Instagram).
+            Cambiarlo allí lo cambia en todas partes.
+          </p>
           <div>
             <span className="label">…o URL de imagen externa (opcional)</span>
             <input
@@ -694,7 +687,7 @@ function ExerciseVideosManager() {
     if (!all) return [];
     const needle = q.trim().toLowerCase();
     return all.filter((e) => {
-      if (onlySet && !e.video_url && !e.image_url) return false;
+      if (onlySet && !e.video_url && !e.image_url && !e.video_path) return false;
       if (!needle) return true;
       return (
         e.canonical_name.toLowerCase().includes(needle) ||
@@ -706,7 +699,7 @@ function ExerciseVideosManager() {
 
   if (all === null) return <PageLoader />;
 
-  const configured = all.filter((e) => e.video_url || e.image_url).length;
+  const configured = all.filter((e) => e.video_url || e.image_url || e.video_path).length;
 
   return (
     <div className="space-y-4">
@@ -716,10 +709,12 @@ function ExerciseVideosManager() {
           <button className="btn btn-ghost !px-3 !py-1.5 text-xs" onClick={load}>Reintentar</button>
         </div>
       )}
+      <VideoCoverCard />
       <p className="text-sm text-zinc-500">
-        Añade el vídeo (y opcionalmente una imagen) de cada ejercicio. En el portal, el cliente verá
-        los vídeos de los ejercicios de <strong>su</strong> rutina. Si el vídeo es de YouTube, la
-        portada se toma automáticamente. <span className="text-zinc-400">{configured} con vídeo/imagen.</span>
+        Sube el <strong>vídeo de cada ejercicio</strong> (archivo MP4/MOV/WebM…) o pega un enlace
+        (YouTube…). En el portal, el cliente verá los vídeos de los ejercicios de{" "}
+        <strong>su</strong> rutina, todos con la portada de arriba.{" "}
+        <span className="text-zinc-400">{configured} con vídeo/imagen.</span>
       </p>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -751,6 +746,59 @@ function ExerciseVideosManager() {
   );
 }
 
+/** Portada ÚNICA de todos los vídeos de ejercicios (la ve el cliente como
+ *  miniatura de cada vídeo en su portal y su rutina). */
+function VideoCoverCard() {
+  const toast = useToast();
+  const [brand, setBrand] = useState<import("../types").BrandConfigOut | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    api.getBrand().then(setBrand).catch(() => {});
+  }, []);
+
+  async function upload(file: File | undefined) {
+    if (!file || uploading) return;
+    setUploading(true);
+    try {
+      setBrand(await api.uploadVideoCover(file));
+      toast.push("Portada de los vídeos actualizada");
+    } catch (e) {
+      toast.push(e instanceof ApiError ? e.message : "No se pudo subir la portada", "error");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  const cover = api.mediaUrl(brand?.video_cover_path);
+  return (
+    <div className="card flex items-center gap-4 p-4">
+      <div className="flex h-16 w-28 shrink-0 items-center justify-center overflow-hidden rounded-lg border"
+        style={{ borderColor: "var(--line-strong)", background: "var(--surface-raised)" }}>
+        {cover ? (
+          <img src={cover} alt="Portada de los vídeos" className="h-full w-full object-cover" />
+        ) : (
+          <ImageIcon size={20} className="text-zinc-500" />
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <h3 className="text-sm font-semibold text-zinc-200">Portada de los vídeos</h3>
+        <p className="mt-0.5 text-xs text-zinc-500">
+          Una sola imagen como miniatura de TODOS los vídeos de ejercicios (JPG/PNG, máx. 5 MB).
+        </p>
+      </div>
+      <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+        onChange={(e) => upload(e.target.files?.[0])} />
+      <button className="btn btn-ghost shrink-0 !px-3 !py-1.5 text-xs" disabled={uploading}
+        onClick={() => fileRef.current?.click()}>
+        <Upload size={14} className="text-zinc-500" />
+        {uploading ? "Subiendo…" : cover ? "Cambiar" : "Subir portada"}
+      </button>
+    </div>
+  );
+}
+
 function ExerciseVideoRow({
   exercise: ex, onSaved, toast,
 }: {
@@ -759,23 +807,20 @@ function ExerciseVideoRow({
   toast: ReturnType<typeof useToast>;
 }) {
   const [video, setVideo] = useState(ex.video_url ?? "");
-  const [image, setImage] = useState(ex.image_url ?? "");
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [imgOk, setImgOk] = useState(true);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  const dirty = (video.trim() || null) !== (ex.video_url || null) ||
-    (image.trim() || null) !== (ex.image_url || null);
+  const dirty = (video.trim() || null) !== (ex.video_url || null);
 
-  const previewSrc = image.trim() || youtubeThumb(video.trim());
+  const previewSrc = (ex.image_url ?? "").trim() || youtubeThumb(video.trim());
   useEffect(() => setImgOk(true), [previewSrc]); // al corregir la URL, reintenta cargar
 
   async function save() {
     setSaving(true);
     try {
-      await api.updateExercise(ex.id, {
-        video_url: video.trim() || null,
-        image_url: image.trim() || null,
-      });
+      await api.updateExercise(ex.id, { video_url: video.trim() || null });
       toast.push("Ejercicio actualizado");
       onSaved();
     } catch (e) {
@@ -785,14 +830,47 @@ function ExerciseVideoRow({
     }
   }
 
+  async function uploadVideo(file: File | undefined) {
+    if (!file || uploading) return;
+    setUploading(true);
+    try {
+      await api.uploadExerciseVideo(ex.id, file);
+      toast.push(`Vídeo de "${ex.canonical_name}" subido`);
+      onSaved();
+    } catch (e) {
+      toast.push(e instanceof ApiError ? e.message : "No se pudo subir el vídeo", "error");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function removeVideo() {
+    if (uploading) return;
+    setUploading(true);
+    try {
+      await api.deleteExerciseVideo(ex.id);
+      toast.push("Vídeo quitado");
+      onSaved();
+    } catch (e) {
+      toast.push(e instanceof ApiError ? e.message : "No se pudo quitar", "error");
+    } finally {
+      setUploading(false);
+    }
+  }
+
   return (
     <li className="card p-3">
       <div className="flex items-start gap-3">
         <div
           className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border"
-          style={{ borderColor: "var(--line-strong)", background: "var(--surface-raised)" }}
+          style={{
+            borderColor: ex.video_path ? "#2E7D46" : "var(--line-strong)",
+            background: "var(--surface-raised)",
+          }}
         >
-          {previewSrc && imgOk ? (
+          {ex.video_path ? (
+            <Video size={18} style={{ color: "#2E7D46" }} />
+          ) : previewSrc && imgOk ? (
             <img src={previewSrc} alt="" className="h-full w-full object-cover"
               onError={() => setImgOk(false)} />
           ) : (
@@ -800,20 +878,36 @@ function ExerciseVideoRow({
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-zinc-100">{ex.canonical_name}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="truncate text-sm font-semibold text-zinc-100">{ex.canonical_name}</p>
+            {ex.video_path && (
+              <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
+                style={{ background: "color-mix(in srgb, #2E7D46 14%, transparent)", color: "#2E7D46" }}>
+                Vídeo subido
+              </span>
+            )}
+          </div>
           <p className="text-[11px] uppercase tracking-wide text-zinc-500">{ex.muscle_primary}</p>
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <input ref={fileRef} type="file" className="hidden"
+              accept="video/*,.mp4,.mov,.webm,.m4v,.avi,.mkv,.wmv,.3gp"
+              onChange={(e) => { uploadVideo(e.target.files?.[0]); e.target.value = ""; }} />
+            <button className="btn btn-ghost !px-3 !py-1.5 text-xs" disabled={uploading}
+              onClick={() => fileRef.current?.click()}>
+              <Upload size={13} className="text-zinc-500" />
+              {uploading ? "Subiendo…" : ex.video_path ? "Cambiar vídeo" : "Subir vídeo"}
+            </button>
+            {ex.video_path && (
+              <button className="btn btn-ghost !px-2 !py-1.5 text-xs text-zinc-500"
+                disabled={uploading} onClick={removeVideo}>
+                <Trash2 size={13} /> Quitar
+              </button>
+            )}
             <input
-              className="input !py-1.5 text-xs"
-              placeholder="URL del vídeo (YouTube…)"
+              className="input min-w-40 flex-1 !py-1.5 text-xs"
+              placeholder="…o URL del vídeo (YouTube)"
               value={video}
               onChange={(e) => setVideo(e.target.value)}
-            />
-            <input
-              className="input !py-1.5 text-xs"
-              placeholder="URL de imagen (opcional)"
-              value={image}
-              onChange={(e) => setImage(e.target.value)}
             />
           </div>
         </div>

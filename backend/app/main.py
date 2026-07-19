@@ -77,6 +77,15 @@ app = FastAPI(
 # Limiter; este objeto en app.state habilita el manejador global de errores).
 app.state.limiter = Limiter(key_func=client_key)
 
+# Archivos PÚBLICOS (foto de la landing, portada y vídeos de ejercicios).
+# Bajo /api/* para que Caddy los proxyee; StaticFiles soporta Range (el vídeo
+# se puede adelantar/atrasar sin descargarlo entero).
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+
+from app.services.storage import media_dir  # noqa: E402
+
+app.mount("/api/media", StaticFiles(directory=media_dir()), name="media")
+
 
 @app.exception_handler(RateLimitExceeded)
 def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:

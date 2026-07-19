@@ -225,6 +225,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
           // plegados y cargan su resumen al abrirlos.
           <details
             key={p.id}
+            name="feedback-periodos"
             className="card p-5"
             open={isCurrent}
             onToggle={(e) => {

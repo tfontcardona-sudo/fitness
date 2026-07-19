@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Check, BellRing, Pencil, Smartphone, ClipboardCheck, Trash2, CreditCard } from "lucide-react";
+import { ArrowLeft, Check, BellRing, ChevronRight, Pencil, Smartphone, ClipboardCheck, Trash2, CreditCard } from "lucide-react";
 import { api, keepIfSame, REFRESH_MS } from "../lib/api";
 import type { ClientOut } from "../types";
 import {
@@ -258,13 +258,19 @@ export default function ClientProfilePage() {
               </div>
               <PhoneRow client={client} onSaved={reload} />
               <Row label="Edad" value={age ? `${age} años` : "—"} />
-              <Row label="Objetivo" value={client.goal_type ? GOAL_LABEL[client.goal_type] : "—"} />
-              <Row label="Nivel" value={client.level ? LEVEL_LABEL[client.level] : "—"} />
+              {/* Filas HIPERMEDIA: pulsar el dato lleva al apartado que lo trata. */}
+              <Row label="Objetivo" value={client.goal_type ? GOAL_LABEL[client.goal_type] : "—"}
+                onGo={() => changeTab("planificacion")} />
+              <Row label="Nivel" value={client.level ? LEVEL_LABEL[client.level] : "—"}
+                onGo={() => changeTab("anamnesis")} />
               {hasTraining && (
-                <Row label="Entreno" value={client.training_place ? PLACE_LABEL[client.training_place] : "—"} />
+                <Row label="Entreno" value={client.training_place ? PLACE_LABEL[client.training_place] : "—"}
+                  onGo={() => changeTab("anamnesis")} />
               )}
               {/* Dieta = la generada con IA; vacía hasta que exista planificación */}
-              <Row label="Dieta" value={planDiet ?? "—"} faint={planDiet == null ? "se llena al generar la planificación" : undefined} />
+              <Row label="Dieta" value={planDiet ?? "—"}
+                faint={planDiet == null ? "se llena al generar la planificación" : undefined}
+                onGo={() => changeTab("planificacion")} />
             </dl>
           </div>
 
@@ -549,14 +555,36 @@ function PhoneRow({ client, onSaved }: { client: ClientOut; onSaved: () => void 
   );
 }
 
-function Row({ label, value, faint }: { label: string; value: string; faint?: string }) {
-  return (
-    <div className="flex items-center justify-between gap-2">
+function Row({ label, value, faint, onGo }: {
+  label: string; value: string; faint?: string;
+  /** Hipermedia: pulsar la fila navega al apartado que trata ese dato. */
+  onGo?: () => void;
+}) {
+  const body = (
+    <>
       <dt className="text-zinc-500">{label}</dt>
-      <dd className="text-right font-medium text-zinc-200">
-        {value}
-        {faint && <span className="block text-[11px] font-normal text-zinc-500">{faint}</span>}
+      <dd className="flex items-center justify-end gap-1 text-right font-medium text-zinc-200">
+        <span>
+          {value}
+          {faint && <span className="block text-[11px] font-normal text-zinc-500">{faint}</span>}
+        </span>
+        {onGo && (
+          <ChevronRight size={13} className="shrink-0 text-zinc-600 transition-colors group-hover:text-[var(--brand-accent)]" />
+        )}
       </dd>
+    </>
+  );
+  if (!onGo) return <div className="flex items-center justify-between gap-2">{body}</div>;
+  return (
+    <div
+      role="link"
+      tabIndex={0}
+      onClick={onGo}
+      onKeyDown={(e) => e.key === "Enter" && onGo()}
+      className="group -mx-1.5 flex cursor-pointer items-center justify-between gap-2 rounded-lg px-1.5 py-0.5 transition-colors hover:bg-[color-mix(in_srgb,var(--brand-accent)_7%,transparent)]"
+      title={`Ir a ${label.toLowerCase()}`}
+    >
+      {body}
     </div>
   );
 }

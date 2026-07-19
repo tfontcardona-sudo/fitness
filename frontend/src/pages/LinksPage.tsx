@@ -80,6 +80,37 @@ export default function LinksPage() {
           )}
         </div>
 
+        {/* Productos recomendados: los mismos del portal, comprables aquí con
+            el código de descuento de arriba. */}
+        {data && data.products.length > 0 && (
+          <div className="mt-10 w-full">
+            <p className="mb-3 text-sm font-bold uppercase tracking-wider text-white/70">
+              Productos que recomiendo
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              {data.products.map((p, i) => (
+                <a key={i} href={p.url} target="_blank" rel="noopener noreferrer"
+                  className="overflow-hidden rounded-2xl border border-white/15 bg-white/10 text-left backdrop-blur transition-transform active:scale-[0.97]">
+                  {p.image_url ? (
+                    <img src={p.image_url} alt="" className="aspect-square w-full object-cover" />
+                  ) : (
+                    <div className="flex aspect-square w-full items-center justify-center"
+                      style={{ background: `${secondary}33` }}>
+                      <ShoppingBag size={28} className="text-white/50" />
+                    </div>
+                  )}
+                  <div className="p-2.5">
+                    <p className="truncate text-xs font-semibold text-white">{p.title}</p>
+                    <p className="mt-0.5 text-[11px] font-semibold" style={{ color: primary }}>
+                      Comprar{data.partner_discount_code ? ` · código ${data.partner_discount_code}` : ""}
+                    </p>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
         <p className="mt-10 text-xs text-white/50">Pago seguro con Stripe</p>
       </div>
     </div>
