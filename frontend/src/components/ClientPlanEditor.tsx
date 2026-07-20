@@ -102,6 +102,27 @@ export function ClientPlanEditor({
   }, []);
   const activeLibrary = library.filter((e) => !e.archived);
 
+  // Escribir un ejercicio a mano desde el buscador: se crea en la biblioteca
+  // (reutilizable en todos los planes, gestionable en Recursos) y se devuelve
+  // su id para seleccionarlo al momento en la rutina.
+  async function createExercise(name: string, muscle: string, pattern: string): Promise<number | null> {
+    try {
+      const created = await api.createExercise({
+        canonical_name: name,
+        muscle_primary: muscle,
+        movement_pattern: pattern,
+        equipment: ["maquina"],
+        level_min: 1,
+      });
+      setLibrary((prev) => [...prev, created]);
+      toast.push(`Ejercicio «${created.canonical_name}» creado`);
+      return created.id;
+    } catch (e: any) {
+      toast.push(e?.message ?? "No se pudo crear el ejercicio", "error");
+      return null;
+    }
+  }
+
   function mutate(fn: (d: typeof draft) => void) {
     setDraft((d) => { const n = structuredClone(d); fn(n); return n; });
   }
@@ -631,6 +652,7 @@ export function ClientPlanEditor({
                     value={ex.exercise_id}
                     fallbackName={exMap[ex.exercise_id] ?? `Ejercicio #${ex.exercise_id}`}
                     onChange={(id) => mutate((d) => (d.training.sessions[si].exercises[ei].exercise_id = id))}
+                    onCreate={createExercise}
                   />
                 </div>
                 <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -808,15 +830,39 @@ function Area({ label, value, onChange }: { label: string; value: string; onChan
  *  VARIANTES (mismo patrón de movimiento) y después toda la biblioteca separada
  *  por músculo (orden alfabético). Teclear filtra por nombre o por músculo — el
  *  coach encuentra y cambia cualquier ejercicio en segundos. */
-function ExerciseSelect({ library, lookup, value, fallbackName, onChange }: {
+// Grupos musculares elegibles al crear un ejercicio a mano, con el patrón de
+// movimiento por defecto de cada uno (el backend lo exige; alimenta guardrails
+// y la agrupación de "Variantes" del propio selector).
+const MUSCLE_CHOICES: [string, string, string][] = [
+  ["pecho", "Pecho", "horizontal_push"],
+  ["espalda", "Espalda", "horizontal_pull"],
+  ["hombros", "Hombros", "shoulder_abduction"],
+  ["biceps", "Bíceps", "elbow_flexion"],
+  ["triceps", "Tríceps", "elbow_extension"],
+  ["cuadriceps", "Cuádriceps", "squat"],
+  ["isquios", "Isquios", "knee_flexion"],
+  ["gluteos", "Glúteos", "hip_extension"],
+  ["gemelos", "Gemelos", "plantar_flexion"],
+  ["core", "Core", "core_flexion"],
+  ["antebrazos", "Antebrazos", "elbow_flexion"],
+  ["trapecio", "Trapecio", "scapular_elevation"],
+  ["aductores", "Aductores", "hip_adduction"],
+  ["cardio", "Cardio", "cardio"],
+];
+
+function ExerciseSelect({ library, lookup, value, fallbackName, onChange, onCreate }: {
   library: ExerciseOut[];          // solo ACTIVOS: candidatos del selector
   lookup?: ExerciseOut[];          // biblioteca completa (con archivados) para resolver el actual
   value: number;
   fallbackName: string;
   onChange: (id: number) => void;
+  // Crear un ejercicio A MANO desde el buscador: devuelve el id nuevo o null.
+  onCreate?: (name: string, muscle: string, pattern: string) => Promise<number | null>;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
+  const [creating, setCreating] = useState(false); // muestra el selector de grupo muscular
+  const [saving, setSaving] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   useDismiss(boxRef, () => setOpen(false), open); // fuera/ESC → se cierra
@@ -825,6 +871,7 @@ function ExerciseSelect({ library, lookup, value, fallbackName, onChange }: {
   useEffect(() => {
     if (open) {
       setQ("");
+      setCreating(false);
       searchRef.current?.focus();
     }
   }, [open]);
@@ -859,6 +906,17 @@ function ExerciseSelect({ library, lookup, value, fallbackName, onChange }: {
   function pick(id: number) {
     onChange(id);
     setOpen(false);
+  }
+
+  const createName = q.trim();
+  const canCreate = !!onCreate && createName.length >= 3;
+
+  async function doCreate(muscle: string, pattern: string) {
+    if (!onCreate || saving) return;
+    setSaving(true);
+    const id = await onCreate(createName, muscle, pattern);
+    setSaving(false);
+    if (id != null) pick(id);
   }
 
   const GroupHeader = ({ text }: { text: string }) => (
@@ -921,12 +979,48 @@ function ExerciseSelect({ library, lookup, value, fallbackName, onChange }: {
                 {list.map((e) => <Item key={e.id} e={e} />)}
               </div>
             ))}
-            {total === 0 && (
+            {total === 0 && !canCreate && (
               <p className="px-3 py-3 text-xs text-zinc-500">
                 Sin resultados para «{q}».
               </p>
             )}
           </div>
+          {/* Escribir un ejercicio A MANO: crea en la biblioteca y lo selecciona.
+              Aparece siempre que el texto tenga entidad (≥3 letras), también
+              cuando hay resultados parecidos pero no el que el coach quiere. */}
+          {canCreate && (
+            <div className="border-t p-2" style={{ borderColor: "var(--line)" }}>
+              {!creating ? (
+                <button
+                  type="button"
+                  onClick={() => setCreating(true)}
+                  className="block w-full rounded-md px-3 py-1.5 text-left text-xs font-semibold hover:bg-zinc-500/10"
+                  style={{ color: "var(--brand-accent-2)" }}
+                >
+                  ＋ Crear «{createName}» como ejercicio nuevo
+                </button>
+              ) : (
+                <div>
+                  <p className="px-1 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                    ¿Grupo muscular de «{createName}»?
+                  </p>
+                  <div className="grid grid-cols-2 gap-1">
+                    {MUSCLE_CHOICES.map(([slug, label, pattern]) => (
+                      <button
+                        key={slug}
+                        type="button"
+                        disabled={saving}
+                        onClick={() => doCreate(slug, pattern)}
+                        className="rounded-md px-2 py-1 text-left text-xs text-zinc-200 hover:bg-zinc-500/10 disabled:opacity-50"
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

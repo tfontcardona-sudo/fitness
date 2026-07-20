@@ -413,7 +413,7 @@ FORMATO POR TOMA (réplica EXACTA del método del coach):
       indica AOVE y qué evitar; en fruta, piezas recomendadas).
     - items: alimentos INTERCAMBIABLES, cada uno con su cantidad EQUIVALENTE en macros
       para cubrir el objetivo de ESE grupo en el slot. VARIEDAD AMPLIA — el cliente debe
-      poder elegir: Hidratos de carbono 9-12 alimentos; Proteína 7-10; Grasas 4-6; Fruta 4-6.
+      poder elegir: Hidratos de carbono 10-14 alimentos; Proteína 9-12; Grasas 5-8; Fruta 5-8.
       amount en CRUDO, con cocido si aplica ("140 g crudo = 380 g cocido"; "150 g";
       "350 ml + 1 huevo entero"). El grupo Vegetales puede ir solo con note (items vacío).
   intro del slot: "Equivalencias calculadas para aportar ~<carbs_g del slot> g de CH del cereal".

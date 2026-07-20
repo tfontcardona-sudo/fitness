@@ -43,11 +43,14 @@ def doc_brand(db: Session):
                     logo_path=logo_abs)
 
 
-def build_plan_pdf(db: Session, plan: Plan, client: Client) -> tuple[bytes, str, str]:
+def build_plan_pdf(db: Session, plan: Plan, client: Client,
+                   fmt: str = "pdf") -> tuple[bytes, str, str]:
     """Devuelve (contenido, media_type, filename) del plan.
 
-    PDF convertido en el servidor (LibreOffice); si la conversión fallara,
-    degrada a .docx para no romper nunca la entrega.
+    fmt="pdf" (por defecto): PDF convertido en el servidor (LibreOffice); si la
+    conversión fallara, degrada a .docx para no romper nunca la entrega.
+    fmt="docx": el Word ORIGINAL editable — para que el coach pueda retocar
+    cualquier apartado del documento antes de enviarlo.
     """
     from app.services.docs.pdf_convert import docx_bytes_to_pdf
     from app.services.docs.plan_doc import generate_plan_doc
@@ -80,6 +83,9 @@ def build_plan_pdf(db: Session, plan: Plan, client: Client) -> tuple[bytes, str,
 
     ascii_name = unicodedata.normalize("NFKD", client.full_name).encode("ascii", "ignore").decode()
     safe = "".join(c if c.isalnum() else "_" for c in ascii_name).strip("_").lower() or "cliente"
+
+    if fmt == "docx":
+        return data, DOCX_MEDIA, f"plan_{safe}_mes{plan.month_index}.docx"
 
     try:
         pdf = docx_bytes_to_pdf(data)

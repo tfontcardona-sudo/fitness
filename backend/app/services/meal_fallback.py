@@ -39,6 +39,9 @@ _DESAYUNO: list[tuple[str, list[_ING]]] = [
     ("Batido completo de plátano y cacahuete",
      [("Leche desnatada", 300, (3.4, 4.8, 0.3)), ("Proteína whey", 30, (80, 8, 7)),
       ("Plátano", 120, (1, 21, 0.3)), ("Crema de cacahuete 100%", 15, (25, 12, 50))]),
+    ("Tortitas de avena con queso fresco y fruta",
+     [("Copos de avena", 60, (13, 60, 7)), ("Claras de huevo", 150, (11, 0.7, 0.2)),
+      ("Queso fresco batido 0%", 150, (8, 4, 0.2)), ("Frutos rojos", 100, (1, 8, 0.3))]),
 ]
 
 _SNACK: list[tuple[str, list[_ING]]] = [
@@ -57,6 +60,9 @@ _SNACK: list[tuple[str, list[_ING]]] = [
     ("Queso fresco batido con frutos rojos",
      [("Queso fresco batido 0%", 250, (8, 4, 0.2)), ("Frutos rojos", 120, (1, 8, 0.3)),
       ("Nueces", 10, (15, 7, 65))]),
+    ("Pan integral con pavo y queso fresco",
+     [("Pan integral", 60, (9, 43, 3.5)), ("Pavo en lonchas", 60, (22, 1, 2)),
+      ("Queso fresco batido 0%", 100, (8, 4, 0.2)), ("Tomate", 80, (1, 3.5, 0.2))]),
 ]
 
 _PRINCIPAL: list[tuple[str, list[_ING]]] = [
@@ -76,6 +82,12 @@ _PRINCIPAL: list[tuple[str, list[_ING]]] = [
      [("Huevo entero", 165, (12.5, 0.7, 10)), ("Claras de huevo", 100, (11, 0.7, 0.2)),
       ("Pan integral", 90, (9, 43, 3.5)), ("Aguacate", 70, (2, 2, 15)),
       ("Tomate", 100, (1, 3.5, 0.2))]),
+    ("Pavo salteado con cuscús y verduras",
+     [("Pechuga de pavo", 180, (22, 0, 1.5)), ("Cuscús (en crudo)", 75, (13, 72, 1)),
+      ("Verduras variadas", 200, (2, 5, 0.3)), ("Aceite de oliva virgen extra", 10, (0, 0, 100))]),
+    ("Atún con boniato y verduras",
+     [("Atún fresco", 170, (23, 0, 5)), ("Boniato (en crudo)", 300, (1.5, 21, 0.2)),
+      ("Verduras variadas", 200, (2, 5, 0.3)), ("Aceite de oliva virgen extra", 8, (0, 0, 100))]),
 ]
 
 
