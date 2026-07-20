@@ -393,11 +393,13 @@ def generate_plan_doc(
         for m in meals:
             section_bar(doc, f"{m.get('name','Comida')} · {m.get('time','')}", WINE, size=10)
             sb = blocks.get(m.get("slot"), {})
-            # La caja FLUYE: si no cabe en lo que queda de página, se parte
-            # limpiamente conservando la crema a ambos lados (nunca recorta
-            # texto) y llena la página en vez de saltar entera dejando un hueco
-            # blanco. La barra viaja pegada a su contenido (keepNext).
-            cell = open_box(doc, CREAM)
+            # Regla del diseño de referencia: NINGÚN corte visible. Las cajas de
+            # opciones/toma libre (contenido acotado, ≤3 opciones) viajan ENTERAS
+            # a la página siguiente si no caben. Las equivalencias (sin cota) sí
+            # pueden fluir, pero cada grupo lleva keepLines: el corte cae ENTRE
+            # grupos, nunca a mitad de una frase.
+            is_equiv = bool(sb.get("fmt") == "equivalences" and sb.get("equivalences"))
+            cell = open_box(doc, CREAM, cant_split=not is_equiv)
             if sb.get("fmt") == "equivalences" and sb.get("equivalences"):
                 # foto redonda flotante en la cena (como el ejemplo del coach)
                 img = str(ASSETS / "food_round.png") if "cena" in _norm(m.get("name", "")) else None
@@ -429,30 +431,30 @@ def generate_plan_doc(
     # Ejemplo de dieta semanal
     _weekly_section(doc, brand, diet_mode, nutrition, bank)
 
-    # Tarjetas informativas de cierre: FLUYEN para llenar la página. Si una no
-    # cabe entera en lo que queda, se parte limpiamente conservando la crema a
-    # ambos lados (nunca recorta texto) en vez de saltar entera dejando hueco
-    # blanco al pie. La barra viaja pegada a su contenido (keepNext).
+    # Tarjetas informativas de cierre: contenido FIJO y acotado (menos de media
+    # página cada una) → cada tarjeta viaja ENTERA a la página siguiente si no
+    # cabe. Regla del diseño de referencia: un título abre una tarjeta nueva y
+    # una tarjeta jamás aparece partida con líneas sueltas en otra página.
 
     # Ideas rápidas
     section_bar(doc, "Ideas rápidas de desayunos, snacks y meriendas", WINE)
-    info_box(doc, [f"• {x}" for x in IDEAS_RAPIDAS], fill=CREAM)
+    info_box(doc, [f"• {x}" for x in IDEAS_RAPIDAS], fill=CREAM, cant_split=True)
 
     # Salsas recomendables
     section_bar(doc, "Salsas recomendables", BLUE)
-    info_box(doc, SALSAS_TEXT, fill=CREAM)
+    info_box(doc, SALSAS_TEXT, fill=CREAM, cant_split=True)
 
     # Yogures recomendables
     section_bar(doc, "Yogures recomendables", BLUE)
-    info_box(doc, YOGURES_TEXT, fill=CREAM)
+    info_box(doc, YOGURES_TEXT, fill=CREAM, cant_split=True)
 
     # Quesos recomendables
     section_bar(doc, "Quesos recomendables", BLUE)
-    info_box(doc, QUESOS_TEXT, fill=CREAM)
+    info_box(doc, QUESOS_TEXT, fill=CREAM, cant_split=True)
 
     # Recomendaciones generales
     section_bar(doc, "Recomendaciones generales", WINE)
-    info_box(doc, RECOMENDACIONES, fill=CREAM)
+    info_box(doc, RECOMENDACIONES, fill=CREAM, cant_split=True)
 
     # Suplementación
     section_bar(doc, "Suplementación recomendada", BLUE)
@@ -461,7 +463,7 @@ def generate_plan_doc(
         items = [f"{s.get('name','')} — {s.get('dose','')} ({s.get('timing','')})" for s in supps]
     else:
         items = SUPLEMENTACION_DEFAULT
-    info_box(doc, items, fill=CREAM)
+    info_box(doc, items, fill=CREAM, cant_split=True)
 
     if not include_training or not training:
         buf = io.BytesIO()
