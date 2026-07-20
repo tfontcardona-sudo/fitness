@@ -1316,6 +1316,36 @@ El link del perfil de Instagram de David lleva TODO el embudo: landing → plane
   pruebas local: el PG temporal en /tmp muere entre runs — rearrancar antes de
   fiarse de skips masivos "Requiere PostgreSQL".
 
+## 10.u Tramo 2026-07-19 (5ª) — Legibilidad, texto IA conciso, edición cómoda y avisos precisos
+
+- **`/planes` legible sobre cualquier foto**: velo del fondo más marcado
+  (0,62→0,8→0,9 en vez de 0,45→0,72→0,85) + halo claro (`textShadow`) en la
+  cabecera — el texto se lee pase lo que pase debajo.
+- **Texto de IA más conciso** (mismo contenido, menos relleno):
+  `ai/generator.py` (rationale 2-3 frases cortas, flexibility_rules 1 frase por
+  regla) y `ai/feedback.py` (`PlanAdjustment.reason` ≤18 palabras + párrafo
+  CONCISIÓN nuevo en el system prompt: dato→conclusión, sin reformular ni
+  relleno tipo "cabe señalar"). Afecta a generación, feedback y adaptación
+  (los `reason` de `plan_adjustments` alimentan el `rationale` de adapt_plan).
+- **Textareas largos → modal expandible** (`components/ui.tsx::ExpandableArea`,
+  NUEVO, compartido): justificación/reglas de flexibilidad del editor de plan,
+  "por qué" de cada cambio aplicado (panel), campos del feedback IA y de la
+  Anamnesis — todos usaban una versión casi idéntica del mismo textarea de
+  2-3 líneas donde no se podía leer ni editar bien; ahora al enfocarlos se abre
+  un modal grande con el texto entero (Esc/click fuera/"Hecho" cierra), mismo
+  value/onChange que el compacto (sin borrador aparte).
+- **Aviso "planificación editada" solo si CAMBIÓ algo de verdad**: antes,
+  `onSaved` del editor marcaba `needsDownload=true` SIEMPRE (aunque el coach
+  entrara y guardara sin tocar nada); ahora compara `plan.{nutrition,training,
+  education}` antes/después (JSON) y solo avisa si hay diferencia real; si no,
+  toast "Sin cambios que guardar".
+- **Fotos de progreso del portal**: el icono del aviso (antes SIEMPRE
+  WhatsApp) ahora coincide con el texto — WhatsApp o Mail según el canal real
+  del cliente (`directContact` = Pro).
+- Verificación: `test_ai_service` + `test_today_features` + `test_public_register`
+  + `test_stripe` en verde; los 2 fallos de `test_nutrition_coherence` son
+  preexistentes en `main` (confirmado contra el baseline). tsc + vite build OK.
+
 ## 11. Mapa rápido de archivos tocados en el último tramo
 
 **Pulido §8.2 (2026-07-04)**

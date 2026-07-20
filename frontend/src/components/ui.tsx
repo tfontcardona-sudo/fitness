@@ -199,3 +199,56 @@ export function ConfirmDialog({
     </div>
   );
 }
+
+/* ------------------------------------------------------- ExpandableArea ---- */
+
+/** Textarea de texto largo (justificación, notas, "por qué"…) que en su tamaño
+ *  compacto no deja leer ni editar bien. Al enfocarlo se abre un modal grande
+ *  con el texto entero; "Hecho"/Esc/click fuera lo cierra. Mismo value/onChange
+ *  que el compacto: no hay borrador aparte que pueda desincronizarse. */
+export function ExpandableArea({
+  label, value, onChange, rows = 2, className,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  rows?: number;
+  className?: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const modalRef = useRef<HTMLDivElement>(null);
+  useDismiss(modalRef, () => setExpanded(false), expanded);
+  useModalFocus(modalRef, expanded);
+
+  return (
+    <label className={className ? `block ${className}` : "block"}>
+      <span className="mb-1 block text-xs text-zinc-500">{label}</span>
+      <textarea
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={() => setExpanded(true)}
+        readOnly
+        rows={rows}
+        className="input w-full cursor-pointer resize-none"
+      />
+      {expanded && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="presentation">
+          <div ref={modalRef} role="dialog" aria-modal="true" aria-label={label}
+            className="card flex w-full max-w-xl flex-col gap-2 p-4" style={{ maxHeight: "80vh" }}>
+            <span className="text-sm font-semibold text-zinc-200">{label}</span>
+            <textarea
+              value={value ?? ""}
+              onChange={(e) => onChange(e.target.value)}
+              autoFocus
+              className="input w-full flex-1 resize-none"
+              style={{ minHeight: "40vh" }}
+            />
+            <button onClick={() => setExpanded(false)} className="btn btn-primary self-end">
+              <Check size={14} /> Hecho
+            </button>
+          </div>
+        </div>
+      )}
+    </label>
+  );
+}

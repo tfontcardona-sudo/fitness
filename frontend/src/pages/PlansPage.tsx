@@ -86,16 +86,19 @@ export default function PlansPage() {
           <img src={landing.plans_photo_url} alt=""
             className="pointer-events-none fixed inset-0 h-full w-full object-cover" />
           <div className="pointer-events-none fixed inset-0"
-            style={{ background: "linear-gradient(180deg, rgba(246,241,231,.45) 0%, rgba(246,241,231,.72) 45%, rgba(246,241,231,.85) 100%)" }} />
+            style={{ background: "linear-gradient(180deg, rgba(246,241,231,.62) 0%, rgba(246,241,231,.8) 45%, rgba(246,241,231,.9) 100%)" }} />
         </>
       )}
       <div className="relative mx-auto max-w-4xl px-5 py-10">
-        <header className="mb-6 flex flex-col items-center text-center">
+        {/* textShadow: halo claro alrededor del texto oscuro — se lee bien pase
+            lo que pase debajo (foto clara, oscura, con textura...). */}
+        <header className="mb-6 flex flex-col items-center text-center"
+          style={{ textShadow: "0 0 14px #f6f1e7, 0 0 6px #f6f1e7, 0 1px 2px #f6f1e7" }}>
           <img src="/dq-logo.png" alt="" className="h-14 w-auto rounded-xl shadow-sm" />
           <h1 className="mt-4 text-3xl font-extrabold tracking-tight">
             Empieza tu cambio <span style={{ color: "#E8833A" }}>hoy</span>
           </h1>
-          <p className="mt-1 max-w-lg text-sm opacity-70">
+          <p className="mt-1 max-w-lg text-sm opacity-80">
             Plan de dieta y entreno 100 % a tu medida, con seguimiento real de tu coach.
           </p>
           {/* Gancho de confianza: qué incluye SIEMPRE, de un vistazo */}

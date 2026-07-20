@@ -10,7 +10,7 @@ import {
 import { GOAL_LABEL } from "../lib/format";
 import { CANONICAL_MEALS, mealKeysFromNames, restructureNutritionMeals } from "../lib/meals";
 import { useDismiss } from "../lib/useDismiss";
-import { Spinner, useToast } from "./ui";
+import { ExpandableArea, Spinner, useToast } from "./ui";
 import type { ClientOut, ExerciseOut } from "../types";
 
 let _uidCounter = 0;
@@ -817,13 +817,11 @@ function Num({ label, value, onChange, max }: { label: string; value: number | n
     </label>
   );
 }
+/** Área de texto larga (justificación, reglas de flexibilidad…): usa el modal
+ *  expandible compartido (components/ui.tsx) — en 2 líneas no se lee ni edita
+ *  bien; al enfocarla se abre grande y "Hecho"/Esc/fuera la cierra. */
 function Area({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <label className="mt-2 block">
-      <span className="mb-0.5 block text-xs text-zinc-500">{label}</span>
-      <textarea value={value ?? ""} onChange={(e) => onChange(e.target.value)} rows={2} className="input w-full resize-y" />
-    </label>
-  );
+  return <ExpandableArea label={label} value={value} onChange={onChange} className="mt-2" />;
 }
 
 /** Selector de ejercicio con BUSCADOR y agrupado por GRUPO MUSCULAR: primero las

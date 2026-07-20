@@ -7,7 +7,7 @@ import { CANONICAL_MEALS, mealKeysFromNames } from "../lib/meals";
 import { GOAL_LABEL, goalDays, goalReviewDue, planMonthLabel } from "../lib/format";
 import { deficitLabel, macroPct, MACRO_TOTAL_TOLERANCE } from "../lib/nutritionTargets";
 import { isCriticalLine } from "../lib/clinical";
-import { Spinner, useToast } from "./ui";
+import { ExpandableArea, Spinner, useToast } from "./ui";
 import { MemoDetails } from "./MemoDetails";
 import { ClientPlanEditor } from "./ClientPlanEditor";
 import type { ClientOut, GoalType } from "../types";
@@ -378,13 +378,24 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
         refWeightKg={lastClosing?.closing_weight_kg ?? client.start_weight_kg ?? null}
         initialFocus={editFocus}
         onSaved={(p) => {
+          // Solo avisar de "reenvía la actualización" si REALMENTE cambió algo:
+          // abrir el editor por un bloque y guardar sin tocar nada (o entrar y
+          // salir) no debe disparar el aviso — se compara con lo que había
+          // antes de este guardado.
+          const changed = JSON.stringify(plan.nutrition) !== JSON.stringify(p.nutrition)
+            || JSON.stringify(plan.training) !== JSON.stringify(p.training)
+            || JSON.stringify(plan.education) !== JSON.stringify(p.education);
           setPlan(p);
           setEditing(false);
           setEditFocus(null);
-          // El PDF descargado antes ya NO refleja esta edición: avisar hasta
-          // que el coach lo vuelva a descargar (o lo reenvíe por WhatsApp).
-          setNeedsDownload(true);
-          toast.push("Cambios guardados — envíale la actualización al cliente");
+          if (changed) {
+            // El PDF descargado antes ya NO refleja esta edición: avisar hasta
+            // que el coach lo vuelva a descargar (o lo reenvíe por WhatsApp).
+            setNeedsDownload(true);
+            toast.push("Cambios guardados — envíale la actualización al cliente");
+          } else {
+            toast.push("Sin cambios que guardar");
+          }
         }}
         onCancel={() => { setEditing(false); setEditFocus(null); }}
       />
@@ -765,13 +776,10 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
                     placeholder="Cambio"
                     aria-label="Cambio"
                   />
-                  <textarea
+                  <ExpandableArea
+                    label="Por qué"
                     value={d.reason}
-                    onChange={(e) => setAdjDraft(adjDraft.map((x, j) => (j === i ? { ...x, reason: e.target.value } : x)))}
-                    rows={2}
-                    className="input w-full resize-y text-xs"
-                    placeholder="Por qué"
-                    aria-label="Por qué"
+                    onChange={(v) => setAdjDraft(adjDraft.map((x, j) => (j === i ? { ...x, reason: v } : x)))}
                   />
                 </div>
               ))}

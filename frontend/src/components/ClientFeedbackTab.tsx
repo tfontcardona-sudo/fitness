@@ -3,7 +3,7 @@ import { Sparkles, AlertTriangle, MessageSquare, MessageCircle, Mail, Video, Tar
 import { api } from "../lib/api";
 import { feedbackBody, feedbackMessage, openWhatsApp, videoCallMessage, waPhone } from "../lib/whatsapp";
 import { pkg } from "../lib/packages";
-import { Spinner, useToast } from "./ui";
+import { ExpandableArea, Spinner, useToast } from "./ui";
 import type { ClientOut } from "../types";
 
 interface Period {
@@ -531,12 +531,7 @@ function FeedbackEditor({ docId, content, onCancel, onSaved }: {
 }
 
 function FbArea({ label, value, onChange, rows = 3 }: { label: string; value: string; onChange: (v: string) => void; rows?: number }) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs text-zinc-500">{label}</span>
-      <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={rows} className="input w-full resize-y" />
-    </label>
-  );
+  return <ExpandableArea label={label} value={value} onChange={onChange} rows={rows} />;
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
