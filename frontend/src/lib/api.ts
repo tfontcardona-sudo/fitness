@@ -50,6 +50,7 @@ import type {
   RecommendedProductOut,
   RecommendedProductUpdate,
   TokenOut,
+  VideoCallOut,
 } from "../types";
 
 const TOKEN_KEY = "fitness_coach_token";
@@ -306,6 +307,32 @@ export const api = {
   sendPlanUpdateEmail: (planId: number) =>
     request<{ sent: boolean; email_status: string; attached_pdf: boolean }>(
       "POST", `/plans/${planId}/send-update-email`),
+
+  // --- videollamadas quincenales (Pro): agendar → fecha → confirmar/reagendar ---
+  listVideoCalls: (clientId: number) =>
+    request<VideoCallOut[]>("GET", `/clients/${clientId}/video-calls`),
+  createVideoCall: (clientId: number, periodIndex: number) =>
+    request<VideoCallOut>("POST", `/clients/${clientId}/video-calls`, { period_index: periodIndex }),
+  scheduleVideoCall: (clientId: number, callId: number, scheduledFor: string) =>
+    request<VideoCallOut>("PATCH", `/clients/${clientId}/video-calls/${callId}`, { scheduled_for: scheduledFor }),
+  videoCallDone: (clientId: number, callId: number) =>
+    request<VideoCallOut>("POST", `/clients/${clientId}/video-calls/${callId}/done`),
+  videoCallReschedule: (clientId: number, callId: number) =>
+    request<VideoCallOut>("POST", `/clients/${clientId}/video-calls/${callId}/reschedule`),
+
+  // --- push del COACH (su móvil recibe el resumen de alertas cada 3 h) ---
+  coachPushPublicKey: () =>
+    request<{ enabled: boolean; public_key: string | null }>("GET", "/coach/push/public-key"),
+  coachPushSubscribe: (sub: { endpoint: string; p256dh: string; auth: string }) =>
+    request<{ id: number }>("POST", "/coach/push/subscribe", sub),
+  coachPushUnsubscribe: (sub: { endpoint: string; p256dh: string; auth: string }) =>
+    request<{ removed: boolean }>("POST", "/coach/push/unsubscribe", sub),
+
+  // Autorrelleno del formulario de producto: lee la página del enlace y devuelve
+  // título, descripción e imagen (metadatos OpenGraph).
+  scrapeProduct: (url: string) =>
+    request<{ title: string | null; description: string | null; image_url: string | null }>(
+      "POST", "/resources/products/scrape", { url }),
 
   // --- brand ---
   getBrand: () => request<BrandConfigOut>("GET", "/brand"),

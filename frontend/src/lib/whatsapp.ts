@@ -133,14 +133,17 @@ function pickVoice(fullName: string, extra = 0): Voice {
 }
 
 /** Mensaje para PROPONER la videollamada de revisión (paquete Pro): saludo +
- *  propuesta directa. El coach lo envía por el WhatsApp del cliente y acuerdan
- *  el día/hora en la conversación. */
-export function videoCallMessage(fullName: string): string {
+ *  propuesta directa. Con enlace de reservas (Google Calendar/Meet, Calendly…)
+ *  el cliente elige día y hora él mismo; sin él, se acuerda en la conversación. */
+export function videoCallMessage(fullName: string, meetUrl?: string | null): string {
+  const cita = meetUrl
+    ? `Elige el día y la hora que mejor te vengan desde este enlace (videollamada por Google Meet):\n${meetUrl}`
+    : "¿Qué día y hora te vienen bien esta semana? Te paso el enlace en cuanto lo cerremos.";
   return [
     `Hola ${waFirstName(fullName)},`,
     "Como parte de tu acompañamiento, vamos a hacer una videollamada de revisión "
     + "para repasar tu progreso, resolver dudas y ajustar lo que haga falta.",
-    "¿Qué día y hora te vienen bien esta semana? Te paso el enlace en cuanto lo cerremos.",
+    cita,
     "Un saludo.",
   ].join("\n\n");
 }

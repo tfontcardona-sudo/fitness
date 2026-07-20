@@ -15,7 +15,7 @@ atender:
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
@@ -147,6 +147,39 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
                 "Súbelos en Recursos → Productos para que le salgan en su portal "
                 "con tu código.",
                 "planificacion", "Ver planificación"))
+
+    # --- Videollamada quincenal (Pro) ---------------------------------------
+    # Al llegar la revisión toca videollamada: agendar → fecha → recordatorio
+    # el día antes → confirmar realizada (o reagendar y el ciclo se repite).
+    if (client.package_tier == "pro" and last_period is not None
+            and last_period.status in ("closed", "analyzed")):
+        from app.models import VideoCall
+
+        vc = db.scalar(select(VideoCall).where(
+            VideoCall.client_id == client.id,
+            VideoCall.period_index == last_period.period_index))
+        if vc is None:
+            out.append(_alert(
+                client, "video_call_schedule", "media",
+                f"Toca la videollamada quincenal (revisión #{last_period.period_index}): "
+                "propónsela por WhatsApp con tu enlace de reservas.",
+                "feedback", "Agendar videollamada"))
+        elif vc.status == "pending":
+            out.append(_alert(
+                client, "video_call_schedule", "media",
+                "Videollamada propuesta sin día cerrado: apunta la fecha en cuanto reserve.",
+                "feedback", "Apuntar fecha"))
+        elif vc.status == "scheduled" and vc.scheduled_for is not None:
+            if vc.scheduled_for == today + timedelta(days=1):
+                out.append(_alert(
+                    client, "video_call_tomorrow", "alta",
+                    f"Videollamada MAÑANA ({vc.scheduled_for.strftime('%d/%m')}).",
+                    "feedback", "Ver videollamada"))
+            elif vc.scheduled_for <= today:
+                out.append(_alert(
+                    client, "video_call_confirm", "alta",
+                    "¿Se realizó la videollamada? Confírmala, o reagéndala si no pudo ser.",
+                    "feedback", "Confirmar videollamada"))
 
     # --- Objetivo cambiado sin regenerar el plan ----------------------------
     # Tras cambiar el objetivo, si la IA falló al regenerar, el cliente seguiría

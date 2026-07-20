@@ -336,6 +336,9 @@ class BrandConfig(Base):
     # Foto de fondo de la página pública de PLANES (/planes), independiente de
     # la de la landing /dq (media/…).
     plans_photo_path: Mapped[str | None] = mapped_column(String(500))
+    # Enlace de RESERVAS de videollamada del coach (página de citas de Google
+    # Calendar/Meet, Calendly…): va en el WhatsApp de "agendar videollamada".
+    meet_url: Mapped[str | None] = mapped_column(String(300))
 
 
 # -------------------------------------------------- recommended_products ----
@@ -393,13 +396,43 @@ class PushSubscription(Base):
     __tablename__ = "push_subscriptions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
+    # NULL cuando la suscripción es del COACH (web del coach, no un portal).
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id"), index=True, nullable=True)
+    # True → dispositivo del coach: recibe el resumen de alertas/pendientes.
+    is_coach: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
     endpoint: Mapped[str] = mapped_column(Text, unique=True)
     p256dh: Mapped[str] = mapped_column(String(255))
     auth: Mapped[str] = mapped_column(String(255))
     user_agent: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+# ------------------------------------------------------------ video_calls ----
+class VideoCall(Base):
+    """Videollamada de revisión QUINCENAL de un cliente Pro.
+
+    Ciclo: al llegar la revisión quincenal (período closed/analyzed) toca una →
+    alerta "agendar" → el coach la propone por WhatsApp con su enlace de
+    reservas → cuando el cliente elige día, el coach apunta la fecha
+    (scheduled_for) → recordatorio el día antes (coach y cliente) → tras la
+    fecha, la web pregunta si se realizó: sí → done · no → se reagenda (vuelve
+    a pending y el ciclo empieza de nuevo).
+    """
+
+    __tablename__ = "video_calls"
+    __table_args__ = (UniqueConstraint("client_id", "period_index"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
+    period_index: Mapped[int] = mapped_column(Integer)
+    # pending (propuesta enviada, sin fecha) | scheduled (fecha apuntada) | done
+    status: Mapped[str] = mapped_column(String(12), default="pending", nullable=False)
+    scheduled_for: Mapped[date | None] = mapped_column(Date)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
 
 
 # ------------------------------------------------------------ email_log ----

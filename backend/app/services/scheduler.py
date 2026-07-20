@@ -22,18 +22,18 @@ from apscheduler.triggers.cron import CronTrigger
 from app.config import settings
 from app.db import SessionLocal
 from app.services.jobs import run_daily_maintenance
-from app.services.push import run_push_reminders
+from app.services.push import run_coach_digest, run_push_reminders
 
 logger = logging.getLogger("scheduler")
 
 DAILY_HOUR = 6   # 06:00 hora local: tras el cierre natural del día anterior
 DAILY_MINUTE = 30
 
-# Recordatorios push: cada 4 h en punto (00/04/08/12/16/20 hora local). El
-# propio job descarta las ejecuciones fuera del horario activo 08–22 (ver
-# push.ACTIVE_FROM/ACTIVE_UNTIL), así que en la práctica envía a las
-# 08/12/16/20 como mucho, y solo a quien tenga algo pendiente.
-PUSH_EVERY_HOURS = 4
+# Recordatorios push: cada 3 h en punto (hora local). El propio job descarta
+# las ejecuciones fuera del horario activo 08–22 (push.ACTIVE_FROM/UNTIL), así
+# que en la práctica envía a las 09/12/15/18/21 como mucho, y solo a quien
+# tenga algo pendiente. El resumen del COACH usa la misma cadencia.
+PUSH_EVERY_HOURS = 3
 
 _scheduler: BackgroundScheduler | None = None
 
@@ -62,6 +62,18 @@ def _push_job() -> None:
         db.close()
 
 
+def _coach_digest_job() -> None:
+    db = SessionLocal()
+    try:
+        summary = run_coach_digest(db)
+        logger.info("resumen push del coach: %s", summary)
+    except Exception:  # nunca tumbar el scheduler por un fallo puntual
+        logger.exception("fallo en el resumen push del coach")
+        db.rollback()
+    finally:
+        db.close()
+
+
 def start_scheduler() -> BackgroundScheduler:
     global _scheduler
     if _scheduler is not None:
@@ -81,6 +93,17 @@ def start_scheduler() -> BackgroundScheduler:
         _push_job,
         trigger=CronTrigger(hour=f"*/{PUSH_EVERY_HOURS}", minute=0),
         id="push_reminders",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+        misfire_grace_time=1800,
+    )
+    # Resumen de alertas al MÓVIL del coach, misma cadencia (a y 5 para no
+    # solapar con los recordatorios de los clientes).
+    sched.add_job(
+        _coach_digest_job,
+        trigger=CronTrigger(hour=f"*/{PUSH_EVERY_HOURS}", minute=5),
+        id="coach_digest",
         replace_existing=True,
         coalesce=True,
         max_instances=1,
