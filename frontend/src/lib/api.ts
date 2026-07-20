@@ -365,6 +365,15 @@ export const api = {
     const suffix = qs.toString() ? `?${qs}` : "";
     return request<ExerciseOut[]>("GET", `/exercises${suffix}`);
   },
+  createExercise: (body: {
+    canonical_name: string;
+    muscle_primary: string;
+    movement_pattern: string;
+    aliases?: string[];
+    muscle_secondary?: string[];
+    equipment?: string[];
+    level_min?: number;
+  }) => request<ExerciseOut>("POST", "/exercises", body),
   archiveExercise: (id: number) =>
     request<ExerciseOut>("POST", `/exercises/${id}/archive`),
   restoreExercise: (id: number) =>

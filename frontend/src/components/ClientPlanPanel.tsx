@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Mail, Pencil, PlayCircle, Save, X, Flag, Copy, Archive } from "lucide-react";
+import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Mail, Pencil, PlayCircle, Save, X, Flag, Copy, Archive, FileText } from "lucide-react";
 import { api, getToken } from "../lib/api";
 import { manualUpdateMessage, openWhatsApp, planAndFeedbackMessage, planMessage, waPhone, waUrl } from "../lib/whatsapp";
 import { pkg } from "../lib/packages";
@@ -287,21 +287,24 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
     }
   }
 
-  function downloadPdf() {
+  function downloadDocument(format: "pdf" | "docx" = "pdf") {
     if (!plan) return;
-    fetch(api.planDocumentUrl(plan.id), { headers: { Authorization: `Bearer ${getToken()}` } })
+    const url0 = api.planDocumentUrl(plan.id) + (format === "docx" ? "?format=docx" : "");
+    fetch(url0, { headers: { Authorization: `Bearer ${getToken()}` } })
       .then((r) => r.blob())
       .then((blob) => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `plan_${client.full_name.replace(/\s+/g, "_").toLowerCase()}_mes${plan.month_index}.pdf`;
+        a.download = `plan_${client.full_name.replace(/\s+/g, "_").toLowerCase()}_mes${plan.month_index}.${format}`;
         a.click();
         URL.revokeObjectURL(url);
         setNeedsDownload(false); // ya tiene la versión actualizada
       })
       .catch(() => toast.push("No se pudo descargar", "error"));
   }
+
+  const downloadPdf = () => downloadDocument("pdf");
 
   if (loading) {
     return (
@@ -452,6 +455,13 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
             </button>
             <button onClick={downloadPdf} className="btn btn-ghost">
               <Download size={15} /> Descargar PDF
+            </button>
+            <button
+              onClick={() => downloadDocument("docx")}
+              className="btn btn-ghost"
+              title="Word editable: modifica cualquier apartado del documento antes de enviarlo"
+            >
+              <FileText size={15} /> Word editable
             </button>
             {plan.status === "published" && byEmail && (
               <button onClick={sendPlanByEmail} className="btn btn-primary col-span-2 sm:col-span-1">

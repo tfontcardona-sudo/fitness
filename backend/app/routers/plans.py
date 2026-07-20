@@ -17,7 +17,7 @@ publicación a una llamada de IA en vivo (que puede orquestarse aparte).
 
 from datetime import date, datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -569,9 +569,15 @@ def _doc_brand(db: Session):
 
 
 @router.get("/api/plans/{plan_id}/document")
-def download_plan_document(plan_id: int, db: Session = Depends(get_db)):
-    """Genera y descarga el plan en PDF (constructor compartido con el enlace
-    público del cliente — ver services/plan_delivery)."""
+def download_plan_document(
+    plan_id: int,
+    format: str = Query("pdf", pattern="^(pdf|docx)$"),
+    db: Session = Depends(get_db),
+):
+    """Genera y descarga el plan. format=pdf (por defecto) para entregar;
+    format=docx devuelve el Word ORIGINAL editable, para que el coach pueda
+    modificar cualquier apartado antes de enviarlo. Constructor compartido con
+    el enlace público del cliente — ver services/plan_delivery."""
     from fastapi import Response
 
     from app.services.plan_delivery import build_plan_pdf
@@ -581,7 +587,7 @@ def download_plan_document(plan_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan no encontrado")
     client = db.get(Client, plan.client_id)
 
-    content, media_type, filename = build_plan_pdf(db, plan, client)
+    content, media_type, filename = build_plan_pdf(db, plan, client, fmt=format)
     return Response(
         content=content,
         media_type=media_type,

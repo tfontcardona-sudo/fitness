@@ -16,6 +16,7 @@ from app.db import SessionLocal
 from app.models import BrandConfig, Exercise, User
 from app.security import hash_password
 from app.seeds.exercises_data import EXERCISES
+from app.seeds.machines_data import MACHINE_EXERCISES
 
 
 def seed_exercises(db) -> int:
@@ -25,6 +26,21 @@ def seed_exercises(db) -> int:
     db.add_all(Exercise(**data) for data in EXERCISES)
     db.commit()
     return len(EXERCISES)
+
+
+def seed_machines(db) -> int:
+    """Maquinaria del gimnasio del coach: inserta POR NOMBRE las que falten.
+
+    A diferencia de la biblioteca base (solo con tabla vacía), esto corre en
+    cada arranque y añade las máquinas nuevas sin tocar filas existentes —
+    así producción las recibe en el siguiente deploy."""
+    existing = set(db.scalars(select(Exercise.canonical_name)))
+    missing = [d for d in MACHINE_EXERCISES if d["canonical_name"] not in existing]
+    if not missing:
+        return 0
+    db.add_all(Exercise(**data) for data in missing)
+    db.commit()
+    return len(missing)
 
 
 def seed_brand(db) -> bool:
@@ -56,10 +72,12 @@ def main() -> None:
     db = SessionLocal()
     try:
         n_ex = seed_exercises(db)
+        n_maq = seed_machines(db)
         brand = seed_brand(db)
         n_admins = seed_admins(db)
         print(
             f"[seed] ejercicios: {n_ex or 'ya existían'} · "
+            f"maquinaria nueva: {n_maq} · "
             f"brand: {'creada' if brand else 'ya existía'} · "
             f"admins creados: {n_admins}"
         )
