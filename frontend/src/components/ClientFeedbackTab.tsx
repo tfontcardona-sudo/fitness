@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { Sparkles, AlertTriangle, MessageSquare, MessageCircle, Mail, Video, Target, TrendingUp, BarChart3, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
+import { Sparkles, AlertTriangle, MessageSquare, MessageCircle, Mail, Video, Target, TrendingUp, BarChart3, CalendarCheck, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
 import { api } from "../lib/api";
 import { feedbackBody, feedbackMessage, openWhatsApp, videoCallMessage, waPhone } from "../lib/whatsapp";
 import { pkg } from "../lib/packages";
 import { ExpandableArea, Spinner, useToast } from "./ui";
-import type { ClientOut } from "../types";
+import type { ClientOut, VideoCallOut } from "../types";
 
 interface Period {
   id: number;
@@ -60,6 +60,20 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
   // Revisión a la que ya está adaptado el último plan (para ocultar el banner
   // "Revisar cambios…" una vez adaptada: el trabajo ya está hecho).
   const [adaptedIdx, setAdaptedIdx] = useState<number | null>(null);
+
+  // Videollamadas quincenales (Pro) + enlace de reservas (marca).
+  const [calls, setCalls] = useState<VideoCallOut[]>([]);
+  const [meetUrl, setMeetUrl] = useState<string | null>(null);
+
+  const loadCalls = useCallback(() => {
+    if (!directContact) return;
+    api.listVideoCalls(client.id).then(setCalls).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client.id, directContact]);
+  useEffect(loadCalls, [loadCalls]);
+  useEffect(() => {
+    if (directContact) api.getBrand().then((b) => setMeetUrl(b.meet_url ?? null)).catch(() => {});
+  }, [directContact]);
 
   const load = useCallback(() => {
     api.listPlans(client.id)
@@ -149,15 +163,25 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
     }
   }
 
-  /** Pro: propone la videollamada de revisión abriendo el WhatsApp del cliente. */
-  function proposeVideoCall() {
+  /** Pro: propone la videollamada por WhatsApp (con el enlace de reservas de la
+   *  marca) y la deja registrada como PENDIENTE de fecha — el ciclo arranca:
+   *  apuntar fecha → recordatorio el día antes → confirmar o reagendar. */
+  async function proposeVideoCall(periodIndex: number) {
     const phone = waPhone(client.phone);
     if (!phone) {
       toast.push("Añade el teléfono del cliente en su ficha para la videollamada", "error");
       return;
     }
-    openWhatsApp(phone, videoCallMessage(client.full_name));
-    toast.push("WhatsApp abierto para acordar la videollamada");
+    openWhatsApp(phone, videoCallMessage(client.full_name, meetUrl));
+    try {
+      await api.createVideoCall(client.id, periodIndex);
+      loadCalls();
+    } catch {
+      /* el WhatsApp ya está abierto; el registro puede reintentarse */
+    }
+    toast.push(meetUrl
+      ? "WhatsApp abierto con tu enlace de reservas — cuando reserve, apunta aquí la fecha"
+      : "WhatsApp abierto para acordar la videollamada");
   }
 
   if (periods === null) {
@@ -253,11 +277,6 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                     {byEmail ? <><Mail size={15} /> Enviar por email</> : <><MessageCircle size={15} /> Enviar por WhatsApp</>}
                   </button>
                 )}
-                {directContact && p.feedback_id && (
-                  <button onClick={proposeVideoCall} className="btn btn-ghost" title="Proponer videollamada de revisión">
-                    <Video size={15} /> Videollamada
-                  </button>
-                )}
                 {canGenerate && !p.feedback_id && (
                   <button onClick={() => generate(p.id)} disabled={generating === p.id} className="btn btn-primary">
                     <Sparkles size={15} />
@@ -271,6 +290,17 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
               <div className="mt-3 flex items-center gap-2 rounded-lg p-2.5 text-xs" style={{ background: "rgba(154,107,21,0.09)", color: "#9A6B15" }}>
                 <AlertTriangle size={14} /> El período aún está abierto: el cliente debe cerrarlo antes de generar el feedback.
               </div>
+            )}
+
+            {/* Videollamada quincenal (Pro): ciclo agendar → fecha → confirmar */}
+            {directContact && p.status !== "open" && (
+              <VideoCallCycle
+                clientId={client.id}
+                call={calls.find((c) => c.period_index === p.period_index) ?? null}
+                meetUrl={meetUrl}
+                onPropose={() => proposeVideoCall(p.period_index)}
+                onChanged={loadCalls}
+              />
             )}
 
             {/* Datos del cierre */}
@@ -436,6 +466,134 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
           </details>
         );
       })}
+    </div>
+  );
+}
+
+/** Ciclo de la videollamada quincenal (Pro), por período:
+ *  sin registro → "Proponer por WhatsApp" (abre el chat con el enlace de reservas)
+ *  → pendiente → apuntar la fecha elegida (activa los recordatorios del día antes)
+ *  → reservada → confirmar realizada (se cierra) o reagendar (vuelve a empezar). */
+const VC_COLOR = "#0EA5E9";
+function VideoCallCycle({ clientId, call, meetUrl, onPropose, onChanged }: {
+  clientId: number;
+  call: VideoCallOut | null;
+  meetUrl: string | null;
+  onPropose: () => void;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const [date, setDate] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function run(fn: () => Promise<unknown>, okMsg: string) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await fn();
+      toast.push(okMsg);
+      onChanged();
+    } catch (e: any) {
+      toast.push(e?.message ?? "No se pudo actualizar la videollamada", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const fecha = call?.scheduled_for
+    ? new Date(call.scheduled_for + "T00:00:00").toLocaleDateString("es-ES", {
+        weekday: "long", day: "numeric", month: "long",
+      })
+    : null;
+
+  return (
+    <div className="mt-3 rounded-lg p-3"
+      style={{ background: `color-mix(in srgb, ${VC_COLOR} 7%, transparent)`, border: `1px solid color-mix(in srgb, ${VC_COLOR} 25%, transparent)` }}>
+      <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide" style={{ color: VC_COLOR }}>
+        <Video size={13} /> Videollamada quincenal
+        {call?.status === "done" && <CheckCircle2 size={13} style={{ color: "#2E7D46" }} />}
+      </div>
+
+      {call === null && (
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs text-zinc-400">
+            Toca la videollamada de revisión: propónsela por WhatsApp
+            {meetUrl ? " con tu enlace de reservas (elige día y hora él mismo)." : "."}
+          </p>
+          <button onClick={onPropose} className="btn btn-primary !px-3 !py-1.5 text-xs">
+            <MessageCircle size={13} /> Proponer por WhatsApp
+          </button>
+          {!meetUrl && (
+            <p className="w-full text-[11px] text-zinc-500">
+              Consejo: guarda tu enlace de reservas (Google Calendar/Meet) en{" "}
+              <b>Recursos → Página de enlaces</b> y el mensaje lo incluirá solo.
+            </p>
+          )}
+        </div>
+      )}
+
+      {call?.status === "pending" && (
+        <div className="mt-2 space-y-2">
+          <p className="text-xs text-zinc-400">
+            Propuesta enviada. En cuanto el cliente reserve, apunta aquí el día para
+            activar los recordatorios (a él y a ti, el día antes).
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <input type="date" className="input !w-auto !py-1.5 text-xs" value={date}
+              onChange={(e) => setDate(e.target.value)} />
+            <button
+              className="btn btn-primary !px-3 !py-1.5 text-xs"
+              disabled={!date || busy}
+              onClick={() => run(
+                () => api.scheduleVideoCall(clientId, call.id, date),
+                "Fecha apuntada: os recordaré la videollamada el día antes",
+              )}
+            >
+              <CalendarCheck size={13} /> Apuntar fecha
+            </button>
+            <button onClick={onPropose} className="text-xs text-zinc-500 hover:text-zinc-300">
+              Reenviar WhatsApp
+            </button>
+          </div>
+        </div>
+      )}
+
+      {call?.status === "scheduled" && (
+        <div className="mt-2 space-y-2">
+          <p className="text-xs text-zinc-300">
+            Reservada para el <b>{fecha}</b>.
+          </p>
+          <p className="text-xs text-zinc-500">¿Se realizó la videollamada?</p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="btn btn-primary !px-3 !py-1.5 text-xs"
+              disabled={busy}
+              onClick={() => run(
+                () => api.videoCallDone(clientId, call.id),
+                "Videollamada confirmada como realizada",
+              )}
+            >
+              <CheckCircle2 size={13} /> Sí, realizada
+            </button>
+            <button
+              className="btn btn-ghost !px-3 !py-1.5 text-xs"
+              disabled={busy}
+              onClick={() => run(
+                () => api.videoCallReschedule(clientId, call.id),
+                "Sin problema: vuelve a proponerla por WhatsApp y apunta la nueva fecha",
+              )}
+            >
+              <X size={13} /> No, reagendar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {call?.status === "done" && (
+        <p className="mt-1.5 text-xs" style={{ color: "#2E7D46" }}>
+          Realizada. La siguiente tocará con la próxima revisión quincenal.
+        </p>
+      )}
     </div>
   );
 }

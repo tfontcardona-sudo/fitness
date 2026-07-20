@@ -9,6 +9,7 @@ Los vídeos e imágenes de los EJERCICIOS se gestionan por el router de ejercici
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile, File, status
+from pydantic import BaseModel
 from slowapi import Limiter
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -35,6 +36,84 @@ router = APIRouter(prefix="/api/resources", tags=["resources"])
 limiter = Limiter(key_func=client_key)
 
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+
+# ------------------------------------------- autorrelleno desde la URL ----
+
+class ScrapeIn(BaseModel):
+    url: str
+
+
+@router.post("/products/scrape", dependencies=[Depends(get_current_user)])
+@limiter.limit("10/minute")
+def scrape_product(request: Request, body: ScrapeIn, db: Session = Depends(get_db)) -> dict:
+    """Lee la página del producto y devuelve título, descripción e imagen
+    (metadatos OpenGraph) para AUTORRELLENAR el formulario: el coach pega la
+    URL y el resto de campos se llenan solos."""
+    import ipaddress
+    import re as _re
+    import socket
+    from urllib.parse import urlsplit
+
+    import httpx
+
+    url = (body.url or "").strip()
+    parts = urlsplit(url)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "La URL debe empezar por http:// o https://")
+    # Guarda SSRF: nunca llamar a hosts internos/privados desde el servidor.
+    try:
+        infos = socket.getaddrinfo(parts.hostname, None)
+        for info in infos:
+            ip = ipaddress.ip_address(info[4][0])
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "URL no permitida")
+    except socket.gaierror:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "No se pudo resolver la URL")
+
+    try:
+        r = httpx.get(url, timeout=8, follow_redirects=True, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; DQRBot/1.0)",
+            "Accept-Language": "es-ES,es;q=0.9",
+        })
+        html = r.text[:400_000]
+    except Exception:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                            "No se pudo leer la página del producto")
+
+    def meta(*props: str) -> str | None:
+        for p in props:
+            m = _re.search(
+                rf'<meta[^>]+(?:property|name)=["\']{p}["\'][^>]*content=["\']([^"\']+)["\']',
+                html, _re.IGNORECASE)
+            if not m:  # content antes que property también es válido
+                m = _re.search(
+                    rf'<meta[^>]+content=["\']([^"\']+)["\'][^>]*(?:property|name)=["\']{p}["\']',
+                    html, _re.IGNORECASE)
+            if m:
+                return m.group(1).strip()
+        return None
+
+    title = meta("og:title", "twitter:title")
+    if not title:
+        m = _re.search(r"<title[^>]*>([^<]+)</title>", html, _re.IGNORECASE)
+        title = m.group(1).strip() if m else None
+    image = meta("og:image", "og:image:url", "twitter:image")
+    description = meta("og:description", "twitter:description", "description")
+
+    def _unescape(s: str | None) -> str | None:
+        if not s:
+            return s
+        import html as _html
+
+        return _html.unescape(s)
+
+    return {
+        "title": (_unescape(title) or "")[:160] or None,
+        "description": (_unescape(description) or "")[:500] or None,
+        "image_url": image if image and image.startswith(("http://", "https://")) else None,
+    }
 
 
 def _out(p: RecommendedProduct) -> RecommendedProductOut:

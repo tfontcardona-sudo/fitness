@@ -9,6 +9,7 @@ import {
   Pill,
   Plus,
   Search,
+  Sparkles,
   Trash2,
   Upload,
   Video,
@@ -72,6 +73,7 @@ function LinksPageManager() {
   const [brand, setBrand] = useState<import("../types").BrandConfigOut | null>(null);
   const [storeUrl, setStoreUrl] = useState("");
   const [code, setCode] = useState("");
+  const [meetUrl, setMeetUrl] = useState("");
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadingPlans, setUploadingPlans] = useState(false);
@@ -85,6 +87,7 @@ function LinksPageManager() {
         setBrand(b);
         setStoreUrl(b.partner_store_url ?? "");
         setCode(b.partner_discount_code ?? "");
+        setMeetUrl(b.meet_url ?? "");
       })
       .catch(() => toast.push("No se pudo cargar la configuración", "error"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -99,6 +102,7 @@ function LinksPageManager() {
         ...body,
         partner_store_url: storeUrl.trim() || null,
         partner_discount_code: code.trim() || null,
+        meet_url: meetUrl.trim() || null,
       });
       setBrand(updated);
       toast.push("Página de enlaces guardada");
@@ -222,6 +226,24 @@ function LinksPageManager() {
             <input className="input" placeholder="DAVIDQUICENO" value={code}
               onChange={(e) => setCode(e.target.value)} />
           </div>
+        </div>
+        <button className="btn btn-primary mt-4" disabled={saving} onClick={save}>
+          {saving ? "Guardando…" : "Guardar"}
+        </button>
+      </div>
+
+      {/* Enlace de reservas de la videollamada quincenal (plan Pro) */}
+      <div className="card p-5">
+        <h3 className="text-sm font-semibold text-zinc-200">Videollamadas (plan Pro)</h3>
+        <p className="mt-1 text-sm text-zinc-500">
+          Tu enlace de reservas (Google Calendar con Meet, Calendly…). Al proponer la
+          videollamada quincenal por WhatsApp, el mensaje lo incluye para que el
+          cliente elija día y hora él mismo.
+        </p>
+        <div className="mt-3">
+          <label className="label">Enlace de reservas</label>
+          <input className="input" placeholder="https://calendar.app.google/…" value={meetUrl}
+            onChange={(e) => setMeetUrl(e.target.value)} />
         </div>
         <button className="btn btn-primary mt-4" disabled={saving} onClick={save}>
           {saving ? "Guardando…" : "Guardar"}
@@ -534,6 +556,7 @@ function ProductEditor({
   onRemoveUpload: () => void;
   saving: boolean;
 }) {
+  const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   // La object-URL de la imagen elegida se crea en un efecto (no en el render) y se
   // revoca al cambiar/desmontar: sin fugas ni impureza en el render (StrictMode).
@@ -554,6 +577,41 @@ function ProductEditor({
   }, [draft.file, draft.image_url, draft.uploaded]);
 
   const hasUpload = draft.uploaded !== null || draft.file !== null;
+
+  // AUTORRELLENO desde el enlace: con pegar la URL del producto, el título, la
+  // descripción y la imagen se leen de la propia página (metadatos OpenGraph).
+  // En automático (al pegar/salir del campo) solo rellena lo VACÍO; el botón
+  // manual sobreescribe con lo que traiga la página.
+  const [scraping, setScraping] = useState(false);
+  const scrapedUrl = useRef<string | null>(null);
+
+  async function fillFromUrl(auto: boolean) {
+    const url = draft.url.trim();
+    if (!/^https?:\/\//i.test(url) || scraping) return;
+    if (auto && scrapedUrl.current === url) return; // la misma URL no se relee sola
+    scrapedUrl.current = url;
+    setScraping(true);
+    try {
+      const meta = await api.scrapeProduct(url);
+      if (!meta.title && !meta.description && !meta.image_url) {
+        if (!auto) toast.push("La página no trae datos legibles: rellénalo a mano", "error");
+        return;
+      }
+      setDraft({
+        ...draft,
+        title: auto && draft.title.trim() ? draft.title : (meta.title ?? draft.title),
+        description: auto && draft.description.trim() ? draft.description : (meta.description ?? draft.description),
+        image_url: hasUpload || (auto && draft.image_url.trim())
+          ? draft.image_url
+          : (meta.image_url ?? draft.image_url),
+      });
+      toast.push("Datos del producto rellenados desde el enlace");
+    } catch (e) {
+      if (!auto) toast.push(e instanceof ApiError ? e.message : "No se pudo leer la página del producto", "error");
+    } finally {
+      setScraping(false);
+    }
+  }
 
   return (
     <div className="card space-y-4 p-4">
@@ -644,12 +702,26 @@ function ProductEditor({
           </div>
           <div>
             <span className="label">Enlace (URL) *</span>
-            <input
-              className="input mt-1"
-              value={draft.url}
-              placeholder="https://tienda.com/producto"
-              onChange={(e) => setDraft({ ...draft, url: e.target.value })}
-            />
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <input
+                className="input min-w-48 flex-1"
+                value={draft.url}
+                placeholder="https://tienda.com/producto"
+                onChange={(e) => setDraft({ ...draft, url: e.target.value })}
+                onBlur={() => fillFromUrl(true)}
+              />
+              <button
+                className="btn btn-ghost shrink-0 !px-3 !py-2 text-xs"
+                disabled={scraping || !/^https?:\/\//i.test(draft.url.trim())}
+                onClick={() => fillFromUrl(false)}
+                title="Lee la página del producto y rellena título, descripción e imagen"
+              >
+                {scraping ? <Spinner /> : <Sparkles size={13} />} Rellenar desde el enlace
+              </button>
+            </div>
+            <p className="mt-1 text-[11px] text-zinc-500">
+              Pega el enlace del producto y el resto de campos se rellenan solos.
+            </p>
           </div>
           <p className="rounded-lg border px-3 py-2 text-[11px] text-zinc-500"
             style={{ borderColor: "var(--line-strong)" }}>

@@ -6,7 +6,7 @@ import json
 import re
 import statistics
 import zipfile
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel
@@ -607,6 +607,105 @@ def resend_portal_access(client_id: int, db: Session = Depends(get_db)) -> dict:
     res = send_portal_access(db, client)
     db.commit()
     return {"status": res["status"], "email": client.email, "password": res["password"]}
+
+
+# ------------------------------------------------- videollamadas (Pro) ----
+# Ciclo quincenal: alerta "agendar" al llegar la revisión → el coach la propone
+# por WhatsApp (con su enlace de reservas) → apunta la fecha elegida →
+# recordatorio el día antes → tras la fecha, confirmar realizada o reagendar.
+
+@router.get("/{client_id}/video-calls")
+def list_video_calls(client_id: int, db: Session = Depends(get_db)) -> list[dict]:
+    from app.models import VideoCall
+    from app.schemas.entities import VideoCallOut
+
+    _client_or_404_docs(db, client_id)
+    rows = db.scalars(
+        select(VideoCall).where(VideoCall.client_id == client_id)
+        .order_by(VideoCall.period_index.desc())
+    ).all()
+    return [VideoCallOut.model_validate(r).model_dump(mode="json") for r in rows]
+
+
+class VideoCallIn(BaseModel):
+    period_index: int
+
+
+class VideoCallSchedule(BaseModel):
+    scheduled_for: date
+
+
+@router.post("/{client_id}/video-calls")
+def create_video_call(client_id: int, body: VideoCallIn, db: Session = Depends(get_db)) -> dict:
+    """La propuesta se ha ENVIADO (se abrió el WhatsApp con el enlace de
+    reservas): queda pendiente de que el cliente elija día. Idempotente."""
+    from app.models import VideoCall
+    from app.schemas.entities import VideoCallOut
+
+    _client_or_404_docs(db, client_id)
+    vc = db.scalar(select(VideoCall).where(
+        VideoCall.client_id == client_id, VideoCall.period_index == body.period_index))
+    if vc is None:
+        vc = VideoCall(client_id=client_id, period_index=body.period_index, status="pending")
+        db.add(vc)
+        log_event(db, "client", client_id, "video_call_proposed",
+                  {"period_index": body.period_index})
+        db.commit()
+        db.refresh(vc)
+    return VideoCallOut.model_validate(vc).model_dump(mode="json")
+
+
+@router.patch("/{client_id}/video-calls/{call_id}")
+def schedule_video_call(client_id: int, call_id: int, body: VideoCallSchedule,
+                        db: Session = Depends(get_db)) -> dict:
+    """El cliente eligió día: se apunta la fecha (activa los recordatorios)."""
+    from app.models import VideoCall
+    from app.schemas.entities import VideoCallOut
+
+    vc = db.get(VideoCall, call_id)
+    if not vc or vc.client_id != client_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Videollamada no encontrada")
+    vc.scheduled_for = body.scheduled_for
+    vc.status = "scheduled"
+    log_event(db, "client", client_id, "video_call_scheduled",
+              {"period_index": vc.period_index, "date": body.scheduled_for.isoformat()})
+    db.commit()
+    db.refresh(vc)
+    return VideoCallOut.model_validate(vc).model_dump(mode="json")
+
+
+@router.post("/{client_id}/video-calls/{call_id}/done")
+def video_call_done(client_id: int, call_id: int, db: Session = Depends(get_db)) -> dict:
+    """La videollamada se REALIZÓ: se cierra y la alerta desaparece."""
+    from app.models import VideoCall
+    from app.schemas.entities import VideoCallOut
+
+    vc = db.get(VideoCall, call_id)
+    if not vc or vc.client_id != client_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Videollamada no encontrada")
+    vc.status = "done"
+    log_event(db, "client", client_id, "video_call_done", {"period_index": vc.period_index})
+    db.commit()
+    db.refresh(vc)
+    return VideoCallOut.model_validate(vc).model_dump(mode="json")
+
+
+@router.post("/{client_id}/video-calls/{call_id}/reschedule")
+def video_call_reschedule(client_id: int, call_id: int, db: Session = Depends(get_db)) -> dict:
+    """NO se realizó: vuelve a pendiente sin fecha y el ciclo empieza de nuevo
+    (agendar por WhatsApp → fecha → recordatorios)."""
+    from app.models import VideoCall
+    from app.schemas.entities import VideoCallOut
+
+    vc = db.get(VideoCall, call_id)
+    if not vc or vc.client_id != client_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Videollamada no encontrada")
+    vc.status = "pending"
+    vc.scheduled_for = None
+    log_event(db, "client", client_id, "video_call_rescheduled", {"period_index": vc.period_index})
+    db.commit()
+    db.refresh(vc)
+    return VideoCallOut.model_validate(vc).model_dump(mode="json")
 
 
 
