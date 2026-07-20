@@ -49,7 +49,9 @@ class PlanAdjustment(BaseModel):
 
     area: str = Field(description='Área: "Dieta" | "Entrenamiento" | "Cardio/NEAT" | "Hábitos"')
     change: str = Field(description="El cambio CONCRETO (p. ej. 'Subir CH +30 g en comida y cena').")
-    reason: str = Field(description="Por qué, basado en los datos registrados por el cliente.")
+    reason: str = Field(description="Por qué, basado en los datos registrados por el cliente. "
+                        "1 sola frase corta (máx. ~18 palabras): el dato clave y la conclusión, "
+                        "sin repetirlo de otra forma ni añadir relleno.")
 
 
 class FeedbackAIOutput(BaseModel):
@@ -97,6 +99,12 @@ completas y bien construidas. Honesto y constructivo (sin adular). NO uses emoji
 símbolos decorativos ni signos de exclamación en cadena. Evita tecnicismos innecesarios \
 y las muletillas; explica con claridad. Cada texto debe leerse redondo, sin frases \
 cortadas a medias.
+
+CONCISIÓN: la mitad de palabras que se te ocurra al principio suele bastar. Una frase \
+corta y precisa comunica mejor que dos largas que dicen lo mismo con más adornos. Nunca \
+repitas el mismo dato con otras palabras dentro del mismo campo. Prioriza SIEMPRE: dato \
+concreto → conclusión. Fuera relleno tipo "es importante destacar que", "cabe señalar" o \
+reformulaciones del enunciado.
 
 REGLA CRÍTICA: NO calcules ni inventes números. El backend ya te entrega las métricas \
 (cambio de peso, ritmo semanal, adherencia, energía/sueño, progresión de fuerza). \

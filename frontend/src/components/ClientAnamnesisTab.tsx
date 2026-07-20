@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Eye, FileText, Pencil, Save, Sparkles } from "lucide-react";
 import { api, ApiError, getToken } from "../lib/api";
 import type { ClientOut, GoalType, Level } from "../types";
-import { Spinner, useToast } from "./ui";
+import { ExpandableArea, Spinner, useToast } from "./ui";
 import { ACTIVITY_LABEL, ageFrom, DIET_LABEL, GOAL_LABEL, LEVEL_LABEL, PLACE_LABEL } from "../lib/format";
 
 /**
@@ -440,12 +440,7 @@ function Select({ label, value, onChange, options }: { label: string; value: str
   );
 }
 function Area({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <label className="col-span-2 block">
-      <span className="mb-1 block text-xs text-zinc-500">{label}</span>
-      <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={3} className="input w-full resize-y" />
-    </label>
-  );
+  return <ExpandableArea label={label} value={value} onChange={onChange} rows={3} className="col-span-2" />;
 }
 function CSV({ label, value, onChange }: { label: string; value: string[] | null | undefined; onChange: (v: string[]) => void }) {
   return (

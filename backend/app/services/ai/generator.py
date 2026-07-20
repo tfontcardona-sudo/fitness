@@ -343,9 +343,12 @@ RESTRICCIÓN DE DURACIÓN: la duración de cada sesión se estima como (total de
 declaró un máximo de {ctx.session_max_min} min/sesión, así que NO pongas más de {max_sets} series \
 por sesión (sumando TODOS los ejercicios de esa sesión).
 
-DIETA RAZONADA POR EVIDENCIA: en rationale explica de forma breve y directa el
-porqué (déficit/superávit sobre el TDEE según objetivo, proteína alta para
-preservar/ganar masa, reparto de macros), sin tecnicismos innecesarios.
+DIETA RAZONADA POR EVIDENCIA: en rationale explica el porqué (déficit/superávit
+sobre el TDEE según objetivo, proteína alta para preservar/ganar masa, reparto
+de macros) en 2-3 frases CORTAS y directas, sin tecnicismos innecesarios ni
+relleno — el dato y su conclusión, sin repetirlo con otras palabras.
+En flexibility_rules: cada regla en UNA frase corta y accionable (qué hacer,
+sin explicar el porqué salvo que sea imprescindible para cumplirla bien).
 
 Respeta TODOS los guardrails. La suma de los targets de slot debe acercarse al target_kcal."""
 
@@ -374,9 +377,12 @@ OBLIGATORIOS salvo los marcados como (null si no aplica). No omitas NINGUNO:
   supplements[] (cada uno con los 4 campos: name, dose, timing, evidence_note),
   flexibility_rules[] (strings), refeed_or_break (null si no aplica).
 
-DIETA RAZONADA POR EVIDENCIA: en rationale explica de forma breve y directa el
-porqué (déficit/superávit sobre el TDEE según objetivo, proteína alta para
-preservar/ganar masa, reparto de macros), sin tecnicismos innecesarios.
+DIETA RAZONADA POR EVIDENCIA: en rationale explica el porqué (déficit/superávit
+sobre el TDEE según objetivo, proteína alta para preservar/ganar masa, reparto
+de macros) en 2-3 frases CORTAS y directas, sin tecnicismos innecesarios ni
+relleno — el dato y su conclusión, sin repetirlo con otras palabras.
+En flexibility_rules: cada regla en UNA frase corta y accionable (qué hacer,
+sin explicar el porqué salvo que sea imprescindible para cumplirla bien).
 
 Respeta TODOS los guardrails de nutrición. La suma de los targets de slot debe
 acercarse al target_kcal."""

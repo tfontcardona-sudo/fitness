@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, MessageCircle } from "lucide-react";
+import { Check, Mail, MessageCircle } from "lucide-react";
 import type { PortalBrand } from "../types";
 import { usePortalToast } from "./PortalToast";
 import type { portalApi } from "./portalApi";
@@ -293,10 +293,13 @@ export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDat
           placeholder={hasTraining ? 'Algo concreto: "bajar 0,5 kg", "dormir 7 h", "mejorar técnica de sentadilla"…' : 'Algo concreto: "bajar 0,5 kg", "dormir 7 h", "comer más verdura cada día"…'} />
       </Section>
 
-      {/* 7 · Fotos (WhatsApp) — banner informativo en azul de marca */}
+      {/* 7 · Fotos — banner informativo en azul de marca; icono y canal según
+          cómo recibe este cliente sus entregas (Pro → WhatsApp; resto → email). */}
       <Section n={7} title="Fotos de progreso">
         <div className="flex items-start gap-2 rounded-xl border p-3 text-sm" style={{ borderColor: `${brand.color_secondary}55`, background: `${brand.color_secondary}10` }}>
-          <MessageCircle size={18} style={{ color: brand.color_secondary }} className="mt-0.5 shrink-0" />
+          {directContact
+            ? <MessageCircle size={18} style={{ color: brand.color_secondary }} className="mt-0.5 shrink-0" />
+            : <Mail size={18} style={{ color: brand.color_secondary }} className="mt-0.5 shrink-0" />}
           <p className="opacity-80">
             Envía 3 fotos (<b>frontal</b>, <b>lateral</b> y <b>espalda</b>) a tu coach por <b>{directContact ? "WhatsApp" : "email"}</b>.
             Fondo neutro, buena luz, misma hora y lugar que la vez anterior, sin filtros.
