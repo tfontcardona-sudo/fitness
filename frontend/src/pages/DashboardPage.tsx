@@ -2,16 +2,19 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
+  CalendarPlus,
   CheckCircle2,
   ClipboardCheck,
+  ClipboardList,
   Flag,
   HeartPulse,
   Hourglass,
+  Package,
   Sparkles,
   UserPlus,
 } from "lucide-react";
 import { api, keepIfSame, REFRESH_MS } from "../lib/api";
-import type { ClientOut } from "../types";
+import type { ClientOut, CoachAlert } from "../types";
 import { PageLoader, StatusBadge } from "../components/ui";
 import { goalReviewDue, initials, relativeDays } from "../lib/format";
 import { pkg } from "../lib/packages";
@@ -58,16 +61,17 @@ function nextAction(c: ClientOut): Accion | null {
       cta: "Adaptar planificación", tab: "planificacion",
     };
   if (c.status === "onboarding" && !c.goal_type)
-    // Aún SIN anamnesis: el botón lleva a completarla/leerla (lo que falta)
+    // Aún SIN anamnesis: el botón lleva a completarla/leerla (lo que falta).
+    // Cada tipo de acción con SU color e icono (mismos que las carpetas).
     return {
-      client: c, prio: 3, tone: "#4C66C9", icon: UserPlus, category: "Pendiente",
+      client: c, prio: 3, tone: "#6366F1", icon: ClipboardList, category: "Falta anamnesis",
       title: "Cliente nuevo · falta su anamnesis",
       detail: "Reenvíale el enlace si hace falta y, cuando llegue el PDF, léelo con la IA.",
       cta: "Abrir anamnesis", tab: "anamnesis",
     };
   if (c.status === "onboarding")
     return {
-      client: c, prio: 3, tone: "#4C66C9", icon: UserPlus, category: "Pendiente",
+      client: c, prio: 3, tone: "#E8833A", icon: CalendarPlus, category: "Falta planificación",
       title: "Anamnesis lista · falta su planificación",
       detail: "Revisa los datos y genera su primera planificación con la IA.",
       cta: "Crear planificación", tab: "planificacion",
@@ -93,11 +97,18 @@ function nextAction(c: ClientOut): Accion | null {
 
 export default function DashboardPage() {
   const [clients, setClients] = useState<ClientOut[] | null>(null);
+  const [alerts, setAlerts] = useState<CoachAlert[]>([]);
 
   useEffect(() => {
-    const load = () => api.listClients()
-      .then((cs) => setClients((prev) => keepIfSame(prev, cs)))  // sin re-render si nada cambió
-      .catch(() => setClients((c) => c ?? []));
+    const load = () => {
+      api.listClients()
+        .then((cs) => setClients((prev) => keepIfSame(prev, cs)))  // sin re-render si nada cambió
+        .catch(() => setClients((c) => c ?? []));
+      // Alertas de recursos (suplemento pautado sin producto) → acción propia.
+      api.listAlerts()
+        .then((r) => setAlerts((prev) => keepIfSame(prev, r.alerts)))
+        .catch(() => {});
+    };
     load();
     // Refresco cada 3 s (solo con la pestaña visible): el panel siempre al día
     const t = window.setInterval(() => {
@@ -110,11 +121,24 @@ export default function DashboardPage() {
     const c = clients ?? [];
     const acciones = c
       .map(nextAction)
-      .filter((a): a is Accion => a !== null)
-      .sort((a, b) => a.prio - b.prio);
-    const conAccion = new Set(acciones.map((a) => a.client.id));
+      .filter((a): a is Accion => a !== null);
+    // Falta recurso/producto: viene del centro de alertas (mismo dato).
+    for (const al of alerts) {
+      if (al.kind !== "missing_products") continue;
+      const cli = c.find((x) => x.id === al.client_id);
+      if (!cli) continue;
+      acciones.push({
+        client: cli, prio: 3, tone: "#28707C", icon: Package, category: "Falta recurso/producto",
+        title: "Suplemento del plan sin producto en Recursos",
+        detail: al.message,
+        cta: "Abrir Recursos", tab: "planificacion",
+      });
+    }
+    acciones.sort((a, b) => a.prio - b.prio);
+    const conAccion = new Set(
+      acciones.filter((a) => a.category !== "Falta recurso/producto").map((a) => a.client.id));
     return { acciones, alDia: c.filter((x) => !conAccion.has(x.id) && x.status !== "inactive") };
-  }, [clients]);
+  }, [clients, alerts]);
 
   if (clients === null) return <PageLoader />;
 
@@ -151,10 +175,32 @@ export default function DashboardPage() {
             Todo al día. Ninguna acción pendiente con tus clientes.
           </div>
         ) : (
-          <div className="space-y-2.5">
-            {urgentes.map((a) => (
-              <ActionCard key={a.client.id} a={a} />
-            ))}
+          // AGRUPADO por tipo de acción (como las carpetas de Clientes): cada
+          // grupo con su cabecera, color e icono propios.
+          <div className="space-y-4">
+            {Array.from(new Set(urgentes.map((a) => a.category))).map((cat) => {
+              const items = urgentes.filter((a) => a.category === cat);
+              const { tone, icon: Icon } = items[0];
+              return (
+                <div key={cat}>
+                  <div className="mb-1.5 flex items-center gap-1.5">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-md"
+                      style={{ background: `color-mix(in srgb, ${tone} 14%, transparent)` }}>
+                      <Icon size={12} style={{ color: tone }} />
+                    </span>
+                    <span className="text-xs font-bold uppercase tracking-wide" style={{ color: tone }}>
+                      {cat}
+                    </span>
+                    <span className="text-xs text-zinc-500">{items.length}</span>
+                  </div>
+                  <div className="space-y-2.5">
+                    {items.map((a) => (
+                      <ActionCard key={`${a.client.id}-${a.category}`} a={a} />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </section>
@@ -168,7 +214,7 @@ export default function DashboardPage() {
           </h2>
           <div className="space-y-2">
             {enEspera.map((a) => (
-              <ActionCard key={a.client.id} a={a} quiet />
+              <ActionCard key={`${a.client.id}-${a.category}`} a={a} quiet />
             ))}
           </div>
         </section>
