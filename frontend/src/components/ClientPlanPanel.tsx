@@ -438,10 +438,39 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
               >
                 {plan.status === "published" ? "Activa" : "Borrador antiguo"} · v{plan.version}
               </span>
+              {plan.status === "published" && (
+                // Verde con brillo: ESTA versión es la que ve el cliente ahora
+                // mismo (portal, PDF y semana del mesociclo).
+                <span className="rounded-full px-2 py-0.5 text-xs font-bold"
+                  style={{
+                    background: "rgba(57, 255, 20, 0.12)", color: "#2E7D46",
+                    boxShadow: "0 0 8px rgba(57, 255, 20, 0.35)",
+                  }}>
+                  ● En uso por el cliente
+                </span>
+              )}
             </div>
+            {/* REGISTRO de qué versión es esta: su origen (IA / adaptación a
+                revisión #N) y si lleva cambios manuales sin enviar. */}
             <p className="mt-0.5 text-xs text-zinc-500">
-              La planificación queda ACTIVA al generarla o adaptarla: revísala, edítala si
-              quieres y envíasela por {byEmail ? "email" : "WhatsApp"}.
+              {(() => {
+                const adj = (nut as any)?.applied_adjustments;
+                const manual = ((nut as any)?.manual_changes?.items ?? []).length;
+                const origen = adj?.period_index != null
+                  ? `Adaptada a la revisión quincenal #${adj.period_index}`
+                  : "Generada con IA a partir de su anamnesis";
+                return (
+                  <>
+                    {origen}
+                    {manual > 0 && (
+                      <span className="font-medium" style={{ color: "var(--brand-accent)" }}>
+                        {" "}· con {manual} cambio{manual === 1 ? "" : "s"} manual{manual === 1 ? "" : "es"} sin enviar
+                      </span>
+                    )}
+                    {" "}· esta es siempre la versión más reciente; las anteriores quedan en el archivo de abajo.
+                  </>
+                );
+              })()}
             </p>
           </div>
           {/* Acciones: en móvil ocupan todo el ancho (2 columnas) sin cortarse;
@@ -1135,7 +1164,7 @@ function ImportantPointsCard({ client }: { client: ClientOut }) {
             <MemoDetails
               key={b.label}
               memoKey={`imp:${client.id}:${b.label}`}
-              defaultOpen={nCrit > 0}
+              defaultOpen={false}
               className="rounded-lg border-l-2 px-3 py-2"
               style={{
                 background: "var(--surface-raised)",
@@ -1152,14 +1181,30 @@ function ImportantPointsCard({ client }: { client: ClientOut }) {
                 </span>
               }
             >
+              {/* RESUMIDO: al abrir se ve solo lo crítico; el resto queda tras
+                  "ver todo" para no ahogar la lectura. */}
               <div className="mt-1 space-y-0.5 text-xs">
-                {b.lines.map((l, i) =>
-                  isCriticalLine(l) ? (
-                    <p key={i} className="font-medium" style={{ color: RED }}>{l}</p>
-                  ) : (
-                    <p key={i} className="text-zinc-400">{l}</p>
-                  ),
-                )}
+                {b.lines.filter(isCriticalLine).map((l, i) => (
+                  <p key={i} className="font-medium" style={{ color: RED }}>{l}</p>
+                ))}
+                {(() => {
+                  const resto = b.lines.filter((l) => !isCriticalLine(l));
+                  if (!resto.length) return null;
+                  if (!b.lines.some(isCriticalLine)) {
+                    // Sin nada crítico: se muestra el contenido directamente.
+                    return resto.map((l, i) => <p key={i} className="text-zinc-400">{l}</p>);
+                  }
+                  return (
+                    <details className="pt-1">
+                      <summary className="cursor-pointer text-[11px] font-medium text-zinc-500 hover:text-zinc-300">
+                        ver todo ({resto.length} más)
+                      </summary>
+                      <div className="mt-1 space-y-0.5">
+                        {resto.map((l, i) => <p key={i} className="text-zinc-400">{l}</p>)}
+                      </div>
+                    </details>
+                  );
+                })()}
               </div>
             </MemoDetails>
           );

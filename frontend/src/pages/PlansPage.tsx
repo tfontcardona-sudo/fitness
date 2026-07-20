@@ -86,7 +86,7 @@ export default function PlansPage() {
           <img src={landing.plans_photo_url} alt=""
             className="pointer-events-none fixed inset-0 h-full w-full object-cover" />
           <div className="pointer-events-none fixed inset-0"
-            style={{ background: "linear-gradient(180deg, rgba(246,241,231,.82) 0%, rgba(246,241,231,.94) 45%, rgba(246,241,231,.98) 100%)" }} />
+            style={{ background: "linear-gradient(180deg, rgba(246,241,231,.45) 0%, rgba(246,241,231,.72) 45%, rgba(246,241,231,.85) 100%)" }} />
         </>
       )}
       <div className="relative mx-auto max-w-4xl px-5 py-10">
@@ -176,25 +176,27 @@ export default function PlansPage() {
                 {/* Precio REAL siempre visible (leído de Stripe): total del pago,
                     equivalente al mes y % de ahorro frente a mensual. */}
                 {pr && (
-                  <div className="mt-3">
-                    <div className="flex items-baseline gap-2">
-                      <p className="text-3xl font-extrabold" style={{ color: p.color }}>
+                  // Precio en una sola línea (whitespace-nowrap: el € nunca
+                  // salta de línea) y el ahorro alineado a la derecha.
+                  <div className="mt-3 flex items-end justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="whitespace-nowrap text-3xl font-extrabold leading-none" style={{ color: p.color }}>
                         {euros(pr.total)}
-                      </p>
-                      <span className="text-xs font-medium opacity-60">
-                        / {billingLabel(period).toLowerCase()}
-                      </span>
-                      {ahorro && (
-                        <span className="ml-auto rounded-full px-2 py-0.5 text-[11px] font-bold text-white"
-                          style={{ background: "#2E7D46" }}>
-                          Ahorra {ahorro}%
+                        <span className="ml-1 align-baseline text-xs font-medium opacity-60">
+                          / {billingLabel(period).toLowerCase()}
                         </span>
+                      </p>
+                      {pr.months > 1 && (
+                        <p className="mt-1 whitespace-nowrap text-xs font-semibold" style={{ color: "#2E7D46" }}>
+                          sale a {euros(pr.per_month)} al mes
+                        </p>
                       )}
                     </div>
-                    {pr.months > 1 && (
-                      <p className="text-xs font-semibold" style={{ color: "#2E7D46" }}>
-                        sale a {euros(pr.per_month)} al mes
-                      </p>
+                    {ahorro && (
+                      <span className="shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-bold text-white"
+                        style={{ background: "#2E7D46" }}>
+                        Ahorra {ahorro}%
+                      </span>
                     )}
                   </div>
                 )}
