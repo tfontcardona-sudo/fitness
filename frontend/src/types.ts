@@ -397,6 +397,11 @@ export interface VideoCallOut {
   period_index: number;
   status: "pending" | "scheduled" | "done";
   scheduled_for: string | null; // ISO date
+  // Cuando se agenda con Google Calendar/Meet: hora concreta, duración y enlaces.
+  scheduled_at?: string | null; // ISO datetime
+  duration_min?: number | null;
+  meet_url?: string | null;
+  google_html_link?: string | null;
 }
 
 /** GET /api/ai-credit — saldo local de créditos de la API de Anthropic.

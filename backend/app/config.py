@@ -88,6 +88,28 @@ class Settings(BaseSettings):
     def stripe_price_for(self, tier: str, period: str) -> str:
         return getattr(self, f"stripe_price_{tier}_{period}", "")
 
+    # --- Google Calendar / Meet (videollamadas Pro) ---
+    # client_id/secret: credenciales del cliente OAuth creado en Google Cloud
+    # (APIs y servicios → Credenciales → ID de cliente de OAuth, tipo "Aplicación
+    # web"). La URI de redirección autorizada debe ser
+    # {public_base_url}/api/google/oauth/callback. calendar_id: normalmente
+    # "primary" (el calendario principal del coach). El coach conecta su cuenta
+    # UNA vez desde Ajustes → se guarda el refresh_token y el sistema crea los
+    # eventos con enlace de Meet e invita al cliente. Sin estas claves, la
+    # integración queda desactivada y sigue el flujo manual (enlace de reservas).
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_calendar_id: str = "primary"
+
+    @property
+    def google_enabled(self) -> bool:
+        return bool(self.google_client_id and self.google_client_secret)
+
+    @property
+    def google_redirect_uri(self) -> str:
+        """URI de redirección OAuth (debe coincidir EXACTA con la de Google Cloud)."""
+        return f"{self.public_base_url.rstrip('/')}/api/google/oauth/callback"
+
     # --- Comportamiento ---
     auto_pilot_default: bool = False
     tz: str = "Europe/Madrid"

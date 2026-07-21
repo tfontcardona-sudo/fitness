@@ -14,6 +14,7 @@ from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import pytest
+from sqlalchemy import select
 
 warnings.filterwarnings("ignore")
 
@@ -158,6 +159,88 @@ def test_no_video_call_alert_outside_pro(db, pro_client_reviewed) -> None:
     client.package_tier = "full"
     db.flush()
     assert _vc_alerts(db, client) == []
+
+
+@needs_db
+def test_schedule_meet_creates_event_and_persists(db, pro_client_reviewed, monkeypatch) -> None:
+    """POST schedule-meet: crea el evento (gcal mockeado), guarda hora + Meet +
+    id de evento y deja la videollamada en 'scheduled'. Reagendar cancela el
+    evento en Google y limpia los campos."""
+    import os
+
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.models import VideoCall
+    from app.security import create_access_token
+    from app.services import google_calendar as gcal
+    from app.services.email_service import EmailService
+
+    client, _plan, _period = pro_client_reviewed
+    db.commit()  # el endpoint usa su propia sesión: la fila debe estar confirmada
+
+    # gcal mockeado (sin red): conectado + creación de evento con enlace de Meet.
+    monkeypatch.setattr(gcal, "is_connected", lambda _db: True)
+    created = {}
+    def fake_create(_db, **kw):
+        created.update(kw)
+        return {"event_id": "ev-123", "meet_url": "https://meet.google.com/abc",
+                "html_link": "https://calendar.google.com/ev-123"}
+    monkeypatch.setattr(gcal, "create_meet_event", fake_create)
+    # El email no debe dejar EmailLog (rompería el FK del teardown) ni enviar.
+    monkeypatch.setattr(EmailService, "send", lambda self, **kw: "sent")
+
+    auth = {"Authorization": f"Bearer {create_access_token(os.environ.get('ADMIN_1_USER', 'coach1'))}"}
+    http = TestClient(app)
+    start = f"{(date.today() + timedelta(days=3)).isoformat()}T17:00"
+    r = http.post(f"/api/clients/{client.id}/video-calls/schedule-meet", headers=auth,
+                  json={"period_index": 1, "start_at": start, "duration_min": 45})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "scheduled"
+    assert body["meet_url"] == "https://meet.google.com/abc"
+    assert body["duration_min"] == 45
+    assert body["scheduled_at"] is not None
+    # Se invitó al cliente por email en el evento.
+    assert created["attendee_email"] == client.email
+
+    db.expire_all()
+    vc = db.scalar(select(VideoCall).where(VideoCall.client_id == client.id, VideoCall.period_index == 1))
+    assert vc.google_event_id == "ev-123"
+    assert vc.scheduled_for == date.today() + timedelta(days=3)
+
+    # Reagendar: cancela el evento en Google y vuelve a 'pending' sin datos.
+    cancelled = {}
+    monkeypatch.setattr(gcal, "cancel_meet_event",
+                        lambda _db, event_id: cancelled.update(event_id=event_id))
+    r2 = http.post(f"/api/clients/{client.id}/video-calls/{vc.id}/reschedule", headers=auth)
+    assert r2.status_code == 200, r2.text
+    assert cancelled.get("event_id") == "ev-123"
+    b2 = r2.json()
+    assert b2["status"] == "pending"
+    assert b2["meet_url"] is None and b2["scheduled_at"] is None
+
+
+@needs_db
+def test_schedule_meet_requires_google_connected(db, pro_client_reviewed, monkeypatch) -> None:
+    """Sin Google conectado, el endpoint responde 409 (no crea nada)."""
+    import os
+
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.security import create_access_token
+    from app.services import google_calendar as gcal
+
+    client, _plan, _period = pro_client_reviewed
+    db.commit()  # el endpoint usa su propia sesión: la fila debe estar confirmada
+    monkeypatch.setattr(gcal, "is_connected", lambda _db: False)
+    auth = {"Authorization": f"Bearer {create_access_token(os.environ.get('ADMIN_1_USER', 'coach1'))}"}
+    http = TestClient(app)
+    start = f"{(date.today() + timedelta(days=3)).isoformat()}T17:00"
+    r = http.post(f"/api/clients/{client.id}/video-calls/schedule-meet", headers=auth,
+                  json={"period_index": 1, "start_at": start, "duration_min": 30})
+    assert r.status_code == 409
 
 
 @needs_db

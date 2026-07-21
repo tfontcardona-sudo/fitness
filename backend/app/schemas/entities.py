@@ -355,6 +355,11 @@ class VideoCallOut(BaseModel):
     period_index: int
     status: Literal["pending", "scheduled", "done"]
     scheduled_for: date | None
+    # Cuando se agenda con Google Calendar/Meet: hora concreta, duración y enlaces.
+    scheduled_at: datetime | None = None
+    duration_min: int | None = None
+    meet_url: str | None = None
+    google_html_link: str | None = None
 
 
 # ------------------------------------------ productos recomendados (portal) ----

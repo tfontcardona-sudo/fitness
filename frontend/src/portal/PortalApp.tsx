@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Bell, BellOff, CalendarCheck, Check, ChevronDown, Dumbbell, LineChart, Library, LogOut, NotebookPen, Share, Smartphone, X } from "lucide-react";
+import { Bell, BellOff, CalendarCheck, Check, ChevronDown, Dumbbell, LineChart, Library, LogOut, NotebookPen, Share, Smartphone, Video, X } from "lucide-react";
 import { portalApi, portalSession, PortalError } from "./portalApi";
+import type { VideoCallCard } from "./portalApi";
 import type { PortalState } from "../types";
 import { PortalWorkout } from "./PortalWorkout";
 import { PortalDiary } from "./PortalDiary";
@@ -159,6 +160,9 @@ export default function PortalApp({ token }: { token: string }) {
         </header>
 
         <main className="relative z-[1] flex-1 px-5 pb-28 pt-2">
+          {state.package_tier === "pro" && (
+            <VideoCallBanner api={apiClient} accent={state.brand.color_secondary} />
+          )}
           <WelcomeSetup api={apiClient} token={token} accent={state.brand.color_primary}
             secondary={state.brand.color_secondary} hasTraining={!isStart} />
           {/* key={effTab} → transición suave (animate-rise respeta reduced-motion) */}
@@ -207,6 +211,36 @@ export default function PortalApp({ token }: { token: string }) {
         </nav>
       </div>
     </PortalToastProvider>
+  );
+}
+
+/** Banner de la próxima videollamada de revisión (Pro con Google Meet): fecha,
+ *  hora y botón "Unirme". Se muestra sobre cualquier pestaña para que no pase por
+ *  alto (además del email, la invitación de Google Calendar y el push). */
+function VideoCallBanner({ api, accent }: { api: ReturnType<typeof portalApi>; accent: string }) {
+  const [call, setCall] = useState<VideoCallCard | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api.videoCall().then((r) => { if (alive) setCall(r.call); }).catch(() => {});
+    return () => { alive = false; };
+  }, [api]);
+  if (!call) return null;
+  return (
+    <div className="mb-4 rounded-2xl p-4"
+      style={{ background: `color-mix(in srgb, ${accent} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${accent} 35%, transparent)` }}>
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest" style={{ color: accent }}>
+        <Video size={13} /> Videollamada de revisión
+      </div>
+      <p className="mt-1 text-sm font-medium capitalize">{call.when_label}</p>
+      {call.duration_min ? <p className="text-[11px] opacity-50">{call.duration_min} min</p> : null}
+      {call.meet_url && (
+        <a href={call.meet_url} target="_blank" rel="noopener noreferrer"
+          className="tap mt-3 inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white"
+          style={{ background: accent }}>
+          <Video size={15} /> {call.is_today ? "Unirme ahora" : "Unirme a Meet"}
+        </a>
+      )}
+    </div>
   );
 }
 

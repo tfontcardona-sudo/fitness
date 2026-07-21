@@ -28,6 +28,23 @@ _HTTP_RE = re.compile(r"^https?://", re.IGNORECASE)
 
 DAY_LABELS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 DAY_SLUGS = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
+_MONTHS_ES = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
+              "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+
+
+def format_when_es(dt: datetime) -> str:
+    """"jueves 21 de julio a las 17:00" (para emails/push, sin depender de locale).
+
+    Se muestra en la zona horaria del negocio (settings.tz)."""
+    from app.config import settings
+
+    if dt.tzinfo is not None:
+        try:
+            dt = dt.astimezone(ZoneInfo(getattr(settings, "tz", None) or "Europe/Madrid"))
+        except Exception:
+            pass
+    return (f"{DAY_LABELS[dt.weekday()].lower()} {dt.day} de "
+            f"{_MONTHS_ES[dt.month]} a las {dt:%H:%M}")
 
 
 def today_local() -> date:

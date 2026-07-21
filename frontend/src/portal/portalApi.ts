@@ -21,6 +21,15 @@ import type {
   TrainingWeek,
 } from "../types";
 
+/** Tarjeta "Unirme" de la próxima videollamada agendada (Pro con Google Meet). */
+export interface VideoCallCard {
+  scheduled_at: string;   // ISO datetime
+  when_label: string;     // "jueves 21 de julio a las 17:00"
+  duration_min: number | null;
+  meet_url: string | null;
+  is_today: boolean;
+}
+
 export class PortalError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -124,6 +133,8 @@ export function portalApi(token: string) {
       return req<unknown[]>("POST", `${base}/close/photos?kind=${kind}`, fd);
     },
     feedback: () => req<FeedbackDocOut[]>("GET", `${base}/feedback`),
+    // Próxima videollamada de revisión agendada (con hora y enlace de Meet).
+    videoCall: () => req<{ call: VideoCallCard | null }>("GET", `${base}/video-call`),
     changeRequest: (message: string) =>
       req<ChangeRequestOut>("POST", `${base}/change-request`, { message }),
     // --- Web Push (§8.1) ---

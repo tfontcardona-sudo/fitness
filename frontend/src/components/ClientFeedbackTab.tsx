@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Sparkles, AlertTriangle, MessageSquare, MessageCircle, Mail, Video, Target, TrendingUp, BarChart3, CalendarCheck, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
 import { api } from "../lib/api";
-import { feedbackBody, feedbackMessage, openWhatsApp, videoCallMessage, waPhone } from "../lib/whatsapp";
+import { feedbackBody, feedbackMessage, openWhatsApp, videoCallMessage, videoCallScheduledMessage, waPhone } from "../lib/whatsapp";
 import { pkg } from "../lib/packages";
 import { ExpandableArea, Spinner, useToast } from "./ui";
 import type { ClientOut, VideoCallOut } from "../types";
@@ -61,9 +61,11 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
   // "Revisar cambios…" una vez adaptada: el trabajo ya está hecho).
   const [adaptedIdx, setAdaptedIdx] = useState<number | null>(null);
 
-  // Videollamadas quincenales (Pro) + enlace de reservas (marca).
+  // Videollamadas quincenales (Pro) + enlace de reservas (marca) + estado de la
+  // conexión con Google (si está conectada, se agenda con Meet en 1 clic).
   const [calls, setCalls] = useState<VideoCallOut[]>([]);
   const [meetUrl, setMeetUrl] = useState<string | null>(null);
+  const [googleConnected, setGoogleConnected] = useState(false);
 
   const loadCalls = useCallback(() => {
     if (!directContact) return;
@@ -72,8 +74,25 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
   }, [client.id, directContact]);
   useEffect(loadCalls, [loadCalls]);
   useEffect(() => {
-    if (directContact) api.getBrand().then((b) => setMeetUrl(b.meet_url ?? null)).catch(() => {});
+    if (!directContact) return;
+    api.getBrand().then((b) => setMeetUrl(b.meet_url ?? null)).catch(() => {});
+    api.googleStatus().then((s) => setGoogleConnected(s.connected)).catch(() => {});
   }, [directContact]);
+
+  /** Pro: comparte por WhatsApp la videollamada YA agendada (fecha + Meet). */
+  function shareMeetWhatsApp(call: VideoCallOut) {
+    const phone = waPhone(client.phone);
+    if (!phone) {
+      toast.push("Añade el teléfono del cliente en su ficha para avisarle", "error");
+      return;
+    }
+    const when = call.scheduled_at
+      ? new Date(call.scheduled_at).toLocaleString("es-ES", {
+          weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit",
+        })
+      : "";
+    openWhatsApp(phone, videoCallScheduledMessage(client.full_name, when, call.meet_url ?? ""));
+  }
 
   const load = useCallback(() => {
     api.listPlans(client.id)
@@ -300,9 +319,12 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
               && (isCurrent || calls.some((c) => c.period_index === p.period_index)) && (
               <VideoCallCycle
                 clientId={client.id}
+                periodIndex={p.period_index}
                 call={calls.find((c) => c.period_index === p.period_index) ?? null}
                 meetUrl={meetUrl}
+                googleConnected={googleConnected}
                 onPropose={() => proposeVideoCall(p.period_index)}
+                onShareMeet={shareMeetWhatsApp}
                 onChanged={loadCalls}
               />
             )}
@@ -485,15 +507,21 @@ function localToday(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
-function VideoCallCycle({ clientId, call, meetUrl, onPropose, onChanged }: {
+function VideoCallCycle({ clientId, periodIndex, call, meetUrl, googleConnected, onPropose, onShareMeet, onChanged }: {
   clientId: number;
+  periodIndex: number;
   call: VideoCallOut | null;
   meetUrl: string | null;
+  googleConnected: boolean;
   onPropose: () => void;
+  onShareMeet: (call: VideoCallOut) => void;
   onChanged: () => void;
 }) {
   const toast = useToast();
-  const [date, setDate] = useState("");
+  const [date, setDate] = useState("");        // flujo manual (apuntar fecha del enlace)
+  const [gDate, setGDate] = useState("");       // agendado con Google Meet: día
+  const [gTime, setGTime] = useState("17:00");  // …hora
+  const [gDur, setGDur] = useState(30);         // …duración (min)
   const [busy, setBusy] = useState(false);
 
   async function run(fn: () => Promise<unknown>, okMsg: string) {
@@ -510,11 +538,27 @@ function VideoCallCycle({ clientId, call, meetUrl, onPropose, onChanged }: {
     }
   }
 
-  const fecha = call?.scheduled_for
+  async function copyLink(url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.push("Enlace de Meet copiado");
+    } catch {
+      toast.push("No se pudo copiar el enlace", "error");
+    }
+  }
+
+  // Con hora (agendado por Google Meet) mostramos fecha + hora; si no, solo día.
+  const cuando = call?.scheduled_at
+    ? new Date(call.scheduled_at).toLocaleString("es-ES", {
+        weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit",
+      })
+    : call?.scheduled_for
     ? new Date(call.scheduled_for + "T00:00:00").toLocaleDateString("es-ES", {
         weekday: "long", day: "numeric", month: "long",
       })
     : null;
+
+  const notScheduled = call === null || call?.status === "pending";
 
   return (
     <div className="mt-3 rounded-lg p-3"
@@ -524,7 +568,44 @@ function VideoCallCycle({ clientId, call, meetUrl, onPropose, onChanged }: {
         {call?.status === "done" && <CheckCircle2 size={13} style={{ color: "#2E7D46" }} />}
       </div>
 
-      {call === null && (
+      {/* Agendar con Google Meet (1 clic) — solo si el coach conectó Google. */}
+      {notScheduled && googleConnected && (
+        <div className="mt-2 space-y-2">
+          <p className="text-xs text-zinc-400">
+            Agenda con Google Meet: elige día y hora y créala en 1 clic. Se crea el
+            evento en tu calendario, se invita al cliente por email y recibe
+            recordatorios automáticos.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <input type="date" className="input !w-auto !py-1.5 text-xs" value={gDate}
+              min={localToday()} onChange={(e) => setGDate(e.target.value)} />
+            <input type="time" className="input !w-auto !py-1.5 text-xs" value={gTime}
+              onChange={(e) => setGTime(e.target.value)} />
+            <select className="input !w-auto !py-1.5 text-xs" value={gDur}
+              onChange={(e) => setGDur(Number(e.target.value))}>
+              <option value={30}>30 min</option>
+              <option value={45}>45 min</option>
+              <option value={60}>60 min</option>
+            </select>
+            <button
+              className="btn btn-primary !px-3 !py-1.5 text-xs"
+              disabled={!gDate || !gTime || busy}
+              onClick={() => run(
+                () => api.scheduleVideoCallMeet(clientId, periodIndex, `${gDate}T${gTime}`, gDur),
+                "Videollamada creada en Google Meet e invitación enviada al cliente",
+              )}
+            >
+              <Video size={13} /> Crear en Google Meet
+            </button>
+          </div>
+          <button onClick={onPropose} className="text-[11px] text-zinc-500 hover:text-zinc-300">
+            o proponer por WhatsApp para que elija él el día
+          </button>
+        </div>
+      )}
+
+      {/* Sin Google conectado: proponer por WhatsApp (con el enlace de reservas). */}
+      {call === null && !googleConnected && (
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-zinc-400">
             Toca la videollamada de revisión: propónsela por WhatsApp
@@ -533,20 +614,20 @@ function VideoCallCycle({ clientId, call, meetUrl, onPropose, onChanged }: {
           <button onClick={onPropose} className="btn btn-primary !px-3 !py-1.5 text-xs">
             <MessageCircle size={13} /> Proponer por WhatsApp
           </button>
-          {!meetUrl && (
-            <p className="w-full text-[11px] text-zinc-500">
-              Consejo: guarda tu enlace de reservas (Google Calendar/Meet) en{" "}
-              <b>Recursos → Página de enlaces</b> y el mensaje lo incluirá solo.
-            </p>
-          )}
+          <p className="w-full text-[11px] text-zinc-500">
+            Consejo: conecta Google en <b>Recursos → Ajustes</b> y agenda con Meet en 1 clic
+            (evento + invitación + recordatorios automáticos).
+          </p>
         </div>
       )}
 
+      {/* Propuesta enviada por WhatsApp: apuntar la fecha que reservó el cliente. */}
       {call?.status === "pending" && (
         <div className="mt-2 space-y-2">
           <p className="text-xs text-zinc-400">
-            Propuesta enviada. En cuanto el cliente reserve, apunta aquí el día para
-            activar los recordatorios (a él y a ti, el día antes).
+            {googleConnected
+              ? "Si el cliente ya reservó por tu enlace, apunta aquí el día (sin crear evento en Meet):"
+              : "Propuesta enviada. En cuanto el cliente reserve, apunta aquí el día para activar los recordatorios (a él y a ti, el día antes)."}
           </p>
           <div className="flex flex-wrap items-center gap-2">
             {/* min=hoy: una fecha pasada rompería el ciclo (la alerta de
@@ -554,7 +635,7 @@ function VideoCallCycle({ clientId, call, meetUrl, onPropose, onChanged }: {
             <input type="date" className="input !w-auto !py-1.5 text-xs" value={date}
               min={localToday()} onChange={(e) => setDate(e.target.value)} />
             <button
-              className="btn btn-primary !px-3 !py-1.5 text-xs"
+              className="btn btn-ghost !px-3 !py-1.5 text-xs"
               disabled={!date || busy}
               onClick={() => run(
                 () => api.scheduleVideoCall(clientId, call.id, date),
@@ -573,8 +654,23 @@ function VideoCallCycle({ clientId, call, meetUrl, onPropose, onChanged }: {
       {call?.status === "scheduled" && (
         <div className="mt-2 space-y-2">
           <p className="text-xs text-zinc-300">
-            Reservada para el <b>{fecha}</b>.
+            Reservada para el <b>{cuando}</b>
+            {call.duration_min ? <span className="text-zinc-500"> ({call.duration_min} min)</span> : null}.
           </p>
+          {call.meet_url && (
+            <div className="flex flex-wrap gap-2">
+              <a href={call.meet_url} target="_blank" rel="noopener noreferrer"
+                className="btn btn-primary !px-3 !py-1.5 text-xs">
+                <Video size={13} /> Unirme a Meet
+              </a>
+              <button className="btn btn-ghost !px-3 !py-1.5 text-xs" onClick={() => copyLink(call.meet_url!)}>
+                <Copy size={13} /> Copiar enlace
+              </button>
+              <button className="btn btn-ghost !px-3 !py-1.5 text-xs" onClick={() => onShareMeet(call)}>
+                <MessageCircle size={13} /> Enviar por WhatsApp
+              </button>
+            </div>
+          )}
           <p className="text-xs text-zinc-500">¿Se realizó la videollamada?</p>
           <div className="flex flex-wrap gap-2">
             <button
@@ -592,7 +688,9 @@ function VideoCallCycle({ clientId, call, meetUrl, onPropose, onChanged }: {
               disabled={busy}
               onClick={() => run(
                 () => api.videoCallReschedule(clientId, call.id),
-                "Sin problema: vuelve a proponerla por WhatsApp y apunta la nueva fecha",
+                call.meet_url
+                  ? "Evento cancelado en Google: vuelve a agendar la nueva fecha"
+                  : "Sin problema: vuelve a proponerla por WhatsApp y apunta la nueva fecha",
               )}
             >
               <X size={13} /> No, reagendar

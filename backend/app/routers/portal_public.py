@@ -323,6 +323,40 @@ def portal_today(
     return TodayView(**portal_svc.build_today_view(db, client, portal_svc.today_local()))
 
 
+@router.get("/{token}/video-call", response_model=dict)
+@limiter.limit("120/minute")
+def portal_video_call(
+    request: Request,
+    client: Client = Depends(get_client_by_token),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Próxima videollamada de revisión AGENDADA (con hora y enlace de Meet) para
+    la tarjeta "Unirme" del portal. Devuelve {call: null} si no hay ninguna."""
+    from app.models import VideoCall
+
+    today = portal_svc.today_local()
+    vc = db.scalar(
+        select(VideoCall)
+        .where(
+            VideoCall.client_id == client.id,
+            VideoCall.status == "scheduled",
+            VideoCall.scheduled_for.is_not(None),
+            VideoCall.scheduled_for >= today,
+        )
+        .order_by(VideoCall.scheduled_for.asc())
+        .limit(1)
+    )
+    if vc is None or not vc.scheduled_at:
+        return {"call": None}
+    return {"call": {
+        "scheduled_at": vc.scheduled_at.isoformat(),
+        "when_label": portal_svc.format_when_es(vc.scheduled_at),
+        "duration_min": vc.duration_min,
+        "meet_url": vc.meet_url,
+        "is_today": vc.scheduled_for == today,
+    }}
+
+
 @router.get("/{token}/training", response_model=dict)
 @limiter.limit("120/minute")
 def portal_training(

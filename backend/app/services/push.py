@@ -251,6 +251,23 @@ def notify_plan_published(db: Session, client: Client, *, republished: bool = Fa
     return send_to_client(db, client, payload)
 
 
+def notify_video_call_scheduled(db: Session, client: Client, when_label: str,
+                                meet_url: str) -> int:
+    """Avisa al cliente (push) de que su videollamada quedó agendada. No commit.
+    Abre el enlace de Meet al tocar la notificación. Silencioso sin push/devices."""
+    if not push_configured():
+        return 0
+    brand = portal_svc.brand_payload(db)
+    payload = {
+        "title": brand.get("name", "Tu asesoría"),
+        "body": f"Videollamada de revisión agendada: {when_label}. ¡Te espero!",
+        "count": 1,
+        "url": meet_url,
+        "tag": "dq-videollamada",
+    }
+    return send_to_client(db, client, payload)
+
+
 # --------------------------------------------------------------- envío ----
 
 def _send_to_subs(db: Session, subs: list[PushSubscription], payload: dict, who: str) -> int:
@@ -369,11 +386,16 @@ def run_push_reminders(db: Session, now: datetime | None = None) -> dict:
         )
         if already:
             continue
+        # Con hora concreta (agendado por Google Meet) el aviso la incluye y
+        # enlaza directo a Meet; si no, al portal.
+        hora = ""
+        if vc.scheduled_at is not None:
+            hora = " a las " + vc.scheduled_at.astimezone(ZoneInfo(settings.tz)).strftime("%H:%M")
         payload = {
             "title": brand.get("name", "Tu asesoría"),
-            "body": "Recordatorio: mañana tienes la videollamada con tu coach. ¡Te espero!",
+            "body": f"Recordatorio: mañana{hora} tienes la videollamada con tu coach. ¡Te espero!",
             "count": 1,
-            "url": f"{base}/p/{client.portal_token}",
+            "url": vc.meet_url or f"{base}/p/{client.portal_token}",
             "tag": "dq-videollamada",
         }
         ok = send_to_client(db, client, payload)

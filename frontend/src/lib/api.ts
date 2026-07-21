@@ -320,6 +320,17 @@ export const api = {
     request<VideoCallOut>("POST", `/clients/${clientId}/video-calls/${callId}/done`),
   videoCallReschedule: (clientId: number, callId: number) =>
     request<VideoCallOut>("POST", `/clients/${clientId}/video-calls/${callId}/reschedule`),
+  // Agenda con Google Calendar + Meet (1 clic): crea el evento, invita al
+  // cliente y devuelve el enlace de Meet. startAt en formato "YYYY-MM-DDTHH:MM".
+  scheduleVideoCallMeet: (clientId: number, periodIndex: number, startAt: string, durationMin: number) =>
+    request<VideoCallOut>("POST", `/clients/${clientId}/video-calls/schedule-meet`,
+      { period_index: periodIndex, start_at: startAt, duration_min: durationMin }),
+
+  // --- Google Calendar / Meet (conexión de la cuenta del coach) ---
+  googleStatus: () =>
+    request<{ enabled: boolean; connected: boolean; email: string | null }>("GET", "/google/status"),
+  googleStart: () => request<{ authorize_url: string }>("GET", "/google/oauth/start"),
+  googleDisconnect: () => request<{ disconnected: boolean }>("POST", "/google/disconnect"),
 
   // --- push del COACH (su móvil recibe el resumen de alertas cada 3 h) ---
   coachPushPublicKey: () =>

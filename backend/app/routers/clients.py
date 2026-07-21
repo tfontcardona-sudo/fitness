@@ -718,7 +718,8 @@ def video_call_done(client_id: int, call_id: int, db: Session = Depends(get_db))
 @router.post("/{client_id}/video-calls/{call_id}/reschedule")
 def video_call_reschedule(client_id: int, call_id: int, db: Session = Depends(get_db)) -> dict:
     """NO se realizó: vuelve a pendiente sin fecha y el ciclo empieza de nuevo
-    (agendar por WhatsApp → fecha → recordatorios)."""
+    (agendar por WhatsApp/Meet → fecha → recordatorios). Si tenía evento en
+    Google Calendar, se cancela (avisa a los invitados)."""
     from app.models import VideoCall
     from app.schemas.entities import VideoCallOut
 
@@ -728,9 +729,133 @@ def video_call_reschedule(client_id: int, call_id: int, db: Session = Depends(ge
     if vc.status == "done":
         raise HTTPException(status.HTTP_409_CONFLICT,
                             "Esta videollamada ya se realizó: no puede reagendarse")
+    _cancel_google_event_safe(db, vc)
     vc.status = "pending"
     vc.scheduled_for = None
+    vc.scheduled_at = None
+    vc.meet_url = None
+    vc.google_event_id = None
+    vc.google_html_link = None
     log_event(db, "client", client_id, "video_call_rescheduled", {"period_index": vc.period_index})
+    db.commit()
+    db.refresh(vc)
+    return VideoCallOut.model_validate(vc).model_dump(mode="json")
+
+
+# --- Agendar con Google Calendar + Meet (1 clic) -------------------------------
+
+def _cancel_google_event_safe(db: Session, vc) -> None:
+    """Cancela el evento de Google si existe. No rompe el flujo local si falla
+    (p. ej. Google desconectado): lo importante es que el estado local avance."""
+    if not vc.google_event_id:
+        return
+    from app.services import google_calendar as gcal
+    try:
+        gcal.cancel_meet_event(db, event_id=vc.google_event_id)
+    except gcal.GoogleCalendarError:
+        import logging
+        logging.getLogger("app.google").warning(
+            "no se pudo cancelar el evento de Google de la videollamada %s", vc.id)
+
+
+class VideoCallMeetIn(BaseModel):
+    period_index: int
+    start_at: datetime           # fecha y hora (zona del coach si viene sin offset)
+    duration_min: int = 30
+
+
+@router.post("/{client_id}/video-calls/schedule-meet")
+def schedule_video_call_meet(client_id: int, body: VideoCallMeetIn,
+                             db: Session = Depends(get_db)) -> dict:
+    """Agenda la videollamada creando el evento en Google Calendar con enlace de
+    Meet e invitando al cliente por email. 1 clic: crea (o reprograma si ya
+    existía), avisa por email + push y devuelve el enlace de Meet.
+
+    Requiere que el coach haya conectado Google en Ajustes. Idempotente por
+    (cliente, período): reprograma el evento existente en vez de duplicarlo.
+    """
+    from zoneinfo import ZoneInfo
+
+    from app.models import VideoCall
+    from app.schemas.entities import VideoCallOut
+    from app.services import email_templates as tpl
+    from app.services import google_calendar as gcal
+    from app.services import push as push_svc
+    from app.services.email_service import EmailService, brand_from_config
+
+    client = _client_or_404_docs(db, client_id)
+    if not gcal.is_connected(db):
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "Conecta tu cuenta de Google en Ajustes para agendar por Meet.")
+    if body.duration_min < 5 or body.duration_min > 240:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "La duración debe estar entre 5 y 240 minutos.")
+
+    tz = ZoneInfo(settings.tz)
+    raw = body.start_at
+    start_aware = raw.replace(tzinfo=tz) if raw.tzinfo is None else raw.astimezone(tz)
+    if start_aware <= datetime.now(tz):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "La fecha y hora ya pasaron: revisa el día elegido.")
+    start_naive_local = start_aware.replace(tzinfo=None)
+    from app.services.portal import format_when_es
+
+    when_label = format_when_es(start_aware)
+
+    brand = brand_from_config(db)
+    summary = f"Videollamada de revisión · {client.full_name}".strip()
+    description = (
+        "Videollamada de revisión quincenal de tu asesoría. "
+        "Repasaremos tu progreso, resolveremos dudas y ajustaremos lo que haga falta."
+    )
+
+    # Crea o reprograma el evento en Google Calendar.
+    vc = db.scalar(select(VideoCall).where(
+        VideoCall.client_id == client_id, VideoCall.period_index == body.period_index))
+    try:
+        if vc is not None and vc.google_event_id:
+            ev = gcal.update_meet_event(
+                db, event_id=vc.google_event_id,
+                start_at=start_naive_local, duration_min=body.duration_min)
+        else:
+            ev = gcal.create_meet_event(
+                db, summary=summary, description=description,
+                start_at=start_naive_local, duration_min=body.duration_min,
+                attendee_email=client.email or None)
+    except gcal.GoogleCalendarError as exc:
+        db.rollback()
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+
+    if vc is None:
+        vc = VideoCall(client_id=client_id, period_index=body.period_index)
+        db.add(vc)
+    vc.status = "scheduled"
+    vc.scheduled_at = start_aware
+    vc.scheduled_for = start_aware.date()
+    vc.duration_min = body.duration_min
+    vc.meet_url = ev.get("meet_url") or vc.meet_url
+    vc.google_event_id = ev.get("event_id") or vc.google_event_id
+    vc.google_html_link = ev.get("html_link") or vc.google_html_link
+    log_event(db, "client", client_id, "video_call_meet_scheduled",
+              {"period_index": body.period_index, "at": start_aware.isoformat(),
+               "event_id": vc.google_event_id})
+
+    # Notificaciones de la app (además de la invitación nativa de Google):
+    # email con el enlace de Meet + push al portal del cliente.
+    if vc.meet_url:
+        emailer = EmailService(db)
+        _parts = (client.full_name or "").split()
+        first_name = _parts[0] if _parts else "hola"
+        subject, html = tpl.video_call_scheduled(
+            brand, first_name, when_label, vc.meet_url, body.duration_min)
+        emailer.send(to=client.email, subject=subject, html=html,
+                     kind="video_call_scheduled", client=client)
+        try:
+            push_svc.notify_video_call_scheduled(db, client, when_label, vc.meet_url)
+        except Exception:  # el push nunca debe tumbar el agendado
+            import logging
+            logging.getLogger("app.google").exception("push de videollamada fallido")
+
     db.commit()
     db.refresh(vc)
     return VideoCallOut.model_validate(vc).model_dump(mode="json")

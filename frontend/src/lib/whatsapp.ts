@@ -148,6 +148,20 @@ export function videoCallMessage(fullName: string, meetUrl?: string | null): str
   ].join("\n\n");
 }
 
+/** Mensaje para AVISAR de la videollamada YA agendada con Google Meet: fecha,
+ *  hora y enlace de Meet directo. Se usa desde el botón "Enviar por WhatsApp"
+ *  cuando la cita ya está creada (además del email y la invitación de Google). */
+export function videoCallScheduledMessage(
+  fullName: string, whenLabel: string, meetUrl: string,
+): string {
+  return [
+    `Hola ${waFirstName(fullName)},`,
+    `Te confirmo tu videollamada de revisión: ${whenLabel}.`,
+    `Nos vemos en Google Meet, puedes unirte desde aquí:\n${meetUrl}`,
+    "Te llegará también la invitación a tu Google Calendar con recordatorios. Un saludo.",
+  ].join("\n\n");
+}
+
 /** Mensaje de ARRANQUE (alta manual): pagar el plan + rellenar la anamnesis
  *  (página del PDF editable), con la instrucción EN MAYÚSCULAS de enviarla
  *  rellena. Un solo mensaje. */
