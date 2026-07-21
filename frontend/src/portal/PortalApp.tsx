@@ -14,6 +14,7 @@ import {
   injectManifest,
   isPushSupported,
   needsInstallFirst,
+  PUSH_CHANGED_EVENT,
   pushIsOn,
   refreshBadge,
   registerServiceWorker,
@@ -125,15 +126,15 @@ export default function PortalApp({ token }: { token: string }) {
     <PortalToastProvider light={light}>
       <div className={`portal-root ${light ? "" : "portal-dark"} mx-auto flex min-h-screen max-w-md flex-col`}>
         {/* Cabecera con marca */}
-        <header className="relative z-[1] flex items-center justify-between px-5 pb-2 pt-6">
-          <div className="flex items-center gap-3">
-            <img src="/dq-logo.png" alt="" className="h-9 w-auto rounded-lg shadow-sm" />
-            <div>
-              <p className="text-[10px] uppercase tracking-widest opacity-50">{state.brand.name}</p>
-              <h1 className="text-xl font-semibold">Hola, {state.first_name}</h1>
+        <header className="relative z-[1] flex items-center justify-between gap-2 px-5 pb-2 pt-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <img src="/dq-logo.png" alt="" className="h-9 w-auto shrink-0 rounded-lg shadow-sm" />
+            <div className="min-w-0">
+              <p className="truncate text-[10px] uppercase tracking-widest opacity-50">{state.brand.name}</p>
+              <h1 className="truncate text-xl font-semibold">Hola, {state.first_name}</h1>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex shrink-0 items-center gap-3">
             {state.period && (
               <div className="text-right">
                 {/* Azul (secundario): es un dato del ciclo, no una acción.
@@ -158,7 +159,7 @@ export default function PortalApp({ token }: { token: string }) {
         </header>
 
         <main className="relative z-[1] flex-1 px-5 pb-28 pt-2">
-          <WelcomeSetup api={apiClient} accent={state.brand.color_primary}
+          <WelcomeSetup api={apiClient} token={token} accent={state.brand.color_primary}
             secondary={state.brand.color_secondary} hasTraining={!isStart} />
           {/* key={effTab} → transición suave (animate-rise respeta reduced-motion) */}
           <div key={effTab} className="animate-rise">
@@ -169,6 +170,7 @@ export default function PortalApp({ token }: { token: string }) {
             {effTab === "cierre" && (
               <PortalClose
                 api={apiClient}
+                token={token}
                 brand={state.brand}
                 onClosed={reload}
                 canClose={canClose}
@@ -215,6 +217,14 @@ function PushToggle({ api }: { api: ReturnType<typeof portalApi> }) {
   const toast = usePortalToast();
   const [on, setOn] = useState(pushIsOn);
   const [busy, setBusy] = useState(false);
+
+  // Si el push cambia desde OTRO control (pasos de bienvenida), la campana
+  // se actualiza sola — un solo estado real, varias vistas.
+  useEffect(() => {
+    const sync = () => setOn(pushIsOn());
+    window.addEventListener(PUSH_CHANGED_EVENT, sync);
+    return () => window.removeEventListener(PUSH_CHANGED_EVENT, sync);
+  }, []);
 
   // Navegador sin push posible (ni instalando): no enseñar un botón muerto.
   if (!isPushSupported() && !needsInstallFirst()) return null;
@@ -270,17 +280,27 @@ const PUSH_DISMISSED_KEY = "portal_push_dismissed";
  *  2) activar las notificaciones/recordatorios.
  * Desaparece al pulsar "Listo" o solo cuando ambos pasos están hechos.
  */
-function WelcomeSetup({ api, accent, secondary, hasTraining = true }: {
-  api: ReturnType<typeof portalApi>; accent: string; secondary: string; hasTraining?: boolean;
+function WelcomeSetup({ api, token, accent, secondary, hasTraining = true }: {
+  api: ReturnType<typeof portalApi>; token: string; accent: string; secondary: string; hasTraining?: boolean;
 }) {
   const toast = usePortalToast();
+  // Clave POR CLIENTE (token): en un móvil compartido, que un cliente lo
+  // descarte no se lo esconde a otro. Las claves antiguas (globales) se
+  // respetan como "ya descartado" para no reaparecer a quien ya lo cerró.
+  const doneKey = `${WELCOME_DONE_KEY}_${token.slice(0, 16)}`;
   const [dismissed, setDismissed] = useState(
-    () => localStorage.getItem(WELCOME_DONE_KEY) === "1"
+    () => localStorage.getItem(doneKey) === "1"
+      || localStorage.getItem(WELCOME_DONE_KEY) === "1"
       || localStorage.getItem(PUSH_DISMISSED_KEY) === "1"
   );
-  const [granted, setGranted] = useState(
-    () => isPushSupported() && Notification.permission === "granted"
-  );
+  // "Hecho" = las notificaciones están realmente ACTIVAS en este dispositivo
+  // (permiso + no apagadas a mano), sincronizado con la campana de arriba.
+  const [granted, setGranted] = useState(pushIsOn);
+  useEffect(() => {
+    const sync = () => setGranted(pushIsOn());
+    window.addEventListener(PUSH_CHANGED_EVENT, sync);
+    return () => window.removeEventListener(PUSH_CHANGED_EVENT, sync);
+  }, []);
   const [busy, setBusy] = useState(false);
 
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
@@ -290,10 +310,12 @@ function WelcomeSetup({ api, accent, secondary, hasTraining = true }: {
 
   // Todo hecho (o nada que ofrecer en este navegador) → no molestar más.
   if (dismissed || (granted && installed)) return null;
-  if (!isPushSupported() && !installFirst && installed) return null;
+  // Navegador sin push posible y sin camino de instalación (WebView de
+  // Instagram/WhatsApp en Android): el botón de activar solo daría error.
+  if (!isPushSupported() && !installFirst) return null;
 
   const done = () => {
-    localStorage.setItem(WELCOME_DONE_KEY, "1");
+    localStorage.setItem(doneKey, "1");
     setDismissed(true);
   };
 

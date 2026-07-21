@@ -121,12 +121,30 @@ def public_register(request: Request, body: PublicRegisterIn,
     db.refresh(client)
 
     # Email de arranque (pago + anamnesis PDF). No bloquea el registro si falla.
-    try:
-        email_status = send_onboarding_email(db, client)
-        db.commit()
-    except Exception:
-        db.rollback()
-        email_status = "failed"
+    # FRENO anti-abuso: a una misma dirección, como mucho UN email por hora —
+    # el formulario es público y sin esto cualquiera podía bombardear un buzón
+    # ajeno reenviando el registro (el resto del flujo sigue funcionando igual).
+    from datetime import datetime, timedelta, timezone as _tz
+
+    from app.models import EmailLog
+
+    recent = db.scalar(
+        select(EmailLog.id).where(
+            EmailLog.client_id == client.id,
+            EmailLog.kind == "onboarding",
+            EmailLog.status == "sent",  # un intento fallido sí puede reintentarse
+            EmailLog.sent_at >= datetime.now(_tz.utc) - timedelta(hours=1),
+        ).limit(1)
+    )
+    if recent:
+        email_status = "already_sent"
+    else:
+        try:
+            email_status = send_onboarding_email(db, client)
+            db.commit()
+        except Exception:
+            db.rollback()
+            email_status = "failed"
 
     # URL de pago de Stripe (checkout ligado a ESTE cliente, como el alta
     # manual). Si Stripe no está disponible, el registro y el email ya valen:

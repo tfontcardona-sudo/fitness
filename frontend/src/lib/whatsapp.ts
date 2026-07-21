@@ -137,7 +137,7 @@ function pickVoice(fullName: string, extra = 0): Voice {
  *  el cliente elige día y hora él mismo; sin él, se acuerda en la conversación. */
 export function videoCallMessage(fullName: string, meetUrl?: string | null): string {
   const cita = meetUrl
-    ? `Elige el día y la hora que mejor te vengan desde este enlace (videollamada por Google Meet):\n${meetUrl}`
+    ? `Elige el día y la hora que mejor te vengan desde este enlace de reservas:\n${meetUrl}`
     : "¿Qué día y hora te vienen bien esta semana? Te paso el enlace en cuanto lo cerremos.";
   return [
     `Hola ${waFirstName(fullName)},`,

@@ -269,9 +269,23 @@ export function clampTargets(next: MacroTargets, tdee?: number | null, weightKg?
     if (kLo > kHi) { kLo = 1100; kHi = 4500; }
   }
   const kcal = Math.round(clamp(next.kcal || kcalOf(p, next.carbs_g || 0, f), kLo, kHi));
-  // Los carbohidratos cuadran el 4/4/9 con los valores ya acotados.
-  const carbs = Math.max(0, Math.round((kcal - p * 4 - f * 9) / 4));
-  return { kcal, protein_g: p, carbs_g: carbs, fat_g: f };
+  // Los carbohidratos cuadran el 4/4/9 con los valores ya acotados. Si no
+  // caben (P y G acotadas superan las kcal), cede la grasa hasta su suelo y
+  // después la proteína — MISMA cascada que reconcile_nutrition del backend:
+  // lo que muestra el editor es EXACTAMENTE lo que se guardará.
+  let pF = p;
+  let fF = f;
+  let carbs = Math.round((kcal - pF * 4 - fF * 9) / 4);
+  if (carbs < 0) {
+    fF = Math.max(fLo, Math.round((kcal - pF * 4) / 9));
+    carbs = Math.round((kcal - pF * 4 - fF * 9) / 4);
+  }
+  if (carbs < 0) {
+    const pMin = w ? Math.round(w * 1.6) : 60;
+    pF = Math.max(pMin, Math.round((kcal - fF * 9) / 4));
+    carbs = Math.max(0, Math.round((kcal - pF * 4 - fF * 9) / 4));
+  }
+  return { kcal, protein_g: pF, carbs_g: carbs, fat_g: fF };
 }
 
 export function rescaleNutrition(nut: any, next: MacroTargets, weightKg?: number | null): void {
@@ -334,21 +348,27 @@ export function rescaleNutrition(nut: any, next: MacroTargets, weightKg?: number
     }
   }
 
+  // Cada plato queda COHERENTE CONSIGO MISMO (espejo de _scale_dish del
+  // backend): macros por eje, kcal del plato = 4/4/9 de SUS macros, y los
+  // gramos siguen la energía real del plato (no un ratio ajeno).
   const scaleDish = (o: any) => {
     if (!o) return;
+    let rDish = rK;
     if (o.macros) {
-      o.macros = {
-        ...o.macros,
-        kcal: scale(o.macros.kcal, rK),
-        protein_g: scale(o.macros.protein_g, rP),
-        carbs_g: scale(o.macros.carbs_g, rC),
-        fat_g: scale(o.macros.fat_g, rF),
-      };
+      const oldK = typeof o.macros.kcal === "number" ? o.macros.kcal : 0;
+      const nP = scale(o.macros.protein_g, rP);
+      const nC = scale(o.macros.carbs_g, rC);
+      const nF = scale(o.macros.fat_g, rF);
+      const nK = [nP, nC, nF].every((x) => typeof x === "number")
+        ? kcalOf(nP, nC, nF)
+        : scale(o.macros.kcal, rK);
+      o.macros = { ...o.macros, kcal: nK, protein_g: nP, carbs_g: nC, fat_g: nF };
+      if (oldK > 0 && typeof nK === "number" && nK > 0) rDish = nK / oldK;
     }
     for (const ing of o.ingredients ?? []) {
-      ing.grams = scaleG(ing.grams, rK);
+      ing.grams = scaleG(ing.grams, rDish);
       // La medida casera ("1 taza ≈ 80 g") también lleva gramos dentro
-      ing.household = scaleAmountText(ing.household, rK);
+      ing.household = scaleAmountText(ing.household, rDish);
     }
   };
   const bank = nut.meal_bank;

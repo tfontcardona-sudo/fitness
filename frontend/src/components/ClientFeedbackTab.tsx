@@ -292,8 +292,12 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
               </div>
             )}
 
-            {/* Videollamada quincenal (Pro): ciclo agendar → fecha → confirmar */}
-            {directContact && p.status !== "open" && (
+            {/* Videollamada quincenal (Pro): ciclo agendar → fecha → confirmar.
+                En períodos ANTIGUOS solo se muestra si su videollamada existe
+                (estado/confirmación pendiente); proponer una nueva solo aplica
+                a la revisión actual. */}
+            {directContact && p.status !== "open"
+              && (isCurrent || calls.some((c) => c.period_index === p.period_index)) && (
               <VideoCallCycle
                 clientId={client.id}
                 call={calls.find((c) => c.period_index === p.period_index) ?? null}
@@ -475,6 +479,12 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
  *  → pendiente → apuntar la fecha elegida (activa los recordatorios del día antes)
  *  → reservada → confirmar realizada (se cierra) o reagendar (vuelve a empezar). */
 const VC_COLOR = "#0EA5E9";
+
+/** Fecha de HOY local en formato YYYY-MM-DD (para el min del selector). */
+function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 function VideoCallCycle({ clientId, call, meetUrl, onPropose, onChanged }: {
   clientId: number;
   call: VideoCallOut | null;
@@ -539,8 +549,10 @@ function VideoCallCycle({ clientId, call, meetUrl, onPropose, onChanged }: {
             activar los recordatorios (a él y a ti, el día antes).
           </p>
           <div className="flex flex-wrap items-center gap-2">
+            {/* min=hoy: una fecha pasada rompería el ciclo (la alerta de
+                "¿se realizó?" saldría al instante y sin recordatorios) */}
             <input type="date" className="input !w-auto !py-1.5 text-xs" value={date}
-              onChange={(e) => setDate(e.target.value)} />
+              min={localToday()} onChange={(e) => setDate(e.target.value)} />
             <button
               className="btn btn-primary !px-3 !py-1.5 text-xs"
               disabled={!date || busy}

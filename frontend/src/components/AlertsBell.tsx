@@ -4,6 +4,7 @@ import { Bell, Check, Smartphone } from "lucide-react";
 import { api, keepIfSame, REFRESH_MS } from "../lib/api";
 import {
   coachPushActive,
+  coachPushSubscribed,
   disableCoachPush,
   enableCoachPush,
   resyncCoachPushIfGranted,
@@ -31,7 +32,11 @@ export function AlertsBell() {
   const [pushOn, setPushOn] = useState(coachPushActive);
   const [pushBusy, setPushBusy] = useState(false);
   useEffect(() => {
-    resyncCoachPushIfGranted().finally(() => setPushOn(coachPushActive()));
+    // Tras la resuscripción silenciosa, el interruptor refleja el estado REAL
+    // (suscripción viva), no solo el permiso.
+    resyncCoachPushIfGranted().finally(() => {
+      coachPushSubscribed().then(setPushOn).catch(() => {});
+    });
   }, []);
 
   async function togglePush() {

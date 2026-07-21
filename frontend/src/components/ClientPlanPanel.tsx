@@ -82,9 +82,21 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
   // editada ya está guardada; el PDF descargado antes se queda antiguo).
   const [needsDownload, setNeedsDownload] = useState(false);
 
-  // Al montar: carga el último plan guardado + el mapa de ejercicios + los períodos.
+  // Al montar O AL CAMBIAR DE CLIENTE: carga el último plan + ejercicios +
+  // períodos. El estado se RESETEA primero — sin esto, al saltar del cliente A
+  // al B (alerta/panel con la misma pestaña abierta) B heredaba el plan, el
+  // feedback y el editor abierto de A (incluso el WhatsApp salía con el
+  // feedback de A).
   useEffect(() => {
     let alive = true;
+    setLoading(true);
+    setPlan(null);
+    setFb(null);
+    setNeedsDownload(false);
+    setEditing(false);
+    setEditFocus(null);
+    setAdjDraft(null);
+    setMissing(null);
     Promise.all([
       api.listPlans(client.id),
       api.listExercises({ include_archived: true }),

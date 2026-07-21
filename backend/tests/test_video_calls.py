@@ -80,7 +80,8 @@ def pro_client_reviewed(db):
     db.query(VideoCall).filter_by(client_id=client.id).delete()
     db.query(AuditLog).filter_by(entity="client", entity_id=client.id).delete()
     db.flush()
-    db.delete(period)
+    # TODOS los períodos (los tests pueden abrir el siguiente): hijos primero.
+    db.query(Period).filter_by(client_id=client.id).delete()
     db.flush()
     db.delete(plan)
     db.flush()
@@ -117,7 +118,17 @@ def test_video_call_alert_cycle(db, pro_client_reviewed) -> None:
     db.flush()
     assert _vc_alerts(db, client) == []
 
-    # Mañana → recordatorio de severidad alta
+    # REGRESIÓN: se abre el período siguiente (el portal/el job lo abren en
+    # cuanto el cliente vuelve a estar activo) — la videollamada reservada NO
+    # puede desaparecer del radar por eso.
+    from app.models import Period
+
+    p2 = Period(client_id=client.id, plan_id=_plan.id, period_index=2,
+                starts_on=today, ends_on=today + timedelta(days=13), status="open")
+    db.add(p2)
+    db.flush()
+
+    # Mañana → recordatorio de severidad alta (AUNQUE haya un período abierto)
     vc.scheduled_for = today + timedelta(days=1)
     db.flush()
     alerts = _vc_alerts(db, client)

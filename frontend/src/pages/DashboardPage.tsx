@@ -37,6 +37,7 @@ interface Accion {
   tab: string;               // pestaña destino del perfil
   tone: string;              // color del indicador
   icon: typeof Sparkles;
+  to?: string;               // destino explícito (si no es el perfil del cliente)
 }
 
 function nextAction(c: ClientOut): Accion | null {
@@ -99,12 +100,14 @@ function nextAction(c: ClientOut): Accion | null {
 export default function DashboardPage() {
   const [clients, setClients] = useState<ClientOut[] | null>(null);
   const [alerts, setAlerts] = useState<CoachAlert[]>([]);
+  // Un fallo de red NO se disfraza de "Todo al día": banner explícito.
+  const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
     const load = () => {
       api.listClients()
-        .then((cs) => setClients((prev) => keepIfSame(prev, cs)))  // sin re-render si nada cambió
-        .catch(() => setClients((c) => c ?? []));
+        .then((cs) => { setLoadFailed(false); setClients((prev) => keepIfSame(prev, cs)); })
+        .catch(() => { setLoadFailed(true); setClients((c) => c ?? []); });
       // Alertas de recursos (suplemento pautado sin producto) → acción propia.
       api.listAlerts()
         .then((r) => setAlerts((prev) => keepIfSame(prev, r.alerts)))
@@ -129,11 +132,13 @@ export default function DashboardPage() {
       const cli = c.find((x) => x.id === al.client_id);
       if (!cli) continue;
       if (al.kind === "missing_products") {
+        // El botón dice "Abrir Recursos" → lleva DE VERDAD a Recursos (donde
+        // se sube el producto), no a la planificación del cliente.
         acciones.push({
           client: cli, prio: 3, tone: "#28707C", icon: Package, category: "Falta recurso/producto",
           title: "Suplemento del plan sin producto en Recursos",
           detail: al.message,
-          cta: "Abrir Recursos", tab: "planificacion",
+          cta: "Abrir Recursos", tab: "planificacion", to: "/recursos",
         });
       } else if (al.kind.startsWith("video_call_")) {
         // Ciclo de la videollamada quincenal (Pro): agendar → mañana → confirmar.
@@ -170,6 +175,13 @@ export default function DashboardPage() {
           <UserPlus size={16} /> Nuevo cliente
         </Link>
       </header>
+
+      {loadFailed && (
+        <div className="card mt-4 p-3 text-sm text-zinc-300">
+          No se pudo actualizar el panel (¿sin conexión?). Lo que ves puede estar
+          incompleto; se reintenta solo cada pocos segundos.
+        </div>
+      )}
 
       {/* QUÉ TOCA HACER — el corazón del panel (naranja: acción) */}
       <section className="mt-7">
@@ -271,7 +283,7 @@ function ActionCard({ a, quiet }: { a: Accion; quiet?: boolean }) {
   const Icon = a.icon;
   return (
     <Link
-      to={`/clientes/${a.client.id}?tab=${a.tab}`}
+      to={a.to ?? `/clientes/${a.client.id}?tab=${a.tab}`}
       className="card card-hover flex flex-wrap items-center gap-x-4 gap-y-2.5 p-4 active:scale-[0.995]"
       style={quiet ? undefined : { borderLeft: `3px solid ${a.tone}` }}
     >

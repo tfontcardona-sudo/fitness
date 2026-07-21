@@ -8,12 +8,15 @@ type Api = ReturnType<typeof portalApi>;
 
 /** BORRADOR persistente de la revisión: es el formulario más largo del portal
  *  y el cliente puede salir a mirar su diario a mitad — nada debe perderse.
- *  Se guarda en el móvil (localStorage) por período y se limpia al enviar. */
-const DRAFT_KEY = (closeDate: string | null) => `portal_close_draft_${closeDate ?? "actual"}`;
+ *  Se guarda en el móvil (localStorage) POR CLIENTE (token) y período: en un
+ *  móvil compartido, el borrador de un cliente no puede aparecer (ni pisarse)
+ *  en el portal de otro — son datos de salud privados. */
+const DRAFT_KEY = (token: string, closeDate: string | null) =>
+  `portal_close_draft_${token.slice(0, 16)}_${closeDate ?? "actual"}`;
 
-function loadDraft(closeDate: string | null): Record<string, any> {
+function loadDraft(token: string, closeDate: string | null): Record<string, any> {
   try {
-    return JSON.parse(localStorage.getItem(DRAFT_KEY(closeDate)) ?? "{}");
+    return JSON.parse(localStorage.getItem(DRAFT_KEY(token, closeDate)) ?? "{}");
   } catch {
     return {};
   }
@@ -45,8 +48,8 @@ const FEELINGS_NUTRITION: { key: string; label: string }[] = [
  * cambios, qué cuesta, objetivo. Al enviar dispara el feedback de adaptación IA.
  * Las fotos de progreso se envían por WhatsApp (no se suben aquí).
  */
-export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDate, periodStatus, hasTraining = true, directContact = true }: {
-  api: Api; brand: PortalBrand; onClosed: () => void; canClose: boolean;
+export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, closeDate, periodStatus, hasTraining = true, directContact = true }: {
+  api: Api; token: string; brand: PortalBrand; onClosed: () => void; canClose: boolean;
   daysLeft: number | null; closeDate: string | null; periodStatus?: string | null;
   // Paquete solo-nutrición (Start): sin adherencia ni sensaciones de entreno.
   hasTraining?: boolean;
@@ -58,7 +61,7 @@ export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDat
     ? new Date(closeDate + "T00:00:00").toLocaleDateString("es-ES", { day: "2-digit", month: "long" })
     : null;
   const toast = usePortalToast();
-  const draft = loadDraft(closeDate);
+  const draft = loadDraft(token, closeDate);
   const [weight, setWeight] = useState<string>(draft.weight ?? "");
   const [waist, setWaist] = useState<string>(draft.waist ?? "");
   const [hip, setHip] = useState<string>(draft.hip ?? "");
@@ -78,7 +81,7 @@ export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDat
   // Si cambia el período con la pestaña montada (rollover), se recarga SU
   // borrador — sin volcar el del período anterior sobre la clave nueva.
   useEffect(() => {
-    const d = loadDraft(closeDate);
+    const d = loadDraft(token, closeDate);
     setWeight(d.weight ?? ""); setWaist(d.waist ?? ""); setHip(d.hip ?? "");
     setArm(d.arm ?? ""); setThigh(d.thigh ?? ""); setFeelings(d.feelings ?? {});
     setAdhDiet(d.adhDiet ?? ""); setAdhTrain(d.adhTrain ?? "");
@@ -86,19 +89,19 @@ export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDat
     setHardest(d.hardest ?? ""); setNextGoal(d.nextGoal ?? "");
     setQuestions(d.questions ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [closeDate]);
+  }, [token, closeDate]);
 
   // Cada cambio queda guardado en el móvil: volver a la pestaña lo restaura.
   useEffect(() => {
     if (done) return;
     try {
-      localStorage.setItem(DRAFT_KEY(closeDate), JSON.stringify({
+      localStorage.setItem(DRAFT_KEY(token, closeDate), JSON.stringify({
         weight, waist, hip, arm, thigh, feelings,
         adhDiet, adhTrain, freeMeals, changes, hardest, nextGoal, questions,
       }));
     } catch { /* almacenamiento lleno o bloqueado: seguimos sin borrador */ }
   }, [weight, waist, hip, arm, thigh, feelings, adhDiet, adhTrain, freeMeals,
-      changes, hardest, nextGoal, questions, closeDate, done]);
+      changes, hardest, nextGoal, questions, token, closeDate, done]);
 
   const allFeelings = FEELINGS.every((f) => feelings[f.key] > 0);
   // Validación de RANGOS en el móvil: si algo se sale (300 kg, 60 comidas
@@ -141,7 +144,7 @@ export function PortalClose({ api, brand, onClosed, canClose, daysLeft, closeDat
         closing_next_goal: nextGoal || null,
       });
       setDone(true);
-      try { localStorage.removeItem(DRAFT_KEY(closeDate)); } catch { /* sin borrador */ }
+      try { localStorage.removeItem(DRAFT_KEY(token, closeDate)); } catch { /* sin borrador */ }
       toast.push("Revisión enviada");
       setTimeout(onClosed, 1600);
     } catch (e: any) {

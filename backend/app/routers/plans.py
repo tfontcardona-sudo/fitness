@@ -79,6 +79,18 @@ def create_plan(client_id: int, body: PlanCreateIn, db: Session = Depends(get_db
     )
     version = (last.version + 1) if last else 1
     client = _client_or_404(db, client_id)
+    # MISMA red de coherencia que la edición (PATCH): este endpoint acepta el
+    # contenido ya ensamblado y era la única puerta por la que una nutrición
+    # descuadrada (totales ≠ macros ≠ comidas) llegaba TAL CUAL a la BD → PDF
+    # y portal con tres cifras distintas. Topes sanos + reconciliación siempre.
+    if isinstance(body.nutrition_json, dict):
+        from app.services.nutrition_scale import reconcile_nutrition
+
+        _sanitize_nutrition(body.nutrition_json)
+        reconcile_nutrition(
+            body.nutrition_json,
+            weight_kg=client.current_weight_kg or client.start_weight_kg,
+        )
     plan = Plan(
         client_id=client_id, month_index=body.month_index, version=version,
         status="draft", nutrition_json=body.nutrition_json,
@@ -140,6 +152,10 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
     # mensaje al cliente ("he ajustado X → Y").
     old_nutrition = dict(plan.nutrition_json) if isinstance(plan.nutrition_json, dict) else None
     old_training = dict(plan.training_json) if isinstance(plan.training_json, dict) else None
+    # Para el diff, el "antes" se compara NORMALIZADO igual que el "después":
+    # si el plan guardado era legado (sin reconciliar), guardar SIN TOCAR NADA
+    # generaba avisos fantasma ("Calorías: 2000 → 2180") que no eran del coach.
+    old_for_diff = old_nutrition
     for field, value in changes.items():
         if value is not None:
             # Red de seguridad: nutrition_json se reemplaza entero; si el editor
@@ -155,6 +171,11 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
                 cli = db.get(Client, plan.client_id)
                 w = (cli.current_weight_kg or cli.start_weight_kg) if cli else None
                 reconcile_nutrition(value, weight_kg=w)
+                if isinstance(old_nutrition, dict):
+                    import copy
+
+                    old_for_diff = copy.deepcopy(old_nutrition)
+                    reconcile_nutrition(old_for_diff, weight_kg=w)
                 # Ninguna toma sin contenido: si el coach añadió comidas en el
                 # editor, los slots nuevos reciben 3 opciones por defecto
                 # escaladas a sus macros (el cliente nunca ve una "toma libre").
@@ -187,7 +208,7 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
 
     diff_items = manual_change_summary(
         db,
-        old_nutrition=old_nutrition, new_nutrition=plan.nutrition_json,
+        old_nutrition=old_for_diff, new_nutrition=plan.nutrition_json,
         old_training=old_training, new_training=plan.training_json,
     )
     if diff_items:

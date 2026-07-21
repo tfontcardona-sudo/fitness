@@ -78,6 +78,12 @@ def save_subscription(
     if sub is None:
         sub = PushSubscription(client_id=client.id, endpoint=endpoint, p256dh=p256dh, auth=auth)
         db.add(sub)
+    elif sub.is_coach:
+        # Dispositivo del COACH (endpoint único por navegador): que abra el
+        # portal de un cliente para previsualizarlo NO lo convierte en el
+        # dispositivo de ese cliente ni le quita el resumen — solo claves.
+        sub.p256dh = p256dh
+        sub.auth = auth
     else:
         sub.client_id = client.id  # por si el dispositivo cambió de token/cliente
         sub.p256dh = p256dh
@@ -320,7 +326,9 @@ def run_push_reminders(db: Session, now: datetime | None = None) -> dict:
     devices = 0
     for cid in client_ids:
         client = db.get(Client, cid)
-        if client is None:
+        # A un cliente INACTIVO no se le recuerda nada (su período abierto
+        # residual mantendría "te falta la revisión" para siempre).
+        if client is None or client.status == "inactive":
             continue
         pending = pending_for_client(db, client, today)
         if pending["count"] == 0:
@@ -336,32 +344,42 @@ def run_push_reminders(db: Session, now: datetime | None = None) -> dict:
                       {"pending": pending, "devices": ok})
 
     # Recordatorio de VIDEOLLAMADA (Pro): si la tiene reservada para MAÑANA,
-    # un aviso — solo en la primera franja del día para no repetirlo en cada
-    # ciclo del job.
-    if now_local.hour < ACTIVE_FROM + 3:
-        from datetime import timedelta
+    # UN aviso al día. Se evalúa en TODAS las franjas (si el coach apunta la
+    # fecha por la tarde, el aviso sale igualmente esa tarde); el duplicado se
+    # evita con el registro de auditoría: ya avisado para esa fecha → no repite.
+    from datetime import timedelta
 
-        from app.models import VideoCall
+    from app.models import AuditLog, VideoCall
 
-        calls = db.scalars(select(VideoCall).where(
-            VideoCall.status == "scheduled",
-            VideoCall.scheduled_for == today + timedelta(days=1),
-        )).all()
-        for vc in calls:
-            client = db.get(Client, vc.client_id)
-            if client is None:
-                continue
-            payload = {
-                "title": brand.get("name", "Tu asesoría"),
-                "body": "Recordatorio: mañana tienes la videollamada con tu coach. ¡Te espero!",
-                "count": 1,
-                "url": f"{base}/p/{client.portal_token}",
-                "tag": "dq-videollamada",
-            }
-            ok = send_to_client(db, client, payload)
-            if ok:
-                log_event(db, "client", client.id, "push_videocall_reminder",
-                          {"date": vc.scheduled_for.isoformat(), "devices": ok})
+    calls = db.scalars(select(VideoCall).where(
+        VideoCall.status == "scheduled",
+        VideoCall.scheduled_for == today + timedelta(days=1),
+    )).all()
+    for vc in calls:
+        client = db.get(Client, vc.client_id)
+        if client is None or client.status == "inactive":
+            continue
+        already = db.scalar(
+            select(AuditLog.id).where(
+                AuditLog.entity == "client",
+                AuditLog.entity_id == client.id,
+                AuditLog.event == "push_videocall_reminder",
+                AuditLog.detail_json["date"].astext == vc.scheduled_for.isoformat(),
+            ).limit(1)
+        )
+        if already:
+            continue
+        payload = {
+            "title": brand.get("name", "Tu asesoría"),
+            "body": "Recordatorio: mañana tienes la videollamada con tu coach. ¡Te espero!",
+            "count": 1,
+            "url": f"{base}/p/{client.portal_token}",
+            "tag": "dq-videollamada",
+        }
+        ok = send_to_client(db, client, payload)
+        if ok:
+            log_event(db, "client", client.id, "push_videocall_reminder",
+                      {"date": vc.scheduled_for.isoformat(), "devices": ok})
 
     db.commit()
     summary = {"clients_notified": notified, "devices": devices,
@@ -388,13 +406,20 @@ def run_coach_digest(db: Session, now: datetime | None = None) -> dict:
 
     alerts: list[dict] = []
     for client in db.scalars(select(Client).where(Client.status != "inactive")):
-        alerts.extend(client_alerts(db, client, now_local.date()))
+        try:
+            alerts.extend(client_alerts(db, client, now_local.date()))
+        except Exception:  # un cliente con datos raros no tumba el resumen entero
+            logger.exception("alertas ilegibles del cliente %s en el digest", client.id)
     if not alerts:
         return {"alerts": 0, "devices": 0}
 
-    # Las de severidad alta primero; 3 líneas máximo en el cuerpo.
+    # Las de severidad alta primero; 3 líneas máximo en el cuerpo. El nombre
+    # puede venir vacío (dato legado): nunca reventar el resumen por eso.
     alerts.sort(key=lambda a: 0 if a.get("severity") == "alta" else 1)
-    lines = [f"· {a['client_name'].split()[0]}: {a['action']}" for a in alerts[:3]]
+    lines = [
+        f"· {(a.get('client_name') or '').split()[0] if (a.get('client_name') or '').split() else 'Cliente'}: {a['action']}"
+        for a in alerts[:3]
+    ]
     if len(alerts) > 3:
         lines.append(f"…y {len(alerts) - 3} más")
     payload = {
