@@ -34,6 +34,7 @@ export function keepIfSame<T>(prev: T, next: T): T {
 }
 
 import type {
+  AiCreditOut,
   BrandConfigOut,
   CoachAlert,
   ChangeRequestOut,
@@ -333,6 +334,11 @@ export const api = {
   scrapeProduct: (url: string) =>
     request<{ title: string | null; description: string | null; image_url: string | null }>(
       "POST", "/resources/products/scrape", { url }),
+
+  // --- créditos IA (Anthropic) ---
+  getAiCredit: () => request<AiCreditOut>("GET", "/ai-credit"),
+  setAiCredit: (balance_usd: number) =>
+    request<AiCreditOut>("PUT", "/ai-credit", { balance_usd }),
 
   // --- brand ---
   getBrand: () => request<BrandConfigOut>("GET", "/brand"),

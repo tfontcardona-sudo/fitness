@@ -462,6 +462,23 @@ class ChangeRequest(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+# ------------------------------------------------------- ai_credit_state ----
+class AiCreditState(Base):
+    """Saldo de créditos de la API de Anthropic (fila única).
+
+    Anthropic NO expone el saldo por API: el coach lo apunta al recargar y el
+    sistema descuenta el coste estimado (tokens reales × precio del modelo) de
+    cada llamada a la IA. Restante = balance_usd - spent_usd.
+    """
+
+    __tablename__ = "ai_credit_state"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    balance_usd: Mapped[float | None] = mapped_column(Float)  # None = sin configurar
+    spent_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 # ------------------------------------------------------------ audit_log ----
 class AuditLog(Base):
     __tablename__ = "audit_log"
