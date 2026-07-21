@@ -11,6 +11,7 @@ import {
 import { useAuth } from "../hooks/useAuth";
 import { useBrand } from "../hooks/useBrand";
 import { AlertsBell } from "./AlertsBell";
+import { AiCreditButton } from "./AiCreditButton";
 
 const NAV = [
   { to: "/", label: "Hoy", icon: LayoutDashboard, end: true },
@@ -121,6 +122,8 @@ export default function AppShell() {
               {!collapsed && <span>{label}</span>}
             </NavLink>
           ))}
+          {/* Créditos de la API de Anthropic: saldo restante + recarga */}
+          <AiCreditButton collapsed={collapsed} />
         </nav>
 
         <div className="border-t p-2.5" style={{ borderColor: "var(--line)" }}>

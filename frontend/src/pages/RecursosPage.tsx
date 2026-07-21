@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
+import { youtubeId } from "../lib/video";
 import type {
   ExerciseOut,
   ProductCategory,
@@ -1042,23 +1043,10 @@ function ExerciseVideoRow({
   );
 }
 
-/** Portada de YouTube para la vista previa del coach — host ANCLADO igual que el
- *  backend (services/portal.py): la vista previa enseña EXACTAMENTE lo que verá
- *  el cliente (una URL que solo contenga "youtube.com" en el path no cuela). */
-const YT_HOSTS = new Set(["youtu.be", "youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"]);
+/** Portada de YouTube para la vista previa del coach — misma detección (host
+ *  anclado, lib/video.ts) que usa el reproductor del portal: la vista previa
+ *  enseña EXACTAMENTE lo que verá el cliente. */
 function youtubeThumb(url: string): string | null {
-  let u: URL;
-  try {
-    u = new URL(url);
-  } catch {
-    return null;
-  }
-  const host = u.hostname.toLowerCase();
-  if (!YT_HOSTS.has(host)) return null;
-  const segs = u.pathname.split("/").filter(Boolean);
-  let id: string | null | undefined;
-  if (host === "youtu.be") id = segs[0];
-  else if (segs[0] === "watch") id = u.searchParams.get("v");
-  else if (segs.length >= 2 && ["embed", "shorts", "v", "live"].includes(segs[0])) id = segs[1];
-  return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null;
+  const id = youtubeId(url);
+  return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null;
 }

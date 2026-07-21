@@ -399,6 +399,17 @@ export interface VideoCallOut {
   scheduled_for: string | null; // ISO date
 }
 
+/** GET /api/ai-credit — saldo local de créditos de la API de Anthropic.
+ * Anthropic no expone el saldo por API: el coach lo apunta al recargar y el
+ * sistema descuenta el coste estimado de cada llamada a la IA. */
+export interface AiCreditOut {
+  balance_usd: number | null;
+  spent_usd: number;
+  remaining_usd: number | null;
+  updated_at: string | null;
+  recharge_url: string;
+}
+
 /** GET /api/public/landing — datos públicos de la página de enlaces (/dq). */
 export interface LandingOut {
   name: string;

@@ -99,6 +99,21 @@ class AIClient:
             self._client = Anthropic(api_key=self._api_key)
         return self._client
 
+    @staticmethod
+    def _record_usage(model: str, resp) -> None:
+        """Descuenta el coste real (tokens de la respuesta) del saldo local de
+        créditos (botón "Créditos IA" del sidebar). Best-effort: nunca rompe."""
+        usage = getattr(resp, "usage", None)
+        if usage is None:
+            return
+        from app.services.ai_credit import record_usage
+
+        record_usage(
+            model,
+            getattr(usage, "input_tokens", 0) or 0,
+            getattr(usage, "output_tokens", 0) or 0,
+        )
+
     def _raw_call(self, *, model: str, system: str, user: str) -> str:
         """Una llamada cruda al modelo. Sobrescribible en tests."""
         try:
@@ -113,6 +128,7 @@ class AIClient:
             if translated:
                 raise translated from exc
             raise
+        self._record_usage(model, resp)
         return "".join(
             block.text for block in resp.content if getattr(block, "type", None) == "text"
         )
@@ -153,6 +169,7 @@ class AIClient:
             if translated:
                 raise translated from exc
             raise
+        self._record_usage(model, resp)
         return "".join(
             block.text for block in resp.content if getattr(block, "type", None) == "text"
         )

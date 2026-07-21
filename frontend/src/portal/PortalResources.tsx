@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
-import { Check, Copy, Dumbbell, ExternalLink, Package, Pill, PlayCircle, ShoppingBag } from "lucide-react";
-import type { PortalBrand, PortalResources as Resources, ResourceProduct } from "../types";
+import { useEffect, useRef, useState } from "react";
+import { Check, Copy, Dumbbell, ExternalLink, Package, Pill, PlayCircle, ShoppingBag, X } from "lucide-react";
+import type { PortalBrand, PortalResources as Resources, ResourceExerciseVideo, ResourceProduct } from "../types";
 import { Empty, Loading } from "./PortalUi";
+import { InlineVideo, isEmbeddable } from "./InlineVideo";
 import { usePortalToast } from "./PortalToast";
 import type { portalApi } from "./portalApi";
 
@@ -10,15 +11,27 @@ type Api = ReturnType<typeof portalApi>;
 /**
  * Recursos: los vídeos de los ejercicios de SU rutina (título + imagen + vídeo)
  * y los productos que el coach recomienda (suplementos, material…), cada uno con
- * su título, imagen y enlace. Todo de solo lectura: se abre en una pestaña nueva.
+ * su título, imagen y enlace. Los vídeos se reproducen AQUÍ MISMO (tocar la
+ * tarjeta abre el reproductor; otro toque o la ✕ lo cierra); los productos se
+ * abren en la tienda con el código de descuento listo.
  */
 export function PortalResources({ api, brand, hasTraining = true }: { api: Api; brand: PortalBrand; hasTraining?: boolean }) {
   const [data, setData] = useState<Resources | null>(null);
   const [error, setError] = useState(false);
+  // Vídeo en reproducción (uno como mucho): el reproductor sale a ancho completo
+  // encima de la galería; tocar otra tarjeta cambia de vídeo.
+  const [playing, setPlaying] = useState<ResourceExerciseVideo | null>(null);
+  const playerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     api.resources().then(setData).catch(() => setError(true));
   }, [api]);
+
+  // El reproductor vive encima de la galería: si el cliente toca una tarjeta del
+  // fondo, se le lleva hasta él (si no, parecería que el toque no hizo nada).
+  useEffect(() => {
+    if (playing) playerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [playing]);
 
   if (error) {
     return (
@@ -67,34 +80,67 @@ export function PortalResources({ api, brand, hasTraining = true }: { api: Api; 
             <PlayCircle size={16} style={{ color: brand.color_secondary }} />
             <h3 className="text-sm font-semibold">Vídeos de tus ejercicios</h3>
           </div>
+
+          {/* Reproductor EN la misma pantalla: sale al tocar una tarjeta */}
+          {playing && (
+            <div ref={playerRef} className="portal-card overflow-hidden scroll-mt-4">
+              <div className="flex items-center gap-2 p-2.5 pb-2">
+                <p className="min-w-0 flex-1 truncate text-xs font-semibold">{playing.title}</p>
+                <button
+                  type="button"
+                  onClick={() => setPlaying(null)}
+                  aria-label="Cerrar vídeo"
+                  className="tap -m-1 shrink-0 rounded-lg p-1 opacity-50 hover:opacity-90"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="px-2.5 pb-2.5">
+                <InlineVideo url={playing.video_url} title={playing.title} />
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
-            {videos.map((v) => (
-              <a
-                key={v.exercise_id}
-                href={v.video_url}
-                target="_blank"
-                rel="noreferrer"
-                className="portal-card tap group flex flex-col overflow-hidden"
-                aria-label={`Ver vídeo de ${v.title}`}
-              >
-                <Thumb src={v.image_url} ratio="video" accent={brand.color_secondary}>
-                  <span
-                    className="absolute inset-0 flex items-center justify-center text-white transition-transform group-active:scale-95"
-                    style={{ background: "rgba(0,0,0,0.18)" }}
-                  >
-                    <PlayCircle size={34} className="drop-shadow-lg" />
-                  </span>
-                </Thumb>
-                <div className="flex flex-1 flex-col p-2.5">
-                  <p className="line-clamp-2 text-xs font-semibold leading-snug">{v.title}</p>
-                  {v.muscle && (
-                    <span className="mt-1 text-[10px] uppercase tracking-wide opacity-50">
-                      {v.muscle}
+            {videos.map((v) => {
+              const active = playing?.exercise_id === v.exercise_id;
+              const embeddable = isEmbeddable(v.video_url);
+              const open = () => {
+                if (!embeddable) {
+                  window.open(v.video_url, "_blank", "noopener");
+                  return;
+                }
+                setPlaying(active ? null : v); // toque en la activa = cerrar
+              };
+              return (
+                <button
+                  type="button"
+                  key={v.exercise_id}
+                  onClick={open}
+                  aria-pressed={active}
+                  className="portal-card tap group flex flex-col overflow-hidden text-left"
+                  style={active ? { outline: `2px solid ${brand.color_secondary}` } : undefined}
+                  aria-label={active ? `Cerrar vídeo de ${v.title}` : `Ver vídeo de ${v.title}`}
+                >
+                  <Thumb src={v.image_url} ratio="video" accent={brand.color_secondary}>
+                    <span
+                      className="absolute inset-0 flex items-center justify-center text-white transition-transform group-active:scale-95"
+                      style={{ background: "rgba(0,0,0,0.18)" }}
+                    >
+                      <PlayCircle size={34} className="drop-shadow-lg" />
                     </span>
-                  )}
-                </div>
-              </a>
-            ))}
+                  </Thumb>
+                  <div className="flex flex-1 flex-col p-2.5">
+                    <p className="line-clamp-2 text-xs font-semibold leading-snug">{v.title}</p>
+                    {v.muscle && (
+                      <span className="mt-1 text-[10px] uppercase tracking-wide opacity-50">
+                        {v.muscle}
+                      </span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </section>
       )}
