@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Bell, CalendarCheck, Check, ChevronDown, Dumbbell, LineChart, Library, LogOut, NotebookPen, Share, Smartphone, X } from "lucide-react";
+import { Bell, BellOff, CalendarCheck, Check, ChevronDown, Dumbbell, LineChart, Library, LogOut, NotebookPen, Share, Smartphone, X } from "lucide-react";
 import { portalApi, portalSession, PortalError } from "./portalApi";
 import type { PortalState } from "../types";
 import { PortalWorkout } from "./PortalWorkout";
@@ -14,9 +14,12 @@ import {
   injectManifest,
   isPushSupported,
   needsInstallFirst,
+  pushIsOn,
   refreshBadge,
   registerServiceWorker,
   resyncPushIfGranted,
+  turnPushOff,
+  turnPushOn,
 } from "./push";
 
 // El portal del cliente es SOLO seguimiento: 3 pestañas abajo (Entreno, Diario,
@@ -141,6 +144,7 @@ export default function PortalApp({ token }: { token: string }) {
                 <p className="text-[11px] opacity-50">días restantes</p>
               </div>
             )}
+            <PushToggle api={apiClient} />
             {portalSession.token() && (
               <button
                 onClick={() => { portalSession.clear(); window.location.href = "/portal"; }}
@@ -201,6 +205,56 @@ export default function PortalApp({ token }: { token: string }) {
         </nav>
       </div>
     </PortalToastProvider>
+  );
+}
+
+/** Interruptor de NOTIFICACIONES en la cabecera: campana = activadas (toca para
+ *  apagar), campana tachada = apagadas (toca para encender). El apagado borra la
+ *  suscripción y deja un flag local para que no se reactive sola. */
+function PushToggle({ api }: { api: ReturnType<typeof portalApi> }) {
+  const toast = usePortalToast();
+  const [on, setOn] = useState(pushIsOn);
+  const [busy, setBusy] = useState(false);
+
+  // Navegador sin push posible (ni instalando): no enseñar un botón muerto.
+  if (!isPushSupported() && !needsInstallFirst()) return null;
+
+  const toggle = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (on) {
+        await turnPushOff(api);
+        setOn(false);
+        toast.push("Notificaciones desactivadas");
+      } else {
+        if (needsInstallFirst()) {
+          toast.push("En iPhone: añade primero el portal a tu pantalla de inicio y actívalas desde la app");
+          return;
+        }
+        await turnPushOn(api);
+        setOn(true);
+        refreshBadge(api);
+        toast.push("Notificaciones activadas 🔔");
+      }
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "No se pudo cambiar");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={toggle}
+      disabled={busy}
+      aria-label={on ? "Desactivar notificaciones" : "Activar notificaciones"}
+      title={on ? "Notificaciones activadas — toca para desactivarlas" : "Notificaciones desactivadas — toca para activarlas"}
+      className="tap -m-1 rounded-lg p-1 hover:opacity-80"
+      style={{ opacity: on ? 0.85 : 0.4 }}
+    >
+      {on ? <Bell size={18} /> : <BellOff size={18} />}
+    </button>
   );
 }
 

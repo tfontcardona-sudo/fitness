@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Bell, Check } from "lucide-react";
+import { Bell, Check, Smartphone } from "lucide-react";
 import { api, keepIfSame, REFRESH_MS } from "../lib/api";
+import {
+  coachPushActive,
+  disableCoachPush,
+  enableCoachPush,
+  resyncCoachPushIfGranted,
+} from "../lib/coachPush";
 import { useDismiss } from "../lib/useDismiss";
 import { useToast } from "./ui";
 import type { CoachAlert } from "../types";
@@ -19,6 +25,34 @@ export function AlertsBell() {
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   useDismiss(panelRef, () => setOpen(false), open);
+
+  // Push al MÓVIL del coach: estado local del interruptor + resuscripción
+  // silenciosa al abrir la web (si el permiso ya estaba concedido).
+  const [pushOn, setPushOn] = useState(coachPushActive);
+  const [pushBusy, setPushBusy] = useState(false);
+  useEffect(() => {
+    resyncCoachPushIfGranted().finally(() => setPushOn(coachPushActive()));
+  }, []);
+
+  async function togglePush() {
+    if (pushBusy) return;
+    setPushBusy(true);
+    try {
+      if (pushOn) {
+        await disableCoachPush();
+        setPushOn(false);
+        toast.push("Notificaciones al móvil desactivadas en este dispositivo");
+      } else {
+        await enableCoachPush();
+        setPushOn(true);
+        toast.push("Activado: recibirás en este dispositivo el resumen de pendientes cada 3 h");
+      }
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "No se pudo cambiar", "error");
+    } finally {
+      setPushBusy(false);
+    }
+  }
 
   const load = useCallback(() => {
     // keepIfSame: no re-renderiza la campana cada 3 s si las alertas no cambian.
@@ -117,6 +151,21 @@ export function AlertsBell() {
               })
             )}
           </div>
+          {/* Interruptor: recibir todo esto también en el MÓVIL (push cada 3 h) */}
+          <div className="flex items-center justify-between gap-2 border-t px-4 py-2.5"
+            style={{ borderColor: "var(--line)" }}>
+            <span className="flex items-center gap-1.5 text-xs text-zinc-400">
+              <Smartphone size={13} /> Avisos en el móvil
+            </span>
+            <button
+              onClick={togglePush}
+              disabled={pushBusy}
+              className="text-xs font-semibold hover:opacity-80 disabled:opacity-50"
+              style={{ color: pushOn ? "var(--brand-accent)" : "var(--text-faint)" }}
+            >
+              {pushBusy ? "…" : pushOn ? "Activados · desactivar" : "Activar"}
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -170,5 +219,7 @@ const GROUPS: { id: string; label: string; color: string; kinds: string[] }[] = 
   { id: "seguimiento", label: "Seguimiento", color: "#C2453A", kinds: ["no_logs"] },
   { id: "objetivo", label: "Objetivo", color: "#2E5E8C", kinds: ["goal_review"] },
   { id: "recursos", label: "Recursos / productos", color: "#28707C", kinds: ["missing_products"] },
+  { id: "videollamada", label: "Videollamada", color: "#0EA5E9",
+    kinds: ["video_call_schedule", "video_call_tomorrow", "video_call_confirm"] },
   { id: "otras", label: "Otras", color: "#7A7A7A", kinds: [] },
 ];

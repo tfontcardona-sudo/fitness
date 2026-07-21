@@ -1346,6 +1346,63 @@ El link del perfil de Instagram de David lleva TODO el embudo: landing → plane
   + `test_stripe` en verde; los 2 fallos de `test_nutrition_coherence` son
   preexistentes en `main` (confirmado contra el baseline). tsc + vite build OK.
 
+## 10.v Tramo 2026-07-20 — Videollamadas Pro, push del coach, autorrelleno de productos y push cada 3 h
+
+- **Videollamadas quincenales (Pro), ciclo completo**:
+  - Modelo `VideoCall` (`video_calls`, unique client+period_index; status
+    pending|scheduled|done) + migración **`0023_video_calls_coach_push.py`**
+    (también: `push_subscriptions.client_id` nullable + `is_coach`, y
+    `brand_config.meet_url`).
+  - `BrandConfig.meet_url` = enlace de reservas del coach (Google Calendar con
+    Meet, Calendly…), editable en **Recursos → Página de enlaces** (tarjeta
+    "Videollamadas (plan Pro)").
+  - Endpoints en `routers/clients.py`: GET/POST `/clients/{id}/video-calls`
+    (crear = propuesta enviada, idempotente), PATCH `/{call_id}` (apuntar
+    fecha), POST `/{call_id}/done` y `/{call_id}/reschedule` (vuelve a
+    pendiente sin fecha: el ciclo empieza de nuevo).
+  - Alertas (`routers/alerts.py`, solo Pro con la última revisión cerrada):
+    `video_call_schedule` (sin registro o pendiente de fecha),
+    `video_call_tomorrow` (alta, reservada para mañana) y `video_call_confirm`
+    (alta, fecha pasada: "¿se realizó?"). Grupo propio "Videollamada"
+    (#0EA5E9, icono Video) en la campana Y en el panel diario.
+  - UI del ciclo en `ClientFeedbackTab.tsx::VideoCallCycle` (por período, Pro):
+    "Proponer por WhatsApp" (mensaje `videoCallMessage` CON el enlace de
+    reservas si está configurado) → input de fecha "Apuntar fecha" →
+    "Sí, realizada" / "No, reagendar".
+  - Recordatorio al CLIENTE el día antes: dentro de `run_push_reminders`
+    (solo primera franja del día, tag `dq-videollamada`). Al coach se lo
+    recuerda la alerta alta + su resumen push.
+- **Push al MÓVIL del COACH**: router nuevo **`routers/coach_push.py`**
+  (`/api/coach/push/{public-key,subscribe,unsubscribe}`, JWT) +
+  `save/remove_coach_subscription` y `send_to_coach` en `services/push.py`;
+  job **`run_coach_digest`** cada 3 h (scheduler, minuto :05, horario 08–22):
+  agrega `client_alerts` de todos los clientes no inactivos y envía "N
+  pendientes de tus clientes" (3 líneas + "…y X más", tag `dq-coach`).
+  Frontend: **`lib/coachPush.ts`** (NUEVO; registra `/sw.js`, suscribe contra
+  la API del coach, flag local `coach_push_off` para apagar) + interruptor
+  "Avisos en el móvil" al pie de la campana (`AlertsBell.tsx`). En iPhone
+  requiere añadir la web a la pantalla de inicio (mensaje ya lo explica).
+- **Autorrelleno de productos desde la URL**: endpoint
+  `POST /api/resources/products/scrape` (JWT, límite 10/min, guarda SSRF:
+  resuelve el host y rechaza IPs privadas/loopback; lee 400 KB máx y parsea
+  OpenGraph/twitter/title). En `RecursosPage.tsx::ProductEditor`, al pegar el
+  enlace (blur) se rellenan solos los campos VACÍOS (título, descripción,
+  imagen) y el botón "Rellenar desde el enlace" fuerza el relleno.
+- **Push del portal cada 3 h + interruptor**: `PUSH_EVERY_HOURS = 3`
+  (scheduler) y TTL 3 h; campana en la cabecera del portal
+  (`PortalApp.tsx::PushToggle`): activadas ↔ desactivadas. Al apagar se borra
+  la suscripción (backend + navegador) y queda el flag local
+  `portal_push_off` que la resuscripción automática respeta
+  (`push.ts::turnPushOn/turnPushOff/pushIsOn`).
+- Tests nuevos: **`tests/test_video_calls.py`** (ciclo completo de alertas de
+  la videollamada, solo-Pro, upsert de suscripción del coach y saltos del
+  digest). OJO stub local de pywebpush (scratchpad): `WebPushException` debe
+  aceptar `response=` como la librería real o `test_push.py` falla en falso.
+- Verificación: alembic 0001→0023 en BD limpia OK; suite completa con el mismo
+  set de fallos preexistentes que `main` (auth fixture sin ADMIN_* env, 4 de
+  `test_machines_and_word` del PR #65 por lo mismo); `test_push.py` y
+  `test_video_calls.py` en verde; tsc + vite build OK.
+
 ## 11. Mapa rápido de archivos tocados en el último tramo
 
 **Pulido §8.2 (2026-07-04)**

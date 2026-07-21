@@ -281,8 +281,10 @@ class BrandConfigIn(BaseModel):
     # Página pública de enlaces (/dq): tienda del partner y código de descuento.
     partner_store_url: str | None = Field(default=None, max_length=300)
     partner_discount_code: str | None = Field(default=None, max_length=40)
+    # Enlace de reservas de videollamada (Google Calendar/Meet, Calendly…).
+    meet_url: str | None = Field(default=None, max_length=300)
 
-    _v_partner_url = field_validator("partner_store_url")(_http_url_or_none)
+    _v_partner_url = field_validator("partner_store_url", "meet_url")(_http_url_or_none)
 
     @field_validator("partner_discount_code")
     @classmethod
@@ -336,6 +338,19 @@ class LandingOut(BaseModel):
     partner_discount_code: str | None
     # Catálogo de productos recomendados (comprables con el código de arriba).
     products: list[LandingProductOut] = []
+
+
+# -------------------------------------------------- videollamadas (Pro) ----
+class VideoCallOut(BaseModel):
+    """Estado de la videollamada quincenal de un cliente Pro."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    client_id: int
+    period_index: int
+    status: Literal["pending", "scheduled", "done"]
+    scheduled_for: date | None
 
 
 # ------------------------------------------ productos recomendados (portal) ----

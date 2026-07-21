@@ -386,6 +386,17 @@ export interface BrandConfigOut {
   video_cover_path: string | null;
   // Foto de fondo de la página pública de planes (/planes).
   plans_photo_path: string | null;
+  // Enlace de reservas de la videollamada (Google Calendar/Meet, Calendly…).
+  meet_url: string | null;
+}
+
+/** Videollamada quincenal de un cliente Pro (ciclo agendar → fecha → confirmar). */
+export interface VideoCallOut {
+  id: number;
+  client_id: number;
+  period_index: number;
+  status: "pending" | "scheduled" | "done";
+  scheduled_for: string | null; // ISO date
 }
 
 /** GET /api/public/landing — datos públicos de la página de enlaces (/dq). */

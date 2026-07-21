@@ -105,14 +105,55 @@ export async function enablePush(api: PortalApiClient): Promise<void> {
     endpoint: json.endpoint,
     keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
   });
+  // Activar explícitamente siempre gana al interruptor de apagado.
+  localStorage.removeItem(PUSH_OFF_KEY);
+}
+
+// Interruptor local: el cliente puede APAGAR sus notificaciones desde el portal
+// (y volver a encenderlas). El flag vive en este dispositivo; con él puesto, la
+// resuscripción automática no vuelve a activarlas por su cuenta.
+const PUSH_OFF_KEY = "portal_push_off";
+
+export function isPushOff(): boolean {
+  return localStorage.getItem(PUSH_OFF_KEY) === "1";
+}
+
+/** Estado efectivo del interruptor en ESTE dispositivo. */
+export function pushIsOn(): boolean {
+  return isPushSupported() && Notification.permission === "granted" && !isPushOff();
+}
+
+/** Vuelve a encender las notificaciones (limpia el flag y resuscribe). */
+export async function turnPushOn(api: PortalApiClient): Promise<void> {
+  localStorage.removeItem(PUSH_OFF_KEY);
+  await enablePush(api);
+}
+
+/** Apaga las notificaciones: borra la suscripción del backend y del navegador
+ *  y deja el flag para que la resuscripción automática no las reactive. */
+export async function turnPushOff(api: PortalApiClient): Promise<void> {
+  localStorage.setItem(PUSH_OFF_KEY, "1");
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = reg ? await reg.pushManager.getSubscription() : null;
+    if (sub) {
+      const json = sub.toJSON();
+      if (json.endpoint) await api.pushUnsubscribe(json.endpoint).catch(() => {});
+      await sub.unsubscribe().catch(() => {});
+    }
+    syncAppBadge(0);
+  } catch {
+    /* el flag ya está puesto: no volverá a suscribirse solo */
+  }
 }
 
 /**
  * Si el permiso YA está concedido, reengancha la suscripción en segundo plano
- * (autocura tras borrar la BD o cambiar de dispositivo). Silencioso.
+ * (autocura tras borrar la BD o cambiar de dispositivo). Silencioso. Respeta
+ * el interruptor: apagado a mano → no se reactiva sola.
  */
 export async function resyncPushIfGranted(api: PortalApiClient): Promise<void> {
-  if (!isPushSupported() || Notification.permission !== "granted") return;
+  if (!isPushSupported() || Notification.permission !== "granted" || isPushOff()) return;
   try {
     await enablePush(api);
   } catch {

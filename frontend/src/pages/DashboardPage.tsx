@@ -12,6 +12,7 @@ import {
   Package,
   Sparkles,
   UserPlus,
+  Video,
 } from "lucide-react";
 import { api, keepIfSame, REFRESH_MS } from "../lib/api";
 import type { ClientOut, CoachAlert } from "../types";
@@ -122,17 +123,30 @@ export default function DashboardPage() {
     const acciones = c
       .map(nextAction)
       .filter((a): a is Accion => a !== null);
-    // Falta recurso/producto: viene del centro de alertas (mismo dato).
+    // Falta recurso/producto y videollamadas: vienen del centro de alertas
+    // (mismo dato), cada tipo con su grupo, color e icono propios.
     for (const al of alerts) {
-      if (al.kind !== "missing_products") continue;
       const cli = c.find((x) => x.id === al.client_id);
       if (!cli) continue;
-      acciones.push({
-        client: cli, prio: 3, tone: "#28707C", icon: Package, category: "Falta recurso/producto",
-        title: "Suplemento del plan sin producto en Recursos",
-        detail: al.message,
-        cta: "Abrir Recursos", tab: "planificacion",
-      });
+      if (al.kind === "missing_products") {
+        acciones.push({
+          client: cli, prio: 3, tone: "#28707C", icon: Package, category: "Falta recurso/producto",
+          title: "Suplemento del plan sin producto en Recursos",
+          detail: al.message,
+          cta: "Abrir Recursos", tab: "planificacion",
+        });
+      } else if (al.kind.startsWith("video_call_")) {
+        // Ciclo de la videollamada quincenal (Pro): agendar → mañana → confirmar.
+        acciones.push({
+          client: cli, prio: al.severity === "alta" ? 1 : 3, tone: "#0EA5E9", icon: Video,
+          category: "Videollamada",
+          title: al.kind === "video_call_tomorrow" ? "Videollamada mañana"
+            : al.kind === "video_call_confirm" ? "Confirmar videollamada"
+            : "Agendar videollamada",
+          detail: al.message,
+          cta: al.action, tab: al.tab,
+        });
+      }
     }
     acciones.sort((a, b) => a.prio - b.prio);
     const conAccion = new Set(
