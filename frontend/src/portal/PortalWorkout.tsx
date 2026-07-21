@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Trash2, PlayCircle, Check, Sparkles, CalendarRange } from "lucide-react";
+import { Trash2, PlayCircle, Check, Sparkles, CalendarRange, X } from "lucide-react";
 import type { PlanChanges, PortalBrand, TodaySession, TrainingWeek } from "../types";
 import { usePortalToast } from "./PortalToast";
 import { Loading, localToday } from "./PortalUi";
+import { InlineVideo, isEmbeddable } from "./InlineVideo";
 import { useDismiss } from "../lib/useDismiss";
 import type { portalApi } from "./portalApi";
 
@@ -35,7 +36,13 @@ export function PortalWorkout({ api, brand, periodStatus = null }: {
   const [todayDay, setTodayDay] = useState<string | null>(null);
   const [sets, setSets] = useState<Record<number, SetRow[]>>({});
   const [history, setHistory] = useState<Record<string, HistSession[]>>({});
+  // Vídeo abierto EN la propia pantalla (uno como mucho: abrir otro cierra el
+  // anterior, y cerrar el que está abierto devuelve al cliente a su rutina).
+  const [openVideoId, setOpenVideoId] = useState<number | null>(null);
   const saveTimer = useRef<number | null>(null);
+
+  // Al cambiar de sesión, el vídeo abierto deja de tener contexto: se cierra.
+  useEffect(() => setOpenVideoId(null), [selectedIdx]);
 
   useEffect(() => {
     Promise.all([api.training(), api.today(), api.getDiary(today), api.workoutHistory()]).then(([tr, t, diary, hist]) => {
@@ -292,6 +299,8 @@ export function PortalWorkout({ api, brand, periodStatus = null }: {
           {selected.exercises.map((ex) => {
             const rows = sets[ex.exercise_id] ?? [];
             const doneCount = rows.filter((r) => r.weight_kg != null && r.reps != null).length;
+            const embeddable = isEmbeddable(ex.video_url);
+            const videoOpen = embeddable && openVideoId === ex.exercise_id;
             return (
               <div key={ex.exercise_id} className="portal-card p-4">
                 <div className="flex items-start justify-between gap-2">
@@ -313,9 +322,30 @@ export function PortalWorkout({ api, brand, periodStatus = null }: {
                         <Check size={13} /> {doneCount}/{rows.length}
                       </span>
                     )}
-                    {ex.video_url && (
-                      // Botón VISIBLE (píldora con etiqueta), no un icono suelto:
-                      // el cliente debe ver de un vistazo que el ejercicio tiene vídeo.
+                    {ex.video_url && (embeddable ? (
+                      // Botón azul VISIBLE que abre el vídeo AQUÍ MISMO (sin salir
+                      // de la rutina): otro toque lo cierra y sigue registrando.
+                      <button
+                        type="button"
+                        onClick={() => setOpenVideoId(videoOpen ? null : ex.exercise_id)}
+                        aria-expanded={videoOpen}
+                        aria-label={videoOpen ? `Cerrar vídeo de ${ex.name}` : `Ver vídeo de ${ex.name}`}
+                        className="tap flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1.5 text-[11px] font-semibold"
+                        style={
+                          videoOpen
+                            ? { background: brand.color_secondary, color: "#fff" }
+                            : {
+                                background: `color-mix(in srgb, ${brand.color_secondary} 14%, transparent)`,
+                                color: brand.color_secondary,
+                              }
+                        }
+                      >
+                        {videoOpen ? <X size={14} /> : <PlayCircle size={14} />}
+                        {videoOpen ? "Cerrar" : "Vídeo"}
+                      </button>
+                    ) : (
+                      // Página que no sabemos embeber (ni YouTube/Vimeo ni archivo):
+                      // se abre fuera, como antes.
                       <a
                         href={ex.video_url} target="_blank" rel="noreferrer"
                         aria-label={`Ver vídeo de ${ex.name}`}
@@ -327,9 +357,15 @@ export function PortalWorkout({ api, brand, periodStatus = null }: {
                       >
                         <PlayCircle size={14} /> Vídeo
                       </a>
-                    )}
+                    ))}
                   </div>
                 </div>
+
+                {videoOpen && ex.video_url && (
+                  <div className="mt-3">
+                    <InlineVideo url={ex.video_url} title={ex.name} />
+                  </div>
+                )}
 
                 <div className="mt-3 space-y-1.5">
                   <div className="grid grid-cols-[28px_1fr_1fr_40px] items-center gap-2 px-1 text-[10px] uppercase tracking-wide opacity-40">

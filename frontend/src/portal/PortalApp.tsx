@@ -228,6 +228,9 @@ function WelcomeSetup({ api, accent, secondary, hasTraining = true }: {
     () => isPushSupported() && Notification.permission === "granted"
   );
   const [busy, setBusy] = useState(false);
+  // Descartar a mano exige CONFIRMAR: una vez oculto no vuelve a aparecer
+  // (si completa los dos pasos, en cambio, desaparece solo sin preguntar).
+  const [confirming, setConfirming] = useState(false);
 
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
   const installed = window.matchMedia("(display-mode: standalone)").matches
@@ -332,9 +335,39 @@ function WelcomeSetup({ api, accent, secondary, hasTraining = true }: {
           )}
         </Step>
 
-        <button onClick={done} className="tap flex items-center gap-1 text-[11px] font-medium opacity-50 hover:opacity-80">
-          <X size={12} /> No volver a mostrar
-        </button>
+        {confirming ? (
+          <div
+            className="rounded-xl border p-2.5"
+            style={{ borderColor: `color-mix(in srgb, ${accent} 35%, transparent)` }}
+          >
+            <p className="text-[11px] font-semibold">¿Seguro que quieres ocultarlo?</p>
+            <p className="mt-0.5 text-[11px] opacity-60">
+              Este aviso no volverá a aparecer, ni aunque te falte algún paso.
+            </p>
+            <div className="mt-2 flex gap-2">
+              <button
+                onClick={done}
+                className="tap rounded-lg px-3 py-1.5 text-[11px] font-semibold text-white"
+                style={{ background: accent }}
+              >
+                Sí, ocultar
+              </button>
+              <button
+                onClick={() => setConfirming(false)}
+                className="tap rounded-lg px-3 py-1.5 text-[11px] font-medium opacity-60 hover:opacity-90"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setConfirming(true)}
+            className="tap flex items-center gap-1 text-[11px] font-medium opacity-50 hover:opacity-80"
+          >
+            <X size={12} /> No volver a mostrar
+          </button>
+        )}
       </div>
     </details>
   );
