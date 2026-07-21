@@ -460,13 +460,16 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 sm:items-center">
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="Nuevo cliente"
-        className="card animate-rise w-full max-w-md p-6"
+        // max-h + scroll propio: en móvil/pantallas cortas el formulario es más
+        // alto que la ventana; sin esto se cortaba y no se llegaba a "Crear
+        // cliente". Ahora el modal se desplaza dentro y el botón siempre alcanza.
+        className="card animate-rise my-auto max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto p-6"
         style={{ background: "var(--surface-raised)" }}
       >
         {!created ? (

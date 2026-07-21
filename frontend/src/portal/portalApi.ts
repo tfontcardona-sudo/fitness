@@ -123,6 +123,9 @@ export function portalApi(token: string) {
       files.forEach((f) => fd.append("files", f));
       return req<unknown[]>("POST", `${base}/close/photos?kind=${kind}`, fd);
     },
+    // El cliente confirma que envió sus fotos de progreso al coach (apaga el
+    // recordatorio del portal y del push).
+    confirmPhotos: () => req<{ confirmed: boolean }>("POST", `${base}/photos-confirmed`),
     feedback: () => req<FeedbackDocOut[]>("GET", `${base}/feedback`),
     changeRequest: (message: string) =>
       req<ChangeRequestOut>("POST", `${base}/change-request`, { message }),

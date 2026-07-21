@@ -291,6 +291,8 @@ function ProductsManager() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
   const [toDelete, setToDelete] = useState<RecommendedProductOut | null>(null);
+  // Buscador del catálogo (útil cuando hay muchos productos que gestionar).
+  const [q, setQ] = useState("");
 
   const [loadFailed, setLoadFailed] = useState(false);
   const load = useCallback(() => {
@@ -430,6 +432,18 @@ function ProductsManager() {
 
   if (products === null) return <PageLoader />;
 
+  // Filtro por texto (nombre/categoría/enlace). Con búsqueda activa se ocultan
+  // las flechas de reordenar (moverían el índice equivocado de la lista filtrada).
+  const searching = q.trim().length > 0;
+  const needle = q.trim().toLowerCase();
+  const visible = searching
+    ? products.filter((p) =>
+        p.title.toLowerCase().includes(needle)
+        || (p.category ?? "").toLowerCase().includes(needle)
+        || (p.description ?? "").toLowerCase().includes(needle)
+        || p.url.toLowerCase().includes(needle))
+    : products;
+
   return (
     <div className="space-y-4">
       {loadFailed && (
@@ -448,9 +462,18 @@ function ProductsManager() {
           saving={saving}
         />
       ) : (
-        <button className="btn btn-primary" onClick={startNew}>
-          <Plus size={16} /> Nuevo producto
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <button className="btn btn-primary" onClick={startNew}>
+            <Plus size={16} /> Nuevo producto
+          </button>
+          {products.length > 4 && (
+            <div className="relative min-w-48 flex-1">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+              <input className="input !py-2 !pl-9 text-sm" placeholder="Buscar producto…"
+                value={q} onChange={(e) => setQ(e.target.value)} />
+            </div>
+          )}
+        </div>
       )}
 
       {products.length === 0 && !draft ? (
@@ -463,9 +486,11 @@ function ProductsManager() {
             </button>
           }
         />
+      ) : visible.length === 0 ? (
+        <EmptyState title="Sin resultados" hint="Prueba con otro término de búsqueda." />
       ) : (
         <ul className="space-y-2.5">
-          {products.map((p, i) => {
+          {visible.map((p, i) => {
             const cat = CATS.find((c) => c.id === p.category) ?? CATS[2];
             return (
               <li
@@ -473,16 +498,20 @@ function ProductsManager() {
                 className="card flex items-center gap-3 p-3"
                 style={{ opacity: p.active ? 1 : 0.55 }}
               >
-                <div className="flex flex-col text-zinc-500">
-                  <button
-                    aria-label="Subir"
-                    disabled={i === 0}
-                    onClick={() => move(i, -1)}
-                    className="tap -my-0.5 disabled:opacity-25"
-                  >
-                    <GripVertical size={14} className="rotate-90" />
-                  </button>
-                </div>
+                {/* Reordenar solo sin búsqueda: con la lista filtrada el índice
+                    no corresponde al del catálogo completo. */}
+                {!searching && (
+                  <div className="flex flex-col text-zinc-500">
+                    <button
+                      aria-label="Subir"
+                      disabled={i === 0}
+                      onClick={() => move(i, -1)}
+                      className="tap -my-0.5 disabled:opacity-25"
+                    >
+                      <GripVertical size={14} className="rotate-90" />
+                    </button>
+                  </div>
+                )}
                 <ProductThumb src={p.image_url} icon={cat.icon} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">

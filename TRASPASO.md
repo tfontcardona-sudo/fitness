@@ -1501,6 +1501,40 @@ exportados (los seeds crean el admin y la fixture de auth funciona) y SIN
 preexistentes" del baseline eran TODOS de entorno. Comando:
 `DATABASE_URL=… ADMIN_1_USER=coach1 ADMIN_1_PASS=testpass1234 SCHEDULER_ENABLED=false python3 -m pytest`.
 
+## 10.x Tramo 2026-07-21 (2ª) — Modal, fondo de /planes, buscador de productos, recordatorio de fotos y más avisos al coach
+
+- **FIX modal "Nuevo cliente"**: no tenía altura máxima ni scroll → en pantallas
+  cortas se cortaba y no se llegaba a "Crear cliente". Ahora `max-h-[calc(100dvh-2rem)]
+  overflow-y-auto` + contenedor con scroll y alineación arriba (`items-start`).
+- **Fondo de /planes limpio como /dq**: se quitó el velo crema que lavaba la
+  foto; ahora el mismo tratamiento oscuro de la landing (`${bg}55→CC→F2`), foto
+  bien visible, cabecera y pie en BLANCO con sombra, checks en verde claro. Las
+  tarjetas siguen blancas (heredan texto oscuro del root) y resaltan.
+- **Buscador de productos**: en la landing pública `/dq` (input translúcido,
+  aparece con >4 productos) y en el gestor de productos de Recursos (con >4;
+  oculta las flechas de reordenar mientras se filtra, para no mover el índice
+  equivocado).
+- **Recordatorio de FOTOS de progreso** (NUEVO ciclo):
+  - Modelo `Period.closing_submitted_at` + `Period.photos_confirmed` + migración
+    **0025** (idempotente). Al cerrar la revisión se sella la hora y
+    `photos_confirmed=False`.
+  - `push.photos_pending(db, client, now, min_minutes)`: la última revisión
+    cerrada/analizada sin confirmar. Push a partir de ~15 min (`min_minutes=15`)
+    y luego cada 3 h (cadencia normal del job); el banner del portal se muestra
+    ya (`min_minutes=0`). Integrado en `pending_for_client` (nueva clave
+    `photos`) y en el texto del recordatorio.
+  - Portal: `PortalState.photos_pending` → banner `PhotosReminder` (encima de
+    todo, en cualquier pestaña): "¿Ya enviaste tus fotos?" → **Sí** llama a
+    `POST /p/{token}/photos-confirmed` y se apaga; **Todavía no** lo pliega esta
+    sesión y el push sigue recordándolo cada 3 h.
+- **Más avisos al coach** ("notificar de todo lo que recibe"): las **peticiones
+  de cambio** del cliente (portal → coach) ahora generan alerta `change_request`
+  (alta), visible en la campana (grupo Seguimiento), en el resumen push del
+  coach y en el panel "Qué toca hacer" ("Petición del cliente"). El resto del
+  sistema de alertas ya derivaba del estado y persistía hasta resolverse.
+- Verificación: suite completa en verde desde BD limpia (migración 0001→0025);
+  nuevo `test_photos_reminder_cycle`; `tsc` + `vite build` OK.
+
 ## 11. Mapa rápido de archivos tocados en el último tramo
 
 **Pulido §8.2 (2026-07-04)**
