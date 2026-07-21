@@ -15,7 +15,7 @@ import {
   Video,
 } from "lucide-react";
 import { api, keepIfSame, REFRESH_MS } from "../lib/api";
-import type { ClientOut, CoachAlert } from "../types";
+import type { ClientOut, CoachAlert, VideoCallAgendaItem } from "../types";
 import { PageLoader, StatusBadge } from "../components/ui";
 import { goalReviewDue, initials, relativeDays } from "../lib/format";
 import { pkg } from "../lib/packages";
@@ -100,6 +100,7 @@ function nextAction(c: ClientOut): Accion | null {
 export default function DashboardPage() {
   const [clients, setClients] = useState<ClientOut[] | null>(null);
   const [alerts, setAlerts] = useState<CoachAlert[]>([]);
+  const [agenda, setAgenda] = useState<VideoCallAgendaItem[]>([]);
   // Un fallo de red NO se disfraza de "Todo al día": banner explícito.
   const [loadFailed, setLoadFailed] = useState(false);
 
@@ -111,6 +112,10 @@ export default function DashboardPage() {
       // Alertas de recursos (suplemento pautado sin producto) → acción propia.
       api.listAlerts()
         .then((r) => setAlerts((prev) => keepIfSame(prev, r.alerts)))
+        .catch(() => {});
+      // Agenda de videollamadas agendadas (con Meet).
+      api.videoCallsAgenda()
+        .then((r) => setAgenda((prev) => keepIfSame(prev, r.calls)))
         .catch(() => {});
     };
     load();
@@ -141,13 +146,16 @@ export default function DashboardPage() {
           cta: "Abrir Recursos", tab: "planificacion", to: "/recursos",
         });
       } else if (al.kind.startsWith("video_call_")) {
-        // Ciclo de la videollamada quincenal (Pro): agendar → mañana → confirmar.
+        // Videollamada quincenal (Pro): propuesta → aceptar/modificar → agendada
+        // → mañana → confirmar. El cliente propone; el coach acepta o modifica.
         acciones.push({
           client: cli, prio: al.severity === "alta" ? 1 : 3, tone: "#0EA5E9", icon: Video,
           category: "Videollamada",
-          title: al.kind === "video_call_tomorrow" ? "Videollamada mañana"
+          title: al.kind === "video_call_proposed" ? "Propuesta de videollamada"
+            : al.kind === "video_call_tomorrow" ? "Videollamada mañana"
             : al.kind === "video_call_confirm" ? "Confirmar videollamada"
-            : "Agendar videollamada",
+            : al.kind === "video_call_manual" ? "Agendar videollamada"
+            : "Videollamada",
           detail: al.message,
           cta: al.action, tab: al.tab,
         });
@@ -230,6 +238,43 @@ export default function DashboardPage() {
           </div>
         )}
       </section>
+
+      {/* AGENDA DE VIDEOLLAMADAS — las agendadas (con Meet), hasta realizarlas */}
+      {agenda.length > 0 && (
+        <section className="mt-8">
+          <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-zinc-200">
+            <span aria-hidden className="h-3.5 w-1 rounded-full" style={{ background: "#0EA5E9" }} />
+            <Video size={15} style={{ color: "#0EA5E9" }} /> Videollamadas agendadas
+          </h2>
+          <div className="card p-2">
+            <ul className="divide-y" style={{ borderColor: "var(--line)" }}>
+              {agenda.map((v) => (
+                <li key={v.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
+                  <Link to={`/clientes/${v.client_id}?tab=feedback`}
+                    className="flex min-w-0 items-center gap-2.5 hover:opacity-80">
+                    <Avatar name={v.client_name} size={30} />
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-zinc-200">{v.client_name}</span>
+                      <span className="block truncate text-xs capitalize text-zinc-500">
+                        {v.when_label}{v.duration_min ? ` · ${v.duration_min} min` : ""}
+                        {v.is_past ? " · pendiente de confirmar" : ""}
+                      </span>
+                    </span>
+                  </Link>
+                  {v.meet_url && (
+                    <a href={v.meet_url} target="_blank" rel="noopener noreferrer"
+                      title="Unirme a Google Meet" aria-label="Unirme a Google Meet"
+                      className="tap flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+                      style={{ background: "color-mix(in srgb, #0EA5E9 14%, transparent)", color: "#0EA5E9" }}>
+                      <Video size={17} />
+                    </a>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      )}
 
       {/* EN ESPERA — informativo, sin urgencia (azul: información) */}
       {enEspera.length > 0 && (

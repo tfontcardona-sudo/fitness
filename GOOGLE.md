@@ -10,19 +10,28 @@ agendar es **1 clic** desde la ficha del cliente.
 
 ---
 
-## Qué consigues al conectarlo
+## Cómo funciona el flujo
 
-- Al **agendar** una videollamada (eliges día, hora y duración) se crea un evento
-  en **tu Google Calendar** con **enlace de Meet** automático.
-- El **cliente recibe la invitación** en su email/Google Calendar, con los
-  **recordatorios nativos de Google** (email 24 h antes + avisos 60 y 10 min antes).
-- Además, la app le manda un **email con el enlace de Meet** y un **push** en su
-  portal, y le muestra un botón **"Unirme"** en su pantalla de inicio.
-- Reprogramar o cancelar desde la web **actualiza el evento en Google** y reavisa
-  a ambos.
+1. El cliente **envía su revisión quincenal** → en su **portal** le aparece un
+   formulario para **proponer día y hora** de la videollamada.
+2. Tú lo ves en la **agenda del Panel** y en la ficha del cliente (pestaña
+   **Feedback**): puedes **Aceptar** o **Modificar**.
+   - **Aceptar** → se crea el evento en **tu Google Calendar** con **enlace de
+     Meet**, se invita al cliente por email y se le manda el enlace.
+   - **Modificar** → se abre **WhatsApp** para acordar otra hora; queda
+     *pendiente de agendar a mano* y, cuando lo acordáis, escribes el día/hora y
+     se crea igual.
+3. La videollamada queda en tu **agenda** (día, hora, cliente y un **icono de
+   Meet** para unirte) hasta que la marcas como realizada.
 
-Notificaciones "para que no pase por alto", en varias capas: Google (nativo) +
-email de la app + push del portal + tarjeta con botón "Unirme".
+### Notificaciones "para que no pase por alto"
+
+- **Invitación de Google Calendar** al cliente con recordatorios nativos
+  (email 24 h antes + avisos 60 y 10 min antes).
+- **Email de la app** con el enlace de Meet al agendar.
+- **Push** en el portal del cliente + botón **"Unirme"**.
+- **Recordatorio el día antes y 1 hora antes**, a ti y al cliente.
+- Reprogramar/cancelar desde la web **actualiza el evento en Google** y reavisa.
 
 ---
 
@@ -72,13 +81,13 @@ queda activa.
 
 ### 5. Conectar tu cuenta desde la web
 
-1. Entra en la web del coach → **Recursos** (Ajustes).
+1. Entra en la web del coach → **Recursos → Página de enlaces**.
 2. Pulsa **"Conectar con Google Calendar / Meet"**.
 3. Acepta los permisos en Google. Vuelves a la web con "Conectado como tu-email".
 
-Listo. A partir de aquí, en la ficha de un cliente Pro (pestaña **Feedback**),
-al tocar la videollamada verás el selector de día/hora y el botón **"Crear en
-Google Meet"**.
+Listo. A partir de aquí, cuando un cliente Pro proponga su videollamada desde el
+portal, te saldrá en la **agenda del Panel** y en su ficha (pestaña **Feedback**)
+con los botones **Aceptar** / **Modificar**.
 
 ---
 

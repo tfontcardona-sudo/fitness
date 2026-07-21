@@ -132,18 +132,16 @@ function pickVoice(fullName: string, extra = 0): Voice {
   return VOICES[(s + e) % VOICES.length];
 }
 
-/** Mensaje para PROPONER la videollamada de revisión (paquete Pro): saludo +
- *  propuesta directa. Con enlace de reservas (Google Calendar/Meet, Calendly…)
- *  el cliente elige día y hora él mismo; sin él, se acuerda en la conversación. */
-export function videoCallMessage(fullName: string, meetUrl?: string | null): string {
-  const cita = meetUrl
-    ? `Elige el día y la hora que mejor te vengan desde este enlace de reservas:\n${meetUrl}`
-    : "¿Qué día y hora te vienen bien esta semana? Te paso el enlace en cuanto lo cerremos.";
+/** Mensaje para MODIFICAR la propuesta de videollamada del cliente: se le pide
+ *  acordar otro día/hora por el chat (el coach lo agenda luego a mano). */
+export function videoCallModifyMessage(fullName: string, proposedWhen?: string): string {
+  const ref = proposedWhen
+    ? `Sobre la videollamada que propusiste (${proposedWhen}): necesito moverla un poco.`
+    : "Sobre la videollamada de revisión que propusiste: necesito moverla un poco.";
   return [
     `Hola ${waFirstName(fullName)},`,
-    "Como parte de tu acompañamiento, vamos a hacer una videollamada de revisión "
-    + "para repasar tu progreso, resolver dudas y ajustar lo que haga falta.",
-    cita,
+    ref,
+    "¿Qué otro día y hora te vienen bien? En cuanto lo cerremos te llega la invitación con el enlace de Meet.",
     "Un saludo.",
   ].join("\n\n");
 }

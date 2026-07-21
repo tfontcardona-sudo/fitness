@@ -268,6 +268,102 @@ def notify_video_call_scheduled(db: Session, client: Client, when_label: str,
     return send_to_client(db, client, payload)
 
 
+def notify_coach_video_call_proposed(db: Session, client: Client, when_label: str) -> int:
+    """Avisa al COACH (push) de que un cliente propuso día/hora de videollamada.
+    Al tocar, abre el panel del coach. Silencioso sin push/dispositivos."""
+    if not push_configured():
+        return 0
+    base = settings.public_base_url.rstrip("/")
+    name = (client.full_name or "Un cliente").split()[0] if (client.full_name or "").strip() else "Un cliente"
+    payload = {
+        "title": "Videollamada propuesta",
+        "body": f"{name} propuso videollamada: {when_label}. Acéptala o modifícala.",
+        "count": 1,
+        "url": f"{base}/clientes/{client.id}",
+        "tag": "dq-vc-propuesta",
+    }
+    return send_to_coach(db, payload)
+
+
+def run_video_call_reminders(db: Session, now: datetime | None = None) -> dict:
+    """Recordatorios de las videollamadas AGENDADAS, a coach y cliente:
+      - el DÍA ANTES (una vez, en horario activo),
+      - 1 H ANTES el mismo día (una vez).
+    Corre cada ~15 min (scheduler). Dedup por AuditLog (evento vc_reminder + tag).
+    """
+    if not push_configured():
+        return {"skipped": "push sin configurar"}
+    from datetime import timedelta
+
+    from app.models import AuditLog, VideoCall
+
+    now_utc = now or datetime.now(timezone.utc)
+    tz = ZoneInfo(settings.tz)
+    now_local = now_utc.astimezone(tz)
+    today = now_local.date()
+
+    brand = portal_svc.brand_payload(db)
+    brand_name = brand.get("name", "Tu asesoría")
+
+    def _already(call_id: int, tag: str) -> bool:
+        return bool(db.scalar(select(AuditLog.id).where(
+            AuditLog.entity == "video_call", AuditLog.entity_id == call_id,
+            AuditLog.event == "vc_reminder",
+            AuditLog.detail_json["tag"].astext == tag).limit(1)))
+
+    calls = db.scalars(select(VideoCall).where(
+        VideoCall.status == "scheduled",
+        VideoCall.scheduled_at.is_not(None))).all()
+    sent = 0
+    for vc in calls:
+        client = db.get(Client, vc.client_id)
+        if client is None or client.status == "inactive":
+            continue
+        sched_local = vc.scheduled_at.astimezone(tz)
+        delta = sched_local - now_local
+        hora = sched_local.strftime("%H:%M")
+        first = (client.full_name or "").split()[0] if (client.full_name or "").strip() else "Cliente"
+
+        # --- El día antes (fecha == hoy+1), una vez, en horario activo ---------
+        if (vc.scheduled_for == today + timedelta(days=1)
+                and _within_active_hours(now_local)):
+            tag = f"day:{vc.scheduled_for.isoformat()}"
+            if not _already(vc.id, tag):
+                sent += _send_videocall_reminder(
+                    db, client, vc, brand_name,
+                    client_body=f"Mañana a las {hora} tienes tu videollamada de revisión. ¡Te espero!",
+                    coach_body=f"{first}: videollamada MAÑANA a las {hora}.")
+                log_event(db, "video_call", vc.id, "vc_reminder", {"tag": tag})
+
+        # --- 1 hora antes (falta entre 45 y 75 min), una vez ------------------
+        elif timedelta(minutes=45) <= delta <= timedelta(minutes=75):
+            tag = f"hour:{sched_local.strftime('%Y%m%d%H')}"
+            if not _already(vc.id, tag):
+                sent += _send_videocall_reminder(
+                    db, client, vc, brand_name,
+                    client_body=f"En 1 hora (a las {hora}) es tu videollamada de revisión. ¡Prepárate!",
+                    coach_body=f"{first}: videollamada EN 1 HORA (a las {hora}).")
+                log_event(db, "video_call", vc.id, "vc_reminder", {"tag": tag})
+
+    db.commit()
+    return {"reminders": sent}
+
+
+def _send_videocall_reminder(db: Session, client: Client, vc, brand_name: str,
+                             *, client_body: str, coach_body: str) -> int:
+    """Manda el recordatorio de una videollamada al cliente y al coach (a Meet)."""
+    base = settings.public_base_url.rstrip("/")
+    n = send_to_client(db, client, {
+        "title": brand_name, "body": client_body, "count": 1,
+        "url": vc.meet_url or f"{base}/p/{client.portal_token}", "tag": "dq-videollamada",
+    })
+    n += send_to_coach(db, {
+        "title": "Videollamada", "body": coach_body, "count": 1,
+        "url": vc.meet_url or f"{base}/clientes/{client.id}", "tag": "dq-vc-coach",
+    })
+    return n
+
+
 # --------------------------------------------------------------- envío ----
 
 def _send_to_subs(db: Session, subs: list[PushSubscription], payload: dict, who: str) -> int:
@@ -360,49 +456,9 @@ def run_push_reminders(db: Session, now: datetime | None = None) -> dict:
             log_event(db, "client", client.id, "push_reminder_sent",
                       {"pending": pending, "devices": ok})
 
-    # Recordatorio de VIDEOLLAMADA (Pro): si la tiene reservada para MAÑANA,
-    # UN aviso al día. Se evalúa en TODAS las franjas (si el coach apunta la
-    # fecha por la tarde, el aviso sale igualmente esa tarde); el duplicado se
-    # evita con el registro de auditoría: ya avisado para esa fecha → no repite.
-    from datetime import timedelta
-
-    from app.models import AuditLog, VideoCall
-
-    calls = db.scalars(select(VideoCall).where(
-        VideoCall.status == "scheduled",
-        VideoCall.scheduled_for == today + timedelta(days=1),
-    )).all()
-    for vc in calls:
-        client = db.get(Client, vc.client_id)
-        if client is None or client.status == "inactive":
-            continue
-        already = db.scalar(
-            select(AuditLog.id).where(
-                AuditLog.entity == "client",
-                AuditLog.entity_id == client.id,
-                AuditLog.event == "push_videocall_reminder",
-                AuditLog.detail_json["date"].astext == vc.scheduled_for.isoformat(),
-            ).limit(1)
-        )
-        if already:
-            continue
-        # Con hora concreta (agendado por Google Meet) el aviso la incluye y
-        # enlaza directo a Meet; si no, al portal.
-        hora = ""
-        if vc.scheduled_at is not None:
-            hora = " a las " + vc.scheduled_at.astimezone(ZoneInfo(settings.tz)).strftime("%H:%M")
-        payload = {
-            "title": brand.get("name", "Tu asesoría"),
-            "body": f"Recordatorio: mañana{hora} tienes la videollamada con tu coach. ¡Te espero!",
-            "count": 1,
-            "url": vc.meet_url or f"{base}/p/{client.portal_token}",
-            "tag": "dq-videollamada",
-        }
-        ok = send_to_client(db, client, payload)
-        if ok:
-            log_event(db, "client", client.id, "push_videocall_reminder",
-                      {"date": vc.scheduled_for.isoformat(), "devices": ok})
-
+    # Los recordatorios de VIDEOLLAMADA (día antes + 1 h antes, a coach y cliente)
+    # los gestiona run_video_call_reminders en su propio job (cada 15 min), porque
+    # el "1 h antes" necesita granularidad fina que este ciclo de 3 h no da.
     db.commit()
     summary = {"clients_notified": notified, "devices": devices,
                "subscribed_clients": len(client_ids)}

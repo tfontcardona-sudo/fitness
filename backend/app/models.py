@@ -426,8 +426,9 @@ class VideoCall(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
     period_index: Mapped[int] = mapped_column(Integer)
-    # pending (propuesta enviada, sin fecha) | scheduled (fecha apuntada) | done
-    status: Mapped[str] = mapped_column(String(12), default="pending", nullable=False)
+    # proposed (cliente propuso día/hora) | pending_manual (a agendar a mano) |
+    # scheduled (agendada con Meet) | done. "pending" queda por compatibilidad.
+    status: Mapped[str] = mapped_column(String(20), default="proposed", nullable=False)
     # Fecha (día) de la cita. Se mantiene aunque haya integración con Google:
     # los recordatorios/alertas existentes razonan por día y se deriva de
     # scheduled_at cuando la cita se crea con hora concreta.

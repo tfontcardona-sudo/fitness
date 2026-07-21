@@ -405,30 +405,38 @@ cd backend && python -m pytest tests/ -q
    ensucian `clients` con `@example.com` en cada `pytest`.
 6. **Subir el PDF de ejemplo de planificación** y ajustar el prompt/estructura del
    plan para que la IA lo replique (estructura, contenido, colores).
-7. ✅ **Google Calendar / Meet en las videollamadas Pro** (guía: `GOOGLE.md`).
-   El coach conecta su cuenta de Google UNA vez en **Recursos → Página de enlaces**
-   (OAuth) y, en la ficha de un cliente Pro (pestaña **Feedback**), agenda con
-   **1 clic**: elige día/hora/duración → se crea el evento en Google Calendar con
-   **enlace de Meet**, se invita al cliente por email y ambos reciben los
-   recordatorios nativos de Google. Notificaciones multicapa "para que no pase por
-   alto": invitación de Google + email de la app (`video_call_scheduled`) + push
-   del portal + recordatorio por email el día antes (`video_call_reminder`, job
-   diario) + tarjeta **"Unirme"** en el portal del cliente. Reprogramar/cancelar
-   desde la web sincroniza el evento en Google. Archivos clave:
+7. ✅ **Videollamadas Pro con Google Calendar / Meet** (guía: `GOOGLE.md`).
+   Flujo: el coach conecta su Google UNA vez en **Recursos → Página de enlaces**
+   (OAuth). Al **enviar la revisión quincenal**, al cliente Pro le aparece en su
+   **portal** un formulario para **PROPONER día y hora**. El coach lo ve en su
+   **agenda del Panel** y en la pestaña **Feedback**: puede **ACEPTAR** (crea el
+   evento en Google Calendar con **Meet**, invita al cliente por email y le manda
+   el enlace) o **MODIFICAR** (abre WhatsApp para acordar otra hora → queda
+   *pendiente de agendar a mano* → el coach escribe el día/hora → mismo resultado).
+   Estados de `VideoCall`: `proposed → accept|modify → scheduled|pending_manual →
+   done`. Recordatorios multicapa (coach y cliente): invitación nativa de Google +
+   email de la app (`video_call_scheduled`) + push del portal + **recordatorio el
+   día antes y 1 h antes** (`push.run_video_call_reminders`, job cada 15 min) +
+   email día antes (`video_call_reminder`, job diario) + tarjeta **"Unirme"** en
+   el portal. Reprogramar/cancelar sincroniza el evento en Google.
    - Backend: `services/google_calendar.py` (OAuth + Calendar/Meet vía `httpx`,
      sin librerías pesadas de Google), `routers/google_oauth.py`
-     (`/api/google/status|oauth/start|oauth/callback|disconnect`), endpoint
-     `POST /api/clients/{id}/video-calls/schedule-meet`, modelo `GoogleCredential`
-     (fila única con el `refresh_token`) + columnas nuevas en `video_calls`
-     (`scheduled_at`, `duration_min`, `meet_url`, `google_event_id`,
-     `google_html_link`), migración `0025`. Config: `GOOGLE_CLIENT_ID/SECRET`,
+     (`/api/google/status|oauth/start|oauth/callback|disconnect`). Coach:
+     `POST /clients/{id}/video-calls/{call_id}/accept|modify`,
+     `.../schedule-meet` (a mano), `GET /api/video-calls/agenda` (agenda del
+     Panel). Portal (público): `GET|POST /api/p/{token}/video-call` (estado +
+     proponer). Modelo `GoogleCredential` (fila única con `refresh_token`) +
+     columnas en `video_calls` (`scheduled_at`, `duration_min`, `meet_url`,
+     `google_event_id`, `google_html_link`); migraciones `0025` (columnas) y
+     `0026` (status a VARCHAR(20)). Config: `GOOGLE_CLIENT_ID/SECRET`,
      `GOOGLE_CALENDAR_ID` (gate `settings.google_enabled`, como Stripe).
-   - Frontend: botón "Conectar con Google" en `RecursosPage`, selector de
-     día/hora + "Crear en Google Meet" en `ClientFeedbackTab` (`VideoCallCycle`),
-     banner "Unirme" en el portal (`PortalApp` → `GET /api/p/{token}/video-call`).
-   - Sin claves de Google en el `.env`, la integración queda desactivada y sigue
-     el flujo manual (enlace de reservas por WhatsApp). Tests: `test_google_calendar.py`
-     + `test_video_calls.py` (agendado con `gcal` mockeado).
+   - Frontend: "Conectar con Google" en `RecursosPage`; en el portal
+     (`PortalApp` → `VideoCallBanner`) el cliente propone/ve estado/"Unirme";
+     en `ClientFeedbackTab` (`VideoCallCycle`) el coach acepta/modifica/agenda a
+     mano; agenda de videollamadas en `DashboardPage`.
+   - Sin claves de Google en el `.env`, la integración queda desactivada (aceptar
+     pide conectar Google). Tests: `test_google_calendar.py` (servicio) +
+     `test_video_calls.py` (propuesta/aceptar/modificar/agendar, `gcal` mockeado).
 
 ---
 

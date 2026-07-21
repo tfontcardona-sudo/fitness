@@ -323,6 +323,15 @@ def portal_today(
     return TodayView(**portal_svc.build_today_view(db, client, portal_svc.today_local()))
 
 
+def _last_review_period(db: Session, client_id: int) -> Period | None:
+    """Última revisión CERRADA/ANALIZADA (dispara el agendado de videollamada)."""
+    return db.scalar(
+        select(Period).where(Period.client_id == client_id,
+                             Period.status.in_(("closed", "analyzed")))
+        .order_by(Period.period_index.desc()).limit(1)
+    )
+
+
 @router.get("/{token}/video-call", response_model=dict)
 @limiter.limit("120/minute")
 def portal_video_call(
@@ -330,30 +339,120 @@ def portal_video_call(
     client: Client = Depends(get_client_by_token),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Próxima videollamada de revisión AGENDADA (con hora y enlace de Meet) para
-    la tarjeta "Unirme" del portal. Devuelve {call: null} si no hay ninguna."""
+    """Estado de la videollamada de revisión para el portal (solo Pro):
+      - scheduled: agendada (tarjeta "Unirme" con enlace de Meet)
+      - book:      toca agendar (formulario día/hora para PROPONER al coach)
+      - proposed:  propuesta enviada, esperando confirmación del coach
+      - pending_manual: el coach la está agendando (te escribirá por WhatsApp)
+      - none:      nada que hacer
+    """
     from app.models import VideoCall
 
+    if client.package_tier != "pro":
+        return {"state": "none"}
     today = portal_svc.today_local()
-    vc = db.scalar(
-        select(VideoCall)
-        .where(
+
+    # Prioridad: una llamada AGENDADA y futura → tarjeta "Unirme".
+    sched = db.scalar(
+        select(VideoCall).where(
             VideoCall.client_id == client.id,
             VideoCall.status == "scheduled",
             VideoCall.scheduled_for.is_not(None),
             VideoCall.scheduled_for >= today,
-        )
-        .order_by(VideoCall.scheduled_for.asc())
-        .limit(1)
+        ).order_by(VideoCall.scheduled_for.asc()).limit(1)
     )
-    if vc is None or not vc.scheduled_at:
-        return {"call": None}
-    return {"call": {
-        "scheduled_at": vc.scheduled_at.isoformat(),
-        "when_label": portal_svc.format_when_es(vc.scheduled_at),
-        "duration_min": vc.duration_min,
-        "meet_url": vc.meet_url,
-        "is_today": vc.scheduled_for == today,
+    if sched is not None and sched.scheduled_at:
+        return {"state": "scheduled", "call": {
+            "scheduled_at": sched.scheduled_at.isoformat(),
+            "when_label": portal_svc.format_when_es(sched.scheduled_at),
+            "duration_min": sched.duration_min,
+            "meet_url": sched.meet_url,
+            "is_today": sched.scheduled_for == today,
+        }}
+
+    # Si no, según la última revisión y su videollamada.
+    last_review = _last_review_period(db, client.id)
+    if last_review is None:
+        return {"state": "none"}
+    vc = db.scalar(select(VideoCall).where(
+        VideoCall.client_id == client.id,
+        VideoCall.period_index == last_review.period_index))
+    if vc is None:
+        return {"state": "book", "period_index": last_review.period_index}
+    if vc.status == "proposed" and vc.scheduled_at:
+        return {"state": "proposed", "call": {
+            "scheduled_at": vc.scheduled_at.isoformat(),
+            "when_label": portal_svc.format_when_es(vc.scheduled_at),
+        }}
+    if vc.status == "pending_manual":
+        return {"state": "pending_manual"}
+    if vc.status in ("proposed",):  # propuesta sin fecha (no debería): reofrecer
+        return {"state": "book", "period_index": last_review.period_index}
+    return {"state": "none"}
+
+
+class VideoCallProposeIn(BaseModel):
+    start_at: datetime  # día y hora que propone el cliente (zona del negocio)
+
+
+@router.post("/{token}/video-call", response_model=dict)
+@limiter.limit("20/minute")
+def portal_video_call_propose(
+    request: Request,
+    body: VideoCallProposeIn,
+    client: Client = Depends(get_client_by_token),
+    db: Session = Depends(get_db),
+) -> dict:
+    """El cliente PROPONE día y hora para su videollamada de revisión. Queda a la
+    espera de que el coach la acepte o la modifique. Avisa al coach por push."""
+    from zoneinfo import ZoneInfo
+
+    from app.models import VideoCall
+
+    if client.package_tier != "pro":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "No disponible en tu plan")
+    last_review = _last_review_period(db, client.id)
+    if last_review is None:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "Aún no hay una revisión para agendar")
+
+    tz = ZoneInfo(settings.tz)
+    raw = body.start_at
+    start_aware = raw.replace(tzinfo=tz) if raw.tzinfo is None else raw.astimezone(tz)
+    if start_aware <= datetime.now(tz):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "Elige un día y una hora futuros")
+
+    vc = db.scalar(select(VideoCall).where(
+        VideoCall.client_id == client.id,
+        VideoCall.period_index == last_review.period_index))
+    if vc is not None and vc.status in ("scheduled", "done"):
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "Tu videollamada ya está agendada")
+    if vc is not None and vc.status == "pending_manual":
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "Tu coach está agendando la videollamada contigo")
+    if vc is None:
+        vc = VideoCall(client_id=client.id, period_index=last_review.period_index)
+        db.add(vc)
+    vc.status = "proposed"
+    vc.scheduled_at = start_aware
+    vc.scheduled_for = start_aware.date()
+    vc.duration_min = None
+    vc.meet_url = None
+    vc.google_event_id = None
+    vc.google_html_link = None
+    log_event(db, "client", client.id, "video_call_client_proposed",
+              {"period_index": last_review.period_index, "at": start_aware.isoformat()})
+    try:
+        push_svc.notify_coach_video_call_proposed(
+            db, client, portal_svc.format_when_es(start_aware))
+    except Exception:  # el push nunca debe tumbar la propuesta
+        pass
+    db.commit()
+    return {"state": "proposed", "call": {
+        "scheduled_at": start_aware.isoformat(),
+        "when_label": portal_svc.format_when_es(start_aware),
     }}
 
 

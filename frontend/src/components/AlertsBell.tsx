@@ -225,6 +225,7 @@ const GROUPS: { id: string; label: string; color: string; kinds: string[] }[] = 
   { id: "objetivo", label: "Objetivo", color: "#2E5E8C", kinds: ["goal_review"] },
   { id: "recursos", label: "Recursos / productos", color: "#28707C", kinds: ["missing_products"] },
   { id: "videollamada", label: "Videollamada", color: "#0EA5E9",
-    kinds: ["video_call_schedule", "video_call_tomorrow", "video_call_confirm"] },
+    kinds: ["video_call_wait", "video_call_proposed", "video_call_manual",
+            "video_call_tomorrow", "video_call_confirm"] },
   { id: "otras", label: "Otras", color: "#7A7A7A", kinds: [] },
 ];

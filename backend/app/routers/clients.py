@@ -610,9 +610,11 @@ def resend_portal_access(client_id: int, db: Session = Depends(get_db)) -> dict:
 
 
 # ------------------------------------------------- videollamadas (Pro) ----
-# Ciclo quincenal: alerta "agendar" al llegar la revisión → el coach la propone
-# por WhatsApp (con su enlace de reservas) → apunta la fecha elegida →
-# recordatorio el día antes → tras la fecha, confirmar realizada o reagendar.
+# Flujo: el CLIENTE propone día/hora desde su portal al enviar su revisión
+# quincenal → el COACH lo ve en su agenda y ACEPTA (crea el evento en Google
+# Calendar con Meet e invita al cliente por email) o MODIFICA (lo acuerda por
+# WhatsApp y lo agenda a mano). Estados: proposed → accept | modify → scheduled |
+# pending_manual → done. Recordatorios el día antes y 1 h antes (coach y cliente).
 
 @router.get("/{client_id}/video-calls")
 def list_video_calls(client_id: int, db: Session = Depends(get_db)) -> list[dict]:
@@ -626,123 +628,6 @@ def list_video_calls(client_id: int, db: Session = Depends(get_db)) -> list[dict
     ).all()
     return [VideoCallOut.model_validate(r).model_dump(mode="json") for r in rows]
 
-
-class VideoCallIn(BaseModel):
-    period_index: int
-
-
-class VideoCallSchedule(BaseModel):
-    scheduled_for: date
-
-
-@router.post("/{client_id}/video-calls")
-def create_video_call(client_id: int, body: VideoCallIn, db: Session = Depends(get_db)) -> dict:
-    """La propuesta se ha ENVIADO (se abrió el WhatsApp con el enlace de
-    reservas): queda pendiente de que el cliente elija día. Idempotente."""
-    from app.models import VideoCall
-    from app.schemas.entities import VideoCallOut
-
-    _client_or_404_docs(db, client_id)
-    vc = db.scalar(select(VideoCall).where(
-        VideoCall.client_id == client_id, VideoCall.period_index == body.period_index))
-    if vc is None:
-        from sqlalchemy.exc import IntegrityError
-
-        vc = VideoCall(client_id=client_id, period_index=body.period_index, status="pending")
-        db.add(vc)
-        log_event(db, "client", client_id, "video_call_proposed",
-                  {"period_index": body.period_index})
-        try:
-            db.commit()
-        except IntegrityError:
-            # Doble click concurrente: otro request ya la creó (unique
-            # client+período). Se devuelve la existente, sin 500.
-            db.rollback()
-            vc = db.scalar(select(VideoCall).where(
-                VideoCall.client_id == client_id,
-                VideoCall.period_index == body.period_index))
-            if vc is None:
-                raise
-        db.refresh(vc)
-    return VideoCallOut.model_validate(vc).model_dump(mode="json")
-
-
-@router.patch("/{client_id}/video-calls/{call_id}")
-def schedule_video_call(client_id: int, call_id: int, body: VideoCallSchedule,
-                        db: Session = Depends(get_db)) -> dict:
-    """El cliente eligió día: se apunta la fecha (activa los recordatorios)."""
-    from app.models import VideoCall
-    from app.schemas.entities import VideoCallOut
-
-    vc = db.get(VideoCall, call_id)
-    if not vc or vc.client_id != client_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Videollamada no encontrada")
-    if vc.status == "done":
-        raise HTTPException(status.HTTP_409_CONFLICT,
-                            "Esta videollamada ya se realizó; la siguiente irá con la próxima revisión")
-    # Una fecha pasada (dedazo en el selector) rompería el ciclo: la alerta de
-    # "¿se realizó?" saldría al instante y el recordatorio del día antes jamás.
-    from app.services.portal import today_local
-
-    if body.scheduled_for < today_local():
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            "La fecha ya pasó: revisa el día elegido")
-    vc.scheduled_for = body.scheduled_for
-    vc.status = "scheduled"
-    log_event(db, "client", client_id, "video_call_scheduled",
-              {"period_index": vc.period_index, "date": body.scheduled_for.isoformat()})
-    db.commit()
-    db.refresh(vc)
-    return VideoCallOut.model_validate(vc).model_dump(mode="json")
-
-
-@router.post("/{client_id}/video-calls/{call_id}/done")
-def video_call_done(client_id: int, call_id: int, db: Session = Depends(get_db)) -> dict:
-    """La videollamada se REALIZÓ: se cierra y la alerta desaparece."""
-    from app.models import VideoCall
-    from app.schemas.entities import VideoCallOut
-
-    vc = db.get(VideoCall, call_id)
-    if not vc or vc.client_id != client_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Videollamada no encontrada")
-    if vc.status != "scheduled":
-        raise HTTPException(status.HTTP_409_CONFLICT,
-                            "Solo puede confirmarse una videollamada con fecha reservada")
-    vc.status = "done"
-    log_event(db, "client", client_id, "video_call_done", {"period_index": vc.period_index})
-    db.commit()
-    db.refresh(vc)
-    return VideoCallOut.model_validate(vc).model_dump(mode="json")
-
-
-@router.post("/{client_id}/video-calls/{call_id}/reschedule")
-def video_call_reschedule(client_id: int, call_id: int, db: Session = Depends(get_db)) -> dict:
-    """NO se realizó: vuelve a pendiente sin fecha y el ciclo empieza de nuevo
-    (agendar por WhatsApp/Meet → fecha → recordatorios). Si tenía evento en
-    Google Calendar, se cancela (avisa a los invitados)."""
-    from app.models import VideoCall
-    from app.schemas.entities import VideoCallOut
-
-    vc = db.get(VideoCall, call_id)
-    if not vc or vc.client_id != client_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Videollamada no encontrada")
-    if vc.status == "done":
-        raise HTTPException(status.HTTP_409_CONFLICT,
-                            "Esta videollamada ya se realizó: no puede reagendarse")
-    _cancel_google_event_safe(db, vc)
-    vc.status = "pending"
-    vc.scheduled_for = None
-    vc.scheduled_at = None
-    vc.meet_url = None
-    vc.google_event_id = None
-    vc.google_html_link = None
-    log_event(db, "client", client_id, "video_call_rescheduled", {"period_index": vc.period_index})
-    db.commit()
-    db.refresh(vc)
-    return VideoCallOut.model_validate(vc).model_dump(mode="json")
-
-
-# --- Agendar con Google Calendar + Meet (1 clic) -------------------------------
 
 def _cancel_google_event_safe(db: Session, vc) -> None:
     """Cancela el evento de Google si existe. No rompe el flujo local si falla
@@ -758,6 +643,84 @@ def _cancel_google_event_safe(db: Session, vc) -> None:
             "no se pudo cancelar el evento de Google de la videollamada %s", vc.id)
 
 
+def _confirm_meet(db: Session, client: Client, vc, *, start_aware: datetime,
+                  duration_min: int) -> None:
+    """Crea/actualiza el evento en Google Calendar con Meet, deja la videollamada
+    en 'scheduled' y avisa al cliente (email con el enlace + push). NO hace commit.
+    Ante un error de Google hace rollback y lanza 502 (mensaje legible)."""
+    from zoneinfo import ZoneInfo
+
+    from app.services import email_templates as tpl
+    from app.services import google_calendar as gcal
+    from app.services import push as push_svc
+    from app.services.email_service import EmailService, brand_from_config
+    from app.services.portal import format_when_es
+
+    if start_aware.tzinfo is None:
+        start_aware = start_aware.replace(tzinfo=ZoneInfo(settings.tz))
+    start_naive_local = start_aware.astimezone(ZoneInfo(settings.tz)).replace(tzinfo=None)
+    when_label = format_when_es(start_aware)
+    brand = brand_from_config(db)
+    summary = f"Videollamada de revisión · {client.full_name}".strip()
+    description = (
+        "Videollamada de revisión quincenal de tu asesoría. "
+        "Repasaremos tu progreso, resolveremos dudas y ajustaremos lo que haga falta."
+    )
+    try:
+        if vc.google_event_id:
+            ev = gcal.update_meet_event(
+                db, event_id=vc.google_event_id,
+                start_at=start_naive_local, duration_min=duration_min)
+        else:
+            ev = gcal.create_meet_event(
+                db, summary=summary, description=description,
+                start_at=start_naive_local, duration_min=duration_min,
+                attendee_email=client.email or None)
+    except gcal.GoogleCalendarError as exc:
+        db.rollback()
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+
+    vc.status = "scheduled"
+    vc.scheduled_at = start_aware
+    vc.scheduled_for = start_aware.date()
+    vc.duration_min = duration_min
+    vc.meet_url = ev.get("meet_url") or vc.meet_url
+    vc.google_event_id = ev.get("event_id") or vc.google_event_id
+    vc.google_html_link = ev.get("html_link") or vc.google_html_link
+    log_event(db, "client", client.id, "video_call_meet_scheduled",
+              {"period_index": vc.period_index, "at": start_aware.isoformat(),
+               "event_id": vc.google_event_id})
+
+    # Aviso al cliente: email con el enlace de Meet + push (además de la
+    # invitación nativa de Google Calendar). El WhatsApp lo lanza el coach desde
+    # la web con un botón.
+    if vc.meet_url:
+        emailer = EmailService(db)
+        _parts = (client.full_name or "").split()
+        first_name = _parts[0] if _parts else "hola"
+        subject, html = tpl.video_call_scheduled(
+            brand, first_name, when_label, vc.meet_url, duration_min)
+        emailer.send(to=client.email, subject=subject, html=html,
+                     kind="video_call_scheduled", client=client)
+        try:
+            push_svc.notify_video_call_scheduled(db, client, when_label, vc.meet_url)
+        except Exception:  # el push nunca debe tumbar el agendado
+            import logging
+            logging.getLogger("app.google").exception("push de videollamada fallido")
+
+
+def _future_local(raw: datetime) -> datetime:
+    """Normaliza a la zona del coach y exige que sea futura (si no, 422)."""
+    from zoneinfo import ZoneInfo
+
+    tz = ZoneInfo(settings.tz)
+    start_aware = raw.replace(tzinfo=tz) if raw.tzinfo is None else raw.astimezone(tz)
+    if start_aware <= datetime.now(tz):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "La fecha y hora ya pasaron: revisa el día elegido.")
+    return start_aware
+
+
 class VideoCallMeetIn(BaseModel):
     period_index: int
     start_at: datetime           # fecha y hora (zona del coach si viene sin offset)
@@ -767,21 +730,16 @@ class VideoCallMeetIn(BaseModel):
 @router.post("/{client_id}/video-calls/schedule-meet")
 def schedule_video_call_meet(client_id: int, body: VideoCallMeetIn,
                              db: Session = Depends(get_db)) -> dict:
-    """Agenda la videollamada creando el evento en Google Calendar con enlace de
-    Meet e invitando al cliente por email. 1 clic: crea (o reprograma si ya
-    existía), avisa por email + push y devuelve el enlace de Meet.
+    """Agenda a MANO (o resuelve un 'pendiente de agendar'): el coach escribe día,
+    hora y duración → se crea el evento en Google Calendar con Meet, se invita al
+    cliente por email y se le manda el enlace. Idempotente por (cliente, período).
 
-    Requiere que el coach haya conectado Google en Ajustes. Idempotente por
-    (cliente, período): reprograma el evento existente en vez de duplicarlo.
+    Requiere Google conectado. También lo usa el coach para iniciar una
+    videollamada sin propuesta previa del cliente.
     """
-    from zoneinfo import ZoneInfo
-
     from app.models import VideoCall
     from app.schemas.entities import VideoCallOut
-    from app.services import email_templates as tpl
     from app.services import google_calendar as gcal
-    from app.services import push as push_svc
-    from app.services.email_service import EmailService, brand_from_config
 
     client = _client_or_404_docs(db, client_id)
     if not gcal.is_connected(db):
@@ -790,72 +748,116 @@ def schedule_video_call_meet(client_id: int, body: VideoCallMeetIn,
     if body.duration_min < 5 or body.duration_min > 240:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             "La duración debe estar entre 5 y 240 minutos.")
+    start_aware = _future_local(body.start_at)
 
-    tz = ZoneInfo(settings.tz)
-    raw = body.start_at
-    start_aware = raw.replace(tzinfo=tz) if raw.tzinfo is None else raw.astimezone(tz)
-    if start_aware <= datetime.now(tz):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            "La fecha y hora ya pasaron: revisa el día elegido.")
-    start_naive_local = start_aware.replace(tzinfo=None)
-    from app.services.portal import format_when_es
-
-    when_label = format_when_es(start_aware)
-
-    brand = brand_from_config(db)
-    summary = f"Videollamada de revisión · {client.full_name}".strip()
-    description = (
-        "Videollamada de revisión quincenal de tu asesoría. "
-        "Repasaremos tu progreso, resolveremos dudas y ajustaremos lo que haga falta."
-    )
-
-    # Crea o reprograma el evento en Google Calendar.
     vc = db.scalar(select(VideoCall).where(
         VideoCall.client_id == client_id, VideoCall.period_index == body.period_index))
-    try:
-        if vc is not None and vc.google_event_id:
-            ev = gcal.update_meet_event(
-                db, event_id=vc.google_event_id,
-                start_at=start_naive_local, duration_min=body.duration_min)
-        else:
-            ev = gcal.create_meet_event(
-                db, summary=summary, description=description,
-                start_at=start_naive_local, duration_min=body.duration_min,
-                attendee_email=client.email or None)
-    except gcal.GoogleCalendarError as exc:
-        db.rollback()
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
-
     if vc is None:
         vc = VideoCall(client_id=client_id, period_index=body.period_index)
         db.add(vc)
-    vc.status = "scheduled"
-    vc.scheduled_at = start_aware
-    vc.scheduled_for = start_aware.date()
-    vc.duration_min = body.duration_min
-    vc.meet_url = ev.get("meet_url") or vc.meet_url
-    vc.google_event_id = ev.get("event_id") or vc.google_event_id
-    vc.google_html_link = ev.get("html_link") or vc.google_html_link
-    log_event(db, "client", client_id, "video_call_meet_scheduled",
-              {"period_index": body.period_index, "at": start_aware.isoformat(),
-               "event_id": vc.google_event_id})
+    _confirm_meet(db, client, vc, start_aware=start_aware, duration_min=body.duration_min)
+    db.commit()
+    db.refresh(vc)
+    return VideoCallOut.model_validate(vc).model_dump(mode="json")
 
-    # Notificaciones de la app (además de la invitación nativa de Google):
-    # email con el enlace de Meet + push al portal del cliente.
-    if vc.meet_url:
-        emailer = EmailService(db)
-        _parts = (client.full_name or "").split()
-        first_name = _parts[0] if _parts else "hola"
-        subject, html = tpl.video_call_scheduled(
-            brand, first_name, when_label, vc.meet_url, body.duration_min)
-        emailer.send(to=client.email, subject=subject, html=html,
-                     kind="video_call_scheduled", client=client)
-        try:
-            push_svc.notify_video_call_scheduled(db, client, when_label, vc.meet_url)
-        except Exception:  # el push nunca debe tumbar el agendado
-            import logging
-            logging.getLogger("app.google").exception("push de videollamada fallido")
 
+class VideoCallAcceptIn(BaseModel):
+    duration_min: int = 30
+
+
+@router.post("/{client_id}/video-calls/{call_id}/accept")
+def accept_video_call(client_id: int, call_id: int, body: VideoCallAcceptIn,
+                      db: Session = Depends(get_db)) -> dict:
+    """ACEPTA la propuesta del cliente tal cual: crea el evento en Google Calendar
+    con Meet en el día/hora propuestos e invita al cliente."""
+    from app.models import VideoCall
+    from app.schemas.entities import VideoCallOut
+    from app.services import google_calendar as gcal
+
+    vc = db.get(VideoCall, call_id)
+    if not vc or vc.client_id != client_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Videollamada no encontrada")
+    if vc.status not in ("proposed", "pending_manual"):
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "Solo puede aceptarse una propuesta pendiente.")
+    if vc.scheduled_at is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "No hay una fecha propuesta que aceptar.")
+    client = _client_or_404_docs(db, client_id)
+    if not gcal.is_connected(db):
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "Conecta tu cuenta de Google en Ajustes para agendar por Meet.")
+    if body.duration_min < 5 or body.duration_min > 240:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "La duración debe estar entre 5 y 240 minutos.")
+    start_aware = _future_local(vc.scheduled_at)
+    _confirm_meet(db, client, vc, start_aware=start_aware, duration_min=body.duration_min)
+    db.commit()
+    db.refresh(vc)
+    return VideoCallOut.model_validate(vc).model_dump(mode="json")
+
+
+@router.post("/{client_id}/video-calls/{call_id}/modify")
+def modify_video_call(client_id: int, call_id: int, db: Session = Depends(get_db)) -> dict:
+    """MODIFICA la propuesta: queda 'pendiente de agendar a mano'. El coach lo
+    acuerda con el cliente por WhatsApp y luego escribe el día/hora definitivos
+    (schedule-meet). Hasta entonces sale en las alertas con recordatorios."""
+    from app.models import VideoCall
+    from app.schemas.entities import VideoCallOut
+
+    vc = db.get(VideoCall, call_id)
+    if not vc or vc.client_id != client_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Videollamada no encontrada")
+    if vc.status == "done":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Esta videollamada ya se realizó.")
+    vc.status = "pending_manual"
+    log_event(db, "client", client_id, "video_call_modify_requested",
+              {"period_index": vc.period_index})
+    db.commit()
+    db.refresh(vc)
+    return VideoCallOut.model_validate(vc).model_dump(mode="json")
+
+
+@router.post("/{client_id}/video-calls/{call_id}/done")
+def video_call_done(client_id: int, call_id: int, db: Session = Depends(get_db)) -> dict:
+    """La videollamada se REALIZÓ: se cierra y sale de la agenda/alertas."""
+    from app.models import VideoCall
+    from app.schemas.entities import VideoCallOut
+
+    vc = db.get(VideoCall, call_id)
+    if not vc or vc.client_id != client_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Videollamada no encontrada")
+    if vc.status != "scheduled":
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "Solo puede confirmarse una videollamada agendada.")
+    vc.status = "done"
+    log_event(db, "client", client_id, "video_call_done", {"period_index": vc.period_index})
+    db.commit()
+    db.refresh(vc)
+    return VideoCallOut.model_validate(vc).model_dump(mode="json")
+
+
+@router.post("/{client_id}/video-calls/{call_id}/reschedule")
+def video_call_reschedule(client_id: int, call_id: int, db: Session = Depends(get_db)) -> dict:
+    """NO se realizó: cancela el evento en Google (avisa a los invitados) y queda
+    'pendiente de agendar a mano' para acordar una nueva fecha."""
+    from app.models import VideoCall
+    from app.schemas.entities import VideoCallOut
+
+    vc = db.get(VideoCall, call_id)
+    if not vc or vc.client_id != client_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Videollamada no encontrada")
+    if vc.status == "done":
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "Esta videollamada ya se realizó: no puede reagendarse")
+    _cancel_google_event_safe(db, vc)
+    vc.status = "pending_manual"
+    vc.scheduled_for = None
+    vc.scheduled_at = None
+    vc.meet_url = None
+    vc.google_event_id = None
+    vc.google_html_link = None
+    log_event(db, "client", client_id, "video_call_rescheduled", {"period_index": vc.period_index})
     db.commit()
     db.refresh(vc)
     return VideoCallOut.model_validate(vc).model_dump(mode="json")

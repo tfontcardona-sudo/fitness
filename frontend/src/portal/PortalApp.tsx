@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Bell, BellOff, CalendarCheck, Check, ChevronDown, Dumbbell, LineChart, Library, LogOut, NotebookPen, Share, Smartphone, Video, X } from "lucide-react";
 import { portalApi, portalSession, PortalError } from "./portalApi";
-import type { VideoCallCard } from "./portalApi";
+import type { VideoCallStatus } from "./portalApi";
 import type { PortalState } from "../types";
 import { PortalWorkout } from "./PortalWorkout";
 import { PortalDiary } from "./PortalDiary";
@@ -214,34 +214,130 @@ export default function PortalApp({ token }: { token: string }) {
   );
 }
 
-/** Banner de la próxima videollamada de revisión (Pro con Google Meet): fecha,
- *  hora y botón "Unirme". Se muestra sobre cualquier pestaña para que no pase por
- *  alto (además del email, la invitación de Google Calendar y el push). */
+/** Fecha de HOY (YYYY-MM-DD) para el mínimo del selector. */
+function portalLocalToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** Videollamada de revisión en el portal (Pro). Se muestra sobre cualquier
+ *  pestaña para que no pase por alto. Estados:
+ *   - book: al enviar la revisión, el cliente PROPONE día y hora.
+ *   - proposed: propuesta enviada, esperando confirmación del coach.
+ *   - pending_manual: el coach la agenda (te escribirá por WhatsApp).
+ *   - scheduled: agendada → botón "Unirme" (Google Meet). */
 function VideoCallBanner({ api, accent }: { api: ReturnType<typeof portalApi>; accent: string }) {
-  const [call, setCall] = useState<VideoCallCard | null>(null);
-  useEffect(() => {
-    let alive = true;
-    api.videoCall().then((r) => { if (alive) setCall(r.call); }).catch(() => {});
-    return () => { alive = false; };
+  const toast = usePortalToast();
+  const [vc, setVc] = useState<VideoCallStatus | null>(null);
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("17:00");
+  const [busy, setBusy] = useState(false);
+
+  const reload = useCallback(() => {
+    api.videoCall().then(setVc).catch(() => {});
   }, [api]);
-  if (!call) return null;
-  return (
-    <div className="mb-4 rounded-2xl p-4"
-      style={{ background: `color-mix(in srgb, ${accent} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${accent} 35%, transparent)` }}>
-      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest" style={{ color: accent }}>
-        <Video size={13} /> Videollamada de revisión
-      </div>
-      <p className="mt-1 text-sm font-medium capitalize">{call.when_label}</p>
-      {call.duration_min ? <p className="text-[11px] opacity-50">{call.duration_min} min</p> : null}
-      {call.meet_url && (
-        <a href={call.meet_url} target="_blank" rel="noopener noreferrer"
-          className="tap mt-3 inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white"
-          style={{ background: accent }}>
-          <Video size={15} /> {call.is_today ? "Unirme ahora" : "Unirme a Meet"}
-        </a>
-      )}
+  useEffect(reload, [reload]);
+
+  if (!vc || vc.state === "none") return null;
+
+  const box = {
+    background: `color-mix(in srgb, ${accent} 12%, transparent)`,
+    border: `1px solid color-mix(in srgb, ${accent} 35%, transparent)`,
+  } as const;
+  const header = (
+    <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest" style={{ color: accent }}>
+      <Video size={13} /> Videollamada de revisión
     </div>
   );
+
+  async function propose() {
+    if (!date || !time || busy) return;
+    setBusy(true);
+    try {
+      const r = await api.proposeVideoCall(`${date}T${time}`);
+      setVc(r);
+      toast.push("Propuesta enviada. Tu coach la confirmará.");
+    } catch (e: any) {
+      toast.push(e?.message ?? "No se pudo enviar la propuesta");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // AGENDADA → tarjeta "Unirme".
+  if (vc.state === "scheduled" && vc.call) {
+    return (
+      <div className="mb-4 rounded-2xl p-4" style={box}>
+        {header}
+        <p className="mt-1 text-sm font-medium capitalize">{vc.call.when_label}</p>
+        {vc.call.duration_min ? <p className="text-[11px] opacity-50">{vc.call.duration_min} min</p> : null}
+        {vc.call.meet_url && (
+          <a href={vc.call.meet_url} target="_blank" rel="noopener noreferrer"
+            className="tap mt-3 inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white"
+            style={{ background: accent }}>
+            <Video size={15} /> {vc.call.is_today ? "Unirme ahora" : "Unirme a Meet"}
+          </a>
+        )}
+      </div>
+    );
+  }
+
+  // TOCA PROPONER → formulario día + hora.
+  if (vc.state === "book") {
+    return (
+      <div className="mb-4 rounded-2xl p-4" style={box}>
+        {header}
+        <p className="mt-1 text-sm">Agenda tu videollamada de revisión con tu coach: elige el día y la hora que mejor te vengan.</p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <input type="date" className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: `color-mix(in srgb, ${accent} 35%, transparent)`, background: "transparent" }}
+            value={date} min={portalLocalToday()} onChange={(e) => setDate(e.target.value)} />
+          <input type="time" className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: `color-mix(in srgb, ${accent} 35%, transparent)`, background: "transparent" }}
+            value={time} onChange={(e) => setTime(e.target.value)} />
+          <button onClick={propose} disabled={!date || !time || busy}
+            className="tap inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            style={{ background: accent }}>
+            <CalendarCheck size={15} /> Solicitar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // PROPUESTA ENVIADA → esperando al coach (con opción de cambiarla).
+  if (vc.state === "proposed") {
+    return (
+      <div className="mb-4 rounded-2xl p-4" style={box}>
+        {header}
+        <p className="mt-1 text-sm">
+          Has propuesto: <b className="capitalize">{vc.call?.when_label}</b>. Tu coach lo confirmará
+          en breve; te avisaremos con el enlace.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <input type="date" className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: `color-mix(in srgb, ${accent} 35%, transparent)`, background: "transparent" }}
+            value={date} min={portalLocalToday()} onChange={(e) => setDate(e.target.value)} />
+          <input type="time" className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: `color-mix(in srgb, ${accent} 35%, transparent)`, background: "transparent" }}
+            value={time} onChange={(e) => setTime(e.target.value)} />
+          <button onClick={propose} disabled={!date || !time || busy}
+            className="tap inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold"
+            style={{ border: `1px solid color-mix(in srgb, ${accent} 45%, transparent)`, color: accent }}>
+            Cambiar propuesta
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // PENDIENTE MANUAL → el coach la agenda contigo por WhatsApp.
+  if (vc.state === "pending_manual") {
+    return (
+      <div className="mb-4 rounded-2xl p-4" style={box}>
+        {header}
+        <p className="mt-1 text-sm">Tu coach se pondrá en contacto contigo por WhatsApp para acordar el día y la hora de tu videollamada.</p>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 /** Interruptor de NOTIFICACIONES en la cabecera: campana = activadas (toca para
