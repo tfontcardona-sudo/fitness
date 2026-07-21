@@ -53,31 +53,55 @@ def scrape_product(request: Request, body: ScrapeIn, db: Session = Depends(get_d
     import ipaddress
     import re as _re
     import socket
-    from urllib.parse import urlsplit
+    from urllib.parse import urljoin, urlsplit
 
     import httpx
 
-    url = (body.url or "").strip()
-    parts = urlsplit(url)
-    if parts.scheme not in ("http", "https") or not parts.hostname:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            "La URL debe empezar por http:// o https://")
-    # Guarda SSRF: nunca llamar a hosts internos/privados desde el servidor.
-    try:
-        infos = socket.getaddrinfo(parts.hostname, None)
+    MAX_HTML = 400_000
+
+    def _check_host(u: str) -> None:
+        """Guarda SSRF: esquema http(s) y host que NO resuelva a IP interna."""
+        p = urlsplit(u)
+        if p.scheme not in ("http", "https") or not p.hostname:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                "La URL debe empezar por http:// o https://")
+        try:
+            infos = socket.getaddrinfo(p.hostname, None)
+        except socket.gaierror:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                "No se pudo resolver la URL")
         for info in infos:
             ip = ipaddress.ip_address(info[4][0])
             if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
                 raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "URL no permitida")
-    except socket.gaierror:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "No se pudo resolver la URL")
 
+    url = (body.url or "").strip()
+    _check_host(url)
+
+    # Redirecciones a MANO (sin follow_redirects): cada salto se revalida con la
+    # misma guarda — una tienda no puede 302-redirigirnos a un host interno.
+    # Cuerpo en STREAMING con tope: nunca bufferizar una respuesta gigante.
     try:
-        r = httpx.get(url, timeout=8, follow_redirects=True, headers={
+        html = ""
+        with httpx.Client(timeout=8, follow_redirects=False, headers={
             "User-Agent": "Mozilla/5.0 (compatible; DQRBot/1.0)",
             "Accept-Language": "es-ES,es;q=0.9",
-        })
-        html = r.text[:400_000]
+        }) as cli:
+            for _hop in range(4):
+                with cli.stream("GET", url) as r:
+                    if r.status_code in (301, 302, 303, 307, 308) and r.headers.get("location"):
+                        url = urljoin(url, r.headers["location"])
+                        _check_host(url)
+                        continue
+                    raw = b""
+                    for chunk in r.iter_bytes():
+                        raw += chunk
+                        if len(raw) >= MAX_HTML:
+                            break
+                    html = raw[:MAX_HTML].decode(r.encoding or "utf-8", errors="replace")
+                    break
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY,
                             "No se pudo leer la página del producto")

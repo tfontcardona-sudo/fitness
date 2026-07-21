@@ -36,7 +36,12 @@ def client():
     from fastapi.testclient import TestClient
 
     from app.main import app
+    from app.seeds.run import main as seed_main
 
+    # Como en el resto de módulos: los seeds crean el admin/brand si faltan.
+    # Sin esto, este archivo corre PRIMERO (orden alfabético) y en una BD
+    # recién migrada el coach no existe → 401 y fallos que no son del código.
+    seed_main()
     return TestClient(app)
 
 

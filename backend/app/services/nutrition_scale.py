@@ -15,9 +15,17 @@ quedaba con los gramos antiguos.
 from __future__ import annotations
 
 import copy
+import math
 import re
 
 from app.services.metrics import PROTEIN_RANGE
+
+
+def _rhu(x: float) -> int:
+    """Redondeo half-up (0,5 → 1), como Math.round del frontend: sin esto, el
+    redondeo bancario de Python hacía DESAPARECER ingredientes pequeños (2,5 g
+    de aceite → 0 g) y el editor y el PDF diferían en el mismo cálculo."""
+    return int(math.floor(x + 0.5))
 
 # Grasa por kg por objetivo (mismo criterio que el frontend); suelo 0,6 g/kg.
 FAT_PER_KG = {
@@ -141,13 +149,15 @@ def reconcile_nutrition(nut: dict, weight_kg: float | None = None, *,
     # Carbohidratos = colchón para que P·4 + C·4 + G·9 == target.
     c = round((target - p * 4 - f * 9) / 4)
     if c < 0:
-        # 1º baja la grasa hasta su suelo saludable
-        fat_min = round((weight_kg or 0) * 0.6)
+        # 1º baja la grasa hasta su suelo saludable (suelo ABSOLUTO 20 g: sin
+        # peso registrado, w*0,6 daría 0 y la grasa podía quedar a cero).
+        fat_min = max(20, round((weight_kg or 0) * 0.6))
         f = max(fat_min, round((target - p * 4) / 9))
         c = round((target - p * 4 - f * 9) / 4)
     if c < 0:
         # 2º recorta la proteína hasta su suelo de preservación de masa
-        protein_min = round((weight_kg or 0) * 1.6)
+        # (sin peso: 60 g, el mismo suelo que usa clamp_targets)
+        protein_min = round(weight_kg * 1.6) if weight_kg else 60
         p = max(protein_min, round((target - f * 9) / 4))
         c = max(0, round((target - p * 4 - f * 9) / 4))
 
@@ -213,7 +223,46 @@ def reconcile_nutrition(nut: dict, weight_kg: float | None = None, *,
         r_f = (f / pre_f) if pre_f > 0 else 1.0
         if any(abs(r - 1.0) > 0.01 for r in (r_k, r_p, r_c, r_f)):
             scale_bank(bank, r_k, r_p, r_c, r_f)
+        # 3b) Alineado POR TOMA: los ratios globales no ven un descuadre que
+        # solo mueve el reparto (añadir/quitar una toma encoge las demás pero
+        # sus opciones del banco seguían al 100%). Cada toma se compara con SU
+        # objetivo y, si sus opciones se desvían >5%, se reescalan a él.
+        # Solo en los caminos con clamp (coach/adaptación): en la generación la
+        # autoridad son los guardrails y el banco debe llegarles tal cual.
+        if clamp:
+            _align_bank_slots(nut)
     return nut
+
+
+def _align_bank_slots(nut: dict) -> None:
+    """Reescala las opciones de cada toma (banco flexible) hacia el objetivo de
+    ESA toma cuando se desvían más de un 5% en kcal. Muta `nut`."""
+    bank = nut.get("meal_bank")
+    if not isinstance(bank, dict) or bank.get("mode") != "flexible_7":
+        return
+    targets: dict[int, dict] = {}
+    for i, m in enumerate(nut.get("meals") or []):
+        if isinstance(m, dict) and isinstance(m.get("target"), dict):
+            targets[int(m.get("slot") or (i + 1))] = m["target"]
+    for slot in bank.get("slots") or []:
+        t = targets.get(int(slot.get("slot") or 0))
+        opts = [o for o in (slot.get("options") or []) if isinstance(o.get("macros"), dict)]
+        if not t or not opts:
+            continue
+
+        def _mean(axis: str) -> float:
+            return sum(float(o["macros"].get(axis) or 0) for o in opts) / len(opts)
+
+        mean_k, tk = _mean("kcal"), float(t.get("kcal") or 0)
+        if tk <= 0 or mean_k <= 0 or abs(mean_k - tk) / tk <= 0.05:
+            continue
+        r_k = tk / mean_k
+        r_p = (float(t.get("protein_g") or 0) / _mean("protein_g")) if _mean("protein_g") > 0 else r_k
+        r_c = (float(t.get("carbs_g") or 0) / _mean("carbs_g")) if _mean("carbs_g") > 0 else r_k
+        r_f = (float(t.get("fat_g") or 0) / _mean("fat_g")) if _mean("fat_g") > 0 else r_k
+        for o in slot.get("options") or []:
+            _scale_dish(o, r_k, r_p, r_c, r_f)
+        _scale_equivalences(slot.get("equivalences") or {}, r_k, r_p, r_c, r_f)
 
 
 def macros_for_kcal(goal: str | None, weight_kg: float, kcal: float) -> dict:
@@ -255,12 +304,13 @@ def macros_scaled_to_kcal(base_nut: dict, kcal: float) -> dict:
 
 
 def _scale(v, f: float):
-    return round(v * f) if isinstance(v, (int, float)) else v
+    return _rhu(v * f) if isinstance(v, (int, float)) else v
 
 
 def _scale_g(v, f: float):
-    """Gramos de ingrediente: reescala y redondea a múltiplos de 5."""
-    return max(0, round(v * f / 5) * 5) if isinstance(v, (int, float)) else v
+    """Gramos de ingrediente: reescala y redondea a múltiplos de 5 (half-up:
+    un ingrediente pequeño se conserva, no se esfuma a 0 g)."""
+    return max(0, _rhu(v * f / 5) * 5) if isinstance(v, (int, float)) else v
 
 
 def _scale_amount_text(text, f: float):
@@ -274,7 +324,7 @@ def _scale_amount_text(text, f: float):
     def repl(m):
         val = float(m.group(1).replace(",", "."))
         scaled = val * f
-        scaled = round(scaled / 5) * 5 if scaled >= 25 else max(1, round(scaled))
+        scaled = _rhu(scaled / 5) * 5 if scaled >= 25 else max(1, _rhu(scaled))
         return f"{int(scaled)} {m.group(2)}"
 
     return re.sub(r"(\d+(?:[.,]\d+)?)\s*(g|gr|ml)\b", repl, text)
@@ -293,18 +343,31 @@ def _equiv_ratio(group_name, r_k: float, r_p: float, r_c: float, r_f: float) -> 
 
 
 def _scale_dish(o: dict, r_k: float, r_p: float, r_c: float, r_f: float) -> None:
+    """Escala un plato manteniéndolo COHERENTE CONSIGO MISMO: los macros van
+    cada uno por su eje, las kcal del plato se recalculan de SUS macros (4/4/9,
+    no un eje aparte) y los gramos siguen la energía total real del plato — si
+    solo sube la proteína, los gramos suben lo que sube el plato, no otro ratio."""
     if not o:
         return
+    r_dish = r_k
     mm = o.get("macros")
     if mm:
-        o["macros"] = {**mm, "kcal": _scale(mm.get("kcal"), r_k),
-                       "protein_g": _scale(mm.get("protein_g"), r_p),
-                       "carbs_g": _scale(mm.get("carbs_g"), r_c),
-                       "fat_g": _scale(mm.get("fat_g"), r_f)}
+        old_k = float(mm.get("kcal") or 0)
+        new_p = _scale(mm.get("protein_g"), r_p)
+        new_c = _scale(mm.get("carbs_g"), r_c)
+        new_f = _scale(mm.get("fat_g"), r_f)
+        if all(isinstance(x, (int, float)) for x in (new_p, new_c, new_f)):
+            new_k = kcal_of(float(new_p), float(new_c), float(new_f))
+        else:
+            new_k = _scale(mm.get("kcal"), r_k)
+        o["macros"] = {**mm, "kcal": new_k,
+                       "protein_g": new_p, "carbs_g": new_c, "fat_g": new_f}
+        if old_k > 0 and isinstance(new_k, (int, float)) and new_k > 0:
+            r_dish = float(new_k) / old_k
     for ing in o.get("ingredients") or []:
-        ing["grams"] = _scale_g(ing.get("grams"), r_k)
+        ing["grams"] = _scale_g(ing.get("grams"), r_dish)
         # La medida casera ("1 taza ≈ 80 g") también lleva gramos dentro
-        ing["household"] = _scale_amount_text(ing.get("household"), r_k)
+        ing["household"] = _scale_amount_text(ing.get("household"), r_dish)
 
 
 def _scale_equivalences(eq: dict, r_k: float, r_p: float, r_c: float, r_f: float) -> None:

@@ -207,7 +207,8 @@ files: Annotated[List[UploadFile], File(description="1–4 fotos corporales")], 
     created: list[ProgressPhoto] = []
     for f in files:
         try:
-            rel = save_photo(client.id, f.file.read())
+            # Lectura ACOTADA (10 MB + 1): un cuerpo gigante no se bufferiza entero
+            rel = save_photo(client.id, f.file.read(10 * 1024 * 1024 + 1))
         except PhotoValidationError as exc:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
         photo = ProgressPhoto(client_id=client.id, period_id=None, kind=kind, file_path=rel)
@@ -266,7 +267,7 @@ def portal_upload_anamnesis_pdf(
     from app.services.storage import DocumentValidationError
 
     try:
-        res = ingest_anamnesis_pdf(db, client.id, file.file.read(),
+        res = ingest_anamnesis_pdf(db, client.id, file.file.read(25 * 1024 * 1024 + 1),
                                    file.filename or "anamnesis.pdf", by="client")
     except DocumentValidationError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
@@ -767,7 +768,8 @@ def portal_close_photos(
     created: list[ProgressPhoto] = []
     for f in files:
         try:
-            rel = save_photo(client.id, f.file.read())
+            # Lectura ACOTADA (10 MB + 1): un cuerpo gigante no se bufferiza entero
+            rel = save_photo(client.id, f.file.read(10 * 1024 * 1024 + 1))
         except PhotoValidationError as exc:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
         photo = ProgressPhoto(client_id=client.id, period_id=period.id, kind=kind, file_path=rel)

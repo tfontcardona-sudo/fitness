@@ -38,6 +38,21 @@ export function coachPushActive(): boolean {
   return isCoachPushSupported() && Notification.permission === "granted" && !coachPushOff();
 }
 
+/** Estado REAL: además del permiso y el interruptor, comprueba que la
+ *  suscripción del navegador EXISTE (puede haberse perdido al limpiar datos).
+ *  Sin esto, el interruptor decía "Activados" con el permiso concedido pero
+ *  sin ninguna suscripción viva detrás. */
+export async function coachPushSubscribed(): Promise<boolean> {
+  if (!coachPushActive()) return false;
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = reg ? await reg.pushManager.getSubscription() : null;
+    return sub !== null;
+  } catch {
+    return false;
+  }
+}
+
 function urlBase64ToUint8Array(base64: string): Uint8Array {
   const padding = "=".repeat((4 - (base64.length % 4)) % 4);
   const b64 = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");

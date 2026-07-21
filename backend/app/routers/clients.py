@@ -583,7 +583,7 @@ def upload_client_document(
     """Sube un documento (PDF) y lo asocia al cliente."""
     _client_or_404_docs(db, client_id)
     try:
-        return ingest_anamnesis_pdf(db, client_id, file.file.read(),
+        return ingest_anamnesis_pdf(db, client_id, file.file.read(25 * 1024 * 1024 + 1),
                                     file.filename or "anamnesis.pdf", by="coach")
     except DocumentValidationError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
@@ -646,11 +646,23 @@ def create_video_call(client_id: int, body: VideoCallIn, db: Session = Depends(g
     vc = db.scalar(select(VideoCall).where(
         VideoCall.client_id == client_id, VideoCall.period_index == body.period_index))
     if vc is None:
+        from sqlalchemy.exc import IntegrityError
+
         vc = VideoCall(client_id=client_id, period_index=body.period_index, status="pending")
         db.add(vc)
         log_event(db, "client", client_id, "video_call_proposed",
                   {"period_index": body.period_index})
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            # Doble click concurrente: otro request ya la creó (unique
+            # client+período). Se devuelve la existente, sin 500.
+            db.rollback()
+            vc = db.scalar(select(VideoCall).where(
+                VideoCall.client_id == client_id,
+                VideoCall.period_index == body.period_index))
+            if vc is None:
+                raise
         db.refresh(vc)
     return VideoCallOut.model_validate(vc).model_dump(mode="json")
 
@@ -665,6 +677,16 @@ def schedule_video_call(client_id: int, call_id: int, body: VideoCallSchedule,
     vc = db.get(VideoCall, call_id)
     if not vc or vc.client_id != client_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Videollamada no encontrada")
+    if vc.status == "done":
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "Esta videollamada ya se realizó; la siguiente irá con la próxima revisión")
+    # Una fecha pasada (dedazo en el selector) rompería el ciclo: la alerta de
+    # "¿se realizó?" saldría al instante y el recordatorio del día antes jamás.
+    from app.services.portal import today_local
+
+    if body.scheduled_for < today_local():
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "La fecha ya pasó: revisa el día elegido")
     vc.scheduled_for = body.scheduled_for
     vc.status = "scheduled"
     log_event(db, "client", client_id, "video_call_scheduled",
@@ -683,6 +705,9 @@ def video_call_done(client_id: int, call_id: int, db: Session = Depends(get_db))
     vc = db.get(VideoCall, call_id)
     if not vc or vc.client_id != client_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Videollamada no encontrada")
+    if vc.status != "scheduled":
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "Solo puede confirmarse una videollamada con fecha reservada")
     vc.status = "done"
     log_event(db, "client", client_id, "video_call_done", {"period_index": vc.period_index})
     db.commit()
@@ -700,6 +725,9 @@ def video_call_reschedule(client_id: int, call_id: int, db: Session = Depends(ge
     vc = db.get(VideoCall, call_id)
     if not vc or vc.client_id != client_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Videollamada no encontrada")
+    if vc.status == "done":
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "Esta videollamada ya se realizó: no puede reagendarse")
     vc.status = "pending"
     vc.scheduled_for = None
     log_event(db, "client", client_id, "video_call_rescheduled", {"period_index": vc.period_index})

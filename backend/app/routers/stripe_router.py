@@ -7,21 +7,27 @@
                               (desde el WhatsApp/email del coach) y va a Stripe.
 - POST /api/stripe/webhook    aviso de Stripe al cobrar: marca el pago o crea el
                               perfil del cliente. Verificado por firma.
+
+GOTCHA: sin `from __future__ import annotations` A PROPÓSITO — con él, el
+decorador de slowapi hace que FastAPI no resuelva el body Pydantic (422 en query),
+igual que pasó en public_site.py.
 """
-from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
+from slowapi import Limiter
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.deps import get_client_by_token
 from app.models import Client
+from app.ratelimit import client_key
 from app.schemas.entities import BillingPeriod, PackageTier
 from app.services.stripe_service import StripeError, create_checkout_url, handle_webhook
 
 router = APIRouter(tags=["stripe"])
+limiter = Limiter(key_func=client_key)
 
 
 class CheckoutIn(BaseModel):
@@ -31,8 +37,10 @@ class CheckoutIn(BaseModel):
 
 
 @router.post("/api/public/checkout")
-def public_checkout(body: CheckoutIn, db: Session = Depends(get_db)) -> dict:
-    """Registro personal: crea la sesión de pago del plan elegido → URL de Stripe."""
+@limiter.limit("10/minute")
+def public_checkout(request: Request, body: CheckoutIn, db: Session = Depends(get_db)) -> dict:
+    """Registro personal: crea la sesión de pago del plan elegido → URL de Stripe.
+    Con rate limit: es público y cada llamada crea una sesión REAL en Stripe."""
     try:
         return {"url": create_checkout_url(db, body.tier, body.period)}
     except StripeError as exc:

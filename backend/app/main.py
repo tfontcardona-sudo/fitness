@@ -106,9 +106,15 @@ _errlog = logging.getLogger("app.errors")
 @app.exception_handler(Exception)
 async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     _errlog.exception("Error no controlado en %s %s", request.method, request.url.path)
+    # En las rutas PÚBLICAS (sin login: landing, registro, portal por token,
+    # Stripe) el detalle del error NO se expone a desconocidos — va al log.
+    path = request.url.path
+    public = path.startswith(("/api/public", "/api/p/", "/api/stripe", "/api/pay"))
+    detail = ("Error interno, inténtalo de nuevo en un momento" if public
+              else f"Error interno ({type(exc).__name__}): {exc}")
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"detail": {"message": f"Error interno ({type(exc).__name__}): {exc}"}},
+        content={"detail": {"message": detail}},
     )
 
 

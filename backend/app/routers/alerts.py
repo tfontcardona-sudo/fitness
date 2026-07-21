@@ -151,31 +151,45 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
     # --- Videollamada quincenal (Pro) ---------------------------------------
     # Al llegar la revisión toca videollamada: agendar → fecha → recordatorio
     # el día antes → confirmar realizada (o reagendar y el ciclo se repite).
-    if (client.package_tier == "pro" and last_period is not None
-            and last_period.status in ("closed", "analyzed")):
+    # OJO: se ancla a la última revisión CERRADA/ANALIZADA (no al último período
+    # sin más) — al abrirse el período siguiente, el pendiente NO desaparece.
+    if client.package_tier == "pro":
         from app.models import VideoCall
 
-        vc = db.scalar(select(VideoCall).where(
-            VideoCall.client_id == client.id,
-            VideoCall.period_index == last_period.period_index))
-        if vc is None:
-            out.append(_alert(
-                client, "video_call_schedule", "media",
-                f"Toca la videollamada quincenal (revisión #{last_period.period_index}): "
-                "propónsela por WhatsApp con tu enlace de reservas.",
-                "feedback", "Agendar videollamada"))
-        elif vc.status == "pending":
-            out.append(_alert(
-                client, "video_call_schedule", "media",
-                "Videollamada propuesta sin día cerrado: apunta la fecha en cuanto reserve.",
-                "feedback", "Apuntar fecha"))
-        elif vc.status == "scheduled" and vc.scheduled_for is not None:
-            if vc.scheduled_for == today + timedelta(days=1):
+        last_review = db.scalar(
+            select(Period).where(Period.client_id == client.id,
+                                 Period.status.in_(("closed", "analyzed")))
+            .order_by(Period.period_index.desc()).limit(1)
+        )
+        vc = None
+        if last_review is not None:
+            vc = db.scalar(select(VideoCall).where(
+                VideoCall.client_id == client.id,
+                VideoCall.period_index == last_review.period_index))
+            if vc is None:
+                out.append(_alert(
+                    client, "video_call_schedule", "media",
+                    f"Toca la videollamada quincenal (revisión #{last_review.period_index}): "
+                    "propónsela por WhatsApp con tu enlace de reservas.",
+                    "feedback", "Agendar videollamada"))
+            elif vc.status == "pending":
+                out.append(_alert(
+                    client, "video_call_schedule", "media",
+                    "Videollamada propuesta sin día cerrado: apunta la fecha en cuanto reserve.",
+                    "feedback", "Apuntar fecha"))
+        # Reservas con fecha: avisar SIEMPRE (aunque sea de una revisión
+        # anterior — una llamada sin confirmar no puede olvidarse en silencio).
+        for sched in db.scalars(select(VideoCall).where(
+                VideoCall.client_id == client.id,
+                VideoCall.status == "scheduled")):
+            if sched.scheduled_for is None:
+                continue
+            if sched.scheduled_for == today + timedelta(days=1):
                 out.append(_alert(
                     client, "video_call_tomorrow", "alta",
-                    f"Videollamada MAÑANA ({vc.scheduled_for.strftime('%d/%m')}).",
+                    f"Videollamada MAÑANA ({sched.scheduled_for.strftime('%d/%m')}).",
                     "feedback", "Ver videollamada"))
-            elif vc.scheduled_for <= today:
+            elif sched.scheduled_for <= today:
                 out.append(_alert(
                     client, "video_call_confirm", "alta",
                     "¿Se realizó la videollamada? Confírmala, o reagéndala si no pudo ser.",

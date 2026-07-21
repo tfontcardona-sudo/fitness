@@ -254,6 +254,34 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
         dislikes=(_cli.food_dislikes or []) if _cli else [],
     )
 
+    # Los DETALLES que verá el cliente ("Proteína: 150 → X g", "Totales
+    # finales…") se reescriben con los valores FINALES tras los topes
+    # fisiológicos: si un ajuste de la IA se acotó (p. ej. "proteína a 400 g"
+    # clampado a 210), las Novedades y el PDF no pueden prometer un número que
+    # el plan real no lleva.
+    _fm = nut.get("macros") or {}
+    _finales = (
+        ("Proteína", _fm.get("protein_g"), "g"),
+        ("Carbohidratos", _fm.get("carbs_g"), "g"),
+        ("Grasas", _fm.get("fat_g"), "g"),
+        ("Calorías", nut.get("target_kcal"), "kcal"),
+    )
+    for it in items:
+        d = it.get("detail")
+        if not d:
+            continue
+        for _label, _v, _unit in _finales:
+            if isinstance(_v, (int, float)):
+                d = re.sub(rf"({_label}: [^→·]*→ )\d+( {_unit})",
+                           rf"\g<1>{int(round(_v))}\g<2>", d)
+        d = re.sub(
+            r"(Totales finales: )\d+( kcal · P )\d+( / C )\d+( / G )\d+( g)",
+            rf"\g<1>{int(round(nut.get('target_kcal') or 0))}"
+            rf"\g<2>{int(round(_fm.get('protein_g') or 0))}"
+            rf"\g<3>{int(round(_fm.get('carbs_g') or 0))}"
+            rf"\g<4>{int(round(_fm.get('fat_g') or 0))}\g<5>", d)
+        it["detail"] = d
+
     # Siempre se sobreescribe (el plan base puede arrastrar el bloque de una
     # adaptación anterior tras el deepcopy).
     if items:

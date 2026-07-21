@@ -1403,6 +1403,104 @@ El link del perfil de Instagram de David lleva TODO el embudo: landing → plane
   `test_machines_and_word` del PR #65 por lo mismo); `test_push.py` y
   `test_video_calls.py` en verde; tsc + vite build OK.
 
+## 10.w Tramo 2026-07-21 — AUDITORÍA INTEGRAL (6 agentes) + corrección de todo lo confirmado
+
+Auditoría de todo el sistema por áreas (coherencia nutricional, superficie
+pública/seguridad, push/alertas/videollamadas, web del coach, portal del
+cliente, migraciones/paridad). Hallazgos CONFIRMADOS y corregidos:
+
+**Backend — alertas/push/videollamadas**
+- `alerts.py`: el bloque de videollamadas se ancla a la última revisión
+  CERRADA/ANALIZADA (no al último período sin más) y las reservas con fecha
+  alertan SIEMPRE — antes, abrir el período siguiente hacía desaparecer
+  "mañana/confirmar" y la llamada quedaba olvidada. Test de regresión añadido.
+- `push.py`: el resumen del coach no revienta con nombres en blanco (y cada
+  cliente va en try/except); `save_subscription` NO roba el dispositivo del
+  coach al previsualizar un portal (endpoint único por navegador); los
+  recordatorios saltan clientes INACTIVOS; el recordatorio de videollamada
+  corre en TODAS las franjas con dedupe por audit_log (antes solo a primera
+  hora, y apuntarla por la tarde lo perdía).
+- `scheduler.py`: `timezone=settings.tz` EXPLÍCITA en cada CronTrigger — sin
+  ella APScheduler usa la zona del SERVIDOR (UTC) y todo corría a deshora.
+- `jobs.py`: fecha LOCAL (`today_local()`, no `date.today()` UTC) y commit POR
+  CLIENTE — un fallo a mitad ya no pierde los EmailLog de correos enviados
+  (que se reenviaban duplicados al día siguiente).
+- `clients.py` (videollamadas): fecha en pasado → 422; confirmar/reagendar
+  solo desde estados válidos (una "done" no resucita); carrera del doble click
+  en crear capturada (IntegrityError → devuelve la existente).
+
+**Backend — coherencia nutricional**
+- `plans.py::create_plan`: aplicaba el contenido TAL CUAL — ahora sanea +
+  reconcilia igual que el PATCH (era la única puerta de entrada sin red).
+- `plans.py::update_plan`: el diff compara contra el "antes" NORMALIZADO —
+  guardar sin tocar nada un plan legado ya no genera avisos fantasma.
+- `nutrition_scale.py`: suelo ABSOLUTO de grasa 20 g y proteína 60 g sin peso
+  registrado; redondeo half-up `_rhu` (los 2,5 g de aceite ya no desaparecen
+  y coincide con Math.round del frontend); `_scale_dish` coherente consigo
+  mismo (kcal del plato = 4/4/9 de SUS macros, gramos por el ratio de energía
+  del plato); NUEVO `_align_bank_slots`: cada toma del banco se reescala a SU
+  objetivo si se desvía >5% (añadir/quitar una toma dejaba las demás con
+  opciones al 100% del tamaño antiguo) — solo en caminos con clamp.
+- `adapt_plan.py`: los detalles "antes → después" y "Totales finales" se
+  reescriben con los valores FINALES tras el clamp (la IA podía prometer
+  "proteína 400 g" y el plan llevar 210).
+- `plan_diff.py`: detecta también el cambio de reparto POR COMIDA (mover CH de
+  la cena al desayuno con los mismos totales) y empareja sesiones por
+  día+nombre (insertar una sesión ya no genera diffs fantasma en cascada).
+- `nutritionTargets.ts` (espejo): `clampTargets` cede grasa→proteína cuando no
+  caben en las kcal acotadas (misma cascada que el backend: el editor enseña
+  EXACTAMENTE lo que se guardará) y `scaleDish` espejado coherente.
+
+**Backend — seguridad de la superficie pública**
+- `resources.py` (scrape): redirecciones a MANO revalidando cada salto contra
+  la guarda SSRF (una tienda no puede 302-redirigir a un host interno) +
+  cuerpo en streaming con tope de 400 KB.
+- `public_site.py` (registro): máximo UN email de onboarding por hora y
+  dirección (vía EmailLog) — el formulario público permitía bombardear un
+  buzón ajeno.
+- `stripe_router.py`: rate limit 10/min en /public/checkout (cada llamada crea
+  una sesión REAL de Stripe); quitado `from __future__ import annotations`
+  (GOTCHA slowapi, igual que public_site).
+- `main.py`: el detalle de los errores 500 NO se expone en rutas públicas
+  (/api/public, /api/p/, /api/stripe, /api/pay) — solo al log.
+- Subidas ACOTADAS (leer MAX+1, no bufferizar GB): fotos del portal (10 MB) y
+  PDF de anamnesis (25 MB), como ya hacía resources.py.
+- `entities.py::BrandConfigOut`: passthrough en `partner_store_url`/`meet_url`
+  de SALIDA (una URL legada sin http ya no tumba el GET de marca con 500).
+
+**Frontend — web del coach**
+- `ClientPlanPanel.tsx`: RESET de estado al cambiar de cliente — antes, saltar
+  de A a B con la misma pestaña heredaba el plan/feedback de A (¡y el WhatsApp
+  podía salir con el feedback de A!).
+- `RecursosPage.tsx`: el autorrelleno hace merge FUNCIONAL sobre el borrador
+  vigente (lo tecleado durante la lectura no se pisa; si se guardó, no reabre)
+  y "Guardar" parte de la marca FRESCA (no pisa cambios de otra pestaña).
+- `AlertsBell.tsx`: el interruptor del móvil refleja la suscripción REAL
+  (`coachPushSubscribed`), no solo el permiso.
+- `DashboardPage.tsx`: "Abrir Recursos" lleva a /recursos de verdad; banner
+  explícito si el panel no carga (antes un fallo de red pintaba "Todo al día").
+- `ClientFeedbackTab.tsx`: selector de fecha con `min=hoy`; el ciclo de
+  videollamada solo se ofrece en la revisión actual (en antiguas, solo si su
+  llamada existe); mensaje de WhatsApp sin "Google Meet" fijo (vale Calendly).
+- `api.ts::updateBrand`: tipo alineado con BrandConfigIn (sin rutas de subida).
+
+**Frontend — portal del cliente**
+- `PortalClose.tsx`: el borrador de la revisión se guarda POR CLIENTE (token)
+  — en un móvil compartido, los datos de salud de A aparecían pre-rellenados
+  en el formulario de B (y B podía enviarlos como suyos).
+- `push.ts` + `PortalApp.tsx`: evento `portal:push-changed` sincroniza campana
+  y pasos de bienvenida (un solo estado real); `refreshBadge` respeta el
+  apagado (el badge no "resucita" al volver a la app); apagar NO mata la
+  suscripción del navegador si el backend dice que no era de este cliente
+  (dispositivo compartido con la web del coach); WelcomeSetup por token, sin
+  botón muerto en WebViews sin push, y cabecera sin estrujarse (truncate).
+
+**Entorno de tests (IMPORTANTE)**: con `ADMIN_1_USER`/`ADMIN_1_PASS`
+exportados (los seeds crean el admin y la fixture de auth funciona) y SIN
+`EMAILS_ENABLED=false`, la suite ENTERA pasa a 0 fallos — los "34 fallos
+preexistentes" del baseline eran TODOS de entorno. Comando:
+`DATABASE_URL=… ADMIN_1_USER=coach1 ADMIN_1_PASS=testpass1234 SCHEDULER_ENABLED=false python3 -m pytest`.
+
 ## 11. Mapa rápido de archivos tocados en el último tramo
 
 **Pulido §8.2 (2026-07-04)**

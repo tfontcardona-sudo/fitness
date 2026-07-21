@@ -44,6 +44,17 @@ def _nutrition_diff(old: dict, new: dict) -> list[str]:
         items.append(f"Comidas del día: {len(old_meals)} → {len(new_meals)} tomas")
     elif old_meals != new_meals:
         items.append("Cambio en el reparto de comidas del día")
+    else:
+        # Mismos nombres y totales pero OTRO reparto por comida (mover 30 g de
+        # CH de la cena al desayuno): también es un cambio que el cliente nota.
+        for om, nm in zip((old.get("meals") or []), (new.get("meals") or [])):
+            if not (isinstance(om, dict) and isinstance(nm, dict)):
+                continue
+            ot, nt = om.get("target") or {}, nm.get("target") or {}
+            ok, nk = _f(ot.get("kcal")), _f(nt.get("kcal"))
+            if ok is not None and nk is not None and abs(ok - nk) > 10:
+                _num_change(items, f"{nm.get('name') or 'Comida'}",
+                            round(ok), round(nk), "kcal")
 
     old_sup = {(s.get("name") or "").strip() for s in (old.get("supplements") or [])
                if isinstance(s, dict) and s.get("name")}
@@ -110,10 +121,33 @@ def _training_diff(db: Session, old: dict, new: dict) -> list[str]:
 
     if len(old_sessions) != len(new_sessions):
         items.append(f"Sesiones de entreno: {len(old_sessions)} → {len(new_sessions)}")
-    # Emparejado por posición (el editor no reordena sesiones entre días).
-    for old_s, new_s in zip(old_sessions, new_sessions):
-        if isinstance(old_s, dict) and isinstance(new_s, dict):
-            _session_diff(items, old_s, new_s, names)
+    # Emparejado por IDENTIDAD (día + nombre) y solo después por posición:
+    # insertar una sesión al principio no desalinea todas las demás (el zip por
+    # posición generaba "añadido/quitado X" fantasma en cada sesión posterior).
+    def _key(s: dict) -> str:
+        return f"{(s.get('day') or '').strip().lower()}|{(s.get('name') or '').strip().lower()}"
+
+    old_by_key: dict[str, dict] = {}
+    for s in old_sessions:
+        if isinstance(s, dict) and _key(s) not in old_by_key:
+            old_by_key[_key(s)] = s
+    paired_old: set[int] = set()
+    pairs: list[tuple[dict, dict]] = []
+    unpaired_new: list[dict] = []
+    for s in new_sessions:
+        if not isinstance(s, dict):
+            continue
+        o = old_by_key.get(_key(s))
+        if o is not None and id(o) not in paired_old:
+            pairs.append((o, s))
+            paired_old.add(id(o))
+        else:
+            unpaired_new.append(s)
+    # Los restantes (renombrados/reordenados sin identidad) caen a posición.
+    rest_old = [s for s in old_sessions if isinstance(s, dict) and id(s) not in paired_old]
+    pairs.extend(zip(rest_old, unpaired_new))
+    for old_s, new_s in pairs:
+        _session_diff(items, old_s, new_s, names)
     return items
 
 

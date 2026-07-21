@@ -342,7 +342,10 @@ export const api = {
 
   // --- brand ---
   getBrand: () => request<BrandConfigOut>("GET", "/brand"),
-  updateBrand: (body: Omit<BrandConfigOut, "id" | "logo_path" | "links_photo_path">) =>
+  // El PUT lleva SOLO los campos de BrandConfigIn: las rutas de archivos
+  // subidos (logo, fotos, portada) se gestionan por sus endpoints de subida.
+  updateBrand: (body: Omit<BrandConfigOut, "id" | "logo_path" | "links_photo_path"
+    | "video_cover_path" | "plans_photo_path">) =>
     request<BrandConfigOut>("PUT", "/brand", body),
   uploadLogo: (file: File) => {
     const fd = new FormData();

@@ -80,9 +80,12 @@ def start_scheduler() -> BackgroundScheduler:
         return _scheduler
 
     sched = BackgroundScheduler(timezone=settings.tz)
+    # OJO: cada CronTrigger lleva SU timezone explícita — sin ella, APScheduler
+    # usa la zona del SERVIDOR (UTC en el VPS) y los jobs correrían a deshora
+    # (mantenimiento a las 08:30 locales en vez de 06:30, push desplazado).
     sched.add_job(
         _daily_job,
-        trigger=CronTrigger(hour=DAILY_HOUR, minute=DAILY_MINUTE),
+        trigger=CronTrigger(hour=DAILY_HOUR, minute=DAILY_MINUTE, timezone=settings.tz),
         id="daily_maintenance",
         replace_existing=True,
         coalesce=True,
@@ -91,7 +94,7 @@ def start_scheduler() -> BackgroundScheduler:
     )
     sched.add_job(
         _push_job,
-        trigger=CronTrigger(hour=f"*/{PUSH_EVERY_HOURS}", minute=0),
+        trigger=CronTrigger(hour=f"*/{PUSH_EVERY_HOURS}", minute=0, timezone=settings.tz),
         id="push_reminders",
         replace_existing=True,
         coalesce=True,
@@ -102,7 +105,7 @@ def start_scheduler() -> BackgroundScheduler:
     # solapar con los recordatorios de los clientes).
     sched.add_job(
         _coach_digest_job,
-        trigger=CronTrigger(hour=f"*/{PUSH_EVERY_HOURS}", minute=5),
+        trigger=CronTrigger(hour=f"*/{PUSH_EVERY_HOURS}", minute=5, timezone=settings.tz),
         id="coach_digest",
         replace_existing=True,
         coalesce=True,

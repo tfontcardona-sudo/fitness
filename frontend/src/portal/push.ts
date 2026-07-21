@@ -107,12 +107,27 @@ export async function enablePush(api: PortalApiClient): Promise<void> {
   });
   // Activar explícitamente siempre gana al interruptor de apagado.
   localStorage.removeItem(PUSH_OFF_KEY);
+  announcePushChange();
 }
 
 // Interruptor local: el cliente puede APAGAR sus notificaciones desde el portal
 // (y volver a encenderlas). El flag vive en este dispositivo; con él puesto, la
 // resuscripción automática no vuelve a activarlas por su cuenta.
 const PUSH_OFF_KEY = "portal_push_off";
+
+/** Evento interno: cualquier cambio de estado del push lo anuncia, para que
+ *  TODOS los controles (campana de la cabecera, pasos de bienvenida) se
+ *  actualicen a la vez — sin él, activar desde un sitio dejaba al otro
+ *  mostrando el estado antiguo. */
+export const PUSH_CHANGED_EVENT = "portal:push-changed";
+
+function announcePushChange(): void {
+  try {
+    window.dispatchEvent(new Event(PUSH_CHANGED_EVENT));
+  } catch {
+    /* entorno sin window/Event: nada que anunciar */
+  }
+}
 
 export function isPushOff(): boolean {
   return localStorage.getItem(PUSH_OFF_KEY) === "1";
@@ -130,7 +145,10 @@ export async function turnPushOn(api: PortalApiClient): Promise<void> {
 }
 
 /** Apaga las notificaciones: borra la suscripción del backend y del navegador
- *  y deja el flag para que la resuscripción automática no las reactive. */
+ *  y deja el flag para que la resuscripción automática no las reactive.
+ *  Si el backend dice que ese endpoint NO era de este cliente (dispositivo
+ *  compartido con la web del coach), la suscripción del navegador se CONSERVA:
+ *  matarla dejaría sin avisos al otro uso del mismo navegador. */
 export async function turnPushOff(api: PortalApiClient): Promise<void> {
   localStorage.setItem(PUSH_OFF_KEY, "1");
   try {
@@ -138,13 +156,17 @@ export async function turnPushOff(api: PortalApiClient): Promise<void> {
     const sub = reg ? await reg.pushManager.getSubscription() : null;
     if (sub) {
       const json = sub.toJSON();
-      if (json.endpoint) await api.pushUnsubscribe(json.endpoint).catch(() => {});
-      await sub.unsubscribe().catch(() => {});
+      let removed = true;
+      if (json.endpoint) {
+        removed = (await api.pushUnsubscribe(json.endpoint).catch(() => ({ removed: true }))).removed;
+      }
+      if (removed) await sub.unsubscribe().catch(() => {});
     }
     syncAppBadge(0);
   } catch {
     /* el flag ya está puesto: no volverá a suscribirse solo */
   }
+  announcePushChange();
 }
 
 /**
@@ -169,8 +191,14 @@ export function syncAppBadge(count: number): void {
   else nav.clearAppBadge?.().catch(() => {});
 }
 
-/** Lee pendientes del backend y sincroniza el badge. Devuelve el count. */
+/** Lee pendientes del backend y sincroniza el badge. Devuelve el count.
+ *  Con las notificaciones APAGADAS a mano, el badge se mantiene a 0: volver a
+ *  la app no puede "resucitar" el numerito que el cliente quiso quitar. */
 export async function refreshBadge(api: PortalApiClient): Promise<number> {
+  if (isPushOff()) {
+    syncAppBadge(0);
+    return 0;
+  }
   try {
     const pending = await api.pushPending();
     syncAppBadge(pending.count);

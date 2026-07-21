@@ -301,6 +301,10 @@ class BrandConfigOut(BrandConfigIn):
     video_cover_path: str | None = None
     plans_photo_path: str | None = None
     contact_email: str | None  # relaja EmailStr al leer de DB
+    # SALIDA tolerante (mismo criterio que ExerciseOut): una URL legada sin
+    # http(s) guardada en DB no puede tumbar con 500 el GET de la marca —
+    # la validación estricta es de ENTRADA.
+    _v_partner_url = field_validator("partner_store_url", "meet_url")(_passthrough)
 
 
 # ------------------------------------------------- registro público (landing) ----

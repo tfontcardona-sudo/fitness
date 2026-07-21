@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import {
   Dumbbell,
   ExternalLink,
@@ -98,7 +99,11 @@ function LinksPageManager() {
     if (!brand || saving) return;
     setSaving(true);
     try {
-      const { id, logo_path, links_photo_path, ...body } = brand;
+      // Base FRESCA de la marca: guardar aquí no puede pisar con una copia
+      // vieja los cambios hechos entre medias en Ajustes u otra pestaña.
+      const fresh = await api.getBrand().catch(() => brand);
+      const { id, logo_path, links_photo_path, video_cover_path, plans_photo_path,
+              ...body } = fresh;
       const updated = await api.updateBrand({
         ...body,
         partner_store_url: storeUrl.trim() || null,
@@ -551,7 +556,7 @@ function ProductEditor({
   draft, setDraft, onSave, onCancel, onRemoveUpload, saving,
 }: {
   draft: Draft;
-  setDraft: (d: Draft) => void;
+  setDraft: Dispatch<SetStateAction<Draft | null>>;
   onSave: () => void;
   onCancel: () => void;
   onRemoveUpload: () => void;
@@ -598,13 +603,20 @@ function ProductEditor({
         if (!auto) toast.push("La página no trae datos legibles: rellénalo a mano", "error");
         return;
       }
-      setDraft({
-        ...draft,
-        title: auto && draft.title.trim() ? draft.title : (meta.title ?? draft.title),
-        description: auto && draft.description.trim() ? draft.description : (meta.description ?? draft.description),
-        image_url: hasUpload || (auto && draft.image_url.trim())
-          ? draft.image_url
-          : (meta.image_url ?? draft.image_url),
+      // Merge sobre el borrador VIGENTE (update funcional): lo que el coach
+      // teclee MIENTRAS se lee la página no se pisa, y si el editor ya se
+      // cerró (guardó durante la lectura) no se reabre con datos viejos.
+      setDraft((prev) => {
+        if (!prev) return prev;
+        const hasUp = prev.uploaded !== null || prev.file !== null;
+        return {
+          ...prev,
+          title: auto && prev.title.trim() ? prev.title : (meta.title ?? prev.title),
+          description: auto && prev.description.trim() ? prev.description : (meta.description ?? prev.description),
+          image_url: hasUp || (auto && prev.image_url.trim())
+            ? prev.image_url
+            : (meta.image_url ?? prev.image_url),
+        };
       });
       toast.push("Datos del producto rellenados desde el enlace");
     } catch (e) {
