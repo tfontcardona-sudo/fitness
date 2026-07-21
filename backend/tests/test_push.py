@@ -176,7 +176,7 @@ def test_pending_for_client(db, client_with_plan) -> None:
 
     # Día 3, nada registrado → falta diario + entreno (hoy hay sesión), no quincenal
     p = push_svc.pending_for_client(db, client, today)
-    assert p == {"diary": True, "workout": True, "quincenal": False, "count": 2}
+    assert p == {"diary": True, "workout": True, "quincenal": False, "photos": False, "count": 2}
 
     # Fila de diario vacía (autosave) → sigue faltando el diario
     log = DailyLog(period_id=period.id, log_date=today)
@@ -205,6 +205,33 @@ def test_pending_for_client(db, client_with_plan) -> None:
     period.status = "closed"
     db.flush()
     assert push_svc.pending_for_client(db, client, today)["count"] == 0
+
+
+@needs_db
+def test_photos_reminder_cycle(db, client_with_plan) -> None:
+    """Tras cerrar la revisión: recordatorio de fotos (~15 min → cada 3 h) hasta
+    que el cliente confirma; entonces se apaga."""
+    from datetime import datetime, timedelta, timezone
+
+    client, plan, period = client_with_plan
+    now = datetime(2026, 7, 20, 12, 0, tzinfo=timezone.utc)
+
+    # Sin cerrar → no aplica el recordatorio de fotos
+    assert push_svc.photos_pending(db, client, now=now, min_minutes=15) is False
+
+    # Revisión enviada AHORA: el push espera 15 min; el banner (0 min) ya aplica
+    period.status = "closed"
+    period.closing_submitted_at = now
+    period.photos_confirmed = False
+    db.flush()
+    assert push_svc.photos_pending(db, client, now=now, min_minutes=0) is True
+    assert push_svc.photos_pending(db, client, now=now, min_minutes=15) is False
+    assert push_svc.photos_pending(db, client, now=now + timedelta(minutes=20), min_minutes=15) is True
+
+    # Confirmadas → se apaga en ambos casos
+    period.photos_confirmed = True
+    db.flush()
+    assert push_svc.photos_pending(db, client, now=now + timedelta(hours=6), min_minutes=0) is False
 
 
 @needs_db

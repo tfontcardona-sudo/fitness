@@ -301,6 +301,8 @@ def portal_state_full(
         if period
         else portal_svc.latest_published_plan(db, client.id)
     )
+    from app.services.push import photos_pending
+
     return PortalState(
         first_name=_first_name(client),
         status=client.status,
@@ -309,6 +311,8 @@ def portal_state_full(
         has_plan=plan is not None,
         period=portal_svc.period_info(period, portal_svc.today_local()),
         brand=PortalBrand(**portal_svc.brand_payload(db)),
+        # Banner del portal: se muestra ya (sin esperar los 15 min del push).
+        photos_pending=photos_pending(db, client, min_minutes=0),
     )
 
 
@@ -731,6 +735,10 @@ def portal_close_period(
     ):
         setattr(period, field, getattr(body, field))
     period.status = "closed"
+    # Arranca el recordatorio de fotos: se enviará ~15 min después y luego cada
+    # 3 h hasta que el cliente confirme en el portal que las envió al coach.
+    period.closing_submitted_at = datetime.now(timezone.utc)
+    period.photos_confirmed = False
 
     # El cliente pasa a esperar la revisión del coach (review_pending)
     if client.status in ("active", "awaiting_feedback", "at_risk"):
@@ -740,6 +748,30 @@ def portal_close_period(
               {"period_index": period.period_index, "rating": body.closing_rating})
     db.commit()
     return {"closed": True, "period_index": period.period_index}
+
+
+@router.post("/{token}/photos-confirmed")
+@limiter.limit("20/minute")
+def portal_confirm_photos(
+    request: Request,
+    client: Client = Depends(get_client_by_token),
+    db: Session = Depends(get_db),
+) -> dict:
+    """El cliente confirma que envió sus fotos de progreso al coach: se apaga el
+    recordatorio (portal + push). Sobre la última revisión cerrada/analizada."""
+    period = db.scalar(
+        select(Period).where(
+            Period.client_id == client.id,
+            Period.status.in_(("closed", "analyzed")),
+        ).order_by(Period.period_index.desc()).limit(1)
+    )
+    if period is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "No hay revisión que confirmar")
+    period.photos_confirmed = True
+    log_event(db, "client", client.id, "progress_photos_confirmed",
+              {"period_index": period.period_index})
+    db.commit()
+    return {"confirmed": True}
 
 
 @router.post("/{token}/close/photos")

@@ -77,36 +77,43 @@ export default function PlansPage() {
     }
   }
 
+  // Mismo tratamiento de fondo que la pantalla principal (/dq): la FOTO se ve
+  // clara, solo con un degradado oscuro por debajo para que el texto blanco de
+  // la cabecera se lea — nada de velo que la lave. Las tarjetas siguen blancas
+  // (heredan el texto oscuro del root) y resaltan sobre la foto.
+  const bg = landing?.color_bg ?? "#0B111C";
   return (
-    <div className="relative" style={{ minHeight: "100vh", background: "#f6f1e7", color: "#26211a" }}>
+    <div className="relative" style={{ minHeight: "100vh", background: bg, color: "#26211a" }}>
       {/* Foto de fondo propia (Recursos → Página de enlaces → Foto de los
-          planes) con velo crema para que todo se lea. */}
-      {landing?.plans_photo_url && (
+          planes), visible como en /dq. Sin foto: degradado de marca. */}
+      {landing?.plans_photo_url ? (
         <>
           <img src={landing.plans_photo_url} alt=""
             className="pointer-events-none fixed inset-0 h-full w-full object-cover" />
           <div className="pointer-events-none fixed inset-0"
-            style={{ background: "linear-gradient(180deg, rgba(246,241,231,.62) 0%, rgba(246,241,231,.8) 45%, rgba(246,241,231,.9) 100%)" }} />
+            style={{ background: `linear-gradient(180deg, ${bg}55 0%, ${bg}CC 55%, ${bg}F2 100%)` }} />
         </>
+      ) : (
+        <div className="pointer-events-none fixed inset-0"
+          style={{ background: `radial-gradient(120% 80% at 50% 0%, ${(landing?.color_secondary ?? "#2E5E8C")}44 0%, ${bg} 60%)` }} />
       )}
       <div className="relative mx-auto max-w-4xl px-5 py-10">
-        {/* textShadow: halo claro alrededor del texto oscuro — se lee bien pase
-            lo que pase debajo (foto clara, oscura, con textura...). */}
-        <header className="mb-6 flex flex-col items-center text-center"
-          style={{ textShadow: "0 0 14px #f6f1e7, 0 0 6px #f6f1e7, 0 1px 2px #f6f1e7" }}>
-          <img src="/dq-logo.png" alt="" className="h-14 w-auto rounded-xl shadow-sm" />
+        {/* Cabecera en BLANCO sobre la foto (como /dq), con sombra para leerse. */}
+        <header className="mb-6 flex flex-col items-center text-center text-white"
+          style={{ textShadow: "0 2px 12px rgba(0,0,0,0.55), 0 1px 3px rgba(0,0,0,0.7)" }}>
+          <img src="/dq-logo.png" alt="" className="h-14 w-auto rounded-xl shadow-lg" />
           <h1 className="mt-4 text-3xl font-extrabold tracking-tight">
-            Empieza tu cambio <span style={{ color: "#E8833A" }}>hoy</span>
+            Empieza tu cambio <span style={{ color: "#F6A560" }}>hoy</span>
           </h1>
-          <p className="mt-1 max-w-lg text-sm opacity-80">
+          <p className="mt-1 max-w-lg text-sm text-white/85">
             Plan de dieta y entreno 100 % a tu medida, con seguimiento real de tu coach.
           </p>
           {/* Gancho de confianza: qué incluye SIEMPRE, de un vistazo */}
-          <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs font-medium">
-            <span style={{ color: "#2E7D46" }}>✓ Plan personalizado</span>
-            <span style={{ color: "#2E7D46" }}>✓ Revisión quincenal</span>
-            <span style={{ color: "#2E7D46" }}>✓ App de seguimiento</span>
-            <span style={{ color: "#2E7D46" }}>✓ Pago seguro</span>
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs font-semibold">
+            <span style={{ color: "#6FE39A" }}>✓ Plan personalizado</span>
+            <span style={{ color: "#6FE39A" }}>✓ Revisión quincenal</span>
+            <span style={{ color: "#6FE39A" }}>✓ App de seguimiento</span>
+            <span style={{ color: "#6FE39A" }}>✓ Pago seguro</span>
           </div>
         </header>
 
@@ -216,7 +223,8 @@ export default function PlansPage() {
         </div>
         )}
 
-        <p className="mt-8 text-center text-xs opacity-50">
+        <p className="mt-8 text-center text-xs text-white/60"
+          style={{ textShadow: "0 1px 3px rgba(0,0,0,0.6)" }}>
           {prices
             ? "Pago seguro con Stripe."
             : "Pago seguro con Stripe. El precio de cada plan se muestra en la pantalla de pago."}
