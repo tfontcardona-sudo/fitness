@@ -309,7 +309,8 @@ def build_training_sessions(db: Session, client: Client) -> list[dict]:
 # Host de YouTube ANCLADO de verdad: se parsea la URL y se compara el hostname
 # entero (no subcadenas ni límites de regex, que también casaban dentro del path:
 # "example.com/x//youtu.be/…"). Solo estos hosts producen portada.
-_YT_HOSTS = {"youtu.be", "youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"}
+_YT_HOSTS = {"youtu.be", "www.youtu.be", "youtube.com", "www.youtube.com", "m.youtube.com",
+             "music.youtube.com", "youtube-nocookie.com", "www.youtube-nocookie.com"}
 _YT_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
 
 
@@ -329,7 +330,7 @@ def youtube_thumbnail(url: str | None) -> str | None:
         return None
     vid: str | None = None
     segs = [s for s in parts.path.split("/") if s]
-    if host == "youtu.be":
+    if host in ("youtu.be", "www.youtu.be"):
         vid = segs[0] if segs else None
     elif segs and segs[0] == "watch":
         vid = (parse_qs(parts.query).get("v") or [None])[0]
