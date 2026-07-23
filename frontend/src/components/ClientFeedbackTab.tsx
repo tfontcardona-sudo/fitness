@@ -225,8 +225,31 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
   const needsAdapt = latestReview != null && adaptedIdx !== latestReview.period_index;
   const maxIdx = periods.reduce((mx, p) => Math.max(mx, p.period_index), 0);
 
+  // Videollamada (Pro): se ancla a la ÚLTIMA revisión cerrada/analizada (igual
+  // que la alerta). Se muestra ARRIBA del todo y SIEMPRE visible — antes vivía
+  // dentro del período, que queda plegado, así que al pulsar la notificación
+  // el coach no veía los botones de aceptar/modificar.
+  const lastReviewIdx = periods
+    .filter((p) => p.status === "closed" || p.status === "analyzed")
+    .reduce((mx, p) => Math.max(mx, p.period_index), 0);
+  const callForLastReview = calls.find((c) => c.period_index === lastReviewIdx) ?? null;
+  const showVideoCall = directContact && lastReviewIdx > 0 && callForLastReview?.status !== "done";
+
   return (
     <div className="space-y-4">
+      {/* Videollamada quincenal (Pro), SIEMPRE arriba y visible: el cliente
+          propone → el coach acepta o modifica → agendada con Meet. */}
+      {showVideoCall && (
+        <VideoCallCycle
+          clientId={client.id}
+          periodIndex={lastReviewIdx}
+          call={callForLastReview}
+          googleConnected={googleConnected}
+          onModify={modifyVideoCall}
+          onShareMeet={shareMeetWhatsApp}
+          onChanged={loadCalls}
+        />
+      )}
       {latestReview && needsAdapt && (
         <div
           className="card flex flex-wrap items-center justify-between gap-2 p-3.5"
@@ -305,21 +328,8 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
               </div>
             )}
 
-            {/* Videollamada quincenal (Pro): el cliente propone → el coach acepta
-                o modifica → agendada con Meet. En períodos ANTIGUOS solo se
-                muestra si su videollamada existe. */}
-            {directContact && p.status !== "open"
-              && (isCurrent || calls.some((c) => c.period_index === p.period_index)) && (
-              <VideoCallCycle
-                clientId={client.id}
-                periodIndex={p.period_index}
-                call={calls.find((c) => c.period_index === p.period_index) ?? null}
-                googleConnected={googleConnected}
-                onModify={modifyVideoCall}
-                onShareMeet={shareMeetWhatsApp}
-                onChanged={loadCalls}
-              />
-            )}
+            {/* La videollamada quincenal (Pro) se muestra ARRIBA del todo, no
+                dentro del período (que queda plegado). Ver `showVideoCall`. */}
 
             {/* Datos del cierre */}
             {p.status !== "open" && (
