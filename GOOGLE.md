@@ -101,6 +101,12 @@ con los botones **Aceptar** / **Modificar**.
 
 ## Notas y resolución de problemas
 
+- **`invalid_client` / "The OAuth client was not found"** (Error 401): el
+  `GOOGLE_CLIENT_ID` del `.env` está mal escrito, es un valor de prueba, o el
+  cliente OAuth se borró en Google Cloud. Copia otra vez el **ID de cliente**
+  exacto (termina en `.apps.googleusercontent.com`) y reinicia. Si NO vas a usar
+  la conexión automática, deja `GOOGLE_CLIENT_ID`/`SECRET` **vacíos**: el botón
+  "Conectar" desaparece y se usa el enlace de reservas manual.
 - **`redirect_uri_mismatch`**: la URI de redirección del `.env`/dominio no coincide
   con la de Google Cloud. Revisa que sean idénticas (incluido `http` vs `https` y
   sin barra final de más).

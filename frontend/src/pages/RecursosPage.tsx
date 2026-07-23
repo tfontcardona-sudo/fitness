@@ -300,11 +300,11 @@ function LinksPageManager() {
           cliente por email y ambos recibís recordatorios automáticos.
         </p>
         {google && !google.enabled && (
-          <p className="mt-3 rounded-lg p-2.5 text-xs"
-            style={{ background: "rgba(154,107,21,0.10)", color: "#9A6B15" }}>
-            La integración con Google no está configurada en el servidor (faltan
-            <code> GOOGLE_CLIENT_ID</code>/<code>SECRET</code> en el .env). Consulta
-            la guía <b>GOOGLE.md</b> del repositorio.
+          <p className="mt-3 rounded-lg p-2.5 text-xs text-zinc-400"
+            style={{ background: "var(--surface-raised)" }}>
+            La conexión automática con Google Meet (opcional) no está activada. No
+            hace falta: usa el <b>enlace de reservas</b> de aquí abajo y el cliente
+            elige día y hora por WhatsApp.
           </p>
         )}
         {google?.enabled && (
