@@ -100,6 +100,10 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
     google_calendar_id: str = "primary"
+    # Email de la cuenta de Google de la asesoría (p. ej. asesoriasdqr@gmail.com):
+    # al pulsar "Conectar", Google abre YA con esta cuenta en vez de la que el
+    # navegador tenga por defecto (evita conectar sin querer la cuenta personal).
+    google_login_hint: str = ""
 
     @property
     def google_enabled(self) -> bool:

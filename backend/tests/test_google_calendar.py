@@ -59,6 +59,16 @@ def test_authorize_url_and_state_roundtrip():
     assert gcal.verify_state(state) == "coach1"
 
 
+def test_authorize_url_includes_login_hint(monkeypatch):
+    # Sin login_hint configurado: no aparece.
+    monkeypatch.setattr(settings, "google_login_hint", "")
+    assert "login_hint" not in gcal.build_authorize_url("coach1")
+    # Con login_hint: Google abre con esa cuenta (email URL-encoded).
+    monkeypatch.setattr(settings, "google_login_hint", "asesoriasdqr@gmail.com")
+    url = gcal.build_authorize_url("coach1")
+    assert "login_hint=asesoriasdqr%40gmail.com" in url
+
+
 def test_verify_state_rejects_tampering():
     with pytest.raises(gcal.GoogleCalendarError):
         gcal.verify_state("no-es-un-state-valido")

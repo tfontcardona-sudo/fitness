@@ -95,6 +95,10 @@ def build_authorize_url(coach: str) -> str:
         "include_granted_scopes": "true",
         "state": state,
     }
+    # Abre YA con la cuenta de la asesoría (no la que el navegador tenga por
+    # defecto): evita conectar sin querer la cuenta personal del coach.
+    if settings.google_login_hint:
+        params["login_hint"] = settings.google_login_hint
     return f"{_AUTH_URL}?{httpx.QueryParams(params)}"
 
 
