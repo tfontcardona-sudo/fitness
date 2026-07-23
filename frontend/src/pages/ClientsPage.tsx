@@ -460,26 +460,29 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 sm:items-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="Nuevo cliente"
-        // max-h + scroll propio: en móvil/pantallas cortas el formulario es más
-        // alto que la ventana; sin esto se cortaba y no se llegaba a "Crear
-        // cliente". Ahora el modal se desplaza dentro y el botón siempre alcanza.
-        className="card animate-rise my-auto max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto p-6"
+        // COLUMNA flex con cabecera fija, cuerpo desplazable y BOTONES fijos
+        // abajo: el modal nunca supera la altura de la ventana y "Crear cliente"
+        // queda SIEMPRE visible (centrar un modal más alto que la pantalla
+        // recortaba arriba y abajo aunque tuviera scroll).
+        className="card animate-rise flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col overflow-hidden"
         style={{ background: "var(--surface-raised)" }}
       >
         {!created ? (
           <>
-            <h3 className="text-base font-semibold text-zinc-100">Nuevo cliente</h3>
-            <p className="mt-1 text-sm text-zinc-500">
-              Al crearlo se le enviará por email su acceso al portal (usuario, contraseña
-              y enlace). Solo necesitas nombre y email; el teléfono es para WhatsApp.
-            </p>
-            <div className="mt-5 space-y-4">
+            <div className="shrink-0 p-6 pb-3">
+              <h3 className="text-base font-semibold text-zinc-100">Nuevo cliente</h3>
+              <p className="mt-1 text-sm text-zinc-500">
+                Al crearlo se le enviará por email su acceso al portal (usuario, contraseña
+                y enlace). Solo necesitas nombre y email; el teléfono es para WhatsApp.
+              </p>
+            </div>
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-1">
               <div>
                 <label className="label">Nombre completo</label>
                 <input className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} />
@@ -556,7 +559,10 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
                 </div>
               </div>
             </div>
-            <div className="mt-6 flex justify-end gap-2">
+            {/* Pie FIJO: los botones quedan siempre a la vista, no dependen del
+                scroll del formulario. */}
+            <div className="shrink-0 flex justify-end gap-2 border-t p-6 pt-4"
+              style={{ borderColor: "var(--line)" }}>
               <button className="btn btn-ghost" onClick={onClose}>
                 Cancelar
               </button>
@@ -566,7 +572,7 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
             </div>
           </>
         ) : (
-          <>
+          <div className="min-h-0 flex-1 overflow-y-auto p-6">
             <h3 className="text-base font-semibold text-zinc-100">Cliente creado</h3>
 
             {/* Envío COMBINADO de arranque: pago del plan + anamnesis en un solo
@@ -616,7 +622,7 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
                 Hecho
               </button>
             </div>
-          </>
+          </div>
         )}
       </div>
     </div>
