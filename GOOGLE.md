@@ -74,10 +74,18 @@ agendar es **1 clic** desde la ficha del cliente.
 GOOGLE_CLIENT_ID=xxxxxxxx.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=xxxxxxxx
 GOOGLE_CALENDAR_ID=primary
+# La cuenta de Google de la asesoría: Google abrirá "Conectar" ya con ella.
+GOOGLE_LOGIN_HINT=asesoriasdqr@gmail.com
 ```
 
 Reinicia el backend. En el arranque, si las claves están puestas, la integración
 queda activa.
+
+> **`GOOGLE_LOGIN_HINT`** hace que, al pulsar "Conectar", Google abra
+> directamente con la cuenta de la asesoría (no con la que tengas por defecto en
+> el navegador). Ponla igual que la cuenta con la que creaste las credenciales.
+> Además, esa cuenta debe estar en **Usuarios de prueba** de la pantalla de
+> consentimiento (Paso 2.5) si la app está "En pruebas".
 
 ### 5. Conectar tu cuenta desde la web
 
