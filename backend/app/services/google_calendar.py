@@ -53,6 +53,31 @@ class GoogleCalendarError(Exception):
     """Error legible de la integración (config, conexión o API de Google)."""
 
 
+def _google_error(exc: Exception, fallback: str) -> GoogleCalendarError:
+    """Extrae el MOTIVO real que devuelve Google (mensaje del JSON de error) y lo
+    añade al aviso y al log — sin esto solo se veía "inténtalo de nuevo" y no se
+    podía diagnosticar (falta de permiso, API sin habilitar, cuota…)."""
+    resp = getattr(exc, "response", None)
+    detail = ""
+    status = None
+    if resp is not None:
+        status = getattr(resp, "status_code", None)
+        try:
+            j = resp.json()
+            err = j.get("error", {}) if isinstance(j, dict) else {}
+            detail = (err.get("message") if isinstance(err, dict) else "") or ""
+        except Exception:
+            detail = ""
+        if not detail:
+            try:
+                detail = (resp.text or "")[:300]
+            except Exception:
+                detail = ""
+    logger.warning("Google Calendar error (HTTP %s): %s", status, detail or str(exc))
+    msg = f"{fallback} (Google: {detail})" if detail else fallback
+    return GoogleCalendarError(msg)
+
+
 # --------------------------------------------------------------- estado ----
 
 def is_connected(db: Session) -> bool:
@@ -278,9 +303,8 @@ def create_meet_event(
         resp.raise_for_status()
         ev = resp.json()
     except httpx.HTTPError as exc:
-        logger.warning("fallo al crear el evento en Google Calendar: %s", exc)
-        raise GoogleCalendarError(
-            "No se pudo crear el evento en Google Calendar, inténtalo de nuevo.") from exc
+        raise _google_error(
+            exc, "No se pudo crear el evento en Google Calendar, inténtalo de nuevo.") from exc
 
     return {
         "event_id": ev.get("id"),
@@ -311,9 +335,8 @@ def update_meet_event(
         resp.raise_for_status()
         ev = resp.json()
     except httpx.HTTPError as exc:
-        logger.warning("fallo al reprogramar el evento de Google: %s", exc)
-        raise GoogleCalendarError(
-            "No se pudo reprogramar el evento en Google Calendar.") from exc
+        raise _google_error(
+            exc, "No se pudo reprogramar el evento en Google Calendar.") from exc
     return {"event_id": ev.get("id"), "meet_url": _extract_meet_url(ev),
             "html_link": ev.get("htmlLink")}
 
@@ -330,8 +353,7 @@ def cancel_meet_event(db: Session, *, event_id: str) -> None:
         if resp.status_code not in (200, 204, 404, 410):
             resp.raise_for_status()
     except httpx.HTTPError as exc:
-        logger.warning("fallo al cancelar el evento de Google: %s", exc)
-        raise GoogleCalendarError("No se pudo cancelar el evento en Google Calendar.") from exc
+        raise _google_error(exc, "No se pudo cancelar el evento en Google Calendar.") from exc
 
 
 def _extract_meet_url(ev: dict) -> str | None:
