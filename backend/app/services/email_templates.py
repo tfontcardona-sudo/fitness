@@ -200,6 +200,40 @@ def closing_due(brand: Brand, first_name: str, portal_url: str, period_index: in
     return subject, _shell(brand, "Cierra tu período", body, f"{portal_url}/cierre", "Completar cierre")
 
 
+def video_call_scheduled(brand: Brand, first_name: str, when_label: str,
+                         meet_url: str, duration_min: int) -> tuple[str, str]:
+    """Confirmación de la videollamada de revisión agendada (con enlace de Meet)."""
+    first_name = _esc(first_name)
+    when = _esc(when_label)
+    subject = f"Tu videollamada de revisión: {when_label} · {brand.name}"
+    body = (
+        f"<p>Hola {first_name}, ya tenemos fecha para tu <strong>videollamada de "
+        f"revisión</strong>:</p>"
+        f"<p style='font-size:18px'><strong>{when}</strong> "
+        f"<span style='color:#6b7280'>({duration_min} min)</span></p>"
+        "<p>Recibirás también una invitación en tu Google Calendar con recordatorios "
+        "automáticos. Cuando llegue el momento, únete desde este mismo enlace:</p>"
+        f"<p style='color:#6b7280;font-size:13px'>Enlace de Meet: "
+        f"<a href='{_esc(meet_url)}' style='color:{brand.color_primary}'>{_esc(meet_url)}</a></p>"
+    )
+    return subject, _shell(brand, "Videollamada agendada", body, meet_url, "Unirme a la videollamada")
+
+
+def video_call_reminder(brand: Brand, first_name: str, when_label: str,
+                        meet_url: str) -> tuple[str, str]:
+    """Recordatorio (día antes) de la videollamada, con el enlace de Meet."""
+    first_name = _esc(first_name)
+    when = _esc(when_label)
+    subject = f"Recordatorio: videollamada {when_label} · {brand.name}"
+    body = (
+        f"<p>Hola {first_name}, te recuerdo que <strong>mañana</strong> tenemos tu "
+        f"videollamada de revisión:</p>"
+        f"<p style='font-size:18px'><strong>{when}</strong></p>"
+        "<p>Nos vemos en la llamada. Puedes unirte desde el botón de abajo.</p>"
+    )
+    return subject, _shell(brand, "Tu videollamada es mañana", body, meet_url, "Unirme a la videollamada")
+
+
 def feedback_ready(brand: Brand, first_name: str, portal_url: str,
                    has_training: bool = True) -> tuple[str, str]:
     first_name = _esc(first_name)

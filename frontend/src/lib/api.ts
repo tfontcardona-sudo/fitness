@@ -51,6 +51,7 @@ import type {
   RecommendedProductOut,
   RecommendedProductUpdate,
   TokenOut,
+  VideoCallAgendaItem,
   VideoCallOut,
 } from "../types";
 
@@ -309,17 +310,33 @@ export const api = {
     request<{ sent: boolean; email_status: string; attached_pdf: boolean }>(
       "POST", `/plans/${planId}/send-update-email`),
 
-  // --- videollamadas quincenales (Pro): agendar → fecha → confirmar/reagendar ---
+  // --- videollamadas quincenales (Pro): el cliente propone → coach acepta/modifica ---
   listVideoCalls: (clientId: number) =>
     request<VideoCallOut[]>("GET", `/clients/${clientId}/video-calls`),
-  createVideoCall: (clientId: number, periodIndex: number) =>
-    request<VideoCallOut>("POST", `/clients/${clientId}/video-calls`, { period_index: periodIndex }),
-  scheduleVideoCall: (clientId: number, callId: number, scheduledFor: string) =>
-    request<VideoCallOut>("PATCH", `/clients/${clientId}/video-calls/${callId}`, { scheduled_for: scheduledFor }),
+  // Aceptar la propuesta del cliente tal cual (crea el evento + Meet + invita).
+  acceptVideoCall: (clientId: number, callId: number, durationMin = 30) =>
+    request<VideoCallOut>("POST", `/clients/${clientId}/video-calls/${callId}/accept`, { duration_min: durationMin }),
+  // Modificar: queda pendiente de agendar a mano (se acuerda por WhatsApp).
+  modifyVideoCall: (clientId: number, callId: number) =>
+    request<VideoCallOut>("POST", `/clients/${clientId}/video-calls/${callId}/modify`),
   videoCallDone: (clientId: number, callId: number) =>
     request<VideoCallOut>("POST", `/clients/${clientId}/video-calls/${callId}/done`),
   videoCallReschedule: (clientId: number, callId: number) =>
     request<VideoCallOut>("POST", `/clients/${clientId}/video-calls/${callId}/reschedule`),
+  // Agenda a mano (o acepta con otra hora): crea el evento con Meet, invita al
+  // cliente y devuelve el enlace. startAt en formato "YYYY-MM-DDTHH:MM".
+  scheduleVideoCallMeet: (clientId: number, periodIndex: number, startAt: string, durationMin: number) =>
+    request<VideoCallOut>("POST", `/clients/${clientId}/video-calls/schedule-meet`,
+      { period_index: periodIndex, start_at: startAt, duration_min: durationMin }),
+  // Agenda del coach: videollamadas agendadas (día, hora, cliente, enlace).
+  videoCallsAgenda: () =>
+    request<{ calls: VideoCallAgendaItem[]; count: number }>("GET", "/video-calls/agenda"),
+
+  // --- Google Calendar / Meet (conexión de la cuenta del coach) ---
+  googleStatus: () =>
+    request<{ enabled: boolean; connected: boolean; email: string | null }>("GET", "/google/status"),
+  googleStart: () => request<{ authorize_url: string }>("GET", "/google/oauth/start"),
+  googleDisconnect: () => request<{ disconnected: boolean }>("POST", "/google/disconnect"),
 
   // --- push del COACH (su móvil recibe el resumen de alertas cada 3 h) ---
   coachPushPublicKey: () =>

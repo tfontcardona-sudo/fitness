@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import {
+  CheckCircle2,
   Dumbbell,
   ExternalLink,
   GripVertical,
@@ -31,7 +32,11 @@ import { ConfirmDialog, EmptyState, PageLoader, Spinner, useToast } from "../com
  * se configura es lo que el cliente ve en la pestaña "Recursos" de su portal.
  */
 export default function RecursosPage() {
-  const [tab, setTab] = useState<"productos" | "videos" | "enlaces">("productos");
+  // Al volver del OAuth de Google (/recursos?google=…) abrimos directamente la
+  // pestaña "Página de enlaces", donde está el bloque de conexión con Google.
+  const [tab, setTab] = useState<"productos" | "videos" | "enlaces">(
+    () => (new URLSearchParams(window.location.search).has("google") ? "enlaces" : "productos"),
+  );
   return (
     <div className="mx-auto max-w-4xl px-4 py-6 md:px-8 md:py-8">
       <header className="mb-6">
@@ -83,6 +88,13 @@ function LinksPageManager() {
   const plansPhotoRef = useRef<HTMLInputElement>(null);
   const publicUrl = `${window.location.origin}/dq`;
 
+  // Estado de la conexión con Google (Calendar + Meet) para agendar en 1 clic.
+  const [google, setGoogle] = useState<{ enabled: boolean; connected: boolean; email: string | null } | null>(null);
+  const [googleBusy, setGoogleBusy] = useState(false);
+  const loadGoogle = useCallback(() => {
+    api.googleStatus().then(setGoogle).catch(() => setGoogle(null));
+  }, []);
+
   useEffect(() => {
     api.getBrand()
       .then((b) => {
@@ -92,8 +104,45 @@ function LinksPageManager() {
         setMeetUrl(b.meet_url ?? "");
       })
       .catch(() => toast.push("No se pudo cargar la configuración", "error"));
+    loadGoogle();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Al volver del consentimiento de Google (?google=connected|error): avisa,
+  // limpia el parámetro de la URL y recarga el estado de la conexión.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search).get("google");
+    if (!p) return;
+    if (p === "connected") toast.push("Google conectado: ya puedes agendar videollamadas con Meet");
+    else if (p === "error") toast.push("No se pudo conectar con Google, inténtalo de nuevo", "error");
+    window.history.replaceState({}, "", window.location.pathname);
+    loadGoogle();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function connectGoogle() {
+    setGoogleBusy(true);
+    try {
+      const { authorize_url } = await api.googleStart();
+      window.location.href = authorize_url;  // redirige al consentimiento de Google
+    } catch (e) {
+      toast.push(e instanceof ApiError ? e.message : "No se pudo iniciar la conexión con Google", "error");
+      setGoogleBusy(false);
+    }
+  }
+
+  async function disconnectGoogle() {
+    setGoogleBusy(true);
+    try {
+      await api.googleDisconnect();
+      toast.push("Google desconectado");
+      loadGoogle();
+    } catch (e) {
+      toast.push(e instanceof ApiError ? e.message : "No se pudo desconectar", "error");
+    } finally {
+      setGoogleBusy(false);
+    }
+  }
 
   async function save() {
     if (!brand || saving) return;
@@ -238,22 +287,59 @@ function LinksPageManager() {
         </button>
       </div>
 
-      {/* Enlace de reservas de la videollamada quincenal (plan Pro) */}
+      {/* Videollamadas quincenales (plan Pro): Google Meet + enlace de reservas */}
       <div className="card p-5">
-        <h3 className="text-sm font-semibold text-zinc-200">Videollamadas (plan Pro)</h3>
+        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-zinc-200">
+          <Video size={15} /> Videollamadas (plan Pro)
+        </h3>
+
+        {/* Conexión con Google Calendar / Meet: agendar con 1 clic */}
         <p className="mt-1 text-sm text-zinc-500">
-          Tu enlace de reservas (Google Calendar con Meet, Calendly…). Al proponer la
-          videollamada quincenal por WhatsApp, el mensaje lo incluye para que el
-          cliente elija día y hora él mismo.
+          Conecta tu cuenta de Google para agendar la videollamada quincenal con enlace
+          de <b>Meet</b> en 1 clic: se crea el evento en tu calendario, se invita al
+          cliente por email y ambos recibís recordatorios automáticos.
         </p>
-        <div className="mt-3">
-          <label className="label">Enlace de reservas</label>
+        {google && !google.enabled && (
+          <p className="mt-3 rounded-lg p-2.5 text-xs"
+            style={{ background: "rgba(154,107,21,0.10)", color: "#9A6B15" }}>
+            La integración con Google no está configurada en el servidor (faltan
+            <code> GOOGLE_CLIENT_ID</code>/<code>SECRET</code> en el .env). Consulta
+            la guía <b>GOOGLE.md</b> del repositorio.
+          </p>
+        )}
+        {google?.enabled && (
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            {google.connected ? (
+              <>
+                <span className="flex items-center gap-1.5 text-sm" style={{ color: "#2E7D46" }}>
+                  <CheckCircle2 size={16} /> Conectado{google.email ? ` como ${google.email}` : ""}
+                </span>
+                <button className="btn btn-ghost !py-1.5 text-xs" disabled={googleBusy} onClick={disconnectGoogle}>
+                  Desconectar
+                </button>
+              </>
+            ) : (
+              <button className="btn btn-primary" disabled={googleBusy} onClick={connectGoogle}>
+                <Video size={15} /> Conectar con Google Calendar / Meet
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Enlace de reservas (alternativa manual, sin conectar Google) */}
+        <div className="mt-5 border-t border-white/5 pt-4">
+          <label className="label">Enlace de reservas (alternativa)</label>
+          <p className="mb-1 text-xs text-zinc-500">
+            Si prefieres no conectar Google, tu enlace de reservas (página de citas de
+            Google, Calendly…) se incluye en el WhatsApp de la videollamada para que el
+            cliente elija día y hora él mismo.
+          </p>
           <input className="input" placeholder="https://calendar.app.google/…" value={meetUrl}
             onChange={(e) => setMeetUrl(e.target.value)} />
+          <button className="btn btn-primary mt-3" disabled={saving} onClick={save}>
+            {saving ? "Guardando…" : "Guardar enlace"}
+          </button>
         </div>
-        <button className="btn btn-primary mt-4" disabled={saving} onClick={save}>
-          {saving ? "Guardando…" : "Guardar"}
-        </button>
       </div>
     </div>
   );

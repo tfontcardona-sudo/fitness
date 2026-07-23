@@ -353,8 +353,15 @@ class VideoCallOut(BaseModel):
     id: int
     client_id: int
     period_index: int
-    status: Literal["pending", "scheduled", "done"]
+    # proposed (cliente propuso) | pending_manual (a agendar a mano) | scheduled
+    # (agendada con Meet) | done. "pending" queda por compatibilidad con datos previos.
+    status: Literal["proposed", "pending_manual", "scheduled", "done", "pending"]
     scheduled_for: date | None
+    # Cuando se agenda con Google Calendar/Meet: hora concreta, duración y enlaces.
+    scheduled_at: datetime | None = None
+    duration_min: int | None = None
+    meet_url: str | None = None
+    google_html_link: str | None = None
 
 
 # ------------------------------------------ productos recomendados (portal) ----

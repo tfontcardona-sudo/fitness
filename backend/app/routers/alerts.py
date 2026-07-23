@@ -165,35 +165,42 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
                 "planificacion", "Ver planificación"))
 
     # --- Videollamada quincenal (Pro) ---------------------------------------
-    # Al llegar la revisión toca videollamada: agendar → fecha → recordatorio
-    # el día antes → confirmar realizada (o reagendar y el ciclo se repite).
-    # OJO: se ancla a la última revisión CERRADA/ANALIZADA (no al último período
-    # sin más) — al abrirse el período siguiente, el pendiente NO desaparece.
+    # El cliente propone día/hora al enviar su revisión → el coach ACEPTA (crea el
+    # Meet) o MODIFICA (lo acuerda por WhatsApp y agenda a mano). Estados:
+    # proposed → accept|modify → scheduled|pending_manual → done. Se ancla a la
+    # última revisión CERRADA/ANALIZADA; los agendados salen SIEMPRE (aunque el
+    # siguiente período ya se haya abierto): una llamada no puede olvidarse.
     if client.package_tier == "pro":
         from app.models import VideoCall
+        from app.services.portal import format_when_es
 
         last_review = db.scalar(
             select(Period).where(Period.client_id == client.id,
                                  Period.status.in_(("closed", "analyzed")))
             .order_by(Period.period_index.desc()).limit(1)
         )
-        vc = None
         if last_review is not None:
             vc = db.scalar(select(VideoCall).where(
                 VideoCall.client_id == client.id,
                 VideoCall.period_index == last_review.period_index))
             if vc is None:
                 out.append(_alert(
-                    client, "video_call_schedule", "media",
-                    f"Toca la videollamada quincenal (revisión #{last_review.period_index}): "
-                    "propónsela por WhatsApp con tu enlace de reservas.",
+                    client, "video_call_wait", "media",
+                    f"Revisión #{last_review.period_index}: esperando que el cliente proponga "
+                    "la videollamada (o agéndala tú a mano).",
                     "feedback", "Agendar videollamada"))
-            elif vc.status == "pending":
+            elif vc.status == "proposed" and vc.scheduled_at is not None:
                 out.append(_alert(
-                    client, "video_call_schedule", "media",
-                    "Videollamada propuesta sin día cerrado: apunta la fecha en cuanto reserve.",
-                    "feedback", "Apuntar fecha"))
-        # Reservas con fecha: avisar SIEMPRE (aunque sea de una revisión
+                    client, "video_call_proposed", "alta",
+                    f"El cliente propuso videollamada: {format_when_es(vc.scheduled_at)}. "
+                    "Acéptala o modifícala.",
+                    "feedback", "Aceptar o modificar"))
+            elif vc.status == "pending_manual":
+                out.append(_alert(
+                    client, "video_call_manual", "alta",
+                    "Videollamada a agendar a mano (acordado por WhatsApp): escribe el día y la hora.",
+                    "feedback", "Agendar día y hora"))
+        # Agendadas con fecha: recordar SIEMPRE (aunque sea de una revisión
         # anterior — una llamada sin confirmar no puede olvidarse en silencio).
         for sched in db.scalars(select(VideoCall).where(
                 VideoCall.client_id == client.id,
@@ -246,3 +253,35 @@ def list_alerts(db: Session = Depends(get_db)) -> dict:
     alerts.sort(key=lambda a: (0 if a["severity"] == "alta" else 1, a["client_name"]))
     return {"alerts": alerts, "count": len(alerts),
             "high": sum(1 for a in alerts if a["severity"] == "alta")}
+
+
+@router.get("/video-calls/agenda")
+def video_calls_agenda(db: Session = Depends(get_db)) -> dict:
+    """Agenda de videollamadas AGENDADAS (con Meet): día, hora, cliente y enlace.
+    Salen ordenadas por fecha y permanecen hasta que el coach las confirma como
+    realizadas (las ya pasadas sin confirmar salen marcadas para revisar)."""
+    from app.models import VideoCall
+    from app.services.portal import format_when_es, today_local
+
+    today = today_local()
+    rows = db.scalars(
+        select(VideoCall).where(VideoCall.status == "scheduled",
+                                VideoCall.scheduled_at.is_not(None))
+        .order_by(VideoCall.scheduled_at.asc())
+    ).all()
+    out = []
+    for vc in rows:
+        client = db.get(Client, vc.client_id)
+        if client is None or client.status == "inactive":
+            continue
+        out.append({
+            "id": vc.id,
+            "client_id": vc.client_id,
+            "client_name": client.full_name,
+            "scheduled_at": vc.scheduled_at.isoformat(),
+            "when_label": format_when_es(vc.scheduled_at),
+            "duration_min": vc.duration_min,
+            "meet_url": vc.meet_url,
+            "is_past": vc.scheduled_for is not None and vc.scheduled_for < today,
+        })
+    return {"calls": out, "count": len(out)}

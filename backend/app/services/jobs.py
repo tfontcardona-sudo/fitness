@@ -173,6 +173,30 @@ def _maintain_client(db: Session, client: Client, today: date,
                      kind="closing_due", client=client)
         summary["reminders"] += 1
 
+    # 1c) Recordatorio (email) de la videollamada de MAÑANA (Pro con evento
+    # agendado en Google Meet). Complementa la invitación nativa de Google y el
+    # push del portal: capa extra "para que no pase por alto". Uno al día.
+    if getattr(client, "package_tier", None) == "pro":
+        from datetime import timedelta
+
+        from app.models import VideoCall
+        from app.services.portal import format_when_es
+
+        vc = db.scalar(
+            select(VideoCall).where(
+                VideoCall.client_id == client.id,
+                VideoCall.status == "scheduled",
+                VideoCall.scheduled_for == today + timedelta(days=1),
+            )
+        )
+        if (vc is not None and vc.meet_url and vc.scheduled_at is not None
+                and not _already_sent_today(db, client.id, "video_call_reminder", today)):
+            subject, html = tpl.video_call_reminder(
+                brand, _first_name(client), format_when_es(vc.scheduled_at), vc.meet_url)
+            emailer.send(to=client.email, subject=subject, html=html,
+                         kind="video_call_reminder", client=client)
+            summary["reminders"] += 1
+
     # 2) Cambio de estado
     if decision.new_status and decision.new_status != client.status:
         if can_transition(client.status, decision.new_status):

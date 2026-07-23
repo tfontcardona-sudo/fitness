@@ -20,7 +20,7 @@ from app.ratelimit import client_key
 from app.db import engine
 from app.routers import (
     ai_credit, alerts, auth, brand, clients, coach_push, email, exercises,
-    plans, portal_public, public_site, resources, stripe_router,
+    google_oauth, plans, portal_public, public_site, resources, stripe_router,
 )
 
 APP_VERSION = "0.2.0"
@@ -109,7 +109,8 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
     # En las rutas PÚBLICAS (sin login: landing, registro, portal por token,
     # Stripe) el detalle del error NO se expone a desconocidos — va al log.
     path = request.url.path
-    public = path.startswith(("/api/public", "/api/p/", "/api/stripe", "/api/pay"))
+    public = path.startswith(("/api/public", "/api/p/", "/api/stripe", "/api/pay",
+                              "/api/google/oauth/callback"))
     detail = ("Error interno, inténtalo de nuevo en un momento" if public
               else f"Error interno ({type(exc).__name__}): {exc}")
     return JSONResponse(
@@ -141,6 +142,7 @@ app.include_router(ai_credit.router)
 app.include_router(email.router)
 app.include_router(stripe_router.router)
 app.include_router(coach_push.router)
+app.include_router(google_oauth.router)
 app.include_router(public_site.router)
 app.include_router(portal_public.router)
 

@@ -432,10 +432,48 @@ class VideoCall(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
     period_index: Mapped[int] = mapped_column(Integer)
-    # pending (propuesta enviada, sin fecha) | scheduled (fecha apuntada) | done
-    status: Mapped[str] = mapped_column(String(12), default="pending", nullable=False)
+    # proposed (cliente propuso día/hora) | pending_manual (a agendar a mano) |
+    # scheduled (agendada con Meet) | done. "pending" queda por compatibilidad.
+    status: Mapped[str] = mapped_column(String(20), default="proposed", nullable=False)
+    # Fecha (día) de la cita. Se mantiene aunque haya integración con Google:
+    # los recordatorios/alertas existentes razonan por día y se deriva de
+    # scheduled_at cuando la cita se crea con hora concreta.
     scheduled_for: Mapped[date | None] = mapped_column(Date)
+    # --- Integración Google Calendar / Meet (cuando el coach agenda con hora) ---
+    # Momento exacto de la videollamada (con zona horaria) y duración en minutos.
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    duration_min: Mapped[int | None] = mapped_column(Integer)
+    # Enlace de Google Meet del evento + id/enlace del evento en Google Calendar
+    # (para poder reprogramarlo o cancelarlo por API). Nulos si se agendó a mano
+    # sin Google (flujo de reservas clásico).
+    meet_url: Mapped[str | None] = mapped_column(String(500))
+    google_event_id: Mapped[str | None] = mapped_column(String(255))
+    google_html_link: Mapped[str | None] = mapped_column(String(500))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+# ------------------------------------------------------ google_credentials ----
+class GoogleCredential(Base):
+    """Credenciales OAuth de la cuenta de Google del COACH (fila única).
+
+    Single-tenant: hay un solo coach, así que una sola fila. Se guarda el
+    `refresh_token` (permanente) para poder mintar `access_token` cuando toque
+    crear/editar eventos de Calendar sin volver a pedir permiso. El coach conecta
+    su cuenta una vez desde Ajustes (OAuth) y puede desconectarla.
+    """
+
+    __tablename__ = "google_credentials"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    google_email: Mapped[str | None] = mapped_column(String(200))
+    access_token: Mapped[str | None] = mapped_column(Text)
+    refresh_token: Mapped[str | None] = mapped_column(Text)
+    token_expiry: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    scope: Mapped[str | None] = mapped_column(Text)
+    connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )

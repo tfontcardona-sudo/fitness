@@ -390,13 +390,32 @@ export interface BrandConfigOut {
   meet_url: string | null;
 }
 
-/** Videollamada quincenal de un cliente Pro (ciclo agendar → fecha → confirmar). */
+/** Videollamada quincenal de un cliente Pro. El cliente propone → el coach
+ *  acepta (crea el Meet) o modifica (agenda a mano). */
 export interface VideoCallOut {
   id: number;
   client_id: number;
   period_index: number;
-  status: "pending" | "scheduled" | "done";
+  // proposed | pending_manual | scheduled | done ("pending" = dato antiguo)
+  status: "proposed" | "pending_manual" | "scheduled" | "done" | "pending";
   scheduled_for: string | null; // ISO date
+  // Cuando se agenda con Google Calendar/Meet: hora concreta, duración y enlaces.
+  scheduled_at?: string | null; // ISO datetime
+  duration_min?: number | null;
+  meet_url?: string | null;
+  google_html_link?: string | null;
+}
+
+/** Fila de la agenda de videollamadas del coach (Panel). */
+export interface VideoCallAgendaItem {
+  id: number;
+  client_id: number;
+  client_name: string;
+  scheduled_at: string;   // ISO datetime
+  when_label: string;     // "jueves 21 de julio a las 17:00"
+  duration_min: number | null;
+  meet_url: string | null;
+  is_past: boolean;       // pasada sin confirmar (a marcar como realizada)
 }
 
 /** GET /api/ai-credit — saldo local de créditos de la API de Anthropic.

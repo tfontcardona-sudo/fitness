@@ -22,7 +22,7 @@ from apscheduler.triggers.cron import CronTrigger
 from app.config import settings
 from app.db import SessionLocal
 from app.services.jobs import run_daily_maintenance
-from app.services.push import run_coach_digest, run_push_reminders
+from app.services.push import run_coach_digest, run_push_reminders, run_video_call_reminders
 
 logger = logging.getLogger("scheduler")
 
@@ -34,6 +34,11 @@ DAILY_MINUTE = 30
 # que en la práctica envía a las 09/12/15/18/21 como mucho, y solo a quien
 # tenga algo pendiente. El resumen del COACH usa la misma cadencia.
 PUSH_EVERY_HOURS = 3
+
+# Recordatorios de VIDEOLLAMADA (día antes + 1 h antes): cada 15 min, para que el
+# aviso de "1 h antes" caiga con precisión suficiente. El job es barato (solo
+# mira las agendadas) e idempotente (dedup por auditoría).
+VC_REMINDER_EVERY_MIN = 15
 
 _scheduler: BackgroundScheduler | None = None
 
@@ -69,6 +74,18 @@ def _coach_digest_job() -> None:
         logger.info("resumen push del coach: %s", summary)
     except Exception:  # nunca tumbar el scheduler por un fallo puntual
         logger.exception("fallo en el resumen push del coach")
+        db.rollback()
+    finally:
+        db.close()
+
+
+def _video_call_reminder_job() -> None:
+    db = SessionLocal()
+    try:
+        summary = run_video_call_reminders(db)
+        logger.info("recordatorios de videollamada: %s", summary)
+    except Exception:  # nunca tumbar el scheduler por un fallo puntual
+        logger.exception("fallo en los recordatorios de videollamada")
         db.rollback()
     finally:
         db.close()
@@ -111,6 +128,15 @@ def start_scheduler() -> BackgroundScheduler:
         coalesce=True,
         max_instances=1,
         misfire_grace_time=1800,
+    )
+    sched.add_job(
+        _video_call_reminder_job,
+        trigger=CronTrigger(minute=f"*/{VC_REMINDER_EVERY_MIN}", timezone=settings.tz),
+        id="video_call_reminders",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+        misfire_grace_time=600,
     )
     sched.start()
     logger.info(
