@@ -156,16 +156,46 @@ def diary_is_filled(log: DailyLog | None) -> bool:
     return any(getattr(log, f, None) not in (None, "") for f in _DIARY_FIELDS)
 
 
-def pending_for_client(db: Session, client: Client, today: date) -> dict:
-    """Qué le falta hoy al cliente: diario, entreno y/o revisión quincenal.
+def photos_pending(db: Session, client: Client, *, now: datetime | None = None,
+                   min_minutes: int = 0) -> bool:
+    """¿Falta que el cliente confirme el envío de sus fotos de progreso?
+    True si su última revisión (cerrada/analizada) no está confirmada y han
+    pasado al menos `min_minutes` desde que la envió (para el push: ~15 min;
+    para el banner del portal: 0, se muestra ya)."""
+    from datetime import timedelta
 
-    Devuelve {"diary": bool, "workout": bool, "quincenal": bool, "count": int}.
-    Solo hay pendientes con un período `open`; diario/entreno solo dentro del
-    rango de fechas del período; la quincenal cuando `can_close` (día ≥14).
+    from app.models import Period
+
+    p = db.scalar(
+        select(Period).where(
+            Period.client_id == client.id,
+            Period.status.in_(("closed", "analyzed")),
+        ).order_by(Period.period_index.desc()).limit(1)
+    )
+    if p is None or p.photos_confirmed or p.closing_submitted_at is None:
+        return False
+    now = now or datetime.now(timezone.utc)
+    submitted = p.closing_submitted_at
+    if submitted.tzinfo is None:
+        submitted = submitted.replace(tzinfo=timezone.utc)
+    return now >= submitted + timedelta(minutes=min_minutes)
+
+
+def pending_for_client(db: Session, client: Client, today: date,
+                       now: datetime | None = None) -> dict:
+    """Qué le falta hoy al cliente: diario, entreno, revisión quincenal y/o
+    confirmar el envío de fotos.
+
+    Solo hay pendientes de diario/entreno/quincenal con un período `open`; el de
+    fotos aplica tras cerrar una revisión (~15 min después) hasta que confirme.
     """
-    out = {"diary": False, "workout": False, "quincenal": False, "count": 0}
+    out = {"diary": False, "workout": False, "quincenal": False, "photos": False, "count": 0}
+    # Fotos: independiente del período abierto (es sobre la revisión ya cerrada).
+    out["photos"] = photos_pending(db, client, now=now, min_minutes=15)
+
     period = portal_svc.active_period(db, client.id)
     if period is None or period.status != "open":
+        out["count"] = int(out["photos"])
         return out
 
     info = portal_svc.period_info(period, today) or {}
@@ -192,7 +222,8 @@ def pending_for_client(db: Session, client: Client, today: date) -> dict:
                 )
             out["workout"] = not has_sets
 
-    out["count"] = int(out["diary"]) + int(out["workout"]) + int(out["quincenal"])
+    out["count"] = (int(out["diary"]) + int(out["workout"]) + int(out["quincenal"])
+                    + int(out["photos"]))
     return out
 
 
@@ -205,6 +236,8 @@ def build_reminder_payload(pending: dict, brand_name: str, portal_url: str) -> d
         parts.append("el diario de hoy")
     if pending.get("quincenal"):
         parts.append("la revisión quincenal")
+    if pending.get("photos"):
+        parts.append("confirmar el envío de tus fotos de progreso")
 
     if len(parts) == 1:
         body = f"Te falta {parts[0]}. Un minuto y listo 💪"
@@ -443,7 +476,7 @@ def run_push_reminders(db: Session, now: datetime | None = None) -> dict:
         # residual mantendría "te falta la revisión" para siempre).
         if client is None or client.status == "inactive":
             continue
-        pending = pending_for_client(db, client, today)
+        pending = pending_for_client(db, client, today, now=now_local.astimezone(timezone.utc))
         if pending["count"] == 0:
             continue
         payload = build_reminder_payload(

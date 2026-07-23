@@ -564,6 +564,8 @@ export interface PortalState {
   has_plan: boolean;
   period: PortalPeriodInfo | null;
   brand: PortalBrand;
+  // Tras enviar la revisión: falta confirmar el envío de las fotos al coach.
+  photos_pending?: boolean;
 }
 
 /** GET /api/p/{token}/push/pending — espejo de PushPendingOut. */
@@ -571,6 +573,7 @@ export interface PushPending {
   diary: boolean;
   workout: boolean;
   quincenal: boolean;
+  photos?: boolean;
   plan?: boolean;
   count: number;
 }

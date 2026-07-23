@@ -145,6 +145,14 @@ export default function DashboardPage() {
           detail: al.message,
           cta: "Abrir Recursos", tab: "planificacion", to: "/recursos",
         });
+      } else if (al.kind === "change_request") {
+        // El cliente escribió una petición/duda desde su portal: al coach.
+        acciones.push({
+          client: cli, prio: 1, tone: "#C2453A", icon: HeartPulse, category: "Petición del cliente",
+          title: "Petición o duda desde el portal",
+          detail: al.message,
+          cta: al.action, tab: al.tab,
+        });
       } else if (al.kind.startsWith("video_call_")) {
         // Videollamada quincenal (Pro): propuesta → aceptar/modificar → agendada
         // → mañana → confirmar. El cliente propone; el coach acepta o modifica.

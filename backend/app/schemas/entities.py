@@ -583,6 +583,9 @@ class PortalState(BaseModel):
     has_plan: bool
     period: PortalPeriodInfo | None
     brand: PortalBrand
+    # Tras enviar la revisión: recordatorio de confirmar el envío de las fotos
+    # de progreso al coach (persiste hasta que el cliente lo confirme).
+    photos_pending: bool = False
 
 
 class PushKeyOut(BaseModel):
@@ -614,6 +617,7 @@ class PushPendingOut(BaseModel):
     diary: bool
     workout: bool
     quincenal: bool
+    photos: bool = False  # confirmar envío de fotos de progreso tras la revisión
     plan: bool = False  # planificación nueva sin ver (suma 1 al badge)
     count: int
 

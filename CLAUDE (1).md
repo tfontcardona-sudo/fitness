@@ -427,8 +427,8 @@ cd backend && python -m pytest tests/ -q
      Panel). Portal (público): `GET|POST /api/p/{token}/video-call` (estado +
      proponer). Modelo `GoogleCredential` (fila única con `refresh_token`) +
      columnas en `video_calls` (`scheduled_at`, `duration_min`, `meet_url`,
-     `google_event_id`, `google_html_link`); migraciones `0025` (columnas) y
-     `0026` (status a VARCHAR(20)). Config: `GOOGLE_CLIENT_ID/SECRET`,
+     `google_event_id`, `google_html_link`); migraciones `0026` (columnas) y
+     `0027` (status a VARCHAR(20)). Config: `GOOGLE_CLIENT_ID/SECRET`,
      `GOOGLE_CALENDAR_ID` (gate `settings.google_enabled`, como Stripe).
    - Frontend: "Conectar con Google" en `RecursosPage`; en el portal
      (`PortalApp` → `VideoCallBanner`) el cliente propone/ve estado/"Unirme";

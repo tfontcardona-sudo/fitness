@@ -206,6 +206,12 @@ class Period(Base):
     # Momento en que el coach vio esta revisión en Seguimiento (apaga el aviso "!"
     # en la lista de clientes). Nulo = revisión nueva sin ver.
     coach_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Momento en que el cliente ENVIÓ la revisión quincenal (para el recordatorio
+    # de fotos: ~15 min después y luego cada 3 h hasta que confirme).
+    closing_submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # El cliente confirmó en el portal que envió sus fotos de progreso al coach.
+    # Mientras sea False (tras cerrar la revisión), se le recuerda.
+    photos_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     client: Mapped[Client] = relationship(back_populates="periods")

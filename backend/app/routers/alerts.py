@@ -126,6 +126,22 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
                               f"Sin registros del cliente desde hace {gap} días.",
                               "seguimiento", "Ver seguimiento"))
 
+    # --- Petición de cambio del cliente sin atender (portal → coach) ---------
+    # El cliente escribió una duda/petición desde su portal: el coach debe
+    # verlo. Persiste hasta que se marque resuelta.
+    from app.models import ChangeRequest
+
+    open_cr = db.scalar(
+        select(func.count()).select_from(ChangeRequest)
+        .where(ChangeRequest.client_id == client.id, ChangeRequest.status == "open")
+    )
+    if open_cr:
+        out.append(_alert(
+            client, "change_request", "alta",
+            f"Tiene {open_cr} petición/duda sin responder desde su portal."
+            if open_cr > 1 else "Te ha escrito una petición/duda desde su portal.",
+            "seguimiento", "Ver petición"))
+
     # --- Suplementos del plan SIN producto en Recursos ----------------------
     # El portal del cliente destaca los productos de SU planificación (con el
     # código del coach). Si un suplemento pautado no tiene producto subido, el

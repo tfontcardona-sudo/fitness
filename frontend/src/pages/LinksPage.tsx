@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Copy, Dumbbell, ShoppingBag } from "lucide-react";
+import { Copy, Dumbbell, Search, ShoppingBag } from "lucide-react";
 import { api } from "../lib/api";
 import type { LandingOut } from "../types";
 
@@ -13,10 +13,21 @@ import type { LandingOut } from "../types";
 export default function LinksPage() {
   const [data, setData] = useState<LandingOut | null>(null);
   const [copied, setCopied] = useState(false);
+  // Buscador de productos: cuando el catálogo es largo, filtra por nombre.
+  const [q, setQ] = useState("");
 
   useEffect(() => {
     api.publicLanding().then(setData).catch(() => setData(null));
   }, []);
+
+  const filteredProducts = useMemo(() => {
+    const all = data?.products ?? [];
+    const needle = q.trim().toLowerCase();
+    if (!needle) return all;
+    return all.filter((p) =>
+      p.title.toLowerCase().includes(needle)
+      || (p.category ?? "").toLowerCase().includes(needle));
+  }, [data, q]);
 
   const primary = data?.color_primary ?? "#E8833A";
   const secondary = data?.color_secondary ?? "#2E5E8C";
@@ -87,8 +98,23 @@ export default function LinksPage() {
             <p className="mb-3 text-sm font-bold uppercase tracking-wider text-white/70">
               Productos que recomiendo
             </p>
+            {/* Buscador: solo cuando hay catálogo suficiente para que ayude */}
+            {data.products.length > 4 && (
+              <div className="relative mb-3">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/50" />
+                <input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Buscar producto…"
+                  className="w-full rounded-xl border border-white/20 bg-white/10 py-2.5 pl-9 pr-3 text-sm text-white placeholder-white/50 outline-none backdrop-blur focus:border-white/40"
+                />
+              </div>
+            )}
+            {filteredProducts.length === 0 ? (
+              <p className="py-4 text-sm text-white/50">No hay productos que coincidan con «{q}».</p>
+            ) : (
             <div className="grid grid-cols-2 gap-3">
-              {data.products.map((p, i) => (
+              {filteredProducts.map((p, i) => (
                 <a key={i} href={p.url} target="_blank" rel="noopener noreferrer"
                   className="overflow-hidden rounded-2xl border border-white/15 bg-white/10 text-left backdrop-blur transition-transform active:scale-[0.97]">
                   {p.image_url ? (
@@ -108,6 +134,7 @@ export default function LinksPage() {
                 </a>
               ))}
             </div>
+            )}
           </div>
         )}
 

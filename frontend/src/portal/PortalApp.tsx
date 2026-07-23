@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Bell, BellOff, CalendarCheck, Check, ChevronDown, Dumbbell, LineChart, Library, LogOut, NotebookPen, Share, Smartphone, Video, X } from "lucide-react";
+import { Bell, BellOff, CalendarCheck, Camera, Check, ChevronDown, Dumbbell, LineChart, Library, LogOut, NotebookPen, Share, Smartphone, Video, X } from "lucide-react";
 import { portalApi, portalSession, PortalError } from "./portalApi";
 import type { VideoCallStatus } from "./portalApi";
 import type { PortalState } from "../types";
@@ -162,6 +162,9 @@ export default function PortalApp({ token }: { token: string }) {
         <main className="relative z-[1] flex-1 px-5 pb-28 pt-2">
           {state.package_tier === "pro" && (
             <VideoCallBanner api={apiClient} accent={state.brand.color_secondary} />
+          )}
+          {state.photos_pending && (
+            <PhotosReminder api={apiClient} accent={state.brand.color_primary} onConfirmed={reload} />
           )}
           <WelcomeSetup api={apiClient} token={token} accent={state.brand.color_primary}
             secondary={state.brand.color_secondary} hasTraining={!isStart} />
@@ -395,6 +398,66 @@ function PushToggle({ api }: { api: ReturnType<typeof portalApi> }) {
     >
       {on ? <Bell size={18} /> : <BellOff size={18} />}
     </button>
+  );
+}
+
+/** Recordatorio de FOTOS DE PROGRESO: tras enviar la revisión quincenal, el
+ *  cliente confirma aquí si ya envió sus 3 fotos al coach. "Sí" apaga el aviso
+ *  (portal y push); "Todavía no" lo pliega y el push seguirá recordándoselo cada
+ *  3 h hasta que confirme. */
+function PhotosReminder({ api, accent, onConfirmed }: {
+  api: ReturnType<typeof portalApi>; accent: string; onConfirmed: () => void;
+}) {
+  const toast = usePortalToast();
+  const [busy, setBusy] = useState(false);
+  // "Todavía no": se pliega en ESTA sesión; el aviso vuelve al recargar (sigue
+  // pendiente) y el push lo recuerda cada 3 h.
+  const [snoozed, setSnoozed] = useState(false);
+
+  if (snoozed) return null;
+
+  const confirm = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await api.confirmPhotos();
+      toast.push("¡Gracias! Fotos confirmadas 📸");
+      onConfirmed();
+    } catch {
+      toast.push("No se pudo confirmar, inténtalo de nuevo");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="portal-card mb-4 p-3.5">
+      <div className="flex items-start gap-2.5">
+        <span className="mt-0.5 shrink-0" style={{ color: accent }}><Camera size={18} /></span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold">¿Ya enviaste tus fotos de progreso a tu coach?</p>
+          <p className="mt-0.5 text-[11px] opacity-60">
+            3 fotos (frontal, lateral y espalda), mismo sitio y luz que la vez anterior.
+          </p>
+          <div className="mt-2.5 flex flex-wrap gap-2">
+            <button
+              onClick={confirm}
+              disabled={busy}
+              className="portal-btn3d min-h-[36px] px-4 py-1.5 text-xs font-semibold"
+              style={{ background: accent, color: "#fff" }}
+            >
+              <span className="inline-flex items-center gap-1"><Check size={13} /> Sí, ya las envié</span>
+            </button>
+            <button
+              onClick={() => { setSnoozed(true); toast.push("Te lo recordaré cada 3 h hasta que las envíes"); }}
+              disabled={busy}
+              className="tap min-h-[36px] rounded-xl px-3 py-1.5 text-xs font-medium opacity-60 hover:opacity-90"
+            >
+              Todavía no
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

@@ -1,4 +1,4 @@
-"""0026: ensancha video_calls.status a VARCHAR(20).
+"""0027: ensancha video_calls.status a VARCHAR(20).
 
 El nuevo flujo usa estados más descriptivos ("pending_manual" = 14 caracteres)
 que no caben en el VARCHAR(12) original. Idempotente.
@@ -6,8 +6,8 @@ que no caben en el VARCHAR(12) original. Idempotente.
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0026"
-down_revision = "0025"
+revision = "0027"
+down_revision = "0026"
 branch_labels = None
 depends_on = None
 

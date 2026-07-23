@@ -1,4 +1,4 @@
-"""0025: integración Google Calendar / Meet para las videollamadas Pro.
+"""0026: integración Google Calendar / Meet para las videollamadas Pro.
 
 - `google_credentials`: credenciales OAuth de la cuenta de Google del coach
   (fila única single-tenant; guarda el refresh_token para crear eventos).
@@ -11,8 +11,8 @@ Idempotente.
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0025"
-down_revision = "0024"
+revision = "0026"
+down_revision = "0025"
 branch_labels = None
 depends_on = None
 
