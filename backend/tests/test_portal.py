@@ -54,11 +54,20 @@ def client():
 
 @pytest.fixture(scope="module")
 def auth(client):
-    import os
+    # Token acuñado directo (no /api/auth/login): el login está limitado a 5/min
+    # y, al correr la suite completa, se agotaba el límite → KeyError('access_token').
+    # Además garantiza que el usuario existe, así el test no depende de ADMIN_x.
+    from sqlalchemy import select
 
-    r = client.post("/api/auth/login",
-                    json={"username": ADMIN_USER, "password": os.environ.get("ADMIN_1_PASS", ADMIN_PASS)})
-    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+    from app.db import SessionLocal
+    from app.models import User
+    from app.security import create_access_token, hash_password
+
+    with SessionLocal() as db:
+        if not db.scalar(select(User).where(User.username == ADMIN_USER)):
+            db.add(User(username=ADMIN_USER, password_hash=hash_password("test")))
+            db.commit()
+    return {"Authorization": f"Bearer {create_access_token(ADMIN_USER)}"}
 
 
 def _generate_plan_content():
@@ -132,16 +141,20 @@ def test_full_portal_cycle(client, auth):
     assert pub["status"] == "published"
     assert client.get(f"/api/clients/{cid}", headers=auth).json()["status"] == "active"
 
-    # 5) Abrir período (empieza hoy, 14 días)
-    today = date.today()
-    per = client.post(f"/api/clients/{cid}/periods", headers=auth, json={
-        "plan_id": plan["id"], "starts_on": today.isoformat(), "days": 14,
-    }).json()
-    assert per["period_index"] == 1
+    # 5) Al publicar, el sistema YA abre el primer período automáticamente
+    #    (períodos autónomos): se usa ese, no se crea otro a mano (crearlo lo
+    #    agendaría al día siguiente y el diario de hoy caería fuera de rango).
+    #    La fecha del período es la de NEGOCIO (Europe/Madrid, today_local), que
+    #    cerca de medianoche difiere de date.today() (UTC) — por eso el diario
+    #    debe usar ESA fecha, no la UTC, o el test es flaky por husos horarios.
+    from app.services.portal import today_local
+
+    today = today_local()
 
     # 6) Estado tras el plan: con plan y período
     state = client.get(f"/api/p/{token}/state").json()
     assert state["has_plan"] is True
+    assert state["period"]["period_index"] == 1
     assert state["period"]["days_left"] >= 0
     assert state["period"]["can_close"] is False  # día 1, aún no
 
