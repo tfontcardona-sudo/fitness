@@ -19,8 +19,29 @@ portal) y el cliente registra su seguimiento diario hasta el cierre quincenal.
 - **Frontend:** React + TypeScript + Vite + Tailwind.
 - **Infra:** Docker / Docker Compose. Caddy como reverse proxy en producción.
 - **IA:** API de Anthropic (`claude-opus-4-8` pesado, `claude-haiku-4-5` ligero).
-- **Estado:** desplegado y funcionando en local. 99 tests en verde.
+- **Estado:** desplegado y funcionando. Suite en verde.
 - **Idioma del proyecto:** comentarios y textos de UI en **español**.
+
+> **Hardening v2 en curso** (rama `hardening/asesorias-v2`, sin mergear). Ver
+> **`INFORME_HARDENING.md`** para el detalle. Convenciones y módulos nuevos que
+> hay que respetar:
+> - **Una sola verdad de objetivos calóricos**: el backend manda
+>   (`services/nutrition_scale.py`, `services/metrics.py`); el editor
+>   (`frontend/src/lib/nutritionTargets.ts`) debe coincidir. Está blindado por
+>   `shared/nutrition_contract.json` + `tests/test_nutrition_parity.py` (si tocas
+>   uno, regenera el contrato con `scripts/gen_nutrition_contract.py` y corre el
+>   test). **Redondeo half-up (`_rhu`) en todo el sistema** (= `Math.round` del
+>   front), nunca `round()` bancario para valores que ve/persiste el usuario.
+> - **La IA NO calcula**: BMR/TDEE/kcal, ajuste individualizado y **reparto
+>   completo de macros** los computa el backend (`metrics.energy_targets`,
+>   `metrics.macro_targets`) y se los entrega como CONTRATO. Nunca metas fórmulas
+>   de cálculo en `prompts.py`.
+> - **Validador determinista** (`guardrails.validate_plan_deterministic`): el
+>   "Revisor 0" con veto (Atwater, Σ comidas = día, tolerancias del contrato,
+>   alérgenos en subingredientes, patrón dietético, porciones). Úsalo/extiéndelo
+>   al montar el panel de supervisión del §9.
+> - **Criterio de coach**: `CRITERIOS_ASESORIA.md` (rellenar `[PENDIENTE TONI]`).
+> - **Historia antigua**: `docs/HISTORICO.md` (referencia, NO fuente de verdad viva).
 
 ---
 
