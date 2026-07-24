@@ -2,7 +2,7 @@
 
 **Rama**: `hardening/asesorias-v2` (nunca `main`; **no se ha desplegado nada**).
 **Base**: último `main` (integra hasta PR #78).
-**Suite**: **224/224 en verde** (incluye los nuevos tests de §1, §3 y §9.0).
+**Suite**: **269/269 en verde** (tests nuevos de §1, §2, §3, §8, §9.0 y §14).
 **Modelo de trabajo**: commits atómicos, cada uno con la suite en verde, para que
 puedas revisar la rama por partes.
 
@@ -93,6 +93,43 @@ supervisión, en código y más estricto que `check_nutrition`:
   10 huevos; los líquidos no cuentan como porción absurda).
 - Extiende guardrails (no reescribe). 11 tests (`tests/test_deterministic_validator.py`).
 
+### §2 · Base de datos de alimentos + solver de porciones (commit `hardening §2`)
+Aborda el **hallazgo #1** (la primera causa de tener que revisar un plan: los
+gramos y sus valores los ponía el modelo de memoria).
+- **Modelo `Food`** (migración 0028): composición por 100 g crudo (kcal/P/C/G/
+  fibra), **alérgenos y etiquetas con índices GIN**, cotas de ración y gramos por
+  unidad práctica. **Seed curado de 66 alimentos** comunes (idempotente por nombre).
+- **`services/portion_solver.py`**:
+  - `filter_foods`: descarta **antes del prompt** los alimentos con un alérgeno del
+    cliente (por campo y por nombre/sinónimo), odiados o que violan la restricción
+    dietética — un alérgeno **no entra ni por accidente** en el contexto.
+  - `solve_portions`: **mínimos cuadrados con cotas** (`scipy.optimize.lsq_linear`,
+    bvls) minimiza la desviación vs los macros del slot, con pesos por eje y
+    **redondeo a raciones cocinables**, recalculando totales.
+  - `equivalent_portion`: equivalencias **por macro neta**, no por gramos brutos.
+- 10 tests. `numpy`/`scipy` añadidos a requirements.
+- **Pendiente de integrar** en el flujo de IA (que devuelva IDs en vez de gramos);
+  las piezas ya están listas y probadas.
+
+### §8 · Motor de decisión quincenal determinista (commit `hardening §8`)
+`services/biweekly_engine.py` — **decisión en código, no criterio del modelo**, para
+la revisión de cada 15 días (donde estos sistemas se degradan):
+- **Control de calidad del dato antes de decidir** (un solo pesaje / ciclo menstrual
+  → no tocar, pedir mejor registro).
+- Ritmo real por regresión de pesajes vs ritmo diana. **Dentro → no tocar** (inercia).
+- **Adherencia <80% → prohibido tocar kcal**. Fuera de rango → **kcal ±6% moviendo
+  hidratos/grasa, proteína fija**. Recomposición (peso plano + perímetros↓ + fuerza↑)
+  → no tocar. Fatiga roja ×2 → diet break. 8+ semanas de déficit → nota de refeed.
+- Cada decisión guarda la **regla disparada y los datos**. 11 tests.
+
+### §14 · Golden set (commit `hardening §14`)
+`app/golden_set.py`: **23 perfiles de casos límite** (graso alto/bajo por sexo, mujer
+55 sedentaria, deportista 6 días, opositor, madre reciente, lesión, senior…) + casos
+de check-in. Marcados **`POR_VALIDAR`** (David/Toni revisan los rangos).
+`tests/test_golden_set.py` es un **gate de CI** que pasa cada perfil por la capa
+determinista (energía, macros, validador, motor quincenal) y falla si un caso produce
+un bloqueante. No ejercita la IA (sin clave en CI).
+
 ### Documentos entregados
 - **`CLAUDE.md`** actualizado (sección de estado del hardening; ver §4 abajo).
 - **`CRITERIOS_ASESORIA.md`** arrancado desde el código, con huecos `[PENDIENTE TONI]`.
@@ -140,14 +177,12 @@ supervisión, en código y más estricto que `check_nutrition`:
 Ordenado por impacto. Nada de esto está a medias en el código: está **no empezado**
 salvo donde indico "andamiaje".
 
-- **§2 · Base de datos de alimentos + solver de porciones (scipy).** Es el cambio
-  de mayor impacto y también el más grande. Requiere: tabla `food` (composición
-  real BEDCA/USDA con alérgenos y etiquetas), cambiar el contrato con la IA
-  (devuelve IDs, no gramos), y un solver `scipy.optimize` que fije las cantidades.
-  **`scipy` no está instalado** en el entorno y la descarga de BEDCA/USDA a través
-  del proxy no es fiable en esta sesión. Pendiente como bloque propio. *(El
-  validador de porciones del §9.0 ya mitiga lo peor —cantidades absurdas— mientras
-  tanto.)*
+- **§2 (integración) · Conectar el solver al flujo de IA.** La base de alimentos,
+  el filtro y el solver **ya están hechos y probados**; falta cambiar el contrato con
+  la IA para que devuelva **IDs de alimento** (no gramos) y que `solve_portions` fije
+  las cantidades en la generación y en el banco de comidas. El seed son 66 alimentos
+  curados; ampliarlo a BEDCA/USDA completo es un paso posterior (la descarga por el
+  proxy no es fiable en esta sesión).
 - **§4 · Modelo único `PlanState` + versionado v1/v2/v3 + grafo de dependencias
   bidireccional.** El sistema ya reconcilia el plan como organismo
   (`reconcile_nutrition`) y el documento se genera desde los datos; falta el
@@ -160,9 +195,9 @@ salvo donde indico "andamiaje".
   el prompt; falta la validación determinista cruzada.
 - **§7 · Libro de estilo**: **arrancado** (`CRITERIOS_ASESORIA.md`), pendiente que
   Toni rellene los `[PENDIENTE TONI]` y su inyección en generación/panel.
-- **§8 · Motor quincenal determinista** (medias móviles, reglas de decisión, tope
-  de cambio por revisión, "no tocar" como decisión válida). No empezado; el sistema
-  ya adapta quincenalmente pero sin el motor determinista de reglas.
+- **§8 (integración) · Enchufar el motor quincenal al flujo de revisión.** El motor
+  determinista **ya está hecho y probado** (`biweekly_engine.py`); falta llamarlo desde
+  el cierre de período real (`adapt_plan`/análisis quincenal) y persistir la decisión.
 - **§9 · Panel de 10 revisores independientes + árbitro + bucle de reparación.**
   **Andamiaje**: el Validador 0 (determinista) está hecho y testeado; falta el
   contrato JSON de revisores IA, la ejecución en paralelo con contexto aislado, el
@@ -174,10 +209,9 @@ salvo donde indico "andamiaje".
   ICP + panel).
 - **§13 · Aprendizaje continuo** (captura de ediciones, clasificador,
   `MEJORAS_PROPUESTAS.md`). No empezado; `plan_diff.py` ya da la base del diff.
-- **§14 · Golden set (30–40 perfiles) + determinismo (temp 0) + prompts versionados
-  + modo sombra + telemetría.** No empezado. **Nota**: el "CRITERIO DE TERMINADO"
-  pide el golden set en verde; no está creado, así que ese criterio queda
-  parcialmente cumplido (suite completa en verde, golden set pendiente).
+- **§14 (parcial) · Golden set HECHO** sobre la capa determinista (23 perfiles,
+  gate de CI, `POR_VALIDAR`). Pendiente: determinismo de la IA (temp 0 en extracción/
+  revisión), prompts versionados en el repo, modo sombra y telemetría por plan.
 
 ---
 
@@ -185,8 +219,8 @@ salvo donde indico "andamiaje".
 
 ```bash
 git checkout hardening/asesorias-v2
-git log --oneline main..HEAD          # 5 commits atómicos, uno por pieza
-cd backend && python -m pytest        # 224/224 (necesita Postgres local)
+git log --oneline main..HEAD          # commits atómicos, uno por pieza
+cd backend && python -m pytest        # 269/269 (necesita Postgres local)
 ```
 Los commits están pensados para revisarse de uno en uno; cada uno deja la suite en
 verde. La CI puede añadir el test de paridad TS (necesita node+esbuild, que ya

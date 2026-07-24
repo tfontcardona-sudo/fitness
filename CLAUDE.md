@@ -40,6 +40,15 @@ portal) y el cliente registra su seguimiento diario hasta el cierre quincenal.
 >   "Revisor 0" con veto (Atwater, Σ comidas = día, tolerancias del contrato,
 >   alérgenos en subingredientes, patrón dietético, porciones). Úsalo/extiéndelo
 >   al montar el panel de supervisión del §9.
+> - **Base de alimentos + solver** (`models.Food` mig. 0028, `seeds/foods_data.py`,
+>   `services/portion_solver.py`): la IA selecciona alimentos; el backend fija los
+>   gramos con `solve_portions` (scipy). `filter_foods` quita alérgenos/patrón ANTES
+>   del prompt. Requiere `numpy`/`scipy` (en requirements).
+> - **Motor quincenal determinista** (`services/biweekly_engine.decide_biweekly`):
+>   reglas fijas para la revisión (no criterio del modelo); pendiente de enchufar al
+>   cierre de período real.
+> - **Golden set** (`app/golden_set.py`, `tests/test_golden_set.py`): gate de CI de la
+>   capa determinista; rangos `POR_VALIDAR`.
 > - **Criterio de coach**: `CRITERIOS_ASESORIA.md` (rellenar `[PENDIENTE TONI]`).
 > - **Historia antigua**: `docs/HISTORICO.md` (referencia, NO fuente de verdad viva).
 
