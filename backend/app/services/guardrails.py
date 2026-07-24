@@ -412,6 +412,212 @@ def check_training(
     return r
 
 
+# ============================================ VALIDADOR DETERMINISTA (§9.0) ===
+# El "Revisor 0" del panel de supervisión (hardening §9): veto absoluto y en
+# CÓDIGO, más estricto que check_nutrition. Comprueba coherencia numérica dura
+# (Atwater, suma de comidas, tolerancias vs el contrato de macros), seguridad
+# (cero alérgenos ni alimentos odiados, restricción dietética al 100%) y
+# realismo de porciones. No sustituye a check_nutrition: lo COMPLEMENTA.
+
+# Tolerancias del contrato (macros objetivo calculados por el backend, §3).
+DET_KCAL_TOL_PCT = 0.02   # kcal ±2% del objetivo
+DET_PROTEIN_TOL_G = 5      # P ±5 g
+DET_FAT_TOL_G = 5          # G ±5 g
+DET_CARB_TOL_G = 10        # HC ±10 g
+DET_ATWATER_EPS_KCAL = 3   # |kcal declaradas − 4/4/9 de sus macros| ≤ 3 (redondeo)
+DET_MEALSUM_EPS = 2        # |Σ comidas − total del día| por eje ≤ 2 (redondeo)
+
+# Porciones realistas: caps por ración cruda (nada de 480 g de brócoli ni 11
+# huevos). Genéricos y conservadores: solo bloquean lo CLARAMENTE absurdo.
+PORTION_SOLID_ABSURD_G = 700    # un solo alimento sólido > 700 g crudo/ración
+PORTION_EGG_ABSURD = 8          # > 8 huevos en una toma
+_LIQUID_HINTS = ("leche", "bebida", "caldo", "agua", "yogur", "kefir", "batido", "zumo")
+
+
+def _atwater(macros: dict) -> float:
+    return (float(macros.get("protein_g") or 0) * 4
+            + float(macros.get("carbs_g") or 0) * 4
+            + float(macros.get("fat_g") or 0) * 9)
+
+
+# Patrones dietéticos éticos/religiosos: términos PROHIBIDOS (normalizados). Un
+# match = violación (100%, sin excepción). Reutiliza la normalización de alérgenos.
+_DIET_PATTERN_FORBIDDEN: dict[str, tuple[str, ...]] = {
+    "vegano": ("pollo", "pavo", "ternera", "cerdo", "carne", "jamon", "lomo", "atun",
+               "salmon", "merluza", "pescado", "gamba", "marisco", "huevo", "clara",
+               "yema", "leche", "yogur", "queso", "nata", "mantequilla", "miel"),
+    "vegetariano": ("pollo", "pavo", "ternera", "cerdo", "carne", "jamon", "lomo",
+                    "atun", "salmon", "merluza", "pescado", "gamba", "marisco",
+                    "bacalao", "sardina"),
+    "pescetariano": ("pollo", "pavo", "ternera", "cerdo", "carne", "jamon", "lomo"),
+    "sin_cerdo": ("cerdo", "jamon", "lomo", "bacon", "panceta", "chorizo", "salchichon",
+                  "tocino"),
+    "halal": ("cerdo", "jamon", "lomo", "bacon", "panceta", "chorizo", "salchichon",
+              "tocino", "alcohol", "vino", "cerveza"),
+    "kosher": ("cerdo", "jamon", "lomo", "bacon", "panceta", "gamba", "marisco",
+               "langostino", "mejillon", "almeja", "calamar", "pulpo"),
+}
+
+
+def _all_option_texts(opt: dict) -> list[str]:
+    """Textos de una opción para escanear alérgenos/patrón: ingredientes +
+    medida casera + TÍTULO + preparación (subingredientes escondidos en el
+    nombre o la elaboración, p. ej. 'pesto', 'tortilla', 'salsa césar')."""
+    texts = _ingredient_texts(opt)
+    for extra in ("title", "prep"):
+        v = opt.get(extra)
+        if v:
+            texts.append(_norm_food(v))
+    return texts
+
+
+def _iter_options(nutrition: dict):
+    """Itera (slot, option) sobre el banco, sea flexible_7 o strict."""
+    bank = nutrition.get("meal_bank") or {}
+    if bank.get("mode") == "strict":
+        for d in bank.get("days") or []:
+            for m in d.get("meals") or []:
+                yield m.get("slot"), (m.get("dish") or {})
+    else:
+        for slot in bank.get("slots") or []:
+            for o in slot.get("options") or []:
+                yield slot.get("slot"), o
+
+
+def _check_portions(r: GuardrailReport, slot, opt: dict) -> None:
+    key = opt.get("key", opt.get("title", "?"))
+    for ing in opt.get("ingredients") or []:
+        food = _norm_food(ing.get("food", ""))
+        grams = ing.get("grams")
+        if not isinstance(grams, (int, float)):
+            continue
+        is_liquid = any(h in food for h in _LIQUID_HINTS)
+        if grams > PORTION_SOLID_ABSURD_G and not is_liquid:
+            r.violations.append(
+                f"porción irreal: slot {slot} '{key}' — {grams:.0f} g de "
+                f"'{ing.get('food')}' (máx. razonable {PORTION_SOLID_ABSURD_G} g)"
+            )
+        if "huevo" in food:
+            # huevo M ≈ 55 g; > 8 huevos (~440 g) es una toma irreal.
+            eggs = grams / 55
+            if eggs > PORTION_EGG_ABSURD:
+                r.violations.append(
+                    f"porción irreal: slot {slot} '{key}' — ~{eggs:.0f} huevos "
+                    f"(máx. {PORTION_EGG_ABSURD})"
+                )
+
+
+def validate_plan_deterministic(
+    nutrition: dict,
+    *,
+    objective_macros: dict | None = None,
+    allergies: list[str] | None = None,
+    dislikes: list[str] | None = None,
+    diet_pattern: str | None = None,
+    meals_expected: int | None = None,
+) -> GuardrailReport:
+    """Revisor 0 del panel (§9.0): validación determinista con VETO. Devuelve
+    violations (bloquean) y warnings. Complementa check_nutrition/check_meal_options.
+
+    - Atwater: kcal declaradas = 4/4/9 de sus macros (totales y cada opción).
+    - Σ objetivos de comida = total del día, eje por eje.
+    - Si se da `objective_macros` (contrato del §3): kcal ±2%, P ±5 g, G ±5 g,
+      HC ±10 g respecto al contrato.
+    - Cero alérgenos y cero alimentos odiados (aquí odiado = VETO, no aviso),
+      buscando también en título y preparación (subingredientes).
+    - Restricción dietética ética/religiosa al 100%.
+    - nº de comidas correcto.
+    - Porciones realistas.
+    """
+    r = GuardrailReport()
+    macros = nutrition.get("macros") or {}
+    target = float(nutrition.get("target_kcal") or 0)
+
+    # 1) Atwater de los totales
+    if macros:
+        aw = _atwater(macros)
+        if abs(aw - target) > DET_ATWATER_EPS_KCAL:
+            r.violations.append(
+                f"incoherencia Atwater: kcal declaradas {target:.0f} ≠ 4/4/9 de "
+                f"los macros ({aw:.0f})"
+            )
+
+    # 2) Σ comidas = total del día, eje por eje
+    meals = [m for m in (nutrition.get("meals") or []) if isinstance(m.get("target"), dict)]
+    if meals and macros:
+        for axis, total in (("kcal", target), ("protein_g", float(macros.get("protein_g") or 0)),
+                            ("carbs_g", float(macros.get("carbs_g") or 0)),
+                            ("fat_g", float(macros.get("fat_g") or 0))):
+            s = sum(float(m["target"].get(axis) or 0) for m in meals)
+            if abs(s - total) > DET_MEALSUM_EPS:
+                r.violations.append(
+                    f"Σ comidas ({axis}={s:.0f}) ≠ total del día ({total:.0f})"
+                )
+
+    # 3) Tolerancias vs el contrato de macros (§3), si se conoce
+    if objective_macros:
+        checks = [
+            ("target_kcal", target, float(objective_macros.get("kcal") or 0),
+             DET_KCAL_TOL_PCT * max(1.0, float(objective_macros.get("kcal") or 0)), "kcal"),
+            ("protein_g", float(macros.get("protein_g") or 0),
+             float(objective_macros.get("protein_g") or 0), DET_PROTEIN_TOL_G, "proteína"),
+            ("fat_g", float(macros.get("fat_g") or 0),
+             float(objective_macros.get("fat_g") or 0), DET_FAT_TOL_G, "grasa"),
+            ("carbs_g", float(macros.get("carbs_g") or 0),
+             float(objective_macros.get("carbs_g") or 0), DET_CARB_TOL_G, "carbohidratos"),
+        ]
+        for _key, val, obj, tol, label in checks:
+            if obj > 0 and abs(val - obj) > tol:
+                r.violations.append(
+                    f"{label} {val:.0f} fuera de la tolerancia (±{tol:.0f}) del "
+                    f"contrato {obj:.0f}"
+                )
+
+    # 4) nº de comidas
+    if meals_expected and meals and len(meals) != meals_expected:
+        r.violations.append(
+            f"nº de comidas {len(meals)} ≠ {meals_expected} declaradas"
+        )
+
+    # 5) Por opción: Atwater, alérgenos/odiados/patrón (con subingredientes), porciones
+    forbidden = _DIET_PATTERN_FORBIDDEN.get(_norm_food(diet_pattern).replace(" ", "_")) if diet_pattern else None
+    for slot, opt in _iter_options(nutrition):
+        om = opt.get("macros")
+        if isinstance(om, dict):
+            aw = _atwater(om)
+            dk = float(om.get("kcal") or 0)
+            if dk > 0 and abs(aw - dk) > max(DET_ATWATER_EPS_KCAL, 0.02 * dk):
+                r.violations.append(
+                    f"Atwater opción slot {slot} '{opt.get('key', opt.get('title', '?'))}': "
+                    f"kcal {dk:.0f} ≠ 4/4/9 ({aw:.0f})"
+                )
+        texts = _all_option_texts(opt)
+        key = opt.get("key", opt.get("title", "?"))
+        for al in allergies or []:
+            found = _match_term(_terms_for(al), texts)
+            if found:
+                r.violations.append(
+                    f"⚠ ALÉRGENO (subingredientes): slot {slot} '{key}' contiene "
+                    f"'{found}' (alergia {al})"
+                )
+        for dl in dislikes or []:
+            found = _match_term(_terms_for(dl), texts)
+            if found:
+                r.violations.append(
+                    f"alimento odiado: slot {slot} '{key}' contiene '{found}' ({dl})"
+                )
+        if forbidden:
+            hit = _match_term(forbidden, texts)
+            if hit:
+                r.violations.append(
+                    f"restricción '{diet_pattern}' violada: slot {slot} '{key}' "
+                    f"contiene '{hit}'"
+                )
+        _check_portions(r, slot, opt)
+
+    return r
+
+
 def filter_exercises_for_client(
     exercises: list[dict],
     *,
