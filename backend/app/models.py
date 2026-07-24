@@ -312,6 +312,45 @@ class FeedbackDoc(Base):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+# ---------------------------------------------------------------- foods ----
+class Food(Base):
+    """Composición de alimentos (hardening §2) — base para el solver de porciones.
+
+    La IA selecciona alimentos (por nombre/ID); el backend fija las CANTIDADES con
+    un solver contra los macros del slot. Valores por 100 g en CRUDO. Los alérgenos
+    y las etiquetas permiten filtrar la base ANTES de que un alimento prohibido
+    llegue siquiera al contexto del modelo.
+    """
+
+    __tablename__ = "foods"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    canonical_name: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    aliases: Mapped[list[str] | None] = mapped_column(ARRAY(String))
+    # proteina|carbohidrato|grasa|verdura|fruta|lacteo|legumbre|otro
+    group: Mapped[str] = mapped_column(String(20), index=True)
+    # Composición por 100 g (crudo)
+    kcal: Mapped[float] = mapped_column(Float)
+    protein_g: Mapped[float] = mapped_column(Float)
+    carbs_g: Mapped[float] = mapped_column(Float)
+    fat_g: Mapped[float] = mapped_column(Float)
+    fiber_g: Mapped[float] = mapped_column(Float, default=0.0)
+    # Alérgenos declarados (índice GIN) y etiquetas (vegano, sin_gluten, barato…)
+    allergens: Mapped[list[str] | None] = mapped_column(ARRAY(String))
+    tags: Mapped[list[str] | None] = mapped_column(ARRAY(String))
+    # Gramos por unidad práctica (1 huevo≈55, 1 rebanada≈40); None → redondeo a 5 g.
+    unit_grams: Mapped[float | None] = mapped_column(Float)
+    # Cotas realistas por ración (crudo) para el solver.
+    min_grams: Mapped[float] = mapped_column(Float, default=0.0)
+    max_grams: Mapped[float] = mapped_column(Float, default=400.0)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+
+    __table_args__ = (
+        Index("ix_foods_allergens", "allergens", postgresql_using="gin"),
+        Index("ix_foods_tags", "tags", postgresql_using="gin"),
+    )
+
+
 # --------------------------------------------------------- brand_config ----
 class BrandConfig(Base):
     __tablename__ = "brand_config"

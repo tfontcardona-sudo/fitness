@@ -13,9 +13,10 @@ from sqlalchemy import func, select
 
 from app.config import settings
 from app.db import SessionLocal
-from app.models import BrandConfig, Exercise, User
+from app.models import BrandConfig, Exercise, Food, User
 from app.security import hash_password
 from app.seeds.exercises_data import EXERCISES
+from app.seeds.foods_data import FOODS
 from app.seeds.machines_data import MACHINE_EXERCISES
 
 
@@ -39,6 +40,19 @@ def seed_machines(db) -> int:
     if not missing:
         return 0
     db.add_all(Exercise(**data) for data in missing)
+    db.commit()
+    return len(missing)
+
+
+def seed_foods(db) -> int:
+    """Base de composición de alimentos (§2): inserta POR NOMBRE los que falten,
+    en cada arranque (como la maquinaria) para que producción reciba los nuevos
+    en el siguiente deploy sin tocar filas existentes."""
+    existing = set(db.scalars(select(Food.canonical_name)))
+    missing = [d for d in FOODS if d["canonical_name"] not in existing]
+    if not missing:
+        return 0
+    db.add_all(Food(**data) for data in missing)
     db.commit()
     return len(missing)
 
@@ -73,11 +87,13 @@ def main() -> None:
     try:
         n_ex = seed_exercises(db)
         n_maq = seed_machines(db)
+        n_food = seed_foods(db)
         brand = seed_brand(db)
         n_admins = seed_admins(db)
         print(
             f"[seed] ejercicios: {n_ex or 'ya existían'} · "
             f"maquinaria nueva: {n_maq} · "
+            f"alimentos nuevos: {n_food} · "
             f"brand: {'creada' if brand else 'ya existía'} · "
             f"admins creados: {n_admins}"
         )
