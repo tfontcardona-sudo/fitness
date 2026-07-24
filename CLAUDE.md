@@ -49,6 +49,10 @@ portal) y el cliente registra su seguimiento diario hasta el cierre quincenal.
 >   cierre de período real.
 > - **Golden set** (`app/golden_set.py`, `tests/test_golden_set.py`): gate de CI de la
 >   capa determinista; rangos `POR_VALIDAR`.
+> - **Panel de supervisión + ICP + semáforo** (`services/review_panel.py`,
+>   `services/safety_gate.py`): revisor 0 determinista + roles IA con contexto AISLADO
+>   + árbitro (no anula vetos) + ICP + lista roja/semáforo. Revisores IA inyectables;
+>   pendiente el bucle de reparación y el adaptador a IA real.
 > - **Criterio de coach**: `CRITERIOS_ASESORIA.md` (rellenar `[PENDIENTE TONI]`).
 > - **Historia antigua**: `docs/HISTORICO.md` (referencia, NO fuente de verdad viva).
 
