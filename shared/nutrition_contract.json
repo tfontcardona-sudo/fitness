@@ -1,0 +1,436 @@
+{
+  "_comment": "Contrato compartido backend↔frontend de objetivos calóricos. Autoridad: backend (app/services/nutrition_scale.py). NO editar a mano: regenerar con scripts/gen_nutrition_contract.py. El test tests/test_nutrition_parity.py verifica que el frontend (lib/nutritionTargets.ts) produce lo mismo.",
+  "constants": {
+    "MAX_DEFICIT_PCT": 30,
+    "MAX_SURPLUS_PCT": 15,
+    "FAT_PER_KG": {
+      "fat_loss": 0.8,
+      "muscle_gain": 0.9,
+      "recomp": 0.9,
+      "maintenance": 1.0,
+      "injury_recovery": 1.0
+    },
+    "PROTEIN_MID_PER_KG": {
+      "fat_loss": 2.2,
+      "muscle_gain": 1.9,
+      "recomp": 2.4,
+      "maintenance": 1.9,
+      "injury_recovery": 2.25
+    },
+    "CLAMP_BOUNDS": {
+      "protein_per_kg": [
+        1.2,
+        3.0
+      ],
+      "fat_per_kg": [
+        0.6,
+        2.0
+      ],
+      "fat_floor_g": 20,
+      "kcal_abs": [
+        1100,
+        4500
+      ],
+      "protein_no_weight": [
+        60,
+        280
+      ],
+      "fat_no_weight": [
+        20,
+        160
+      ]
+    }
+  },
+  "cases": [
+    {
+      "fn": "kcalOf",
+      "args": [
+        150,
+        200,
+        60
+      ],
+      "expected": 1940
+    },
+    {
+      "fn": "kcalOf",
+      "args": [
+        0,
+        0,
+        0
+      ],
+      "expected": 0
+    },
+    {
+      "fn": "kcalOf",
+      "args": [
+        200,
+        0,
+        50
+      ],
+      "expected": 1250
+    },
+    {
+      "fn": "kcalOf",
+      "args": [
+        120,
+        350,
+        80
+      ],
+      "expected": 2600
+    },
+    {
+      "fn": "macrosForKcal",
+      "args": [
+        "fat_loss",
+        80,
+        2200
+      ],
+      "expected": {
+        "kcal": 2200,
+        "protein_g": 176,
+        "carbs_g": 230,
+        "fat_g": 64
+      }
+    },
+    {
+      "fn": "macrosForKcal",
+      "args": [
+        "fat_loss",
+        60,
+        1500
+      ],
+      "expected": {
+        "kcal": 1500,
+        "protein_g": 132,
+        "carbs_g": 135,
+        "fat_g": 48
+      }
+    },
+    {
+      "fn": "macrosForKcal",
+      "args": [
+        "fat_loss",
+        95,
+        3000
+      ],
+      "expected": {
+        "kcal": 3000,
+        "protein_g": 209,
+        "carbs_g": 370,
+        "fat_g": 76
+      }
+    },
+    {
+      "fn": "macrosForKcal",
+      "args": [
+        "fat_loss",
+        55,
+        1200
+      ],
+      "expected": {
+        "kcal": 1200,
+        "protein_g": 121,
+        "carbs_g": 80,
+        "fat_g": 44
+      }
+    },
+    {
+      "fn": "macrosForKcal",
+      "args": [
+        "muscle_gain",
+        80,
+        2200
+      ],
+      "expected": {
+        "kcal": 2200,
+        "protein_g": 152,
+        "carbs_g": 236,
+        "fat_g": 72
+      }
+    },
+    {
+      "fn": "macrosForKcal",
+      "args": [
+        "muscle_gain",
+        60,
+        1500
+      ],
+      "expected": {
+        "kcal": 1500,
+        "protein_g": 114,
+        "carbs_g": 140,
+        "fat_g": 54
+      }
+    },
+    {
+      "fn": "macrosForKcal",
+      "args": [
+        "muscle_gain",
+        95,
+        3000
+      ],
+      "expected": {
+        "kcal": 3000,
+        "protein_g": 181,
+        "carbs_g": 376,
+        "fat_g": 86
+      }
+    },
+    {
+      "fn": "macrosForKcal",
+      "args": [
+        "muscle_gain",
+        55,
+        1200
+      ],
+      "expected": {
+        "kcal": 1200,
+        "protein_g": 105,
+        "carbs_g": 83,
+        "fat_g": 50
+      }
+    },
+    {
+      "fn": "macrosForKcal",
+      "args": [
+        "recomp",
+        80,
+        2200
+      ],
+      "expected": {
+        "kcal": 2200,
+        "protein_g": 192,
+        "carbs_g": 196,
+        "fat_g": 72
+      }
+    },
+    {
+      "fn": "macrosForKcal",
+      "args": [
+        "recomp",
+        60,
+        1500
+      ],
+      "expected": {
+        "kcal": 1500,
+        "protein_g": 144,
+        "carbs_g": 110,
+        "fat_g": 54
+      }
+    },
+    {
+      "fn": "macrosForKcal",
+      "args": [
+        "recomp",
+        95,
+        3000
+      ],
+      "expected": {
+        "kcal": 3000,
+        "protein_g": 228,
+        "carbs_g": 329,
+        "fat_g": 86
+      }
+    },
+    {
+      "fn": "macrosForKcal",
+      "args": [
+        "recomp",
+        55,
+        1200
+      ],
+      "expected": {
+        "kcal": 1200,
+        "protein_g": 132,
+        "carbs_g": 56,
+        "fat_g": 50
+      }
+    },
+    {
+      "fn": "macrosForKcal",
+      "args": [
+        "maintenance",
+        80,
+        2200
+      ],
+      "expected": {
+        "kcal": 2200,
+        "protein_g": 152,
+        "carbs_g": 218,
+        "fat_g": 80
+      }
+    },
+    {
+      "fn": "macrosForKcal",
+      "args": [
+        "maintenance",
+        60,
+        1500
+      ],
+      "expected": {
+        "kcal": 1500,
+        "protein_g": 114,
+        "carbs_g": 126,
+        "fat_g": 60
+      }
+    },
+    {
+      "fn": "macrosForKcal",
+      "args": [
+        "maintenance",
+        95,
+        3000
+      ],
+      "expected": {
+        "kcal": 3000,
+        "protein_g": 181,
+        "carbs_g": 355,
+        "fat_g": 95
+      }
+    },
+    {
+      "fn": "macrosForKcal",
+      "args": [
+        "maintenance",
+        55,
+        1200
+      ],
+      "expected": {
+        "kcal": 1200,
+        "protein_g": 105,
+        "carbs_g": 71,
+        "fat_g": 55
+      }
+    },
+    {
+      "fn": "macrosForKcal",
+      "args": [
+        "injury_recovery",
+        80,
+        2200
+      ],
+      "expected": {
+        "kcal": 2200,
+        "protein_g": 180,
+        "carbs_g": 190,
+        "fat_g": 80
+      }
+    },
+    {
+      "fn": "macrosForKcal",
+      "args": [
+        "injury_recovery",
+        60,
+        1500
+      ],
+      "expected": {
+        "kcal": 1500,
+        "protein_g": 135,
+        "carbs_g": 105,
+        "fat_g": 60
+      }
+    },
+    {
+      "fn": "macrosForKcal",
+      "args": [
+        "injury_recovery",
+        95,
+        3000
+      ],
+      "expected": {
+        "kcal": 3000,
+        "protein_g": 214,
+        "carbs_g": 322,
+        "fat_g": 95
+      }
+    },
+    {
+      "fn": "macrosForKcal",
+      "args": [
+        "injury_recovery",
+        55,
+        1200
+      ],
+      "expected": {
+        "kcal": 1200,
+        "protein_g": 124,
+        "carbs_g": 52,
+        "fat_g": 55
+      }
+    },
+    {
+      "fn": "macrosForKcal",
+      "args": [
+        "recomp",
+        100,
+        900
+      ],
+      "expected": {
+        "kcal": 900,
+        "protein_g": 160,
+        "carbs_g": 0,
+        "fat_g": 60
+      }
+    },
+    {
+      "fn": "macrosScaledToKcal",
+      "args": [
+        {
+          "macros": {
+            "protein_g": 150,
+            "carbs_g": 200,
+            "fat_g": 60
+          },
+          "target_kcal": 2000
+        },
+        2500
+      ],
+      "expected": {
+        "kcal": 2500,
+        "protein_g": 193,
+        "carbs_g": 259,
+        "fat_g": 77
+      }
+    },
+    {
+      "fn": "macrosScaledToKcal",
+      "args": [
+        {
+          "macros": {
+            "protein_g": 150,
+            "carbs_g": 200,
+            "fat_g": 60
+          },
+          "target_kcal": 2000
+        },
+        1600
+      ],
+      "expected": {
+        "kcal": 1600,
+        "protein_g": 124,
+        "carbs_g": 166,
+        "fat_g": 49
+      }
+    },
+    {
+      "fn": "macrosScaledToKcal",
+      "args": [
+        {
+          "macros": {
+            "protein_g": 0,
+            "carbs_g": 0,
+            "fat_g": 0
+          },
+          "target_kcal": 0
+        },
+        2000
+      ],
+      "expected": {
+        "kcal": 2000,
+        "protein_g": 0,
+        "carbs_g": 500,
+        "fat_g": 0
+      }
+    }
+  ]
+}
