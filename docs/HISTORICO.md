@@ -1,3 +1,16 @@
+# HISTÓRICO — referencia de traspasos consolidados
+
+> **Documento histórico, NO fuente de verdad viva.** La fuente de verdad viva es
+> `CLAUDE.md` (raíz) para arquitectura/decisiones/convenciones y el propio código.
+> Aquí se conservan, fundidos, los antiguos documentos de traspaso que competían
+> como fuente de verdad (hallazgo #8 del hardening v2). Se guardan como archivo
+> histórico para no perder el rastro de decisiones antiguas, no para leerse de
+> arriba abajo.
+
+---
+
+## Fuente A — TRASPASO.md (raíz, versión más completa)
+
 # Documento de traspaso — Fitness System (DQ / David Quiceno)
 
 > Objetivo de este doc: que otra sesión de IA (Fable u otra) pueda **continuar el trabajo sin perder contexto**.
@@ -1549,6 +1562,663 @@ preexistentes" del baseline eran TODOS de entorno. Comando:
 - `backend/alembic/versions/0005_portal_theme_light.py` — **NUEVO** (normaliza
   'dark'→'light' una vez).
 - `backend/app/routers/portal_public.py` — manifest oscuro `#0E0B10`.
+
+**Web Push (2026-07-03)**
+- `backend/app/services/push.py` — **NUEVO** (núcleo Web Push).
+- `backend/app/models.py` — `PushSubscription`.
+- `backend/alembic/versions/0004_push_subscriptions.py` — **NUEVO**.
+- `backend/alembic/versions/0002/0003` — hechas idempotentes (BD nueva no rompía).
+- `backend/app/routers/portal_public.py` — 5 endpoints push/manifest.
+- `backend/app/schemas/entities.py` — `PushKeyOut`, `PushSubscribeIn`, `PushPendingOut`…
+- `backend/app/services/scheduler.py` — job `push_reminders` cada 4 h.
+- `backend/app/config.py`, `.env.example`, `backend/requirements.txt` (pywebpush).
+- `backend/scripts/generate_vapid_keys.py`, `backend/tests/test_push.py` — **NUEVOS**.
+- `frontend/public/sw.js`, `frontend/public/icons/*` — **NUEVOS**.
+- `frontend/src/portal/push.ts` — **NUEVO**; `PortalApp.tsx` (banner + badge),
+  `portalApi.ts`, `types.ts`, `index.html`.
+
+**Backend (tramo anterior)**
+- `app/services/adapt_plan.py` — **NUEVO** (adaptación determinista).
+- `app/routers/clients.py` — endpoints tracking/history reescritos + adapt-plan + list_clients con `pending_review`.
+- `app/models.py` — Period `coach_reviewed_at` (+ campos tracking previos).
+- `alembic/versions/0003_coach_reviewed_at.py` — **NUEVO**.
+
+**Frontend**
+- `src/lib/api.ts` — tipos tracking/history + `adaptPlan`.
+- `src/types.ts` — `ClientOut.pending_review`.
+- `src/pages/ClientsPage.tsx` — badge "!".
+- `src/pages/ClientProfilePage.tsx` — lee `?tab=`.
+- `src/components/ClientTrackingTab.tsx` — media + quincenales desplegables + `BeforeAfter`.
+- `src/components/ClientFeedbackTab.tsx` — quita fotos/regenerar/word, antes/después, copiar todo, banner adaptar.
+- `src/components/ClientHistoryTab.tsx` — objetivo+restantes, medidas, % fuerza, desplegables, quita Planes.
+- `src/components/ClientPlanPanel.tsx` — `adapt()` + botón "Adaptar a la revisión #N".
+
+---
+
+_Fin del traspaso. Si algo no está aquí, mirar la memoria (§10) y el git/estado actual del código, que es la fuente de verdad._
+
+---
+
+## Fuente B — traspaso/TRASPASO.md
+
+# TRASPASO — Sistema de Asesorías Fitness (DQ)
+
+> **Documento único de traspaso.** Si eres una IA o un dev que recoge este
+> proyecto: lee esto entero antes de tocar nada. Es autocontenido. **El código es
+> la fuente de verdad**: cuando dudes de un detalle, ábrelo y verifícalo.
+> (En la raíz del repo también existe `CLAUDE (1).md`, con info equivalente.)
+
+---
+
+## Contenido de esta carpeta de traspaso (súbela entera — 7 archivos)
+
+- **TRASPASO.md** — este documento: estado, arquitectura, flujo, gotchas, pendientes.
+- **CODIGO-BACKEND.md** — TODO el código del backend (53 archivos) en un solo doc.
+- **CODIGO-FRONTEND.md** — TODO el código del frontend (36 archivos) en un solo doc.
+- **README.md** — visión general + **despliegue en producción** (VPS/Caddy/SMTP/backups).
+- **anamnesis-oficial-en-blanco.pdf** — el dosier oficial que rellena el cliente.
+- **anamnesis-ejemplo-rellena.pdf** — ejemplo relleno (lo que la IA lee y extrae).
+- **feedback-ejemplo.docx** — ejemplo del informe de feedback generado (la salida).
+
+> Los dos `CODIGO-*.md` son una **foto del código** del día del traspaso. Si vas a
+> editar el proyecto en vivo, abre el repo real; estos sirven para que la IA tenga
+> todo el contexto si solo puede leer documentos.
+
+---
+
+## 0. Qué es (resumen en 30 s)
+
+Software **single-tenant** para un coach de fitness/nutrición (David Quiceno,
+marca "DQ"). Automatiza el ciclo de asesoría **cliente ↔ coach**:
+
+1. El coach da de alta al cliente y le envía el **dosier** (PDF de anamnesis o el
+   enlace del portal).
+2. El cliente rellena la anamnesis (PDF); la **IA la lee** y pre-rellena la ficha.
+3. El coach **genera un plan mensual** (dieta + entreno) con IA, lo **revisa/edita**,
+   lo **publica** y lo **descarga en Word** para enviarlo.
+4. El coach **inicia el período de seguimiento**; el cliente, en su **portal**,
+   registra cada día (peso, entreno con series/reps, dieta, diario). Todo se
+   **autoguarda en el backend** y el coach lo ve en tiempo real.
+5. A los **14 días** el cliente **cierra** el período (peso final, perímetros,
+   fotos, valoración). El coach recibe una **notificación**.
+6. El coach **genera el feedback** (IA + métricas + Word), lo revisa y lo **envía
+   al cliente**, que lo ve en su pestaña **"Progreso"**. Vuelve al paso 4.
+
+**Stack:** FastAPI · PostgreSQL · SQLAlchemy 2.0 / Alembic · APScheduler ·
+React + TypeScript + Vite + Tailwind · Caddy · Docker · **API de Anthropic**.
+**Modelos:** `claude-opus-4-8` (pesado: generación/visión/feedback),
+`claude-haiku-4-5` (ligero). **Idioma del proyecto:** español (UI y comentarios).
+
+---
+
+## 1. Cómo arrancar (desarrollo)
+
+Proyecto en `C:\Users\Usuari\Desktop\fitness-system` (Windows + Docker Desktop).
+
+```bash
+# Arrancar todo (backend + frontend + Postgres + mailpit) con hot-reload
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+# Sin reconstruir
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+# Parar
+docker compose -f docker-compose.yml -f docker-compose.dev.yml down
+```
+
+| Servicio | URL |
+|---|---|
+| Panel del coach (web) | http://localhost:5173 |
+| API + Swagger | http://localhost:8000/api/docs |
+| Portal del cliente | http://localhost:5173/p/{token} |
+| Mailpit (emails de prueba) | http://localhost:8025 |
+
+**Login del coach:** `ADMIN_1_USER` / `ADMIN_1_PASS` del `.env`.
+
+`.env` (no se versiona) tiene: `ANTHROPIC_API_KEY`, `MODEL_HEAVY`, `MODEL_LIGHT`,
+`JWT_SECRET`, `PORTAL_TOKEN_SECRET`, `ADMIN_1_*`, `ADMIN_2_*`, `BASE_URL`,
+`EMAILS_ENABLED`, `TZ`, `DATABASE_URL`, `AUTO_PILOT_DEFAULT`.
+
+⚠️ **Si la IA falla con "balance is too low": no hay crédito** en la cuenta de
+Anthropic. Recarga en console.anthropic.com. Sin crédito, Leer anamnesis /
+Generar plan / Generar feedback devuelven **502 con mensaje legible** (no 500).
+
+---
+
+## 2. Arquitectura
+
+### Backend (`backend/app/`)
+```
+main.py            FastAPI: routers, CORS, scheduler en lifespan, health.
+config.py          Settings (pydantic-settings, lee .env).
+db.py              engine + SessionLocal + Base.
+models.py          Modelos SQLAlchemy (tablas abajo).
+security.py        JWT (coach) + tokens de portal firmados (itsdangerous).
+deps.py            get_current_user (JWT), get_client_by_token (portal).
+routers/
+  auth.py          login, me.
+  clients.py       CRUD clientes, documentos (PDF anamnesis), FOTOS (coach),
+                   leer-anamnesis (IA), generar-plan (IA).
+  exercises.py     biblioteca de ejercicios.
+  plans.py         planes (editar/publicar/Word), PERÍODOS, FEEDBACK (generar/
+                   enviar/descargar), métricas-resumen, swap, plantilla anamnesis.
+  brand.py         configuración de marca.
+  portal_public.py endpoints PÚBLICOS del portal (token, sin login).
+schemas/
+  entities.py      schemas Pydantic de API (espejados en frontend/src/types.ts).
+  ai.py            contratos de la salida de IA del plan (Plan/Meals/Education).
+services/
+  ai/
+    client.py      AIClient: wrapper Anthropic con retry + validación. Métodos
+                   generate_json(), read_pdf_json() (PDF nativo). MAX_TOKENS=16000.
+                   Traduce errores de la API a AIGenerationError (→502 legible).
+    extraction.py  AnamnesisExtraction + extract_anamnesis_from_pdf(): la IA lee
+                   el PDF y extrae TODAS las secciones (estructurado + resúmenes).
+    generator.py   generate_monthly_plan(ctx, ai): 3 llamadas orquestadas.
+    feedback.py    generate_feedback_analysis(): parte CUALITATIVA del feedback.
+    prompts.py     prompts del plan.
+  feedback_service.py  build_period_feedback() (métricas+IA+Word+persistir) y
+                       compute_period_summary() (métricas SIN IA para el "Resumen").
+  metrics.py       TODA la aritmética: BMR/TDEE/kcal, e1RM, tendencia peso, adherencia.
+  guardrails.py    validación de seguridad de la salida de IA (E.4/F.4).
+  state_machine.py estados del cliente/período.
+  scheduler.py + jobs.py   APScheduler (mantenimiento diario).
+  email_service.py + email_templates.py   SMTP con marca + log.
+  portal.py        lógica del portal: build_today_view, build_training_sessions…
+  swap.py          intercambio de ejercicios.
+  storage.py       ficheros en disco {STORAGE_PATH}/clients/{id}/{photos|documents|
+                   uploads|feedback}. save_photo (quita EXIF), save_document (PDF),
+                   list_documents (SOLO PDF, oculta sidecar _*).
+  docs/            Word con marca: plan_doc, feedback_doc, charts (matplotlib).
+  audit.py         log_event().
+seeds/             150 ejercicios + marca + 2 admins (idempotente).
+```
+
+**Tablas (`models.py`):** `User`, `Client`, `Plan`, `Period`, `DailyLog`,
+`WorkoutLog`, `Exercise`, `ProgressPhoto`, `FeedbackDoc`, `BrandConfig`,
+`EmailLog`, `ChangeRequest`, `AuditLog`.
+- `Client` tiene los campos de anamnesis (estructurados + columnas de notas:
+  `medical_notes`, `medication_notes`, `current_supplements`, `sport_history`,
+  `lifestyle_notes`, `injuries_notes`) + `status`.
+- `FeedbackDoc`: `content_json`, `docx_path`, **`sent_at`** (clave: borrador vs enviado).
+- `Period`: datos de cierre (`closing_weight_kg`, perímetros, rating…), `status`
+  (open/closed/analyzed), `metrics_json`, `ai_analysis_json`.
+
+### Frontend (`frontend/src/`)
+```
+pages/
+  LoginPage · DashboardPage · ClientsPage · BrandPage
+  ClientProfilePage.tsx   Perfil con pestañas Resumen/Anamnesis/Planificación/
+                          Feedback. Banner de notificación (cliente cerró →
+                          feedback). Sidebar: "Abrir/copiar enlace del portal".
+components/
+  ClientSummaryTab · ClientAnamnesisTab (todos los campos del PDF + "Leer con IA"
+    + "Ver PDF") · ClientPlanPanel (genera/persiste/ver/edita/publica/Word +
+    "Iniciar seguimiento") · ClientPlanEditor (editor del plan → PATCH) ·
+    ClientFeedbackTab (períodos, Resumen, Generar/Enviar feedback, fotos) ·
+    ClientDocuments (subir PDF) · ui.
+lib/  api.ts (cliente HTTP coach) · format.ts
+portal/  App SEPARADA del cliente (token en la URL, sin login):
+  PortalApp (tabs: Hoy·Plan·Entreno·Diario·Cierre·Progreso) · PortalToday
+  (medidor de días + checklist diario + comidas + entreno) · PortalWorkout
+  (registro de series, selector de sesión, autosave) · PortalDiary · PortalPlan ·
+  PortalClose (cierre + fotos) · PortalFeedback ("Progreso": informes ENVIADOS,
+  con contenido) · portalApi.ts
+types.ts  espejo manual de los schemas Pydantic (mantener en el mismo commit).
+```
+
+---
+
+## 3. El pipeline de IA — PRINCIPIO DE SEGURIDAD
+
+**La IA NUNCA calcula números.** El backend calcula todo lo cuantitativo
+(BMR, TDEE, kcal, macros, e1RM, adherencia, tendencias) en `metrics.py`, filtra
+ejercicios de forma determinista en `guardrails.py`, y revalida cada salida de IA.
+La IA solo rellena lo cualitativo **dentro** de esos límites.
+
+- **Generar plan** (`routers/clients.py` → `generator.generate_monthly_plan`): valida
+  anamnesis completa (422 si faltan campos) → calcula métricas → filtra biblioteca
+  (en gimnasio NO restringe por equipo) → **3 llamadas IA** (núcleo, comidas,
+  educativo), cada una validada contra su schema con 1 reintento → guardrails →
+  persiste como **borrador** (`status="draft"`).
+- **Leer anamnesis** (`extraction.py`): `read_pdf_json` manda el PDF como bloque
+  `document` (base64) a Anthropic. Extrae estructurado + resúmenes por sección +
+  `deep_analysis`. Pre-rellena la ficha (no pisa con null).
+- **Feedback** (`feedback_service.build_period_feedback`): reúne diario/cierre,
+  calcula métricas, llama a la IA SOLO para lo cualitativo (`ai/feedback.py`),
+  genera el Word (`docs/feedback_doc.py` con gráficas) y persiste el `FeedbackDoc`
+  como **borrador** (`sent_at=None`).
+
+---
+
+## 4. El flujo cliente ↔ coach (estado: COMPLETO y probado con IA real)
+
+```
+COACH                                   CLIENTE (portal, token en URL)
+─────                                   ──────────────────────────────
+Alta cliente
+Enviar dosier (PDF anamnesis o link) ─► rellena la anamnesis (PDF)
+Subir PDF → IA lee y pre-rellena
+Revisar/corregir Anamnesis
+Generar plan (IA) → revisar/EDITAR
+Publicar plan → Descargar Word ───────► (lo recibe)
+"Iniciar seguimiento" (crea período) ─► PORTAL: cada día registra
+                                        · peso, sueño, ánimo (Diario)
+                                        · series/reps por ejercicio (Entreno)
+                                        · dieta seguida / comidas elegidas
+                                        (todo AUTOSAVE al backend, en vivo)
+(ve el progreso en tiempo real)         medidor "Día X/14" + checklist
+                              día 14 ──► Cierre: peso final, perímetros, FOTOS,
+                                        valoración → cliente = review_pending
+NOTIFICACIÓN en el perfil ◄─────────────┘
+pestaña Feedback:
+ · "Resumen" (métricas SIN IA)
+ · "Generar feedback" (IA → borrador + Word, ve fotos)
+ · revisar
+ · "Enviar al cliente" ────────────────► PORTAL "Progreso": ve el informe
+   (sent_at + review_pending→active        (peso, adherencia, análisis,
+    + cierra notificación + email)          cambios, objetivos)
+→ vuelve a generar plan del mes siguiente
+```
+
+**Clave del feedback:** es **borrador hasta que el coach pulsa "Enviar"**. El
+portal (`/p/{token}/feedback`) filtra `sent_at IS NOT NULL`; el cliente NO ve
+borradores. Mismo patrón "revisar antes de publicar" que anamnesis y plan.
+
+**Autosave del portal:** `PUT /p/{token}/diary` es un **upsert PARCIAL**
+(`exclude_unset`): cada pantalla guarda solo lo suyo (comidas / diario / series).
+
+---
+
+## 5. Endpoints clave (verifica en /api/docs)
+
+```
+POST  /api/auth/login                         Login coach → JWT
+GET/POST/PATCH /api/clients[/{id}]            CRUD cliente (PATCH = anamnesis editable)
+POST  /api/clients/{id}/documents             Subir anamnesis PDF (+ IA lee)
+POST  /api/clients/{id}/read-anamnesis        Leer PDF con IA
+POST  /api/clients/{id}/generate-plan         Generar plan (IA, borrador)
+GET   /api/clients/{id}/photos[/{photo_id}]   Fotos del cliente (ver/descargar)
+PATCH /api/plans/{id}                          Editar plan a mano
+POST  /api/plans/{id}/publish                  Publicar plan
+GET   /api/plans/{id}/document                 Plan en Word
+POST  /api/clients/{id}/periods                Iniciar período (plan publicado)
+GET   /api/clients/{id}/periods                Listar períodos + cierre + feedback
+GET   /api/periods/{id}/metrics                Resumen SIN IA (peso/adherencia/fuerza/objetivo)
+POST  /api/periods/{id}/feedback               Generar feedback (IA, borrador) → Word
+GET   /api/feedback/{id}                        Contenido + sent_at
+POST  /api/feedback/{id}/send                   ENVIAR al cliente (sent_at + estado + email)
+GET   /api/feedback/{id}/document               Feedback en Word
+GET   /api/anamnesis-template                    Plantilla PDF en blanco
+# Portal (público, token):
+GET   /api/p/{token}/state | today | training | plan
+PUT   /api/p/{token}/diary                       Autosave parcial (diario/series/comidas)
+POST  /api/p/{token}/close [+ /close/photos]     Cierre + fotos
+GET   /api/p/{token}/feedback                     "Progreso": feedbacks ENVIADOS
+```
+Descargas con JWT en el frontend: `fetch → blob → download` con header
+`Authorization: Bearer`.
+
+---
+
+## 6. ⚠️ GOTCHAS CRÍTICOS (resueltos; NO reintroducir)
+
+0. **[DEV/WINDOWS] Vite no detecta cambios en el bind mount de Docker.** Síntoma:
+   "no veo ningún cambio" pese a editar. FIX aplicado: `server.watch.usePolling:true`
+   en `frontend/vite.config.ts`. Si sigue, reinicia el contenedor `web` y haz
+   **Ctrl+Shift+R** en el navegador.
+1. **`from __future__ import annotations` ROMPE FastAPI/Pydantic** en archivos con
+   endpoints/schemas de ruta (ForwardRef sin resolver). Eliminado de `routers/`,
+   `schemas/`, `deps.py`. No lo añadas ahí.
+2. **`temperature` está deprecado en `claude-opus-4-8`** → 400. No lo pases.
+3. **`VITE_API_URL` = `http://api:8000`** (nombre del servicio Docker) en dev, no localhost.
+4. **`email-validator` en `requirements.txt`** (lo necesita `EmailStr`).
+5. **`UploadFile` en listas:** `Annotated[List[UploadFile], File(...)]`.
+6. **El enlace del portal usa el ORIGEN del navegador** (`window.location.origin`)
+   para funcionar en dev (:5173) y prod. No uses `BASE_URL` para el botón del coach.
+7. **Errores 500 → el Traceback está en el log del contenedor `api`** (`api-1 |`).
+8. **`ClientUpdate` (PATCH) debe incluir TODO campo editable de la pestaña Anamnesis;**
+   Pydantic descarta extras en silencio (el coach cree que guardó y no).
+9. **Un 500 al Leer/Generar suele ser API sin crédito** → ya sale como 502 legible
+   (`client._translate_api_error`).
+10. **Schemas de salida de IA: lista los subcampos en el prompt** (si no, la IA los
+    omite y la validación tumba todo) y deja `MAX_TOKENS` holgado (banco de comidas
+    grande). `MealSlot`/`Supplement` tienen defaults tolerantes.
+11. **`PUT /p/{token}/diary` es upsert PARCIAL:** no mandes `workout_sets:[]` desde
+    diario/comidas o **borras las series** del cliente.
+12. **El feedback es BORRADOR hasta `send`:** el portal filtra `sent_at IS NOT NULL`.
+    No quites ese filtro.
+
+---
+
+## 7. Estado actual (qué está hecho y verificado)
+
+- ✅ Anamnesis: extracción cubre TODAS las secciones del PDF; pestaña muestra todo;
+  subir PDF auto-lee y auto-rellena en vivo; "Ver PDF".
+- ✅ Plan: generar (3 llamadas IA + guardrails), **persiste**, ver, **editar**
+  (`ClientPlanEditor`), publicar, **descargar Word**. Educativo OCULTO en UI.
+- ✅ Período: "Iniciar seguimiento".
+- ✅ Portal: medidor de días + checklist diario; Entreno (series + selector de
+  sesión + autosave); Diario; Cierre (+fotos); Progreso (informes enviados con contenido).
+- ✅ Feedback: Resumen (sin IA), Generar (IA → borrador + Word), **fotos** (ver/
+  descargar en el coach), **Enviar al cliente** (sent_at + review_pending→active +
+  email + cierra notificación). **Probado end-to-end con IA real** (cliente ss).
+- ✅ Tests unitarios en verde; test frágil robustecido.
+
+**Datos de prueba:** cliente **ss** (id 2) tiene plan publicado, período cerrado con
+14 días simulados, un feedback **generado pero SIN enviar** (para probar el botón
+"Enviar"), y 2 fotos de ejemplo. Su token de portal está en la BD (`clients.portal_token`).
+
+---
+
+## 8. Trabajo pendiente / próximos pasos
+
+1. **PDF de ejemplo de planificación (lo siguiente que quiere el dueño):** subirá un
+   PDF con cómo debe ser el plan mensual (estructura, contenido, colores). La IA debe
+   **generar siguiendo ese ejemplo**. Tocará `generator.py` (prompts/estructura) y
+   posiblemente `docs/plan_doc.py` (estilo del Word). El dueño trabaja la CALIDAD
+   interna (dieta/entreno) aparte.
+2. **Editor del plan: banco de comidas** (28 opciones) y **swap de ejercicio** dentro
+   del editor (hoy el swap es por la biblioteca, `swap.py`).
+3. **Aislar los tests de integración de la BD de desarrollo:** hoy crean clientes
+   `@example.com` en cada `pytest` (usar transacción con rollback o BD de test).
+4. **Probar el ciclo con un cliente real** (no simulado) de punta a punta.
+
+---
+
+## 9. Convenciones y cómo trabajar
+
+- **Idioma:** UI y comentarios en español. El dueño se comunica en catalán/castellano.
+- **Estilo del dueño:** pasos pequeños con checkpoints; feedback honesto sin adular;
+  no romper nada del proceso. Comunicación visual/concreta.
+- **Seguridad:** mantener "la IA no calcula". Todo número desde `metrics.py`.
+- **Sin migraciones innecesarias:** se reaprovechan columnas/sidecars antes de migrar.
+- **`types.ts` espeja `schemas/entities.py`** — actualízalos en el mismo commit.
+- **Tras editar:** en dev recarga solo (con el polling del gotcha 0). Si tocas
+  dependencias/Dockerfile, reconstruye. Para depurar 500, lee el log de `api`.
+- **El código manda:** este doc resume el estado; si algo no cuadra, verifica en los
+  archivos.
+```
+
+---
+
+## Fuente C — fable-bundle/01-TRASPASO.md
+
+# Documento de traspaso — Fitness System (DQ / David Quiceno)
+
+> Objetivo de este doc: que otra sesión de IA (Fable u otra) pueda **continuar el trabajo sin perder contexto**.
+> Última actualización: 2026-07-03. Autor del último tramo: Claude Fable 5 (Web Push).
+> Cliente/marca: **David Quiceno (DQ)** — asesoría de fitness. Colores marca: **vino `#8B1A2B`**, **azul `#4A7BA8`**.
+
+---
+
+## 0. TL;DR — dónde nos hemos quedado
+
+- Sistema de **asesoría de fitness** completo: app del **coach** (web con login JWT) + **portal del cliente** (sin login, por token `/p/{token}`) + **backend FastAPI** + IA para generar planes y feedback.
+- Acabamos de terminar una **gran feature: portal de seguimiento** (entreno/diario/quincenal) + **seguimiento en tiempo real** del coach + **adaptación del plan** tras cada revisión quincenal. Backend + frontend **aplicados y verificados**.
+- **HECHO (2026-07-03): Web Push completo** (§8.1) — PWA instalable por cliente, service worker, suscripciones VAPID, job cada 4 h y badge en el icono. Falta solo generar las claves VAPID en el `.env` (1 comando) y, para móviles reales, tener HTTPS.
+- **BLOQUEANTE ACTUAL:** la **API de Anthropic no tiene crédito** (`Your credit balance is too low`). Por eso la generación de plan inicial y el feedback IA fallan (502/error). Se **simularon a mano** para el cliente de prueba. La **adaptación de plan NO necesita IA** (es determinista) y funciona.
+
+---
+
+## 1. Stack y arquitectura
+
+| Capa | Tecnología |
+|------|-----------|
+| Backend | **FastAPI** + **SQLAlchemy** + **Alembic** (migraciones) + **Pydantic** |
+| Base de datos | **PostgreSQL** (JSONB para planes/análisis) |
+| Frontend | **React + Vite + TypeScript** + Tailwind (clases utilitarias) |
+| Documentos | **python-docx** (Word) → **LibreOffice headless** (docx→PDF). En HOST: **PyMuPDF (fitz)** solo para QA de render (NO está en el contenedor) |
+| IA | `app/services/ai/` — `AIClient` (Anthropic). `model_heavy` para planes/feedback |
+| Infra | **Docker Compose** (`docker-compose.yml` + `docker-compose.dev.yml`) |
+| Email | **Mailpit** (dev) |
+
+**Contenedores** (`docker compose ps`): `api`, `db`, `web`, `mailpit`.
+- `api`: python:3.11-slim + LibreOffice + fuente Carlito. `entrypoint.sh` corre `alembic upgrade head` al arrancar. Uvicorn con `--reload` (volumen montado).
+- `web`: Vite dev server (HMR, volumen montado).
+
+**Dos aplicaciones frontend:**
+1. **Coach** — con login JWT. Páginas en `frontend/src/pages/`, componentes en `frontend/src/components/`.
+2. **Portal del cliente** — sin login, token en URL `/p/{token}`. Todo en `frontend/src/portal/`. API en `frontend/src/portal/portalApi.ts`.
+
+---
+
+## 2. Modelos de datos clave (`backend/app/models.py`)
+
+- **Client** — ficha del cliente (anamnesis estructurada: sexo, edad, peso, objetivo, alergias, comidas, etc.). `status`: onboarding/active/at_risk/review_pending/awaiting_feedback/inactive. `portal_token`. `start_weight_kg`, `goal_weight_kg`.
+- **Plan** — plan mensual. `month_index`, `version`, `status` (draft/published/superseded). `nutrition_json`, `training_json`, `education_json` (JSONB). `generated_by`.
+- **Period** — período quincenal (cierre de 2 semanas). Campos de cierre (revisión quincenal):
+  - `closing_weight_kg`, `closing_waist_cm`, `closing_hip_cm`, `closing_arm_cm`, `closing_thigh_cm`, `closing_rating`, `closing_hardest`, `closing_questions`
+  - **(añadidos en esta feature)** `closing_feelings_json` (dict sensaciones 1-5), `adherence_diet_0_10`, `adherence_training_0_10`, `free_meals_count`, `closing_changes`, `closing_next_goal`
+  - `ai_analysis_json` (métricas + `plan_adjustments` del feedback)
+  - **`coach_reviewed_at`** (marca cuándo el coach vio la revisión → apaga el "!")
+  - `status`: open / closed / analyzed
+- **DailyLog** — registro diario. `weight_kg`, `sleep_hours`, `diet_adherence` (yes/partial/no), `energy_1_5`, `mood_1_5`, `fatigue_1_5`, `free_notes` + **(añadidos)** `steps` (String), `satiety_1_10` (Float), `water_liters` (Float).
+- **WorkoutLog** — series de entreno (peso+reps) ligadas a un `daily_log_id` y `exercise_id`.
+- **Exercise** — biblioteca de ejercicios (patrón, músculos, equipo, nivel, contraindicaciones).
+- **ProgressPhoto** — fotos de progreso (ahora se piden por WhatsApp, no se suben).
+- **FeedbackDoc** — informe de feedback quincenal.
+- **BrandConfig** — marca (nombre, colores, logo, tema portal).
+
+**Migraciones Alembic** (`backend/alembic/versions/`):
+- `0002_tracking_fields.py` — campos de tracking en DailyLog + Period.
+- `0003_coach_reviewed_at.py` — `periods.coach_reviewed_at`.
+- Se aplican solas al arrancar `api`. Manual: `docker compose exec api sh -c "cd /code && alembic upgrade head"`.
+
+---
+
+## 3. Feature "Portal de seguimiento" — estado COMPLETO
+
+### 3.1 Portal del cliente (`frontend/src/portal/`)
+- **Solo 3 pestañas abajo**: **Entreno** / **Diario** / **Quincenal** (se quitaron Hoy/Plan/Progreso). La dieta va en el PDF, no en el portal.
+- Tema **CREMA `#F5F0E8`** + colores DQ (vino/azul) + **luces neón** + **botones 3D**. CSS en `frontend/src/index.css` (`.portal-root`, `.portal-btn3d`, `.portal-card`, `.portal-neon-wine/blue`, `.portal-nav`, `.portal-tab-badge`).
+- **PortalWorkout.tsx** — registro de series; auto-selecciona la sesión del día ("· hoy"), navegable a otras; historial por ejercicio (`ExHistory`, "última vez" expandible) vía `GET /api/p/{token}/workout-history`.
+- **PortalDiary.tsx** — diario con peso/sueño/pasos/saciedad/litros/comentarios. Autosave. Registro por fecha (resetea a las 00:00 al abrir día nuevo).
+- **PortalClose.tsx** — **REVISIÓN QUINCENAL** (réplica del PDF del coach). 7 secciones: 1) medidas (peso + cintura/cadera/brazo/muslo), 2) 6 sensaciones (1-5), 3) adherencia dieta/entreno (0-10) + comidas libres, 4) cambios, 5) qué cuesta, 6) objetivo, 7) fotos → nota WhatsApp; + dudas. **Bloqueada hasta el día 15** con contador de días + "Se activa el <fecha>"; badge "!" en la pestaña cuando se puede rellenar.
+
+### 3.2 Coach — pestañas del perfil de cliente (`frontend/src/pages/ClientProfilePage.tsx`)
+Tabs: Resumen / Anamnesis / **Planificación** / **Seguimiento** / **Feedback** / **Historial**. Lee `?tab=` de la URL.
+
+- **ClientTrackingTab.tsx** (Seguimiento, tiempo real, polling 10s):
+  - Tabla de registros diarios + **fila "Media"** (media de peso/sueño/pasos/saciedad/agua/series/%adherencia).
+  - **Revisiones quincenales** como **desplegables** (`<details>`), más reciente primero, con rango de fechas + **valoración /10** en el summary. Dentro: **antes/después** (día 1 → día 15) de peso y cinta, adherencias, sensaciones, textos.
+  - Abrir esta pestaña **marca `coach_reviewed_at`** → apaga el "!" de la lista.
+- **ClientFeedbackTab.tsx** (Feedback):
+  - **Sin** sección de fotos, **sin** "Regenerar feedback", **sin** "Descargar Word".
+  - Botón **"Generar feedback"** solo si no existe aún (necesita IA → hoy falla por falta de crédito).
+  - **Resumen** con antes/después de 15 días (peso start→end) + métricas + fuerza.
+  - Texto de feedback **editable** + botón **"Copiar todo"**.
+  - Banner **"! Adaptar planificación a la revisión #N"** (llama a `adaptPlan`, sin IA).
+- **ClientHistoryTab.tsx** (Historial):
+  - Objetivo: **peso objetivo (kg) + kg restantes**.
+  - **Medidas antes/después** (primer vs último período con dato) + **% fuerza total**.
+  - **Evolución por período** = **desplegable** por período: cinta (cintura/cadera/brazo/muslo), peso, adherencia, **% fuerza subido en el período**.
+  - **Sin** sección "Planes".
+  - Nota: con **1 solo** período, antes==después y los % salen "—" (hace falta ≥2 revisiones).
+- **ClientPlanPanel.tsx** (Planificación):
+  - Genera plan inicial con IA (`generatePlan`, hoy falla por crédito).
+  - Botón **"! Adaptar a la revisión #N"** → `adaptPlan` (determinista, sin IA). Crea nueva versión borrador; el coach la revisa y **publica** (el cliente ve la rutina nueva; el PDF de dieta se actualiza).
+
+### 3.3 Backend endpoints clave (`backend/app/routers/clients.py`)
+- `GET /api/clients/{id}/tracking` — período + daily + **daily_averages** + **quincenals** (lista acumulada con antes/después + `feelings_score_10`) + flags. Marca `coach_reviewed_at`.
+- `GET /api/clients/{id}/history` — resumen + `remaining_to_goal_kg` + `measures{before,after}` + `total_strength_gain_pct` + períodos (con cinta + `strength_gain_pct`).
+- `GET /api/clients` (list_clients) — añade `pending_review` / `pending_review_period` (períodos closed/analyzed con `coach_reviewed_at IS NULL`) → **badge "!"** en la lista.
+- `POST /api/clients/{id}/generate-plan` — genera plan con IA (dieta+entreno). Inyecta los `plan_adjustments` del último período `analyzed` en `ctx.notes`.
+- `POST /api/clients/{id}/adapt-plan` — **NUEVO, sin IA**. Ver 4.2.
+- `GET /api/p/{token}/workout-history` — historial por ejercicio para el portal.
+
+### 3.4 Adaptación / feedback IA
+- `app/services/ai/feedback.py` — `FeedbackAIOutput` con `plan_adjustments` (lista de `PlanAdjustment{area, change, reason}`) = la **cuadrícula de cambios**.
+- `app/services/feedback_service.py` — `build_period_feedback` (payload con registro_diario + revisión_quincenal completa) + `compute_period_summary` (métricas sin IA).
+- `app/services/docs/feedback_doc.py` — renderiza la "Cuadrícula de cambios aplicados".
+- `app/services/docs/plan_doc.py` — `generate_plan_doc(include_training=False)` → **PDF solo dieta** (clon del ejemplo del coach; ver memoria `plan-example-fidelity`).
+
+---
+
+## 4. El fix del 502 al "Adaptar plan" (IMPORTANTE)
+
+### 4.1 Causa
+`POST /generate-plan` → llama a la IA → **sin crédito** → error → **502**. La generación inicial SÍ necesita IA. Pero la **adaptación** no debería (los cambios ya los calculó la IA en el feedback).
+
+### 4.2 Solución (aplicada)
+`backend/app/services/adapt_plan.py` → `adapt_plan_from_feedback(db, client_id)`:
+- Coge el **último período `analyzed`** (coincide con el banner del coach).
+- Coge el **plan publicado** como base.
+- Aplica los `plan_adjustments` de forma **DETERMINISTA** con `_parse_change`:
+  - Distingue **delta** (`+15`, `subir 15`, `bajar 20`) vs **objetivo absoluto** (`reducir a 150`, `hasta 2000`, `200 g`). "a/hasta N" tiene prioridad sobre el verbo.
+  - Dieta: proteína / CH / kcal (con **clamp `>=0`**).
+  - Entreno: solo deltas `+X kg` → suma a `start_weight_hint_kg` de todos los ejercicios.
+  - Cambios no numéricos/estructurales (p.ej. "añadir 1 serie") se ignoran y quedan en el rationale para que el coach los aplique a mano.
+- Crea **nueva versión borrador**. NO llama a la IA → **funciona siempre**.
+- Endpoint `POST /clients/{id}/adapt-plan` → `AdaptError` mapea a **409** (nunca 500/502). Ajustes vacíos → copia + nota (no crashea).
+- Frontend: botón en ClientPlanPanel + banner en ClientFeedbackTab llaman `api.adaptPlan` (NO `generatePlan`).
+
+**Verificado:** Manuel (34) → proteína 185→**200**, básicos **+2,5 kg**. Cliente 2 (sin ajustes) → copia sin error. Casos límite del parser OK.
+
+---
+
+## 5. CAVEAT crítico — API sin crédito
+
+La API de Anthropic da `Error 400: Your credit balance is too low`. Afecta a:
+- **Generar plan inicial** (necesita IA) → falla.
+- **Generar feedback** (parte cualitativa) → falla.
+- **NO afecta** a "Adaptar plan" (es determinista).
+
+Para el cliente de prueba **Manuel Rodríguez (id 34)** se **simuló a mano** (métricas/gráficas/cuadrícula/PDF son reales; solo el texto IA se escribió a mano): FeedbackDoc borrador, 5 `plan_adjustments`, plan adaptado.
+
+**Acción para el usuario:** recargar crédito en la cuenta Anthropic para que el flujo IA funcione end-to-end. Config de la clave: `backend/app/config.py` (variable de entorno / `.env`).
+
+---
+
+## 6. Datos de prueba
+
+- **Cliente 34 "Manuel Rodríguez"** — el poblado a mano: período #1 (2026-06-18→07-01, backdated), 14 DailyLogs, ~158 series, revisión quincenal completa, feedback simulado, plan v1 publicado + drafts v2/v3.
+- **Cliente 35 "Didac"** — cliente de pruebas del desarrollo de la feature.
+- **Cliente 2** — tiene período `analyzed` pero **sin `plan_adjustments`** (feedback antiguo) → adaptar hace copia+nota.
+
+Obtener token de portal de un cliente: `GET /api/clients/{id}/portal-link` (con JWT) o mirar `client.portal_token` en la BD.
+
+---
+
+## 7. Cómo arrancar / probar / verificar
+
+```bash
+# Arrancar todo
+cd C:/Users/Usuari/Desktop/fitness-system
+docker compose up -d            # o: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+docker compose ps               # ver estado
+docker compose logs api --tail 50
+
+# Typecheck frontend
+docker compose exec web npx tsc --noEmit
+
+# Import/sanity backend
+docker compose exec api python -c "import app.routers.clients; print('OK')"
+
+# Migraciones (se aplican solas al arrancar; manual:)
+docker compose exec api sh -c "cd /code && alembic upgrade head"
+```
+
+- Coach web: normalmente `http://localhost:5173` (Vite) → login. API en `http://localhost:8000`, OpenAPI en `http://localhost:8000/api/openapi.json`.
+- Portal cliente: `http://localhost:5173/p/{token}`.
+
+**Verificación de esta feature (ya hecha, repetible):** hay un workflow guardado en
+`.../workflows/scripts/verify-tracking-changes-wf_*.js` (auditoría de requisitos + caza de bugs). Resultado del último run: **20/20 requisitos, 0 bugs graves, 5 medios/bajos → todos corregidos**.
+
+---
+
+## 8. PENDIENTE
+
+### 8.1 Web Push — **HECHO (2026-07-03, Claude Fable 5)**
+Implementado completo según la spec original. Mapa de piezas:
+
+**Backend**
+- `app/services/push.py` — núcleo: `pending_for_client` (qué falta HOY: diario /
+  entreno / quincenal), `build_reminder_payload`, `send_to_client` (pywebpush +
+  VAPID; borra suscripciones caducadas 404/410), `run_push_reminders` (el job).
+- `app/models.py` → **`PushSubscription`** + migración **`0004_push_subscriptions`**.
+- `app/routers/portal_public.py` — 5 endpoints nuevos bajo `/api/p/{token}`:
+  `GET /push/public-key`, `POST /push/subscribe`, `POST /push/unsubscribe`,
+  `GET /push/pending` (para el badge al abrir) y `GET /manifest.webmanifest`
+  (**manifest PWA POR CLIENTE**: `start_url=/p/{token}` → al instalar la app se
+  abre directamente SU portal).
+- `app/services/scheduler.py` — job `push_reminders` **cada 4 h** en punto
+  (CronTrigger `*/4`); el propio job descarta ejecuciones fuera de **08–22**
+  (constantes `ACTIVE_FROM/ACTIVE_UNTIL` en push.py) → en la práctica envía a
+  las 08/12/16/20 y **solo a quien tenga algo pendiente**.
+- `app/config.py` + `.env.example` → `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`,
+  `VAPID_SUBJECT`, `PUSH_ENABLED`. `scripts/generate_vapid_keys.py` las genera.
+- `requirements.txt` → `pywebpush==2.3.0`.
+- Tests: `tests/test_push.py` (9 tests: puros + integración con PG, envío
+  monkeypatcheado). Verificado además con smoke test HTTP de los 5 endpoints.
+
+**Frontend**
+- `public/sw.js` — service worker (raíz → scope cubre `/p/*`): muestra la
+  notificación, pone `count` en el badge (`navigator.setAppBadge`) y al tocarla
+  enfoca/abre el portal. Sin caché offline (a propósito).
+- `public/icons/` — icon-192/512, maskable-512 y badge-72 (mancuerna, vino DQ).
+- `src/portal/push.ts` — registro del SW, **inyección del manifest por cliente**,
+  `enablePush` (permiso + PushManager.subscribe + POST al backend),
+  `resyncPushIfGranted` (autocura silenciosa), `refreshBadge`.
+- `src/portal/PortalApp.tsx` — `PushBanner` ("¿Te aviso si te falta algo?" con
+  botón Activar; en **iOS sin instalar** muestra instrucciones de "Añadir a
+  pantalla de inicio", porque en iOS el push solo existe en la app instalada);
+  badge sincronizado al cargar y al volver el foco.
+- `index.html` — apple-touch-icon + metas PWA.
+
+**Para activarlo (una vez):**
+```bash
+docker compose exec api python -m scripts.generate_vapid_keys
+# pegar las 3 líneas en .env  →  docker compose build api && docker compose up -d
+```
+
+**Cómo probar:** en el PC, Chrome en `http://localhost:5173/p/{token}` (localhost
+cuenta como contexto seguro): banner → Activar → aceptar permiso → fila en
+`push_subscriptions`. Forzar un envío sin esperar al cron:
+`docker compose exec api python -c "from app.db import SessionLocal; from app.services.push import run_push_reminders; print(run_push_reminders(SessionLocal()))"`
+(dentro de la ventana 08–22 y con algo pendiente). **En móviles reales hace
+falta HTTPS** (DOMAIN configurado con Caddy); en iOS además instalar la PWA.
+
+### 8.2 Pulido (no bloqueante)
+- Look "iron obsidiana" oscuro vino/azul del tracker: se activa vía BrandPage → `portal_theme=dark` (el código ya respeta el tema; el default actual es crema claro).
+- Historial: los antes/después y % de fuerza necesitan **≥2 períodos** para verse; con 1 salen "—".
+- Reforzar marcado visual de la sesión de entreno "de hoy" (ya funciona, opcional).
+
+### 8.3 Cuando haya crédito de IA
+- Probar generar plan inicial + feedback real end-to-end (hoy simulado para Manuel).
+
+---
+
+## 9. Convenciones y "gotchas" (no tropezar dos veces)
+
+- **Docker en este PC** se corrompió una vez por disco lleno (reparse points AF_UNIX en `Docker\run` + `docker-secrets-engine`). Si no arranca: resetear ambos dirs a la vez y arrancar una vez.
+- **Render docx→PDF QA**: usar **LibreOffice headless** (no Word COM). **PyMuPDF (fitz)** solo en HOST, no en el contenedor. Ojo disco lleno. Ver memoria `docx-render-tooling`.
+- **PDF del plan** debe ser **clon del ejemplo del coach** (PDF `Didad.docx (3).pdf`); solo cambia la info del cliente. Detalles y correcciones de fidelidad (banda translúcida de la comida, plato en PNG sin fondo negro, logo, tablas que no se cortan) en memoria `plan-doc-design` y `plan-example-fidelity`.
+- **Edit tool**: hay que **Read** el archivo antes de editar.
+- **PowerShell 5.1**: sin `&&`/`||`/ternarios; el clasificador de sandbox se pone nervioso con rutas cerca de `C:\Program Files`.
+- **La infra de tracking YA existía** (DailyLog/WorkoutLog/Period/portal) — se **extendió**, no se creó de cero.
+- Las **fotos** de progreso se envían por **WhatsApp**, no se suben al portal.
+- **Migraciones**: `0001` hace `create_all` desde los modelos ACTUALES → en una
+  BD nueva, cualquier migración posterior encuentra sus columnas/tablas ya
+  creadas. Por eso **0002–0004 son idempotentes** (comprueban existencia antes
+  de añadir) y **toda migración futura debe serlo también**.
+- **`SessionLocal` usa `autoflush=False`**: un servicio que hace add/delete y
+  luego SELECT en la misma sesión debe hacer `db.flush()` entre medias o no
+  verá sus propios cambios (ver `push.save_subscription`).
+
+---
+
+## 10. Memoria persistente de la IA (contexto extra)
+
+En `C:\Users\Usuari\.claude\projects\C--Users-Usuari-Desktop-fitness-system\memory\`:
+- `MEMORY.md` — índice.
+- `tracking-portal-feature.md` — **estado detallado de esta feature** (fases, decisiones, cambios por prompt). El más importante para continuar.
+- `plan-doc-design.md` — diseño del Word/PDF del plan.
+- `plan-example-fidelity.md` — el plan IA debe ser clon del PDF ejemplo.
+- `docx-render-tooling.md` — cómo renderizar docx→imagen para QA.
+
+---
+
+## 11. Mapa rápido de archivos tocados en el último tramo
 
 **Web Push (2026-07-03)**
 - `backend/app/services/push.py` — **NUEVO** (núcleo Web Push).
