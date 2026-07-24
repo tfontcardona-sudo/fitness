@@ -79,6 +79,9 @@ class ClientContext:
     energy_method: str
     # biblioteca ya filtrada: [{id, name, pattern, muscle, ...}]
     exercise_library: list[dict]
+    # Reparto de macros calculado EN CÓDIGO (hardening §3): la IA lo recibe como
+    # CONTRATO (no lo decide). None solo en flujos que aún no lo pasan.
+    macro_plan: dict | None = None
     # análisis cualitativo del coach/IA (lesiones, hábitos, contexto) — opcional
     deep_analysis: str | None = None
     notes: str = ""
@@ -195,6 +198,12 @@ def _client_block(ctx: ClientContext) -> str:
             "metricas_backend": {
                 "bmr": ctx.bmr, "tdee": ctx.tdee,
                 "kcal_objetivo": ctx.target_kcal, "metodo": ctx.energy_method,
+                # CONTRATO de macros (hardening §3): son los gramos EXACTOS que
+                # debe cumplir el plan. La IA NO los recalcula: construye el menú
+                # y las tomas para alcanzarlos. Las kcal ya incluyen cualquier
+                # subida por respetar suelos.
+                "macros_objetivo_g": ctx.macro_plan or "(no provisto: usa la "
+                "metodología de macros como guía)",
             },
         },
         ensure_ascii=False, indent=2,

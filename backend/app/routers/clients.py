@@ -1120,6 +1120,18 @@ def generate_client_plan(
         body_fat_pct=client.body_fat_pct, daily_activity=client.daily_activity_level,
         level=client.level, session_min=client.session_max_min,
     )
+    # Reparto de macros EN CÓDIGO (hardening §3): la IA lo recibe como contrato.
+    # Si los suelos no caben, macro_targets sube las kcal → esa es la kcal objetivo
+    # real que se entrega (nunca se rompe un suelo por un plazo).
+    from app.services.metrics import macro_targets as _macro_targets
+    _mp = _macro_targets(
+        client.sex, weight_now, client.goal_type, et.target_kcal, client.training_days,
+    )
+    macro_plan = {
+        "kcal": _mp.kcal, "protein_g": _mp.protein_g, "carbs_g": _mp.carbs_g,
+        "fat_g": _mp.fat_g, "fiber_g_min": _mp.fiber_g_min, "water_ml": _mp.water_ml,
+    }
+    target_kcal_final = _mp.kcal  # puede haber subido respecto a et.target_kcal
 
     # 3) Biblioteca de ejercicios filtrada (solo aptos para este cliente)
     all_ex = db.scalars(select(Exercise)).all()
@@ -1230,7 +1242,8 @@ def generate_client_plan(
         food_likes=client.food_likes or [],
         contraindications=contra_tags,
         body_fat_pct=client.body_fat_pct,
-        bmr=et.bmr, tdee=et.tdee, target_kcal=et.target_kcal, energy_method=et.method,
+        bmr=et.bmr, tdee=et.tdee, target_kcal=target_kcal_final, energy_method=et.method,
+        macro_plan=macro_plan,
         exercise_library=library,
         deep_analysis=deep_analysis,
         notes=adj_notes,
