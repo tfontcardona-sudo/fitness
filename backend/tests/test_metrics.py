@@ -57,10 +57,13 @@ def test_energy_targets_muscle_gain_is_surplus():
     assert et.target_kcal > et.tdee
 
 
-def test_energy_targets_recomp_is_maintenance():
+def test_energy_targets_recomp_near_maintenance():
+    # Hardening §3: recomposición = rango −5%..0% (no mantenimiento exacto). Con
+    # el punto medio son −2,5% sobre el TDEE, salvo que choque con el suelo.
     et = m.energy_targets("female", 60, 165, 28, "recomp", training_days=3)
-    assert et.adjustment_pct == 0.0
-    assert et.target_kcal == et.tdee
+    assert -0.05 <= et.adjustment_pct <= 0.0
+    assert et.target_kcal <= et.tdee
+    assert et.bracket == "recomp/any"
 
 
 def test_age_from_birth():

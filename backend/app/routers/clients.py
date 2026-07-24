@@ -1118,6 +1118,7 @@ def generate_client_plan(
         sex=client.sex, weight_kg=weight_now, height_cm=client.height_cm,
         age=age, goal_type=client.goal_type, training_days=client.training_days,
         body_fat_pct=client.body_fat_pct, daily_activity=client.daily_activity_level,
+        level=client.level, session_min=client.session_max_min,
     )
 
     # 3) Biblioteca de ejercicios filtrada (solo aptos para este cliente)
