@@ -12,6 +12,30 @@ ni se improvisan en runtime: se formatean con datos del cliente y nada más.
 
 from __future__ import annotations
 
+from functools import lru_cache
+from pathlib import Path
+
+
+@lru_cache(maxsize=1)
+def criterios_reference() -> str:
+    """Criterio del coach (CRITERIOS_ASESORIA.md, hardening §7) como bloque de
+    referencia para inyectar en la generación. Omite las líneas [PENDIENTE TONI]
+    (aún sin rellenar). Devuelve '' si el archivo no existe (nunca rompe)."""
+    for base in (Path(__file__).resolve().parents[4], Path.cwd(), Path.cwd().parent):
+        f = base / "CRITERIOS_ASESORIA.md"
+        try:
+            if f.exists():
+                body = "\n".join(
+                    ln for ln in f.read_text(encoding="utf-8").splitlines()
+                    if "[PENDIENTE TONI]" not in ln
+                ).strip()
+                return ("=== CRITERIO DEL COACH (referencia; ajústate a él) ===\n" + body
+                        ) if body else ""
+        except Exception:  # noqa: BLE001 — referencia best-effort
+            continue
+    return ""
+
+
 # ============================================================ D.1 base ====
 
 SYSTEM_BASE = """Eres un experto en nutrición deportiva y ciencias del entrenamiento de fuerza. \
@@ -118,14 +142,17 @@ METHODOLOGY_NUTRITION_BRIEF = """\
 
 
 def system_prompt_full() -> str:
-    """System prompt para la llamada ① (núcleo): base + metodología completa."""
-    return "\n\n".join([SYSTEM_BASE, METHODOLOGY_NUTRITION, METHODOLOGY_TRAINING])
+    """System prompt para la llamada ① (núcleo): base + metodología completa +
+    criterio del coach (§7) si está definido."""
+    return "\n\n".join(filter(None, [
+        SYSTEM_BASE, METHODOLOGY_NUTRITION, METHODOLOGY_TRAINING, criterios_reference()]))
 
 
 def system_prompt_nutrition_only() -> str:
     """System prompt para el núcleo SOLO-NUTRICIÓN (paquete Start): base +
-    metodología de nutrición, sin la de entrenamiento (no se genera entreno)."""
-    return "\n\n".join([SYSTEM_BASE, METHODOLOGY_NUTRITION])
+    metodología de nutrición + criterio del coach, sin la de entrenamiento."""
+    return "\n\n".join(filter(None, [
+        SYSTEM_BASE, METHODOLOGY_NUTRITION, criterios_reference()]))
 
 
 def system_prompt_meals() -> str:
