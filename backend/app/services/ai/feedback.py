@@ -157,6 +157,7 @@ def generate_feedback_analysis(payload: dict, ai, nutrition_only: bool = False) 
         system=_SYSTEM + (_NUTRITION_ONLY_NOTE if nutrition_only else ""),
         user=_user_prompt(payload),
         schema=FeedbackAIOutput,
+        temperature=0,  # §14: la lectura de la revisión quincenal es determinista
     )
     # Saneo defensivo: este texto va verbatim al PDF y a WhatsApp.
     out.natural_analysis = _clean_text(out.natural_analysis) or ""

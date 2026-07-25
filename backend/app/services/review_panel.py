@@ -332,6 +332,7 @@ def make_ai_reviewer(
         out = ai_client.generate_json(
             model=settings.model_light, system=SYSTEM_REVIEWER,
             user=prompt, schema=ReviewerOutput,
+            temperature=0,  # §14: cada revisor juzga de forma determinista
         )
         hallazgos = [ReviewFinding(
             severity=h.severidad, description=h.descripcion,

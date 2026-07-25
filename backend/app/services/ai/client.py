@@ -114,15 +114,22 @@ class AIClient:
             getattr(usage, "output_tokens", 0) or 0,
         )
 
-    def _raw_call(self, *, model: str, system: str, user: str) -> str:
-        """Una llamada cruda al modelo. Sobrescribible en tests."""
+    def _raw_call(self, *, model: str, system: str, user: str,
+                  temperature: float | None = None) -> str:
+        """Una llamada cruda al modelo. Sobrescribible en tests.
+
+        `temperature` fija el determinismo: 0 en extracción/revisión (§14) donde la
+        reproducibilidad importa; None (por defecto del modelo) en generación."""
         try:
-            resp = self._anthropic().messages.create(
-                model=model,
-                max_tokens=MAX_TOKENS,
-                system=system,
-                messages=[{"role": "user", "content": user}],
-            )
+            kwargs = {
+                "model": model,
+                "max_tokens": MAX_TOKENS,
+                "system": system,
+                "messages": [{"role": "user", "content": user}],
+            }
+            if temperature is not None:
+                kwargs["temperature"] = temperature
+            resp = self._anthropic().messages.create(**kwargs)
         except Exception as exc:
             translated = _translate_api_error(exc)
             if translated:
@@ -134,7 +141,8 @@ class AIClient:
         )
 
     def _raw_call_with_pdf(
-        self, *, model: str, system: str, user: str, pdf_bytes: bytes
+        self, *, model: str, system: str, user: str, pdf_bytes: bytes,
+        temperature: float | None = None,
     ) -> str:
         """Una llamada al modelo incluyendo un PDF como documento adjunto.
 
@@ -145,11 +153,11 @@ class AIClient:
 
         b64 = base64.standard_b64encode(pdf_bytes).decode("ascii")
         try:
-            resp = self._anthropic().messages.create(
-                model=model,
-                max_tokens=MAX_TOKENS,
-                system=system,
-                messages=[{
+            kwargs = {
+                "model": model,
+                "max_tokens": MAX_TOKENS,
+                "system": system,
+                "messages": [{
                     "role": "user",
                     "content": [
                         {
@@ -163,7 +171,10 @@ class AIClient:
                         {"type": "text", "text": user},
                     ],
                 }],
-            )
+            }
+            if temperature is not None:
+                kwargs["temperature"] = temperature
+            resp = self._anthropic().messages.create(**kwargs)
         except Exception as exc:
             translated = _translate_api_error(exc)
             if translated:
@@ -175,14 +186,16 @@ class AIClient:
         )
 
     def read_pdf_json(
-        self, *, model: str, system: str, user: str, pdf_bytes: bytes, schema: type[T]
+        self, *, model: str, system: str, user: str, pdf_bytes: bytes, schema: type[T],
+        temperature: float | None = None,
     ) -> T:
         """Lee un PDF, extrae datos y los valida contra el esquema. Reintenta una vez."""
         last_error: str | None = None
         attempt_user = user
         for _ in range(2):
             raw = self._raw_call_with_pdf(
-                model=model, system=system, user=attempt_user, pdf_bytes=pdf_bytes
+                model=model, system=system, user=attempt_user, pdf_bytes=pdf_bytes,
+                temperature=temperature,
             )
             try:
                 data = json.loads(_extract_json(raw))
@@ -203,14 +216,16 @@ class AIClient:
         )
 
     def generate_json(
-        self, *, model: str, system: str, user: str, schema: type[T]
+        self, *, model: str, system: str, user: str, schema: type[T],
+        temperature: float | None = None,
     ) -> T:
         """Genera, parsea y valida. Reintenta UNA vez con el error inyectado."""
         last_error: str | None = None
         attempt_user = user
 
         for attempt in range(2):
-            raw = self._raw_call(model=model, system=system, user=attempt_user)
+            raw = self._raw_call(model=model, system=system, user=attempt_user,
+                                 temperature=temperature)
             try:
                 data = json.loads(_extract_json(raw))
             except json.JSONDecodeError as exc:

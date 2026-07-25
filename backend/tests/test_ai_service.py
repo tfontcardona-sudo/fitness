@@ -30,9 +30,29 @@ class ScriptedClient(AIClient):
         self._responses = list(responses)
         self.calls: list[dict] = []
 
-    def _raw_call(self, *, model, system, user):
-        self.calls.append({"model": model, "system": system, "user": user})
+    def _raw_call(self, *, model, system, user, temperature=None):
+        self.calls.append({"model": model, "system": system, "user": user,
+                           "temperature": temperature})
         return self._responses.pop(0)
+
+
+def test_revisor_usa_temperatura_0():
+    # §14: cada revisor del panel juzga de forma determinista (temperatura 0).
+    from app.services.review_panel import REVIEWER_ROLES, make_ai_reviewer
+
+    resp = json.dumps({"veredicto": "aprobado", "puntuacion_rubrica": 90, "hallazgos": []})
+    sc = ScriptedClient([resp])
+    reviewer = make_ai_reviewer(sc, plan_text="PLAN", anamnesis_text="ANAM")
+    reviewer(REVIEWER_ROLES[0])
+    assert sc.calls[0]["temperature"] == 0
+
+
+def test_generacion_no_fija_temperatura():
+    # La generación del plan conserva la temperatura por defecto del modelo
+    # (variedad en las opciones de comida); solo extracción/revisión van a 0.
+    sc = ScriptedClient([_valid_core_json(), _flexible_meals_json(), _education_json()])
+    generate_monthly_plan(_ctx(), sc, include_training=True)
+    assert all(c["temperature"] is None for c in sc.calls)
 
 
 def test_extract_json_from_markdown_fence():
