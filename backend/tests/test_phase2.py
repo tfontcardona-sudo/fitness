@@ -22,7 +22,6 @@ from PIL import Image
 warnings.filterwarnings("ignore")
 
 ADMIN_USER = os.environ.get("ADMIN_1_USER", "coach1")
-ADMIN_PASS = os.environ.get("ADMIN_1_PASS", "")
 
 
 def _db_available() -> bool:
@@ -37,10 +36,7 @@ def _db_available() -> bool:
         return False
 
 
-pytestmark = pytest.mark.skipif(
-    not _db_available() or not ADMIN_PASS,
-    reason="Requiere PostgreSQL y ADMIN_1_PASS (entorno de docker-compose)",
-)
+pytestmark = pytest.mark.skipif(not _db_available(), reason="Requiere PostgreSQL")
 
 
 @pytest.fixture(scope="module")
@@ -56,9 +52,19 @@ def client():
 
 @pytest.fixture(scope="module")
 def auth(client):
-    r = client.post("/api/auth/login", json={"username": ADMIN_USER, "password": ADMIN_PASS})
-    assert r.status_code == 200
-    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+    # Token directo (no /api/auth/login, limitado a 5/min): evita que la suite
+    # completa agote el límite y garantiza que el usuario exista.
+    from sqlalchemy import select
+
+    from app.db import SessionLocal
+    from app.models import User
+    from app.security import create_access_token, hash_password
+
+    with SessionLocal() as db:
+        if not db.scalar(select(User).where(User.username == ADMIN_USER)):
+            db.add(User(username=ADMIN_USER, password_hash=hash_password("test")))
+            db.commit()
+    return {"Authorization": f"Bearer {create_access_token(ADMIN_USER)}"}
 
 
 def _jpg() -> io.BytesIO:

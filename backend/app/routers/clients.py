@@ -129,6 +129,8 @@ def _quincenal_entry(db: Session, period: Period, prev: Period | None) -> dict:
         "free_meals": period.free_meals_count,
         "changes": period.closing_changes, "hardest": period.closing_hardest,
         "next_goal": period.closing_next_goal, "questions": period.closing_questions,
+        # §8 (hardening): raíl de decisión determinista (regla + acción), si existe.
+        "biweekly_decision": (period.ai_analysis_json or {}).get("biweekly_decision"),
     }
 
 
@@ -1048,6 +1050,30 @@ class GeneratePlanIn(BaseModel):
     meals: list[str] | None = None
 
 
+def _food_catalog_for(db: Session, client: Client) -> list[dict]:
+    """§2: catálogo de alimentos (foods) como dicts para el solver, FILTRADO por las
+    alergias/aversiones/patrón del cliente (un alérgeno no puede ni entrar al prompt).
+    Best-effort: si algo falla, devuelve [] y la generación sigue con gramos de la IA."""
+    try:
+        from app.models import Food
+        from app.services.portion_solver import filter_foods
+        rows = db.scalars(select(Food).where(Food.archived.is_(False))).all()
+        foods = [{
+            "id": f.id, "canonical_name": f.canonical_name, "aliases": f.aliases or [],
+            "kcal": f.kcal, "protein_g": f.protein_g, "carbs_g": f.carbs_g, "fat_g": f.fat_g,
+            "allergens": f.allergens or [], "tags": f.tags or [],
+            "unit_grams": f.unit_grams, "min_grams": f.min_grams, "max_grams": f.max_grams,
+        } for f in rows]
+        return filter_foods(
+            foods,
+            allergies=client.food_allergies or [],
+            dislikes=client.food_dislikes or [],
+            diet_pattern=getattr(client, "diet_mode", None),
+        )
+    except Exception:  # noqa: BLE001
+        return []
+
+
 @router.post("/{client_id}/generate-plan")
 def generate_client_plan(
     client_id: int,
@@ -1118,7 +1144,20 @@ def generate_client_plan(
         sex=client.sex, weight_kg=weight_now, height_cm=client.height_cm,
         age=age, goal_type=client.goal_type, training_days=client.training_days,
         body_fat_pct=client.body_fat_pct, daily_activity=client.daily_activity_level,
+        level=client.level, session_min=client.session_max_min,
     )
+    # Reparto de macros EN CÓDIGO (hardening §3): la IA lo recibe como contrato.
+    # Si los suelos no caben, macro_targets sube las kcal → esa es la kcal objetivo
+    # real que se entrega (nunca se rompe un suelo por un plazo).
+    from app.services.metrics import macro_targets as _macro_targets
+    _mp = _macro_targets(
+        client.sex, weight_now, client.goal_type, et.target_kcal, client.training_days,
+    )
+    macro_plan = {
+        "kcal": _mp.kcal, "protein_g": _mp.protein_g, "carbs_g": _mp.carbs_g,
+        "fat_g": _mp.fat_g, "fiber_g_min": _mp.fiber_g_min, "water_ml": _mp.water_ml,
+    }
+    target_kcal_final = _mp.kcal  # puede haber subido respecto a et.target_kcal
 
     # 3) Biblioteca de ejercicios filtrada (solo aptos para este cliente)
     all_ex = db.scalars(select(Exercise)).all()
@@ -1229,7 +1268,8 @@ def generate_client_plan(
         food_likes=client.food_likes or [],
         contraindications=contra_tags,
         body_fat_pct=client.body_fat_pct,
-        bmr=et.bmr, tdee=et.tdee, target_kcal=et.target_kcal, energy_method=et.method,
+        bmr=et.bmr, tdee=et.tdee, target_kcal=target_kcal_final, energy_method=et.method,
+        macro_plan=macro_plan,
         exercise_library=library,
         deep_analysis=deep_analysis,
         notes=adj_notes,
@@ -1242,8 +1282,12 @@ def generate_client_plan(
     # Paquete Start = solo nutrición: la IA no genera entrenamiento (ni el
     # educativo de entreno). Full/Pro generan el plan completo.
     include_training = client.package_tier != "start"
+    # §2 (hardening): catálogo de alimentos FILTRADO (sin alérgenos/aversiones/patrón)
+    # para que la IA seleccione por food_id y el solver fije los gramos.
+    food_catalog = _food_catalog_for(db, client)
     try:
-        generated = generate_monthly_plan(ctx, AIClient(), include_training=include_training)
+        generated = generate_monthly_plan(
+            ctx, AIClient(), include_training=include_training, food_catalog=food_catalog)
     except PlanGenerationError as exc:
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY,
@@ -1287,6 +1331,25 @@ def generate_client_plan(
             } for a in last_analyzed.ai_analysis_json["plan_adjustments"]],
         }
 
+    # §9 (hardening): panel de supervisión + reparación determinista + semáforo/ICP.
+    # Best-effort: si el panel falla, el plan sale intacto y sin anotación. Puede
+    # reconciliar la nutrición a rango (nunca la degrada) y marca ROJO si un
+    # bloqueante persiste (el coach lo revisa; no hay auto-envío).
+    from app.services.plan_review import review_generated_plan
+
+    try:
+        review_ai = AIClient()
+    except Exception:  # noqa: BLE001
+        review_ai = None
+    nutrition, review_summary = review_generated_plan(
+        nutrition, client=client, ctx=ctx, ai=review_ai,
+        objective_macros=ctx.macro_plan,
+    )
+    if review_summary and review_summary.get("color") == "rojo":
+        flags = list(flags) + [
+            "revisión: ROJO — el panel detectó puntos a revisar antes de enviar"
+        ]
+
     # 5) Persistir como borrador (nueva versión del mes)
     last = db.scalar(
         select(Plan).where(Plan.client_id == client_id, Plan.month_index == month_index)
@@ -1296,7 +1359,7 @@ def generate_client_plan(
     plan = Plan(
         client_id=client_id, month_index=month_index, version=version, status="draft",
         nutrition_json=nutrition, training_json=training, education_json=education,
-        guardrail_flags=flags, generated_by="ai",
+        guardrail_flags=flags, generated_by="ai", review_json=review_summary,
         goal_type=client.goal_type,  # snapshot: objetivo que sirve este plan
     )
     db.add(plan)
@@ -1315,6 +1378,7 @@ def generate_client_plan(
         "id": plan.id, "month_index": plan.month_index, "version": plan.version,
         "status": plan.status, "guardrail_flags": flags or [],
         "nutrition": nutrition, "training": training, "education": education,
+        "review": review_summary,  # §9: color/ICP/hallazgos del panel
         # Fechas: el título del plan ("Planificación · julio 2026") las necesita
         # ya al generar, sin esperar a recargar la lista.
         "created_at": plan.created_at.isoformat() if plan.created_at else None,

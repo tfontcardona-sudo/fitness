@@ -54,6 +54,16 @@ def activate_plan(db: Session, plan: Plan, *, notify: bool = True) -> None:
 
     log_event(db, "plan", plan.id, "plan_published", {"month_index": plan.month_index})
 
+    # §12 (hardening): desbloqueo progresivo por segmento. El resultado del plan
+    # (limpio = sin violación de guardrail ni edición del coach) alimenta la racha
+    # del segmento del cliente. Best-effort: nunca bloquea la activación.
+    try:
+        from app.services.progressive_unlock import register_plan_activation
+
+        register_plan_activation(db, plan, client, commit=False)
+    except Exception:  # noqa: BLE001 — el desbloqueo nunca frena la publicación
+        pass
+
     # Seguimiento AUTÓNOMO: el período de 14 días se abre si no hay ninguno
     from app.services.periods import ensure_open_period
 

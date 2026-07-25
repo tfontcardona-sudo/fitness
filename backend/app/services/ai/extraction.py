@@ -229,4 +229,5 @@ def extract_anamnesis_from_pdf(pdf_bytes: bytes, ai) -> AnamnesisExtraction:
         user=_EXTRACTION_USER,
         pdf_bytes=pdf_bytes,
         schema=AnamnesisExtraction,
+        temperature=0,  # §14: extracción determinista (mismos datos → misma lectura)
     )

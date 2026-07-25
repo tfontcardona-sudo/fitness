@@ -156,6 +156,8 @@ class Plan(Base):
     guardrail_flags: Mapped[list[str] | None] = mapped_column(ARRAY(String))
     generated_by: Mapped[str | None] = mapped_column(String(80))  # modelo IA o "coach"
     goal_type: Mapped[str | None] = mapped_column(String(20))  # objetivo que servía este plan (archivo)
+    # §9 (hardening): resultado del panel de supervisión (color/ICP/hallazgos).
+    review_json: Mapped[dict | None] = mapped_column(JSONB)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -310,6 +312,81 @@ class FeedbackDoc(Base):
     docx_path: Mapped[str | None] = mapped_column(String(500))
     pdf_path: Mapped[str | None] = mapped_column(String(500))
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+# ---------------------------------------------------------------- foods ----
+class Food(Base):
+    """Composición de alimentos (hardening §2) — base para el solver de porciones.
+
+    La IA selecciona alimentos (por nombre/ID); el backend fija las CANTIDADES con
+    un solver contra los macros del slot. Valores por 100 g en CRUDO. Los alérgenos
+    y las etiquetas permiten filtrar la base ANTES de que un alimento prohibido
+    llegue siquiera al contexto del modelo.
+    """
+
+    __tablename__ = "foods"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    canonical_name: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    aliases: Mapped[list[str] | None] = mapped_column(ARRAY(String))
+    # proteina|carbohidrato|grasa|verdura|fruta|lacteo|legumbre|otro
+    group: Mapped[str] = mapped_column(String(20), index=True)
+    # Composición por 100 g (crudo)
+    kcal: Mapped[float] = mapped_column(Float)
+    protein_g: Mapped[float] = mapped_column(Float)
+    carbs_g: Mapped[float] = mapped_column(Float)
+    fat_g: Mapped[float] = mapped_column(Float)
+    fiber_g: Mapped[float] = mapped_column(Float, default=0.0)
+    # Alérgenos declarados (índice GIN) y etiquetas (vegano, sin_gluten, barato…)
+    allergens: Mapped[list[str] | None] = mapped_column(ARRAY(String))
+    tags: Mapped[list[str] | None] = mapped_column(ARRAY(String))
+    # Gramos por unidad práctica (1 huevo≈55, 1 rebanada≈40); None → redondeo a 5 g.
+    unit_grams: Mapped[float | None] = mapped_column(Float)
+    # Cotas realistas por ración (crudo) para el solver.
+    min_grams: Mapped[float] = mapped_column(Float, default=0.0)
+    max_grams: Mapped[float] = mapped_column(Float, default=400.0)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+
+    __table_args__ = (
+        Index("ix_foods_allergens", "allergens", postgresql_using="gin"),
+        Index("ix_foods_tags", "tags", postgresql_using="gin"),
+    )
+
+
+# ------------------------------------------------------ plan_edits (§13) ----
+class PlanEdit(Base):
+    """Captura de las ediciones del coach sobre un plan generado (hardening §13).
+
+    Si no se registra desde el plan nº1, dentro de seis meses seguimos sin corpus.
+    `category` clasifica el porqué (cálculo, restricción, horario, selección de
+    alimentos, volumen, progresión, redacción, realismo, criterio, otro)."""
+
+    __tablename__ = "plan_edits"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    plan_id: Mapped[int] = mapped_column(ForeignKey("plans.id"), index=True)
+    category: Mapped[str] = mapped_column(String(30), index=True)
+    field_path: Mapped[str | None] = mapped_column(String(120))  # dónde se editó
+    before_json: Mapped[dict | None] = mapped_column(JSONB)
+    after_json: Mapped[dict | None] = mapped_column(JSONB)
+    note: Mapped[str | None] = mapped_column(Text)               # el "por qué" en 1 clic
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+# -------------------------------------------------- segment_unlock (§12) ----
+class SegmentUnlock(Base):
+    """Estado de desbloqueo progresivo por segmento (hardening §12).
+
+    Cada segmento empieza en ámbar; pasa a verde tras N planes consecutivos con
+    ICP alto y sin edición material; si vuelve a acumular ediciones, revierte."""
+
+    __tablename__ = "segment_unlock"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    segment: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    clean_streak: Mapped[int] = mapped_column(Integer, default=0)   # planes limpios seguidos
+    unlocked: Mapped[bool] = mapped_column(Boolean, default=False)  # True = auto-verde
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 # --------------------------------------------------------- brand_config ----

@@ -10,10 +10,17 @@ Unidades: kg, cm, kcal, gramos. Pesos de comida siempre en crudo (E.3).
 
 from __future__ import annotations
 
+import math
 import statistics
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date
+
+
+def _rhu(x: float) -> int:
+    """Redondeo half-up (0,5 → 1), coherente con `_rhu` de nutrition_scale y con
+    Math.round del frontend: una sola convención de redondeo en todo el sistema."""
+    return int(math.floor(x + 0.5))
 
 # ----------------------------------------------------------------- energía ----
 
@@ -109,57 +116,196 @@ def age_from_birth(birth: date, today: date | None = None) -> int:
     return today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day))
 
 
+# --- Ajuste energético INDIVIDUALIZADO (hardening §3) -------------------------
+# El punto medio del rango del objetivo daba a un cliente al 12% de graso y a
+# otro al 35% exactamente el mismo déficit. La evidencia recomienda déficits
+# mayores cuanta más grasa hay (más margen, menos riesgo de perder masa magra) y
+# superávits menores cuanta más experiencia (menos capacidad de ganar músculo sin
+# grasa). Cada rango lleva su RITMO DIANA de cambio de peso (%/semana).
+# Referencias: Helms 2014 (déficit por nivel de grasa), Iraki 2019 / Garthe 2013
+# (superávit por experiencia), Barakat 2020 (recomposición).
+
+# Umbrales de % graso por sexo para elegir el bracket de pérdida.
+_FAT_HIGH = {"male": 25.0, "female": 32.0}   # ≥ → graso alto
+_FAT_LOW = {"male": 15.0, "female": 23.0}    # < → graso bajo
+
+
+def _fat_bracket(sex: str, body_fat_pct: float | None) -> str:
+    """"high" | "medium" | "low" según % graso y sexo; "medium" si no hay dato."""
+    if body_fat_pct is None:
+        return "medium"
+    if body_fat_pct >= _FAT_HIGH.get(sex, 25.0):
+        return "high"
+    if body_fat_pct < _FAT_LOW.get(sex, 15.0):
+        return "low"
+    return "medium"
+
+
+@dataclass
+class EnergyAdjustment:
+    pct: float          # fracción con signo sobre el TDEE (−0,20 = déficit 20%)
+    rate_lo: float      # ritmo diana mín. (%/semana de peso corporal, con signo)
+    rate_hi: float      # ritmo diana máx.
+    bracket: str        # descripción del tramo aplicado (para trazabilidad)
+
+
+# (conservador, agresivo) en fracción con signo + (ritmo_lo, ritmo_hi) %/sem.
+_ADJUSTMENT_TABLE = {
+    ("fat_loss", "high"):   ((-0.20, -0.25), (-0.7, -1.0)),
+    ("fat_loss", "medium"): ((-0.15, -0.20), (-0.5, -0.7)),
+    ("fat_loss", "low"):    ((-0.10, -0.15), (-0.3, -0.5)),
+    ("muscle_gain", "novice"): ((0.12, 0.15), (0.25, 0.5)),
+    ("muscle_gain", "exp"):    ((0.05, 0.10), (0.1, 0.25)),
+    ("recomp", "any"):      ((0.0, -0.05), (0.0, 0.0)),
+    ("injury_recovery", "any"): ((0.0, -0.05), (0.0, 0.0)),
+    ("maintenance", "any"): ((0.0, 0.0), (0.0, 0.0)),
+}
+
+
+def individualized_energy_adjustment(
+    goal_type: str, sex: str, body_fat_pct: float | None,
+    level: str | None = None, adherence_ratio: float | None = None,
+) -> EnergyAdjustment:
+    """Ajuste calórico y ritmo diana individualizados por objetivo, % graso y
+    experiencia. La adherencia histórica (si se conoce) elige el punto dentro del
+    rango: buena adherencia → extremo más agresivo (lo sostiene); mala → extremo
+    conservador (un déficit fuerte que no se cumple no sirve). Sin historial →
+    punto medio (arranque prudente, principio del canario del §12)."""
+    if goal_type == "fat_loss":
+        key = ("fat_loss", _fat_bracket(sex, body_fat_pct))
+    elif goal_type == "muscle_gain":
+        key = ("muscle_gain", "novice" if level == "beginner" else "exp")
+    elif goal_type in ("recomp", "injury_recovery", "maintenance"):
+        key = (goal_type, "any")
+    else:
+        key = ("maintenance", "any")
+    (cons, aggr), (rate_lo, rate_hi) = _ADJUSTMENT_TABLE[key]
+
+    if adherence_ratio is None:
+        pct = (cons + aggr) / 2
+    elif adherence_ratio >= 0.85:
+        pct = aggr
+    elif adherence_ratio < 0.60:
+        pct = cons
+    else:
+        pct = (cons + aggr) / 2
+    return EnergyAdjustment(
+        pct=round(pct, 4), rate_lo=rate_lo, rate_hi=rate_hi,
+        bracket=f"{key[0]}/{key[1]}",
+    )
+
+
+# --- TDEE por componentes (hardening §3) --------------------------------------
+# NEAT por pasos reales + EAT del entrenamiento REALMENTE planificado + ETA, en
+# vez de un único factor multiplicador. Se usa cuando hay datos (pasos); si no,
+# cae al método clásico (factor de actividad). MET por defecto ~6 (entreno de
+# fuerza moderado-vigoroso). Referencias: Levine 2002 (NEAT), compendio de MET.
+_STEP_KCAL = 0.00045  # kcal por paso y por kg de peso
+_TRAINING_MET = 6.0
+
+
+@dataclass
+class TdeeComponents:
+    bmr: float
+    neat: float
+    eat: float
+    eta: float
+    total: float
+
+
+def tdee_by_components(
+    bmr_value: float, weight_kg: float, daily_steps: float,
+    sessions_per_week: int, session_min: float, met: float = _TRAINING_MET,
+) -> TdeeComponents:
+    """TDEE = BMR + NEAT(pasos) + EAT(entreno planificado) + ETA(10% del resto)."""
+    neat = daily_steps * weight_kg * _STEP_KCAL
+    eat = sessions_per_week * session_min * met * weight_kg / 60 / 7
+    eta = 0.10 * (bmr_value + neat + eat)
+    total = bmr_value + neat + eat + eta
+    return TdeeComponents(
+        bmr=round(bmr_value, 1), neat=round(neat, 1), eat=round(eat, 1),
+        eta=round(eta, 1), total=round(total, 1),
+    )
+
+
+# Pasos/día representativos por nivel de actividad declarado (para poder usar el
+# método por componentes con la anamnesis actual, que aún no pide pasos exactos).
+_STEPS_BY_ACTIVITY = {
+    "sedentary": 4000, "light": 7000, "active": 10000, "very_active": 13000,
+}
+
+
 @dataclass
 class EnergyTargets:
     bmr: float
     tdee: float
     target_kcal: float
-    method: str           # "mifflin" | "katch"
+    method: str            # "mifflin" | "katch"
     adjustment_pct: float  # negativo = déficit, positivo = superávit
+    # Individualización (hardening §3): trazabilidad de POR QUÉ este ajuste.
+    bracket: str = ""
+    rate_target_pct: tuple[float, float] = (0.0, 0.0)  # ritmo diana %/semana
+    tdee_components: float | None = None   # TDEE por NEAT+EAT+ETA (si hay datos)
+    warnings: list[str] = field(default_factory=list)
 
 
 def energy_targets(
     sex: str, weight_kg: float, height_cm: float, age: int, goal_type: str,
     training_days: int, body_fat_pct: float | None = None,
-    daily_activity: str | None = None,
+    daily_activity: str | None = None, level: str | None = None,
+    adherence_ratio: float | None = None, session_min: float | None = None,
 ) -> EnergyTargets:
     """Objetivo calórico de referencia que el backend entrega a la IA.
 
-    La IA puede afinar dentro de los guardrails, pero parte de esta base
-    objetiva en lugar de inventarla. El TDEE combina la actividad DIARIA
-    (ocupación/NEAT) con los días de entreno cuando se conoce.
+    La IA NO calcula: parte de esta base objetiva. El ajuste sobre el TDEE se
+    individualiza por % graso (pérdida) o experiencia (ganancia) y, si se conoce,
+    por adherencia histórica. El TDEE se compara con el método por componentes
+    (NEAT+EAT+ETA) y se avisa si divergen >15%.
     """
     use_katch = body_fat_pct is not None and 3 <= body_fat_pct <= 60
     b = bmr(sex, weight_kg, height_cm, age, body_fat_pct)
     t = tdee(b, training_days, daily_activity)
-    lo, hi = GOAL_ADJUSTMENT.get(goal_type, (0.0, 0.05))
-    mid = (lo + hi) / 2
-    if goal_type == "fat_loss":
-        target = t * (1 - mid)
-        adj = -mid
-    elif goal_type == "muscle_gain":
-        target = t * (1 + mid)
-        adj = mid
-    elif goal_type == "injury_recovery":
-        # Lesión: mantenimiento a déficit muy ligero — nunca superávit ni
-        # déficit fuerte (la reparación de tejidos necesita energía y proteína).
-        target = t * (1 - mid)
-        adj = -mid
-    else:  # recomp / maintenance → mantenimiento
-        target = t
-        adj = 0.0
+    warnings: list[str] = []
+
+    # TDEE por componentes con los datos disponibles (pasos aproximados por el
+    # nivel de actividad). Se compara con el clásico; divergencia >15% → aviso.
+    comp_total: float | None = None
+    steps = _STEPS_BY_ACTIVITY.get(daily_activity or "")
+    if steps:
+        comp = tdee_by_components(
+            b, weight_kg, steps, training_days or 0, session_min or 60.0,
+        )
+        comp_total = comp.total
+        if t > 0 and abs(comp_total - t) / t > 0.15:
+            warnings.append(
+                f"TDEE clásico ({t:.0f}) y por componentes ({comp_total:.0f}) "
+                f"divergen >15%: revisa actividad/pasos declarados."
+            )
+
+    adj = individualized_energy_adjustment(
+        goal_type, sex, body_fat_pct, level, adherence_ratio
+    )
+    target = t * (1 + adj.pct)
+
     # Suelo de seguridad: nunca por debajo del BMR ni de un mínimo por sexo (mismo
     # criterio que el guardrail de nutrición). Sin esto, un cliente sedentario o
     # ligero en pérdida de grasa recibía un target < BMR que el propio guardrail
     # rechazaba → no se podía generar el plan. Se recalcula el % real aplicado.
     floor = max(b, 1600.0 if sex == "male" else 1400.0)
+    applied = adj.pct
     if target < floor:
         target = floor
-        adj = round((target / t - 1), 4) if t else 0.0
+        applied = round((target / t - 1), 4) if t else 0.0
+        warnings.append(
+            "El ajuste pedido caía por debajo del suelo calórico seguro: se "
+            "recalcula al ritmo seguro (nunca se rompe un suelo por un plazo)."
+        )
     return EnergyTargets(
         bmr=b, tdee=t, target_kcal=round(target, 1),
         method="katch" if use_katch else "mifflin",
-        adjustment_pct=round(adj, 4),
+        adjustment_pct=round(applied, 4),
+        bracket=adj.bracket, rate_target_pct=(adj.rate_lo, adj.rate_hi),
+        tdee_components=comp_total, warnings=warnings,
     )
 
 
@@ -181,6 +327,72 @@ def protein_target_g(weight_kg: float, goal_type: str) -> tuple[float, float]:
     """Rango de proteína recomendado (g/día) según objetivo (E.2)."""
     lo, hi = PROTEIN_RANGE.get(goal_type, (1.8, 2.2))
     return round(weight_kg * lo, 1), round(weight_kg * hi, 1)
+
+
+@dataclass
+class MacroPlan:
+    """Reparto completo de macros calculado EN CÓDIGO (hardening §3). La IA no
+    decide gramos de macros: recibe este contrato y construye el menú para
+    cumplirlo. `kcal` puede subir respecto a la pedida si los suelos no cabían."""
+
+    kcal: int
+    protein_g: int
+    carbs_g: int
+    fat_g: int
+    fiber_g_min: int
+    water_ml: int
+    notes: list[str] = field(default_factory=list)
+
+
+def macro_targets(
+    sex: str, weight_kg: float, goal_type: str, kcal: float, training_days: int,
+) -> MacroPlan:
+    """Reparto completo de macros: proteína (punto medio del rango por objetivo),
+    grasa (≥0,6 g/kg — 0,7 en mujeres — Y dentro del 20–35% de las kcal),
+    carbohidratos = el resto con SUELO de 2 g/kg si entrena ≥3 días y 3 g/kg si
+    ≥5. Fibra 14 g/1.000 kcal (mín. 25). Agua 30–40 ml/kg (guía 35).
+
+    Regla innegociable (§3): si los suelos no caben en las kcal objetivo, se SUBEN
+    las kcal (se reduce el déficit); NUNCA se rompe un suelo para cumplir un plazo.
+    """
+    notes: list[str] = []
+    p_lo, p_hi = PROTEIN_RANGE.get(goal_type, (1.8, 2.2))
+    protein = _rhu(weight_kg * (p_lo + p_hi) / 2)
+
+    # Grasa: suelo por kg y suelo del 20% de kcal; techo del 35% de kcal.
+    fat_kg_floor = weight_kg * (0.7 if sex == "female" else 0.6)
+    fat_20 = 0.20 * kcal / 9
+    fat_35 = 0.35 * kcal / 9
+    fat = _rhu(min(max(fat_kg_floor, fat_20), max(fat_35, fat_kg_floor)))
+
+    carbs = _rhu((kcal - protein * 4 - fat * 9) / 4)
+
+    # Suelo de carbohidratos según volumen de entreno.
+    carb_floor_per_kg = 3.0 if (training_days or 0) >= 5 else 2.0 if (training_days or 0) >= 3 else 0.0
+    carb_floor = _rhu(weight_kg * carb_floor_per_kg)
+    if carbs < carb_floor:
+        # Los suelos (P + G + suelo de HC) no caben: se suben las kcal para
+        # respetarlos en vez de romper el suelo (nunca por un plazo del cliente).
+        carbs = carb_floor
+        notes.append(
+            f"kcal ajustadas para respetar el suelo de {carb_floor} g de "
+            f"carbohidratos ({carb_floor_per_kg:g} g/kg): no se rompe un suelo "
+            f"por un objetivo de plazo."
+        )
+    elif carbs < 0:
+        carbs = 0
+        notes.append("kcal ajustadas: proteína y grasa mínimas ya cubren la energía.")
+
+    # UNA SOLA VERDAD: las kcal declaradas SON exactamente la suma 4/4/9 de sus
+    # macros (mismo criterio que reconcile_nutrition). Así nunca hay "aquí pone X
+    # kcal y los macros suman otra cosa" — el descuadre más visible para el cliente.
+    final_kcal = protein * 4 + carbs * 4 + fat * 9
+    fiber = max(25, _rhu(14 * final_kcal / 1000))
+    water = _rhu(weight_kg * 35)
+    return MacroPlan(
+        kcal=final_kcal, protein_g=protein, carbs_g=carbs, fat_g=fat,
+        fiber_g_min=fiber, water_ml=water, notes=notes,
+    )
 
 
 # ------------------------------------------------------------------- e1RM ----

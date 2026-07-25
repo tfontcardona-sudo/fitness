@@ -12,6 +12,30 @@ ni se improvisan en runtime: se formatean con datos del cliente y nada más.
 
 from __future__ import annotations
 
+from functools import lru_cache
+from pathlib import Path
+
+
+@lru_cache(maxsize=1)
+def criterios_reference() -> str:
+    """Criterio del coach (CRITERIOS_ASESORIA.md, hardening §7) como bloque de
+    referencia para inyectar en la generación. Omite las líneas [PENDIENTE TONI]
+    (aún sin rellenar). Devuelve '' si el archivo no existe (nunca rompe)."""
+    for base in (Path(__file__).resolve().parents[4], Path.cwd(), Path.cwd().parent):
+        f = base / "CRITERIOS_ASESORIA.md"
+        try:
+            if f.exists():
+                body = "\n".join(
+                    ln for ln in f.read_text(encoding="utf-8").splitlines()
+                    if "[PENDIENTE TONI]" not in ln
+                ).strip()
+                return ("=== CRITERIO DEL COACH (referencia; ajústate a él) ===\n" + body
+                        ) if body else ""
+        except Exception:  # noqa: BLE001 — referencia best-effort
+            continue
+    return ""
+
+
 # ============================================================ D.1 base ====
 
 SYSTEM_BASE = """Eres un experto en nutrición deportiva y ciencias del entrenamiento de fuerza. \
@@ -32,18 +56,20 @@ fuera del JSON."""
 METHODOLOGY_NUTRITION = """\
 === METODOLOGÍA DE NUTRICIÓN (conocimiento experto) ===
 
-ENERGÍA
-- BMR: Mifflin-St Jeor; si hay % graso, Katch-McArdle (370 + 21.6 × masa magra kg).
-- TDEE: BMR × factor de actividad (1.2 / 1.375 / 1.55 / 1.725 / 1.9) según días de entrenamiento.
-- Pérdida de grasa: déficit 15–25% del TDEE (mayor a mayor % graso; conservador en magros/novatos).
-  Ganancia: superávit 5–12% (menor en avanzados). Recomposición: mantenimiento ±5% con proteína alta.
-- Las calorías SIEMPRE con justificación: TDEE estimado + ajuste + por qué.
-  IMPORTANTE: el backend ya te entrega BMR, TDEE y kcal objetivo calculados. NO recalcules:
-  parte de esos números y justifícalos. Tú afinas dentro de los límites, no inventas la base.
+ENERGÍA (el backend YA la calcula — tú NO calculas nada de esto)
+- El backend te entrega BMR, TDEE, kcal objetivo, el % de ajuste ya individualizado
+  (por % graso / experiencia / adherencia) y el reparto COMPLETO de macros
+  (proteína, grasa, carbohidratos, fibra mínima, agua). Son un CONTRATO: no los
+  recalcules ni los cambies. Tú NO conoces las fórmulas de BMR/TDEE ni las
+  necesitas; tu trabajo es construir el menú que cumpla esos números y explicar
+  al cliente, en lenguaje claro, el porqué del enfoque (no la aritmética).
+- Justifica las calorías con el ajuste que te da el backend ("mantenemos un
+  déficit moderado del X% sobre tu gasto porque…"), nunca inventando la base.
 
-MACROS Y DISTRIBUCIÓN
-- Proteína 1.6–2.2 g/kg (hasta 2.6 en déficit agresivo y sujeto magro); grasas mínimo 0.6–0.8 g/kg;
-  carbohidratos el resto, priorizados peri-entrenamiento.
+MACROS Y DISTRIBUCIÓN (los gramos de macros te los DA el backend; no los cambies)
+- Recibes proteína, grasa y carbohidratos en gramos ya calculados. Tu tarea es
+  distribuirlos entre las tomas y elegir alimentos que los cumplan, priorizando
+  los carbohidratos peri-entrenamiento.
 - Reparto de proteína en tomas de 0.3–0.5 g/kg según número de comidas declarado.
 - Si el cliente DELEGA el número/horario de comidas, elige tú el reparto óptimo para su
   objetivo y rutina (3-5 comidas; añade media mañana, merienda o pre-cama solo si aportan).
@@ -116,14 +142,17 @@ METHODOLOGY_NUTRITION_BRIEF = """\
 
 
 def system_prompt_full() -> str:
-    """System prompt para la llamada ① (núcleo): base + metodología completa."""
-    return "\n\n".join([SYSTEM_BASE, METHODOLOGY_NUTRITION, METHODOLOGY_TRAINING])
+    """System prompt para la llamada ① (núcleo): base + metodología completa +
+    criterio del coach (§7) si está definido."""
+    return "\n\n".join(filter(None, [
+        SYSTEM_BASE, METHODOLOGY_NUTRITION, METHODOLOGY_TRAINING, criterios_reference()]))
 
 
 def system_prompt_nutrition_only() -> str:
     """System prompt para el núcleo SOLO-NUTRICIÓN (paquete Start): base +
-    metodología de nutrición, sin la de entrenamiento (no se genera entreno)."""
-    return "\n\n".join([SYSTEM_BASE, METHODOLOGY_NUTRITION])
+    metodología de nutrición + criterio del coach, sin la de entrenamiento."""
+    return "\n\n".join(filter(None, [
+        SYSTEM_BASE, METHODOLOGY_NUTRITION, criterios_reference()]))
 
 
 def system_prompt_meals() -> str:

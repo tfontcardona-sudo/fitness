@@ -269,21 +269,25 @@ def macros_for_kcal(goal: str | None, weight_kg: float, kcal: float) -> dict:
     """Macros óptimos para unas kcal: proteína (punto medio del rango por
     evidencia) y grasa por kg; carbohidratos = el resto (grasa cede hasta su
     suelo de 0,6 g/kg si no caben)."""
+    # Redondeo half-up (`_rhu`) en TODAS las salidas: es el MISMO que Math.round
+    # del frontend (nutritionTargets.ts). Con round() bancario de Python, 95×1,9
+    # = 180,5 daba 180 g aquí y 181 g en el editor → "dos verdades" por 1 g. El
+    # contrato de paridad (tests/test_nutrition_parity.py) blinda que no reaparezca.
     lo, hi = PROTEIN_RANGE.get(goal or "", (1.8, 2.2))
-    protein = round(weight_kg * (lo + hi) / 2)
-    fat = round(weight_kg * FAT_PER_KG.get(goal or "", 0.9))
-    fat_min = round(weight_kg * 0.6)
-    protein_min = round(weight_kg * 1.6)
-    carbs = round((kcal - protein * 4 - fat * 9) / 4)
+    protein = _rhu(weight_kg * (lo + hi) / 2)
+    fat = _rhu(weight_kg * FAT_PER_KG.get(goal or "", 0.9))
+    fat_min = _rhu(weight_kg * 0.6)
+    protein_min = _rhu(weight_kg * 1.6)
+    carbs = _rhu((kcal - protein * 4 - fat * 9) / 4)
     if carbs < 0:
-        fat = max(fat_min, round((kcal - protein * 4) / 9))
-        carbs = round((kcal - protein * 4 - fat * 9) / 4)
+        fat = max(fat_min, _rhu((kcal - protein * 4) / 9))
+        carbs = _rhu((kcal - protein * 4 - fat * 9) / 4)
     if carbs < 0:
         # proteína+grasa mínimas superan las kcal: recorta la proteína a su suelo
         # para que los macros no declaren unas kcal que no cumplen.
-        protein = max(protein_min, round((kcal - fat * 9) / 4))
-        carbs = max(0, round((kcal - protein * 4 - fat * 9) / 4))
-    return {"kcal": round(kcal), "protein_g": protein, "carbs_g": carbs, "fat_g": fat}
+        protein = max(protein_min, _rhu((kcal - fat * 9) / 4))
+        carbs = max(0, _rhu((kcal - protein * 4 - fat * 9) / 4))
+    return {"kcal": _rhu(kcal), "protein_g": protein, "carbs_g": carbs, "fat_g": fat}
 
 
 def macros_scaled_to_kcal(base_nut: dict, kcal: float) -> dict:
@@ -297,10 +301,11 @@ def macros_scaled_to_kcal(base_nut: dict, kcal: float) -> dict:
     f0 = m.get("fat_g") or 0
     old = kcal_of(p0, c0, f0) or (base_nut or {}).get("target_kcal") or kcal
     r = (kcal / old) if old else 1.0
-    protein = round(p0 * r)
-    fat = round(f0 * r)
-    carbs = max(0, round((kcal - protein * 4 - fat * 9) / 4))
-    return {"kcal": round(kcal), "protein_g": protein, "carbs_g": carbs, "fat_g": fat}
+    # half-up (`_rhu`) para igualar Math.round del editor (nutritionTargets.ts).
+    protein = _rhu(p0 * r)
+    fat = _rhu(f0 * r)
+    carbs = max(0, _rhu((kcal - protein * 4 - fat * 9) / 4))
+    return {"kcal": _rhu(kcal), "protein_g": protein, "carbs_g": carbs, "fat_g": fat}
 
 
 def _scale(v, f: float):

@@ -98,10 +98,19 @@ def client():
 
 @pytest.fixture(scope="module")
 def auth(client):
-    import os
-    r = client.post("/api/auth/login",
-                    json={"username": "coach1", "password": os.environ.get("ADMIN_1_PASS", "passw0rd")})
-    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+    # Token directo (no /api/auth/login, limitado a 5/min): evita que la suite
+    # completa agote el límite y garantiza que el usuario exista.
+    from sqlalchemy import select
+
+    from app.db import SessionLocal
+    from app.models import User
+    from app.security import create_access_token, hash_password
+
+    with SessionLocal() as db:
+        if not db.scalar(select(User).where(User.username == "coach1")):
+            db.add(User(username="coach1", password_hash=hash_password("test")))
+            db.commit()
+    return {"Authorization": f"Bearer {create_access_token('coach1')}"}
 
 
 def _email():
