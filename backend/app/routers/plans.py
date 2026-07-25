@@ -54,6 +54,7 @@ class PlanOut(BaseModel):
     training_json: dict | None
     education_json: dict | None
     guardrail_flags: list[str] | None
+    review_json: dict | None = None  # §9: color/ICP/hallazgos del panel
     goal_type: str | None = None
     published_at: datetime | None = None
     created_at: datetime | None = None

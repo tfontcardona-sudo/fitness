@@ -156,6 +156,8 @@ class Plan(Base):
     guardrail_flags: Mapped[list[str] | None] = mapped_column(ARRAY(String))
     generated_by: Mapped[str | None] = mapped_column(String(80))  # modelo IA o "coach"
     goal_type: Mapped[str | None] = mapped_column(String(20))  # objetivo que servía este plan (archivo)
+    # §9 (hardening): resultado del panel de supervisión (color/ICP/hallazgos).
+    review_json: Mapped[dict | None] = mapped_column(JSONB)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

@@ -1303,6 +1303,25 @@ def generate_client_plan(
             } for a in last_analyzed.ai_analysis_json["plan_adjustments"]],
         }
 
+    # §9 (hardening): panel de supervisión + reparación determinista + semáforo/ICP.
+    # Best-effort: si el panel falla, el plan sale intacto y sin anotación. Puede
+    # reconciliar la nutrición a rango (nunca la degrada) y marca ROJO si un
+    # bloqueante persiste (el coach lo revisa; no hay auto-envío).
+    from app.services.plan_review import review_generated_plan
+
+    try:
+        review_ai = AIClient()
+    except Exception:  # noqa: BLE001
+        review_ai = None
+    nutrition, review_summary = review_generated_plan(
+        nutrition, client=client, ctx=ctx, ai=review_ai,
+        objective_macros=ctx.macro_plan,
+    )
+    if review_summary and review_summary.get("color") == "rojo":
+        flags = list(flags) + [
+            "revisión: ROJO — el panel detectó puntos a revisar antes de enviar"
+        ]
+
     # 5) Persistir como borrador (nueva versión del mes)
     last = db.scalar(
         select(Plan).where(Plan.client_id == client_id, Plan.month_index == month_index)
@@ -1312,7 +1331,7 @@ def generate_client_plan(
     plan = Plan(
         client_id=client_id, month_index=month_index, version=version, status="draft",
         nutrition_json=nutrition, training_json=training, education_json=education,
-        guardrail_flags=flags, generated_by="ai",
+        guardrail_flags=flags, generated_by="ai", review_json=review_summary,
         goal_type=client.goal_type,  # snapshot: objetivo que sirve este plan
     )
     db.add(plan)
@@ -1331,6 +1350,7 @@ def generate_client_plan(
         "id": plan.id, "month_index": plan.month_index, "version": plan.version,
         "status": plan.status, "guardrail_flags": flags or [],
         "nutrition": nutrition, "training": training, "education": education,
+        "review": review_summary,  # §9: color/ICP/hallazgos del panel
         # Fechas: el título del plan ("Planificación · julio 2026") las necesita
         # ya al generar, sin esperar a recargar la lista.
         "created_at": plan.created_at.isoformat() if plan.created_at else None,
