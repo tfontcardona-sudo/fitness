@@ -12,12 +12,20 @@ import { MemoDetails } from "./MemoDetails";
 import { ClientPlanEditor } from "./ClientPlanEditor";
 import type { ClientOut, GoalType } from "../types";
 
+interface PlanReview {
+  color?: "verde" | "ambar" | "rojo" | null;
+  icp?: number | null;
+  escalated?: boolean;
+  findings?: { severity: string; description: string }[];
+}
+
 interface PlanData {
   id: number;
   month_index: number;
   version: number;
   status: string;
   guardrail_flags: string[];
+  review?: PlanReview | null;
   nutrition: any;
   training: any;
   education: any;
@@ -33,6 +41,7 @@ function normalize(p: any): PlanData {
     version: p.version,
     status: p.status,
     guardrail_flags: p.guardrail_flags ?? [],
+    review: p.review ?? p.review_json ?? null,
     nutrition: p.nutrition ?? p.nutrition_json ?? null,
     training: p.training ?? p.training_json ?? null,
     education: p.education ?? p.education_json ?? null,
@@ -475,7 +484,36 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
                   ● En uso por el cliente
                 </span>
               )}
+              {/* §9: semáforo del panel de supervisión + ICP (confianza del plan). */}
+              {plan.review?.color && (() => {
+                const c = plan.review.color;
+                const style = c === "rojo"
+                  ? { background: "rgba(220,38,38,0.12)", color: "#B91C1C" }
+                  : c === "verde"
+                    ? { background: "rgba(22,163,74,0.12)", color: "#15803D" }
+                    : { background: "rgba(217,119,6,0.12)", color: "#B45309" };
+                const label = c === "rojo" ? "Revisar" : c === "verde" ? "Panel OK" : "Ámbar";
+                const icp = typeof plan.review.icp === "number" ? ` · ICP ${Math.round(plan.review.icp)}` : "";
+                return (
+                  <span className="rounded-full px-2 py-0.5 text-xs font-semibold"
+                    style={style}
+                    title={c === "rojo"
+                      ? "El panel de supervisión detectó puntos a revisar antes de enviar"
+                      : "Confianza del panel de supervisión (ICP 0-100)"}>
+                    {c === "rojo" ? "▲ " : "● "}{label}{icp}
+                  </span>
+                );
+              })()}
             </div>
+            {/* §9: hallazgos del panel cuando el plan escala a ROJO. */}
+            {plan.review?.color === "rojo" && (plan.review.findings?.length ?? 0) > 0 && (
+              <ul className="mt-1.5 space-y-0.5 text-xs text-red-700">
+                {plan.review!.findings!
+                  .filter((f) => f.severity === "bloqueante")
+                  .slice(0, 4)
+                  .map((f, i) => <li key={i}>• {f.description}</li>)}
+              </ul>
+            )}
             {/* REGISTRO de qué versión es esta: su origen (IA / adaptación a
                 revisión #N) y si lleva cambios manuales sin enviar. */}
             <p className="mt-0.5 text-xs text-zinc-500">
