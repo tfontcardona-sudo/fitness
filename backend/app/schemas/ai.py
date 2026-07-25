@@ -268,3 +268,23 @@ class EducationOutput(BaseModel):
     pills: list[EducationPill] = Field(min_length=3, max_length=5)
     biomech_by_pattern: list[BiomechPattern] = Field(min_length=1)
     faq: list[FaqItem] = Field(default_factory=list)
+
+
+# ---------------------------------- panel de supervisión (hardening §9) ----
+class ReviewFindingOut(BaseModel):
+    """Hallazgo de un revisor del panel."""
+
+    severidad: Literal["bloqueante", "mayor", "menor"]
+    descripcion: str
+    cita_anamnesis: str = ""
+    donde_en_el_plan: str = ""
+    correccion_propuesta: str = ""
+
+
+class ReviewerOutput(BaseModel):
+    """Veredicto estructurado de un revisor IA del panel (§9). Contrato aislado:
+    el revisor solo ve anamnesis + plan y devuelve esto."""
+
+    veredicto: Literal["aprobado", "aprobado_con_reservas", "rechazado"]
+    puntuacion_rubrica: int = Field(ge=0, le=100)
+    hallazgos: list[ReviewFindingOut] = Field(default_factory=list)

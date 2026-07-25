@@ -270,6 +270,87 @@ def _coverage_from(verdicts: list[ReviewerVerdict]) -> float:
 
 # ------------------------------------------------------------ orquestador ----
 
+MAX_REPAIR_ITERATIONS = 3
+
+
+@dataclass
+class RepairOutcome:
+    final: PanelResult
+    iterations: int
+    escalated: bool          # persiste un bloqueante tras el máximo de iteraciones
+    history: list[PanelResult] = field(default_factory=list)
+
+
+def run_panel_with_repair(
+    nutrition: dict,
+    profile: dict,
+    *,
+    repair: Callable[[dict, list[ReviewFinding]], dict],
+    objective_macros: dict | None = None,
+    ai_reviewer: Callable[[dict], ReviewerVerdict] | None = None,
+    is_checkin: bool = False,
+    icp_threshold: int = 80,
+    max_iterations: int = MAX_REPAIR_ITERATIONS,
+) -> RepairOutcome:
+    """Bucle de reparación (§9): corre el panel; si hay bloqueantes, los hallazgos
+    vuelven al generador (`repair`), que corrige SOLO la parte afectada y devuelve
+    el plan nuevo; se vuelve a correr el panel completo. Máximo `max_iterations`;
+    si persiste un bloqueante, se ESCALA (no se envía). `repair(plan, findings) ->
+    plan_corregido` es inyectable (el generador real o un mock en tests)."""
+    history: list[PanelResult] = []
+    current = nutrition
+    for i in range(1, max_iterations + 1):
+        res = run_panel(current, profile, objective_macros=objective_macros,
+                        ai_reviewer=ai_reviewer, is_checkin=is_checkin,
+                        icp_threshold=icp_threshold)
+        history.append(res)
+        blocking = res.blocking()
+        if not blocking and not res.vetoed:
+            return RepairOutcome(res, i, escalated=False, history=history)
+        if i == max_iterations:
+            return RepairOutcome(res, i, escalated=True, history=history)
+        # Los hallazgos vuelven al generador: corrige SOLO lo afectado.
+        try:
+            current = repair(current, blocking)
+        except Exception:  # noqa: BLE001 — si la reparación falla, se escala
+            return RepairOutcome(res, i, escalated=True, history=history)
+    return RepairOutcome(history[-1], max_iterations, escalated=True, history=history)
+
+
+def make_ai_reviewer(
+    ai_client, plan_text: str, anamnesis_text: str, *, criterios_text: str = "",
+) -> Callable[[dict], ReviewerVerdict]:
+    """Adaptador real: convierte un rol de revisor en una llamada a la IA con
+    contexto AISLADO y salida estructurada. Devuelve un callable para `run_panel`.
+    `ai_client` debe exponer `generate_json(model, system, user, schema)` (como
+    AIClient). Determinismo: se pide temperatura 0 vía el system prompt del rol."""
+    from app.schemas.ai import ReviewerOutput  # schema Pydantic del veredicto
+    from app.config import settings
+
+    def reviewer(role: dict) -> ReviewerVerdict:
+        prompt = reviewer_prompt(role, plan_text, anamnesis_text, criterios_text)
+        out = ai_client.generate_json(
+            model=settings.model_light, system=SYSTEM_REVIEWER,
+            user=prompt, schema=ReviewerOutput,
+        )
+        hallazgos = [ReviewFinding(
+            severity=h.severidad, description=h.descripcion,
+            cita_anamnesis=h.cita_anamnesis or "", donde_en_el_plan=h.donde_en_el_plan or "",
+            correccion_propuesta=h.correccion_propuesta or "",
+        ) for h in out.hallazgos]
+        return ReviewerVerdict(role["key"], out.veredicto, out.puntuacion_rubrica,
+                               hallazgos, can_veto=role.get("can_veto", False))
+
+    return reviewer
+
+
+SYSTEM_REVIEWER = (
+    "Eres un revisor experto de planes de nutrición y entrenamiento. Respondes "
+    "EXCLUSIVAMENTE con JSON válido conforme al schema. Sé estricto y concreto: "
+    "cita la anamnesis literalmente y señala dónde en el plan. No inventes datos."
+)
+
+
 def run_panel(
     nutrition: dict,
     profile: dict,
