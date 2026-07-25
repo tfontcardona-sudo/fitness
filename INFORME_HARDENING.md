@@ -2,7 +2,7 @@
 
 **Rama**: `hardening/asesorias-v2` (nunca `main`; **no se ha desplegado nada**).
 **Base**: último `main` (integra hasta PR #78).
-**Suite**: **340/340 en verde** (tests de §1–§14; incluye el arreglo de fallos preexistentes).
+**Suite**: **349/349 en verde** (tests de §1–§14; incluye el arreglo de fallos preexistentes).
 **Modelo de trabajo**: commits atómicos, cada uno con la suite en verde, para que
 puedas revisar la rama por partes.
 
@@ -151,9 +151,9 @@ un bloqueante. No ejercita la IA (sin clave en CI).
   (contrato, independencia, árbitro, vetos, ICP, color) ya está hecho y probado.
 
 ### Robustez de la suite (fallos PREEXISTENTES en la base, no introducidos aquí)
-- Fixtures de auth (test_portal / test_integration_a3 / test_audit_fixes) acuñaban
-  el token vía `/api/auth/login`, limitado a 5/min → la suite completa agotaba el
-  límite (`KeyError('access_token')`). Ahora acuñan el token directo y garantizan
+- Fixtures de auth (test_portal / test_integration_a3 / test_audit_fixes / test_phase2)
+  acuñaban el token vía `/api/auth/login`, limitado a 5/min → la suite completa
+  agotaba el límite (401 en el fixture). Ahora acuñan el token directo y garantizan
   el usuario: deterministas y sin depender de `ADMIN_x`.
 - `test_full_portal_cycle` era flaky por husos horarios (usaba `date.today()` UTC
   para el diario mientras el período se abre con la fecha de negocio Europe/Madrid).
@@ -225,6 +225,23 @@ encargo quiere evitar.
   `MEJORAS_PROPUESTAS.md`. **§14** golden set + estabilidad + telemetría +
   `PROMPT_VERSION`.
 
+### Integraciones al flujo en vivo YA ENCHUFADAS (deterministas, validadas en CI)
+Estas no necesitaban clave de API: son deterministas y se prueban de punta a punta.
+- **§13 · captura de ediciones del coach**: `PATCH /api/plans` registra cada cambio
+  del `manual_change_summary` como `PlanEdit` clasificado (`classify_change_text`).
+  Test: `test_edit_capture.py`.
+- **§8 · motor quincenal → cierre real**: `build_period_feedback` calcula el raíl
+  DETERMINISTA (`services/biweekly_period.decision_for_period`) desde el cierre
+  (ritmo real por regresión, adherencia 0-10, perímetros, fuerza, fatiga, semanas
+  en déficit), lo persiste junto al análisis del modelo
+  (`period.ai_analysis_json['biweekly_decision']`) y el tracking del coach lo
+  expone por revisión. Test: `test_biweekly_period.py` (4 casos).
+- **§12 · desbloqueo por segmento en la activación**: `activate_plan` registra el
+  resultado del plan en la racha del segmento (`register_plan_activation`,
+  best-effort). "Limpio" = sin violación de guardrail ni edición del coach; el ICP
+  del panel endurecerá la señal cuando los revisores IA estén enchufados. Tests en
+  `test_learning_unlock_stability.py`.
+
 ### Integraciones al flujo en vivo que quedan (necesitan clave de API para validar)
 - **§2 · solver → contrato IA**: que la IA devuelva **IDs de alimento** y que
   `solve_portions` fije los gramos en la generación (hoy la IA da gramos y el
@@ -233,10 +250,7 @@ encargo quiere evitar.
 - **§9 · panel con revisores IA en cada generación**: el panel corre determinista
   ya (revisor 0); enchufar los 8 revisores IA reales (`make_ai_reviewer`) y el bucle
   de reparación a la generación, y **surface del color/ICP en la UI del coach**.
-- **§8 · motor quincenal → cierre real**: llamar a `decide_biweekly` desde el cierre
-  de período y persistir la decisión con su regla.
-- **§13/§12 · captura y desbloqueo en vivo**: registrar cada edición del coach
-  (`record_edit`) desde el editor y actualizar el segmento (`register_plan_outcome`).
+  Cuando esto exista, el ICP alimenta el "limpio" del §12 (hoy determinista).
 - **§14 · modo sombra + temp 0**: correr una versión nueva en paralelo sobre los
   mismos casos y promocionar solo si mejora; fijar temperatura 0 en extracción/revisión.
 
