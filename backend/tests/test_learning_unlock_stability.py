@@ -119,3 +119,89 @@ def test_segmento_clinico_nunca_verde():
     from app.services.progressive_unlock import segment_allows_green
     with SessionLocal() as db:
         assert segment_allows_green(db, {"age": 40, "medical_notes": "Diabético"}) is False
+
+
+@needs_db
+def test_profile_from_client_mapea_edad_y_notas():
+    from datetime import date
+
+    from app.models import Client
+    from app.services.progressive_unlock import client_segment, profile_from_client
+
+    sano = Client(full_name="Sano", email="x@x.com", portal_token="t1",
+                  birth_date=date(1990, 1, 1), current_weight_kg=80, height_cm=178,
+                  food_allergies=[])
+    prof = profile_from_client(sano)
+    assert isinstance(prof["age"], int) and 18 <= prof["age"] <= 65
+    assert client_segment(prof) == "adulto_sano_estandar"
+
+    clinico = Client(full_name="Clin", email="y@x.com", portal_token="t2",
+                     birth_date=date(1990, 1, 1), medication_notes="Sintrom (anticoagulante)")
+    assert client_segment(profile_from_client(clinico)) == "clinico"
+
+
+@needs_db
+def test_plan_limpio_vs_editado():
+    import uuid
+    from app.db import SessionLocal
+    from app.models import Client, Plan, PlanEdit
+    from app.services.progressive_unlock import plan_is_clean
+
+    with SessionLocal() as db:
+        c = Client(full_name="PC", email=f"pc-{uuid.uuid4().hex[:8]}@x.com",
+                   portal_token=uuid.uuid4().hex)
+        db.add(c); db.flush()
+        limpio = Plan(client_id=c.id, month_index=1, status="draft", guardrail_flags=[])
+        db.add(limpio); db.flush()
+        assert plan_is_clean(db, limpio) is True
+
+        # una violación de guardrail lo ensucia
+        con_violacion = Plan(client_id=c.id, month_index=2, status="draft",
+                             guardrail_flags=["violation:kcal_below_floor"])
+        db.add(con_violacion); db.flush()
+        assert plan_is_clean(db, con_violacion) is False
+
+        # una edición material del coach lo ensucia
+        db.add(PlanEdit(plan_id=limpio.id, category="calculo", note="subió kcal"))
+        db.flush()
+        assert plan_is_clean(db, limpio) is False
+        db.rollback()
+
+
+@needs_db
+def test_register_plan_activation_avanza_y_revierte():
+    import uuid
+    from datetime import date
+    from app.db import SessionLocal
+    from app.models import Client, Plan, PlanEdit, SegmentUnlock
+    from app.services.progressive_unlock import client_segment, profile_from_client, register_plan_activation
+
+    with SessionLocal() as db:
+        c = Client(full_name="Act", email=f"act-{uuid.uuid4().hex[:8]}@x.com",
+                   portal_token=uuid.uuid4().hex, birth_date=date(1990, 1, 1),
+                   current_weight_kg=80, height_cm=178, food_allergies=[])
+        db.add(c); db.flush()
+        seg = client_segment(profile_from_client(c))
+        # arranca el segmento desde cero para un aserto determinista
+        db.query(SegmentUnlock).filter(SegmentUnlock.segment == seg).delete()
+        db.flush()
+
+        limpio = Plan(client_id=c.id, month_index=1, status="draft", guardrail_flags=[])
+        db.add(limpio); db.flush()
+        row = register_plan_activation(db, limpio, c, commit=False)
+        assert row.segment == seg and row.clean_streak == 1
+
+        # un segundo plan limpio suma
+        limpio2 = Plan(client_id=c.id, month_index=2, status="draft", guardrail_flags=[])
+        db.add(limpio2); db.flush()
+        row = register_plan_activation(db, limpio2, c, commit=False)
+        assert row.clean_streak == 2
+
+        # un plan con edición del coach revierte la racha a 0
+        editado = Plan(client_id=c.id, month_index=3, status="draft", guardrail_flags=[])
+        db.add(editado); db.flush()
+        db.add(PlanEdit(plan_id=editado.id, category="volumen", note="cambió series"))
+        db.flush()
+        row = register_plan_activation(db, editado, c, commit=False)
+        assert row.clean_streak == 0 and row.unlocked is False
+        db.rollback()
