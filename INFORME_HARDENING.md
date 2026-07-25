@@ -2,7 +2,7 @@
 
 **Rama**: `hardening/asesorias-v2` (nunca `main`; **no se ha desplegado nada**).
 **Base**: último `main` (integra hasta PR #78).
-**Suite**: **349/349 en verde** (tests de §1–§14; incluye el arreglo de fallos preexistentes).
+**Suite**: **348/348 en verde** (tests de §1–§14; incluye el arreglo de fallos preexistentes).
 **Modelo de trabajo**: commits atómicos, cada uno con la suite en verde, para que
 puedas revisar la rama por partes.
 
