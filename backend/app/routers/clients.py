@@ -1050,6 +1050,30 @@ class GeneratePlanIn(BaseModel):
     meals: list[str] | None = None
 
 
+def _food_catalog_for(db: Session, client: Client) -> list[dict]:
+    """§2: catálogo de alimentos (foods) como dicts para el solver, FILTRADO por las
+    alergias/aversiones/patrón del cliente (un alérgeno no puede ni entrar al prompt).
+    Best-effort: si algo falla, devuelve [] y la generación sigue con gramos de la IA."""
+    try:
+        from app.models import Food
+        from app.services.portion_solver import filter_foods
+        rows = db.scalars(select(Food).where(Food.archived.is_(False))).all()
+        foods = [{
+            "id": f.id, "canonical_name": f.canonical_name, "aliases": f.aliases or [],
+            "kcal": f.kcal, "protein_g": f.protein_g, "carbs_g": f.carbs_g, "fat_g": f.fat_g,
+            "allergens": f.allergens or [], "tags": f.tags or [],
+            "unit_grams": f.unit_grams, "min_grams": f.min_grams, "max_grams": f.max_grams,
+        } for f in rows]
+        return filter_foods(
+            foods,
+            allergies=client.food_allergies or [],
+            dislikes=client.food_dislikes or [],
+            diet_pattern=getattr(client, "diet_mode", None),
+        )
+    except Exception:  # noqa: BLE001
+        return []
+
+
 @router.post("/{client_id}/generate-plan")
 def generate_client_plan(
     client_id: int,
@@ -1258,8 +1282,12 @@ def generate_client_plan(
     # Paquete Start = solo nutrición: la IA no genera entrenamiento (ni el
     # educativo de entreno). Full/Pro generan el plan completo.
     include_training = client.package_tier != "start"
+    # §2 (hardening): catálogo de alimentos FILTRADO (sin alérgenos/aversiones/patrón)
+    # para que la IA seleccione por food_id y el solver fije los gramos.
+    food_catalog = _food_catalog_for(db, client)
     try:
-        generated = generate_monthly_plan(ctx, AIClient(), include_training=include_training)
+        generated = generate_monthly_plan(
+            ctx, AIClient(), include_training=include_training, food_catalog=food_catalog)
     except PlanGenerationError as exc:
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY,

@@ -152,6 +152,91 @@ def solve_portions(foods: list[dict], target: dict) -> SolvedPortion:
 
 # ------------------------------------------------------------ equivalencias ----
 
+def _household_for(name: str, grams: float, unit_grams: float | None) -> str:
+    """Medida casera para una cantidad ya resuelta por el solver."""
+    if unit_grams and unit_grams > 0:
+        n = max(1, round(grams / unit_grams))
+        return f"{n} ud ({int(round(grams))} g)"
+    return f"{int(round(grams))} g"
+
+
+def snap_option_ingredients(
+    ingredients: list[dict], target: dict, foods_by_id: dict[int, dict],
+) -> tuple[list[dict], dict] | None:
+    """§2: fija los gramos de una opción cuyos ingredientes referencian el catálogo.
+
+    Devuelve `(ingredientes_nuevos, macros_nuevas)` si TODOS los ingredientes tienen
+    un `food_id` resoluble; en otro caso `None` (se conserva la porción de la IA).
+    El solver decide los gramos para acercar la opción al `target` del slot; la IA
+    solo eligió los alimentos. Nunca lanza.
+    """
+    if not ingredients:
+        return None
+    foods = []
+    for ing in ingredients:
+        fid = ing.get("food_id")
+        food = foods_by_id.get(fid) if fid is not None else None
+        if not food:
+            return None  # un solo ingrediente fuera del catálogo → no tocamos la opción
+        foods.append(food)
+
+    solved = solve_portions(foods, target)
+    if not solved.items:
+        return None
+
+    by_id: dict[int, SolvedFood] = {}
+    for it in solved.items:
+        by_id.setdefault(it.food_id, it)
+
+    new_ings: list[dict] = []
+    for ing, food in zip(ingredients, foods):
+        it = by_id.get(food.get("id"))
+        if it is None or it.grams <= 0:
+            return None  # el solver descartó un alimento → conservamos la opción de la IA
+        new_ings.append({
+            "food": food.get("canonical_name", ing.get("food")),
+            "grams": it.grams,
+            "household": _household_for(food.get("canonical_name", ""), it.grams,
+                                        food.get("unit_grams")),
+            "food_id": food.get("id"),
+        })
+    macros = {
+        "kcal": solved.totals["kcal"],
+        "protein_g": solved.totals["protein_g"],
+        "carbs_g": solved.totals["carbs_g"],
+        "fat_g": solved.totals["fat_g"],
+    }
+    return new_ings, macros
+
+
+def snap_meal_bank(meal_bank: dict, slot_targets: dict[int, dict],
+                   foods_by_id: dict[int, dict]) -> int:
+    """§2: recorre el banco flexible y FIJA los gramos de cada opción cuyos
+    ingredientes estén en el catálogo. Best-effort: devuelve cuántas opciones ajustó
+    y nunca lanza (la que no encaje se queda como la dejó la IA)."""
+    if not meal_bank or not foods_by_id:
+        return 0
+    snapped = 0
+    for slot in (meal_bank.get("slots") or []):
+        if slot.get("fmt") not in (None, "options"):
+            continue
+        target = slot_targets.get(slot.get("slot"))
+        if not target:
+            continue
+        for opt in (slot.get("options") or []):
+            try:
+                res = snap_option_ingredients(opt.get("ingredients") or [], target, foods_by_id)
+            except Exception:  # noqa: BLE001 — el solver nunca rompe la generación
+                res = None
+            if res is None:
+                continue
+            new_ings, macros = res
+            opt["ingredients"] = new_ings
+            opt["macros"] = macros
+            snapped += 1
+    return snapped
+
+
 def equivalent_portion(base_food: dict, base_grams: float, alt_food: dict,
                        axis: str = "carbs_g") -> float:
     """Gramos de `alt_food` que igualan el aporte del EJE dominante de `base_food`

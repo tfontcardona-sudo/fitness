@@ -147,6 +147,9 @@ class Ingredient(BaseModel):
     food: str
     grams: float = Field(gt=0)  # SIEMPRE en crudo (E.3)
     household: str  # medida casera obligatoria
+    # §2 (hardening): id del alimento en el catálogo (foods). Cuando la IA lo
+    # aporta, el backend FIJA los gramos con el solver (la IA solo selecciona).
+    food_id: int | None = None
 
 
 class OptionMacros(BaseModel):

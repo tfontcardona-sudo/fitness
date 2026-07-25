@@ -107,3 +107,59 @@ def test_equivalencia_por_macro_neta():
     grams = equivalent_portion(ARROZ, 60, PATATA, axis="carbs_g")
     # 46,8 g HC / (17/100) = 275 g de patata (redondeado a 5)
     assert 270 <= grams <= 280
+
+
+# ------------------------------------------------- §2 enganche: snap por catálogo ----
+
+def test_snap_option_fija_gramos_por_food_id():
+    from app.services.portion_solver import snap_option_ingredients
+
+    foods_by_id = {1: POLLO, 2: ARROZ, 3: ACEITE}
+    ingredients = [
+        {"food": "Pollo", "grams": 999, "household": "x", "food_id": 1},
+        {"food": "Arroz", "grams": 999, "household": "x", "food_id": 2},
+        {"food": "AOVE", "grams": 999, "household": "x", "food_id": 3},
+    ]
+    target = {"protein_g": 45, "carbs_g": 60, "fat_g": 15}
+    res = snap_option_ingredients(ingredients, target, foods_by_id)
+    assert res is not None
+    new_ings, macros = res
+    # El solver reemplaza los gramos absurdos (999) por cantidades realistas.
+    assert all(0 < i["grams"] < 500 for i in new_ings)
+    # Y los macros resultantes se acercan al objetivo (±25% en cada eje).
+    for k in ("protein_g", "carbs_g", "fat_g"):
+        assert abs(macros[k] - target[k]) <= 0.25 * target[k] + 8
+
+
+def test_snap_option_ignora_si_falta_food_id():
+    from app.services.portion_solver import snap_option_ingredients
+
+    ingredients = [
+        {"food": "Pollo", "grams": 150, "household": "x", "food_id": 1},
+        {"food": "Salsa casera", "grams": 30, "household": "x"},  # sin food_id
+    ]
+    res = snap_option_ingredients(ingredients, {"protein_g": 40, "carbs_g": 5, "fat_g": 5},
+                                  {1: POLLO})
+    assert res is None  # una opción con un ingrediente fuera del catálogo no se toca
+
+
+def test_snap_meal_bank_cuenta_y_muta():
+    from app.services.portion_solver import snap_meal_bank
+
+    bank = {"mode": "flexible_7", "slots": [{
+        "slot": 1, "fmt": "options",
+        "options": [{
+            "key": "A", "title": "Pollo con arroz",
+            "ingredients": [
+                {"food": "Pollo", "grams": 1, "household": "x", "food_id": 1},
+                {"food": "Arroz", "grams": 1, "household": "x", "food_id": 2},
+            ],
+            "macros": {"kcal": 1, "protein_g": 1, "carbs_g": 1, "fat_g": 1},
+        }],
+    }]}
+    n = snap_meal_bank(bank, {1: {"protein_g": 40, "carbs_g": 55, "fat_g": 8}},
+                       {1: POLLO, 2: ARROZ})
+    assert n == 1
+    opt = bank["slots"][0]["options"][0]
+    assert opt["macros"]["protein_g"] > 1  # macros recalculados por el solver
+    assert all(i["grams"] > 1 for i in opt["ingredients"])

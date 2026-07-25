@@ -397,7 +397,29 @@ Respeta TODOS los guardrails de nutrición. La suma de los targets de slot debe
 acercarse al target_kcal."""
 
 
-def _meals_user_prompt(ctx: ClientContext, core: PlanCoreOutput) -> str:
+def _food_catalog_block(food_catalog: list[dict] | None) -> str:
+    """§2: catálogo compacto de alimentos para que la IA seleccione por food_id;
+    el backend fija los gramos con el solver. Vacío si no hay catálogo."""
+    if not food_catalog:
+        return ""
+    lines = []
+    for f in food_catalog[:120]:
+        lines.append(
+            f"{f.get('id')}·{f.get('canonical_name')} "
+            f"(P{f.get('protein_g')}/C{f.get('carbs_g')}/G{f.get('fat_g')}/"
+            f"{f.get('kcal')}kcal por 100 g)"
+        )
+    return (
+        "\n\nCATÁLOGO DE ALIMENTOS (id·nombre · macros por 100 g). En las opciones "
+        "fmt=\"options\", cuando un ingrediente exista aquí, añade su \"food_id\": el "
+        "backend FIJARÁ los gramos exactos con un solver (tú solo eliges los "
+        "alimentos). Si un ingrediente NO está en el catálogo, omite food_id.\n"
+        + " | ".join(lines)
+    )
+
+
+def _meals_user_prompt(ctx: ClientContext, core: PlanCoreOutput,
+                       food_catalog: list[dict] | None = None) -> str:
     targets = _slot_targets(core)
     slot_info = {
         m.slot: {"nombre": m.name, "hora": m.time, **targets[m.slot]}
@@ -411,7 +433,8 @@ TOMAS DEL DÍA (slot, nombre, hora, macros objetivo del slot):
 PROHIBIDO (NINGÚN plato puede contenerlo — seguridad): \
 alergias/intolerancias={ctx.food_allergies}, aversiones={ctx.food_dislikes}. \
 PREFERIR / INCLUIR cuando encaje en los macros (alimentos que le gustan): {ctx.food_likes}.\
-{(' SALUD A TENER EN CUENTA EN LA DIETA (patologías, medicación, digestivo): ' + ctx.clinical_notes.replace(chr(10), ' ')) if ctx.clinical_notes else ''}"""
+{(' SALUD A TENER EN CUENTA EN LA DIETA (patologías, medicación, digestivo): ' + ctx.clinical_notes.replace(chr(10), ' ')) if ctx.clinical_notes else ''}\
+{_food_catalog_block(food_catalog)}"""
 
     if ctx.diet_mode == "flexible_7":
         return common + """
@@ -480,7 +503,8 @@ balance energético, sueño y recuperación, NEAT, hidratación, deload."""
 # --------------------------------------------------------------- pipeline ----
 
 def generate_monthly_plan(
-    ctx: ClientContext, ai: AIClient, include_training: bool = True
+    ctx: ClientContext, ai: AIClient, include_training: bool = True,
+    food_catalog: list[dict] | None = None,
 ) -> GeneratedPlan:
     """Ejecuta las llamadas con guardrails y devuelve el plan.
 
@@ -555,12 +579,27 @@ def generate_monthly_plan(
     try:
         meals = ai.generate_json(
             model=model, system=system_prompt_meals(),
-            user=_meals_user_prompt(ctx, core), schema=schema,
+            user=_meals_user_prompt(ctx, core, food_catalog), schema=schema,
         )
     except AIGenerationError as exc:
         raise PlanGenerationError(f"banco de comidas: {exc}") from exc
 
     targets = _slot_targets(core)
+
+    # §2 (hardening): la IA SELECCIONA alimentos (food_id del catálogo); el backend
+    # FIJA los gramos con el solver de porciones. Best-effort: solo ajusta opciones
+    # cuyos ingredientes estén TODOS en el catálogo; el resto queda como la IA.
+    if food_catalog and isinstance(meals, MealsFlexibleOutput):
+        try:
+            from app.services.portion_solver import snap_meal_bank
+            foods_by_id = {f["id"]: f for f in food_catalog if f.get("id") is not None}
+            meals_dict = meals.model_dump()
+            snapped = snap_meal_bank(meals_dict, targets, foods_by_id)
+            if snapped:
+                meals = schema.model_validate(meals_dict)
+                flags.append(f"solver: {snapped} opción(es) con gramos fijados por el catálogo (§2)")
+        except Exception:  # noqa: BLE001 — el solver nunca rompe la generación
+            pass
     if isinstance(meals, MealsFlexibleOutput):
         meal_report = gr.check_meal_options(
             [s.model_dump() for s in meals.slots], targets,

@@ -221,6 +221,61 @@ def _nutrition_only_core_json() -> str:
     return json.dumps({"nutrition": core["nutrition"]})
 
 
+def _food_catalog() -> list[dict]:
+    return [
+        {"id": 1, "canonical_name": "Pechuga de pollo", "aliases": [], "kcal": 120,
+         "protein_g": 22.5, "carbs_g": 0, "fat_g": 2.6, "allergens": [], "tags": [],
+         "unit_grams": None, "min_grams": 80, "max_grams": 300},
+        {"id": 2, "canonical_name": "Arroz blanco", "aliases": [], "kcal": 354,
+         "protein_g": 7, "carbs_g": 78, "fat_g": 1, "allergens": [], "tags": [],
+         "unit_grams": None, "min_grams": 40, "max_grams": 200},
+    ]
+
+
+def _flexible_meals_with_ids() -> str:
+    # Cada slot: 1 opción con dos ingredientes del catálogo (food_id 1 y 2) y gramos
+    # ABSURDOS (999) que el solver debe corregir.
+    targets = {1: (528, 44, 52, 16), 2: (726, 60, 72, 22),
+               3: (331, 30, 28, 11), 4: (540, 41, 58, 16)}
+    slots = []
+    for slot, (kcal, p, c, f) in targets.items():
+        slots.append({"slot": slot, "options": [{
+            "key": "A", "title": f"Pollo con arroz slot {slot}",
+            "ingredients": [
+                {"food": "Pollo", "grams": 999, "household": "x", "food_id": 1},
+                {"food": "Arroz", "grams": 999, "household": "x", "food_id": 2},
+            ],
+            "prep": "Cocer", "prep_minutes": 10,
+            "macros": {"kcal": kcal, "protein_g": p, "carbs_g": c, "fat_g": f},
+            "tags": [],
+        }]})
+    return json.dumps({"mode": "flexible_7", "slots": slots})
+
+
+def test_solver_fija_gramos_en_generacion_con_catalogo():
+    # §2: con catálogo, el solver reemplaza los gramos absurdos (999) por realistas.
+    client = ScriptedClient([_nutrition_only_core_json(), _flexible_meals_with_ids()])
+    plan = generate_monthly_plan(_ctx(), client, include_training=False,
+                                 food_catalog=_food_catalog())
+    nutrition_json, _, _, flags = plan.to_persistable()
+    assert any(fl.startswith("solver:") for fl in flags)
+    for slot in nutrition_json["meal_bank"]["slots"]:
+        for opt in slot["options"]:
+            for ing in opt["ingredients"]:
+                assert 0 < ing["grams"] < 500  # ya no hay 999
+    # El catálogo aparece en el prompt de comidas (2ª llamada).
+    assert "CATÁLOGO DE ALIMENTOS" in client.calls[1]["user"]
+
+
+def test_sin_catalogo_no_snapea_backward_compat():
+    # Sin catálogo, la generación conserva EXACTAMENTE el comportamiento previo.
+    client = ScriptedClient([_nutrition_only_core_json(), _flexible_meals_json()])
+    plan = generate_monthly_plan(_ctx(), client, include_training=False)
+    _, _, _, flags = plan.to_persistable()
+    assert not any(fl.startswith("solver:") for fl in flags)
+    assert "CATÁLOGO DE ALIMENTOS" not in client.calls[1]["user"]
+
+
 def test_nutrition_only_pipeline_skips_training():
     # Paquete Start: núcleo de nutrición + comidas, SIN entreno ni educativo.
     client = ScriptedClient([_nutrition_only_core_json(), _flexible_meals_json()])
