@@ -2,7 +2,7 @@
 
 **Rama**: `hardening/asesorias-v2` (nunca `main`; **no se ha desplegado nada**).
 **Base**: último `main` (integra hasta PR #78).
-**Suite**: **292/292 en verde** (tests nuevos de §1, §2, §3, §8, §9, §9.0, §11, §12 y §14; incluye el arreglo de fallos preexistentes).
+**Suite**: **340/340 en verde** (tests de §1–§14; incluye el arreglo de fallos preexistentes).
 **Modelo de trabajo**: commits atómicos, cada uno con la suite en verde, para que
 puedas revisar la rama por partes.
 
@@ -201,51 +201,49 @@ un bloqueante. No ejercita la IA (sin clave en CI).
 
 ---
 
-## 3. Lo que queda PENDIENTE (y por qué)
+## 3. Estado por sección y lo que queda (y por qué)
 
-Ordenado por impacto. Nada de esto está a medias en el código: está **no empezado**
-salvo donde indico "andamiaje".
+**Todas las 14 secciones tienen ya su lógica construida y probada.** Lo único que
+queda son INTEGRACIONES al flujo de IA en vivo, que cambian el comportamiento de
+producción de generación/revisión y **requieren una clave de API para validarse
+de punta a punta** — hacerlas a ciegas arriesgaría regresiones, justo lo que este
+encargo quiere evitar.
 
-- **§2 (integración) · Conectar el solver al flujo de IA.** La base de alimentos,
-  el filtro y el solver **ya están hechos y probados**; falta cambiar el contrato con
-  la IA para que devuelva **IDs de alimento** (no gramos) y que `solve_portions` fije
-  las cantidades en la generación y en el banco de comidas. El seed son 66 alimentos
-  curados; ampliarlo a BEDCA/USDA completo es un paso posterior (la descarga por el
-  proxy no es fiable en esta sesión).
-- **§4 · Modelo único `PlanState` + versionado v1/v2/v3 + grafo de dependencias
-  bidireccional.** El sistema ya reconcilia el plan como organismo
-  (`reconcile_nutrition`) y el documento se genera desde los datos; falta el
-  `PlanState` Pydantic formal con historial y revert, y la propagación bottom-up
-  explícita.
-- **§5 · Extracción de anamnesis con confianza + doble pase + detección de
-  contradicciones + matriz de cobertura.** No empezado.
-- **§6 · Coherencia dieta↔entreno profunda** (ciclado de HC por día, pre/post sobre
-  hora real, volumen vs profundidad del déficit). Parcial: las pautas ya están en
-  el prompt; falta la validación determinista cruzada.
-- **§7 · Libro de estilo**: **arrancado** (`CRITERIOS_ASESORIA.md`), pendiente que
-  Toni rellene los `[PENDIENTE TONI]` y su inyección en generación/panel.
-- **§8 (integración) · Enchufar el motor quincenal al flujo de revisión.** El motor
-  determinista **ya está hecho y probado** (`biweekly_engine.py`); falta llamarlo desde
-  el cierre de período real (`adapt_plan`/análisis quincenal) y persistir la decisión.
-- **§9 (parcial) · Panel HECHO** (revisor 0 determinista + 8 roles IA con contexto
-  aislado + árbitro con vetos, testado con IA mockeada). Pendiente: el **bucle de
-  reparación** (los hallazgos vuelven al generador; máx. 3 iteraciones) y el
-  adaptador `make_ai_reviewer` que llama a la IA real.
-  **Andamiaje**: el Validador 0 (determinista) está hecho y testeado; falta el
-  contrato JSON de revisores IA, la ejecución en paralelo con contexto aislado, el
-  árbitro y el bucle de reparación (máx. 3 iteraciones).
-- **§10 · Simulación 12 semanas, prueba de estrés de adherencia, mejor-de-N,
-  checklist de sentido común, canario.** No empezado.
-- **§11 · ICP HECHO** (`compute_icp`, con consenso y estabilidad). Pendiente:
-  alimentarlo con confianza de extracción real (§5) y estabilidad de 2 seeds (§14).
-- **§12 (parcial) · Semáforo + lista roja HECHOS** (`safety_gate`). Pendiente: el
-  **desbloqueo progresivo por segmento** (empezar en ámbar, pasar a verde tras N
-  planes sin edición) — necesita persistencia por segmento y contadores.
-- **§13 · Aprendizaje continuo** (captura de ediciones, clasificador,
-  `MEJORAS_PROPUESTAS.md`). No empezado; `plan_diff.py` ya da la base del diff.
-- **§14 (parcial) · Golden set HECHO** sobre la capa determinista (23 perfiles,
-  gate de CI, `POR_VALIDAR`). Pendiente: determinismo de la IA (temp 0 en extracción/
-  revisión), prompts versionados en el repo, modo sombra y telemetría por plan.
+### Construido y probado (módulos + tests)
+- **§1** consolidación + contrato de paridad. **§2** BBDD de alimentos + solver
+  (scipy) + filtro. **§3** energía individualizada + macros en código + contrato a
+  la IA. **§4** `PlanState` (versionado + revert + propagación top-down y bottom-up).
+  **§5** contradicciones + matriz de cobertura + retrato + doble pase con confianza.
+  **§6** coherencia dieta↔entreno (`diet_training_coherence`). **§7** criterio del
+  coach **inyectado** en la generación (`criterios_reference`). **§8** motor
+  quincenal determinista. **§9** panel (revisor 0 determinista + 8 roles IA con
+  contexto aislado + árbitro + vetos) + **bucle de reparación** (máx 3) +
+  `make_ai_reviewer`. **§9.0** validador determinista. **§10** simulación 12 sem +
+  estrés de adherencia + best-of-N + checklist + canario. **§11** ICP (con consenso
+  y estabilidad). **§12** semáforo + lista roja + **desbloqueo progresivo por
+  segmento** (persistido). **§13** captura de ediciones + clasificador +
+  `MEJORAS_PROPUESTAS.md`. **§14** golden set + estabilidad + telemetría +
+  `PROMPT_VERSION`.
+
+### Integraciones al flujo en vivo que quedan (necesitan clave de API para validar)
+- **§2 · solver → contrato IA**: que la IA devuelva **IDs de alimento** y que
+  `solve_portions` fije los gramos en la generación (hoy la IA da gramos y el
+  validador de porciones §9.0 caza lo absurdo). Ampliar el seed (66 alimentos) a
+  BEDCA/USDA completo.
+- **§9 · panel con revisores IA en cada generación**: el panel corre determinista
+  ya (revisor 0); enchufar los 8 revisores IA reales (`make_ai_reviewer`) y el bucle
+  de reparación a la generación, y **surface del color/ICP en la UI del coach**.
+- **§8 · motor quincenal → cierre real**: llamar a `decide_biweekly` desde el cierre
+  de período y persistir la decisión con su regla.
+- **§13/§12 · captura y desbloqueo en vivo**: registrar cada edición del coach
+  (`record_edit`) desde el editor y actualizar el segmento (`register_plan_outcome`).
+- **§14 · modo sombra + temp 0**: correr una versión nueva en paralelo sobre los
+  mismos casos y promocionar solo si mejora; fijar temperatura 0 en extracción/revisión.
+
+> Motivo de dejarlas fuera: todas tocan llamadas de IA reales que la CI no puede
+> ejercitar sin `ANTHROPIC_API_KEY`. Los MÓDULOS están listos y probados con
+> dependencias inyectables/mocks; el enganche final se valida mejor en una sesión
+> con clave y con decisiones de UI del coach.
 
 ---
 
@@ -254,7 +252,7 @@ salvo donde indico "andamiaje".
 ```bash
 git checkout hardening/asesorias-v2
 git log --oneline main..HEAD          # commits atómicos, uno por pieza
-cd backend && python -m pytest        # 292/292 (necesita Postgres local)
+cd backend && python -m pytest        # 340/340 (necesita Postgres local)
 ```
 Los commits están pensados para revisarse de uno en uno; cada uno deja la suite en
 verde. La CI puede añadir el test de paridad TS (necesita node+esbuild, que ya

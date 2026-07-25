@@ -51,8 +51,15 @@ portal) y el cliente registra su seguimiento diario hasta el cierre quincenal.
 >   capa determinista; rangos `POR_VALIDAR`.
 > - **Panel de supervisión + ICP + semáforo** (`services/review_panel.py`,
 >   `services/safety_gate.py`): revisor 0 determinista + roles IA con contexto AISLADO
->   + árbitro (no anula vetos) + ICP + lista roja/semáforo. Revisores IA inyectables;
->   pendiente el bucle de reparación y el adaptador a IA real.
+>   + árbitro (no anula vetos) + ICP + lista roja/semáforo + **bucle de reparación**
+>   (`run_panel_with_repair`, máx 3) + `make_ai_reviewer`. Revisores IA inyectables.
+> - **Más módulos del hardening v2** (todos con tests; integración al flujo IA en vivo
+>   pendiente, ver INFORME_HARDENING.md): `diet_training_coherence` (§6),
+>   `plan_quality` (§10 simulación/estrés/best-of-N/checklist/canario),
+>   `anamnesis_extraction` (§5 contradicciones/cobertura/doble pase), `plan_state`
+>   (§4 versionado + propagación), `biweekly_engine` (§8), `continuous_learning` (§13),
+>   `progressive_unlock` (§12), `plan_stability` (§11/§14). Migraciones 0028 (foods),
+>   0029 (plan_edits, segment_unlock).
 > - **Criterio de coach**: `CRITERIOS_ASESORIA.md` (rellenar `[PENDIENTE TONI]`).
 > - **Historia antigua**: `docs/HISTORICO.md` (referencia, NO fuente de verdad viva).
 
