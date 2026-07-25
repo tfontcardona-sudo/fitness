@@ -351,6 +351,42 @@ class Food(Base):
     )
 
 
+# ------------------------------------------------------ plan_edits (§13) ----
+class PlanEdit(Base):
+    """Captura de las ediciones del coach sobre un plan generado (hardening §13).
+
+    Si no se registra desde el plan nº1, dentro de seis meses seguimos sin corpus.
+    `category` clasifica el porqué (cálculo, restricción, horario, selección de
+    alimentos, volumen, progresión, redacción, realismo, criterio, otro)."""
+
+    __tablename__ = "plan_edits"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    plan_id: Mapped[int] = mapped_column(ForeignKey("plans.id"), index=True)
+    category: Mapped[str] = mapped_column(String(30), index=True)
+    field_path: Mapped[str | None] = mapped_column(String(120))  # dónde se editó
+    before_json: Mapped[dict | None] = mapped_column(JSONB)
+    after_json: Mapped[dict | None] = mapped_column(JSONB)
+    note: Mapped[str | None] = mapped_column(Text)               # el "por qué" en 1 clic
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+# -------------------------------------------------- segment_unlock (§12) ----
+class SegmentUnlock(Base):
+    """Estado de desbloqueo progresivo por segmento (hardening §12).
+
+    Cada segmento empieza en ámbar; pasa a verde tras N planes consecutivos con
+    ICP alto y sin edición material; si vuelve a acumular ediciones, revierte."""
+
+    __tablename__ = "segment_unlock"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    segment: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    clean_streak: Mapped[int] = mapped_column(Integer, default=0)   # planes limpios seguidos
+    unlocked: Mapped[bool] = mapped_column(Boolean, default=False)  # True = auto-verde
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 # --------------------------------------------------------- brand_config ----
 class BrandConfig(Base):
     __tablename__ = "brand_config"
