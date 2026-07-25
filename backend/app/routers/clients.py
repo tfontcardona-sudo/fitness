@@ -129,6 +129,8 @@ def _quincenal_entry(db: Session, period: Period, prev: Period | None) -> dict:
         "free_meals": period.free_meals_count,
         "changes": period.closing_changes, "hardest": period.closing_hardest,
         "next_goal": period.closing_next_goal, "questions": period.closing_questions,
+        # §8 (hardening): raíl de decisión determinista (regla + acción), si existe.
+        "biweekly_decision": (period.ai_analysis_json or {}).get("biweekly_decision"),
     }
 
 

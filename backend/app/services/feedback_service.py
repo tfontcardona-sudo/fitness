@@ -357,9 +357,16 @@ def build_period_feedback(db: Session, period_id: int, ai=None) -> FeedbackDoc:
     except AIGenerationError as exc:
         raise FeedbackError(f"La IA no devolvió un feedback válido: {exc}") from exc
 
+    # §8 (hardening): raíl de decisión DETERMINISTA. Se calcula sin IA a partir del
+    # cierre y acompaña al análisis del modelo con la regla que disparó (auditable).
+    from app.services.biweekly_period import decision_for_period, decision_to_json
+
+    biweekly = decision_to_json(decision_for_period(db, period, client))
+
     docx_rel = _write_feedback_doc(db, client, period, inputs, ai_out)
     content = {**ai_out.model_dump(), "metrics": inputs["metrics_json"],
                "weight_points": inputs["weight_points"],
+               "biweekly_decision": biweekly,
                "goal_weight_kg": client.goal_weight_kg}
     # Regenerar NO duplica: si el período ya tiene feedback, se reemplaza su
     # contenido (mismo doc, mismo id) en vez de apilar un segundo documento.
@@ -377,7 +384,7 @@ def build_period_feedback(db: Session, period_id: int, ai=None) -> FeedbackDoc:
         db.add(fb)
     period.status = "analyzed"
     period.metrics_json = inputs["metrics_json"]
-    period.ai_analysis_json = ai_out.model_dump()
+    period.ai_analysis_json = {**ai_out.model_dump(), "biweekly_decision": biweekly}
     period.ai_photo_analysis = ai_out.ai_photo_analysis
     db.flush()
     log_event(db, "period", period.id, "feedback_generated", {"feedback_id": fb.id})
