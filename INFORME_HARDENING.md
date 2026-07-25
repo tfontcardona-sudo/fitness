@@ -2,7 +2,7 @@
 
 **Rama**: `hardening/asesorias-v2` (nunca `main`; **no se ha desplegado nada**).
 **Base**: último `main` (integra hasta PR #78).
-**Suite**: **348/348 en verde** (tests de §1–§14; incluye el arreglo de fallos preexistentes).
+**Suite**: **359/359 en verde** (tests de §1–§14; incluye el arreglo de fallos preexistentes).
 **Modelo de trabajo**: commits atómicos, cada uno con la suite en verde, para que
 puedas revisar la rama por partes.
 
@@ -108,8 +108,9 @@ gramos y sus valores los ponía el modelo de memoria).
     **redondeo a raciones cocinables**, recalculando totales.
   - `equivalent_portion`: equivalencias **por macro neta**, no por gramos brutos.
 - 10 tests. `numpy`/`scipy` añadidos a requirements.
-- **Pendiente de integrar** en el flujo de IA (que devuelva IDs en vez de gramos);
-  las piezas ya están listas y probadas.
+- **YA integrado** en la generación (enganche final): la IA recibe el catálogo y
+  devuelve `food_id`; `snap_meal_bank` fija los gramos con el solver. Backward
+  compatible (sin `food_id` se conserva la porción de la IA).
 
 ### §8 · Motor de decisión quincenal determinista (commit `hardening §8`)
 `services/biweekly_engine.py` — **decisión en código, no criterio del modelo**, para
@@ -242,22 +243,26 @@ Estas no necesitaban clave de API: son deterministas y se prueban de punta a pun
   del panel endurecerá la señal cuando los revisores IA estén enchufados. Tests en
   `test_learning_unlock_stability.py`.
 
-### Integraciones al flujo en vivo que quedan (necesitan clave de API para validar)
-- **§2 · solver → contrato IA**: que la IA devuelva **IDs de alimento** y que
-  `solve_portions` fije los gramos en la generación (hoy la IA da gramos y el
-  validador de porciones §9.0 caza lo absurdo). Ampliar el seed (66 alimentos) a
-  BEDCA/USDA completo.
-- **§9 · panel con revisores IA en cada generación**: el panel corre determinista
-  ya (revisor 0); enchufar los 8 revisores IA reales (`make_ai_reviewer`) y el bucle
-  de reparación a la generación, y **surface del color/ICP en la UI del coach**.
-  Cuando esto exista, el ICP alimenta el "limpio" del §12 (hoy determinista).
-- **§14 · modo sombra + temp 0**: correr una versión nueva en paralelo sobre los
-  mismos casos y promocionar solo si mejora; fijar temperatura 0 en extracción/revisión.
+### Enganche final YA HECHO en vivo (a petición del coach; validado con IA simulada en CI)
+- **§14 · temperatura 0** en extracción de anamnesis, lectura de la revisión
+  quincenal y cada revisor del panel (la generación conserva temperatura por
+  defecto para variedad de comidas).
+- **§9 · panel de supervisión en la generación**: `services/plan_review` corre el
+  revisor 0 (determinista) + los 8 revisores IA con contexto aislado, calcula
+  color/ICP y aplica una **reparación determinista acotada** (reconciliar/clamp);
+  si un bloqueante persiste ESCALA a ROJO. `plans.review_json` lo persiste y la UI
+  del coach muestra el semáforo + ICP + hallazgos. Best-effort: nunca bloquea la
+  generación y el plan persistido siempre es válido.
+- **§2 · solver → contrato IA**: la IA recibe un catálogo filtrado y devuelve
+  `food_id`; `snap_meal_bank` fija los gramos con el solver de porciones y recalcula
+  macros. Backward compatible: sin catálogo o sin `food_id`, se conserva la porción
+  de la IA. (Pendiente NO bloqueante: ampliar el seed de 66 alimentos a BEDCA/USDA.)
 
-> Motivo de dejarlas fuera: todas tocan llamadas de IA reales que la CI no puede
-> ejercitar sin `ANTHROPIC_API_KEY`. Los MÓDULOS están listos y probados con
-> dependencias inyectables/mocks; el enganche final se valida mejor en una sesión
-> con clave y con decisiones de UI del coach.
+### Lo único que queda (no bloqueante)
+- **§14 · modo sombra**: correr una versión nueva del prompt en paralelo sobre los
+  mismos casos y promocionar solo si mejora. Requiere clave y una campaña de
+  generación real; la telemetría/versión (`PROMPT_VERSION`) ya está lista.
+- **§2 · catálogo completo** de alimentos (BEDCA/USDA) sobre los 66 del seed.
 
 ---
 
