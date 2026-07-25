@@ -72,6 +72,27 @@ def classify_edit(field_path: str | None, before=None, after=None) -> str:
     return "otro"
 
 
+def classify_change_text(text: str) -> str:
+    """Clasifica un cambio por su texto legible (los diff strings de plan_diff,
+    p. ej. 'Calorías: 2000 → 2180 kcal'). Acento-insensible."""
+    import unicodedata
+
+    t = unicodedata.normalize("NFKD", text or "").encode("ascii", "ignore").decode("ascii").lower()
+    if any(k in t for k in ("calor", "kcal", "proteina", "hidrato", "grasa", "macro")):
+        return "calculo"
+    if any(k in t for k in ("rir", "descanso", "progres", "tempo", "deload")):
+        return "progresion"
+    if any(k in t for k in ("serie", "rep", "peso", "ejercicio", "sesion", "volumen")):
+        return "volumen"
+    if "suplement" in t:
+        return "otro"
+    if any(k in t for k in ("comida", "toma", "reparto", "desayuno", "cena", "merienda", "horario")):
+        return "horario"
+    if any(k in t for k in ("alimento", "ingredient", "opcion")):
+        return "seleccion_alimentos"
+    return "otro"
+
+
 def recurring_categories(db: Session, *, min_count: int = PROPOSAL_THRESHOLD) -> dict[str, int]:
     """Categorías de edición que se repiten ≥ min_count (patrones a atender)."""
     rows = db.execute(

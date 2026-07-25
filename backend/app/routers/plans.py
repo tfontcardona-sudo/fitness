@@ -227,6 +227,19 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
 
     log_event(db, "plan", plan.id, "plan_edited",
               {"fields": list(changes.keys()), "diff": diff_items[:20]})
+
+    # §13 (hardening): captura de las ediciones del coach para el aprendizaje
+    # continuo. Best-effort con savepoint: si algo falla NUNCA corrompe la edición.
+    if diff_items:
+        try:
+            from app.services.continuous_learning import classify_change_text, record_edit
+
+            with db.begin_nested():
+                for it in diff_items[:20]:
+                    record_edit(db, plan_id=plan.id, category=classify_change_text(it),
+                                note=it, commit=False)
+        except Exception:  # noqa: BLE001 — captura best-effort
+            pass
     # Editar también ACTIVA: si el coach retoca un borrador (legado), el plan
     # queda vigente al guardar — no existe el paso "Publicar".
     if plan.status == "draft":
