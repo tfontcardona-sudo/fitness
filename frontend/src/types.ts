@@ -427,6 +427,14 @@ export interface AiCreditOut {
   remaining_usd: number | null;
   updated_at: string | null;
   recharge_url: string;
+  /** Consumo REAL en vivo (no depende de que el coach apunte el saldo). */
+  spent_today_usd: number;
+  spent_window_usd: number;
+  calls_window: number;
+  window_days: number;
+  last_call_at: string | null;
+  avg_cost_per_plan_usd: number | null;
+  plans_left: number | null;
 }
 
 /** GET /api/public/landing — datos públicos de la página de enlaces (/dq). */
