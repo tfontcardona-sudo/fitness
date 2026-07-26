@@ -181,6 +181,33 @@ def photos_pending(db: Session, client: Client, *, now: datetime | None = None,
     return now >= submitted + timedelta(minutes=min_minutes)
 
 
+def videocall_pending(db: Session, client: Client) -> bool:
+    """¿Falta que el cliente PROPONGA su videollamada de revisión? (solo Pro).
+    True si su última revisión (cerrada/analizada) aún no tiene una videollamada
+    propuesta por él ni agendada/en curso por el coach — es decir, el portal le
+    muestra el formulario para agendar y todavía no lo ha usado."""
+    if client.package_tier != "pro":
+        return False
+    from app.models import Period, VideoCall
+
+    p = db.scalar(
+        select(Period).where(
+            Period.client_id == client.id,
+            Period.status.in_(("closed", "analyzed")),
+        ).order_by(Period.period_index.desc()).limit(1)
+    )
+    if p is None:
+        return False
+    vc = db.scalar(select(VideoCall).where(
+        VideoCall.client_id == client.id,
+        VideoCall.period_index == p.period_index))
+    # Sin videollamada, o propuesta sin fecha (estado 'book' del portal): toca
+    # que el cliente la agende. Con propuesta/agendada/manual/hecha, no.
+    if vc is None:
+        return True
+    return vc.status == "proposed" and vc.scheduled_at is None
+
+
 def pending_for_client(db: Session, client: Client, today: date,
                        now: datetime | None = None) -> dict:
     """Qué le falta hoy al cliente: diario, entreno, revisión quincenal y/o
@@ -189,13 +216,16 @@ def pending_for_client(db: Session, client: Client, today: date,
     Solo hay pendientes de diario/entreno/quincenal con un período `open`; el de
     fotos aplica tras cerrar una revisión (~15 min después) hasta que confirme.
     """
-    out = {"diary": False, "workout": False, "quincenal": False, "photos": False, "count": 0}
-    # Fotos: independiente del período abierto (es sobre la revisión ya cerrada).
+    out = {"diary": False, "workout": False, "quincenal": False,
+           "photos": False, "videocall": False, "count": 0}
+    # Fotos y videollamada: independientes del período abierto (van sobre la
+    # revisión ya cerrada). La videollamada solo aplica en Pro.
     out["photos"] = photos_pending(db, client, now=now, min_minutes=15)
+    out["videocall"] = videocall_pending(db, client)
 
     period = portal_svc.active_period(db, client.id)
     if period is None or period.status != "open":
-        out["count"] = int(out["photos"])
+        out["count"] = int(out["photos"]) + int(out["videocall"])
         return out
 
     info = portal_svc.period_info(period, today) or {}
@@ -223,7 +253,7 @@ def pending_for_client(db: Session, client: Client, today: date,
             out["workout"] = not has_sets
 
     out["count"] = (int(out["diary"]) + int(out["workout"]) + int(out["quincenal"])
-                    + int(out["photos"]))
+                    + int(out["photos"]) + int(out["videocall"]))
     return out
 
 
@@ -236,6 +266,8 @@ def build_reminder_payload(pending: dict, brand_name: str, portal_url: str) -> d
         parts.append("el diario de hoy")
     if pending.get("quincenal"):
         parts.append("la revisión quincenal")
+    if pending.get("videocall"):
+        parts.append("agendar tu videollamada de revisión")
     if pending.get("photos"):
         parts.append("confirmar el envío de tus fotos de progreso")
 
@@ -293,7 +325,7 @@ def notify_video_call_scheduled(db: Session, client: Client, when_label: str,
     brand = portal_svc.brand_payload(db)
     payload = {
         "title": brand.get("name", "Tu asesoría"),
-        "body": f"Videollamada de revisión agendada: {when_label}. ¡Te espero!",
+        "body": f"Tu coach ha confirmado tu videollamada: {when_label}. Enlace de Meet listo, toca para verlo.",
         "count": 1,
         "url": meet_url,
         "tag": "dq-videollamada",
@@ -311,6 +343,24 @@ def notify_coach_video_call_proposed(db: Session, client: Client, when_label: st
     payload = {
         "title": "Videollamada propuesta",
         "body": f"{name} propuso videollamada: {when_label}. Acéptala o modifícala.",
+        "count": 1,
+        "url": f"{base}/clientes/{client.id}",
+        "tag": "dq-vc-propuesta",
+    }
+    return send_to_coach(db, payload)
+
+
+def notify_coach_video_call_rescheduled(db: Session, client: Client, when_label: str) -> int:
+    """Avisa al COACH (push) de que un cliente REPROGRAMÓ su videollamada ya
+    agendada y propone una nueva fecha/hora. Al tocar, abre el panel del coach.
+    Silencioso sin push/dispositivos."""
+    if not push_configured():
+        return 0
+    base = settings.public_base_url.rstrip("/")
+    name = (client.full_name or "Un cliente").split()[0] if (client.full_name or "").strip() else "Un cliente"
+    payload = {
+        "title": "Videollamada reprogramada",
+        "body": f"{name} no puede a la hora agendada y propone: {when_label}. Acéptala o modifícala.",
         "count": 1,
         "url": f"{base}/clientes/{client.id}",
         "tag": "dq-vc-propuesta",

@@ -176,7 +176,8 @@ def test_pending_for_client(db, client_with_plan) -> None:
 
     # Día 3, nada registrado → falta diario + entreno (hoy hay sesión), no quincenal
     p = push_svc.pending_for_client(db, client, today)
-    assert p == {"diary": True, "workout": True, "quincenal": False, "photos": False, "count": 2}
+    assert p == {"diary": True, "workout": True, "quincenal": False,
+                 "photos": False, "videocall": False, "count": 2}
 
     # Fila de diario vacía (autosave) → sigue faltando el diario
     log = DailyLog(period_id=period.id, log_date=today)

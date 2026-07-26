@@ -478,6 +478,23 @@ cd backend && python -m pytest tests/ -q
    - Sin claves de Google en el `.env`, la integración queda desactivada (aceptar
      pide conectar Google). Tests: `test_google_calendar.py` (servicio) +
      `test_video_calls.py` (propuesta/aceptar/modificar/agendar, `gcal` mockeado).
+   - **Mejoras del ciclo (pulido):**
+     · **Reprogramar desde el portal del cliente:** una videollamada YA agendada
+       puede reprogramarla el propio cliente si no le va bien la hora
+       (`POST /api/p/{token}/video-call/reschedule`, botón "¿No te va bien?
+       Reprogramar" en `VideoCallBanner` estado *scheduled*). Cancela el evento en
+       Google, vuelve a `proposed` con la nueva fecha, limpia los campos de Meet y
+       avisa al coach por push (`notify_coach_video_call_rescheduled`) para que la
+       vuelva a confirmar.
+     · **Confirmación clara del coach en el portal:** la tarjeta *scheduled* dice
+       explícitamente "Tu coach ha confirmado tu videollamada" con la fecha/hora y
+       el enlace de Meet pegado; el push al cliente lo confirma igual
+       (`notify_video_call_scheduled`).
+     · **Aviso al cliente para que proponga su videollamada** si no lo hace: si es
+       Pro y su última revisión está cerrada sin propuesta, entra en los
+       recordatorios push cada 3 h (`push.videocall_pending` → `pending_for_client`
+       → `build_reminder_payload`: "agendar tu videollamada de revisión") hasta que
+       la agende.
 
 ---
 

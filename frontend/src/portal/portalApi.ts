@@ -147,6 +147,9 @@ export function portalApi(token: string) {
     // El cliente propone día y hora (ISO "YYYY-MM-DDTHH:MM").
     proposeVideoCall: (startAt: string) =>
       req<VideoCallStatus>("POST", `${base}/video-call`, { start_at: startAt }),
+    // El cliente REPROGRAMA una videollamada ya agendada (nueva fecha/hora).
+    rescheduleVideoCall: (startAt: string) =>
+      req<VideoCallStatus>("POST", `${base}/video-call/reschedule`, { start_at: startAt }),
     changeRequest: (message: string) =>
       req<ChangeRequestOut>("POST", `${base}/change-request`, { message }),
     // --- Web Push (§8.1) ---

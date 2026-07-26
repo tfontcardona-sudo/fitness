@@ -235,6 +235,7 @@ function VideoCallBanner({ api, accent }: { api: ReturnType<typeof portalApi>; a
   const [date, setDate] = useState("");
   const [time, setTime] = useState("17:00");
   const [busy, setBusy] = useState(false);
+  const [showResched, setShowResched] = useState(false);
 
   const reload = useCallback(() => {
     api.videoCall().then(setVc).catch(() => {});
@@ -267,19 +268,64 @@ function VideoCallBanner({ api, accent }: { api: ReturnType<typeof portalApi>; a
     }
   }
 
-  // AGENDADA → tarjeta "Unirme".
+  async function reschedule() {
+    if (!date || !time || busy) return;
+    setBusy(true);
+    try {
+      const r = await api.rescheduleVideoCall(`${date}T${time}`);
+      setVc(r);
+      setShowResched(false);
+      toast.push("Reprogramación enviada. Tu coach confirmará la nueva hora.");
+    } catch (e: any) {
+      toast.push(e?.message ?? "No se pudo reprogramar");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // AGENDADA → confirmación del coach + "Unirme" y opción de reprogramar.
   if (vc.state === "scheduled" && vc.call) {
     return (
       <div className="mb-4 rounded-2xl p-4" style={box}>
         {header}
-        <p className="mt-1 text-sm font-medium capitalize">{vc.call.when_label}</p>
+        <p className="mt-1 text-sm font-semibold">Tu coach ha confirmado tu videollamada</p>
+        <p className="mt-0.5 text-sm font-medium capitalize">{vc.call.when_label}</p>
         {vc.call.duration_min ? <p className="text-[11px] opacity-50">{vc.call.duration_min} min</p> : null}
-        {vc.call.meet_url && (
-          <a href={vc.call.meet_url} target="_blank" rel="noopener noreferrer"
-            className="tap mt-3 inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white"
-            style={{ background: accent }}>
-            <Video size={15} /> {vc.call.is_today ? "Unirme ahora" : "Unirme a Meet"}
-          </a>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {vc.call.meet_url && (
+            <a href={vc.call.meet_url} target="_blank" rel="noopener noreferrer"
+              className="tap inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white"
+              style={{ background: accent }}>
+              <Video size={15} /> {vc.call.is_today ? "Unirme ahora" : "Unirme a Meet"}
+            </a>
+          )}
+          {!showResched && (
+            <button onClick={() => setShowResched(true)}
+              className="tap inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold"
+              style={{ border: `1px solid color-mix(in srgb, ${accent} 45%, transparent)`, color: accent }}>
+              ¿No te va bien? Reprogramar
+            </button>
+          )}
+        </div>
+        {showResched && (
+          <div className="mt-3">
+            <p className="text-xs opacity-70">Propón una nueva fecha y hora; tu coach la confirmará.</p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <input type="date" className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: `color-mix(in srgb, ${accent} 35%, transparent)`, background: "transparent" }}
+                value={date} min={portalLocalToday()} onChange={(e) => setDate(e.target.value)} />
+              <input type="time" className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: `color-mix(in srgb, ${accent} 35%, transparent)`, background: "transparent" }}
+                value={time} onChange={(e) => setTime(e.target.value)} />
+              <button onClick={reschedule} disabled={!date || !time || busy}
+                className="tap inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                style={{ background: accent }}>
+                <CalendarCheck size={15} /> Reprogramar
+              </button>
+              <button onClick={() => setShowResched(false)} disabled={busy}
+                className="tap inline-flex items-center rounded-xl px-3 py-1.5 text-xs font-semibold opacity-70">
+                Cancelar
+              </button>
+            </div>
+          </div>
         )}
       </div>
     );
