@@ -23,13 +23,20 @@ const YT_HOSTS = new Set([
 ]);
 const YT_ID = /^[A-Za-z0-9_-]{11}$/;
 
-export function youtubeId(url: string): string | null {
-  let u: URL;
+/** Parseo tolerante: acepta también rutas relativas de nuestro propio origen
+ *  ("/api/media/…", que es lo que devuelve el backend para lo subido). */
+function parseUrl(url: string): URL | null {
+  const base = typeof window !== "undefined" ? window.location.origin : "http://localhost";
   try {
-    u = new URL(url);
+    return new URL(url, base);
   } catch {
     return null;
   }
+}
+
+export function youtubeId(url: string): string | null {
+  const u = parseUrl(url);
+  if (!u) return null;
   const host = u.hostname.toLowerCase();
   let id: string | null = null;
   if (host === "youtu.be" || host === "www.youtu.be") {
@@ -59,12 +66,8 @@ function youtubeStart(url: string): number {
 }
 
 function vimeoId(url: string): string | null {
-  let u: URL;
-  try {
-    u = new URL(url);
-  } catch {
-    return null;
-  }
+  const u = parseUrl(url);
+  if (!u) return null;
   const host = u.hostname.toLowerCase();
   if (host !== "vimeo.com" && host !== "www.vimeo.com" && host !== "player.vimeo.com") return null;
   const seg = u.pathname.split("/").filter(Boolean).pop() ?? "";
@@ -90,16 +93,12 @@ export function videoSource(url: string): VideoSource {
   if (vm) {
     return { kind: "vimeo", id: vm, embedUrl: `https://player.vimeo.com/video/${vm}` };
   }
-  // Vídeo subido por el coach (servido por la propia API) o archivo directo.
-  // El chequeo de /api/media/ va sobre el PATH parseado (no sobre la URL cruda,
-  // donde la subcadena podría aparecer en la query de cualquier otra página).
-  let pathname = "";
-  try {
-    pathname = new URL(url).pathname;
-  } catch {
-    /* URL rara: cae al chequeo de extensión */
-  }
-  if (pathname.includes("/api/media/") || FILE_EXT.test(url)) {
+  // Vídeo subido por el coach (servido por la propia API, ruta relativa del
+  // mismo origen) o archivo directo. El chequeo de /api/media/ va sobre el PATH
+  // parseado, no sobre la URL cruda (donde la subcadena podría aparecer en la
+  // query de cualquier otra página).
+  const pathname = parseUrl(url)?.pathname ?? "";
+  if (pathname.startsWith("/api/media/") || FILE_EXT.test(pathname) || FILE_EXT.test(url)) {
     return { kind: "file", src: url };
   }
   return { kind: "external", url };

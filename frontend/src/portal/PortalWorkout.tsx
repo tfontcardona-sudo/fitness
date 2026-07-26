@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Trash2, PlayCircle, Check, Sparkles, CalendarRange, X } from "lucide-react";
+import { Trash2, Play, Check, Sparkles, CalendarRange, X } from "lucide-react";
 import type { PlanChanges, PortalBrand, TodaySession, TrainingWeek } from "../types";
 import { usePortalToast } from "./PortalToast";
 import { Loading, localToday } from "./PortalUi";
@@ -39,6 +39,11 @@ export function PortalWorkout({ api, brand, periodStatus = null }: {
   // Vídeo abierto EN la propia pantalla (uno como mucho: abrir otro cierra el
   // anterior, y cerrar el que está abierto devuelve al cliente a su rutina).
   const [openVideoId, setOpenVideoId] = useState<number | null>(null);
+  // Un toque FUERA del vídeo (o ESC) lo cierra sin moverse de la rutina: el
+  // reproductor va DEBAJO del nombre, así que al quitarlo el ejercicio se queda
+  // exactamente donde estaba en pantalla.
+  const videoBoxRef = useRef<HTMLDivElement>(null);
+  useDismiss(videoBoxRef, () => setOpenVideoId(null), openVideoId !== null);
   const saveTimer = useRef<number | null>(null);
 
   // Al cambiar de sesión, el vídeo abierto deja de tener contexto: se cierra.
@@ -303,69 +308,88 @@ export function PortalWorkout({ api, brand, periodStatus = null }: {
             const videoOpen = embeddable && openVideoId === ex.exercise_id;
             return (
               <div key={ex.exercise_id} className="portal-card p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold">{ex.name}</p>
-                    <p className="text-xs opacity-60">
-                      Objetivo: {ex.sets} × {ex.rep_range} · RIR {ex.rir}
-                      {(ex.week_weight_hint_kg ?? ex.start_weight_hint_kg)
-                        ? ` · ~${ex.week_weight_hint_kg ?? ex.start_weight_hint_kg} kg${
-                            week && ex.week_weight_hint_kg != null && ex.week_weight_hint_kg !== ex.start_weight_hint_kg
-                              ? ` (sem ${week.week})` : ""
-                          }`
-                        : ""}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
+                {/* Zona del vídeo: nombre + botón + reproductor. Un toque FUERA de
+                    esta zona lo cierra y te deja en la rutina, justo donde estabas. */}
+                <div ref={videoOpen ? videoBoxRef : undefined}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className="truncate text-sm font-semibold">{ex.name}</p>
+                        {/* El vídeo del ejercicio, JUNTO AL NOMBRE: azul (consulta,
+                            no acción de registro) y siempre visible si lo tiene. */}
+                        {ex.video_url && (embeddable ? (
+                          // El círculo se ve discreto (26 px) pero el área que se
+                          // pulsa son los 44 px de `tap`: el -my-2 evita que ese
+                          // área infle la altura de la fila del nombre.
+                          <button
+                            type="button"
+                            onClick={() => setOpenVideoId(videoOpen ? null : ex.exercise_id)}
+                            aria-expanded={videoOpen}
+                            aria-label={videoOpen ? `Cerrar vídeo de ${ex.name}` : `Ver vídeo de ${ex.name}`}
+                            title={videoOpen ? "Cerrar vídeo" : "Ver vídeo"}
+                            className="tap -my-2 flex shrink-0 items-center justify-center"
+                          >
+                            <span
+                              className="flex h-[26px] w-[26px] items-center justify-center rounded-full"
+                              style={
+                                videoOpen
+                                  ? { background: brand.color_secondary, color: "#fff" }
+                                  : {
+                                      background: `color-mix(in srgb, ${brand.color_secondary} 16%, transparent)`,
+                                      color: brand.color_secondary,
+                                    }
+                              }
+                            >
+                              {videoOpen ? <X size={13} /> : <Play size={12} fill="currentColor" />}
+                            </span>
+                          </button>
+                        ) : (
+                          // Página que no sabemos embeber (ni YouTube/Vimeo ni
+                          // archivo): se abre fuera, como antes.
+                          <a
+                            href={ex.video_url} target="_blank" rel="noreferrer"
+                            aria-label={`Ver vídeo de ${ex.name}`}
+                            title="Ver vídeo"
+                            className="tap -my-2 flex shrink-0 items-center justify-center"
+                          >
+                            <span
+                              className="flex h-[26px] w-[26px] items-center justify-center rounded-full"
+                              style={{
+                                background: `color-mix(in srgb, ${brand.color_secondary} 16%, transparent)`,
+                                color: brand.color_secondary,
+                              }}
+                            >
+                              <Play size={12} fill="currentColor" />
+                            </span>
+                          </a>
+                        ))}
+                      </div>
+                      <p className="text-xs opacity-60">
+                        Objetivo: {ex.sets} × {ex.rep_range} · RIR {ex.rir}
+                        {(ex.week_weight_hint_kg ?? ex.start_weight_hint_kg)
+                          ? ` · ~${ex.week_weight_hint_kg ?? ex.start_weight_hint_kg} kg${
+                              week && ex.week_weight_hint_kg != null && ex.week_weight_hint_kg !== ex.start_weight_hint_kg
+                                ? ` (sem ${week.week})` : ""
+                            }`
+                          : ""}
+                      </p>
+                    </div>
                     {doneCount > 0 && (
-                      <span className="flex items-center gap-1 text-xs" style={{ color: brand.color_primary }}>
+                      <span className="flex shrink-0 items-center gap-1 text-xs" style={{ color: brand.color_primary }}>
                         <Check size={13} /> {doneCount}/{rows.length}
                       </span>
                     )}
-                    {ex.video_url && (embeddable ? (
-                      // Botón azul VISIBLE que abre el vídeo AQUÍ MISMO (sin salir
-                      // de la rutina): otro toque lo cierra y sigue registrando.
-                      <button
-                        type="button"
-                        onClick={() => setOpenVideoId(videoOpen ? null : ex.exercise_id)}
-                        aria-expanded={videoOpen}
-                        aria-label={videoOpen ? `Cerrar vídeo de ${ex.name}` : `Ver vídeo de ${ex.name}`}
-                        className="tap flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1.5 text-[11px] font-semibold"
-                        style={
-                          videoOpen
-                            ? { background: brand.color_secondary, color: "#fff" }
-                            : {
-                                background: `color-mix(in srgb, ${brand.color_secondary} 14%, transparent)`,
-                                color: brand.color_secondary,
-                              }
-                        }
-                      >
-                        {videoOpen ? <X size={14} /> : <PlayCircle size={14} />}
-                        {videoOpen ? "Cerrar" : "Vídeo"}
-                      </button>
-                    ) : (
-                      // Página que no sabemos embeber (ni YouTube/Vimeo ni archivo):
-                      // se abre fuera, como antes.
-                      <a
-                        href={ex.video_url} target="_blank" rel="noreferrer"
-                        aria-label={`Ver vídeo de ${ex.name}`}
-                        className="tap flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1.5 text-[11px] font-semibold"
-                        style={{
-                          background: `color-mix(in srgb, ${brand.color_secondary} 14%, transparent)`,
-                          color: brand.color_secondary,
-                        }}
-                      >
-                        <PlayCircle size={14} /> Vídeo
-                      </a>
-                    ))}
                   </div>
-                </div>
 
-                {videoOpen && ex.video_url && (
-                  <div className="mt-3">
-                    <InlineVideo url={ex.video_url} title={ex.name} />
-                  </div>
-                )}
+                  {videoOpen && ex.video_url && (
+                    <div className="mt-3">
+                      <InlineVideo url={ex.video_url} title={ex.name} />
+                      <p className="mt-1.5 text-center text-[11px] opacity-45">
+                        Toca el vídeo para pausarlo · toca fuera para cerrarlo
+                      </p>
+                    </div>
+                  )}
+                </div>
 
                 <div className="mt-3 space-y-1.5">
                   <div className="grid grid-cols-[28px_1fr_1fr_40px] items-center gap-2 px-1 text-[10px] uppercase tracking-wide opacity-40">
