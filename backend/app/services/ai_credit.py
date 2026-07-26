@@ -55,17 +55,99 @@ def remaining_usd(state: AiCreditState) -> float | None:
 
 
 def record_usage(model: str, input_tokens: int, output_tokens: int) -> None:
-    """Acumula el coste de una llamada. Sesión propia y a prueba de fallos:
-    la contabilidad JAMÁS puede romper una generación de plan."""
+    """Acumula el coste de una llamada y deja su rastro para el consumo en vivo.
+    Sesión propia y a prueba de fallos: la contabilidad JAMÁS puede romper una
+    generación de plan."""
     try:
         cost = estimate_cost_usd(model, input_tokens, output_tokens)
         if cost <= 0:
             return
         from app.db import SessionLocal
+        from app.models import AiUsageEvent
 
         with SessionLocal() as db:
             state = get_state(db)
             state.spent_usd = (state.spent_usd or 0.0) + cost
+            db.add(AiUsageEvent(
+                model=model or "?", input_tokens=input_tokens or 0,
+                output_tokens=output_tokens or 0, cost_usd=cost,
+            ))
             db.commit()
     except Exception:  # noqa: BLE001 — contabilidad best-effort
         pass
+
+
+# ------------------------------------------------------- consumo en vivo ----
+
+# Ventana para estimar el coste medio por plan (y con él, los planes restantes).
+USAGE_WINDOW_DAYS = 30
+
+
+def usage_summary(db: Session) -> dict:
+    """Consumo REAL en vivo: gasto de hoy, de la ventana, nº de llamadas, última
+    llamada y coste medio por plan (gasto de la ventana ÷ planes generados con IA
+    en la ventana). Nunca lanza: ante cualquier fallo devuelve ceros."""
+    from datetime import timedelta
+
+    from sqlalchemy import func
+
+    from app.models import AiUsageEvent, Plan
+    from app.services.portal import today_local
+
+    out = {
+        "spent_today_usd": 0.0, "spent_window_usd": 0.0, "calls_window": 0,
+        "last_call_at": None, "avg_cost_per_plan_usd": None,
+        "window_days": USAGE_WINDOW_DAYS,
+    }
+    try:
+        since = _utcnow() - timedelta(days=USAGE_WINDOW_DAYS)
+        # Día de negocio (Europe/Madrid), igual que el resto del sistema.
+        start_today = _start_of_local_day(today_local())
+
+        row = db.execute(
+            select(func.coalesce(func.sum(AiUsageEvent.cost_usd), 0.0),
+                   func.count(AiUsageEvent.id),
+                   func.max(AiUsageEvent.created_at))
+            .where(AiUsageEvent.created_at >= since)
+        ).one()
+        out["spent_window_usd"] = round(float(row[0] or 0.0), 4)
+        out["calls_window"] = int(row[1] or 0)
+        out["last_call_at"] = row[2]
+
+        out["spent_today_usd"] = round(float(db.scalar(
+            select(func.coalesce(func.sum(AiUsageEvent.cost_usd), 0.0))
+            .where(AiUsageEvent.created_at >= start_today)
+        ) or 0.0), 4)
+
+        # Planes generados con IA en la misma ventana → coste medio por plan.
+        plans = int(db.scalar(
+            select(func.count(Plan.id))
+            .where(Plan.created_at >= since, Plan.generated_by.isnot(None),
+                   Plan.generated_by != "coach")
+        ) or 0)
+        if plans > 0 and out["spent_window_usd"] > 0:
+            out["avg_cost_per_plan_usd"] = round(out["spent_window_usd"] / plans, 4)
+    except Exception:  # noqa: BLE001 — el resumen nunca rompe el endpoint
+        pass
+    return out
+
+
+def _utcnow():
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc)
+
+
+def _start_of_local_day(local_date):
+    """Medianoche de la fecha de negocio (Europe/Madrid), con huso."""
+    from datetime import datetime, time
+    from zoneinfo import ZoneInfo
+
+    return datetime.combine(local_date, time.min, tzinfo=ZoneInfo("Europe/Madrid"))
+
+
+def plans_left(remaining: float | None, avg_cost_per_plan: float | None) -> int | None:
+    """Planes que aún se pueden generar con el saldo restante (estimación).
+    None si falta el saldo o aún no hay histórico para estimar el coste medio."""
+    if remaining is None or not avg_cost_per_plan or avg_cost_per_plan <= 0:
+        return None
+    return max(0, int(remaining // avg_cost_per_plan))

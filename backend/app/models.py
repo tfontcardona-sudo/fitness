@@ -600,6 +600,26 @@ class AiCreditState(Base):
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class AiUsageEvent(Base):
+    """Cada llamada a la IA con su coste real (tokens × precio del modelo).
+
+    Permite ver el consumo EN VIVO (hoy, últimos 30 días) y estimar cuántos
+    planes más se pueden generar con el saldo restante. Se escribe best-effort:
+    la contabilidad nunca puede romper una generación.
+    """
+
+    __tablename__ = "ai_usage_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    model: Mapped[str] = mapped_column(String(80))
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, index=True
+    )
+
+
 # ------------------------------------------------------------ audit_log ----
 class AuditLog(Base):
     __tablename__ = "audit_log"
