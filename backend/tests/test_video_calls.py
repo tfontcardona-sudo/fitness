@@ -291,6 +291,91 @@ def test_client_proposes_then_coach_accepts(db, pro_client_reviewed, monkeypatch
 
 
 @needs_db
+def test_client_reschedules_scheduled_call(db, pro_client_reviewed, monkeypatch) -> None:
+    """Una videollamada AGENDADA puede reprogramarla el CLIENTE desde su portal:
+    cancela el evento en Google, vuelve a 'proposed' con la nueva hora y limpia
+    los campos de Meet para que el coach la vuelva a confirmar."""
+    import os
+
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.models import VideoCall
+    from app.security import create_access_token, new_portal_token
+    from app.services import google_calendar as gcal
+    from app.services.email_service import EmailService
+
+    client, _plan, _period = pro_client_reviewed
+    client.portal_token = new_portal_token(client.id)
+    db.commit()
+    http = TestClient(app)
+
+    # Propone → coach acepta (evento creado, gcal mockeado) → scheduled.
+    start = f"{(date.today() + timedelta(days=4)).isoformat()}T18:00"
+    http.post(f"/api/p/{client.portal_token}/video-call", json={"start_at": start})
+    db.expire_all()
+    vc = db.scalar(select(VideoCall).where(
+        VideoCall.client_id == client.id, VideoCall.period_index == 1))
+    monkeypatch.setattr(gcal, "is_connected", lambda _db: True)
+    monkeypatch.setattr(gcal, "create_meet_event", lambda _db, **kw: {
+        "event_id": "evR", "meet_url": "https://meet.google.com/r", "html_link": "h"})
+    monkeypatch.setattr(EmailService, "send", lambda self, **kw: "sent")
+    auth = {"Authorization": f"Bearer {create_access_token(os.environ.get('ADMIN_1_USER', 'coach1'))}"}
+    ra = http.post(f"/api/clients/{client.id}/video-calls/{vc.id}/accept",
+                   headers=auth, json={"duration_min": 30})
+    assert ra.status_code == 200, ra.text
+    assert http.get(f"/api/p/{client.portal_token}/video-call").json()["state"] == "scheduled"
+
+    # El cliente REPROGRAMA desde el portal → cancela Google, vuelve a proposed.
+    cancelled = {}
+    monkeypatch.setattr(gcal, "cancel_meet_event",
+                        lambda _db, event_id: cancelled.update(event_id=event_id))
+    new_start = f"{(date.today() + timedelta(days=6)).isoformat()}T19:00"
+    rr = http.post(f"/api/p/{client.portal_token}/video-call/reschedule",
+                   json={"start_at": new_start})
+    assert rr.status_code == 200, rr.text
+    assert rr.json()["state"] == "proposed"
+    assert cancelled.get("event_id") == "evR"
+
+    db.expire_all()
+    vc = db.scalar(select(VideoCall).where(
+        VideoCall.client_id == client.id, VideoCall.period_index == 1))
+    assert vc.status == "proposed"
+    assert vc.meet_url is None and vc.google_event_id is None
+    assert vc.scheduled_for == date.today() + timedelta(days=6)
+    # Sin llamada agendada ya, reprogramar de nuevo da 409.
+    rr2 = http.post(f"/api/p/{client.portal_token}/video-call/reschedule",
+                    json={"start_at": new_start})
+    assert rr2.status_code == 409
+
+
+@needs_db
+def test_videocall_pending_nudge(db, pro_client_reviewed) -> None:
+    """El recordatorio de 'agenda tu videollamada' se enciende para un Pro con la
+    revisión cerrada sin propuesta y se apaga en cuanto propone o si no es Pro."""
+    from app.models import VideoCall
+
+    client, _plan, _period = pro_client_reviewed
+    # Revisión cerrada, sin videollamada → toca que la agende.
+    assert push_svc.videocall_pending(db, client) is True
+
+    # Propuesta con fecha → ya no.
+    vc = VideoCall(client_id=client.id, period_index=1, status="proposed",
+                   scheduled_at=datetime.now(ZoneInfo("Europe/Madrid")) + timedelta(days=2),
+                   scheduled_for=date.today() + timedelta(days=2))
+    db.add(vc)
+    db.flush()
+    assert push_svc.videocall_pending(db, client) is False
+
+    # Un cliente que no es Pro nunca recibe este aviso.
+    db.delete(vc)
+    db.flush()
+    client.package_tier = "full"
+    db.flush()
+    assert push_svc.videocall_pending(db, client) is False
+
+
+@needs_db
 def test_coach_modify_sets_pending_manual(db, pro_client_reviewed) -> None:
     """Modificar deja la videollamada 'pendiente de agendar a mano' y el portal
     del cliente informa de que el coach le escribirá."""

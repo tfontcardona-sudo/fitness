@@ -460,6 +460,77 @@ def portal_video_call_propose(
     }}
 
 
+@router.post("/{token}/video-call/reschedule", response_model=dict)
+@limiter.limit("20/minute")
+def portal_video_call_reschedule(
+    request: Request,
+    body: VideoCallProposeIn,
+    client: Client = Depends(get_client_by_token),
+    db: Session = Depends(get_db),
+) -> dict:
+    """El cliente REPROGRAMA una videollamada YA agendada (no le va bien la hora):
+    cancela el evento de Google actual, propone una NUEVA fecha/hora y avisa al
+    coach por push para que la vuelva a confirmar. Solo Pro. La videollamada
+    vuelve al estado 'proposed' (esperando confirmación del coach)."""
+    from zoneinfo import ZoneInfo
+
+    from app.models import VideoCall
+
+    if client.package_tier != "pro":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "No disponible en tu plan")
+
+    today = portal_svc.today_local()
+    vc = db.scalar(
+        select(VideoCall).where(
+            VideoCall.client_id == client.id,
+            VideoCall.status == "scheduled",
+            VideoCall.scheduled_for.is_not(None),
+            VideoCall.scheduled_for >= today,
+        ).order_by(VideoCall.scheduled_for.asc()).limit(1)
+    )
+    if vc is None:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "No tienes ninguna videollamada agendada para reprogramar")
+
+    tz = ZoneInfo(settings.tz)
+    raw = body.start_at
+    start_aware = raw.replace(tzinfo=tz) if raw.tzinfo is None else raw.astimezone(tz)
+    if start_aware <= datetime.now(tz):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "Elige un día y una hora futuros")
+
+    # Cancela el evento actual en Google (avisa a los invitados). No rompe el
+    # flujo local si Google está caído o desconectado: lo importante es reofrecer.
+    if vc.google_event_id:
+        from app.services import google_calendar as gcal
+        try:
+            gcal.cancel_meet_event(db, event_id=vc.google_event_id)
+        except gcal.GoogleCalendarError:
+            import logging
+            logging.getLogger("app.google").warning(
+                "no se pudo cancelar el evento de Google al reprogramar la vc %s", vc.id)
+
+    vc.status = "proposed"
+    vc.scheduled_at = start_aware
+    vc.scheduled_for = start_aware.date()
+    vc.duration_min = None
+    vc.meet_url = None
+    vc.google_event_id = None
+    vc.google_html_link = None
+    log_event(db, "client", client.id, "video_call_client_rescheduled",
+              {"period_index": vc.period_index, "at": start_aware.isoformat()})
+    try:
+        push_svc.notify_coach_video_call_rescheduled(
+            db, client, portal_svc.format_when_es(start_aware))
+    except Exception:  # el push nunca debe tumbar la reprogramación
+        pass
+    db.commit()
+    return {"state": "proposed", "call": {
+        "scheduled_at": start_aware.isoformat(),
+        "when_label": portal_svc.format_when_es(start_aware),
+    }}
+
+
 @router.get("/{token}/training", response_model=dict)
 @limiter.limit("120/minute")
 def portal_training(
