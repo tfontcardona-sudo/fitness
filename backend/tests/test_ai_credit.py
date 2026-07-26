@@ -48,8 +48,18 @@ def client():
 @pytest.fixture(scope="module")
 def auth():
     # Token directo: /api/auth/login está capado a 5/min contra fuerza bruta.
-    from app.security import create_access_token
+    # Se garantiza el usuario: los seeds solo crean admin si hay ADMIN_1_USER/PASS,
+    # así que en una BD recién migrada coach1 podría no existir → 401.
+    from sqlalchemy import select
 
+    from app.db import SessionLocal
+    from app.models import User
+    from app.security import create_access_token, hash_password
+
+    with SessionLocal() as db:
+        if not db.scalar(select(User).where(User.username == "coach1")):
+            db.add(User(username="coach1", password_hash=hash_password("test")))
+            db.commit()
     return {"Authorization": f"Bearer {create_access_token('coach1')}"}
 
 
@@ -104,3 +114,52 @@ def test_record_usage_jamas_revienta_sin_bd(monkeypatch):
 
     monkeypatch.setattr("app.db.SessionLocal", boom)
     mod.record_usage("claude-opus-4-8", 1000, 1000)  # no debe lanzar
+
+
+# ---- consumo EN VIVO (eventos de uso) ----
+
+@needs_db
+def test_eventos_de_uso_alimentan_el_consumo_en_vivo(client, auth):
+    from app.db import SessionLocal
+    from app.models import AiUsageEvent
+    from app.services.ai_credit import record_usage
+
+    with SessionLocal() as db:
+        db.query(AiUsageEvent).delete()
+        db.commit()
+
+    # Dos llamadas reales → el gasto de hoy y de la ventana se ven sin apuntar saldo.
+    record_usage("claude-haiku-4-5", 1_000_000, 0)      # $1
+    record_usage("claude-opus-4-8", 0, 200_000)          # $5
+
+    data = client.get("/api/ai-credit", headers=auth).json()
+    assert data["spent_today_usd"] == pytest.approx(6.0)
+    assert data["spent_window_usd"] == pytest.approx(6.0)
+    assert data["calls_window"] == 2
+    assert data["last_call_at"] is not None
+
+
+@needs_db
+def test_planes_restantes_desde_el_coste_medio():
+    from app.services.ai_credit import plans_left
+
+    # $90 restantes a $6 el plan → 15 planes.
+    assert plans_left(90.0, 6.0) == 15
+    # Sin saldo apuntado o sin histórico no se inventa un número.
+    assert plans_left(None, 6.0) is None
+    assert plans_left(90.0, None) is None
+    assert plans_left(90.0, 0.0) is None
+    # Nunca negativo.
+    assert plans_left(0.0, 6.0) == 0
+
+
+@needs_db
+def test_resumen_de_uso_nunca_revienta():
+    # usage_summary es best-effort: con la BD viva siempre devuelve las claves.
+    from app.db import SessionLocal
+    from app.services.ai_credit import usage_summary
+
+    with SessionLocal() as db:
+        s = usage_summary(db)
+    assert set(s) >= {"spent_today_usd", "spent_window_usd", "calls_window",
+                      "last_call_at", "avg_cost_per_plan_usd", "window_days"}
