@@ -25,6 +25,22 @@ from app.services.storage import media_url
 # URLs que el portal renderiza como href/src: solo esquema http(s) — los datos
 # LEGADOS (guardados antes del validador de entrada) se re-filtran aquí.
 _HTTP_RE = re.compile(r"^https?://", re.IGNORECASE)
+# Nuestros propios archivos subidos (mismo origen que el portal).
+_MEDIA_PREFIX = "/api/media/"
+
+
+def _playable(url: str | None) -> str | None:
+    """URL que el portal puede poner en un href/src, o None.
+
+    Vale lo NUESTRO (/api/media/…, relativa y del mismo origen) y los enlaces
+    http(s). Todo lo demás se descarta: los datos LEGADOS sin esquema
+    ("www.youtube.com/…") y cualquier javascript:/data: no pueden llegar al
+    navegador como enlace ni como fuente de vídeo.
+    """
+    u = (url or "").strip()
+    if not u:
+        return None
+    return u if u.startswith(_MEDIA_PREFIX) or _HTTP_RE.match(u) else None
 
 DAY_LABELS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 DAY_SLUGS = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
@@ -279,7 +295,7 @@ def _resolve_session(db: Session, sess: dict, load_factor: float = 1.0) -> dict:
             # Indicaciones personalizadas del coach (capacidades/limitaciones):
             # el portal las destaca junto al ejercicio.
             "coach_notes": e.get("coach_notes"),
-            "video_url": video if video and _HTTP_RE.match(video) else None,
+            "video_url": _playable(video),
         })
     return {
         "day": sess.get("day", ""), "name": sess.get("name", ""),
@@ -423,9 +439,8 @@ def build_resources(db: Session, client: Client) -> dict:
             # externo re-filtrado — los datos LEGADOS (guardados antes del
             # validador de entrada) no pueden llegar al portal como href/src
             # sin esquema http(s).
-            uploaded = media_url(ex.video_path)
-            video = uploaded or (ex.video_url or "").strip()
-            if not video or not _HTTP_RE.match(video):
+            video = _playable(media_url(ex.video_path) or ex.video_url)
+            if not video:
                 continue
             image = (ex.image_url or "").strip()
             # Portada: la GLOBAL (una para todos los vídeos) tiene prioridad;
@@ -435,8 +450,7 @@ def build_resources(db: Session, client: Client) -> dict:
                 "title": ex.canonical_name,
                 "muscle": ex.muscle_primary,
                 "video_url": video,
-                "image_url": cover or (image if _HTTP_RE.match(image) else None)
-                or youtube_thumbnail(video),
+                "image_url": cover or _playable(image) or youtube_thumbnail(video),
                 "technique_notes": ex.technique_notes,
             })
 

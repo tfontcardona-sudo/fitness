@@ -93,7 +93,10 @@ def test_exercise_videos_in_routine(client, auth):
     _, token, ex_ids = _client_with_published_plan(client, auth)
     eid = ex_ids[0]
 
-    # Sin vídeo → la sección de vídeos está vacía
+    # Sin vídeo → la sección de vídeos está vacía. Se quita también el archivo
+    # SUBIDO: manda sobre el enlace, así que dejarlo haría fallar la premisa
+    # (biblioteca compartida — otro test o el propio coach pudo subir uno).
+    client.delete(f"/api/exercises/{eid}/video", headers=auth)
     client.patch(f"/api/exercises/{eid}", headers=auth, json={"video_url": "", "image_url": None})
     res = client.get(f"/api/p/{token}/resources").json()
     assert all(v["exercise_id"] != eid for v in res["exercise_videos"])
@@ -345,8 +348,10 @@ def test_url_legada_invalida_no_rompe_listado_ni_portal(client, auth):
     eid = ex_ids[0]
     db = SessionLocal()
     try:  # se salta el validador de la API a propósito (dato legado)
+        # video_path a NULL: el archivo subido tiene prioridad y taparía el caso
+        # legado que este test quiere comprobar.
         db.execute(update(Exercise).where(Exercise.id == eid)
-                   .values(video_url="www.youtube.com/watch?v=dQw4w9WgXcQ"))
+                   .values(video_url="www.youtube.com/watch?v=dQw4w9WgXcQ", video_path=None))
         db.commit()
     finally:
         db.close()
@@ -362,6 +367,46 @@ def test_url_legada_invalida_no_rompe_listado_ni_portal(client, auth):
         for e in sess["exercises"]:
             if e["exercise_id"] == eid:
                 assert e["video_url"] is None
+
+
+def test_video_subido_llega_al_portal_con_ruta_relativa(client, auth):
+    """El vídeo SUBIDO por el coach debe llegar al portal (Entreno y Recursos)
+    como ruta del MISMO origen (/api/media/…).
+
+    Regresión: se servía con URL absoluta armada desde BASE_URL/DOMAIN, así que
+    en cualquier instalación con esa variable sin poner o mal puesta el vídeo no
+    cargaba — y el botón de vídeo del ejercicio ni siquiera aparecía."""
+    from sqlalchemy import update
+
+    from app.db import SessionLocal
+    from app.models import Exercise
+
+    _, token, ex_ids = _client_with_published_plan(client, auth)
+    eid = ex_ids[0]
+    db = SessionLocal()
+    try:
+        db.execute(update(Exercise).where(Exercise.id == eid)
+                   .values(video_path="media/exercises/ex_demo.mp4", video_url=None))
+        db.commit()
+    finally:
+        db.close()
+
+    tr = client.get(f"/api/p/{token}/training").json()
+    found = [e for s in tr["sessions"] for e in s["exercises"] if e["exercise_id"] == eid]
+    assert found, "el ejercicio debe seguir en la sesión"
+    assert found[0]["video_url"] == "/api/media/exercises/ex_demo.mp4"
+
+    res = client.get(f"/api/p/{token}/resources").json()
+    vid = next(v for v in res["exercise_videos"] if v["exercise_id"] == eid)
+    assert vid["video_url"] == "/api/media/exercises/ex_demo.mp4"
+
+    # Limpieza: no dejar el ejercicio con un archivo que no existe.
+    db = SessionLocal()
+    try:
+        db.execute(update(Exercise).where(Exercise.id == eid).values(video_path=None))
+        db.commit()
+    finally:
+        db.close()
 
 
 def test_upload_image_validation(client, auth):

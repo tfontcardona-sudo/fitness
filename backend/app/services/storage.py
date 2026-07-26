@@ -255,12 +255,19 @@ def delete_exercise_video(exercise_id: int) -> None:
 
 
 def media_url(rel_path: str | None) -> str | None:
-    """URL pública de un archivo bajo media/ (None si no aplica)."""
+    """URL pública de un archivo bajo media/ (None si no aplica).
+
+    RELATIVA a propósito. El portal, la landing y la PWA se sirven del MISMO
+    origen que la API (Caddy proxya /api), así que "/api/media/…" funciona
+    siempre: aunque DOMAIN/BASE_URL estén sin poner o mal puestos, o el cliente
+    entre por otro nombre de host. Con URL absoluta, un `.env` incompleto dejaba
+    los vídeos e imágenes subidos sin cargar (y el botón de vídeo sin salir).
+    Mismo criterio que el frontend (api.mediaUrl). Solo se usa en respuestas que
+    pinta el navegador; los emails y documentos construyen sus URLs aparte.
+    """
     if not rel_path or not rel_path.startswith("media/"):
         return None
-    from app.config import settings
-
-    return f"{settings.public_base_url}/api/media/{rel_path[len('media/'):]}"
+    return f"/api/media/{rel_path[len('media/'):]}"
 
 
 def resources_dir() -> Path:

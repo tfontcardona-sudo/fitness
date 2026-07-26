@@ -3,6 +3,7 @@ import { Check, Copy, Dumbbell, ExternalLink, Package, Pill, PlayCircle, Shoppin
 import type { PortalBrand, PortalResources as Resources, ResourceExerciseVideo, ResourceProduct } from "../types";
 import { Empty, Loading } from "./PortalUi";
 import { InlineVideo, isEmbeddable } from "./InlineVideo";
+import { useDismiss } from "../lib/useDismiss";
 import { usePortalToast } from "./PortalToast";
 import type { portalApi } from "./portalApi";
 
@@ -32,6 +33,10 @@ export function PortalResources({ api, brand, hasTraining = true }: { api: Api; 
   useEffect(() => {
     if (playing) playerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [playing]);
+
+  // Mismo gesto que en la rutina: un toque fuera del vídeo (o ESC) lo cierra.
+  // Tocar OTRA tarjeta cierra este y abre el suyo en la misma pulsación.
+  useDismiss(playerRef, () => setPlaying(null), playing !== null);
 
   if (error) {
     return (
