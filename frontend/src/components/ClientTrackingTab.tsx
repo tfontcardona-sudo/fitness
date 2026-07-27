@@ -4,6 +4,63 @@ import { pkg } from "../lib/packages";
 import type { ClientOut } from "../types";
 
 type Tracking = Awaited<ReturnType<typeof api.getClientTracking>>;
+type ChangeRequest = Awaited<ReturnType<typeof api.listChangeRequests>>[number];
+
+/** Peticiones/dudas que el cliente escribió desde su portal. Las abiertas
+ *  mantienen viva la alerta "Te ha escrito…" hasta marcarlas resueltas: este
+ *  bloque es el único sitio donde el coach puede LEERLAS y cerrarlas (antes el
+ *  texto solo viajaba por email y la alerta no se podía apagar nunca). */
+function ChangeRequestsCard({ clientId }: { clientId: number }) {
+  const [crs, setCrs] = useState<ChangeRequest[] | null>(null);
+  const [busy, setBusy] = useState<number | null>(null);
+
+  const load = () => api.listChangeRequests(clientId).then(setCrs).catch(() => {});
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [clientId]);
+
+  const open = (crs ?? []).filter((c) => c.status === "open");
+  if (!open.length) return null;
+
+  async function resolve(id: number) {
+    setBusy(id);
+    try {
+      await api.resolveChangeRequest(id);
+      await load();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="card border border-amber-500/30 p-4">
+      <h4 className="text-sm font-semibold text-amber-300">
+        Peticiones del cliente sin responder ({open.length})
+      </h4>
+      <ul className="mt-2 space-y-2">
+        {open.map((c) => (
+          <li key={c.id} className="flex items-start justify-between gap-3 rounded-lg bg-zinc-900/60 p-3">
+            <div className="min-w-0">
+              <p className="whitespace-pre-wrap text-sm text-zinc-200">{c.message}</p>
+              <p className="mt-1 text-[11px] text-zinc-500">
+                {new Date(c.created_at).toLocaleString("es-ES", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+              </p>
+            </div>
+            <button
+              onClick={() => resolve(c.id)}
+              disabled={busy === c.id}
+              className="btn-secondary shrink-0 text-xs"
+              title="Al marcarla resuelta se apaga su alerta"
+            >
+              {busy === c.id ? "…" : "Marcar resuelta"}
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-[11px] text-zinc-500">
+        Respóndele por WhatsApp o aplica el cambio en su planificación; después márcala resuelta.
+      </p>
+    </div>
+  );
+}
 
 /**
  * Seguimiento del cliente EN TIEMPO REAL para el coach. Hace polling cada 3 s:
@@ -35,9 +92,12 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
   if (!data) return <div className="card p-5 text-sm opacity-60">Cargando seguimiento…</div>;
   if (!data.has_period)
     return (
-      <div className="card p-5 text-sm opacity-60">
-        El cliente aún no tiene un período activo. Se abre solo al activarse la
-        planificación, al enviar el feedback o cuando el cliente entra en su portal.
+      <div className="space-y-4">
+        <ChangeRequestsCard clientId={client.id} />
+        <div className="card p-5 text-sm opacity-60">
+          El cliente aún no tiene un período activo. Se abre solo al activarse la
+          planificación, al enviar el feedback o cuando el cliente entra en su portal.
+        </div>
       </div>
     );
 
@@ -51,6 +111,7 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
 
   return (
     <div className="space-y-4">
+      <ChangeRequestsCard clientId={client.id} />
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-zinc-100">Seguimiento en tiempo real</h3>
         <span className="text-xs text-zinc-500">se actualiza solo · período {p.index}</span>

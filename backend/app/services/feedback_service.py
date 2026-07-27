@@ -352,16 +352,25 @@ def build_period_feedback(db: Session, period_id: int, ai=None) -> FeedbackDoc:
         },
         "hay_fotos": bool(inputs["photo_pairs"]),
     }
+    # §8 (hardening): raíl de decisión DETERMINISTA. Se calcula sin IA a partir
+    # del cierre, ANTES de la llamada — y viaja en el payload como CONTRATO: la
+    # IA redacta sus ajustes ALINEADOS con esta decisión, no la contradice.
+    from app.services.biweekly_period import decision_for_period, decision_to_json
+
+    biweekly = decision_to_json(decision_for_period(db, period, client))
+    payload["decision_determinista"] = {
+        **biweekly,
+        "instruccion": (
+            "Esta decisión la calculó el sistema con reglas fijas y ES LA QUE MANDA "
+            "sobre las calorías. Redacta tus 'plan_adjustments' alineados con ella: "
+            "si action != 'adjust_kcal', NO propongas subir ni bajar calorías; si es "
+            "'adjust_kcal', usa exactamente su kcal_delta_pct."
+        ),
+    }
     try:
         ai_out = generate_feedback_analysis(payload, ai, nutrition_only=nutrition_only)
     except AIGenerationError as exc:
         raise FeedbackError(f"La IA no devolvió un feedback válido: {exc}") from exc
-
-    # §8 (hardening): raíl de decisión DETERMINISTA. Se calcula sin IA a partir del
-    # cierre y acompaña al análisis del modelo con la regla que disparó (auditable).
-    from app.services.biweekly_period import decision_for_period, decision_to_json
-
-    biweekly = decision_to_json(decision_for_period(db, period, client))
 
     docx_rel = _write_feedback_doc(db, client, period, inputs, ai_out)
     content = {**ai_out.model_dump(), "metrics": inputs["metrics_json"],
@@ -418,10 +427,13 @@ def update_feedback_text(db: Session, feedback_id: int, text: dict) -> FeedbackD
 
     inputs = _gather_doc_inputs(db, period, client)
     fb.docx_path = _write_feedback_doc(db, client, period, inputs, ai_out)
-    fb.content_json = {**ai_out.model_dump(), "metrics": metrics or inputs["metrics_json"],
+    # Se PRESERVAN las claves no textuales ya persistidas (biweekly_decision y
+    # cualquier otra futura): editar una frase no puede borrar el raíl auditable.
+    fb.content_json = {**current, **ai_out.model_dump(),
+                       "metrics": metrics or inputs["metrics_json"],
                        "weight_points": inputs["weight_points"],
                        "goal_weight_kg": client.goal_weight_kg}
-    period.ai_analysis_json = ai_out.model_dump()
+    period.ai_analysis_json = {**(period.ai_analysis_json or {}), **ai_out.model_dump()}
     db.flush()
     log_event(db, "period", period.id, "feedback_edited", {"feedback_id": fb.id})
     db.commit()

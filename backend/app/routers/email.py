@@ -5,8 +5,7 @@ correo de prueba y consultar los últimos intentos con su causa de fallo. Así,
 si "no llega el correo", se ve exactamente por qué (SMTP_PASS vacío, contraseña
 de aplicación rechazada, conexión, etc.).
 """
-from __future__ import annotations
-
+# ⚠️ SIN `from __future__ import annotations`: rompe FastAPI/Pydantic (gotcha §5.1).
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import select

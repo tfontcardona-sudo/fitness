@@ -41,6 +41,12 @@ class Alternative:
 
 
 def _client_equipment(client: Client) -> set[str]:
+    # Mismo criterio que generate-plan: en GIMNASIO no se restringe por
+    # equipamiento (se asume gimnasio completo); en casa/exterior sí se
+    # respeta el material declarado. Sin esto, un equipamiento residual de
+    # cuando entrenaba en casa capaba las alternativas del swap en el gym.
+    if getattr(client, "training_place", None) == "gym":
+        return set()
     return set(client.equipment or [])
 
 
@@ -206,6 +212,12 @@ def apply_swap(
         "old_exercise_id": old_exercise_id, "new_exercise_id": new_exercise_id,
         "permanent": permanent, "reason": reason, "from_plan": plan.id,
     })
+    # Igual que generar/adaptar/editar: la versión nueva queda ACTIVA (si no,
+    # el portal y el PDF seguirían sirviendo el plan anterior sin el cambio).
+    # Sin re-notificar al cliente: un swap no es un plan nuevo.
+    from app.services.plan_activation import activate_plan
+
+    activate_plan(db, new_plan, notify=False)
     db.commit()
     return SwapResult(
         new_plan_id=new_plan.id, new_version=new_plan.version,

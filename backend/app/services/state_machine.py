@@ -82,6 +82,18 @@ def evaluate_transition(facts: ClientFacts, today: date) -> TransitionDecision:
     if status == "onboarding":
         return TransitionDecision(None)
 
+    # RECUPERACIÓN at_risk → active: si el cliente retomó el registro y su
+    # adherencia vuelve al mínimo, sale de riesgo solo (antes se quedaba en
+    # at_risk hasta el cierre del período aunque hubiera remontado).
+    if status == "at_risk" and facts.period_start is not None and not facts.period_closed:
+        day = _period_day(today, facts.period_start)
+        if day >= 1 and facts.period_end is not None and today <= facts.period_end:
+            ratio = facts.days_logged_in_period / day if day else 0
+            if ratio >= LOG_RATIO_MIN:
+                return TransitionDecision(
+                    "active", f"adherencia recuperada ({ratio * 100:.0f}%)"
+                )
+
     if status in ("active", "awaiting_feedback"):
         # ¿Período terminado y sin cerrar +4 días? → at_risk
         if facts.period_end is not None and not facts.period_closed:
@@ -106,9 +118,11 @@ def evaluate_transition(facts: ClientFacts, today: date) -> TransitionDecision:
                         notify_coach_at_risk=True,
                     )
 
-        # Recordatorio día 12 si aún no ha registrado nada hoy/poco (no cambia estado)
+        # Recordatorio día 12 si aún no ha registrado nada hoy/poco (no cambia
+        # estado). También a los `at_risk`: el cliente con baja adherencia es
+        # justo el que MÁS necesita el empujón (antes quedaba excluido).
         if (
-            status == "active"
+            status in ("active", "at_risk")
             and facts.period_start is not None
             and not facts.period_closed
             and _period_day(today, facts.period_start) == REMINDER_DAY

@@ -90,6 +90,9 @@ def summarize(panel: rp.PanelResult, *, iterations: int, escalated: bool) -> dic
         "vetoed": panel.vetoed,
         "iterations": iterations,
         "red_flags": panel.red_flags,
+        # Revisores IA que no llegaron a ejecutarse (API caída): el coach ve
+        # que la revisión está DEGRADADA en vez de creerla completa.
+        "degraded_reviewers": list(getattr(panel, "degraded_reviewers", []) or []),
         "findings": [{
             "severity": f.severity, "description": f.description,
             "donde": f.donde_en_el_plan, "correccion": f.correccion_propuesta,

@@ -117,6 +117,8 @@ class Settings(BaseSettings):
     # --- Comportamiento ---
     auto_pilot_default: bool = False
     tz: str = "Europe/Madrid"
+    # Apaga TODOS los jobs (recordatorios, cierres, resúmenes): tests/CI.
+    scheduler_enabled: bool = True
 
     @property
     def public_base_url(self) -> str:

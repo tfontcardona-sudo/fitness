@@ -73,6 +73,16 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
         raise AdaptError("No hay ninguna revisión quincenal analizada para adaptar el plan.")
     adjustments = (period.ai_analysis_json or {}).get("plan_adjustments") or []
 
+    # §8 (hardening): la decisión DETERMINISTA del motor quincenal MANDA sobre
+    # las calorías. El texto libre de la IA no puede contradecirla: si la regla
+    # dice "no tocar kcal" (hold/adherencia/datos insuficientes) se veta el
+    # cambio; si dice "ajustar X%", el número lo pone el motor, no el modelo.
+    decision = (period.ai_analysis_json or {}).get("biweekly_decision") or {}
+    d_action = decision.get("action")
+    d_pct = float(decision.get("kcal_delta_pct") or 0)
+    kcal_vetoed = d_action in ("hold", "work_adherence", "request_data")
+    kcal_engine = d_action == "adjust_kcal" and abs(d_pct) > 0.01
+
     # Plan base = el último PUBLICADO por (mes, versión) — las versiones se
     # reinician por mes, así que ordenar solo por versión elegiría el mes
     # equivocado cuando conviven planes de varios meses.
@@ -163,10 +173,19 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
                     fat_touched = True; seen.add("fat_g")
                     details.append(f"Grasas: {round(before) if before else '—'} → {macros['fat_g']} g")
                 if ("kcal" in c_norm or "calor" in c_norm) and "target_kcal" not in seen:
-                    before = nut.get("target_kcal")
-                    nut["target_kcal"] = _apply(before, c_mode, c_val)
-                    kcal_touched = True; seen.add("target_kcal")
-                    details.append(f"Calorías: {round(before) if before else '—'} → {nut['target_kcal']} kcal")
+                    seen.add("target_kcal")
+                    if kcal_vetoed:
+                        details.append(
+                            "Calorías: NO aplicado — la decisión determinista "
+                            f"(«{decision.get('rule') or d_action}») indica no tocarlas")
+                    elif kcal_engine:
+                        details.append(
+                            "Calorías: las fija la decisión determinista (ver ajuste del motor)")
+                    else:
+                        before = nut.get("target_kcal")
+                        nut["target_kcal"] = _apply(before, c_mode, c_val)
+                        kcal_touched = True
+                        details.append(f"Calorías: {round(before) if before else '—'} → {nut['target_kcal']} kcal")
         elif val is not None and "entren" in area:
             # En entreno solo aplicamos ajustes RELATIVOS de carga (+X kg): un
             # objetivo absoluto no se puede repartir entre todos los ejercicios.
@@ -183,6 +202,24 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
             entry["applied"] = True
             entry["detail"] = " · ".join(details)
         items.append(entry)
+
+    # Ajuste de calorías del MOTOR (§8): número determinista sobre el plan base,
+    # con la proteína bloqueada (los carbohidratos hacen de colchón más abajo).
+    if kcal_engine:
+        before_k = nut.get("target_kcal") or 0
+        if before_k:
+            import math
+            nut["target_kcal"] = int(math.floor(before_k * (1 + d_pct / 100) + 0.5))
+            kcal_touched = True
+            protein_touched = True  # enruta al cuadre con proteína/grasa fijas
+            items.append({
+                "area": "dieta",
+                "change": f"Calorías {'+' if d_pct > 0 else ''}{d_pct:g}% (decisión determinista)",
+                "reason": decision.get("rationale") or decision.get("rule")
+                or "Motor quincenal (§8): reglas fijas sobre tu progreso real.",
+                "applied": True,
+                "detail": f"Calorías: {round(before_k)} → {nut['target_kcal']} kcal · proteína bloqueada",
+            })
 
     # COHERENCIA + REESCALADO EN BLOQUE: si algún ajuste tocó calorías o
     # macros, todo se mueve junto — kcal⇄macros coherentes (4/4/9; con solo
@@ -205,10 +242,12 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
             P, C, F = t["protein_g"], t["carbs_g"], t["fat_g"]
         elif macro_touched and not kcal_touched:
             K = kcal_of(P, C, F)
-        elif carbs_touched:
+        elif carbs_touched and not kcal_engine:
             # El coach fijó los carbohidratos A PROPÓSITO: se RESPETAN y las kcal
             # objetivo se DERIVAN de los macros (4/4/9), en vez de sobrescribir un
             # valor que el coach pidió y dejar el detalle contradiciendo el plan.
+            # (Salvo que el MOTOR haya fijado las kcal: entonces mandan las kcal
+            # del motor y los carbohidratos vuelven a hacer de colchón.)
             K = kcal_of(P, C, F)
             for it in items:
                 if it.get("detail") and "Calorías:" in it["detail"]:

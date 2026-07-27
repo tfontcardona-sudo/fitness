@@ -75,7 +75,7 @@ function urlBase64ToUint8Array(base64: string): Uint8Array {
  * Pide permiso (si hace falta), crea la suscripción en el navegador y la
  * registra en el backend. Lanza Error con mensaje en castellano si algo falla.
  */
-export async function enablePush(api: PortalApiClient): Promise<void> {
+export async function enablePush(api: PortalApiClient, opts: { resync?: boolean } = {}): Promise<void> {
   if (!isPushSupported()) throw new Error("Este navegador no soporta notificaciones");
 
   const permission = await Notification.requestPermission();
@@ -101,9 +101,12 @@ export async function enablePush(api: PortalApiClient): Promise<void> {
   if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
     throw new Error("El navegador devolvió una suscripción incompleta");
   }
+  // resync=true: mantenimiento automático — si este dispositivo ya es de OTRO
+  // cliente (móvil compartido), el backend NO lo reasigna en silencio.
   await api.pushSubscribe({
     endpoint: json.endpoint,
     keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
+    resync: opts.resync === true,
   });
   // Activar explícitamente siempre gana al interruptor de apagado.
   localStorage.removeItem(PUSH_OFF_KEY);
@@ -177,7 +180,7 @@ export async function turnPushOff(api: PortalApiClient): Promise<void> {
 export async function resyncPushIfGranted(api: PortalApiClient): Promise<void> {
   if (!isPushSupported() || Notification.permission !== "granted" || isPushOff()) return;
   try {
-    await enablePush(api);
+    await enablePush(api, { resync: true });
   } catch {
     /* silencioso: es solo mantenimiento */
   }

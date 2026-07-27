@@ -5,6 +5,7 @@ import { usePortalToast } from "./PortalToast";
 import { Loading, localToday } from "./PortalUi";
 import { InlineVideo, isEmbeddable } from "./InlineVideo";
 import { useDismiss } from "../lib/useDismiss";
+import { PortalError } from "./portalApi";
 import type { portalApi } from "./portalApi";
 
 type Api = ReturnType<typeof portalApi>;
@@ -45,11 +46,14 @@ export function PortalWorkout({ api, brand, periodStatus = null }: {
   const videoBoxRef = useRef<HTMLDivElement>(null);
   useDismiss(videoBoxRef, () => setOpenVideoId(null), openVideoId !== null);
   const saveTimer = useRef<number | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [loadTry, setLoadTry] = useState(0);
 
   // Al cambiar de sesión, el vídeo abierto deja de tener contexto: se cierra.
   useEffect(() => setOpenVideoId(null), [selectedIdx]);
 
   useEffect(() => {
+    setLoadError(false);
     Promise.all([api.training(), api.today(), api.getDiary(today), api.workoutHistory()]).then(([tr, t, diary, hist]) => {
       const ss = tr.sessions ?? [];
       setSessions(ss);
@@ -69,8 +73,11 @@ export function PortalWorkout({ api, brand, periodStatus = null }: {
         logged[+k] = Array.from(logged[+k], (r) => r ?? { weight_kg: null, reps: null });
       });
       setSets(logged);
+    }).catch(() => {
+      // Sin esto, un fallo de red dejaba el skeleton girando para siempre.
+      setLoadError(true);
     });
-  }, [api, today]);
+  }, [api, today, loadTry]);
 
   const selected = sessions?.[selectedIdx] ?? null;
 
@@ -111,7 +118,9 @@ export function PortalWorkout({ api, brand, periodStatus = null }: {
     });
     api.saveDiary({ log_date: today, workout_sets })
       .then(() => toast.push("Entreno guardado"))
-      .catch(() => toast.push("No se pudo guardar el último cambio — revisa tu conexión"));
+      .catch((e) => toast.push(
+        e instanceof PortalError ? e.message : "No se pudo guardar el último cambio — revisa tu conexión",
+      ));
   };
 
   function flush(next: Record<number, SetRow[]>) {
@@ -155,6 +164,17 @@ export function PortalWorkout({ api, brand, periodStatus = null }: {
     });
   }
 
+  if (loadError && sessions === null) {
+    return (
+      <div className="py-10 text-center">
+        <p className="text-sm opacity-70">No se pudo cargar tu entreno.</p>
+        <button onClick={() => setLoadTry((n) => n + 1)}
+          className="portal-btn3d mt-3 rounded-xl px-4 py-2 text-sm font-semibold">
+          Reintentar
+        </button>
+      </div>
+    );
+  }
   if (sessions === null) return <Loading />;
   if (sessions.length === 0) {
     // Aún sin plan publicado: en vez de un vacío seco, avisamos de que se está

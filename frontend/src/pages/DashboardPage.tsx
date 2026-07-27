@@ -7,9 +7,11 @@ import {
   ClipboardCheck,
   ClipboardList,
   Flag,
+  CreditCard,
   HeartPulse,
   Hourglass,
   Package,
+  Send,
   Sparkles,
   UserPlus,
   Video,
@@ -128,9 +130,13 @@ export default function DashboardPage() {
 
   const { acciones, alDia } = useMemo(() => {
     const c = clients ?? [];
+    // Feedback YA generado y sin enviar: su tarjeta correcta es "Enviar" (de la
+    // alerta send_feedback), no la genérica "Generar feedback" del estado.
+    const sendFbIds = new Set(alerts.filter((a) => a.kind === "send_feedback").map((a) => a.client_id));
     const acciones = c
       .map(nextAction)
-      .filter((a): a is Accion => a !== null);
+      .filter((a): a is Accion => a !== null)
+      .filter((a) => !(a.category === "Revisión" && sendFbIds.has(a.client.id)));
     // Falta recurso/producto y videollamadas: vienen del centro de alertas
     // (mismo dato), cada tipo con su grupo, color e icono propios.
     for (const al of alerts) {
@@ -152,6 +158,37 @@ export default function DashboardPage() {
           title: "Petición o duda desde el portal",
           detail: al.message,
           cta: al.action, tab: al.tab,
+        });
+      } else if (al.kind === "send_feedback") {
+        acciones.push({
+          client: cli, prio: 1, tone: "#7B4FC9", icon: Send, category: "Revisión",
+          title: "Feedback generado · falta enviarlo",
+          detail: al.message, cta: "Enviar feedback", tab: "feedback",
+        });
+      } else if (al.kind === "regenerate_goal") {
+        acciones.push({
+          client: cli, prio: 1, tone: "#C96A1E", icon: Sparkles, category: "Objetivo",
+          title: "Plan activo con el objetivo anterior",
+          detail: al.message, cta: al.action, tab: al.tab,
+        });
+      } else if (al.kind === "payment_pending") {
+        acciones.push({
+          client: cli, prio: 3, tone: "#9A6B15", icon: CreditCard, category: "Pago",
+          title: "Pago pendiente",
+          detail: al.message, cta: al.action, tab: al.tab,
+        });
+      } else if (al.kind === "period_overdue") {
+        acciones.push({
+          client: cli, prio: al.severity === "alta" ? 1 : 2, tone: "#C2453A", icon: Hourglass,
+          category: "Revisión",
+          title: "Revisión vencida sin enviar",
+          detail: al.message, cta: al.action, tab: al.tab,
+        });
+      } else if (al.kind === "no_logs") {
+        acciones.push({
+          client: cli, prio: 3, tone: "#C2453A", icon: HeartPulse, category: "Seguimiento",
+          title: "Sin registros varios días",
+          detail: al.message, cta: al.action, tab: al.tab,
         });
       } else if (al.kind.startsWith("video_call_")) {
         // Videollamada quincenal (Pro): propuesta → aceptar/modificar → agendada

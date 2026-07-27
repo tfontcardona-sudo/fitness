@@ -34,7 +34,11 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
   function openPdf() {
     if (!pdfName) return;
     fetch(api.clientDocumentUrl(client.id, pdfName), { headers: { Authorization: `Bearer ${getToken()}` } })
-      .then((r) => r.blob())
+      .then((r) => {
+        // Sin esto, un 401/500 abría una pestaña con el JSON del error.
+        if (!r.ok) throw new Error(`Error ${r.status}`);
+        return r.blob();
+      })
       .then((blob) => {
         const url = URL.createObjectURL(blob);
         window.open(url, "_blank");

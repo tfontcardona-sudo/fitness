@@ -22,7 +22,7 @@ portal) y el cliente registra su seguimiento diario hasta el cierre quincenal.
 - **Estado:** desplegado y funcionando. Suite en verde.
 - **Idioma del proyecto:** comentarios y textos de UI en **español**.
 
-> **Hardening v2 en curso** (rama `hardening/asesorias-v2`, sin mergear). Ver
+> **Hardening v2 YA FUSIONADO en `main`** (la rama `hardening/asesorias-v2` es historia). Ver
 > **`INFORME_HARDENING.md`** para el detalle. Convenciones y módulos nuevos que
 > hay que respetar:
 > - **Una sola verdad de objetivos calóricos**: el backend manda
@@ -391,10 +391,15 @@ GET  /api/p/{token}/feedback               (Portal) feedbacks ENVIADOS (sent_at)
 cd backend && python -m pytest tests/ -q
 ```
 
-- **99 tests en verde** en base de datos limpia.
+- **~370 tests en verde** en base de datos limpia y migrada a head.
+- ⚠️ En un entorno nuevo exporta `ADMIN_1_USER`/`ADMIN_1_PASS` y corre los seeds
+  antes: varios tests de integración hacen login real del coach (sin admin
+  sembrado fallan con 401, y no es un bug del código).
 - Los tests pueden **inyectar un AIClient falso** (scripted) para probar todo el
   pipeline sin llamar a la API real (ver `tests/test_ai_service.py`). Útil porque
-  la API real necesita la clave y cuesta dinero/tiempo.
+  la API real necesita la clave y cuesta dinero/tiempo. ⚠️ Por eso mismo, la
+  suite NO detecta errores de parámetros de la API real (p. ej. el gotcha del
+  `temperature`): ahora el filtro vive en `AIClient._effective_temperature`.
 - ✅ El test antes frágil (`tests/test_phase2.py::test_export_with_accented_name`)
   ya usa un email único con uuid; pasa aunque la BD arrastre datos previos.
 - ⚠️ **Los tests de integración escriben en la MISMA BD de desarrollo** y dejan
@@ -495,6 +500,64 @@ cd backend && python -m pytest tests/ -q
        recordatorios push cada 3 h (`push.videocall_pending` → `pending_for_client`
        → `build_reminder_payload`: "agendar tu videollamada de revisión") hasta que
        la agende.
+8. ✅ **Auditoría integral a fondo (julio 2026)** — 6 auditorías por dominio
+   (pipeline IA, coherencia nutricional, ciclo quincenal, portal, panel del
+   coach, infraestructura) con TODOS los hallazgos confirmados corregidos:
+   - **Seguridad:** los sinónimos de alérgenos/lesiones con `"\b"` (backspace,
+     no frontera de palabra) NO detectaban "pan"/gluten, "maní", "soja", "LCA",
+     "L4" — corregido con raw strings + tests de regresión. `temperature` al
+     modelo pesado (gotcha §5.2, reintroducido por §14) filtrado en un único
+     sitio (`AIClient._effective_temperature` + reintento sin él). Un plan con
+     `violation:` de guardrail o semáforo ROJO ya NO se auto-activa ni avisa al
+     cliente (queda en borrador con flag "retenido"). El contrato de macros del
+     backend se IMPONE al eco de la IA en el camino bloqueante (desvío → se fija
+     al contrato y se reescala). Panel §9: un revisor caído ya no fabrica un
+     "aprobado 60" — queda `no_ejecutado` (mayor si tenía veto) y el resumen
+     lleva `degraded_reviewers`. Coherencia dieta⇄entreno (§6) integrada en la
+     generación viva (flags).
+   - **Motor quincenal §8 enchufado de verdad:** la decisión determinista se
+     calcula ANTES de la llamada de feedback y viaja en el payload como contrato;
+     en `adapt_plan`, si la regla dice no tocar kcal (hold/adherencia/datos) el
+     cambio de la IA se VETA, y si dice ajustar X% el número lo pone el motor
+     (proteína bloqueada). Editar el texto del feedback ya no borra
+     `biweekly_decision`; `plan_adjustments` es editable (FeedbackEditIn).
+   - **Coach se entera de TODO:** push inmediato al cerrar una revisión y al
+     entrar un pago/alta de Stripe; alertas nuevas `payment_pending` y
+     `period_overdue`; la petición de cambio muestra su TEXTO y se puede LEER y
+     RESOLVER desde Seguimiento (antes era una alerta eterna sin UI); las fotos
+     de progreso del período se VEN en Feedback; videollamadas huérfanas
+     (proposed/pending_manual de revisiones anteriores) ya no desaparecen; los
+     push de videollamada llevan `?tab=feedback` y el sw.js ya no enfoca
+     cualquier pestaña del portal en vez del destino.
+   - **Portal:** guardar diario/entreno funciona del día 15 hasta enviar la
+     revisión (antes 422 silencioso con pérdida de datos); errores de carga con
+     "Reintentar" (antes skeleton infinito) y toasts con el mensaje real; fallo
+     de red ya no dice "enlace caducado"; el aviso "plan nuevo" se apaga también
+     en Start; el resync automático de push NO roba el dispositivo de otro
+     cliente; carrera del primer guardado del día resuelta con savepoint.
+   - **Coherencia:** `_rhu` (half-up) también en `clamp_targets`/`reconcile`/
+     `rescale_nutrition`/`meal_fallback` (adiós al bancario en valores
+     persistidos); portal y PDF deciden el formato del banco por `bank["mode"]`;
+     swap activa la versión nueva y respeta "gym sin restricción de material";
+     fecha de negocio (`today_local`) en seguimiento, alertas y badge.
+   - **Extracción:** enums normalizados con sinónimos ("Hombre"→male,
+     "Gimnasio"→gym…); lo irreconocible queda VACÍO (nunca un cálculo corrupto).
+     `sport_history` y `goal_weight_kg` ahora llegan al prompt de generación.
+   - **Infra:** `SCHEDULER_ENABLED` en Settings y `.env.example`; `freezegun` en
+     requirements; caché correcta en Caddy (index/sw revalidan, assets
+     inmutables); recordatorio del día 12 incluye a los `at_risk` y hay
+     recuperación `at_risk→active`; "en riesgo" ya no cuenta filas de diario
+     vacías; sensaciones del cierre acotadas 1–5.
+   - **Pendientes DETECTADOS y no aplicados** (por alcance, para próximas
+     sesiones): unificar la recomendación de macros del editor con
+     `metrics.macro_targets` (dos fórmulas hoy); vectores dorados de
+     clamp/reconcile en el contrato de paridad; cablear PlanState §4 (historial/
+     revert con before/after); control de concurrencia del PATCH de planes;
+     fecha de negocio vs zona del dispositivo en el portal (viajes); `scope`
+     de la PWA al rotar token; toggle manual "marcar pagado" en el perfil;
+     alerta `client_went_inactive`; patrón dietético real (vegano/halal) como
+     campo del cliente conectado a `filter_foods` (hoy `_DIET_PATTERN_FORBIDDEN`
+     no tiene fuente de datos); code-splitting del bundle (938 KB).
 
 ---
 

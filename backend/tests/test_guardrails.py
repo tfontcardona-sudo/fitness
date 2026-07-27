@@ -234,3 +234,30 @@ def test_filter_home_requires_owned_equipment():
         equipment_available={"mancuernas"}, level_max=2, training_place="home",
     )
     assert {e["id"] for e in out} == {2}  # no tiene máquina en casa
+
+
+# --- Regresión: fronteras de palabra en alérgenos/lesiones (bug "\b" backspace) ---
+# Los sinónimos con frontera iban en string normal ("\bpan\b" = backspace) y no
+# detectaban NADA: pan/gluten, maní, soja, clara, miel, LCA, L4, C5. Nunca más.
+
+def test_allergen_word_boundary_terms_detect():
+    assert gr.food_allergen("pan integral", ["gluten"]) == "gluten"
+    assert gr.food_allergen("soja texturizada", ["soja"]) == "soja"
+    assert gr.food_allergen("mantequilla de maní", ["cacahuete"]) == "cacahuete"
+    assert gr.food_allergen("clara de huevo", ["huevo"]) == "huevo"
+    assert gr.food_allergen("miel de abeja", ["fructosa"]) == "fructosa"
+
+
+def test_allergen_word_boundary_no_false_positives():
+    # "empanada" contiene "pan" pero NO como palabra; "discreto" no es "disco".
+    assert gr.food_allergen("empanada de atun", ["gluten"]) is None
+    assert gr.food_allergen("crema de calabaza", ["soja"]) is None
+
+
+def test_injury_word_boundary_terms_detect():
+    from app.services.injuries import injury_contra_tags
+
+    assert "rodilla" in injury_contra_tags("rotura del LCA, no resuelta")
+    assert "lumbar" in injury_contra_tags("protrusion en L4 sin resolver")
+    assert "cuello" in injury_contra_tags("rectificacion C5-C6 pendiente")
+    assert injury_contra_tags("trabaja de disc-jockey") == set()

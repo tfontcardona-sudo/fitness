@@ -13,8 +13,6 @@ atender:
   objetivo    → 45 días en la misma etapa: valorar cambio (posponible)
 """
 
-from __future__ import annotations
-
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends
@@ -48,10 +46,23 @@ def _alert(client: Client, kind: str, severity: str, message: str, tab: str,
 
 def client_alerts(db: Session, client: Client, today: date | None = None) -> list[dict]:
     """Alertas de UN cliente (reutilizado por el listado y el backtest)."""
-    today = today or date.today()
+    from app.services.portal import today_local
+
+    # Fecha de NEGOCIO (settings.tz): con date.today() en UTC, de madrugada las
+    # alertas de "sin registros"/videollamada salían descuadradas un día.
+    today = today or today_local()
     out: list[dict] = []
     if client.status == "inactive":
         return out
+
+    # --- Pago pendiente ------------------------------------------------------
+    # Sin alerta, un pago sin completar solo se veía en la carpeta "Falta pago":
+    # el coach debe enterarse también por la campana y el resumen del móvil.
+    if getattr(client, "payment_status", None) == "pending":
+        out.append(_alert(client, "payment_pending", "media",
+                          "Pago pendiente: cobra su plan (o márcalo como pagado "
+                          "si te pagó por otra vía).",
+                          "resumen", "Revisar pago"))
 
     plans = list(db.scalars(
         select(Plan).where(Plan.client_id == client.id)
@@ -126,20 +137,36 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
                               f"Sin registros del cliente desde hace {gap} días.",
                               "seguimiento", "Ver seguimiento"))
 
+        # --- Período vencido sin cerrar: el cliente registra pero no envía ---
+        overdue = (today - last_period.ends_on).days
+        if overdue >= 2:
+            out.append(_alert(
+                client, "period_overdue", "alta" if overdue >= 5 else "media",
+                f"Su revisión quincenal venció hace {overdue} días y no la ha "
+                "enviado: recuérdaselo por WhatsApp.",
+                "seguimiento", "Reclamar la revisión"))
+
     # --- Petición de cambio del cliente sin atender (portal → coach) ---------
     # El cliente escribió una duda/petición desde su portal: el coach debe
     # verlo. Persiste hasta que se marque resuelta.
     from app.models import ChangeRequest
 
-    open_cr = db.scalar(
-        select(func.count()).select_from(ChangeRequest)
+    open_crs = list(db.scalars(
+        select(ChangeRequest)
         .where(ChangeRequest.client_id == client.id, ChangeRequest.status == "open")
-    )
-    if open_cr:
+        .order_by(ChangeRequest.created_at.desc())
+    ))
+    if open_crs:
+        # Con el TEXTO de la petición: el coach debe poder leer QUÉ pide sin
+        # depender del email (en dev está apagado y el mensaje se perdía).
+        extracto = (open_crs[0].message or "").strip()
+        if len(extracto) > 140:
+            extracto = extracto[:137] + "…"
+        prefix = (f"Tiene {len(open_crs)} peticiones sin responder. Última: "
+                  if len(open_crs) > 1 else "Te ha escrito desde su portal: ")
         out.append(_alert(
             client, "change_request", "alta",
-            f"Tiene {open_cr} petición/duda sin responder desde su portal."
-            if open_cr > 1 else "Te ha escrito una petición/duda desde su portal.",
+            f"{prefix}«{extracto}»",
             "seguimiento", "Ver petición"))
 
     # --- Suplementos del plan SIN producto en Recursos ----------------------
@@ -170,10 +197,10 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
     # proposed → accept|modify → scheduled|pending_manual → done. Se ancla a la
     # última revisión CERRADA/ANALIZADA; los agendados salen SIEMPRE (aunque el
     # siguiente período ya se haya abierto): una llamada no puede olvidarse.
-    if client.package_tier == "pro":
-        from app.models import VideoCall
-        from app.services.portal import format_when_es
+    from app.models import VideoCall
+    from app.services.portal import format_when_es
 
+    if client.package_tier == "pro":
         last_review = db.scalar(
             select(Period).where(Period.client_id == client.id,
                                  Period.status.in_(("closed", "analyzed")))
@@ -189,30 +216,32 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
                     f"Revisión #{last_review.period_index}: esperando que el cliente proponga "
                     "la videollamada (o agéndala tú a mano).",
                     "feedback", "Agendar videollamada"))
-            elif vc.status == "proposed" and vc.scheduled_at is not None:
-                out.append(_alert(
-                    client, "video_call_proposed", "alta",
-                    f"El cliente propuso videollamada: {format_when_es(vc.scheduled_at)}. "
-                    "Acéptala o modifícala.",
-                    "feedback", "Aceptar o modificar"))
-            elif vc.status == "pending_manual":
-                out.append(_alert(
-                    client, "video_call_manual", "alta",
-                    "Videollamada a agendar a mano (acordado por WhatsApp): escribe el día y la hora.",
-                    "feedback", "Agendar día y hora"))
-        # Agendadas con fecha: recordar SIEMPRE (aunque sea de una revisión
-        # anterior — una llamada sin confirmar no puede olvidarse en silencio).
-        for sched in db.scalars(select(VideoCall).where(
-                VideoCall.client_id == client.id,
-                VideoCall.status == "scheduled")):
-            if sched.scheduled_for is None:
-                continue
-            if sched.scheduled_for == today + timedelta(days=1):
+
+    # TODAS las videollamadas vivas — de cualquier revisión y aunque el cliente
+    # ya no sea Pro: una propuesta sin responder o una llamada agendada no puede
+    # esfumarse en silencio (antes, al cerrar la revisión siguiente quedaban
+    # huérfanas y desaparecían de las alertas para siempre).
+    for vc in db.scalars(select(VideoCall).where(
+            VideoCall.client_id == client.id,
+            VideoCall.status.in_(("proposed", "pending_manual", "scheduled")))):
+        if vc.status == "proposed" and vc.scheduled_at is not None:
+            out.append(_alert(
+                client, "video_call_proposed", "alta",
+                f"El cliente propuso videollamada: {format_when_es(vc.scheduled_at)}. "
+                "Acéptala o modifícala.",
+                "feedback", "Aceptar o modificar"))
+        elif vc.status == "pending_manual":
+            out.append(_alert(
+                client, "video_call_manual", "alta",
+                "Videollamada a agendar a mano (acordado por WhatsApp): escribe el día y la hora.",
+                "feedback", "Agendar día y hora"))
+        elif vc.status == "scheduled" and vc.scheduled_for is not None:
+            if vc.scheduled_for == today + timedelta(days=1):
                 out.append(_alert(
                     client, "video_call_tomorrow", "alta",
-                    f"Videollamada MAÑANA ({sched.scheduled_for.strftime('%d/%m')}).",
+                    f"Videollamada MAÑANA ({vc.scheduled_for.strftime('%d/%m')}).",
                     "feedback", "Ver videollamada"))
-            elif sched.scheduled_for <= today:
+            elif vc.scheduled_for <= today:
                 out.append(_alert(
                     client, "video_call_confirm", "alta",
                     "¿Se realizó la videollamada? Confírmala, o reagéndala si no pudo ser.",

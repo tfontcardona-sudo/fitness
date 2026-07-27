@@ -197,7 +197,9 @@ def client_tracking(client_id: int, db: Session = Depends(get_db)) -> dict:
         "diet_adherence_pct": round((ok + 0.5 * partial) / n_adh * 100) if n_adh else None,
     }
 
-    today = _date.today()
+    from app.services.portal import today_local
+
+    today = today_local()  # fecha de NEGOCIO (settings.tz), no UTC del servidor
     days_elapsed = (min(today, period.ends_on) - period.starts_on).days + 1
 
     # Revisiones quincenales acumuladas (más reciente primero), con antes/después
@@ -1278,6 +1280,8 @@ def generate_client_plan(
         # debe entender qué pide exactamente y planificar para ese fin.
         goal_in_own_words=client.lifestyle_notes,
         clinical_notes=clinical_notes,
+        sport_history=client.sport_history,
+        goal_weight_kg=client.goal_weight_kg,
     )
     # Paquete Start = solo nutrición: la IA no genera entrenamiento (ni el
     # educativo de entreno). Full/Pro generan el plan completo.
@@ -1350,6 +1354,17 @@ def generate_client_plan(
             "revisión: ROJO — el panel detectó puntos a revisar antes de enviar"
         ]
 
+    # Seguridad ("revisar antes de publicar"): con VIOLACIÓN de guardrail o
+    # semáforo ROJO el plan NO se activa solo — queda en borrador, sin email ni
+    # push al cliente, hasta que el coach lo revise (editar lo activa, o el
+    # botón "Activar" del panel). Un warning no retiene.
+    blocking = [f for f in flags if str(f).startswith("violation:")]
+    retained = bool(blocking) or bool(review_summary and review_summary.get("color") == "rojo")
+    if retained:
+        flags = list(flags) + [
+            "retenido: guardado como BORRADOR — revisa y activa tú (el cliente no ha sido avisado)"
+        ]
+
     # 5) Persistir como borrador (nueva versión del mes)
     last = db.scalar(
         select(Plan).where(Plan.client_id == client_id, Plan.month_index == month_index)
@@ -1366,12 +1381,15 @@ def generate_client_plan(
     db.flush()
     log_event(db, "plan", plan.id, "plan_generated_ai", {
         "client_id": client_id, "version": version, "flags": flags,
+        "retained": retained,
     })
     # La planificación queda ACTIVA al generarse (no hay botón "Publicar":
-    # el envío al cliente va por WhatsApp y el portal se actualiza solo).
-    from app.services.plan_activation import activate_plan
+    # el envío al cliente va por WhatsApp y el portal se actualiza solo) —
+    # SALVO que esté retenida por violación/ROJO (ver arriba).
+    if not retained:
+        from app.services.plan_activation import activate_plan
 
-    activate_plan(db, plan)
+        activate_plan(db, plan)
     db.commit()
     db.refresh(plan)
     return {

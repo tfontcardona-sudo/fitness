@@ -70,11 +70,15 @@ def _facts_for(db: Session, client: Client) -> ClientFacts:
     if period is None:
         return ClientFacts(status=client.status)
 
-    days_logged = db.scalar(
-        select(func.count())
-        .select_from(DailyLog)
-        .where(DailyLog.period_id == period.id)
-    ) or 0
+    # Solo cuentan los días con contenido REAL: el autosave del portal crea la
+    # fila vacía con solo abrir la pantalla, y contarla inflaba la adherencia
+    # (el disparador de "en riesgo" y el % que ve el coach mentían).
+    from app.services.push import diary_is_filled
+
+    logs = list(db.scalars(
+        select(DailyLog).where(DailyLog.period_id == period.id)
+    ))
+    days_logged = sum(1 for lg in logs if diary_is_filled(lg))
 
     last_log_date = db.scalar(
         select(func.max(DailyLog.log_date)).where(DailyLog.period_id == period.id)

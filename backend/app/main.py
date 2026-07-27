@@ -6,7 +6,6 @@ en entrypoint.sh antes de arrancar; el scheduler se añade en la Fase 4.
 
 from contextlib import asynccontextmanager
 import logging
-import os
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -52,7 +51,8 @@ async def lifespan(app: FastAPI):
                 "STRIPE INCOMPLETO: los pagos pueden fallar. Falta: %s.", ", ".join(_missing))
 
     # El scheduler se desactiva en tests/CI con SCHEDULER_ENABLED=false.
-    scheduler_on = os.environ.get("SCHEDULER_ENABLED", "true").lower() == "true"
+    # Vive en Settings como el resto de la config (una sola fuente de verdad).
+    scheduler_on = settings.scheduler_enabled
     if scheduler_on:
         from app.services.scheduler import shutdown_scheduler, start_scheduler
 

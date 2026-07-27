@@ -303,6 +303,13 @@ def portal_state_full(
     )
     from app.services.push import photos_pending
 
+    # Clientes START (solo nutrición): sin pestaña Entreno, /training nunca se
+    # llama y el aviso "plan nuevo" no se apagaría jamás — abrir el portal ya
+    # cuenta como visto (su dieta va en el PDF enlazado desde la portada).
+    if client.package_tier == "start" and client.plan_notice_pending and plan is not None:
+        client.plan_notice_pending = False
+        db.commit()
+
     return PortalState(
         first_name=_first_name(client),
         status=client.status,
@@ -628,6 +635,13 @@ def portal_plan_pdf(
     if plan is None or plan.status != "published":
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Aún no tienes un plan publicado")
 
+    # El cliente ha VISTO su plan: apaga el aviso "plan nuevo" (badge). Es la
+    # única vía de los clientes Start (sin pestaña Entreno, /training nunca se
+    # llama y el badge quedaba encendido para siempre).
+    if client.plan_notice_pending:
+        client.plan_notice_pending = False
+        db.commit()
+
     content, media_type, filename = build_plan_pdf(db, plan, client)
     return Response(
         content=content,
@@ -650,10 +664,13 @@ def portal_diary_upsert(
     if period is None or period.status != "open":
         raise HTTPException(status.HTTP_409_CONFLICT, "No tienes un período abierto")
 
-    # La fecha debe caer DENTRO del período y no ser futura: si no, el cliente
+    # La fecha no puede ser futura ni anterior al período: si no, el cliente
     # podría inflar su adherencia con días que no han pasado o registrar fuera de
     # rango (falsea métricas, feedback y el disparador de "en riesgo").
-    upper = min(period.ends_on, portal_svc.today_local())
+    # ⚠️ Mientras el período siga ABIERTO se acepta también después de ends_on:
+    # los períodos no se cierran solos y muchos clientes envían la revisión el
+    # día 15-16 — antes, esos días el autosave devolvía 422 y se perdían datos.
+    upper = portal_svc.today_local()
     if not (period.starts_on <= body.log_date <= upper):
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -666,9 +683,24 @@ def portal_diary_upsert(
         )
     )
     if log is None:
+        # Find-or-create bajo savepoint: dos autosaves simultáneos (p. ej. el
+        # volcado keepalive de Entreno + el primer guardado de Diario) chocan en
+        # el UNIQUE(period_id, log_date); el perdedor recupera la fila del otro.
+        from sqlalchemy.exc import IntegrityError
+
         log = DailyLog(period_id=period.id, log_date=body.log_date)
-        db.add(log)
-        db.flush()
+        try:
+            with db.begin_nested():
+                db.add(log)
+                db.flush()
+        except IntegrityError:
+            log = db.scalar(
+                select(DailyLog).where(
+                    DailyLog.period_id == period.id, DailyLog.log_date == body.log_date
+                )
+            )
+            if log is None:  # no debería pasar: la carrera implica que existe
+                raise
 
     # Upsert PARCIAL: solo se tocan los campos que el cliente envía. Así un
     # guardado de comidas/diario NO borra las series, ni viceversa (autosaves
@@ -950,6 +982,20 @@ def portal_close_period(
 
     log_event(db, "client", client.id, "period_closed",
               {"period_index": period.period_index, "rating": body.closing_rating})
+    # Push inmediato al COACH: el cierre de la revisión es el evento central del
+    # ciclo — no puede esperar al resumen de cada 3 h. Nunca tumba el cierre.
+    try:
+        base = settings.public_base_url.rstrip("/")
+        first = ((client.full_name or "").split() or ["Un cliente"])[0]
+        push_svc.send_to_coach(db, {
+            "title": "Revisión quincenal enviada",
+            "body": f"{first} ha cerrado su revisión #{period.period_index}. Genera su feedback.",
+            "count": 1,
+            "url": f"{base}/clientes/{client.id}?tab=feedback",
+            "tag": "dq-revision",
+        })
+    except Exception:
+        pass
     db.commit()
     return {"closed": True, "period_index": period.period_index}
 
@@ -1136,16 +1182,18 @@ def push_subscribe(
     if not push_svc.push_configured():
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
                             "Notificaciones no disponibles en este momento")
-    push_svc.save_subscription(
+    sub = push_svc.save_subscription(
         db, client,
         endpoint=body.endpoint,
         p256dh=body.keys.p256dh,
         auth=body.keys.auth,
         user_agent=request.headers.get("user-agent"),
+        # El resync automático no roba el dispositivo de otro cliente.
+        allow_reassign=not body.resync,
     )
     log_event(db, "client", client.id, "push_subscribed", None)
     db.commit()
-    return {"subscribed": True}
+    return {"subscribed": bool(sub.is_coach or sub.client_id == client.id)}
 
 
 @router.post("/{token}/push/unsubscribe", response_model=dict)
@@ -1174,9 +1222,9 @@ def push_pending(
     ver, para que el portal sincronice el badge del icono al abrirse
     (navigator.setAppBadge). El aviso de plan hace que el badge salga aunque el
     cliente no haya aceptado notificaciones push."""
-    from datetime import date as _d
-
-    pending = push_svc.pending_for_client(db, client, _d.today())
+    # Fecha de NEGOCIO (settings.tz), como el resto del portal: con date.today()
+    # en UTC el badge se calculaba sobre "ayer" entre las 00:00 y ~02:00.
+    pending = push_svc.pending_for_client(db, client, portal_svc.today_local())
     plan_notice = bool(client.plan_notice_pending)
     pending["plan"] = plan_notice
     pending["count"] = pending["count"] + (1 if plan_notice else 0)

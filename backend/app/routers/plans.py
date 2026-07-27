@@ -459,12 +459,15 @@ def get_feedback(doc_id: int, db: Session = Depends(get_db)) -> dict:
 
 
 class FeedbackEditIn(BaseModel):
-    """Edición manual del feedback por el coach (solo el texto)."""
+    """Edición manual del feedback por el coach (texto + ajustes del plan)."""
     natural_analysis: str | None = None
     changes_bullets: list[str] | None = None
     answers: str | None = None
     next_objectives: list[str] | None = None
     closing_message: str | None = None
+    # La cuadrícula que "Adaptar planificación" aplica NUMÉRICAMENTE al plan:
+    # el coach debe poder corregirla ANTES de adaptar (no después, a mano).
+    plan_adjustments: list[dict] | None = None
 
 
 @router.patch("/api/feedback/{doc_id}")

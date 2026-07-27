@@ -69,9 +69,13 @@ export function clearToken(): void {
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /** `detail` crudo del backend cuando es un objeto (p. ej. {message, missing}
+   *  del 422 de anamnesis incompleta o {message, error} de los 502 de IA). */
+  detail?: any;
+  constructor(status: number, message: string, detail?: any) {
     super(message);
     this.status = status;
+    this.detail = detail;
   }
 }
 
@@ -104,14 +108,21 @@ async function request<T>(
 
   if (!res.ok) {
     let detail = `Error ${res.status}`;
+    let rawDetail: any;
     try {
       const data = await res.json();
+      rawDetail = data.detail;
       if (typeof data.detail === "string") detail = data.detail;
       else if (Array.isArray(data.detail)) detail = data.detail.map((d: any) => d.msg).join("; ");
+      else if (data.detail && typeof data.detail === "object") {
+        // Los endpoints de IA devuelven {message, error} / {message, missing}:
+        // sin esto, el coach veía "Error 502" en vez de "recarga crédito…".
+        detail = [data.detail.message, data.detail.error].filter(Boolean).join(" — ") || detail;
+      }
     } catch {
       /* respuesta sin cuerpo JSON */
     }
-    throw new ApiError(res.status, detail);
+    throw new ApiError(res.status, detail, rawDetail);
   }
 
   if (opts.raw) return res as unknown as T;
@@ -258,6 +269,14 @@ export const api = {
   readAnamnesis: (clientId: number) =>
     request<{ extracted: any; deep_analysis: string | null; message: string }>(
       "POST", `/clients/${clientId}/read-anamnesis`),
+
+  // --- peticiones de cambio del cliente (portal → coach) ---
+  listChangeRequests: (clientId: number) =>
+    request<{ id: number; client_id: number; message: string; status: "open" | "resolved";
+      created_at: string; resolved_at: string | null }[]>(
+      "GET", `/clients/${clientId}/change-requests`),
+  resolveChangeRequest: (crId: number) =>
+    request<{ id: number; status: string }>("POST", `/change-requests/${crId}/resolve`),
 
   // --- feedback (cierre → informe) ---
   createPeriod: (clientId: number, planId: number, startsOn: string, days = 14) =>
