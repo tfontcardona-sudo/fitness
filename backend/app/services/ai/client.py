@@ -114,12 +114,36 @@ class AIClient:
             getattr(usage, "output_tokens", 0) or 0,
         )
 
+    @staticmethod
+    def _effective_temperature(model: str, temperature: float | None) -> float | None:
+        """Gotcha §5.2: el modelo pesado (claude-opus-4-8) RECHAZA `temperature`
+        con un 400 de la API. Se filtra aquí, en un único sitio, para que ningún
+        llamador pueda reintroducir el fallo: al modelo pesado nunca se le envía;
+        el resto (p. ej. el ligero, en los revisores §14) lo conserva."""
+        from app.config import settings
+
+        if temperature is not None and model == settings.model_heavy:
+            return None
+        return temperature
+
+    def _create_message(self, kwargs: dict):
+        """messages.create con red de seguridad: si aun así un modelo rechaza
+        `temperature` (400), reintenta UNA vez sin él — perder el determinismo
+        es mejor que tumbar la extracción o el feedback en producción."""
+        try:
+            return self._anthropic().messages.create(**kwargs)
+        except Exception as exc:
+            if kwargs.pop("temperature", None) is not None and "temperature" in str(exc).lower():
+                return self._anthropic().messages.create(**kwargs)
+            raise
+
     def _raw_call(self, *, model: str, system: str, user: str,
                   temperature: float | None = None) -> str:
         """Una llamada cruda al modelo. Sobrescribible en tests.
 
         `temperature` fija el determinismo: 0 en extracción/revisión (§14) donde la
         reproducibilidad importa; None (por defecto del modelo) en generación."""
+        temperature = self._effective_temperature(model, temperature)
         try:
             kwargs = {
                 "model": model,
@@ -129,7 +153,7 @@ class AIClient:
             }
             if temperature is not None:
                 kwargs["temperature"] = temperature
-            resp = self._anthropic().messages.create(**kwargs)
+            resp = self._create_message(kwargs)
         except Exception as exc:
             translated = _translate_api_error(exc)
             if translated:
@@ -151,6 +175,7 @@ class AIClient:
         """
         import base64
 
+        temperature = self._effective_temperature(model, temperature)
         b64 = base64.standard_b64encode(pdf_bytes).decode("ascii")
         try:
             kwargs = {

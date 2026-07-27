@@ -72,8 +72,15 @@ def save_subscription(
     p256dh: str,
     auth: str,
     user_agent: str | None = None,
+    *,
+    allow_reassign: bool = True,
 ) -> PushSubscription:
-    """Upsert por endpoint (el navegador puede re-suscribir el mismo device)."""
+    """Upsert por endpoint (el navegador puede re-suscribir el mismo device).
+
+    `allow_reassign=False` (resuscripción automática al abrir el portal): si el
+    endpoint ya es de OTRO cliente, NO se lo roba — en un móvil compartido,
+    abrir el portal de B dejaba a A sin notificaciones en silencio. Solo el
+    gesto explícito de activar (allow_reassign=True) cambia el dueño."""
     sub = db.scalar(select(PushSubscription).where(PushSubscription.endpoint == endpoint))
     if sub is None:
         sub = PushSubscription(client_id=client.id, endpoint=endpoint, p256dh=p256dh, auth=auth)
@@ -84,6 +91,9 @@ def save_subscription(
         # dispositivo de ese cliente ni le quita el resumen — solo claves.
         sub.p256dh = p256dh
         sub.auth = auth
+    elif sub.client_id != client.id and not allow_reassign:
+        # Resync automático sobre el dispositivo de otro cliente: no tocar.
+        return sub
     else:
         sub.client_id = client.id  # por si el dispositivo cambió de token/cliente
         sub.p256dh = p256dh
@@ -344,7 +354,7 @@ def notify_coach_video_call_proposed(db: Session, client: Client, when_label: st
         "title": "Videollamada propuesta",
         "body": f"{name} propuso videollamada: {when_label}. Acéptala o modifícala.",
         "count": 1,
-        "url": f"{base}/clientes/{client.id}",
+        "url": f"{base}/clientes/{client.id}?tab=feedback",
         "tag": "dq-vc-propuesta",
     }
     return send_to_coach(db, payload)
@@ -362,7 +372,7 @@ def notify_coach_video_call_rescheduled(db: Session, client: Client, when_label:
         "title": "Videollamada reprogramada",
         "body": f"{name} no puede a la hora agendada y propone: {when_label}. Acéptala o modifícala.",
         "count": 1,
-        "url": f"{base}/clientes/{client.id}",
+        "url": f"{base}/clientes/{client.id}?tab=feedback",
         "tag": "dq-vc-propuesta",
     }
     return send_to_coach(db, payload)
@@ -442,7 +452,7 @@ def _send_videocall_reminder(db: Session, client: Client, vc, brand_name: str,
     })
     n += send_to_coach(db, {
         "title": "Videollamada", "body": coach_body, "count": 1,
-        "url": vc.meet_url or f"{base}/clientes/{client.id}", "tag": "dq-vc-coach",
+        "url": vc.meet_url or f"{base}/clientes/{client.id}?tab=feedback", "tag": "dq-vc-coach",
     })
     return n
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { DietAdherence, PortalBrand } from "../types";
 import { usePortalToast } from "./PortalToast";
 import { Loading, localToday } from "./PortalUi";
+import { PortalError } from "./portalApi";
 import type { portalApi } from "./portalApi";
 
 type Api = ReturnType<typeof portalApi>;
@@ -45,9 +46,12 @@ export function PortalDiary({ api, brand, periodStatus = null }: {
   // se avisa y no se programan guardados.
   const readOnly = periodStatus != null && periodStatus !== "open";
   const [form, setForm] = useState<DiaryForm | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [loadTry, setLoadTry] = useState(0);
   const saveTimer = useRef<number | null>(null);
 
   useEffect(() => {
+    setLoadError(false);
     api.getDiary(today).then((d) => {
       if (d.exists) {
         setForm({
@@ -60,8 +64,11 @@ export function PortalDiary({ api, brand, periodStatus = null }: {
       } else {
         setForm({ ...EMPTY });
       }
+    }).catch(() => {
+      // Sin esto, un fallo de red dejaba el skeleton girando para siempre.
+      setLoadError(true);
     });
-  }, [api, today]);
+  }, [api, today, loadTry]);
 
   function update(patch: Partial<DiaryForm>) {
     // Con el período cerrado el diario está EN PAUSA: no aceptamos cambios (antes
@@ -88,7 +95,9 @@ export function PortalDiary({ api, brand, periodStatus = null }: {
     api
       .saveDiary({ log_date: today, ...data })
       .then(() => toast.push("Guardado"))
-      .catch(() => toast.push("No se pudo guardar el último cambio — revisa tu conexión"));
+      .catch((e) => toast.push(
+        e instanceof PortalError ? e.message : "No se pudo guardar el último cambio — revisa tu conexión",
+      ));
   };
 
   function scheduleSave(next: DiaryForm) {
@@ -111,6 +120,17 @@ export function PortalDiary({ api, brand, periodStatus = null }: {
     };
   }, []);
 
+  if (loadError && !form) {
+    return (
+      <div className="py-10 text-center">
+        <p className="text-sm opacity-70">No se pudo cargar tu diario.</p>
+        <button onClick={() => setLoadTry((n) => n + 1)}
+          className="portal-btn3d mt-3 rounded-xl px-4 py-2 text-sm font-semibold">
+          Reintentar
+        </button>
+      </div>
+    );
+  }
   if (!form) return <Loading />;
 
   return (

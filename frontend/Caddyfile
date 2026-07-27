@@ -15,6 +15,16 @@
 	handle {
 		root * /srv
 		try_files {path} /index.html
+
+		# Caché correcta tras cada deploy: el HTML y el service worker se
+		# REVALIDAN siempre (si no, un index.html cacheado apuntaba a assets
+		# hasheados ya purgados → pantalla rota hasta Ctrl+Shift+R); los assets
+		# con hash en el nombre son inmutables y se cachean un año.
+		@immutable path /assets/*
+		header @immutable Cache-Control "public, max-age=31536000, immutable"
+		@revalidate path / /index.html /sw.js
+		header @revalidate Cache-Control "no-cache"
+
 		file_server
 	}
 }

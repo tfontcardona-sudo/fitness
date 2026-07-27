@@ -100,10 +100,12 @@ def reviewer_prompt(role: dict, plan_text: str, anamnesis_text: str,
     extra = f"\n\nCRITERIO DEL COACH (referencia):\n{criterios_text}" if criterios_text else ""
     return (
         f"Eres «{role['name']}». Tu rúbrica: {role['rubric']}\n\n"
-        "Revisa el PLAN contra la ANAMNESIS del cliente. Devuelve un veredicto "
-        "(aprobado|aprobado_con_reservas|rechazado), una puntuación 0-100 y una "
-        "lista de hallazgos con severidad (bloqueante|mayor|menor), descripción, "
-        "cita_anamnesis, donde_en_el_plan y correccion_propuesta. No inventes datos "
+        "Revisa el PLAN contra la ANAMNESIS del cliente. Devuelve SOLO un JSON "
+        "con EXACTAMENTE estas claves: \"veredicto\" "
+        "(aprobado|aprobado_con_reservas|rechazado), \"puntuacion_rubrica\" "
+        "(entero 0-100) y \"hallazgos\" (lista; cada hallazgo con \"severidad\" "
+        "(bloqueante|mayor|menor), \"descripcion\", \"cita_anamnesis\", "
+        "\"donde_en_el_plan\" y \"correccion_propuesta\"). No inventes datos "
         "que no estén en la anamnesis.\n\n"
         f"=== ANAMNESIS ===\n{anamnesis_text}\n\n=== PLAN ===\n{plan_text}{extra}"
     )
@@ -209,6 +211,9 @@ class PanelResult:
     findings: list[ReviewFinding]   # deduplicadas, ordenadas por severidad
     red_flags: list[str]
     vetoed: bool
+    # Revisores IA que NO llegaron a ejecutarse (API caída/sin crédito): el
+    # coach debe saber que esta revisión está DEGRADADA, no fingirla completa.
+    degraded_reviewers: list[str] = field(default_factory=list)
 
     def blocking(self) -> list[ReviewFinding]:
         return [f for f in self.findings if f.severity == "bloqueante"]
@@ -241,8 +246,11 @@ def consolidate(
     reds = red_flags(profile)
 
     # ICP a partir de los revisores NO deterministas (2-8) para la media del panel.
+    # Los "no_ejecutado" (degradados) NO puntúan: ni aprueban ni hunden la media —
+    # su ausencia ya pesa vía su hallazgo (mayor si el rol tenía veto).
     panel_scores = [v.puntuacion_rubrica for v in verdicts
-                    if v.reviewer != "validador_determinista"]
+                    if v.reviewer != "validador_determinista"
+                    and v.veredicto != "no_ejecutado"]
     det_ok = not any(v.reviewer == "validador_determinista" and v.veredicto == "rechazado"
                      for v in verdicts)
     coverage = _coverage_from(verdicts)
@@ -368,15 +376,24 @@ def run_panel(
     verdicts: list[ReviewerVerdict] = [
         deterministic_reviewer(nutrition, profile, objective_macros=objective_macros)
     ]
+    degraded: list[str] = []
     if ai_reviewer is not None:
         roles = REVIEWER_ROLES + (CHECKIN_EXTRA_ROLES if is_checkin else [])
         for role in roles:
             try:
                 verdicts.append(ai_reviewer(role))
             except Exception:  # noqa: BLE001 — un revisor caído no tumba el panel
+                # SIN puntuación fabricada: el revisor no se ejecutó. Si era un
+                # rol con veto (p. ej. clínico), su ausencia pesa como hallazgo
+                # MAYOR (empuja el semáforo a ámbar) — nunca un aprobado ficticio.
+                degraded.append(role["key"])
+                sev = "mayor" if role.get("can_veto") else "menor"
                 verdicts.append(ReviewerVerdict(
-                    role["key"], "aprobado_con_reservas", 60,
-                    [ReviewFinding("menor", f"revisor {role['key']} no disponible")],
-                    can_veto=role.get("can_veto", False),
+                    role["key"], "no_ejecutado", 0,
+                    [ReviewFinding(sev, f"revisor {role['key']} NO ejecutado "
+                                        "(API no disponible): revisión degradada")],
+                    can_veto=False,
                 ))
-    return consolidate(verdicts, profile, icp_threshold=icp_threshold)
+    result = consolidate(verdicts, profile, icp_threshold=icp_threshold)
+    result.degraded_reviewers = degraded
+    return result

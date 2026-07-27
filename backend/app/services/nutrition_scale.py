@@ -39,7 +39,7 @@ MAX_SURPLUS_PCT = 15
 
 
 def kcal_of(p: float, c: float, f: float) -> int:
-    return round(p * 4 + c * 4 + f * 9)
+    return _rhu(p * 4 + c * 4 + f * 9)
 
 
 def _clamp(v: float, lo: float, hi: float) -> float:
@@ -62,13 +62,13 @@ def clamp_targets(nut: dict, weight_kg: float | None = None) -> None:
     if not isinstance(m, dict):
         return
     w = float(weight_kg) if isinstance(weight_kg, (int, float)) and weight_kg else 0.0
-    p_lo, p_hi = (round(w * 1.2), round(w * 3.0)) if w else (60, 280)
-    f_lo, f_hi = (max(20, round(w * 0.6)), round(w * 2.0)) if w else (20, 160)
+    p_lo, p_hi = (_rhu(w * 1.2), _rhu(w * 3.0)) if w else (60, 280)
+    f_lo, f_hi = (max(20, _rhu(w * 0.6)), _rhu(w * 2.0)) if w else (20, 160)
 
     if isinstance(m.get("protein_g"), (int, float)):
-        m["protein_g"] = round(_clamp(float(m["protein_g"]), p_lo, p_hi))
+        m["protein_g"] = _rhu(_clamp(float(m["protein_g"]), p_lo, p_hi))
     if isinstance(m.get("fat_g"), (int, float)):
-        m["fat_g"] = round(_clamp(float(m["fat_g"]), f_lo, f_hi))
+        m["fat_g"] = _rhu(_clamp(float(m["fat_g"]), f_lo, f_hi))
     if isinstance(m.get("carbs_g"), (int, float)) and m["carbs_g"] < 0:
         m["carbs_g"] = 0
 
@@ -82,13 +82,13 @@ def clamp_targets(nut: dict, weight_kg: float | None = None) -> None:
         k_lo, k_hi = 1100.0, 4500.0
     target = nut.get("target_kcal")
     if isinstance(target, (int, float)) and target > 0:
-        nut["target_kcal"] = round(_clamp(float(target), k_lo, k_hi))
+        nut["target_kcal"] = _rhu(_clamp(float(target), k_lo, k_hi))
     else:
         # Sin objetivo declarado: el implícito (suma de macros) también se acota.
         implicit = kcal_of(float(m.get("protein_g") or 0), float(m.get("carbs_g") or 0),
                            float(m.get("fat_g") or 0))
         if implicit > 0:
-            nut["target_kcal"] = round(_clamp(float(implicit), k_lo, k_hi))
+            nut["target_kcal"] = _rhu(_clamp(float(implicit), k_lo, k_hi))
 
 
 def reconcile_nutrition(nut: dict, weight_kg: float | None = None, *,
@@ -133,7 +133,7 @@ def reconcile_nutrition(nut: dict, weight_kg: float | None = None, *,
             p = sum(float((m.get("target") or {}).get("protein_g") or 0) for m in meals)
             c = sum(float((m.get("target") or {}).get("carbs_g") or 0) for m in meals)
             f = sum(float((m.get("target") or {}).get("fat_g") or 0) for m in meals)
-            macros = {"protein_g": round(p), "carbs_g": round(c), "fat_g": round(f)}
+            macros = {"protein_g": _rhu(p), "carbs_g": _rhu(c), "fat_g": _rhu(f)}
             nut["macros"] = macros
         else:
             return nut  # nada que cuadrar
@@ -147,21 +147,21 @@ def reconcile_nutrition(nut: dict, weight_kg: float | None = None, *,
         target = float(kcal_of(p, c, f))
 
     # Carbohidratos = colchón para que P·4 + C·4 + G·9 == target.
-    c = round((target - p * 4 - f * 9) / 4)
+    c = _rhu((target - p * 4 - f * 9) / 4)
     if c < 0:
         # 1º baja la grasa hasta su suelo saludable (suelo ABSOLUTO 20 g: sin
         # peso registrado, w*0,6 daría 0 y la grasa podía quedar a cero).
-        fat_min = max(20, round((weight_kg or 0) * 0.6))
-        f = max(fat_min, round((target - p * 4) / 9))
-        c = round((target - p * 4 - f * 9) / 4)
+        fat_min = max(20, _rhu((weight_kg or 0) * 0.6))
+        f = max(fat_min, _rhu((target - p * 4) / 9))
+        c = _rhu((target - p * 4 - f * 9) / 4)
     if c < 0:
         # 2º recorta la proteína hasta su suelo de preservación de masa
         # (sin peso: 60 g, el mismo suelo que usa clamp_targets)
-        protein_min = round(weight_kg * 1.6) if weight_kg else 60
-        p = max(protein_min, round((target - f * 9) / 4))
-        c = max(0, round((target - p * 4 - f * 9) / 4))
+        protein_min = _rhu(weight_kg * 1.6) if weight_kg else 60
+        p = max(protein_min, _rhu((target - f * 9) / 4))
+        c = max(0, _rhu((target - p * 4 - f * 9) / 4))
 
-    p, c, f = round(p), round(c), round(f)
+    p, c, f = _rhu(p), _rhu(c), _rhu(f)
     nut["macros"] = {**macros, "protein_g": p, "carbs_g": c, "fat_g": f}
     # Una sola verdad: el objetivo declarado ES exactamente la suma de sus macros.
     nut["target_kcal"] = kcal_of(p, c, f)
@@ -187,7 +187,7 @@ def reconcile_nutrition(nut: dict, weight_kg: float | None = None, *,
         if cur > 0:
             r = total / cur
             for m in with_target:
-                m["target"][axis] = max(0, round(float(m["target"].get(axis) or 0) * r))
+                m["target"][axis] = max(0, _rhu(float(m["target"].get(axis) or 0) * r))
         elif total > 0:
             # La IA no repartió este eje: dáselo entero a la primera comida.
             for i, m in enumerate(with_target):
@@ -417,10 +417,10 @@ def rescale_nutrition(nut: dict, base: dict, kcal: float, protein_g: float,
     r_c = ratio(carbs_g, b_m.get("carbs_g") or 0)
     r_f = ratio(fat_g, b_m.get("fat_g") or 0)
 
-    nut["target_kcal"] = round(kcal)
+    nut["target_kcal"] = _rhu(kcal)
     nut["macros"] = {**(nut.get("macros") or {}),
-                     "protein_g": round(protein_g), "carbs_g": round(carbs_g),
-                     "fat_g": round(fat_g)}
+                     "protein_g": _rhu(protein_g), "carbs_g": _rhu(carbs_g),
+                     "fat_g": _rhu(fat_g)}
 
     # Objetivos por comida: cada eje por su ratio (los totales cuadran)
     base_meals = base.get("meals") or []
@@ -440,7 +440,7 @@ def rescale_nutrition(nut: dict, base: dict, kcal: float, protein_g: float,
         with_t = [m["target"] for m in meals
                   if m.get("target") and isinstance(m["target"].get(key), (int, float))]
         if with_t:
-            diff = round(total) - sum(t[key] for t in with_t)
+            diff = _rhu(total) - sum(t[key] for t in with_t)
             if diff:
                 biggest = max(with_t, key=lambda t: t[key])
                 biggest[key] = max(0, biggest[key] + diff)

@@ -210,7 +210,10 @@ def _meals_for_today(plan: Plan, client: Client, chosen: dict | None) -> list[di
     nutrition = plan.nutrition_json or {}
     meal_defs = nutrition.get("meals", [])  # slots con name/time/target
     bank = nutrition.get("meal_bank") or {}
-    mode = client.diet_mode
+    # El formato lo decide el banco PERSISTIDO (bank["mode"]); diet_mode del
+    # cliente es solo fallback. Si el coach cambia diet_mode sin regenerar, el
+    # plan servido sigue siendo el que existe, no un menú vacío/equivocado.
+    mode = bank.get("mode") or client.diet_mode
     chosen = chosen or {}
 
     slots_out: list[dict] = []
@@ -283,7 +286,10 @@ def _resolve_session(db: Session, sess: dict, load_factor: float = 1.0) -> dict:
         if not video:
             video = ((ex.video_url or "").strip()) if ex else ""
         hint = e.get("start_weight_hint_kg")
-        week_hint = (round(hint * load_factor * 2) / 2) if isinstance(hint, (int, float)) else None
+        # Redondeo HALF-UP a 0,5 kg (convención del sistema; round() bancario
+        # mostraba 21,0 donde tocaba 21,5). Valor que VE el cliente.
+        import math
+        week_hint = (math.floor(hint * load_factor * 2 + 0.5) / 2) if isinstance(hint, (int, float)) else None
         exercises.append({
             "exercise_id": e["exercise_id"],
             "name": ex.canonical_name if ex else f"Ejercicio {e['exercise_id']}",

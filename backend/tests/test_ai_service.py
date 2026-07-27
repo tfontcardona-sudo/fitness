@@ -332,3 +332,42 @@ def test_pipeline_flags_out_of_tolerance_meal_options():
     plan = generate_monthly_plan(_ctx(), client)
     flags = plan.guardrail_flags
     assert any("slot 1" in f for f in flags)
+
+
+# --- Regresión gotcha §5.2: 'temperature' NUNCA llega al modelo pesado ---------
+# claude-opus-4-8 rechaza `temperature` con un 400; el hardening §14 lo
+# reintrodujo (extracción/feedback con temperature=0) y tumbaba ambos flujos
+# en producción. El filtro vive en AIClient para que ningún llamador lo repita.
+
+def test_temperature_filtrada_para_modelo_pesado():
+    from app.config import settings
+    from app.services.ai.client import AIClient
+
+    assert AIClient._effective_temperature(settings.model_heavy, 0) is None
+    assert AIClient._effective_temperature(settings.model_heavy, 0.7) is None
+    assert AIClient._effective_temperature(settings.model_heavy, None) is None
+    # El modelo ligero (revisores §14) la conserva.
+    assert AIClient._effective_temperature(settings.model_light, 0) == 0
+
+
+def test_create_message_reintenta_sin_temperature():
+    # Red de seguridad: si un modelo rechaza 'temperature' (400), se reintenta
+    # una vez sin él en vez de tumbar la llamada.
+    from types import SimpleNamespace
+
+    from app.services.ai.client import AIClient
+
+    calls = []
+
+    class FakeMessages:
+        def create(self, **kwargs):
+            calls.append(dict(kwargs))
+            if "temperature" in kwargs:
+                raise RuntimeError("`temperature` is deprecated for this model")
+            return SimpleNamespace(content=[], usage=None)
+
+    client = AIClient(api_key="test")
+    client._client = SimpleNamespace(messages=FakeMessages())
+    client._create_message({"model": "m", "temperature": 0, "messages": []})
+    assert len(calls) == 2
+    assert "temperature" in calls[0] and "temperature" not in calls[1]

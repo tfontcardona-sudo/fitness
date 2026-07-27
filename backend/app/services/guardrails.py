@@ -165,20 +165,23 @@ _ALLERGEN_SYNONYMS: dict[str, tuple[str, ...]] = {
     "lactosa": ("lactosa", "leche", "yogur", "queso", "nata", "mantequilla", "lacteo",
                 "cuajada", "kefir", "requeson", "cremoso"),
     "leche": ("leche", "lactosa", "yogur", "queso", "nata", "mantequilla", "lacteo", "requeson"),
-    "gluten": ("gluten", "trigo", "cebada", "centeno", "espelta", "\bpan\b", "pasta",
-               "harina", "cuscus", "seitan", "galleta", "biz cocho", "bizcocho"),
+    # ⚠️ Los términos con frontera de palabra van en RAW STRING (r"\b…"): en un
+    # string normal "\b" es el carácter backspace y el término queda inerte —
+    # este bug real dejó pasar "pan" (gluten), "maní" y "soja" sin detectar.
+    "gluten": ("gluten", "trigo", "cebada", "centeno", "espelta", r"\bpan\b", "pasta",
+               "harina", "cuscus", "seitan", "galleta", "bizcocho"),
     "frutos secos": ("fruto seco", "frutos secos", "nuez", "nueces", "almendra", "avellana",
-                     "anacardo", "pistacho", "cacahuete", "\bmani\b", "pinon", "piñon", "pesto"),
-    "cacahuete": ("cacahuete", "\bmani\b", "crema de cacahuete"),
+                     "anacardo", "pistacho", "cacahuete", r"\bmani\b", "pinon", "piñon", "pesto"),
+    "cacahuete": ("cacahuete", r"\bmani\b", "crema de cacahuete"),
     "marisco": ("marisco", "gamba", "langostino", "mejillon", "almeja", "ostra", "calamar",
                 "pulpo", "cangrejo", "langosta", "sepia", "berberecho", "cigala"),
     "crustaceos": ("gamba", "langostino", "cangrejo", "langosta", "cigala", "marisco"),
     "pescado": ("pescado", "atun", "salmon", "merluza", "bacalao", "sardina", "caballa",
                 "trucha", "lubina", "dorada", "anchoa", "boqueron", "panga", "gallo"),
-    "huevo": ("huevo", "\bclara\b", "\byema\b", "tortilla", "mayonesa"),
-    "soja": ("\bsoja\b", "tofu", "edamame", "tempeh", "salsa de soja"),
+    "huevo": ("huevo", r"\bclara\b", r"\byema\b", "tortilla", "mayonesa"),
+    "soja": (r"\bsoja\b", "tofu", "edamame", "tempeh", "salsa de soja"),
     "sesamo": ("sesamo", "tahini", "tahin"),
-    "fructosa": ("fructosa", "\bmiel\b", "sirope"),
+    "fructosa": ("fructosa", r"\bmiel\b", "sirope"),
 }
 
 

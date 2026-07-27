@@ -155,7 +155,7 @@ export function portalApi(token: string) {
     // --- Web Push (§8.1) ---
     pushPublicKey: () =>
       req<{ enabled: boolean; public_key: string | null }>("GET", `${base}/push/public-key`),
-    pushSubscribe: (sub: { endpoint: string; keys: { p256dh: string; auth: string } }) =>
+    pushSubscribe: (sub: { endpoint: string; keys: { p256dh: string; auth: string }; resync?: boolean }) =>
       req<{ subscribed: boolean }>("POST", `${base}/push/subscribe`, sub),
     pushUnsubscribe: (endpoint: string) =>
       req<{ removed: boolean }>("POST", `${base}/push/unsubscribe`, { endpoint }),

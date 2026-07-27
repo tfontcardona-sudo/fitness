@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Sparkles, AlertTriangle, MessageSquare, MessageCircle, Mail, Video, Target, TrendingUp, BarChart3, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
-import { api } from "../lib/api";
+import { api, getToken } from "../lib/api";
 import { feedbackBody, feedbackMessage, openWhatsApp, videoCallModifyMessage, videoCallScheduledMessage, waPhone } from "../lib/whatsapp";
 import { pkg } from "../lib/packages";
 import { ExpandableArea, Spinner, useToast } from "./ui";
@@ -344,6 +344,10 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
             )}
             {p.closing_hardest && <p className="mt-2 text-xs text-zinc-400"><b className="text-zinc-300">Lo más difícil:</b> {p.closing_hardest}</p>}
             {p.closing_questions && <p className="mt-1 text-xs text-zinc-400"><b className="text-zinc-300">Dudas:</b> {p.closing_questions}</p>}
+
+            {/* Fotos de progreso del período: el coach las VE aquí al generar el
+                feedback (antes se subían pero ningún componente las mostraba). */}
+            {p.status !== "open" && <PeriodPhotos clientId={client.id} periodId={p.id} />}
 
             {/* Resumen de métricas (sin IA): fuerza, peso, adherencia, objetivo.
                 Se muestra SIEMPRE, ya cargado — sin botones que pulsar. */}
@@ -817,6 +821,63 @@ function SubTitle({ icon: Icon, text }: { icon: typeof Target; text: string }) {
     <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">
       {/* Icono en azul de marca: los subtítulos son estructura, no acción */}
       <Icon size={13} style={{ color: "var(--brand-accent-2)" }} /> {text}
+    </div>
+  );
+}
+
+const KIND_LABEL: Record<string, string> = {
+  front: "Frente", side: "Perfil", back: "Espalda", detail: "Detalle",
+};
+
+/** Fotos de progreso del período (fetch con JWT → blob: las fotos de clientes
+ *  NO son públicas). Muestra miniaturas; un toque abre la foto a tamaño real. */
+function PeriodPhotos({ clientId, periodId }: { clientId: number; periodId: number }) {
+  const [photos, setPhotos] = useState<{ id: number; kind: string; url: string }[] | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const urls: string[] = [];
+    api.listClientPhotos(clientId)
+      .then(async (all) => {
+        const mine = all.filter((p) => p.period_id === periodId);
+        const loaded: { id: number; kind: string; url: string }[] = [];
+        for (const p of mine.slice(0, 8)) {
+          try {
+            const r = await fetch(api.clientPhotoUrl(clientId, p.id), {
+              headers: { Authorization: `Bearer ${getToken()}` },
+            });
+            if (!r.ok) continue;
+            const url = URL.createObjectURL(await r.blob());
+            urls.push(url);
+            loaded.push({ id: p.id, kind: p.kind, url });
+          } catch { /* una foto ilegible no rompe la tira */ }
+        }
+        if (alive) setPhotos(loaded);
+      })
+      .catch(() => alive && setPhotos([]));
+    return () => {
+      alive = false;
+      urls.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [clientId, periodId]);
+
+  if (!photos || photos.length === 0) return null;
+  return (
+    <div className="mt-3">
+      <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+        Fotos de progreso del período
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {photos.map((p) => (
+          <a key={p.id} href={p.url} target="_blank" rel="noopener noreferrer" className="group relative">
+            <img src={p.url} alt={KIND_LABEL[p.kind] ?? p.kind}
+              className="h-24 w-20 rounded-lg border border-zinc-700 object-cover transition group-hover:opacity-80" />
+            <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1 text-[10px] text-white">
+              {KIND_LABEL[p.kind] ?? p.kind}
+            </span>
+          </a>
+        ))}
+      </div>
     </div>
   );
 }

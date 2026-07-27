@@ -388,6 +388,10 @@ def generate_plan_doc(
     # Comidas detalladas: cada comida = barra + CAJA CREMA con el contenido dentro
     # (como el ejemplo). Comida/cena en equivalencias; resto, 3 opciones numeradas.
     bank = nutrition.get("meal_bank") or {}
+    # El formato lo decide el banco PERSISTIDO (bank["mode"]); diet_mode del
+    # cliente es solo fallback: si el coach cambia diet_mode sin regenerar, el
+    # PDF sigue mostrando el menú que existe (no una sección vacía/equivocada).
+    diet_mode = bank.get("mode") or diet_mode
     if diet_mode != "strict" and meals:
         blocks = {s.get("slot"): s for s in bank.get("slots", [])}
         for m in meals:

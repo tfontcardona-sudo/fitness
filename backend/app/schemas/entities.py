@@ -6,7 +6,7 @@ Espejados manualmente en frontend/src/types.ts (regla A.1.5).
 
 import re
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -462,7 +462,9 @@ class PeriodCloseIn(BaseModel):
     closing_arm_cm: float | None = Field(default=None, gt=10, lt=80)
     closing_thigh_cm: float | None = Field(default=None, gt=20, lt=120)
     # Sensaciones (sec 2): {"energia":4,"hambre":3,"sueno":4,"recuperacion":5,"animo":4,"digestiones":3}
-    closing_feelings_json: dict[str, int] | None = None
+    # Valores acotados 1-5: un 0 o un 99 distorsionaría la nota /10 del coach y
+    # la fatiga que lee el motor quincenal.
+    closing_feelings_json: dict[str, Annotated[int, Field(ge=1, le=5)]] | None = None
     adherence_diet_0_10: int | None = Field(default=None, ge=0, le=10)
     adherence_training_0_10: int | None = Field(default=None, ge=0, le=10)
     free_meals_count: int | None = Field(default=None, ge=0, le=50)
@@ -605,6 +607,10 @@ class PushSubscribeIn(BaseModel):
 
     endpoint: str = Field(min_length=10, max_length=2000)
     keys: PushSubscriptionKeys
+    # True = resuscripción AUTOMÁTICA al abrir el portal (mantenimiento): si el
+    # endpoint ya pertenece a OTRO cliente no lo roba — solo el gesto explícito
+    # de activar (resync=False) puede reasignar el dispositivo.
+    resync: bool = False
 
 
 class PushUnsubscribeIn(BaseModel):

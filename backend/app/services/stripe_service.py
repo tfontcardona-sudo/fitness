@@ -131,6 +131,27 @@ def get_plan_prices() -> dict:
 
 # --------------------------------------------------------------- webhook ----
 
+def _notify_coach_payment(db: Session, client: Client, *, new_client: bool) -> None:
+    """Push inmediato al COACH: entró un pago (o un alta nueva con pago). Un
+    ingreso no puede esperar al resumen de cada 3 h. Nunca rompe el webhook."""
+    try:
+        from app.services import push as push_svc
+
+        first = ((client.full_name or "").split() or ["Un cliente"])[0]
+        base = settings.public_base_url.rstrip("/")
+        push_svc.send_to_coach(db, {
+            "title": "Nuevo cliente pagado 🎉" if new_client else "Pago recibido",
+            "body": (f"{first} se ha registrado y pagado el plan {client.package_tier}."
+                     if new_client else
+                     f"{first} ha completado el pago de su plan {client.package_tier}."),
+            "count": 1,
+            "url": f"{base}/clientes/{client.id}",
+            "tag": "dq-pago",
+        })
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _mark_paid(db: Session, client: Client, period: str | None = None) -> None:
     # La duración que el cliente pagó de verdad manda sobre la de la ficha.
     if period in _PERIODS and client.billing_period != period:
@@ -140,6 +161,7 @@ def _mark_paid(db: Session, client: Client, period: str | None = None) -> None:
         client.paid_at = datetime.now(timezone.utc)
         log_event(db, "client", client.id, "payment_received",
                   {"tier": client.package_tier, "billing_period": client.billing_period})
+        _notify_coach_payment(db, client, new_client=False)
 
 
 def _create_selfserve_client(db: Session, *, name: str, email: str,
@@ -165,6 +187,7 @@ def _create_selfserve_client(db: Session, *, name: str, email: str,
                "billing_period": client.billing_period})
     log_event(db, "client", client.id, "payment_received",
               {"tier": client.package_tier, "billing_period": client.billing_period})
+    _notify_coach_payment(db, client, new_client=True)
     db.commit()
     db.refresh(client)
 

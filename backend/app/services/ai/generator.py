@@ -95,6 +95,12 @@ class ClientContext:
     # Historial real de seguimiento (revisiones: peso/adherencia/fuerza) para
     # que la IA entienda el recorrido del cliente, no solo su anamnesis.
     tracking_history: dict | None = None
+    # Experiencia deportiva real (años entrenando, técnica en básicos, otros
+    # deportes): condiciona volumen, selección y progresión del entrenamiento.
+    sport_history: str | None = None
+    # Peso objetivo declarado: da contexto de ritmo/plazo (el CÁLCULO de kcal
+    # sigue siendo del backend; esto solo informa el diseño cualitativo).
+    goal_weight_kg: float | None = None
 
 
 @dataclass
@@ -192,6 +198,10 @@ def _client_block(ctx: ClientContext) -> str:
             "alergias": ctx.food_allergies, "aversiones": ctx.food_dislikes,
             "preferencias": ctx.food_likes,
             "lesiones_contraindicaciones": sorted(ctx.contraindications),
+            # Experiencia real (años, técnica, otros deportes): ajusta volumen,
+            # selección y progresión a lo que el cliente YA sabe hacer.
+            "historial_deportivo": ctx.sport_history or "no declarado",
+            "peso_objetivo_kg": ctx.goal_weight_kg or "no declarado",
             "notas": ctx.notes,
             "historial_seguimiento": ctx.tracking_history
             or "cliente nuevo: sin historial todavía",
@@ -478,6 +488,8 @@ Respeta SIEMPRE alergias y aversiones. Devuelve SOLO JSON:
     return common + """
 
 MODO strict: menú CERRADO de 7 días (lunes→domingo), un plato por slot y día.
+"day" usa EXACTAMENTE estos valores, en minúsculas y SIN tildes:
+"lunes","martes","miercoles","jueves","viernes","sabado","domingo".
 JSON: {"mode":"strict","days":[{"day":"lunes","meals":[{"slot":N,"dish":{"key":"A","title":...,
 "ingredients":[{"food":...,"grams":N,"household":...}],"prep":...,"prep_minutes":N,
 "macros":{"kcal":N,"protein_g":N,"carbs_g":N,"fat_g":N},"tags":[...]}}, ...]}, ... 7 días],
@@ -552,6 +564,37 @@ def generate_monthly_plan(
                             clamp=False)
     )
 
+    # El CONTRATO del backend MANDA (hardening §3): el eco de la IA es solo un
+    # eco. Si se desvía del objetivo calculado en código (kcal ±2% o macros
+    # fuera de tolerancia), los totales se FIJAN a los del contrato y los
+    # objetivos por comida se reescalan a ellos — "una sola verdad" también en
+    # el camino bloqueante, no solo en el panel best-effort.
+    if ctx.macro_plan and ctx.target_kcal:
+        import copy as _copy
+
+        from app.services.nutrition_scale import rescale_nutrition
+
+        nutd = core.nutrition.model_dump()
+        mp = ctx.macro_plan
+        tk = float(ctx.target_kcal)
+        ai_k = float(nutd.get("target_kcal") or 0)
+        m = nutd.get("macros") or {}
+        deviated = (
+            abs(ai_k - tk) > max(30.0, tk * 0.02)
+            or abs(float(m.get("protein_g") or 0) - float(mp.get("protein_g") or 0)) > 5
+            or abs(float(m.get("fat_g") or 0) - float(mp.get("fat_g") or 0)) > 8
+            or abs(float(m.get("carbs_g") or 0) - float(mp.get("carbs_g") or 0)) > 15
+        )
+        if deviated:
+            rescale_nutrition(nutd, _copy.deepcopy(nutd), tk,
+                              float(mp.get("protein_g") or 0),
+                              float(mp.get("carbs_g") or 0),
+                              float(mp.get("fat_g") or 0))
+            core.nutrition = NutritionCore.model_validate(nutd)
+            flags.append(
+                f"contrato: la IA devolvió {round(ai_k)} kcal (objetivo del backend: "
+                f"{round(tk)}) — totales y comidas fijados al contrato")
+
     nut_report = gr.check_nutrition(
         core.nutrition.model_dump(), sex=ctx.sex, weight_kg=ctx.weight_kg,
         bmr=ctx.bmr, tdee=ctx.tdee,
@@ -573,6 +616,22 @@ def generate_monthly_plan(
             flags=core_report.as_flags(),
         )
     flags += core_report.as_flags()
+
+    # §6 (hardening): coherencia cruzada dieta↔entreno DETERMINISTA en el flujo
+    # vivo (déficit profundo vs volumen, CH peri-entreno…). Sus avisos van a los
+    # flags del coach; nunca rompe la generación.
+    if training_core is not None:
+        try:
+            from app.services.diet_training_coherence import check_diet_training_coherence
+
+            coh = check_diet_training_coherence(
+                core.nutrition.model_dump(), training_core.model_dump(),
+                tdee=ctx.tdee,
+                exercise_lookup=_exercise_lookup(ctx.exercise_library),
+            )
+            flags += coh.as_flags()
+        except Exception:  # noqa: BLE001 — el chequeo nunca frena la generación
+            pass
 
     # ② Comidas según diet_mode
     schema = MealsFlexibleOutput if ctx.diet_mode == "flexible_7" else MealsStrictOutput

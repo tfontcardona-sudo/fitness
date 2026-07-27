@@ -312,7 +312,11 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
     if (!plan) return;
     const url0 = api.planDocumentUrl(plan.id) + (format === "docx" ? "?format=docx" : "");
     fetch(url0, { headers: { Authorization: `Bearer ${getToken()}` } })
-      .then((r) => r.blob())
+      .then((r) => {
+        // Sin esto, un 401/500 guardaba un archivo corrupto con el JSON del error.
+        if (!r.ok) throw new Error(`Error ${r.status}`);
+        return r.blob();
+      })
       .then((blob) => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");

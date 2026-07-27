@@ -38,6 +38,10 @@ export default function PortalApp({ token }: { token: string }) {
   const apiClient = useMemo(() => portalApi(token), [token]);
   const [state, setState] = useState<PortalState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 404 = token inválido/caducado (sesión fuera). Cualquier otro fallo (red,
+  // 500, 429) es TEMPORAL: se ofrece reintentar sin tocar la sesión — antes
+  // un corte de red decía "tu enlace ha caducado" y borraba el acceso.
+  const [errorKind, setErrorKind] = useState<"token" | "transient">("transient");
   // La pestaña vive en la URL (?tab=): el botón "atrás" del navegador vuelve a
   // la pestaña anterior (no expulsa del portal) y los overlays abiertos se
   // cierran solos al cambiar de ruta (el contenido de la pestaña se desmonta).
@@ -50,6 +54,7 @@ export default function PortalApp({ token }: { token: string }) {
   const setTab = (t: Tab) => setParams(t === "entreno" ? {} : { tab: t });
 
   const reload = useCallback(() => {
+    setError(null);
     apiClient
       .state()
       .then((s) => {
@@ -57,7 +62,10 @@ export default function PortalApp({ token }: { token: string }) {
         applyBrand(s);
         refreshBadge(apiClient); // badge del icono = pendientes de hoy
       })
-      .catch((e) => setError(e instanceof PortalError ? e.message : "No se pudo cargar tu portal"));
+      .catch((e) => {
+        setErrorKind(e instanceof PortalError && e.status === 404 ? "token" : "transient");
+        setError(e instanceof PortalError ? e.message : "No se pudo cargar tu portal");
+      });
   }, [apiClient]);
 
   useEffect(reload, [reload]);
@@ -76,6 +84,25 @@ export default function PortalApp({ token }: { token: string }) {
       document.removeEventListener("visibilitychange", onFocus);
     };
   }, [token, apiClient]);
+
+  if (error && errorKind === "transient") {
+    // Fallo de red / servidor: NO es un problema del enlace. Reintentar sin
+    // tocar la sesión guardada.
+    return (
+      <Centered>
+        <p className="text-lg font-semibold">No se pudo conectar</p>
+        <p className="mt-1 text-sm opacity-70">
+          Revisa tu conexión e inténtalo de nuevo en unos segundos.
+        </p>
+        <button
+          onClick={reload}
+          className="portal-btn3d mt-4 rounded-xl px-4 py-2 text-sm font-semibold"
+        >
+          Reintentar
+        </button>
+      </Centered>
+    );
+  }
 
   if (error) {
     // Si el token que falla es el GUARDADO (recordarme), lo limpiamos al volver

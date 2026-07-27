@@ -48,9 +48,19 @@ self.addEventListener("notificationclick", (event) => {
   const url = (event.notification.data && event.notification.data.url) || "/";
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
-      // Si el portal ya está abierto en alguna pestaña/app, enfocarla
+      // La notificación manda a SU url (Meet, pestaña del coach…): solo se
+      // reutiliza una ventana si ya está EN esa url. Antes se enfocaba
+      // cualquier pestaña con /p/ y el aviso nunca llegaba a su destino
+      // (p. ej. el enlace de Meet, o el perfil del cliente en la web del coach).
       for (const win of wins) {
-        if (win.url.includes("/p/") && "focus" in win) return win.focus();
+        if (win.url === url && "focus" in win) return win.focus();
+      }
+      // Ventana del MISMO portal abierta y el aviso apunta al portal: navegar
+      // esa ventana a la url del aviso en vez de abrir otra.
+      for (const win of wins) {
+        if (url.includes("/p/") && win.url.includes("/p/") && "navigate" in win) {
+          return win.navigate(url).then((w) => (w && "focus" in w ? w.focus() : undefined));
+        }
       }
       return self.clients.openWindow(url);
     })

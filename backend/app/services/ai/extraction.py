@@ -28,6 +28,38 @@ class MealSlot(BaseModel):
     time: str | None = None  # "HH:MM"
 
 
+# Sinónimos frecuentes (ya sin acentos, minúsculas) → enum del sistema.
+_ENUM_MAPS: dict[str, dict[str, str]] = {
+    "sex": {"male": "male", "female": "female", "hombre": "male", "varon": "male",
+            "masculino": "male", "m": "male", "h": "male", "mujer": "female",
+            "femenino": "female", "f": "female"},
+    "goal_type": {"fat_loss": "fat_loss", "muscle_gain": "muscle_gain",
+                  "recomp": "recomp", "maintenance": "maintenance",
+                  "perdida de grasa": "fat_loss", "perder grasa": "fat_loss",
+                  "definicion": "fat_loss", "adelgazar": "fat_loss",
+                  "ganancia muscular": "muscle_gain", "ganar musculo": "muscle_gain",
+                  "volumen": "muscle_gain", "hipertrofia": "muscle_gain",
+                  "recomposicion": "recomp", "mantenimiento": "maintenance"},
+    "level": {"beginner": "beginner", "intermediate": "intermediate",
+              "advanced": "advanced", "principiante": "beginner",
+              "novato": "beginner", "intermedio": "intermediate",
+              "avanzado": "advanced"},
+    "training_place": {"gym": "gym", "home": "home", "outdoor": "outdoor",
+                       "gimnasio": "gym", "casa": "home", "domicilio": "home",
+                       "exterior": "outdoor", "aire libre": "outdoor",
+                       "calistenia": "outdoor"},
+    "diet_mode": {"flexible_7": "flexible_7", "strict": "strict",
+                  "flexible": "flexible_7", "estricta": "strict",
+                  "estricto": "strict", "cerrada": "strict", "cerrado": "strict"},
+    "daily_activity_level": {"sedentary": "sedentary", "light": "light",
+                             "active": "active", "very_active": "very_active",
+                             "sedentario": "sedentary", "ligera": "light",
+                             "ligero": "light", "activa": "active",
+                             "activo": "active", "muy activa": "very_active",
+                             "muy activo": "very_active"},
+}
+
+
 class AnamnesisExtraction(BaseModel):
     """Datos extraídos del PDF oficial de anamnesis (DQ). Campos opcionales: si
     la IA no los encuentra, los deja en null (o lista/texto vacío) y el coach
@@ -126,6 +158,24 @@ class AnamnesisExtraction(BaseModel):
             "sueño, estrés, conducta alimentaria, logística y contexto."
         ),
     )
+
+    # --- Normalización de ENUMS (PDFs manuscritos → valores del sistema) ------
+    # Un valor fuera de enum ("Hombre", "Gimnasio", "principiante") caía tal
+    # cual en la ficha y aguas abajo TODO compara con el enum exacto: un sexo
+    # no mapeado activaba la rama femenina de Mifflin (−166 kcal) en silencio.
+    # Los sinónimos se mapean (tabla _ENUM_MAPS a nivel de módulo); lo
+    # irreconocible queda en None (el coach lo ve VACÍO y lo corrige — nunca
+    # un cálculo corrupto).
+    @field_validator("sex", "goal_type", "level", "training_place", "diet_mode",
+                     "daily_activity_level", mode="before")
+    @classmethod
+    def _normalize_enum(cls, v, info):
+        if v is None or not isinstance(v, str):
+            return v
+        import unicodedata
+        key = unicodedata.normalize("NFKD", v.strip().lower())
+        key = key.encode("ascii", "ignore").decode("ascii")
+        return _ENUM_MAPS.get(info.field_name, {}).get(key)
 
     @field_validator("meal_schedule")
     @classmethod

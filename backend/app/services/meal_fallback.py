@@ -105,9 +105,11 @@ def _scaled_option(key: str, title: str, ings: list[_ING], target_kcal: float) -
     base_kcal = sum(g * (4 * p + 4 * c + 9 * f) / 100 for _, g, (p, c, f) in ings)
     ratio = target_kcal / base_kcal if base_kcal > 0 and target_kcal > 0 else 1.0
     ratio = max(0.4, min(3.0, ratio))
+    from app.services.nutrition_scale import _rhu  # half-up: convenio del sistema
+
     out_ings, tp, tc, tf = [], 0.0, 0.0, 0.0
     for food, g, (p, c, f) in ings:
-        grams = max(5, round(g * ratio / 5) * 5)
+        grams = max(5, _rhu(g * ratio / 5) * 5)
         out_ings.append({"food": food, "grams": grams, "household": ""})
         tp += grams * p / 100
         tc += grams * c / 100
@@ -115,8 +117,8 @@ def _scaled_option(key: str, title: str, ings: list[_ING], target_kcal: float) -
     return {
         "key": key, "title": title, "prep": "", "prep_minutes": 10,
         "ingredients": out_ings,
-        "macros": {"kcal": round(4 * tp + 4 * tc + 9 * tf),
-                   "protein_g": round(tp), "carbs_g": round(tc), "fat_g": round(tf)},
+        "macros": {"kcal": _rhu(4 * tp + 4 * tc + 9 * tf),
+                   "protein_g": _rhu(tp), "carbs_g": _rhu(tc), "fat_g": _rhu(tf)},
         "tags": [],
     }
 

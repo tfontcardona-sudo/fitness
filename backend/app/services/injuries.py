@@ -16,19 +16,21 @@ import unicodedata
 VALID_CONTRA = {"hombro", "codo", "muneca", "lumbar", "rodilla", "cadera", "cuello", "tobillo"}
 
 # Palabras (ya normalizadas: minúsculas y sin acentos) que apuntan a cada zona.
+# ⚠️ Las fronteras de palabra van en RAW STRING (r"\b…"): en un string normal
+# "\b" es backspace y el término no detecta nada (bug real con "LCA", "L4"…).
 _KEYWORDS: dict[str, tuple[str, ...]] = {
     "hombro": ("hombro", "manguito", "rotador", "subacromial", "supraespinoso",
                "deltoid", "acromio", "escapula", "clavicula"),
     "codo": ("codo", "epicondil", "epitrocle", "epitroclea"),
     "muneca": ("muneca", "carpo", "carpian", "tunel del carpo"),
     "lumbar": ("lumbar", "lumbago", "lumbalg", "espalda baja", "zona baja",
-               "hernia", "protrus", "ciatic", "discal", "\bdisco\b", "sacro",
-               "espondil", "\bl4\b", "\bl5\b", "\bs1\b", "escoliosis"),
-    "rodilla": ("rodilla", "menisco", "cruzado", "\blca\b", "\blcp\b", "\blcl\b",
-                "\blcm\b", "rotul", "patel", "condromalac"),
+               "hernia", "protrus", "ciatic", "discal", r"\bdisco\b", "sacro",
+               "espondil", r"\bl4\b", r"\bl5\b", r"\bs1\b", "escoliosis"),
+    "rodilla": ("rodilla", "menisco", "cruzado", r"\blca\b", r"\blcp\b", r"\blcl\b",
+                r"\blcm\b", "rotul", "patel", "condromalac"),
     "cadera": ("cadera", "psoas", "femoroacetabular", "labrum", "coxal",
                "gluteo medio"),
-    "cuello": ("cuello", "cervical", "\bc5\b", "\bc6\b", "\bc7\b"),
+    "cuello": ("cuello", "cervical", r"\bc5\b", r"\bc6\b", r"\bc7\b"),
     "tobillo": ("tobillo", "aquiles", "esguince", "peroneo", "fascit", "fascia plantar"),
 }
 
