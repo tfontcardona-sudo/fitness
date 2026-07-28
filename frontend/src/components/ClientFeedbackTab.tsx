@@ -573,6 +573,8 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
   ) : null;
 
   // Bloque "agendar a mano" (día + hora + duración → crea el evento con Meet).
+  // `min` del picker no impide teclear una fecha pasada a mano: se valida.
+  const gDatePast = gDate !== "" && gDate < localToday();
   const manualScheduler = (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
@@ -583,7 +585,10 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
         {durationSelect}
         <button
           className="btn btn-primary !px-3 !py-1.5 text-xs"
-          disabled={!gDate || !gTime || busy || !googleConnected}
+          disabled={!gDate || !gTime || busy || !googleConnected || gDatePast}
+          title={!googleConnected ? "Conecta Google en Recursos para agendar con Meet"
+            : !gDate || !gTime ? "Elige el día y la hora"
+            : gDatePast ? "La fecha ya pasó: elige un día futuro" : undefined}
           onClick={() => run(
             () => api.scheduleVideoCallMeet(clientId, periodIndex, `${gDate}T${gTime}`, gDur),
             "Videollamada agendada en Meet y enlace enviado al cliente",
@@ -592,6 +597,9 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
           <Video size={13} /> Agendar con Meet
         </button>
       </div>
+      {gDatePast && (
+        <p className="text-[11px]" style={{ color: "#C2453A" }}>La fecha elegida ya pasó.</p>
+      )}
       {notConnectedNote}
     </div>
   );

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { DietAdherence, PortalBrand } from "../types";
 import { usePortalToast } from "./PortalToast";
-import { Loading, localToday } from "./PortalUi";
+import { Loading, localToday, useDecimalField } from "./PortalUi";
 import { PortalError } from "./portalApi";
 import type { portalApi } from "./portalApi";
 
@@ -41,7 +41,10 @@ export function PortalDiary({ api, brand, periodStatus = null }: {
   api: Api; brand: PortalBrand; periodStatus?: string | null;
 }) {
   const toast = usePortalToast();
-  const today = localToday();
+  // Fecha CONGELADA al montar: recalcularla en cada render hacía que, pasada
+  // la medianoche, cualquier re-render refetcheara el día nuevo pisando lo
+  // tecleado y guardara lo pendiente con la fecha del día siguiente.
+  const [today] = useState(() => localToday());
   // Revisión enviada (período cerrado): el backend rechazaría el guardado —
   // se avisa y no se programan guardados.
   const readOnly = periodStatus != null && periodStatus !== "open";
@@ -95,9 +98,15 @@ export function PortalDiary({ api, brand, periodStatus = null }: {
     api
       .saveDiary({ log_date: today, ...data })
       .then(() => toast.push("Guardado"))
-      .catch((e) => toast.push(
-        e instanceof PortalError ? e.message : "No se pudo guardar el último cambio — revisa tu conexión",
-      ));
+      .catch((e) => {
+        // RE-ENCOLA lo no guardado: el siguiente flush (o el de salida de la
+        // app) lo reintenta — antes el dato pendiente se descartaba y solo
+        // otro tecleo volvía a enviarlo.
+        pendingRef.current = pendingRef.current ?? data;
+        toast.push(
+          e instanceof PortalError ? e.message : "No se pudo guardar el último cambio — revisa tu conexión",
+        );
+      });
   };
 
   function scheduleSave(next: DiaryForm) {
@@ -150,14 +159,17 @@ export function PortalDiary({ api, brand, periodStatus = null }: {
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        {/* Cursor azul: entrada de DATOS (el naranja queda para acciones) */}
-        <NumberCard label="Peso en ayunas" unit="kg" value={form.weight_kg} step={0.1}
+        {/* Cursor azul: entrada de DATOS (el naranja queda para acciones).
+            Rangos ESPEJO del backend (DailyLogUpsert): un valor fuera de rango
+            no viaja (se marca en rojo) — antes un "8" a medio teclear en el
+            flush al bloquear el móvil tumbaba TODO el guardado con un 422. */}
+        <NumberCard label="Peso en ayunas" unit="kg" value={form.weight_kg} min={31} max={299}
           onChange={(v) => update({ weight_kg: v })} accent={brand.color_secondary} />
-        <NumberCard label="Horas de sueño" unit="h" value={form.sleep_hours} step={0.5}
+        <NumberCard label="Horas de sueño" unit="h" value={form.sleep_hours} min={0} max={16}
           onChange={(v) => update({ sleep_hours: v })} accent={brand.color_secondary} />
-        <NumberCard label="Saciedad (1-10)" unit="" value={form.satiety_1_10} step={0.5}
+        <NumberCard label="Saciedad (1-10)" unit="" value={form.satiety_1_10} min={0} max={10}
           onChange={(v) => update({ satiety_1_10: v })} accent={brand.color_secondary} />
-        <NumberCard label="Agua" unit="L" value={form.water_liters} step={0.5}
+        <NumberCard label="Agua" unit="L" value={form.water_liters} min={0} max={15}
           onChange={(v) => update({ water_liters: v })} accent={brand.color_secondary} />
       </div>
 
@@ -165,6 +177,7 @@ export function PortalDiary({ api, brand, periodStatus = null }: {
         <input
           id="diary-steps"
           type="text"
+          maxLength={160}
           className="w-full rounded-xl border bg-transparent p-3 text-sm"
           style={{ borderColor: "rgba(128,128,128,0.2)" }}
           placeholder="Ej.: 8000 pasos + 30' cardio"
@@ -229,33 +242,40 @@ function NumberCard({
   label,
   unit,
   value,
-  step,
   onChange,
   accent,
+  min,
+  max,
 }: {
   label: string;
   unit: string;
   value: number | null;
-  step: number;
   onChange: (v: number | null) => void;
   accent: string;
+  min?: number;
+  max?: number;
 }) {
+  // A prueba de móvil (useDecimalField): acepta coma o punto, lo tecleado no
+  // se pisa, y un valor inválido o fuera de rango NO viaja al autosave (antes
+  // "82,5" no reconocido enviaba null y BORRABA el peso ya guardado).
+  const { invalid, inputProps } = useDecimalField(value, onChange, { min, max });
   return (
     <label className="portal-card block p-4">
       <span className="block text-xs opacity-50">{label}</span>
       <div className="mt-1 flex items-baseline gap-1">
         <input
-          type="number"
-          step={step}
-          inputMode="decimal"
-          value={value ?? ""}
-          onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
+          {...inputProps}
           placeholder="—"
           className="w-full bg-transparent text-2xl font-semibold outline-none"
-          style={{ caretColor: accent }}
+          style={{ caretColor: accent, ...(invalid ? { color: "#C2453A" } : {}) }}
         />
         <span className="text-sm opacity-50">{unit}</span>
       </div>
+      {invalid && (
+        <span className="mt-1 block text-[11px] font-medium" style={{ color: "#C2453A" }}>
+          Valor no válido{min != null && max != null ? ` (entre ${min} y ${max})` : ""} — no se guarda
+        </span>
+      )}
     </label>
   );
 }

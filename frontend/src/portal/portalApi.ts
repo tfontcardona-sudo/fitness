@@ -44,6 +44,30 @@ export class PortalError extends Error {
   }
 }
 
+// Los 422 de validación de FastAPI llegan en inglés y con la ruta técnica del
+// campo: aquí se traducen a "Revisa el peso (entre 30 y 300)" — el cliente
+// debe saber QUÉ corregir, no leer "Input should be greater than 30".
+const FIELD_ES: Record<string, string> = {
+  weight_kg: "el peso", sleep_hours: "las horas de sueño", steps: "los pasos",
+  satiety_1_10: "la saciedad", water_liters: "el agua", reps: "las repeticiones",
+  closing_weight_kg: "el peso final", closing_waist_cm: "la cintura",
+  closing_hip_cm: "la cadera", closing_arm_cm: "el brazo", closing_thigh_cm: "el muslo",
+  adherence_diet_0_10: "la adherencia a la dieta",
+  adherence_training_0_10: "la adherencia al entreno",
+  free_meals_count: "las comidas libres", closing_rating: "la valoración",
+  closing_feelings_json: "las sensaciones", start_at: "la fecha y hora",
+  message: "el mensaje", email: "el email", password: "la contraseña",
+};
+
+function friendly422(items: any[]): string {
+  const labels = Array.from(new Set(items.map((x) => {
+    const loc: any[] = Array.isArray(x?.loc) ? x.loc : [];
+    const field = [...loc].reverse().find((p) => typeof p === "string" && p !== "body");
+    return FIELD_ES[field as string] ?? (typeof field === "string" ? field : "un campo");
+  })));
+  return `Revisa ${labels.join(", ")}: valor fuera de rango o no válido`;
+}
+
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = {};
   let payload: BodyInit | undefined;
@@ -66,7 +90,7 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
     try {
       const d = await res.json();
       if (typeof d.detail === "string") detail = d.detail;
-      else if (Array.isArray(d.detail)) detail = d.detail.map((x: any) => x.msg).join("; ");
+      else if (Array.isArray(d.detail)) detail = friendly422(d.detail);
     } catch {
       /* sin cuerpo */
     }

@@ -56,7 +56,12 @@ function normalize(p: any): PlanData {
  * la info del plan (nutrición, entrenamiento, puntos del cliente, suplementos)
  * y queda ACTIVO al generarse/adaptarse/editarse — sin paso de publicar.
  */
-export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut; onClientChanged?: () => void }) {
+export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
+  client: ClientOut; onClientChanged?: () => void;
+  // Avisa al perfil de que el EDITOR está abierto (guard de "cambios sin
+  // guardar" al cambiar de pestaña o cerrar el navegador).
+  onEditingChange?: (editing: boolean) => void;
+}) {
   const toast = useToast();
   // Paquete del cliente: Start es solo nutrición (sin entreno) y la entrega va
   // por email; Full por email; Pro por WhatsApp.
@@ -71,6 +76,8 @@ export function ClientPlanPanel({ client, onClientChanged }: { client: ClientOut
   const [generating, setGenerating] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [editing, setEditing] = useState(false);
+  // El perfil se entera de que el editor está abierto (guard de navegación).
+  useEffect(() => { onEditingChange?.(editing); }, [editing, onEditingChange]);
   // Bloque desde el que se pulsó "Editar": el editor abre enfocado en él.
   const [editFocus, setEditFocus] = useState<"nutrition" | "training" | "supplements" | null>(null);
   const [sendingUpd, setSendingUpd] = useState(false);

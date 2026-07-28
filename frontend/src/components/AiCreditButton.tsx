@@ -78,9 +78,17 @@ export function AiCreditButton({ collapsed }: { collapsed: boolean }) {
   const usedPct =
     balance && balance > 0 ? Math.min(100, Math.max(0, (spent / balance) * 100)) : null;
 
+  const [inputError, setInputError] = useState<string | null>(null);
   const save = async () => {
+    // Campo vacío = CANCELAR, no "saldo $0" (Number("") es 0 y apuntaba el
+    // saldo a cero sin querer); entrada inválida avisa en vez de no responder.
+    if (draft.trim() === "") { setEditing(false); setInputError(null); return; }
     const value = Number(draft.replace(",", "."));
-    if (!Number.isFinite(value) || value < 0) return;
+    if (!Number.isFinite(value) || value < 0) {
+      setInputError("Escribe un número válido (p. ej. 25 o 12,50)");
+      return;
+    }
+    setInputError(null);
     setSaving(true);
     try {
       setCredit(await api.setAiCredit(value));
@@ -246,6 +254,9 @@ export function AiCreditButton({ collapsed }: { collapsed: boolean }) {
             {saving ? "…" : "OK"}
           </button>
         </div>
+      )}
+      {editing && inputError && (
+        <p className="mt-1 text-[11px]" style={{ color: "#C2453A" }}>{inputError}</p>
       )}
     </div>
   );

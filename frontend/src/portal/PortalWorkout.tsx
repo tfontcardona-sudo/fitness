@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Trash2, Play, Check, Sparkles, CalendarRange, X } from "lucide-react";
 import type { PlanChanges, PortalBrand, TodaySession, TrainingWeek } from "../types";
 import { usePortalToast } from "./PortalToast";
-import { Loading, localToday } from "./PortalUi";
+import { Loading, localToday, useDecimalField } from "./PortalUi";
 import { InlineVideo, isEmbeddable } from "./InlineVideo";
 import { useDismiss } from "../lib/useDismiss";
 import { PortalError } from "./portalApi";
@@ -26,7 +26,9 @@ export function PortalWorkout({ api, brand, periodStatus = null }: {
   // guardado: mejor avisar y no dejar teclear datos que no se guardarían.
   const readOnly = periodStatus != null && periodStatus !== "open";
   const toast = usePortalToast();
-  const today = localToday();
+  // Fecha CONGELADA al montar (ver PortalDiary): pasada la medianoche, un
+  // re-render no debe refetchear el día nuevo pisando lo tecleado.
+  const [today] = useState(() => localToday());
   const [sessions, setSessions] = useState<TodaySession[] | null>(null);
   const [planChanges, setPlanChanges] = useState<PlanChanges | null>(null);
   const [week, setWeek] = useState<TrainingWeek | null>(null);
@@ -118,9 +120,14 @@ export function PortalWorkout({ api, brand, periodStatus = null }: {
     });
     api.saveDiary({ log_date: today, workout_sets })
       .then(() => toast.push("Entreno guardado"))
-      .catch((e) => toast.push(
-        e instanceof PortalError ? e.message : "No se pudo guardar el último cambio — revisa tu conexión",
-      ));
+      .catch((e) => {
+        // RE-ENCOLA lo no guardado para que el siguiente flush lo reintente
+        // (antes el pendiente se descartaba y solo otro tecleo re-enviaba).
+        pendingRef.current = pendingRef.current ?? data;
+        toast.push(
+          e instanceof PortalError ? e.message : "No se pudo guardar el último cambio — revisa tu conexión",
+        );
+      });
   };
 
   function flush(next: Record<number, SetRow[]>) {
@@ -420,8 +427,9 @@ export function PortalWorkout({ api, brand, periodStatus = null }: {
                     return (
                       <div key={i} className="grid grid-cols-[28px_1fr_1fr_40px] items-center gap-2">
                         <span className="text-center text-xs font-semibold tabular-nums" style={{ color: done ? brand.color_primary : undefined, opacity: done ? 1 : 0.5 }}>{i + 1}</span>
-                        <SetInput value={r.weight_kg} step={0.5} placeholder={(ex.week_weight_hint_kg ?? ex.start_weight_hint_kg) ? String(ex.week_weight_hint_kg ?? ex.start_weight_hint_kg) : "—"} accent={brand.color_secondary} onChange={(v) => setRow(ex.exercise_id, i, { weight_kg: v })} />
-                        <SetInput value={r.reps} step={1} placeholder="—" accent={brand.color_secondary} onChange={(v) => setRow(ex.exercise_id, i, { reps: v })} />
+                        {/* Rangos espejo del backend (WorkoutSetIn): 0-600 kg, 0-100 reps */}
+                        <SetInput value={r.weight_kg} min={0} max={600} placeholder={(ex.week_weight_hint_kg ?? ex.start_weight_hint_kg) ? String(ex.week_weight_hint_kg ?? ex.start_weight_hint_kg) : "—"} accent={brand.color_secondary} onChange={(v) => setRow(ex.exercise_id, i, { weight_kg: v })} />
+                        <SetInput value={r.reps} min={0} max={100} integer placeholder="—" accent={brand.color_secondary} onChange={(v) => setRow(ex.exercise_id, i, { reps: v })} />
                         <button onClick={() => removeSet(ex.exercise_id, i)} aria-label={`Borrar serie ${i + 1}`} className="flex h-11 w-11 items-center justify-center justify-self-center rounded-lg opacity-40 hover:opacity-100"><Trash2 size={15} /></button>
                       </div>
                     );
@@ -460,19 +468,25 @@ export function PortalWorkout({ api, brand, periodStatus = null }: {
   );
 }
 
-function SetInput({ value, step, placeholder, accent, onChange }: {
-  value: number | null; step: number; placeholder: string; accent: string; onChange: (v: number | null) => void;
+function SetInput({ value, placeholder, accent, onChange, min = 0, max, integer }: {
+  value: number | null; placeholder: string; accent: string; onChange: (v: number | null) => void;
+  min?: number; max?: number; integer?: boolean;
 }) {
+  // A prueba de móvil (useDecimalField): acepta coma ("62,5" es media placa) —
+  // antes una coma no reconocida viajaba como null y la serie se BORRABA del
+  // servidor mientras el cliente la veía en pantalla. Fuera de rango no viaja.
+  const { invalid, inputProps } = useDecimalField(value, onChange, { min, max, integer });
   return (
     <input
-      type="number"
-      inputMode="decimal"
-      step={step}
-      value={value ?? ""}
+      {...inputProps}
       placeholder={placeholder}
-      onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
       className="min-h-[44px] w-full rounded-xl border bg-transparent px-3 py-2 text-center text-sm font-semibold outline-none"
-      style={{ borderColor: "rgba(128,128,128,0.22)", caretColor: accent }}
+      style={{
+        borderColor: invalid ? "#C2453A" : "rgba(128,128,128,0.22)",
+        caretColor: accent,
+        ...(invalid ? { color: "#C2453A" } : {}),
+      }}
+      title={invalid ? "Valor no válido: no se guarda" : undefined}
     />
   );
 }
