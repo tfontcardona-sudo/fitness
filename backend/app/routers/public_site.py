@@ -88,7 +88,14 @@ def public_register(request: Request, body: PublicRegisterIn,
     email = body.email.strip().lower()
     client = db.scalar(select(Client).where(func.lower(Client.email) == email))
 
-    if client is not None and client.payment_status == "paid":
+    # Solo se reutiliza una ficha en ONBOARDING con pago pendiente (el reintento
+    # legítimo del propio interesado). Cualquier otra — pagada O YA EN MARCHA
+    # (un cliente activo que pagó por transferencia queda "pending" para
+    # siempre) — no puede sobrescribirse desde un formulario público: antes,
+    # cualquiera que conociera el email podía cambiarle nombre, teléfono y
+    # hasta bajarle el paquete (perdía la pestaña Entreno del portal).
+    if client is not None and (client.payment_status == "paid"
+                               or client.status != "onboarding"):
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "Ya existe una asesoría activa con ese email. Escríbenos y te ayudamos.")

@@ -170,7 +170,7 @@ export function onboardingMessage(
     `Hola ${waFirstName(fullName)},`,
     "Para empezar tu asesoría necesito dos cosas:",
     `1) Realiza el pago de tu plan (${planLabel}) desde este enlace:\n${payUrl}`,
-    `2) Descarga tu cuestionario inicial (anamnesis), réllenalo y súbelo desde este enlace:\n${anamnesisUrl}`,
+    `2) Descarga tu cuestionario inicial (anamnesis), rellénalo y súbelo desde este enlace:\n${anamnesisUrl}`,
     "IMPORTANTE: RELLENA Y ENVÍAME TU ANAMNESIS COMPLETA PARA QUE PUEDA PREPARARTE EL PLAN.",
     "Un saludo.",
   ].join("\n\n");

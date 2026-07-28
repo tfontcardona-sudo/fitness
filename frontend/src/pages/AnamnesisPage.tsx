@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { CheckCircle2, Download, FileUp, Loader2 } from "lucide-react";
 
@@ -14,6 +14,16 @@ export default function AnamnesisPage() {
   const [file, setFile] = useState<File | null>(null);
   const [state, setState] = useState<"idle" | "uploading" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
+  // Token comprobado al cargar: con un enlace truncado/revocado, antes la
+  // página mostraba los dos pasos normales y "Descargar" acababa en un JSON de
+  // error crudo en el navegador.
+  const [tokenBad, setTokenBad] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/p/${token}/state`).then((r) => {
+      if (r.status === 404) setTokenBad(true);
+    }).catch(() => { /* fallo de red: se deja continuar (el backend re-valida) */ });
+  }, [token]);
 
   const templateUrl = `/api/p/${token}/anamnesis-template`;
 
@@ -52,7 +62,15 @@ export default function AnamnesisPage() {
           </p>
         </header>
 
-        {state === "done" ? (
+        {tokenBad ? (
+          <div className="rounded-2xl border bg-white p-6 text-center shadow-sm" style={{ borderColor: "#e6ddca" }}>
+            <h2 className="text-lg font-bold">Este enlace no es válido</h2>
+            <p className="mt-2 text-sm opacity-75">
+              Puede que esté incompleto o haya caducado. Escribe a tu coach y te
+              enviará uno nuevo al momento.
+            </p>
+          </div>
+        ) : state === "done" ? (
           <div className="rounded-2xl border bg-white p-6 text-center shadow-sm" style={{ borderColor: "#cfe3cf" }}>
             <CheckCircle2 size={40} className="mx-auto" style={{ color: "#2E7D46" }} />
             <h2 className="mt-3 text-lg font-bold">¡Anamnesis recibida!</h2>

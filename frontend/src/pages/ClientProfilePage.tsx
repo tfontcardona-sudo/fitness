@@ -334,6 +334,26 @@ export default function ClientProfilePage() {
               </span>
             </button>
           )}
+          {/* Pago por OTRA VÍA (bizum, transferencia, efectivo): sin este botón
+              la ficha quedaba "Pago pendiente" para siempre, con la campana
+              insistiendo y la carpeta "Falta pago" contaminada. */}
+          {client.payment_status !== "paid" && (
+            <button
+              onClick={async () => {
+                if (!window.confirm(`¿Marcar a ${client.full_name} como pagado? Úsalo solo si te ha pagado por otra vía (bizum, transferencia, efectivo).`)) return;
+                try {
+                  await api.updateClient(client.id, { payment_status: "paid" } as any);
+                  toast.push("Marcado como pagado");
+                  reload();
+                } catch (e: any) {
+                  toast.push(e?.message ?? "No se pudo marcar", "error");
+                }
+              }}
+              className="w-full text-center text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
+            >
+              ¿Te pagó por otra vía? Marcar como pagado
+            </button>
+          )}
         </aside>
 
         {/* 3) Extras: anamnesis + regenerar enlace (debajo del contenido en

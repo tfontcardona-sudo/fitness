@@ -32,6 +32,8 @@ export default function PlansPage() {
   // Registro hecho pero sin URL de pago (Stripe caído/incompleto): el email de
   // arranque ya lleva su enlace de pago, se lo decimos y no se pierde nada.
   const [registeredNoPay, setRegisteredNoPay] = useState(false);
+  // El email de arranque falló/está apagado: no prometer "revisa tu correo".
+  const [emailFailed, setEmailFailed] = useState(false);
 
   useEffect(() => {
     api.publicPlanPrices().then(setPrices).catch(() => setPrices(null));
@@ -65,6 +67,8 @@ export default function PlansPage() {
         full_name: name.trim(), email: email.trim(), phone: phone.trim(),
         tier: formTier, period,
       });
+      // Si el email de arranque NO salió, no podemos decirle "revisa tu correo".
+      setEmailFailed(r.email_status === "failed" || r.email_status === "disabled");
       if (r.url) {
         window.location.href = r.url;
         return;
@@ -72,7 +76,11 @@ export default function PlansPage() {
       setRegisteredNoPay(true);
       setBusy(false);
     } catch (e: any) {
-      setError(e?.message ?? "No se pudo completar el registro. Inténtalo de nuevo en un momento.");
+      // Un 422 de validación llega en inglés técnico: a un visitante público se
+      // le habla en su idioma.
+      setError(e?.status === 422
+        ? "Revisa el email introducido: no parece una dirección válida."
+        : (e?.message ?? "No se pudo completar el registro. Inténtalo de nuevo en un momento."));
       setBusy(false);
     }
   }
@@ -152,10 +160,18 @@ export default function PlansPage() {
           <div className="mx-auto max-w-lg rounded-2xl border bg-white p-6 text-center shadow-sm"
             style={{ borderColor: "#cfe3cf" }}>
             <h2 className="text-lg font-bold">¡Registro completado!</h2>
-            <p className="mt-2 text-sm opacity-75">
-              Revisa tu correo: te hemos enviado tu cuestionario inicial (anamnesis)
-              y tu enlace de pago para terminar la contratación.
-            </p>
+            {emailFailed ? (
+              <p className="mt-2 text-sm opacity-75">
+                No hemos podido enviarte el correo de bienvenida ahora mismo.
+                No te preocupes: tu registro está hecho — escríbenos y te
+                mandamos tu cuestionario inicial y el enlace de pago al momento.
+              </p>
+            ) : (
+              <p className="mt-2 text-sm opacity-75">
+                Revisa tu correo: te hemos enviado tu cuestionario inicial (anamnesis)
+                y tu enlace de pago para terminar la contratación.
+              </p>
+            )}
           </div>
         ) : (
         <div className="grid gap-4 sm:grid-cols-3">
@@ -308,7 +324,7 @@ export function PaymentOkPage() {
       <h1 className="mt-5 text-2xl font-bold">¡Pago recibido!</h1>
       <p className="mt-2 max-w-md text-sm opacity-75">
         Gracias. Ya tienes en tu correo tu cuestionario inicial (anamnesis):
-        réllenalo y súbelo desde el enlace del email para que preparemos tu plan.
+        rellénalo y súbelo desde el enlace del email para que preparemos tu plan.
         Revisa también la carpeta de spam.
       </p>
     </div>
