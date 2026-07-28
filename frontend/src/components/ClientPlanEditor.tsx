@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Save, X, Plus, Trash2, Utensils, Dumbbell, Target, AlertTriangle, Check, ChevronDown, ChevronUp, PlayCircle } from "lucide-react";
 import { api } from "../lib/api";
 import {
-  GOAL_RULES, goalTargets, kcalOf, macrosForKcal, macrosScaledToKcal, rescaledFrom, redistributeMacro,
+  GOAL_RULES, goalTargets, kcalOf, macrosForKcal, macrosScaledToKcal, rescaledFrom,
   deficitLabel, deficitOptions, deficitSelectValue, kcalFromDeficit, macroPct, gramsFromPct,
   MACRO_TOTAL_TOLERANCE, MAX_DEFICIT_PCT, MAX_SURPLUS_PCT,
   type MacroTargets,
@@ -174,30 +174,47 @@ export function ClientPlanEditor({
     d.nutrition.meal_bank = scaled.meal_bank;
   }
 
+  // ---- EDICIÓN LIBRE ------------------------------------------------------
+  // El coach mueve calorías, gramos o % COMO QUIERA (incluido 0 o vaciar el
+  // campo): NINGÚN campo se reescribe mientras teclea. Si los números no
+  // cuadran, un AVISO PERSISTENTE explica exactamente qué descuadra (y con
+  // cuánto) hasta que todo tenga relación entre sí; mientras tanto no se puede
+  // guardar. En cuanto cuadra (±tolerancia), las comidas y los gramos del
+  // banco se reescalan solos desde la versión base.
+  const KCAL_TOL_PCT = 2; // misma tolerancia que el chip "Macros: 100%" (±2%)
+
+  /** Si los totales del borrador cuadran (kcal ≈ 4/4/9), reescala comidas y
+   *  banco a esos totales. Si no, deja los números tal cual los puso el coach
+   *  (el aviso persistente y el guardado bloqueado hacen el resto). */
+  function rescaleIfCoherent(d: typeof draft) {
+    const target = d.nutrition.target_kcal ?? 0;
+    const m = d.nutrition.macros ?? {};
+    const p = m.protein_g ?? 0, c = m.carbs_g ?? 0, f = m.fat_g ?? 0;
+    if (target <= 0) return;
+    const sum = kcalOf(p, c, f);
+    if (Math.abs(sum - target) <= (KCAL_TOL_PCT / 100) * target) {
+      applyTotals(d, { kcal: target, protein_g: p, carbs_g: c, fat_g: f });
+    }
+  }
+
   function setKcal(v: number | null) {
     mutate((d) => {
       if (v == null || v <= 0) { d.nutrition.target_kcal = v; return; }
+      // Cambiar las CALORÍAS sí escala los tres macros en proporción (es el
+      // ancla y así lo espera el coach); los macros luego se pueden retocar
+      // libremente uno a uno.
       applyTotals(d, macrosScaledToKcal(baseline.current, clampKcal(v)));
     });
   }
 
-  // Editar los GRAMOS de un macro mantiene FIJAS las calorías objetivo (como la
-  // IA): el macro editado toma ese valor y el "colchón" (carbohidratos, o grasa
-  // si editas carbohidratos) absorbe la diferencia. Así todo cuadra al 100% y la
-  // proteína, prioritaria, se preserva. Sin kcal objetivo aún, el macro define la
-  // energía (no hay ancla que mantener).
+  // Editar los GRAMOS de un macro: el valor SE RESPETA tal cual (también 0 o
+  // vacío) y NO se toca ningún otro campo. Si el conjunto deja de cuadrar con
+  // las calorías objetivo, el aviso persistente lo canta con el detalle.
   function setMacro(key: "protein_g" | "carbs_g" | "fat_g", v: number | null) {
-    const target = draft.nutrition.target_kcal ?? 0;
     mutate((d) => {
-      const m = d.nutrition.macros ?? {};
-      const cur = { protein_g: m.protein_g ?? 0, carbs_g: m.carbs_g ?? 0, fat_g: m.fat_g ?? 0 };
-      const grams = clampMacro(v ?? 0);
-      if (target > 0) {
-        applyTotals(d, redistributeMacro(target, cur, key, grams));
-      } else {
-        const next = { ...cur, [key]: grams };
-        applyTotals(d, { kcal: kcalOf(next.protein_g, next.carbs_g, next.fat_g), ...next });
-      }
+      d.nutrition.macros = d.nutrition.macros ?? {};
+      d.nutrition.macros[key] = v == null ? v : clampMacro(v);
+      rescaleIfCoherent(d);
     });
   }
 
@@ -214,17 +231,17 @@ export function ClientPlanEditor({
     });
   }
 
-  // % de un macro (estilo MyFitnessPal): fija sus gramos para que ocupe ese % de
-  // las calorías objetivo, y el colchón absorbe el resto para que el total siga
-  // cuadrando al 100% sobre las MISMAS kcal (mantiene la coherencia). Se puede
-  // teclear decimal. Reescala comidas y banco como cualquier otro cambio.
+  // % de un macro (estilo MyFitnessPal): traduce el % a gramos sobre las
+  // calorías objetivo y los fija — SIN tocar los otros macros (edición libre:
+  // si el total ya no suma 100%, el aviso persistente lo explica). Vaciar el
+  // campo no borra nada: el % es una vista de los gramos.
   function setMacroPct(key: "protein_g" | "carbs_g" | "fat_g", pct: number | null) {
     const target = draft.nutrition.target_kcal ?? 0;
     if (pct == null || !target) return;
     mutate((d) => {
-      const m = d.nutrition.macros ?? {};
-      const cur = { protein_g: m.protein_g ?? 0, carbs_g: m.carbs_g ?? 0, fat_g: m.fat_g ?? 0 };
-      applyTotals(d, redistributeMacro(target, cur, key, clampMacro(gramsFromPct(pct, target, key))));
+      d.nutrition.macros = d.nutrition.macros ?? {};
+      d.nutrition.macros[key] = clampMacro(gramsFromPct(Math.min(100, Math.max(0, pct)), target, key));
+      rescaleIfCoherent(d);
     });
   }
 
@@ -331,6 +348,30 @@ export function ClientPlanEditor({
   // (macros y comidas reales con "0 kcal"). El coach debe teclear un objetivo.
   const kcalInvalid = !(nut.target_kcal && nut.target_kcal > 0);
 
+  // Descuadre PERSISTENTE (edición libre): compara las calorías objetivo con la
+  // suma real de los macros (P·4 + C·4 + G·9). Mientras no cuadre (±2%), el
+  // aviso de abajo explica exactamente qué falta o sobra y no se puede guardar.
+  const macroSumKcal = kcalOf(nut.macros.protein_g ?? 0, nut.macros.carbs_g ?? 0, nut.macros.fat_g ?? 0);
+  const kcalDiff = macroSumKcal - (nut.target_kcal ?? 0); // + = los macros se pasan
+  const coherent = !kcalInvalid
+    && Math.abs(kcalDiff) <= (2 / 100) * (nut.target_kcal ?? 0);
+  // Bloqueo de guardado SOLO cuando se está editando nutrición.
+  const nutritionBlocked = only !== "training" && (kcalInvalid || !coherent);
+
+  // Cuadre rápido desde el aviso: los carbohidratos absorben la diferencia
+  // (proteína y grasa se respetan tal cual las dejó el coach).
+  function cuadrarConCarbohidratos() {
+    const target = nut.target_kcal ?? 0;
+    if (!target) return;
+    mutate((d) => {
+      const m = d.nutrition.macros ?? {};
+      const p = m.protein_g ?? 0, f = m.fat_g ?? 0;
+      m.carbs_g = Math.max(0, Math.round((target - p * 4 - f * 9) / 4));
+      d.nutrition.macros = m;
+      rescaleIfCoherent(d);
+    });
+  }
+
   return (
     <div className="space-y-4">
       {/* Cabecera FIJA por encima de la barra de pestañas (z-20 > z-10) y a
@@ -347,12 +388,17 @@ export function ClientPlanEditor({
           )}
         </h3>
         <div className="flex items-center gap-2">
-          {kcalInvalid && (
-            <span className="hidden text-xs text-[#9A6B15] sm:inline">Pon las calorías objetivo para guardar</span>
+          {nutritionBlocked && (
+            <span className="hidden text-xs text-[#9A6B15] sm:inline">
+              {kcalInvalid ? "Pon las calorías objetivo para guardar" : "Los números no cuadran: mira el aviso de Nutrición"}
+            </span>
           )}
           <button onClick={onCancel} className="btn btn-ghost"><X size={15} /> Cancelar</button>
-          <button onClick={save} disabled={saving || kcalInvalid} className="btn btn-primary"
-            title={kcalInvalid ? "Introduce las calorías objetivo" : undefined}>
+          <button onClick={save} disabled={saving || nutritionBlocked} className="btn btn-primary"
+            title={nutritionBlocked
+              ? (kcalInvalid ? "Introduce las calorías objetivo"
+                 : "Calorías y macros no cuadran: corrige el descuadre (aviso en Nutrición) para guardar")
+              : undefined}>
             {saving ? <Spinner /> : <Save size={15} />} Guardar cambios
           </button>
         </div>
@@ -425,16 +471,18 @@ export function ClientPlanEditor({
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <MacroField label="Proteína" gramValue={nut.macros.protein_g} pct={mp.protein}
-            onGram={(v) => setMacro("protein_g", v)} onPct={(v) => setMacroPct("protein_g", v)} max={MAX_MACRO} />
+            onGram={(v) => setMacro("protein_g", v)} onPct={(v) => setMacroPct("protein_g", v)}
+            max={MAX_MACRO} pctDisabled={kcalInvalid} />
           <MacroField label="Carbohidratos" gramValue={nut.macros.carbs_g} pct={mp.carbs}
-            onGram={(v) => setMacro("carbs_g", v)} onPct={(v) => setMacroPct("carbs_g", v)} max={MAX_MACRO} />
+            onGram={(v) => setMacro("carbs_g", v)} onPct={(v) => setMacroPct("carbs_g", v)}
+            max={MAX_MACRO} pctDisabled={kcalInvalid} />
           <MacroField label="Grasas" gramValue={nut.macros.fat_g} pct={mp.fat}
-            onGram={(v) => setMacro("fat_g", v)} onPct={(v) => setMacroPct("fat_g", v)} max={MAX_MACRO} />
+            onGram={(v) => setMacro("fat_g", v)} onPct={(v) => setMacroPct("fat_g", v)}
+            max={MAX_MACRO} pctDisabled={kcalInvalid} />
         </div>
 
-        {/* Total de los % (MyFitnessPal): verde si cuadra, ámbar si no. El botón
-            de cuadrar por objetivo está siempre disponible como reinicio a un
-            reparto con sentido. */}
+        {/* Estado SIEMPRE visible: % de macros + déficit/superávit real de la
+            dieta (también tras ediciones manuales). Verde si cuadra. */}
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
           {(() => {
             const ok = Math.abs(mp.total - 100) <= MACRO_TOTAL_TOLERANCE;
@@ -450,11 +498,15 @@ export function ClientPlanEditor({
               </span>
             );
           })()}
-          {Math.abs(mp.total - 100) > MACRO_TOTAL_TOLERANCE && (
-            <span className="text-zinc-500">
-              {mp.total > 100 ? "te pasas de las calorías objetivo" : "no llegas a las calorías objetivo"}
+          {tdee && (nut.target_kcal ?? 0) > 0 ? (
+            <span
+              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold"
+              style={{ background: "color-mix(in srgb, var(--brand-accent-2) 12%, transparent)", color: "var(--brand-accent-2)" }}
+              title={`Calorías objetivo (${Math.round(nut.target_kcal)}) sobre tu gasto (TDEE ${Math.round(tdee)} kcal)`}
+            >
+              {deficitLabel(tdee, nut.target_kcal ?? 0)} sobre el TDEE
             </span>
-          )}
+          ) : null}
           {(nut.target_kcal ?? 0) > 0 && (
             <button onClick={cuadrar} className="btn btn-ghost px-2 py-1 text-xs"
               title={goal && weight
@@ -465,12 +517,63 @@ export function ClientPlanEditor({
           )}
         </div>
 
+        {/* AVISO PERSISTENTE de descuadre: qué no cuadra, con cuánto, y cómo
+            arreglarlo en un clic. No desaparece hasta que todo tenga relación
+            entre sí; mientras tanto el guardado queda bloqueado. */}
+        {!coherent && (
+          <div className="mt-2 rounded-lg border p-3 text-xs"
+            style={{ background: "color-mix(in srgb, #9A6B15 10%, transparent)", borderColor: "color-mix(in srgb, #9A6B15 40%, transparent)", color: "#9A6B15" }}>
+            <div className="flex items-start gap-2">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+              <div>
+                {kcalInvalid ? (
+                  <p><b>Faltan las calorías objetivo.</b> Ponlas (o elige un déficit/superávit arriba) para que el plan tenga sentido.</p>
+                ) : (
+                  <>
+                    <p>
+                      <b>No cuadra:</b> proteína {Math.round(nut.macros.protein_g ?? 0)} g + carbohidratos{" "}
+                      {Math.round(nut.macros.carbs_g ?? 0)} g + grasas {Math.round(nut.macros.fat_g ?? 0)} g ={" "}
+                      <b>{macroSumKcal} kcal</b>, pero el objetivo marca <b>{Math.round(nut.target_kcal)} kcal</b>{" "}
+                      → {kcalDiff > 0 ? "sobran" : "faltan"} <b>{Math.abs(Math.round(kcalDiff))} kcal</b>{" "}
+                      (≈ {Math.round(Math.abs(kcalDiff) / 4)} g de carbohidratos).
+                    </p>
+                    <p className="mt-1 opacity-80">
+                      Ajusta los números tú mismo, o cuadra en un clic. Las comidas y el banco se
+                      actualizarán en cuanto todo cuadre. No se puede guardar hasta entonces.
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button onClick={cuadrarConCarbohidratos} className="btn btn-ghost px-2 py-1 text-xs"
+                        title="Los carbohidratos absorben la diferencia; tu proteína y tus grasas se respetan tal cual">
+                        Cuadrar con carbohidratos
+                      </button>
+                      {goal && weight && (
+                        <button onClick={cuadrar} className="btn btn-ghost px-2 py-1 text-xs"
+                          title="Rehace el reparto completo según el objetivo del cliente">
+                          Cuadrar por objetivo
+                        </button>
+                      )}
+                    </div>
+                    {(nut.macros.protein_g ?? 0) * 4 + (nut.macros.fat_g ?? 0) * 9 > (nut.target_kcal ?? 0) && (
+                      <p className="mt-1.5">
+                        ⚠ Solo proteína y grasas ya suman{" "}
+                        {kcalOf(nut.macros.protein_g ?? 0, 0, nut.macros.fat_g ?? 0)} kcal — ni con 0 g de
+                        carbohidratos cuadra: baja proteína o grasas, sube las calorías, o usa «Cuadrar por objetivo».
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         <p className="mt-2 text-xs text-zinc-500">
-          Las <b className="text-zinc-400">calorías</b> son el ancla: al cambiarlas, los tres macros se
-          ajustan en proporción. Al cambiar los <b className="text-zinc-400">gramos</b> o el{" "}
-          <b className="text-zinc-400">%</b> de un macro se mantienen esas calorías y los carbohidratos
-          (o la grasa) cuadran el resto, preservando la proteína. Los objetivos por comida y los gramos
-          del banco se reescalan en tiempo real (tabla de abajo).
+          Edición <b className="text-zinc-400">libre</b>: mueve calorías, gramos o % como quieras
+          (incluido 0 o vaciar un campo) — ningún campo se reescribe mientras tecleas. Al cambiar las{" "}
+          <b className="text-zinc-400">calorías</b>, los tres macros escalan en proporción como punto de
+          partida; los gramos y % se respetan tal cual los dejes. Si algo no cuadra, el aviso de arriba
+          te dice exactamente qué y cuánto, y no se guarda hasta que cuadre. Los objetivos por comida y
+          los gramos del banco se reescalan solos en cuanto los totales tienen relación entre sí.
         </p>
 
         {/* Nº de comidas del día SIN regenerar: mismas kcal/macros, otro reparto */}
@@ -716,19 +819,25 @@ export function ClientPlanEditor({
  *  seguir el valor del modelo al salir del campo (blur). Así borrar todos los
  *  dígitos deja el campo vacío en lugar de saltar a 0/1/3 por el recálculo en
  *  cadena. Emite null cuando queda vacío y el número en cualquier otro caso. */
-function NumberInput({ value, onChange, className, ariaLabel, min = 0, max, step }: {
+function NumberInput({ value, onChange, className, ariaLabel, min = 0, max, step, disabled, title }: {
   value: number | null | undefined;
   onChange: (v: number | null) => void;
   className?: string; ariaLabel?: string; min?: number; max?: number; step?: number;
+  disabled?: boolean; title?: string;
 }) {
   const [raw, setRaw] = useState<string | null>(null);
+  const focused = useRef(false);
   // Último valor EMITIDO por este input: si el prop `value` cambia sin pasar por
   // aquí (reorden de filas, recálculo, tope aplicado), el buffer local ya no
   // representa este campo y se descarta — en Safari/Firefox un clic en un botón
   // no roba el foco, así que el blur no llega y el buffer sobreviviría pegado
   // al ejercicio equivocado.
+  // ⚠️ NUNCA mientras el campo tiene el FOCO: descartar el buffer en mitad del
+  // tecleo hacía imposible borrar el campo o escribir "0" (el recálculo lo
+  // reescribía en cada pulsación y el input "peleaba" con el coach).
   const lastEmitted = useRef<number | null | undefined>(undefined);
-  if (raw !== null && lastEmitted.current !== undefined && value !== lastEmitted.current) {
+  if (raw !== null && !focused.current
+      && lastEmitted.current !== undefined && value !== lastEmitted.current) {
     setRaw(null);
     lastEmitted.current = undefined;
   }
@@ -737,6 +846,9 @@ function NumberInput({ value, onChange, className, ariaLabel, min = 0, max, step
     <input
       type="number" inputMode="decimal" min={min} max={max} step={step}
       value={shown}
+      disabled={disabled}
+      title={title}
+      onFocus={() => { focused.current = true; }}
       onChange={(e) => {
         const s = e.target.value;
         setRaw(s);
@@ -746,17 +858,20 @@ function NumberInput({ value, onChange, className, ariaLabel, min = 0, max, step
         lastEmitted.current = emitted;
         onChange(emitted);
       }}
-      onBlur={() => { setRaw(null); lastEmitted.current = undefined; }}
+      onBlur={() => { focused.current = false; setRaw(null); lastEmitted.current = undefined; }}
       className={className}
       aria-label={ariaLabel}
     />
   );
 }
 
-/** Macro con gramos + su % de la dieta (editable, estilo MyFitnessPal). */
-function MacroField({ label, gramValue, pct, onGram, onPct, max }: {
+/** Macro con gramos + su % de la dieta (editable, estilo MyFitnessPal). El %
+ *  se traduce a gramos sobre las calorías objetivo: sin ellas queda
+ *  deshabilitado (con el porqué en el título), no un campo que "no responde". */
+function MacroField({ label, gramValue, pct, onGram, onPct, max, pctDisabled }: {
   label: string; gramValue: number | null | undefined; pct: number;
   onGram: (v: number | null) => void; onPct: (v: number | null) => void; max?: number;
+  pctDisabled?: boolean;
 }) {
   return (
     <label className="block">
@@ -769,7 +884,10 @@ function MacroField({ label, gramValue, pct, onGram, onPct, max }: {
         </div>
         <div className="relative w-[74px] shrink-0">
           <NumberInput value={Number.isFinite(pct) ? pct : null} max={100} step={0.1} onChange={onPct}
-            className="input w-full px-2 pr-5 text-center" ariaLabel={`${label} en porcentaje`} />
+            disabled={pctDisabled}
+            title={pctDisabled ? "Pon primero las calorías objetivo: el % se calcula sobre ellas" : undefined}
+            className="input w-full px-2 pr-5 text-center disabled:opacity-40"
+            ariaLabel={`${label} en porcentaje`} />
           <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-xs text-zinc-500">%</span>
         </div>
       </div>
