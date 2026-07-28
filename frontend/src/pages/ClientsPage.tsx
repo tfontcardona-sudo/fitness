@@ -359,7 +359,16 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
   const [password, setPassword] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
-  useDismiss(dialogRef, onClose); // fuera + ESC, en una sola pulsación
+  // Un clic accidental fuera del modal (o ESC) con el formulario ya rellenado
+  // lo tiraba todo sin preguntar: con datos escritos, se pide confirmación.
+  const dirty = !created && (name.trim() !== "" || email.trim() !== "" || phone.trim() !== "");
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+  const safeClose = () => {
+    if (dirtyRef.current && !window.confirm("¿Descartar el cliente sin crear?")) return;
+    onClose();
+  };
+  useDismiss(dialogRef, safeClose); // fuera + ESC, en una sola pulsación
   useModalFocus(dialogRef, true); // foco atrapado; al cerrar vuelve al botón
 
   async function submit() {

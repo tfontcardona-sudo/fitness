@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 
 /** Piezas de UI compartidas del portal: carga (skeleton) y estados vacíos. */
@@ -35,4 +36,67 @@ export function Empty({ icon: Icon, title, hint }: { icon: LucideIcon; title: st
       <p className="mt-1 max-w-xs text-sm opacity-60">{hint}</p>
     </div>
   );
+}
+
+/**
+ * Campo numérico del portal A PRUEBA DE MÓVIL. Reglas:
+ *  - `type="text"` + inputMode decimal: acepta COMA o punto ("82,5" vale) —
+ *    con type="number", una coma no localizada dejaba e.target.value en "" y
+ *    el autosave enviaba null, BORRANDO el dato ya guardado en el servidor.
+ *  - Lo tecleado se conserva mientras el campo tiene el foco (nada lo pisa).
+ *  - Un valor inválido o fuera de rango NO se emite (no viaja al autosave):
+ *    se marca en rojo hasta corregirlo; vaciar el campo sí emite null
+ *    (intención clara de borrar el dato).
+ */
+export function useDecimalField(
+  value: number | null | undefined,
+  onChange: (v: number | null) => void,
+  opts: { min?: number; max?: number; integer?: boolean } = {},
+) {
+  const [raw, setRaw] = useState<string | null>(null);
+  const focused = useRef(false);
+
+  const parse = (s: string): number | null => {
+    const t = s.trim().replace(",", ".");
+    if (t === "") return null;
+    const n = Number(t);
+    if (!Number.isFinite(n)) return NaN as unknown as number; // inválido
+    return n;
+  };
+  const outOfRange = (n: number) =>
+    (opts.min != null && n < opts.min) || (opts.max != null && n > opts.max)
+    || (opts.integer === true && !Number.isInteger(n));
+
+  const parsed = raw !== null ? parse(raw) : null;
+  const invalid = raw !== null && raw.trim() !== ""
+    && (parsed === null || Number.isNaN(parsed) || outOfRange(parsed as number));
+
+  return {
+    invalid,
+    inputProps: {
+      type: "text" as const,
+      inputMode: "decimal" as const,
+      value: raw !== null ? raw : (value ?? ""),
+      onFocus: () => { focused.current = true; },
+      onChange: (e: { target: { value: string } }) => {
+        const s = e.target.value;
+        setRaw(s);
+        const n = parse(s);
+        if (n === null) { onChange(null); return; }        // vaciado deliberado
+        if (Number.isNaN(n) || outOfRange(n)) return;      // inválido: no viaja
+        onChange(n);
+      },
+      onBlur: () => {
+        focused.current = false;
+        // Con texto inválido se CONSERVA lo tecleado y la marca roja (borrarlo
+        // sería mentir al cliente); con valor válido se muestra el canónico.
+        setRaw((r) => {
+          if (r === null) return null;
+          const n = parse(r);
+          const bad = r.trim() !== "" && (Number.isNaN(n) || (n !== null && outOfRange(n)));
+          return bad ? r : null;
+        });
+      },
+    },
+  };
 }

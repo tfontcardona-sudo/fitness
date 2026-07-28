@@ -92,25 +92,9 @@ export function goalTargets(goal: GoalType | null | undefined, weightKg: number,
  *  (prioritaria por objetivo) se preserva siempre que se pueda. Si el colchón se
  *  quedaría negativo, se fija a 0 y las kcal reales bajan (nunca hay macros que
  *  declaren unas calorías que no cumplen). */
-export function redistributeMacro(
-  targetKcal: number,
-  cur: { protein_g: number; carbs_g: number; fat_g: number },
-  key: "protein_g" | "carbs_g" | "fat_g",
-  grams: number,
-): MacroTargets {
-  let p = cur.protein_g, c = cur.carbs_g, f = cur.fat_g;
-  if (key === "protein_g") {
-    p = grams;
-    c = Math.max(0, Math.round((targetKcal - p * 4 - f * 9) / 4));
-  } else if (key === "fat_g") {
-    f = grams;
-    c = Math.max(0, Math.round((targetKcal - p * 4 - f * 9) / 4));
-  } else {
-    c = grams;
-    f = Math.max(0, Math.round((targetKcal - p * 4 - c * 4) / 9));
-  }
-  return { kcal: kcalOf(p, c, f), protein_g: p, carbs_g: c, fat_g: f };
-}
+// (El antiguo `redistributeMacro` — colchón automático al editar un macro — se
+// eliminó: el editor pasó a EDICIÓN LIBRE con aviso persistente de descuadre.
+// No lo "recuperes": ese ya no es el modelo vigente.)
 
 // ---- Déficit / superávit -----------------------------------------------------
 // El cálculo de la dieta parte del TDEE: kcal = TDEE ± un porcentaje. Aquí lo
@@ -252,15 +236,16 @@ function equivRatio(name: any, rK: number, rP: number, rC: number, rF: number): 
 /** Topes FISIOLÓGICOS de los objetivos (ESPEJO de nutrition_scale.clamp_targets
  *  del backend — cambiar ambos a la vez): una edición absurda (CH 800 g, grasa
  *  0 g, +77% de superávit) se corrige al momento, en vivo y al guardar. */
-export function clampTargets(next: MacroTargets, tdee?: number | null, weightKg?: number | null): MacroTargets {
-  const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+/** Topes FISIOLÓGICOS/de seguridad de los objetivos, expuestos para que el
+ *  editor pueda AVISAR de cuál se viola (en vez de corregir en silencio). */
+export function targetBounds(tdee?: number | null, weightKg?: number | null): {
+  pLo: number; pHi: number; fLo: number; fHi: number; kLo: number; kHi: number;
+} {
   const w = weightKg && weightKg > 0 ? weightKg : 0;
   const pLo = w ? Math.round(w * 1.2) : 60;
   const pHi = w ? Math.round(w * 3.0) : 280;
   const fLo = w ? Math.max(20, Math.round(w * 0.6)) : 20;
   const fHi = w ? Math.round(w * 2.0) : 160;
-  const p = Math.round(clamp(next.protein_g || 0, pLo, pHi));
-  const f = Math.round(clamp(next.fat_g || 0, fLo, fHi));
   let kLo = 1100;
   let kHi = 4500;
   if (tdee && tdee > 0) {
@@ -268,6 +253,15 @@ export function clampTargets(next: MacroTargets, tdee?: number | null, weightKg?
     kHi = Math.min(4500, tdee * (1 + MAX_SURPLUS_PCT / 100));
     if (kLo > kHi) { kLo = 1100; kHi = 4500; }
   }
+  return { pLo, pHi, fLo, fHi, kLo, kHi };
+}
+
+export function clampTargets(next: MacroTargets, tdee?: number | null, weightKg?: number | null): MacroTargets {
+  const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+  const w = weightKg && weightKg > 0 ? weightKg : 0;
+  const { pLo, pHi, fLo, fHi, kLo, kHi } = targetBounds(tdee, weightKg);
+  const p = Math.round(clamp(next.protein_g || 0, pLo, pHi));
+  const f = Math.round(clamp(next.fat_g || 0, fLo, fHi));
   const kcal = Math.round(clamp(next.kcal || kcalOf(p, next.carbs_g || 0, f), kLo, kHi));
   // Los carbohidratos cuadran el 4/4/9 con los valores ya acotados. Si no
   // caben (P y G acotadas superan las kcal), cede la grasa hasta su suelo y
@@ -288,9 +282,12 @@ export function clampTargets(next: MacroTargets, tdee?: number | null, weightKg?
   return { kcal, protein_g: pF, carbs_g: carbs, fat_g: fF };
 }
 
-export function rescaleNutrition(nut: any, next: MacroTargets, weightKg?: number | null): void {
-  // Topes sanos SIEMPRE, vengan de donde vengan los objetivos.
-  next = clampTargets(next, nut?.tdee_kcal, weightKg);
+export function rescaleNutrition(nut: any, next: MacroTargets, weightKg?: number | null,
+                                 clamp: boolean = true): void {
+  // Topes sanos por defecto. El EDITOR pasa clamp=false: allí los topes se
+  // muestran como AVISO bloqueante (nunca se reescribe en silencio lo que el
+  // coach tecleó); el backend re-acota igualmente al guardar (última red).
+  if (clamp) next = clampTargets(next, nut?.tdee_kcal, weightKg);
   const prev: MacroTargets = {
     kcal: nut.target_kcal ?? 0,
     protein_g: nut.macros?.protein_g ?? 0,
@@ -395,8 +392,9 @@ export function rescaleNutrition(nut: any, next: MacroTargets, weightKg?: number
  *  en cada cambio para que comidas y gramos se recalculen SIEMPRE desde la
  *  versión original (idempotente): teclear "2" y luego "2500" no corrompe nada
  *  porque nunca se reescala sobre valores intermedios ya redondeados. */
-export function rescaledFrom(baseNut: any, next: MacroTargets, weightKg?: number | null): any {
+export function rescaledFrom(baseNut: any, next: MacroTargets, weightKg?: number | null,
+                             clamp: boolean = true): any {
   const n = structuredClone(baseNut ?? {});
-  rescaleNutrition(n, next, weightKg);
+  rescaleNutrition(n, next, weightKg, clamp);
   return n;
 }

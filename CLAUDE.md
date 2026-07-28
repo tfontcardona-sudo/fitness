@@ -548,6 +548,26 @@ cd backend && python -m pytest tests/ -q
      inmutables); recordatorio del día 12 incluye a los `at_risk` y hay
      recuperación `at_risk→active`; "en riesgo" ya no cuenta filas de diario
      vacías; sensaciones del cierre acotadas 1–5.
+   - **Barrido anti-fallos de EDICIÓN (tras fallos reales encontrados por el
+     dueño en el editor):** el editor de nutrición pasó a EDICIÓN LIBRE —
+     0/vaciar permitido, ningún campo se reescribe con el foco, aviso
+     PERSISTENTE de descuadre con cifras y cuadres de un clic, topes de
+     seguridad como AVISO bloqueante (nunca reescritura silenciosa;
+     `targetBounds` + `rescaleNutrition(..., clamp=false)` en el editor),
+     chip permanente de déficit/superávit, kcal escala desde el mix ACTUAL
+     (no el baseline), guard de Safari/Firefox (blur antes de cuadrar),
+     reestructurar comidas exige totales cuadrados, y un plan legado
+     descuadrado no bloquea guardar entreno (`nutTouched`). En el PORTAL:
+     inputs a prueba de móvil (`useDecimalField`: coma o punto, inválido/fuera
+     de rango NO viaja — antes "82,5" no reconocido enviaba null y BORRABA el
+     peso o la serie guardada), rangos espejo del backend, re-encolado del
+     autosave fallido, 422 traducidos con el campo en español, fecha congelada
+     a medianoche, maxLength en pasos y rangos exactos en el cierre. En el
+     PANEL: campos CSV (¡alergias!) y reglas de flexibilidad ya no se comen
+     comas/espacios/Enter al teclear, fecha de nacimiento vaciada → null,
+     créditos IA vacío ≠ $0, confirmación al descartar el modal de cliente o
+     salir con el editor del plan/anamnesis abiertos (+beforeunload), y fecha
+     de videollamada validada con el porqué en el botón.
    - **Pendientes DETECTADOS y no aplicados** (por alcance, para próximas
      sesiones): unificar la recomendación de macros del editor con
      `metrics.macro_targets` (dos fórmulas hoy); vectores dorados de

@@ -129,8 +129,10 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
       <Section title="Datos personales">
         <Select label="Sexo" value={(current("sex") as string) ?? ""} onChange={(v) => set("sex", v as any)}
           options={[["", "—"], ["male", "Hombre"], ["female", "Mujer"]]} />
+        {/* Vaciar la fecha emite "" que el backend rechaza con un 422 críptico:
+            se mapea a null (= sin fecha). */}
         <Field label="Fecha de nacimiento" type="date" value={(current("birth_date") as string) ?? ""}
-          onChange={(v) => set("birth_date", v as any)} />
+          onChange={(v) => set("birth_date", (v || null) as any)} />
       </Section>
 
       <Section title="Antropometría inicial">
@@ -447,11 +449,24 @@ function Area({ label, value, onChange }: { label: string; value: string; onChan
   return <ExpandableArea label={label} value={value} onChange={onChange} rows={3} className="col-span-2" />;
 }
 function CSV({ label, value, onChange }: { label: string; value: string[] | null | undefined; onChange: (v: string[]) => void }) {
+  // BUFFER de texto mientras el campo tiene el foco: derivar lo mostrado del
+  // valor parseado en cada pulsación reescribía el campo al instante y se
+  // COMÍA comas y espacios ("frutos secos" era imposible de teclear; en
+  // ALERGIAS, que alimenta los guardrails, era grave). La lista se emite en
+  // vivo (el borrador siempre está al día para Guardar) pero lo que se VE es
+  // exactamente lo tecleado hasta soltar el foco.
+  const [raw, setRaw] = useState<string | null>(null);
   return (
     <label className="block">
       <span className="mb-1 block text-xs text-zinc-500">{label}</span>
-      <input type="text" value={(value ?? []).join(", ")}
-        onChange={(e) => onChange(e.target.value.split(",").map((s) => s.trim()).filter(Boolean))}
+      <input type="text"
+        value={raw !== null ? raw : (value ?? []).join(", ")}
+        onChange={(e) => {
+          const s = e.target.value;
+          setRaw(s);
+          onChange(s.split(",").map((x) => x.trim()).filter(Boolean));
+        }}
+        onBlur={() => setRaw(null)}
         placeholder="separa por comas" className="input w-full" />
     </label>
   );

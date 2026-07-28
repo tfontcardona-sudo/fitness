@@ -104,21 +104,37 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
       changes, hardest, nextGoal, questions, token, closeDate, done]);
 
   const allFeelings = FEELINGS.every((f) => feelings[f.key] > 0);
-  // Validación de RANGOS en el móvil: si algo se sale (300 kg, 60 comidas
-  // libres…), se avisa del campo concreto ANTES de enviar — el backend
-  // rechazaría todo el cierre con un error genérico.
+  // Coma o punto valen ("82,5"): el número se normaliza en un único sitio.
+  const num = (v: string): number => Number(v.trim().replace(",", "."));
+  // Validación de RANGOS en el móvil, ESPEJO EXACTO del backend (PeriodCloseIn):
+  // si algo se sale, se avisa del campo concreto ANTES de enviar — el backend
+  // rechazaría todo el cierre. Antes los rangos locales diferían de los del
+  // servidor (brazo 90 cm pasaba aquí y reventaba allí con error críptico).
   const rangeError = (() => {
-    const w = Number(weight);
-    if (weight !== "" && (w <= 30 || w >= 300)) return "Revisa el peso final (kg reales)";
-    const per = (v: string, name: string) =>
-      v !== "" && (Number(v) < 20 || Number(v) > 250) ? `Revisa ${name} (cm reales)` : null;
-    const perErr = per(waist, "la cintura") ?? per(hip, "la cadera") ?? per(arm, "el brazo") ?? per(thigh, "el muslo");
+    const w = num(weight);
+    if (weight !== "" && !(Number.isFinite(w) && w > 30 && w < 300)) return "Revisa el peso final (kg reales, 30-300)";
+    const per = (v: string, name: string, lo: number, hi: number) => {
+      const n = num(v);
+      return v !== "" && !(Number.isFinite(n) && n > lo && n < hi)
+        ? `Revisa ${name} (${lo}-${hi} cm)` : null;
+    };
+    const perErr = per(waist, "la cintura", 30, 250) ?? per(hip, "la cadera", 30, 250)
+      ?? per(arm, "el brazo", 10, 80) ?? per(thigh, "el muslo", 20, 120);
     if (perErr) return perErr;
-    if (freeMeals !== "" && (Number(freeMeals) < 0 || Number(freeMeals) > 50))
+    const adh = (v: string, name: string) => {
+      const n = num(v);
+      return v !== "" && !(Number.isFinite(n) && n >= 0 && n <= 10)
+        ? `Revisa ${name} (0-10)` : null;
+    };
+    const adhErr = adh(adhDiet, "la adherencia a la dieta")
+      ?? (hasTraining ? adh(adhTrain, "la adherencia al entreno") : null);
+    if (adhErr) return adhErr;
+    const fm = num(freeMeals);
+    if (freeMeals !== "" && !(Number.isFinite(fm) && fm >= 0 && fm <= 50))
       return "Revisa las comidas libres (0-50)";
     return null;
   })();
-  const canSubmit = Number(weight) > 30 && allFeelings && adhDiet !== ""
+  const canSubmit = num(weight) > 30 && allFeelings && adhDiet !== ""
     && (!hasTraining || adhTrain !== "") && !rangeError && !busy;
 
   async function submit() {
@@ -128,18 +144,18 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
       const vals = FEELINGS.map((f) => feelings[f.key]);
       const avg = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
       await api.close({
-        closing_weight_kg: Number(weight),
+        closing_weight_kg: num(weight),
         closing_rating: avg,
         closing_hardest: hardest || null,
         closing_questions: questions || null,
-        closing_waist_cm: waist ? Number(waist) : null,
-        closing_hip_cm: hip ? Number(hip) : null,
-        closing_arm_cm: arm ? Number(arm) : null,
-        closing_thigh_cm: thigh ? Number(thigh) : null,
+        closing_waist_cm: waist ? num(waist) : null,
+        closing_hip_cm: hip ? num(hip) : null,
+        closing_arm_cm: arm ? num(arm) : null,
+        closing_thigh_cm: thigh ? num(thigh) : null,
         closing_feelings_json: feelings,
-        adherence_diet_0_10: adhDiet === "" ? null : Number(adhDiet),
-        adherence_training_0_10: adhTrain === "" ? null : Number(adhTrain),
-        free_meals_count: freeMeals === "" ? null : Number(freeMeals),
+        adherence_diet_0_10: adhDiet === "" ? null : num(adhDiet),
+        adherence_training_0_10: adhTrain === "" ? null : num(adhTrain),
+        free_meals_count: freeMeals === "" ? null : num(freeMeals),
         closing_changes: changes || null,
         closing_next_goal: nextGoal || null,
       });
@@ -221,7 +237,7 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
       <Section n={1} title="Medidas corporales">
         <p className="mb-2 text-xs opacity-50">Mide por la mañana en ayunas, cinta blanda sin apretar.</p>
         <Field label="Peso (kg)" required>
-          <input type="number" step={0.1} inputMode="decimal"
+          <input type="text" inputMode="decimal"
             className="w-full rounded-xl border bg-transparent p-3 text-lg font-semibold"
             style={{ borderColor: "rgba(128,128,128,0.2)" }}
             value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="—" />
@@ -360,7 +376,7 @@ function Perimeter({ label, value, onChange }: { label: string; value: string; o
   return (
     <label className="portal-card block p-3">
       <span className="block text-xs opacity-50">{label} (cm)</span>
-      <input type="number" step={0.5} inputMode="decimal"
+      <input type="text" inputMode="decimal"
         className="mt-1 w-full bg-transparent text-lg font-semibold outline-none"
         style={{ caretColor: "var(--p-accent-2)" }}
         value={value} onChange={(e) => onChange(e.target.value)} placeholder="—" />
@@ -371,10 +387,13 @@ function Perimeter({ label, value, onChange }: { label: string; value: string; o
 function NumField({ label, value, onChange, min, max, required }: {
   label: string; value: string; onChange: (v: string) => void; min: number; max: number; required?: boolean;
 }) {
+  // min/max informan la etiqueta y el rango se valida en `rangeError` (mismo
+  // rango que el backend); el input es text para que la coma no vacíe el valor.
+  void min; void max;
   return (
     <label className="portal-card block p-3">
       <span className="block text-xs opacity-50">{label} {required && <span style={{ color: "#C2453A" }}>*</span>}</span>
-      <input type="number" step={1} min={min} max={max} inputMode="numeric"
+      <input type="text" inputMode="numeric"
         className="mt-1 w-full bg-transparent text-lg font-semibold outline-none"
         style={{ caretColor: "var(--p-accent-2)" }}
         value={value} onChange={(e) => onChange(e.target.value)} placeholder="—" />

@@ -2,9 +2,9 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Save, X, Plus, Trash2, Utensils, Dumbbell, Target, AlertTriangle, Check, ChevronDown, ChevronUp, PlayCircle } from "lucide-react";
 import { api } from "../lib/api";
 import {
-  GOAL_RULES, goalTargets, kcalOf, macrosForKcal, macrosScaledToKcal, rescaledFrom,
+  GOAL_RULES, goalTargets, kcalOf, macrosForKcal, macrosScaledToKcal, rescaledFrom, targetBounds,
   deficitLabel, deficitOptions, deficitSelectValue, kcalFromDeficit, macroPct, gramsFromPct,
-  MACRO_TOTAL_TOLERANCE, MAX_DEFICIT_PCT, MAX_SURPLUS_PCT,
+  MAX_DEFICIT_PCT, MAX_SURPLUS_PCT,
   type MacroTargets,
 } from "../lib/nutritionTargets";
 import { GOAL_LABEL } from "../lib/format";
@@ -166,8 +166,11 @@ export function ClientPlanEditor({
   const clampKcal = (v: number) => Math.min(MAX_KCAL, Math.max(0, v));
   const clampMacro = (v: number) => Math.min(MAX_MACRO, Math.max(0, v));
 
+  // clamp=false: en el editor los topes de seguridad NUNCA reescriben en
+  // silencio lo tecleado — se muestran como AVISO bloqueante (más abajo). El
+  // backend re-acota igualmente al guardar (última red).
   function applyTotals(d: typeof draft, next: MacroTargets) {
-    const scaled = rescaledFrom(baseline.current, next, refWeightKg);
+    const scaled = rescaledFrom(baseline.current, next, refWeightKg, false);
     d.nutrition.target_kcal = scaled.target_kcal;
     d.nutrition.macros = scaled.macros;
     d.nutrition.meals = scaled.meals;
@@ -176,34 +179,61 @@ export function ClientPlanEditor({
 
   // ---- EDICIÓN LIBRE ------------------------------------------------------
   // El coach mueve calorías, gramos o % COMO QUIERA (incluido 0 o vaciar el
-  // campo): NINGÚN campo se reescribe mientras teclea. Si los números no
-  // cuadran, un AVISO PERSISTENTE explica exactamente qué descuadra (y con
-  // cuánto) hasta que todo tenga relación entre sí; mientras tanto no se puede
-  // guardar. En cuanto cuadra (±tolerancia), las comidas y los gramos del
-  // banco se reescalan solos desde la versión base.
-  const KCAL_TOL_PCT = 2; // misma tolerancia que el chip "Macros: 100%" (±2%)
+  // campo): NINGÚN campo se reescribe mientras teclea ni al cuadrar. Si los
+  // números no cuadran (o violan un tope de seguridad), un AVISO PERSISTENTE
+  // explica exactamente qué pasa y con cuánto, hasta que todo tenga relación
+  // entre sí; mientras tanto no se puede guardar. En cuanto cuadra y es
+  // seguro, comidas y banco se reescalan solos desde la versión base.
+  const KCAL_TOL_PCT = 2; // única tolerancia: chip, reescalado y bloqueo
 
-  /** Si los totales del borrador cuadran (kcal ≈ 4/4/9), reescala comidas y
-   *  banco a esos totales. Si no, deja los números tal cual los puso el coach
-   *  (el aviso persistente y el guardado bloqueado hacen el resto). */
-  function rescaleIfCoherent(d: typeof draft) {
-    const target = d.nutrition.target_kcal ?? 0;
-    const m = d.nutrition.macros ?? {};
+  // ¿El coach ha TOCADO la nutrición en esta sesión de edición? Un plan legado
+  // que ya venía descuadrado no debe bloquear guardar cambios de entreno.
+  const nutTouched = useRef(false);
+
+  /** Comprobación pura sobre un borrador: cuadre 4/4/9 y topes de seguridad. */
+  function checkTotals(n: any): { coherent: boolean; safe: boolean } {
+    const target = n.target_kcal ?? 0;
+    const m = n.macros ?? {};
     const p = m.protein_g ?? 0, c = m.carbs_g ?? 0, f = m.fat_g ?? 0;
-    if (target <= 0) return;
-    const sum = kcalOf(p, c, f);
-    if (Math.abs(sum - target) <= (KCAL_TOL_PCT / 100) * target) {
-      applyTotals(d, { kcal: target, protein_g: p, carbs_g: c, fat_g: f });
-    }
+    if (target <= 0) return { coherent: false, safe: false };
+    const coherent = Math.abs(kcalOf(p, c, f) - target) <= (KCAL_TOL_PCT / 100) * target;
+    const b = targetBounds(n.tdee_kcal, refWeightKg ?? client?.start_weight_kg ?? null);
+    const safe = p >= b.pLo && p <= b.pHi && f >= b.fLo && f <= b.fHi
+      && target >= b.kLo && target <= b.kHi;
+    return { coherent, safe };
+  }
+
+  /** Si los totales del borrador cuadran Y respetan los topes, reescala
+   *  comidas y banco a esos totales. Si no, deja los números tal cual los puso
+   *  el coach (el aviso persistente y el guardado bloqueado hacen el resto). */
+  function rescaleIfCoherent(d: typeof draft) {
+    const { coherent: okC, safe: okS } = checkTotals(d.nutrition);
+    if (!okC || !okS) return;
+    const m = d.nutrition.macros ?? {};
+    applyTotals(d, {
+      kcal: d.nutrition.target_kcal,
+      protein_g: m.protein_g ?? 0, carbs_g: m.carbs_g ?? 0, fat_g: m.fat_g ?? 0,
+    });
+  }
+
+  // En Safari/Firefox un clic en un botón NO roba el foco del input: el buffer
+  // de lo tecleado sobreviviría y taparía el valor recalculado por el botón.
+  // Antes de cualquier acción que reescribe macros, se suelta el foco.
+  function blurActive() {
+    (document.activeElement as HTMLElement | null)?.blur?.();
   }
 
   function setKcal(v: number | null) {
+    nutTouched.current = true;
     mutate((d) => {
-      if (v == null || v <= 0) { d.nutrition.target_kcal = v; return; }
-      // Cambiar las CALORÍAS sí escala los tres macros en proporción (es el
-      // ancla y así lo espera el coach); los macros luego se pueden retocar
-      // libremente uno a uno.
-      applyTotals(d, macrosScaledToKcal(baseline.current, clampKcal(v)));
+      if (v == null) { d.nutrition.target_kcal = null; return; }
+      if (v <= 0) { d.nutrition.target_kcal = 0; return; } // nunca negativas
+      // Cambiar las CALORÍAS escala los tres macros en proporción — desde el
+      // mix ACTUAL del borrador (no desde la versión base: eso destruía los
+      // macros retocados en esta misma sesión de edición).
+      const kcal = clampKcal(v);
+      applyTotals(d, macrosScaledToKcal(
+        { macros: d.nutrition.macros ?? {}, target_kcal: d.nutrition.target_kcal }, kcal));
     });
   }
 
@@ -211,6 +241,7 @@ export function ClientPlanEditor({
   // vacío) y NO se toca ningún otro campo. Si el conjunto deja de cuadrar con
   // las calorías objetivo, el aviso persistente lo canta con el detalle.
   function setMacro(key: "protein_g" | "carbs_g" | "fat_g", v: number | null) {
+    nutTouched.current = true;
     mutate((d) => {
       d.nutrition.macros = d.nutrition.macros ?? {};
       d.nutrition.macros[key] = v == null ? v : clampMacro(v);
@@ -224,10 +255,13 @@ export function ClientPlanEditor({
   // recalculan sobre el TDEE y los macros se rehacen óptimos para el objetivo.
   function setDeficit(signedPct: number) {
     if (!tdee) return;
+    blurActive();
+    nutTouched.current = true;
     const kcal = clampKcal(kcalFromDeficit(tdee, signedPct));
     mutate((d) => {
       if (goal && weight) applyTotals(d, macrosForKcal(goal, weight, kcal));
-      else applyTotals(d, macrosScaledToKcal(baseline.current, kcal));
+      else applyTotals(d, macrosScaledToKcal(
+        { macros: d.nutrition.macros ?? {}, target_kcal: d.nutrition.target_kcal }, kcal));
     });
   }
 
@@ -238,6 +272,7 @@ export function ClientPlanEditor({
   function setMacroPct(key: "protein_g" | "carbs_g" | "fat_g", pct: number | null) {
     const target = draft.nutrition.target_kcal ?? 0;
     if (pct == null || !target) return;
+    nutTouched.current = true;
     mutate((d) => {
       d.nutrition.macros = d.nutrition.macros ?? {};
       d.nutrition.macros[key] = clampMacro(gramsFromPct(Math.min(100, Math.max(0, pct)), target, key));
@@ -254,6 +289,8 @@ export function ClientPlanEditor({
   function cuadrar() {
     const target = draft.nutrition.target_kcal ?? 0;
     if (!target) return;
+    blurActive();
+    nutTouched.current = true;
     mutate((d) => {
       if (goal && weight) {
         applyTotals(d, macrosForKcal(goal, weight, target));
@@ -294,6 +331,17 @@ export function ClientPlanEditor({
       toast.push("El día necesita al menos 2 comidas", "error");
       return;
     }
+    // La reestructuración reparte los TOTALES actuales entre las tomas y los
+    // adopta como nueva base: hacerlo con números descuadrados envenenaría el
+    // baseline (p. ej. proteína 0 repartida → luego todo el macro caería en
+    // una sola comida). Primero cuadrar, después reestructurar.
+    const { coherent: okC, safe: okS } = checkTotals(draft.nutrition);
+    if (!okC || !okS) {
+      toast.push("Cuadra antes las calorías y macros (mira el aviso) y luego cambia las comidas", "error");
+      return;
+    }
+    blurActive();
+    nutTouched.current = true;
     const next = has ? mealKeys.filter((k) => k !== key) : [...mealKeys, key];
     mutate((d) => {
       restructureNutritionMeals(d.nutrition, next);
@@ -315,8 +363,15 @@ export function ClientPlanEditor({
           if (ex && "_uid" in ex) delete ex._uid;
         }
       }
+      // Las reglas de flexibilidad se editan con líneas vacías intermedias
+      // (para no comerse el Enter al teclear): se limpian solo al persistir.
+      const nutrition = structuredClone(draft.nutrition);
+      if (Array.isArray(nutrition.flexibility_rules)) {
+        nutrition.flexibility_rules = nutrition.flexibility_rules
+          .map((s: string) => (s ?? "").trim()).filter(Boolean);
+      }
       const r = await api.updatePlan(plan.id, {
-        nutrition_json: draft.nutrition,
+        nutrition_json: nutrition,
         training_json: training,
         education_json: draft.education,
       });
@@ -349,20 +404,25 @@ export function ClientPlanEditor({
   const kcalInvalid = !(nut.target_kcal && nut.target_kcal > 0);
 
   // Descuadre PERSISTENTE (edición libre): compara las calorías objetivo con la
-  // suma real de los macros (P·4 + C·4 + G·9). Mientras no cuadre (±2%), el
-  // aviso de abajo explica exactamente qué falta o sobra y no se puede guardar.
+  // suma real de los macros (P·4 + C·4 + G·9) y contra los TOPES de seguridad.
+  // Mientras algo no cuadre, el aviso de abajo lo explica con cifras exactas.
   const macroSumKcal = kcalOf(nut.macros.protein_g ?? 0, nut.macros.carbs_g ?? 0, nut.macros.fat_g ?? 0);
   const kcalDiff = macroSumKcal - (nut.target_kcal ?? 0); // + = los macros se pasan
-  const coherent = !kcalInvalid
-    && Math.abs(kcalDiff) <= (2 / 100) * (nut.target_kcal ?? 0);
-  // Bloqueo de guardado SOLO cuando se está editando nutrición.
-  const nutritionBlocked = only !== "training" && (kcalInvalid || !coherent);
+  const { coherent, safe } = checkTotals(nut);
+  const bounds = targetBounds(nut.tdee_kcal, weight);
+  const totalsOk = !kcalInvalid && coherent && safe;
+  // Bloqueo de guardado SOLO cuando se edita nutrición Y el coach la ha tocado:
+  // un plan legado que ya venía descuadrado no bloquea guardar su entreno (al
+  // guardar, el servidor lo cuadra solo y el aviso lo explica).
+  const nutritionBlocked = only !== "training" && nutTouched.current && !totalsOk;
 
   // Cuadre rápido desde el aviso: los carbohidratos absorben la diferencia
   // (proteína y grasa se respetan tal cual las dejó el coach).
   function cuadrarConCarbohidratos() {
     const target = nut.target_kcal ?? 0;
     if (!target) return;
+    blurActive();
+    nutTouched.current = true;
     mutate((d) => {
       const m = d.nutrition.macros ?? {};
       const p = m.protein_g ?? 0, f = m.fat_g ?? 0;
@@ -428,7 +488,7 @@ export function ClientPlanEditor({
               </span>
             </div>
             <button
-              onClick={() => mutate((d) => applyTotals(d, rec))}
+              onClick={() => { blurActive(); nutTouched.current = true; mutate((d) => applyTotals(d, rec)); }}
               className="btn btn-ghost"
             >
               Aplicar recomendación
@@ -484,20 +544,18 @@ export function ClientPlanEditor({
         {/* Estado SIEMPRE visible: % de macros + déficit/superávit real de la
             dieta (también tras ediciones manuales). Verde si cuadra. */}
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-          {(() => {
-            const ok = Math.abs(mp.total - 100) <= MACRO_TOTAL_TOLERANCE;
-            return (
-              <span
-                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold"
-                style={ok
-                  ? { background: "color-mix(in srgb, #1b7f4d 14%, transparent)", color: "#1b7f4d" }
-                  : { background: "color-mix(in srgb, #9A6B15 16%, transparent)", color: "#9A6B15" }}
-              >
-                {ok ? <Check size={12} /> : <AlertTriangle size={12} />}
-                Macros: {mp.total}%
-              </span>
-            );
-          })()}
+          {/* Un ÚNICO veredicto: el chip usa el mismo booleano que el aviso y
+              el bloqueo de guardado (nunca un "✓ verde" con el guardado
+              bloqueado a la vez). */}
+          <span
+            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold"
+            style={totalsOk
+              ? { background: "color-mix(in srgb, #1b7f4d 14%, transparent)", color: "#1b7f4d" }
+              : { background: "color-mix(in srgb, #9A6B15 16%, transparent)", color: "#9A6B15" }}
+          >
+            {totalsOk ? <Check size={12} /> : <AlertTriangle size={12} />}
+            Macros: {mp.total}%
+          </span>
           {tdee && (nut.target_kcal ?? 0) > 0 ? (
             <span
               className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold"
@@ -517,10 +575,11 @@ export function ClientPlanEditor({
           )}
         </div>
 
-        {/* AVISO PERSISTENTE de descuadre: qué no cuadra, con cuánto, y cómo
-            arreglarlo en un clic. No desaparece hasta que todo tenga relación
-            entre sí; mientras tanto el guardado queda bloqueado. */}
-        {!coherent && (
+        {/* AVISO PERSISTENTE: qué no cuadra (o qué tope de seguridad se viola),
+            con cuánto, y cómo arreglarlo en un clic. No desaparece hasta que
+            todo tenga relación entre sí; mientras tanto el guardado queda
+            bloqueado (si el coach ha tocado la nutrición). */}
+        {!totalsOk && (
           <div className="mt-2 rounded-lg border p-3 text-xs"
             style={{ background: "color-mix(in srgb, #9A6B15 10%, transparent)", borderColor: "color-mix(in srgb, #9A6B15 40%, transparent)", color: "#9A6B15" }}>
             <div className="flex items-start gap-2">
@@ -528,7 +587,7 @@ export function ClientPlanEditor({
               <div>
                 {kcalInvalid ? (
                   <p><b>Faltan las calorías objetivo.</b> Ponlas (o elige un déficit/superávit arriba) para que el plan tenga sentido.</p>
-                ) : (
+                ) : !coherent ? (
                   <>
                     <p>
                       <b>No cuadra:</b> proteína {Math.round(nut.macros.protein_g ?? 0)} g + carbohidratos{" "}
@@ -539,7 +598,7 @@ export function ClientPlanEditor({
                     </p>
                     <p className="mt-1 opacity-80">
                       Ajusta los números tú mismo, o cuadra en un clic. Las comidas y el banco se
-                      actualizarán en cuanto todo cuadre. No se puede guardar hasta entonces.
+                      actualizarán en cuanto todo cuadre.
                     </p>
                     <div className="mt-2 flex flex-wrap gap-2">
                       <button onClick={cuadrarConCarbohidratos} className="btn btn-ghost px-2 py-1 text-xs"
@@ -561,6 +620,44 @@ export function ClientPlanEditor({
                       </p>
                     )}
                   </>
+                ) : (
+                  <>
+                    <p><b>Fuera de los topes de seguridad</b> (el sistema no reescribe tus números en silencio; te lo dice aquí):</p>
+                    <ul className="mt-1 list-disc pl-4">
+                      {(nut.macros.protein_g ?? 0) < bounds.pLo && (
+                        <li>Proteína {Math.round(nut.macros.protein_g ?? 0)} g &lt; mínimo {bounds.pLo} g{weight ? ` (1,2 g/kg · ${weight} kg)` : ""}.</li>
+                      )}
+                      {(nut.macros.protein_g ?? 0) > bounds.pHi && (
+                        <li>Proteína {Math.round(nut.macros.protein_g ?? 0)} g &gt; máximo {bounds.pHi} g{weight ? ` (3 g/kg)` : ""}.</li>
+                      )}
+                      {(nut.macros.fat_g ?? 0) < bounds.fLo && (
+                        <li>Grasas {Math.round(nut.macros.fat_g ?? 0)} g &lt; mínimo saludable {bounds.fLo} g{weight ? ` (0,6 g/kg)` : ""}.</li>
+                      )}
+                      {(nut.macros.fat_g ?? 0) > bounds.fHi && (
+                        <li>Grasas {Math.round(nut.macros.fat_g ?? 0)} g &gt; máximo {bounds.fHi} g{weight ? ` (2 g/kg)` : ""}.</li>
+                      )}
+                      {(nut.target_kcal ?? 0) < bounds.kLo && (
+                        <li>Calorías {Math.round(nut.target_kcal)} &lt; mínimo {Math.round(bounds.kLo)} kcal{tdee ? ` (déficit máximo ${MAX_DEFICIT_PCT}% del TDEE)` : ""}.</li>
+                      )}
+                      {(nut.target_kcal ?? 0) > bounds.kHi && (
+                        <li>Calorías {Math.round(nut.target_kcal)} &gt; máximo {Math.round(bounds.kHi)} kcal{tdee ? ` (superávit máximo ${MAX_SURPLUS_PCT}% del TDEE)` : ""}.</li>
+                      )}
+                    </ul>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {goal && weight && (
+                        <button onClick={cuadrar} className="btn btn-ghost px-2 py-1 text-xs"
+                          title="Rehace el reparto completo a valores seguros según el objetivo del cliente">
+                          Cuadrar por objetivo
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+                {!nutTouched.current && (
+                  <p className="mt-1.5 opacity-80">
+                    Este plan ya venía así guardado. Si no tocas la nutrición puedes guardar
+                    igualmente: el sistema la cuadrará sola al guardar.
+                  </p>
                 )}
               </div>
             </div>
@@ -640,8 +737,11 @@ export function ClientPlanEditor({
           </div>
         )}
         <Area label="Justificación (rationale)" value={nut.rationale ?? ""} onChange={(v) => mutate((d) => (d.nutrition.rationale = v))} />
+        {/* Sin trim/filter en vivo: filtrar mientras se teclea se COMÍA el
+            Enter (la línea vacía desaparecía y la regla nueva se pegaba a la
+            anterior). Las líneas vacías se limpian al GUARDAR. */}
         <Area label="Reglas de flexibilidad (una por línea)" value={(nut.flexibility_rules ?? []).join("\n")}
-          onChange={(v) => mutate((d) => (d.nutrition.flexibility_rules = v.split("\n").map((s) => s.trim()).filter(Boolean)))} />
+          onChange={(v) => mutate((d) => (d.nutrition.flexibility_rules = v.split("\n")))} />
 
         <div ref={focusRefs.supplements} style={flashStyle("supplements")} className="rounded-lg">
           <Subhead text="Suplementos" onAdd={() => mutate((d) => d.nutrition.supplements.push({ name: "", dose: "", timing: "", evidence_note: "" }))} />
@@ -668,7 +768,7 @@ export function ClientPlanEditor({
         {tr.weekly_progression.map((w: any, i: number) => (
           <div key={i} className="mt-2 grid grid-cols-2 gap-2 rounded-lg p-2 sm:grid-cols-4" style={{ background: "var(--surface-raised)" }}>
             <Text label={`Sem ${w.week ?? i + 1} · intención`} value={w.intent ?? ""} onChange={(v) => mutate((d) => (d.training.weekly_progression[i].intent = v))} />
-            <Num label="Carga %" value={w.load_pct} onChange={(v) => mutate((d) => (d.training.weekly_progression[i].load_pct = v ?? 0))} />
+            <Num label="Carga %" value={w.load_pct} onChange={(v) => mutate((d) => (d.training.weekly_progression[i].load_pct = Math.max(0, v ?? 0)))} />
             <Text label="RIR" value={w.rir_target ?? ""} onChange={(v) => mutate((d) => (d.training.weekly_progression[i].rir_target = v))} />
             <Text label="Volumen" value={w.volume_note ?? ""} onChange={(v) => mutate((d) => (d.training.weekly_progression[i].volume_note = v))} />
           </div>
@@ -759,10 +859,10 @@ export function ClientPlanEditor({
                   />
                 </div>
                 <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  <Num label="Series" value={ex.sets} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].sets = v ?? 0))} />
+                  <Num label="Series" value={ex.sets} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].sets = Math.max(0, v ?? 0)))} />
                   <Text label="Reps" value={ex.rep_range ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].rep_range = v))} />
                   <Text label="RIR" value={ex.rir ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].rir = v))} />
-                  <Num label="Descanso (s)" value={ex.rest_sec} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].rest_sec = v ?? 0))} />
+                  <Num label="Descanso (s)" value={ex.rest_sec} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].rest_sec = Math.max(0, v ?? 0)))} />
                 </div>
                 <Text label="Progresión" value={ex.progression_rule ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].progression_rule = v))} />
                 <Text label="Cue técnica" value={ex.technique_cue ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].technique_cue = v))} />
@@ -801,7 +901,7 @@ export function ClientPlanEditor({
 
         <Subhead text="Cardio y descarga" />
         <div className="grid grid-cols-2 gap-2">
-          <Num label="Pasos diarios" value={tr.cardio.daily_steps} onChange={(v) => mutate((d) => (d.training.cardio.daily_steps = v ?? 0))} />
+          <Num label="Pasos diarios" value={tr.cardio.daily_steps} onChange={(v) => mutate((d) => (d.training.cardio.daily_steps = Math.max(0, v ?? 0)))} />
         </div>
         <Area label="Instrucciones de deload" value={tr.deload_instructions ?? ""} onChange={(v) => mutate((d) => (d.training.deload_instructions = v))} />
       </div>

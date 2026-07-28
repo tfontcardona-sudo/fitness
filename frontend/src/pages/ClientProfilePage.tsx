@@ -43,6 +43,9 @@ export default function ClientProfilePage() {
   // La pestaña Anamnesis tiene edición local; avisamos si se sale con cambios sin
   // guardar (el panel se re-monta al cambiar de pestaña y perdería el borrador).
   const [anamnesisDirty, setAnamnesisDirty] = useState(false);
+  // Editor de PLAN abierto: cambiar de pestaña re-monta el panel y perdería
+  // todos los retoques. Mismo guard que la anamnesis.
+  const [planEditing, setPlanEditing] = useState(false);
 
   function changeTab(next: Tab) {
     if (next === tab) return;
@@ -50,9 +53,23 @@ export default function ClientProfilePage() {
         !window.confirm("Tienes cambios sin guardar en la anamnesis. ¿Descartarlos?")) {
       return;
     }
+    if (tab === "planificacion" && planEditing &&
+        !window.confirm("Tienes el editor del plan abierto con cambios sin guardar. ¿Descartarlos?")) {
+      return;
+    }
     if (tab === "anamnesis") setAnamnesisDirty(false);
+    if (tab === "planificacion") setPlanEditing(false);
     setTab(next);
   }
+
+  // Cerrar/recargar la pestaña del navegador con un borrador abierto: el aviso
+  // nativo del navegador evita perder media hora de edición por un despiste.
+  useEffect(() => {
+    if (!anamnesisDirty && !planEditing) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [anamnesisDirty, planEditing]);
 
   const [loadError, setLoadError] = useState(false);
   const load = useCallback(() => {
@@ -90,10 +107,13 @@ export default function ClientProfilePage() {
 
   // La pestaña SIGUE a la URL: navegar desde una alerta (o el botón atrás)
   // cambia de pestaña aunque ya estemos en el perfil de este cliente.
+  // Pasa por changeTab: el guard de borradores sin guardar aplica TAMBIÉN aquí
+  // (llegar desde la campana con ?tab= descartaba la anamnesis sin preguntar).
   useEffect(() => {
     const t = searchParams.get("tab") as Tab | null;
     const valid: Tab[] = ["resumen", "anamnesis", "planificacion", "seguimiento", "feedback", "historial"];
-    if (t && valid.includes(t)) setTab(t);
+    if (t && valid.includes(t)) changeTab(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
   useEffect(() => {
@@ -369,7 +389,7 @@ export default function ClientProfilePage() {
           <div key={tab} className="tab-panel">
             {tab === "resumen" && <ClientSummaryTab client={client} />}
             {tab === "anamnesis" && <ClientAnamnesisTab client={client} onSaved={reload} onDirtyChange={setAnamnesisDirty} />}
-            {tab === "planificacion" && <ClientPlanPanel client={client} onClientChanged={reload} />}
+            {tab === "planificacion" && <ClientPlanPanel client={client} onClientChanged={reload} onEditingChange={setPlanEditing} />}
             {tab === "seguimiento" && <ClientTrackingTab client={client} />}
             {tab === "feedback" && <ClientFeedbackTab client={client} onClientChanged={reload} onGoPlan={() => changeTab("planificacion")} />}
             {tab === "historial" && <ClientHistoryTab client={client} />}
