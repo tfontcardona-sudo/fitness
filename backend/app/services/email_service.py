@@ -57,15 +57,16 @@ def brand_from_config(db: Session) -> Brand:
     cfg = db.scalar(select(BrandConfig).limit(1))
     if cfg is None:
         return Brand(name="Tu asesoría", color_primary="#6EE7B7", color_bg="#0A0A0F")
-    logo_url = None
-    if cfg.logo_path:
-        logo_url = f"{settings.public_base_url}/storage/{cfg.logo_path}"
+    # SIN logo en los emails: /storage no pasa por Caddy en producción, así que
+    # la <img> salía ROTA en todos los correos con logo subido. El fallback de
+    # texto con la marca es digno y siempre funciona.
     return Brand(
         name=cfg.name,
         color_primary=cfg.color_primary,
         color_bg=cfg.color_bg,
         contact_email=cfg.contact_email or None,
-        logo_url=logo_url,
+        logo_url=None,
+        color_secondary=getattr(cfg, "color_secondary", None) or "#2E5E8C",
     )
 
 

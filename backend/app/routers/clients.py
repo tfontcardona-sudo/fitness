@@ -530,16 +530,22 @@ def ingest_anamnesis_pdf(db: Session, client_id: int, content: bytes,
     y la subida del PROPIO cliente (página pública /anamnesis/{token}).
 
     Lanza DocumentValidationError si el archivo no es un PDF válido."""
-    # Una sola anamnesis por cliente: borrar las anteriores antes de guardar
+    # VALIDAR ANTES DE BORRAR: la anamnesis es el documento maestro. Antes se
+    # borraba la anterior y LUEGO se validaba la nueva — un archivo corrupto o
+    # demasiado grande destruía la anamnesis existente y dejaba al cliente sin
+    # ninguna. Ahora primero se guarda la nueva (con validación dentro) y solo
+    # después se retiran las versiones anteriores.
     from app.services.storage import client_dir
     folder = client_dir(client_id, "documents")
-    for old in folder.iterdir():
-        if old.is_file() and old.suffix.lower() == ".pdf":
-            try:
-                old.unlink()
-            except Exception:
-                pass
+    previous = [p for p in folder.iterdir()
+                if p.is_file() and p.suffix.lower() == ".pdf"]
     rel = save_document(client_id, content, filename or "anamnesis.pdf")
+    # Una sola anamnesis por cliente: fuera las anteriores (la nueva ya está).
+    for old in previous:
+        try:
+            old.unlink()
+        except Exception:
+            pass
     log_event(db, "client", client_id, "document_uploaded", {"path": rel, "by": by})
     db.commit()
     name = rel.rsplit("/", 1)[-1]

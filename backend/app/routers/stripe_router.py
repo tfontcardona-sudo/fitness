@@ -51,11 +51,23 @@ def public_checkout(request: Request, body: CheckoutIn, db: Session = Depends(ge
 def pay_link(client: Client = Depends(get_client_by_token), db: Session = Depends(get_db)):
     """Enlace estable de pago del alta manual: redirige a Stripe con el plan y la
     duración de ESE cliente. Lo abre desde el mensaje que le envía el coach."""
+    from app.config import settings
+
+    base = settings.public_base_url.rstrip("/")
+    # YA PAGADO: el botón del email de arranque vive para siempre — reabrirlo
+    # tras pagar NO puede cobrar una segunda vez. Se le lleva a la página de
+    # gracias en vez de a un checkout nuevo.
+    if client.payment_status == "paid":
+        return RedirectResponse(f"{base}/pago-ok", status_code=302)
     try:
         url = create_checkout_url(db, client.package_tier, client.billing_period,
                                   client=client)
     except StripeError as exc:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+        # Un cliente en su navegador no debe ver JSON con detalles internos:
+        # a la página de planes, donde puede escribirnos. El detalle, al log.
+        import logging
+        logging.getLogger("app.stripe").warning("pay_link %s sin checkout: %s", client.id, exc)
+        return RedirectResponse(f"{base}/planes", status_code=302)
     return RedirectResponse(url, status_code=302)
 
 

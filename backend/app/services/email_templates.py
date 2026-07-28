@@ -37,6 +37,9 @@ class Brand:
     color_bg: str
     contact_email: str | None = None
     logo_url: str | None = None
+    # ⚠️ Con default SIEMPRE: la plantilla de arranque lo usa y su ausencia
+    # crasheaba TODOS los emails de onboarding en silencio (el except lo tragaba).
+    color_secondary: str = "#2E5E8C"
 
 
 def _shell(brand: Brand, title: str, body_html: str, cta_url: str | None = None,
@@ -143,7 +146,7 @@ def onboarding_pay_anamnesis(brand: Brand, first_name: str, plan_label: str,
         f"{brand.name} necesito dos cosas:</p>"
         f"<p><strong>1) Realiza el pago de tu plan {plan_label}:</strong></p>"
         f"{pay_btn}"
-        f"<p><strong>2) Descarga tu cuestionario inicial (anamnesis), réllenalo "
+        f"<p><strong>2) Descarga tu cuestionario inicial (anamnesis), rellénalo "
         f"y súbelo desde este enlace:</strong></p>"
         f"{anamnesis_btn}"
         f"<p>En esa página puedes descargar el PDF editable, rellenarlo con calma "

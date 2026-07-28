@@ -53,6 +53,10 @@ def test_register_creates_pending_client_and_reuses_on_retry(http):
     assert r.status_code == 200, r.text
     data = r.json()
     assert data["url"] is None  # Stripe sin configurar en tests
+    # REGRESIÓN: la plantilla de arranque crasheaba (Brand sin color_secondary)
+    # y el registro devolvía "failed" en silencio — el cliente pagaba y nunca
+    # recibía su anamnesis. "disabled" (emails off) o "sent" son los válidos.
+    assert data["email_status"] in ("disabled", "sent", "already_sent"), data
 
     db = SessionLocal()
     try:

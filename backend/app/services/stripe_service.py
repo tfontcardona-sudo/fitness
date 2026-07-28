@@ -125,7 +125,12 @@ def get_plan_prices() -> dict:
                     _log.warning("Precio %s (%s %s) ilegible: %s", price_id, tier, period, exc)
 
     data = {"currency": currency, "tiers": tiers}
-    _prices_cache.update(at=time.time(), data=data)
+    # Un fallo TRANSITORIO de Stripe no puede dejar /planes sin precios 10 min:
+    # el resultado totalmente vacío (con Stripe configurado) no se cachea — la
+    # siguiente visita reintenta.
+    all_empty = all(v is None for t in tiers.values() for v in t.values())
+    if not (settings.stripe_enabled and all_empty):
+        _prices_cache.update(at=time.time(), data=data)
     return data
 
 
@@ -197,6 +202,16 @@ def _create_selfserve_client(db: Session, *, name: str, email: str,
         from app.services.portal_access import send_portal_access
 
         send_portal_access(db, client)
+        db.commit()
+    except Exception:
+        db.rollback()
+    # También el ARRANQUE (enlace de la anamnesis): sin él, el cliente que
+    # pagó por el checkout público directo se quedaba solo con el acceso al
+    # portal y nunca recibía su cuestionario inicial.
+    try:
+        from app.services.onboarding import send_onboarding_email
+
+        send_onboarding_email(db, client)
         db.commit()
     except Exception:
         db.rollback()
