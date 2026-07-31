@@ -374,6 +374,9 @@ export function ClientPlanEditor({
         nutrition_json: nutrition,
         training_json: training,
         education_json: draft.education,
+        // Concurrencia optimista: si otra pestaña (o una adaptación) guardó
+        // después de abrir este editor, el backend responde 409 con el motivo.
+        base_rev: (plan.nutrition as any)?.rev ?? 0,
       });
       toast.push("Plan actualizado");
       onSaved({

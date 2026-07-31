@@ -17,6 +17,7 @@ from app.models import BrandConfig, Exercise, Food, User
 from app.security import hash_password
 from app.seeds.exercises_data import EXERCISES
 from app.seeds.foods_data import FOODS
+from app.seeds.home_exercises_data import HOME_EXERCISES
 from app.seeds.machines_data import MACHINE_EXERCISES
 
 
@@ -37,6 +38,19 @@ def seed_machines(db) -> int:
     así producción las recibe en el siguiente deploy."""
     existing = set(db.scalars(select(Exercise.canonical_name)))
     missing = [d for d in MACHINE_EXERCISES if d["canonical_name"] not in existing]
+    if not missing:
+        return 0
+    db.add_all(Exercise(**data) for data in missing)
+    db.commit()
+    return len(missing)
+
+
+def seed_home_exercises(db) -> int:
+    """Cobertura de casa/exterior (peso corporal y bandas): inserta POR NOMBRE
+    los que falten, en cada arranque — la auditoría de perfiles demostró que sin
+    esto un cliente de casa sin material se quedaba con 5-11 ejercicios."""
+    existing = set(db.scalars(select(Exercise.canonical_name)))
+    missing = [d for d in HOME_EXERCISES if d["canonical_name"] not in existing]
     if not missing:
         return 0
     db.add_all(Exercise(**data) for data in missing)
@@ -87,12 +101,14 @@ def main() -> None:
     try:
         n_ex = seed_exercises(db)
         n_maq = seed_machines(db)
+        n_home = seed_home_exercises(db)
         n_food = seed_foods(db)
         brand = seed_brand(db)
         n_admins = seed_admins(db)
         print(
             f"[seed] ejercicios: {n_ex or 'ya existían'} · "
             f"maquinaria nueva: {n_maq} · "
+            f"casa/bandas nuevos: {n_home} · "
             f"alimentos nuevos: {n_food} · "
             f"brand: {'creada' if brand else 'ya existía'} · "
             f"admins creados: {n_admins}"

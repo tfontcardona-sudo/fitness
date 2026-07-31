@@ -354,6 +354,26 @@ export default function ClientProfilePage() {
               ¿Te pagó por otra vía? Marcar como pagado
             </button>
           )}
+          {/* Reactivar a un cliente INACTIVO: la transición existía en la
+              máquina de estados pero no tenía ningún botón (auditoría del
+              ciclo) — el cliente quedaba en un limbo sin alertas ni ciclo. */}
+          {client.status === "inactive" && (
+            <button
+              onClick={async () => {
+                if (!window.confirm(`¿Reactivar a ${client.full_name}? Volverá a recibir recordatorios y su ciclo de seguimiento continuará.`)) return;
+                try {
+                  await api.updateClient(client.id, { status: "active" } as any);
+                  toast.push("Cliente reactivado");
+                  reload();
+                } catch (e: any) {
+                  toast.push(e?.message ?? "No se pudo reactivar", "error");
+                }
+              }}
+              className="w-full rounded-xl border border-emerald-600/40 bg-emerald-600/10 px-3 py-2 text-center text-xs font-semibold text-emerald-500 hover:bg-emerald-600/20"
+            >
+              Reactivar cliente
+            </button>
+          )}
         </aside>
 
         {/* 3) Extras: anamnesis + regenerar enlace (debajo del contenido en

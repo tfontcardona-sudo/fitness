@@ -574,6 +574,8 @@ export interface PortalState {
   brand: PortalBrand;
   // Tras enviar la revisión: falta confirmar el envío de las fotos al coach.
   photos_pending?: boolean;
+  // Onboarding sin anamnesis: el portal enseña el camino a /anamnesis/{token}.
+  needs_anamnesis?: boolean;
 }
 
 /** GET /api/p/{token}/push/pending — espejo de PushPendingOut. */

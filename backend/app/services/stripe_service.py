@@ -248,6 +248,7 @@ def handle_webhook(db: Session, payload: bytes, sig_header: str | None) -> dict:
         client = db.get(Client, int(client_id))
         if not client:
             _log.warning("Webhook Stripe: cliente %s no encontrado", client_id)
+            _notify_orphan_payment(db, session)
             return {"error": "client_not_found", "client_id": client_id}
         _mark_paid(db, client, period)
         db.commit()
@@ -258,6 +259,7 @@ def handle_webhook(db: Session, payload: bytes, sig_header: str | None) -> dict:
     email = (details.get("email") or "").strip().lower()
     if not email:
         _log.warning("Webhook Stripe: checkout sin email; no se puede crear cliente")
+        _notify_orphan_payment(db, session)
         return {"error": "no_email"}
     existing = db.scalar(select(Client).where(func.lower(Client.email) == email))
     if existing:  # ya existía (o webhook reenviado): idempotente

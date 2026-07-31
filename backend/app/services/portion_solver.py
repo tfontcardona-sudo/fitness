@@ -96,10 +96,11 @@ def _round_practical(grams: float, unit_grams: float | None) -> float:
     (1 huevo, 1 rebanada), si no a múltiplos de 5 g."""
     if grams <= 0:
         return 0.0
+    from app.services.nutrition_scale import _rhu  # half-up: convención del sistema
     if unit_grams and unit_grams > 0:
-        n = max(0, round(grams / unit_grams))
+        n = max(0, _rhu(grams / unit_grams))
         return round(n * unit_grams, 1)
-    return float(max(0, round(grams / 5.0)) * 5)
+    return float(max(0, _rhu(grams / 5.0)) * 5)
 
 
 def solve_portions(foods: list[dict], target: dict) -> SolvedPortion:
@@ -135,11 +136,17 @@ def solve_portions(foods: list[dict], target: dict) -> SolvedPortion:
         if gr <= 0:
             continue
         factor = gr / 100.0
+        p_g = round(float(f.get("protein_g", 0)) * factor, 1)
+        c_g = round(float(f.get("carbs_g", 0)) * factor, 1)
+        f_g = round(float(f.get("fat_g", 0)) * factor, 1)
         m = {
-            "kcal": round(float(f.get("kcal", 0)) * factor),
-            "protein_g": round(float(f.get("protein_g", 0)) * factor, 1),
-            "carbs_g": round(float(f.get("carbs_g", 0)) * factor, 1),
-            "fat_g": round(float(f.get("fat_g", 0)) * factor, 1),
+            # kcal = 4/4/9 de los macros declarados (una sola verdad): la kcal
+            # de etiqueta del catálogo (con fibra) desviaba >2% y disparaba el
+            # veto Atwater del Revisor 0 sobre opciones correctas.
+            "kcal": round(4 * p_g + 4 * c_g + 9 * f_g),
+            "protein_g": p_g,
+            "carbs_g": c_g,
+            "fat_g": f_g,
         }
         items.append(SolvedFood(
             food_id=f.get("id", 0), name=f.get("canonical_name", "?"), grams=gr, macros=m,

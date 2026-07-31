@@ -263,7 +263,7 @@ export const api = {
       "POST", `/clients/${clientId}/adapt-plan`),
   publishPlan: (planId: number) =>
     request<{ status: string }>("POST", `/plans/${planId}/publish`),
-  updatePlan: (planId: number, patch: { nutrition_json?: any; training_json?: any; education_json?: any }) =>
+  updatePlan: (planId: number, patch: { nutrition_json?: any; training_json?: any; education_json?: any; base_rev?: number }) =>
     request<{ id: number; status: string; nutrition_json: any; training_json: any; education_json: any; guardrail_flags: string[] | null; month_index: number; version: number }>(
       "PATCH", `/plans/${planId}`, patch),
   readAnamnesis: (clientId: number) =>
@@ -311,6 +311,7 @@ export const api = {
   editFeedback: (docId: number, patch: {
     natural_analysis?: string; changes_bullets?: string[]; answers?: string | null;
     next_objectives?: string[]; closing_message?: string;
+    plan_adjustments?: { area?: string; change?: string; reason?: string }[];
   }) => request<{ id: number; content: any; sent_at: string | null }>("PATCH", `/feedback/${docId}`, patch),
   getPeriodMetrics: (periodId: number) =>
     request<{

@@ -366,6 +366,18 @@ def update_client(client_id: int, body: ClientUpdate, db: Session = Depends(get_
     if not changes:
         return ClientOut.model_validate(client)
 
+    # Cambio de ESTADO manual (auditoría del ciclo: `inactive` era una trampa
+    # sin salida — la transición "reactivación manual" existía en la máquina
+    # pero no tenía ningún llamador). Validado SIEMPRE contra la máquina.
+    if "status" in changes:
+        new_status = changes["status"]
+        if new_status != client.status:
+            from app.services.state_machine import can_transition
+            if not can_transition(client.status, new_status):
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    f"Transición de estado no permitida: {client.status} → {new_status}.")
+
     diff: dict[str, dict] = {}
     for field, new_value in changes.items():
         old_value = getattr(client, field)
@@ -579,6 +591,26 @@ def ingest_anamnesis_pdf(db: Session, client_id: int, content: bytes,
         except Exception:
             db.rollback()
             access_status = "error"  # que el coach lo vea y pueda reenviarlo
+
+    # La llegada de la anamnesis del CLIENTE es EL disparador del trabajo del
+    # coach y era un evento silencioso (auditoría del ciclo): push inmediato,
+    # distinguiendo si la lectura IA falló (letra manuscrita, PDF sucio…).
+    if by == "client" and client is not None:
+        try:
+            from app.services import push as push_svc
+
+            cuerpo = ("Revísala y genera su planificación."
+                      if read_ok else
+                      "La lectura automática falló: revísala y rellena la ficha a mano.")
+            push_svc.send_to_coach(db, {
+                "title": f"📋 {client.full_name} ha enviado su anamnesis",
+                "body": cuerpo,
+                "url": f"/clientes/{client.id}?tab=anamnesis",
+                "tag": f"anamnesis-{client.id}",
+            })
+            db.commit()
+        except Exception:
+            db.rollback()
 
     return {"name": name, "rel_path": rel, "read_ok": read_ok,
             "read_error": read_error, "portal_access": access_status}
@@ -837,11 +869,16 @@ def video_call_done(client_id: int, call_id: int, db: Session = Depends(get_db))
     vc = db.get(VideoCall, call_id)
     if not vc or vc.client_id != client_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Videollamada no encontrada")
-    if vc.status != "scheduled":
+    # También desde proposed/pending_manual: sin Google conectado (o si la
+    # llamada se hizo por teléfono/WhatsApp) esos estados no tenían NINGUNA
+    # salida y su alerta alta sonaba para siempre (auditoría del ciclo).
+    if vc.status not in ("scheduled", "proposed", "pending_manual"):
         raise HTTPException(status.HTTP_409_CONFLICT,
-                            "Solo puede confirmarse una videollamada agendada.")
+                            "Esta videollamada ya está cerrada.")
+    prev_status = vc.status
     vc.status = "done"
-    log_event(db, "client", client_id, "video_call_done", {"period_index": vc.period_index})
+    log_event(db, "client", client_id, "video_call_done",
+              {"period_index": vc.period_index, "from_status": prev_status})
     db.commit()
     db.refresh(vc)
     return VideoCallOut.model_validate(vc).model_dump(mode="json")
@@ -1076,7 +1113,10 @@ def _food_catalog_for(db: Session, client: Client) -> list[dict]:
             foods,
             allergies=client.food_allergies or [],
             dislikes=client.food_dislikes or [],
-            diet_pattern=getattr(client, "diet_mode", None),
+            # OJO: diet_mode ("flexible_7"/"strict") NO es un patrón ético
+            # (vegano/halal…) — pasarlo dejaba el filtro de patrón inerte y
+            # confundía (auditoría #25). El campo real está pendiente (§9).
+            diet_pattern=None,
         )
     except Exception:  # noqa: BLE001
         return []
@@ -1160,6 +1200,7 @@ def generate_client_plan(
     from app.services.metrics import macro_targets as _macro_targets
     _mp = _macro_targets(
         client.sex, weight_now, client.goal_type, et.target_kcal, client.training_days,
+        tdee=et.tdee,
     )
     macro_plan = {
         "kcal": _mp.kcal, "protein_g": _mp.protein_g, "carbs_g": _mp.carbs_g,
@@ -1319,6 +1360,42 @@ def generate_client_plan(
 
     ensure_bank_slots(nutrition, allergies=client.food_allergies or [],
                       dislikes=client.food_dislikes or [])
+
+    # Avisos de COBERTURA (auditoría de perfiles) — no bloquean, pero el coach
+    # debe verlos: biblioteca de ejercicios fina o tomas sin opciones seguras.
+    coverage_flags: list[str] = []
+    _groups = {e.get("muscle_primary") for e in library}
+    if len(library) < 15 or len(_groups) < 4:
+        coverage_flags.append(
+            f"aviso: biblioteca de ejercicios limitada para este cliente "
+            f"({len(library)} ejercicios, {len(_groups)} grupos): añade material "
+            "o revisa lesiones/exclusiones antes de confiar en el entreno.")
+    try:
+        from app.services.meal_fallback import _slot_is_empty
+        _bank = (nutrition.get("meal_bank") or {})
+        _by_slot = {sl.get("slot"): sl for sl in (_bank.get("slots") or [])}
+        if (_bank.get("mode") or "") != "strict":
+            for m in (nutrition.get("meals") or []):
+                if _slot_is_empty(_by_slot.get(m.get("slot"))):
+                    coverage_flags.append(
+                        f"aviso: la toma «{m.get('name') or m.get('slot')}» no tiene "
+                        "opciones seguras con las alergias/aversiones declaradas: "
+                        "añádelas a mano en el editor.")
+    except Exception:
+        pass
+    for note in (_mp.notes or []):
+        coverage_flags.append(f"aviso: {note}")
+    if coverage_flags:
+        flags = list(flags) + coverage_flags
+
+    # Snapshot de los INPUTS con los que se generó (auditoría de ediciones):
+    # si el coach corrige la ficha después (altura mal extraída, nivel, días…),
+    # la alerta plan_stale_inputs compara contra esto y avisa en vez de callar.
+    nutrition["gen_inputs"] = {
+        "weight_kg": weight_now, "height_cm": client.height_cm,
+        "level": client.level, "training_days": client.training_days,
+        "training_place": client.training_place, "diet_mode": client.diet_mode,
+    }
 
     # El TDEE que se persiste y se MUESTRA (déficit/superávit del PDF, del panel
     # del coach y del editor) es el AUTORITATIVO del backend (et.tdee), no el eco

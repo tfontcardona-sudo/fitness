@@ -41,8 +41,10 @@ function inCategory(c: ClientOut, cat: Category): boolean {
     case "pago": return c.payment_status === "pending";
     // Nada pendiente: plan activo, sin revisión por atender y pago al día
     case "aldia":
+      // "Al día" excluye también a los EN RIESGO: el Dashboard los pinta como
+      // prioridad 1 y aquí colaban dentro de la carpeta tranquila (auditoría).
       return !!c.has_published_plan && c.status !== "review_pending"
-        && c.payment_status !== "pending";
+        && c.status !== "at_risk" && c.payment_status !== "pending";
   }
 }
 

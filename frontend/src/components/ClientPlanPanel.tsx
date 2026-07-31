@@ -17,6 +17,9 @@ interface PlanReview {
   icp?: number | null;
   escalated?: boolean;
   findings?: { severity: string; description: string }[];
+  // Revisores IA caídos (no_ejecutado): la revisión está DEGRADADA y el coach
+  // debe saberlo (antes moría en el JSON sin llegar a la interfaz).
+  degraded_reviewers?: string[];
 }
 
 interface PlanData {
@@ -516,13 +519,33 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                 );
               })()}
             </div>
-            {/* §9: hallazgos del panel cuando el plan escala a ROJO. */}
-            {plan.review?.color === "rojo" && (plan.review.findings?.length ?? 0) > 0 && (
-              <ul className="mt-1.5 space-y-0.5 text-xs text-red-700">
+            {/* §9: hallazgos del panel — también en ÁMBAR (antes solo en rojo:
+                un ámbar con hallazgos se veía como un simple chip). */}
+            {(plan.review?.color === "rojo" || plan.review?.color === "ambar")
+              && (plan.review.findings?.length ?? 0) > 0 && (
+              <ul className={`mt-1.5 space-y-0.5 text-xs ${plan.review.color === "rojo" ? "text-red-700" : "text-amber-700"}`}>
                 {plan.review!.findings!
-                  .filter((f) => f.severity === "bloqueante")
+                  .filter((f) => plan.review!.color !== "rojo" || f.severity === "bloqueante")
                   .slice(0, 4)
                   .map((f, i) => <li key={i}>• {f.description}</li>)}
+              </ul>
+            )}
+            {(plan.review?.degraded_reviewers?.length ?? 0) > 0 && (
+              <p className="mt-1 text-xs text-amber-700">
+                ⚠ Revisión degradada: {plan.review!.degraded_reviewers!.length} revisor(es) IA no llegaron a ejecutarse.
+              </p>
+            )}
+            {/* Flags del guardarraíl y avisos de generación: antes se
+                persistían pero NINGUNA pantalla los mostraba (auditoría). */}
+            {(plan.guardrail_flags?.length ?? 0) > 0 && (
+              <ul className="mt-1.5 space-y-0.5 text-xs">
+                {plan.guardrail_flags.slice(0, 6).map((f, i) => (
+                  <li key={i}
+                    className={f.startsWith("violation:") || f.startsWith("retenido")
+                      ? "text-red-700" : "text-amber-700"}>
+                    • {f}
+                  </li>
+                ))}
               </ul>
             )}
             {/* REGISTRO de qué versión es esta: su origen (IA / adaptación a
@@ -706,7 +729,11 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                   <button onClick={downloadPdf} className="btn btn-ghost !px-3 !py-1.5 text-xs">
                     <Download size={13} /> PDF actualizado
                   </button>
-                  <button onClick={dismiss} className="ml-auto text-xs text-zinc-500 underline-offset-2 hover:underline">
+                  <button
+                    onClick={() => {
+                      if (window.confirm("¿Descartar el aviso sin avisar al cliente? Los cambios seguirán en su plan, pero este resumen no podrá recuperarse.")) dismiss();
+                    }}
+                    className="ml-auto text-xs text-zinc-500 underline-offset-2 hover:underline">
                     Descartar aviso
                   </button>
                 </div>

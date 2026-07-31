@@ -192,7 +192,13 @@ def _norm_food(s: str | None) -> str:
 def _terms_for(item: str) -> tuple[str, ...]:
     key = _norm_food(item).strip()
     for k, syns in _ALLERGEN_SYNONYMS.items():
-        if _norm_food(k) == key or key in syns:
+        # El lookup inverso debe comparar contra el sinónimo NORMALIZADO y sin
+        # el marcador \b: si el cliente escribe "maní" o "pan", el término del
+        # diccionario es r"\bmani\b"/r"\bpan\b" y `key in syns` nunca coincidía
+        # → la alergia no expandía a su grupo (auditoría matemática).
+        if _norm_food(k) == key or any(
+            _norm_food(s.replace("\\b", "")) == key for s in syns
+        ):
             return syns
     return (key,) if key else ()
 
@@ -434,6 +440,11 @@ DET_MEALSUM_EPS = 2        # |Σ comidas − total del día| por eje ≤ 2 (redo
 # huevos). Genéricos y conservadores: solo bloquean lo CLARAMENTE absurdo.
 PORTION_SOLID_ABSURD_G = 700    # un solo alimento sólido > 700 g crudo/ración
 PORTION_EGG_ABSURD = 8          # > 8 huevos en una toma
+# Topes por grupo (auditoría matemática): 690 g de arroz crudo (~2.450 kcal)
+# pasaba el tope genérico, y los líquidos no tenían ninguno.
+PORTION_DRY_CEREAL_ABSURD_G = 300   # arroz/pasta/avena/cuscús/quinoa EN CRUDO
+PORTION_LIQUID_ABSURD_ML = 1000     # un solo líquido > 1 L/ración
+_DRY_CEREAL_HINTS = ("arroz", "pasta", "avena", "cuscus", "quinoa", "harina")
 _LIQUID_HINTS = ("leche", "bebida", "caldo", "agua", "yogur", "kefir", "batido", "zumo")
 
 
@@ -445,14 +456,21 @@ def _atwater(macros: dict) -> float:
 
 # Patrones dietéticos éticos/religiosos: términos PROHIBIDOS (normalizados). Un
 # match = violación (100%, sin excepción). Reutiliza la normalización de alérgenos.
+# Construcción PROGRAMÁTICA: vegano ⊇ vegetariano ⊇ (carnes) — la auditoría
+# encontró especies ("bacalao", "sardina") bloqueadas para vegetarianos pero NO
+# para veganos por mantener dos listas a mano.
+_MEATS = ("pollo", "pavo", "ternera", "cerdo", "carne", "jamon", "lomo", "cordero",
+          "conejo", "embutido", "bacon", "panceta", "chorizo", "salchichon", "gelatina")
+_FISH_SEAFOOD = ("atun", "salmon", "merluza", "pescado", "bacalao", "sardina",
+                 "lubina", "dorada", "trucha", "caballa", "anchoa", "boqueron",
+                 "gamba", "marisco", "langostino", "mejillon", "almeja", "calamar",
+                 "pulpo", "sepia")
+_ANIMAL_BYPRODUCTS = ("huevo", "clara", "yema", "leche", "yogur", "queso", "nata",
+                      "mantequilla", "lacteo", "requeson", "kefir", "miel", "whey")
 _DIET_PATTERN_FORBIDDEN: dict[str, tuple[str, ...]] = {
-    "vegano": ("pollo", "pavo", "ternera", "cerdo", "carne", "jamon", "lomo", "atun",
-               "salmon", "merluza", "pescado", "gamba", "marisco", "huevo", "clara",
-               "yema", "leche", "yogur", "queso", "nata", "mantequilla", "miel"),
-    "vegetariano": ("pollo", "pavo", "ternera", "cerdo", "carne", "jamon", "lomo",
-                    "atun", "salmon", "merluza", "pescado", "gamba", "marisco",
-                    "bacalao", "sardina"),
-    "pescetariano": ("pollo", "pavo", "ternera", "cerdo", "carne", "jamon", "lomo"),
+    "vegano": _MEATS + _FISH_SEAFOOD + _ANIMAL_BYPRODUCTS,
+    "vegetariano": _MEATS + _FISH_SEAFOOD,
+    "pescetariano": _MEATS,
     "sin_cerdo": ("cerdo", "jamon", "lomo", "bacon", "panceta", "chorizo", "salchichon",
                   "tocino"),
     "halal": ("cerdo", "jamon", "lomo", "bacon", "panceta", "chorizo", "salchichon",
@@ -495,6 +513,17 @@ def _check_portions(r: GuardrailReport, slot, opt: dict) -> None:
         if not isinstance(grams, (int, float)):
             continue
         is_liquid = any(h in food for h in _LIQUID_HINTS)
+        if is_liquid and grams > PORTION_LIQUID_ABSURD_ML:
+            r.violations.append(
+                f"porción irreal: slot {slot} '{key}' — {grams:.0f} ml de "
+                f"'{ing.get('food')}' (máx. razonable {PORTION_LIQUID_ABSURD_ML} ml)"
+            )
+        if (not is_liquid and any(h in food for h in _DRY_CEREAL_HINTS)
+                and "crudo" in food and grams > PORTION_DRY_CEREAL_ABSURD_G):
+            r.violations.append(
+                f"porción irreal: slot {slot} '{key}' — {grams:.0f} g en crudo de "
+                f"'{ing.get('food')}' (máx. razonable {PORTION_DRY_CEREAL_ABSURD_G} g)"
+            )
         if grams > PORTION_SOLID_ABSURD_G and not is_liquid:
             r.violations.append(
                 f"porción irreal: slot {slot} '{key}' — {grams:.0f} g de "
@@ -649,12 +678,12 @@ def filter_exercises_for_client(
             continue
         needed = set(ex.get("equipment") or [])
         if training_place == "gym":
-            # En gimnasio se asume equipamiento estándar; solo se exige que el
-            # cliente no haya excluido el equipamiento explícitamente.
-            if needed and equipment_available and not needed <= equipment_available:
-                # permite peso corporal siempre
-                if needed != {"peso_corporal"}:
-                    continue
+            # En gimnasio se asume equipamiento estándar COMPLETO: no se
+            # restringe por material (los callers pasan equipment=set()). La
+            # rama anterior era en realidad una allowlist — con un set no vacío
+            # habría excluido casi toda la biblioteca (trampa detectada en la
+            # auditoría; semántica fijada por test).
+            pass
         else:
             # casa/exterior: solo lo que el cliente declaró tener (o peso corporal)
             if needed and not needed <= (equipment_available | {"peso_corporal"}):

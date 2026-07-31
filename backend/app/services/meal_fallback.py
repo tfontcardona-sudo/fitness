@@ -42,6 +42,14 @@ _DESAYUNO: list[tuple[str, list[_ING]]] = [
     ("Tortitas de avena con queso fresco y fruta",
      [("Copos de avena", 60, (13, 60, 7)), ("Claras de huevo", 150, (11, 0.7, 0.2)),
       ("Queso fresco batido 0%", 150, (8, 4, 0.2)), ("Frutos rojos", 100, (1, 8, 0.3))]),
+    # Comodines SIN gluten/lactosa/huevo/frutos secos/marisco/soja: garantizan
+    # opciones seguras también para el cliente multialérgico (auditoría de perfiles).
+    ("Bol salado de arroz con pollo",
+     [("Arroz (en crudo)", 60, (7, 78, 0.6)), ("Pechuga de pollo", 120, (22, 0, 2)),
+      ("Tomate", 100, (1, 3.5, 0.2)), ("Aceite de oliva virgen extra", 8, (0, 0, 100))]),
+    ("Tortitas de arroz con pavo y aguacate",
+     [("Tortitas de arroz", 40, (8, 80, 3)), ("Pavo en lonchas", 80, (22, 1, 2)),
+      ("Aguacate", 70, (2, 2, 15)), ("Tomate", 80, (1, 3.5, 0.2))]),
 ]
 
 _SNACK: list[tuple[str, list[_ING]]] = [
@@ -63,6 +71,13 @@ _SNACK: list[tuple[str, list[_ING]]] = [
     ("Pan integral con pavo y queso fresco",
      [("Pan integral", 60, (9, 43, 3.5)), ("Pavo en lonchas", 60, (22, 1, 2)),
       ("Queso fresco batido 0%", 100, (8, 4, 0.2)), ("Tomate", 80, (1, 3.5, 0.2))]),
+    # Comodines SIN gluten/lactosa/huevo/frutos secos/marisco/soja (multialérgicos).
+    ("Fruta con jamón de pavo",
+     [("Manzana", 150, (0.3, 12, 0.2)), ("Plátano", 100, (1, 21, 0.3)),
+      ("Pavo en lonchas", 80, (22, 1, 2))]),
+    ("Tortitas de arroz con aguacate y tomate",
+     [("Tortitas de arroz", 40, (8, 80, 3)), ("Aguacate", 80, (2, 2, 15)),
+      ("Tomate", 100, (1, 3.5, 0.2))]),
 ]
 
 _PRINCIPAL: list[tuple[str, list[_ING]]] = [
@@ -88,6 +103,19 @@ _PRINCIPAL: list[tuple[str, list[_ING]]] = [
     ("Atún con boniato y verduras",
      [("Atún fresco", 170, (23, 0, 5)), ("Boniato (en crudo)", 300, (1.5, 21, 0.2)),
       ("Verduras variadas", 200, (2, 5, 0.3)), ("Aceite de oliva virgen extra", 8, (0, 0, 100))]),
+    # Comodines SIN pescado/marisco/gluten/lactosa/huevo/frutos secos/soja:
+    # garantizan ≥3 opciones seguras también con aversión a pescado o multialergia
+    # (hallazgo de la auditoría de perfiles: quien odiaba el pescado recibía
+    # merluza/salmón en B/C y el Revisor 0 vetaba el plan entero).
+    ("Pollo con patata y verduras",
+     [("Pechuga de pollo", 180, (22, 0, 2)), ("Patata (en crudo)", 320, (2, 17, 0.1)),
+      ("Verduras variadas", 200, (2, 5, 0.3)), ("Aceite de oliva virgen extra", 10, (0, 0, 100))]),
+    ("Ternera magra con arroz y verduras",
+     [("Ternera magra", 170, (21, 0, 5)), ("Arroz (en crudo)", 75, (7, 78, 0.6)),
+      ("Verduras variadas", 200, (2, 5, 0.3)), ("Aceite de oliva virgen extra", 8, (0, 0, 100))]),
+    ("Pavo con boniato y verduras",
+     [("Pechuga de pavo", 180, (22, 0, 1.5)), ("Boniato (en crudo)", 280, (1.5, 21, 0.2)),
+      ("Verduras variadas", 200, (2, 5, 0.3)), ("Aceite de oliva virgen extra", 10, (0, 0, 100))]),
 ]
 
 
@@ -101,35 +129,76 @@ def _meal_kind(name: str | None) -> list[tuple[str, list[_ING]]]:
     return _SNACK
 
 
+def _ing_cap_g(food: str) -> float:
+    """Tope de ración por ingrediente, espejo del guardarraíl de porciones
+    (PORTION_SOLID_ABSURD_G / huevos): el banco jamás debe fabricar una opción
+    que el Revisor 0 vete por 'porción irreal'."""
+    from app.services.guardrails import (
+        PORTION_EGG_ABSURD, PORTION_SOLID_ABSURD_G, _LIQUID_HINTS, _norm_food,
+    )
+    n = _norm_food(food)
+    if "huevo" in n:
+        return (PORTION_EGG_ABSURD * 55) - 5  # margen bajo el umbral
+    if any(h in n for h in _LIQUID_HINTS):
+        return 1000.0
+    return PORTION_SOLID_ABSURD_G - 50  # margen para el redondeo a 5 g
+
+
 def _scaled_option(key: str, title: str, ings: list[_ING], target_kcal: float) -> dict:
     base_kcal = sum(g * (4 * p + 4 * c + 9 * f) / 100 for _, g, (p, c, f) in ings)
     ratio = target_kcal / base_kcal if base_kcal > 0 and target_kcal > 0 else 1.0
     ratio = max(0.4, min(3.0, ratio))
     from app.services.nutrition_scale import _rhu  # half-up: convenio del sistema
 
+    # Escalado con TOPE por ingrediente: lo que no cabe en uno (p. ej. >650 g de
+    # patata) se redistribuye en kcal entre los que aún tienen margen, para que
+    # la opción siga acercándose al objetivo sin porciones absurdas.
+    dens = [(4 * p + 4 * c + 9 * f) / 100 for _, _, (p, c, f) in ings]  # kcal/g
+    caps = [_ing_cap_g(food) for food, _, _ in ings]
+    grams = [g * ratio for _, g, _ in ings]
+    lost_kcal = 0.0
+    for k in range(len(grams)):
+        if grams[k] > caps[k]:
+            lost_kcal += (grams[k] - caps[k]) * dens[k]
+            grams[k] = caps[k]
+    if lost_kcal > 1:
+        room = [max(0.0, caps[k] - grams[k]) * dens[k] for k in range(len(grams))]
+        total_room = sum(room)
+        if total_room > 0:
+            take = min(lost_kcal, total_room)
+            for k in range(len(grams)):
+                if room[k] > 0 and dens[k] > 0:
+                    grams[k] += (take * room[k] / total_room) / dens[k]
+
     out_ings, tp, tc, tf = [], 0.0, 0.0, 0.0
-    for food, g, (p, c, f) in ings:
-        grams = max(5, _rhu(g * ratio / 5) * 5)
-        out_ings.append({"food": food, "grams": grams, "household": ""})
-        tp += grams * p / 100
-        tc += grams * c / 100
-        tf += grams * f / 100
+    for (food, _g, (p, c, f)), g_final in zip(ings, grams):
+        g_r = max(5, _rhu(g_final / 5) * 5)
+        out_ings.append({"food": food, "grams": g_r, "household": ""})
+        tp += g_r * p / 100
+        tc += g_r * c / 100
+        tf += g_r * f / 100
+    # UNA SOLA VERDAD: las kcal declaradas son EXACTAMENTE 4/4/9 de los macros
+    # declarados (ya redondeados). Antes se redondeaban por separado y la opción
+    # nacía con un descuadre Atwater de ±7 kcal que vetaba el Revisor 0.
+    p_r, c_r, f_r = _rhu(tp), _rhu(tc), _rhu(tf)
     return {
         "key": key, "title": title, "prep": "", "prep_minutes": 10,
         "ingredients": out_ings,
-        "macros": {"kcal": _rhu(4 * tp + 4 * tc + 9 * tf),
-                   "protein_g": _rhu(tp), "carbs_g": _rhu(tc), "fat_g": _rhu(tf)},
+        "macros": {"kcal": 4 * p_r + 4 * c_r + 9 * f_r,
+                   "protein_g": p_r, "carbs_g": c_r, "fat_g": f_r},
         "tags": [],
     }
 
 
 def build_fallback_options(meal: dict, allergies: list[str] | None = None,
                            dislikes: list[str] | None = None) -> list[dict]:
-    """3 opciones cerradas (clave A/B/C) escaladas al objetivo de la toma.
+    """Hasta 3 opciones cerradas (clave A/B/C) escaladas al objetivo de la toma.
 
-    Las alergias EXCLUYEN candidatas siempre; las aversiones solo mientras queden
-    suficientes candidatas para dar 3 opciones. Si ninguna candidata es segura
-    (caso extremo), devuelve lista vacía y el caller conserva su comportamiento.
+    Alergias Y aversiones EXCLUYEN candidatas siempre: el Revisor 0
+    (`validate_plan_deterministic`) veta ambas, así que colar una aversión "para
+    llegar a 3" bloqueaba el plan entero (hallazgo de la auditoría de perfiles).
+    Mejor 1-2 opciones seguras que 3 con una vetada. Si ninguna candidata es
+    segura (caso extremo), devuelve lista vacía y el caller avisa al coach.
     """
     target = meal.get("target") or {}
     kcal = float(target.get("kcal") or 0) or (
@@ -138,9 +207,10 @@ def build_fallback_options(meal: dict, allergies: list[str] | None = None,
     )
     candidates = _meal_kind(meal.get("name"))
     scaled = [_scaled_option("?", t, ings, kcal) for t, ings in candidates]
-    safe = [o for o in scaled if gr.option_allergen(o, allergies) is None]
-    preferred = [o for o in safe if gr.option_allergen(o, dislikes) is None]
-    chosen = (preferred + [o for o in safe if o not in preferred])[:3]
+    safe = [o for o in scaled
+            if gr.option_allergen(o, allergies) is None
+            and gr.option_allergen(o, dislikes) is None]
+    chosen = safe[:3]
     for i, o in enumerate(chosen):
         o["key"] = chr(ord("A") + i)
     return chosen

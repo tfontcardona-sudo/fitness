@@ -1,6 +1,6 @@
 """Máquina de estados del cliente (G.2).
 
-    onboarding → active → awaiting_feedback
+    onboarding → active → review_pending
               → (at_risk si +4 días sin cerrar tras fin de período
                  o <30% de registros a día 10)
               → review_pending → active …
@@ -72,7 +72,7 @@ def evaluate_transition(facts: ClientFacts, today: date) -> TransitionDecision:
     status = facts.status
 
     # inactive: cualquier estado activo con >30 días sin actividad
-    if status in ("active", "awaiting_feedback", "at_risk"):
+    if status in ("active", "at_risk"):
         if facts.last_activity_date is not None:
             idle = (today - facts.last_activity_date).days
             if idle > INACTIVE_DAYS:
@@ -94,7 +94,7 @@ def evaluate_transition(facts: ClientFacts, today: date) -> TransitionDecision:
                     "active", f"adherencia recuperada ({ratio * 100:.0f}%)"
                 )
 
-    if status in ("active", "awaiting_feedback"):
+    if status == "active":
         # ¿Período terminado y sin cerrar +4 días? → at_risk
         if facts.period_end is not None and not facts.period_closed:
             days_past_end = (today - facts.period_end).days
@@ -134,10 +134,12 @@ def evaluate_transition(facts: ClientFacts, today: date) -> TransitionDecision:
 
 
 # valid transitions for event-driven changes (validación defensiva)
+# ("awaiting_feedback" eliminado: era un estado MUERTO — nada lo asignaba y
+# confundía la máquina real, auditoría del ciclo. El flujo salta de active a
+# review_pending directamente al cerrar la revisión.)
 VALID_TRANSITIONS = {
     "onboarding": {"active", "inactive"},
-    "active": {"awaiting_feedback", "review_pending", "at_risk", "inactive"},
-    "awaiting_feedback": {"review_pending", "at_risk", "active", "inactive"},
+    "active": {"review_pending", "at_risk", "inactive"},
     "at_risk": {"review_pending", "active", "inactive"},
     "review_pending": {"active", "inactive"},
     "inactive": {"active"},  # reactivación manual

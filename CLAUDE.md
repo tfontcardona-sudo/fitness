@@ -568,6 +568,63 @@ cd backend && python -m pytest tests/ -q
      créditos IA vacío ≠ $0, confirmación al descartar el modal de cliente o
      salir con el editor del plan/anamnesis abiertos (+beforeunload), y fecha
      de videollamada validada con el porqué en el botón.
+   - **Auditoría de conectividad + banco de 100 perfiles (agosto 2026):** tres
+     auditores de código (ciclo, ediciones, matemática determinista) + un banco
+     de 72 perfiles sintéticos ejecutando el pipeline REAL (metrics → macros →
+     filtros → banco fallback → Revisor 0 → motor quincenal). Corregido TODO lo
+     confirmado:
+     · **CRÍTICO — unidades del motor quincenal:** `kcal_delta_pct` emitía la
+       FRACCIÓN (0.06) y `adapt_plan` dividía entre 100 → el ajuste ±6% del §8
+       se aplicaba como ±0,06% (no-op). Contrato fijado en PUNTOS porcentuales
+       (±6.0) + test e2e. Nueva regla `deriva_no_deseada` (mantenimiento/recomp
+       con >0,45%/sem). Adherencia 0.0 real ya no se lee como 1.0.
+     · **Alérgenos:** lookup inverso de sinónimos roto con términos raw-string
+       ("maní" no detectaba cacahuete; "pan" no expandía a trigo/pasta) —
+       corregido + regresión. Patrones veganos ⊇ vegetarianos (programático).
+       Topes de porción nuevos: cereal seco 300 g crudo, líquidos 1 L.
+     · **Banco fallback:** aversiones ahora VETAN igual que el Revisor 0 (antes
+       colaba pescado a quien lo odia y el plan entero quedaba retenido);
+       plantillas comodín sin los 6 grandes alérgenos (multialérgico cubierto);
+       kcal de cada opción = 4/4/9 EXACTO de sus macros; porciones capadas con
+       redistribución. El solver también declara kcal=Atwater (adiós vetos
+       falsos por la fibra de las etiquetas) y redondea half-up.
+     · **Obesidad:** los suelos de macros por kg total invertían el déficit
+       (fat_loss en superávit sin aviso) → capado al TDEE + nota; suelo calórico
+       ≥ TDEE avisa "esto es mantenimiento". Edad acotada con aviso; e1RM
+       ignora series >15 reps; weight_trend descarta outliers (4·MAD).
+     · **Adaptación:** cláusulas de macros ya NO puentean el veto de kcal del
+       §8 (rebalanceo a las kcal previas); `check_nutrition` corre ANTES de
+       auto-activar la adaptación (violación → borrador retenido); "%s" del
+       texto de la IA interpretados como relativos (antes −10% = −10 g).
+     · **Ciclo:** alerta `adapt_plan` anclada al último período ANALIZADO
+       (sobrevive al envío del feedback); push al coach cuando el CLIENTE sube
+       su anamnesis (con aviso si la lectura IA falló); `inactive` ya tiene
+       salida (botón Reactivar + auto-reactivación por actividad del portal +
+       push/alerta al caer); recordatorios D+3/D+7 al onboarding sin anamnesis;
+       banner del portal "completa tu anamnesis"; videollamadas `proposed`/
+       `pending_manual` se pueden cerrar sin Google ("Marcar hecha");
+       change-request con push inmediato; pago huérfano de Stripe avisa;
+       `awaiting_feedback` (estado muerto) eliminado; "Al día" excluye at_risk;
+       "enviar feedback por email" comprueba `email_status` de verdad.
+     · **Ediciones:** PATCH de planes con control de concurrencia optimista
+       (`base_rev` + rev en nutrition_json → 409 con mensaje claro; PATCH sobre
+       `superseded` → 409); snapshot `gen_inputs` al generar + alertas
+       `plan_stale_inputs` (ficha cambiada tras generar) y
+       `plan_allergen_conflict`/`plan_dislike_conflict` (alergia añadida con
+       plan activo) EN VIVO; `guardrail_flags` y hallazgos ÁMBAR/degraded del
+       panel §9 por fin visibles en la UI; editor de feedback avisa si YA se
+       envió y permite editar `plan_adjustments` ANTES de Adaptar; "Descartar
+       aviso" con confirmación; manifest PWA con el nombre real de la marca;
+       etiqueta "Peso actual" corregida a "Peso inicial".
+     · **Biblioteca de casa:** +22 ejercicios de peso corporal/bandas
+       (seed insert-por-nombre en cada arranque) — un cliente de casa sin
+       material pasaba el filtro con 5-11 ejercicios; ahora ≥14 con ≥7 grupos.
+       Aviso en generate-plan si la biblioteca filtrada queda fina y si alguna
+       toma queda sin opciones seguras. Rama "gym" del filtro fijada como
+       "sin restricción de material" real (era una allowlist encubierta).
+     · Banco de perfiles reproducible en scratchpad (`audit100/run.py`):
+       0 hallazgos tras las correcciones. Suite ampliada con
+       `tests/test_auditoria_integral.py`.
    - **Pendientes DETECTADOS y no aplicados** (por alcance, para próximas
      sesiones): unificar la recomendación de macros del editor con
      `metrics.macro_targets` (dos fórmulas hoy); vectores dorados de
@@ -577,7 +634,15 @@ cd backend && python -m pytest tests/ -q
      de la PWA al rotar token; toggle manual "marcar pagado" en el perfil;
      alerta `client_went_inactive`; patrón dietético real (vegano/halal) como
      campo del cliente conectado a `filter_foods` (hoy `_DIET_PATTERN_FORBIDDEN`
-     no tiene fuente de datos); code-splitting del bundle (938 KB).
+     no tiene fuente de datos); code-splitting del bundle (938 KB); helper único
+     `reference_weight` (editor usa cierre>inicio, PATCH usa current>inicio,
+     generate usa log>cierre>current>inicio — unificar y exponer al editor);
+     volumen por grupo contando secundarios a 0,5 en `check_training` (+ validar
+     progresión/deload); derivar `menstrual_confound` de sexo+cierre;
+     `weeks_in_deficit` cuenta TODOS los períodos ×2 (afinar con kcal<TDEE del
+     plan del período); alineado por toma del banco en modo `strict`
+     (`_align_bank_slots` solo cubre flexible_7); `docs_theme` de BrandConfig
+     sin consumidor; vectores dorados de rescale/clamp TS⇄backend.
 
 ---
 

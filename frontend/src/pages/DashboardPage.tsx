@@ -89,13 +89,7 @@ function nextAction(c: ClientOut): Accion | null {
       detail: "Genera el análisis de la etapa y valora con el cliente si toca cambiar de objetivo.",
       cta: "Valorar objetivo", tab: "planificacion",
     };
-  if (c.status === "awaiting_feedback")
-    return {
-      client: c, prio: 4, tone: "#9A6B15", icon: Hourglass, category: "En espera",
-      title: "Esperando su cierre quincenal",
-      detail: "El período está en marcha: puedes seguir sus registros diarios en tiempo real.",
-      cta: "Ver seguimiento", tab: "seguimiento",
-    };
+  // ("awaiting_feedback" eliminado: estado muerto que nada asignaba — auditoría.)
   return null; // activo y al día
 }
 
@@ -169,6 +163,28 @@ export default function DashboardPage() {
         acciones.push({
           client: cli, prio: 1, tone: "#C96A1E", icon: Sparkles, category: "Objetivo",
           title: "Plan activo con el objetivo anterior",
+          detail: al.message, cta: al.action, tab: al.tab,
+        });
+      } else if (al.kind === "plan_allergen_conflict" || al.kind === "plan_dislike_conflict") {
+        // Alergia/aversión añadida DESPUÉS de generar: el plan activo puede
+        // seguir sirviendo ese alimento en portal y PDF.
+        acciones.push({
+          client: cli, prio: al.kind === "plan_allergen_conflict" ? 1 : 3,
+          tone: "#C2453A", icon: Sparkles, category: "Planificación",
+          title: al.kind === "plan_allergen_conflict"
+            ? "⚠ Alérgeno en el plan activo" : "Alimento no tolerado en el plan",
+          detail: al.message, cta: al.action, tab: al.tab,
+        });
+      } else if (al.kind === "plan_stale_inputs") {
+        acciones.push({
+          client: cli, prio: 2, tone: "#C96A1E", icon: Sparkles, category: "Planificación",
+          title: "Ficha cambiada tras generar el plan",
+          detail: al.message, cta: al.action, tab: al.tab,
+        });
+      } else if (al.kind === "client_inactive") {
+        acciones.push({
+          client: cli, prio: 3, tone: "#7A7A7A", icon: Hourglass, category: "Inactivo",
+          title: "Cliente inactivo",
           detail: al.message, cta: al.action, tab: al.tab,
         });
       } else if (al.kind === "payment_pending") {

@@ -59,7 +59,13 @@ def _adherence_ratio(period: Period, adh: M.AdherenceSummary) -> float:
     si falta, cae al ratio derivado del registro diario."""
     if period.adherence_diet_0_10 is not None:
         return max(0.0, min(1.0, period.adherence_diet_0_10 / 10.0))
-    return adh.diet_adherence_ratio or 1.0
+    # 0.0 real (todo "no") es un DATO, no una ausencia: el `or 1.0` anterior
+    # convertía al peor cliente en adherencia perfecta y el motor ajustaba kcal
+    # en vez de bloquear (auditoría #6). Sin registros de dieta → 1.0 neutro.
+    n_regs = adh.diet_yes + adh.diet_partial + adh.diet_no
+    if n_regs <= 0:
+        return 1.0
+    return max(0.0, min(1.0, adh.diet_adherence_ratio))
 
 
 def _weeks_in_deficit(client: Client, period: Period) -> int:
