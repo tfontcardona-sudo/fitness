@@ -118,6 +118,17 @@ def _photos_count(db: Session, client_id: int) -> int:
     )
 
 
+def _needs_anamnesis(client: Client) -> bool:
+    """Onboarding sin PDF de anamnesis: el portal debe señalar el camino."""
+    if client.status != "onboarding":
+        return False
+    try:
+        from app.services.storage import list_documents
+        return not list_documents(client.id)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _state(db: Session, client: Client) -> AnamnesisStateOut:
     brand = db.scalar(select(BrandConfig).limit(1)) or BrandConfig()
     return AnamnesisStateOut(
@@ -320,6 +331,7 @@ def portal_state_full(
         brand=PortalBrand(**portal_svc.brand_payload(db)),
         # Banner del portal: se muestra ya (sin esperar los 15 min del push).
         photos_pending=photos_pending(db, client, min_minutes=0),
+        needs_anamnesis=_needs_anamnesis(client),
     )
 
 
@@ -660,6 +672,14 @@ def portal_diary_upsert(
 ) -> dict:
     """Registro diario con autosave (upsert por fecha). Autocompletado desde el
     plan en el frontend; aquí solo se persiste lo que el cliente confirma."""
+    # AUTO-REACTIVACIÓN (auditoría del ciclo): un cliente `inactive` que vuelve
+    # a registrar su día está activo de facto — antes quedaba en un limbo sin
+    # alertas, sin push y sin avance de ciclo, sin salida desde la UI.
+    if client.status == "inactive":
+        client.status = "active"
+        log_event(db, "client", client.id, "status_changed",
+                  {"from": "inactive", "to": "active",
+                   "reason": "actividad del portal (registro del diario)"})
     period = portal_svc.active_period(db, client.id)
     if period is None or period.status != "open":
         raise HTTPException(status.HTTP_409_CONFLICT, "No tienes un período abierto")
@@ -976,8 +996,15 @@ def portal_close_period(
     period.closing_submitted_at = datetime.now(timezone.utc)
     period.photos_confirmed = False
 
-    # El cliente pasa a esperar la revisión del coach (review_pending)
-    if client.status in ("active", "awaiting_feedback", "at_risk"):
+    # El cliente pasa a esperar la revisión del coach (review_pending). También
+    # desde `inactive`: cerrar la revisión ES actividad (antes el cierre de un
+    # inactivo no avanzaba el ciclo y el feedback quedaba bloqueado — auditoría).
+    if client.status == "inactive":
+        log_event(db, "client", client.id, "status_changed",
+                  {"from": "inactive", "to": "active",
+                   "reason": "actividad del portal (cierre de revisión)"})
+        client.status = "active"
+    if client.status in ("active", "at_risk"):
         client.status = "review_pending"
 
     log_event(db, "client", client.id, "period_closed",
@@ -1114,6 +1141,21 @@ def portal_change_request(
         EmailService(db).send(to=coach_to, subject=subject, html=html,
                               kind="coach_change_request", client=client)
 
+    # Push INMEDIATO al coach (auditoría del ciclo): con los emails apagados el
+    # mensaje del cliente esperaba hasta 3 h al siguiente digest.
+    try:
+        from app.services import push as push_svc
+
+        extracto = cr.message if len(cr.message) <= 120 else cr.message[:117] + "…"
+        push_svc.send_to_coach(db, {
+            "title": f"✋ {client.full_name} pide un ajuste",
+            "body": extracto,
+            "url": f"/clientes/{client.id}?tab=seguimiento",
+            "tag": f"change-request-{client.id}",
+        })
+    except Exception:  # noqa: BLE001 — el push nunca rompe la petición
+        pass
+
     db.commit()
     db.refresh(cr)
     return ChangeRequestOut.model_validate(cr)
@@ -1138,7 +1180,7 @@ def portal_manifest(
     # Identidad de la app instalada: "DQR" grande (etiqueta bajo el icono) y
     # "Assessories" como subtítulo (nombre completo en splash/ajustes).
     manifest = {
-        "name": "DQR · Assessories",
+        "name": brand.get("name") or "DQR · Assessories",
         "short_name": "DQR",
         "description": "Tu portal de seguimiento: entreno, diario y revisión quincenal.",
         "lang": "es",

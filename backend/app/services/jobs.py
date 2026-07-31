@@ -201,6 +201,25 @@ def _maintain_client(db: Session, client: Client, today: date,
                          kind="video_call_reminder", client=client)
             summary["reminders"] += 1
 
+    # 1d) ONBOARDING fantasma (auditoría del ciclo): quien paga/registra y no
+    # envía la anamnesis no recibía NINGÚN recordatorio nunca más. D+3 y D+7.
+    if client.status == "onboarding" and getattr(client, "created_at", None):
+        days_onb = (today - client.created_at.date()).days
+        if days_onb in (3, 7):
+            try:
+                from app.services.storage import list_documents
+                has_doc = bool(list_documents(client.id))
+            except Exception:  # noqa: BLE001
+                has_doc = True  # ante la duda, no molestar
+            kind = f"onboarding_reminder_d{days_onb}"
+            if not has_doc and not _already_sent_today(db, client.id, kind, today):
+                anamnesis_url = f"{base}/anamnesis/{client.portal_token}"
+                subject, html = tpl.onboarding_reminder(
+                    brand, _first_name(client), anamnesis_url, days_onb)
+                emailer.send(to=client.email, subject=subject, html=html,
+                             kind=kind, client=client)
+                summary["reminders"] += 1
+
     # 2) Cambio de estado
     if decision.new_status and decision.new_status != client.status:
         if can_transition(client.status, decision.new_status):
@@ -209,6 +228,21 @@ def _maintain_client(db: Session, client: Client, today: date,
             log_event(db, "client", client.id, "status_changed",
                       {"from": old, "to": decision.new_status, "reason": decision.reason})
             summary["transitions"] += 1
+
+            # La caída a INACTIVO era silenciosa (auditoría del ciclo): push
+            # inmediato al coach para decidir (reactivar/archivar/escribirle).
+            if decision.new_status == "inactive":
+                try:
+                    from app.services import push as push_svc
+
+                    push_svc.send_to_coach(db, {
+                        "title": f"💤 {client.full_name} ha pasado a inactivo",
+                        "body": decision.reason or "30 días sin actividad.",
+                        "url": f"/clientes/{client.id}",
+                        "tag": f"inactive-{client.id}",
+                    })
+                except Exception:  # noqa: BLE001 — el push nunca rompe el job
+                    pass
 
             # 3) Alerta al coach si pasa a at_risk
             if decision.notify_coach_at_risk and not _already_sent_today(

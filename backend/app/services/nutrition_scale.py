@@ -189,9 +189,13 @@ def reconcile_nutrition(nut: dict, weight_kg: float | None = None, *,
             for m in with_target:
                 m["target"][axis] = max(0, _rhu(float(m["target"].get(axis) or 0) * r))
         elif total > 0:
-            # La IA no repartió este eje: dáselo entero a la primera comida.
-            for i, m in enumerate(with_target):
-                m["target"][axis] = total if i == 0 else 0
+            # Eje sin repartir: en proporción a las kcal de cada comida (darlo
+            # entero a la primera destruía el reparto original — auditoría #21).
+            kcals = [float(m["target"].get("kcal") or 0) for m in with_target]
+            ksum = sum(kcals)
+            for m, k in zip(with_target, kcals):
+                share = (k / ksum) if ksum > 0 else 1.0 / len(with_target)
+                m["target"][axis] = max(0, _rhu(total * share))
         # Ajuste del redondeo a la comida mayor de este eje (suma EXACTA).
         diff = total - sum(int(m["target"].get(axis) or 0) for m in with_target)
         if diff:

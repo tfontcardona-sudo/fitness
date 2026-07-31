@@ -112,6 +112,9 @@ class PlanUpdateIn(BaseModel):
     nutrition_json: dict | None = None
     training_json: dict | None = None
     education_json: dict | None = None
+    # Control de concurrencia optimista: revisión del plan que el editor tenía
+    # abierta. Si no coincide con la actual → 409 (otra pestaña guardó antes).
+    base_rev: int | None = None
 
 
 def _sanitize_nutrition(nut: dict) -> None:
@@ -147,7 +150,24 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
     plan = db.get(Plan, plan_id)
     if not plan:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan no encontrado")
+    # CONCURRENCIA (auditoría de ediciones): dos pestañas con el editor abierto
+    # hacían last-write-wins silencioso (una revertía los macros de la otra y el
+    # diff "cambios manuales" registraba la reversión como si fuera del coach), y
+    # un PATCH desde una pestaña rancia aterrizaba sobre un plan ya SUSTITUIDO.
+    if plan.status == "superseded":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Esta versión del plan quedó sustituida por otra más nueva: recarga "
+            "la pestaña Planificación y edita la versión vigente.")
     changes = body.model_dump(exclude_unset=True)
+    base_rev = changes.pop("base_rev", None)
+    current_rev = int((plan.nutrition_json or {}).get("rev") or 0) \
+        if isinstance(plan.nutrition_json, dict) else 0
+    if base_rev is not None and base_rev != current_rev:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "El plan cambió desde que abriste el editor (otra pestaña o una "
+            "adaptación): recarga para ver la versión actual antes de guardar.")
     # Foto del plan ANTES de aplicar la edición: al final se calcula el diff
     # (determinista) de lo que el coach cambió a mano, para avisar y para el
     # mensaje al cliente ("he ajustado X → Y").
@@ -241,6 +261,13 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
                                 note=it, commit=False)
         except Exception:  # noqa: BLE001 — captura best-effort
             pass
+    # Revisión del plan tras la edición: sube el contador de concurrencia para
+    # que otra pestaña con el editor abierto reciba un 409 claro al guardar.
+    if isinstance(plan.nutrition_json, dict):
+        nj = dict(plan.nutrition_json)
+        nj["rev"] = current_rev + 1
+        plan.nutrition_json = nj
+
     # Editar también ACTIVA: si el coach retoca un borrador (legado), el plan
     # queda vigente al guardar — no existe el paso "Publicar".
     if plan.status == "draft":

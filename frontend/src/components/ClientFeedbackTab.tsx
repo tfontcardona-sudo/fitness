@@ -168,8 +168,20 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
   async function deliverFeedback(feedbackId: number, content: any, alreadySent: boolean, periodIndex = 0) {
     if (byEmail) {
       try {
-        await api.sendFeedbackEmail(feedbackId);
-        toast.push(alreadySent ? "Feedback reenviado por email" : "Feedback enviado por email al cliente");
+        const r = await api.sendFeedbackEmail(feedbackId);
+        // El backend marca "enviado" y avanza el ciclo ANTES del email: si el
+        // email falló, decir "enviado" sin más dejaba al cliente sin informe
+        // y a nadie enterado (auditoría del ciclo).
+        if (r.email_status === "sent") {
+          toast.push(alreadySent ? "Feedback reenviado por email" : "Feedback enviado por email al cliente");
+        } else {
+          toast.push(
+            r.email_status === "disabled"
+              ? "El ciclo ha avanzado pero los EMAILS ESTÁN DESACTIVADOS: envíaselo por WhatsApp"
+              : "El ciclo ha avanzado pero el EMAIL FALLÓ: reenvíalo o mándalo por WhatsApp",
+            "error",
+          );
+        }
         load();
         onClientChanged?.();
       } catch {
@@ -441,6 +453,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
               <FeedbackEditor
                 docId={p.feedback_id as number}
                 content={content}
+                sentAt={sent}
                 onCancel={() => setEditingFb(null)}
                 onSaved={() => { setEditingFb(null); load(); }}
               />
@@ -759,16 +772,22 @@ function BAStat({ label, before, after, lowerBetter }: {
   );
 }
 
-function FeedbackEditor({ docId, content, onCancel, onSaved }: {
-  docId: number; content: any; onCancel: () => void; onSaved: () => void;
+function FeedbackEditor({ docId, content, sentAt, onCancel, onSaved }: {
+  docId: number; content: any; sentAt?: string | null; onCancel: () => void; onSaved: () => void;
 }) {
   const toast = useToast();
+  // Ajustes propuestos a la planificación: editables ANTES de "Adaptar" (el
+  // backend ya lo soportaba pero la interfaz no lo cableaba — auditoría).
+  const initialAdjustments: { area?: string; change?: string; reason?: string }[] =
+    Array.isArray(content?.plan_adjustments) ? content.plan_adjustments : [];
   const [d, setD] = useState<Record<string, string>>({
     natural_analysis: content?.natural_analysis ?? "",
     changes_bullets: (content?.changes_bullets ?? []).join("\n"),
     answers: content?.answers ?? "",
     next_objectives: (content?.next_objectives ?? []).join("\n"),
     closing_message: content?.closing_message ?? "",
+    plan_adjustments: initialAdjustments
+      .map((a) => (a?.change ?? "").toString().trim()).filter(Boolean).join("\n"),
   });
   const [saving, setSaving] = useState(false);
   const set = (k: string, v: string) => setD((p) => ({ ...p, [k]: v }));
@@ -777,12 +796,21 @@ function FeedbackEditor({ docId, content, onCancel, onSaved }: {
     if (saving) return;
     setSaving(true);
     try {
+      // Cada línea es el TEXTO del cambio; área y motivo se conservan por
+      // posición (las líneas nuevas entran como "general").
+      const adjLines = d.plan_adjustments.split("\n").map((s) => s.trim()).filter(Boolean);
+      const adjustments = adjLines.map((line, i) => ({
+        area: initialAdjustments[i]?.area ?? "general",
+        change: line,
+        reason: initialAdjustments[i]?.reason ?? "",
+      }));
       await api.editFeedback(docId, {
         natural_analysis: d.natural_analysis,
         changes_bullets: d.changes_bullets.split("\n").map((s) => s.trim()).filter(Boolean),
         answers: d.answers.trim() || null,
         next_objectives: d.next_objectives.split("\n").map((s) => s.trim()).filter(Boolean),
         closing_message: d.closing_message,
+        ...(adjLines.length || initialAdjustments.length ? { plan_adjustments: adjustments } : {}),
       });
       toast.push("Feedback actualizado");
       onSaved();
@@ -802,11 +830,20 @@ function FeedbackEditor({ docId, content, onCancel, onSaved }: {
           <button onClick={save} disabled={saving} className="btn btn-primary"><Save size={14} /> {saving ? "Guardando…" : "Guardar"}</button>
         </div>
       </div>
+      {sentAt && (
+        <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-600">
+          Este feedback YA SE ENVIÓ el {new Date(sentAt).toLocaleDateString("es-ES")}: el cliente
+          recibió aquella versión por WhatsApp/email. Si lo editas, reenvíaselo para que le llegue la nueva.
+        </p>
+      )}
       <FbArea label="Análisis" value={d.natural_analysis} onChange={(v) => set("natural_analysis", v)} rows={4} />
       <FbArea label="Cambios en el plan (uno por línea)" value={d.changes_bullets} onChange={(v) => set("changes_bullets", v)} />
       <FbArea label="Respuesta a sus dudas" value={d.answers} onChange={(v) => set("answers", v)} />
       <FbArea label="Objetivos próximas 2 semanas (uno por línea)" value={d.next_objectives} onChange={(v) => set("next_objectives", v)} />
       <FbArea label="Mensaje de cierre" value={d.closing_message} onChange={(v) => set("closing_message", v)} rows={2} />
+      <FbArea
+        label="Ajustes propuestos a la planificación (uno por línea — se aplican al pulsar «Adaptar»)"
+        value={d.plan_adjustments} onChange={(v) => set("plan_adjustments", v)} />
     </div>
   );
 }

@@ -53,6 +53,13 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
     today = today or today_local()
     out: list[dict] = []
     if client.status == "inactive":
+        # Antes se devolvía [] y el cliente inactivo desaparecía de TODO el
+        # radar (auditoría del ciclo): estado sin salida y sin aviso. Una única
+        # alerta persistente para decidir: reactivar o archivar de verdad.
+        out.append(_alert(client, "client_inactive", "media",
+                          "Cliente inactivo (30 días sin actividad): reactívalo "
+                          "desde su perfil o acuerda con él el cierre.",
+                          "resumen", "Revisar cliente"))
         return out
 
     # --- Pago pendiente ------------------------------------------------------
@@ -82,9 +89,30 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
                               f"Borrador v{latest.version} sin activar: revísalo y actívalo.",
                               "planificacion", "Activar planificación"))
         else:
-            out.append(_alert(client, "create_plan", "media",
-                              "Sin planificación: completa la anamnesis y genera el plan.",
-                              "anamnesis", "Crear planificación"))
+            # La llegada de la anamnesis era un evento invisible (auditoría del
+            # ciclo): el mensaje decía lo mismo antes y después de que el
+            # cliente la subiera, y si la IA no pudo extraer los campos el
+            # coach creía que no había llegado nada. La alerta ahora distingue.
+            try:
+                from app.services.storage import list_documents
+                has_doc = bool(list_documents(client.id))
+            except Exception:  # noqa: BLE001 — el storage nunca tumba las alertas
+                has_doc = False
+            if has_doc:
+                extra = ("" if client.goal_type else
+                         " (la IA no pudo extraer todos los campos: revísalos a mano)")
+                out.append(_alert(client, "create_plan", "alta",
+                                  f"Anamnesis recibida{extra}: revísala y genera la planificación.",
+                                  "anamnesis", "Revisar anamnesis"))
+            else:
+                days_wait = ((today - client.created_at.date()).days
+                             if getattr(client, "created_at", None) else 0)
+                aging = (f" Lleva {days_wait} días sin enviarla: reclámasela."
+                         if days_wait >= 7 else "")
+                out.append(_alert(client, "create_plan",
+                                  "alta" if days_wait >= 7 else "media",
+                                  f"Sin planificación: falta su anamnesis.{aging}",
+                                  "anamnesis", "Crear planificación"))
         return out  # sin plan publicado, el resto del ciclo no aplica
 
     # --- Revisión quincenal recibida sin feedback ---------------------------
@@ -93,32 +121,42 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
                           f"Revisión #{last_period.period_index} recibida: revisa los datos y genera el feedback.",
                           "seguimiento", "Generar feedback"))
 
-    # --- Feedback generado pero sin enviar ----------------------------------
-    if last_period is not None and last_period.status == "analyzed":
+    # --- Feedback generado pero sin enviar / plan sin adaptar ---------------
+    # ANCLADO al último período ANALIZADO, no al último absoluto: enviar el
+    # feedback abre el período siguiente en el acto, y con el ancla vieja la
+    # alerta "sin adaptar" moría justo entonces — el ciclo nuevo corría 14 días
+    # con las kcal antiguas sin que nadie lo persiguiera (auditoría del ciclo).
+    last_analyzed = last_period if (
+        last_period is not None and last_period.status == "analyzed"
+    ) else db.scalar(
+        select(Period).where(Period.client_id == client.id,
+                             Period.status == "analyzed")
+        .order_by(Period.period_index.desc()).limit(1)
+    )
+    if last_analyzed is not None:
         fb = db.scalar(
-            select(FeedbackDoc).where(FeedbackDoc.period_id == last_period.id)
+            select(FeedbackDoc).where(FeedbackDoc.period_id == last_analyzed.id)
             .order_by(FeedbackDoc.id.desc()).limit(1)
         )
         if fb is not None and fb.sent_at is None:
             out.append(_alert(client, "send_feedback", "alta",
-                              f"Feedback de la revisión #{last_period.period_index} sin enviar al cliente.",
+                              f"Feedback de la revisión #{last_analyzed.period_index} sin enviar al cliente.",
                               "feedback", "Enviar por WhatsApp"))
 
-        # --- Plan sin adaptar a la última revisión --------------------------
         def _adapted_idx(p: Plan | None) -> int | None:
             if p is None:
                 return None
             return ((p.nutrition_json or {}).get("applied_adjustments") or {}).get("period_index")
 
-        if _adapted_idx(latest) != last_period.period_index:
+        if _adapted_idx(latest) != last_analyzed.period_index:
             out.append(_alert(client, "adapt_plan", "alta",
-                              f"Planificación sin adaptar a la revisión #{last_period.period_index}.",
+                              f"Planificación sin adaptar a la revisión #{last_analyzed.period_index}.",
                               "planificacion", "Adaptar planificación"))
         elif latest is not None and latest.status == "draft":
             out.append(_alert(client, "publish_plan", "alta",
-                              f"Borrador adaptado a la revisión #{last_period.period_index} sin activar.",
+                              f"Borrador adaptado a la revisión #{last_analyzed.period_index} sin activar.",
                               "planificacion", "Activar planificación"))
-    elif latest is not None and latest.status == "draft":
+    if last_analyzed is None and latest is not None and latest.status == "draft":
         # Borrador antiguo suelto (legado): los planes nuevos se activan solos
         out.append(_alert(client, "publish_plan", "media",
                           f"Borrador v{latest.version} sin activar.",
@@ -257,6 +295,75 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
         out.append(_alert(client, "regenerate_goal", "alta",
                           f"El objetivo es «{cur}» pero el plan activo sigue en «{old}»: regenéralo.",
                           "planificacion", "Regenerar planificación"))
+
+    # --- Alergia/aversión añadida DESPUÉS de generar: el plan activo puede ---
+    # seguir sirviendo el alérgeno en el portal y el PDF (auditoría de
+    # ediciones). Chequeo EN VIVO del banco publicado contra la ficha actual:
+    # se enciende al editar la ficha y se apaga al corregir/regenerar el plan.
+    if client.food_allergies or client.food_dislikes:
+        from app.services.guardrails import _iter_options, option_allergen
+
+        hit_allergy = hit_dislike = None
+        try:
+            for slot, opt in _iter_options(published.nutrition_json or {}):
+                if hit_allergy is None and client.food_allergies:
+                    found = option_allergen(opt, client.food_allergies)
+                    if found:
+                        hit_allergy = (slot, opt.get("title") or opt.get("key") or "?", found)
+                if hit_dislike is None and client.food_dislikes:
+                    found = option_allergen(opt, client.food_dislikes)
+                    if found:
+                        hit_dislike = (slot, opt.get("title") or opt.get("key") or "?", found)
+                if hit_allergy and hit_dislike:
+                    break
+        except Exception:  # noqa: BLE001 — un plan legado raro no tumba las alertas
+            pass
+        if hit_allergy:
+            s, t, f = hit_allergy
+            out.append(_alert(
+                client, "plan_allergen_conflict", "alta",
+                f"⚠ Su plan activo contiene un ALÉRGENO de su ficha: «{t}» "
+                f"(toma {s}, contiene {f}). Edita esa comida o regenera el plan.",
+                "planificacion", "Corregir planificación"))
+        elif hit_dislike:
+            s, t, f = hit_dislike
+            out.append(_alert(
+                client, "plan_dislike_conflict", "media",
+                f"Su plan activo incluye un alimento que ahora no tolera/odia: "
+                f"«{t}» (toma {s}, {f}). Valora cambiar esa opción.",
+                "planificacion", "Revisar planificación"))
+
+    # --- Ficha cambiada tras generar (peso/altura/nivel/días/lugar/dieta) ----
+    # El PATCH de la ficha era silencioso: la IA extraía mal la altura, el
+    # coach la corregía y las kcal del plan seguían calculadas con el dato
+    # viejo sin ningún aviso (auditoría de ediciones). El plan guarda ahora un
+    # snapshot de sus inputs y aquí se compara con la ficha actual.
+    gen_inputs = (published.nutrition_json or {}).get("gen_inputs") or {}
+    if gen_inputs:
+        diffs: list[str] = []
+        checks = (
+            ("height_cm", client.height_cm, "altura"),
+            ("level", client.level, "nivel"),
+            ("training_days", client.training_days, "días de entreno"),
+            ("training_place", client.training_place, "lugar de entreno"),
+            ("diet_mode", client.diet_mode, "modo de dieta"),
+        )
+        for key, current, label in checks:
+            old = gen_inputs.get(key)
+            if old is not None and current is not None and old != current:
+                diffs.append(f"{label} {old}→{current}")
+        old_w = gen_inputs.get("weight_kg")
+        cur_w = client.current_weight_kg or client.start_weight_kg
+        if (isinstance(old_w, (int, float)) and isinstance(cur_w, (int, float))
+                and abs(float(old_w) - float(cur_w)) >= 3):
+            diffs.append(f"peso {old_w:g}→{cur_w:g} kg")
+        if diffs:
+            out.append(_alert(
+                client, "plan_stale_inputs", "media",
+                "La ficha cambió tras generar el plan (" + ", ".join(diffs[:4]) +
+                "): las kcal/entreno del plan activo salen de los datos viejos — "
+                "valora regenerar o adaptar.",
+                "planificacion", "Revisar planificación"))
 
     # --- 45 días en la misma etapa de objetivo ------------------------------
     if client.goal_started_on is not None:

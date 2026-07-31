@@ -39,13 +39,8 @@ ACTIVITY_FACTORS = {
 # recomposición ≈ mantenimiento con proteína alta (Barakat 2020); en lesión se
 # evita el déficit agresivo para no frenar la reparación de tejidos y se
 # trabaja entre mantenimiento y −5% (Tipton 2015).
-GOAL_ADJUSTMENT = {
-    "fat_loss": (0.15, 0.25),      # déficit 15–25%
-    "muscle_gain": (0.05, 0.12),   # superávit 5–12%
-    "recomp": (0.0, 0.05),         # mantenimiento ±5%
-    "maintenance": (0.0, 0.0),     # mantenimiento estricto
-    "injury_recovery": (0.0, 0.05),  # mantenimiento a −5%
-}
+# (GOAL_ADJUSTMENT eliminado: lo sustituyó _ADJUSTMENT_TABLE — código muerto
+# detectado en la auditoría matemática.)
 
 
 def mifflin_st_jeor(sex: str, weight_kg: float, height_cm: float, age: int) -> float:
@@ -263,9 +258,20 @@ def energy_targets(
     (NEAT+EAT+ETA) y se avisa si divergen >15%.
     """
     use_katch = body_fat_pct is not None and 3 <= body_fat_pct <= 60
+    # Edad fuera de rango (fecha de nacimiento mal tecleada → edad negativa, o
+    # implausible): se acota para el cálculo y SIEMPRE se avisa (auditoría).
+    age_out_of_range = age < 16 or age > 90
+    if age_out_of_range:
+        age = min(90, max(16, age))
     b = bmr(sex, weight_kg, height_cm, age, body_fat_pct)
     t = tdee(b, training_days, daily_activity)
     warnings: list[str] = []
+    if age_out_of_range:
+        warnings.append(f"Edad fuera de rango (se calcula con {age}): revisa la "
+                        "fecha de nacimiento de la ficha.")
+    if age <= 17:
+        warnings.append("Cliente menor de 18 años: revisa el caso con criterio "
+                        "clínico antes de pautar déficit.")
 
     # TDEE por componentes con los datos disponibles (pasos aproximados por el
     # nivel de actividad). Se compara con el clásico; divergencia >15% → aviso.
@@ -300,6 +306,12 @@ def energy_targets(
             "El ajuste pedido caía por debajo del suelo calórico seguro: se "
             "recalcula al ritmo seguro (nunca se rompe un suelo por un plazo)."
         )
+        if goal_type == "fat_loss" and target >= t:
+            warnings.append(
+                "⚠ El suelo seguro queda EN o POR ENCIMA del TDEE: con este "
+                "cuerpo/actividad el objetivo real es mantenimiento, no déficit. "
+                "Valora subir actividad (pasos) o replantear el objetivo."
+            )
     return EnergyTargets(
         bmr=b, tdee=t, target_kcal=round(target, 1),
         method="katch" if use_katch else "mifflin",
@@ -346,6 +358,7 @@ class MacroPlan:
 
 def macro_targets(
     sex: str, weight_kg: float, goal_type: str, kcal: float, training_days: int,
+    tdee: float | None = None,
 ) -> MacroPlan:
     """Reparto completo de macros: proteína (punto medio del rango por objetivo),
     grasa (≥0,6 g/kg — 0,7 en mujeres — Y dentro del 20–35% de las kcal),
@@ -373,12 +386,28 @@ def macro_targets(
     if carbs < carb_floor:
         # Los suelos (P + G + suelo de HC) no caben: se suben las kcal para
         # respetarlos en vez de romper el suelo (nunca por un plazo del cliente).
+        # ⚠ TOPE (auditoría): en clientes con mucho peso los suelos por kg de
+        # peso TOTAL inflaban las kcal por ENCIMA del TDEE — un plan "de pérdida
+        # de grasa" en superávit sin que nadie lo dijera. En fat_loss la subida
+        # por suelo de HC se capa al TDEE (el suelo de HC es el flexible; los de
+        # proteína y grasa no se tocan) y se deja constancia.
         carbs = carb_floor
-        notes.append(
-            f"kcal ajustadas para respetar el suelo de {carb_floor} g de "
-            f"carbohidratos ({carb_floor_per_kg:g} g/kg): no se rompe un suelo "
-            f"por un objetivo de plazo."
-        )
+        if (goal_type == "fat_loss" and tdee and
+                protein * 4 + carbs * 4 + fat * 9 > tdee):
+            capped = _rhu(max(0.0, (tdee - protein * 4 - fat * 9)) / 4)
+            if capped < carbs:
+                carbs = capped
+                notes.append(
+                    "⚠ los suelos por peso total superaban el TDEE: los HC se "
+                    "capan al mantenimiento. Con este peso corporal valora "
+                    "calcular sobre masa magra o replantear el ritmo."
+                )
+        else:
+            notes.append(
+                f"kcal ajustadas para respetar el suelo de {carb_floor} g de "
+                f"carbohidratos ({carb_floor_per_kg:g} g/kg): no se rompe un suelo "
+                f"por un objetivo de plazo."
+            )
     elif carbs < 0:
         carbs = 0
         notes.append("kcal ajustadas: proteína y grasa mínimas ya cubren la energía.")
@@ -425,6 +454,16 @@ def weight_trend(points: list[tuple[date, float]]) -> WeightTrend:
     sobre los días transcurridos: más estable que (fin - inicio) ante ruido.
     """
     pts = sorted((d, w) for d, w in points if w is not None)
+    # Robustez a OUTLIERS (auditoría #8): un typo plausible (48,0 en una serie
+    # de 84…83) volteaba el signo del ritmo y el motor quincenal decidía sobre
+    # él. Se descartan los puntos a >4·MAD de la mediana (con ≥4 pesajes).
+    if len(pts) >= 4:
+        med = statistics.median(w for _, w in pts)
+        mad = statistics.median(abs(w - med) for _, w in pts)
+        if mad > 0:
+            kept = [(d, w) for d, w in pts if abs(w - med) <= 4 * mad + 0.5]
+            if len(kept) >= 3:
+                pts = kept
     if not pts:
         return WeightTrend()
     weights = [w for _, w in pts]
@@ -520,7 +559,9 @@ def exercise_e1rm_progress(sets: list[dict]) -> list[ExerciseProgress]:
     """
     by_ex: dict[int, list[dict]] = {}
     for st in sets:
-        if st.get("weight_kg") and st.get("reps"):
+        # Epley pierde validez con series muy largas (50 reps → e1RM absurdo
+        # que domina la gráfica de fuerza): solo puntúan sets de ≤15 reps.
+        if st.get("weight_kg") and st.get("reps") and st["reps"] <= 15:
             by_ex.setdefault(st["exercise_id"], []).append(st)
 
     out: list[ExerciseProgress] = []

@@ -191,6 +191,23 @@ def reminder_no_logs(brand: Brand, first_name: str, portal_url: str, days_left: 
     return subject, _shell(brand, "¿Cómo va tu seguimiento?", body, portal_url, "Registrar ahora")
 
 
+def onboarding_reminder(brand: Brand, first_name: str, anamnesis_url: str,
+                        days: int) -> tuple[str, str]:
+    """Recordatorio D+3/D+7 a quien empezó el alta y no envió su anamnesis
+    (antes no se le volvía a escribir nunca — auditoría del ciclo)."""
+    first_name = _esc(first_name)
+    subject = f"Tu plan te está esperando · {brand.name}"
+    body = (
+        f"<p>Hola {first_name}, hace unos días empezaste tu alta y aún nos falta "
+        "tu <strong>anamnesis</strong> (el cuestionario inicial). Sin ella no "
+        "podemos preparar tu plan a medida.</p>"
+        "<p>Son dos pasos y puedes hacerlos desde el móvil: descarga el PDF, "
+        "rellénalo con calma y súbelo en el mismo enlace.</p>"
+    )
+    return subject, _shell(brand, "Falta un paso para empezar", body,
+                           anamnesis_url, "Completar mi anamnesis")
+
+
 def closing_due(brand: Brand, first_name: str, portal_url: str, period_index: int) -> tuple[str, str]:
     first_name = _esc(first_name)
     subject = f"Es momento de cerrar tu período · {brand.name}"

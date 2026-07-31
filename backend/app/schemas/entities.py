@@ -129,6 +129,9 @@ class AnamnesisSubmit(BaseModel):
 class ClientUpdate(BaseModel):
     """Edición por el coach (anamnesis editable con audit trail)."""
 
+    # Estado del ciclo (reactivar inactivos / archivar): el endpoint lo valida
+    # SIEMPRE contra la máquina de estados (can_transition) antes de aplicarlo.
+    status: str | None = None
     full_name: str | None = None
     phone: str | None = None
     package_tier: PackageTier | None = None
@@ -588,6 +591,9 @@ class PortalState(BaseModel):
     # Tras enviar la revisión: recordatorio de confirmar el envío de las fotos
     # de progreso al coach (persiste hasta que el cliente lo confirme).
     photos_pending: bool = False
+    # Onboarding sin anamnesis: el portal muestra el camino a /anamnesis/{token}
+    # (antes el cliente veía pestañas vacías sin ninguna ruta — auditoría).
+    needs_anamnesis: bool = False
 
 
 class PushKeyOut(BaseModel):

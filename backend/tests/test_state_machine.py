@@ -143,9 +143,15 @@ def test_inactivity_takes_priority_over_at_risk():
 def test_valid_transitions():
     assert can_transition("onboarding", "active")
     assert can_transition("active", "at_risk")
-    assert can_transition("awaiting_feedback", "review_pending")
+    assert can_transition("active", "review_pending")
     assert can_transition("review_pending", "active")
     assert can_transition("inactive", "active")
+
+
+def test_awaiting_feedback_eliminado():
+    # Estado MUERTO retirado en la auditoría del ciclo: nada lo asignaba.
+    assert not can_transition("active", "awaiting_feedback")
+    assert not can_transition("awaiting_feedback", "review_pending")
 
 
 def test_invalid_transitions():

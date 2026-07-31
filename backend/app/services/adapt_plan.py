@@ -40,6 +40,13 @@ def _parse_change(text: str) -> tuple[str | None, float | None]:
     if not m:
         return (None, None)
     val = float(m.group(1).replace(",", "."))
+    # "un 10%" / "10 %" es un cambio RELATIVO: antes se aplicaba como −10 g /
+    # −10 kcal (auditoría #11). El signo lo pone el verbo (subir/bajar).
+    tail = (text or "")[m.end():m.end() + 3]
+    if "%" in tail:
+        if re.search(r"\b(baj|reduc|menos|quit|resta|recort|dismin)", t):
+            return ("pct", -abs(val))
+        return ("pct", abs(val))
     if m.group(1).startswith(("+", "-")):
         return ("delta", val)
     if re.search(r"\b(a|hasta|hacia)\s+\d", t) or re.search(r"=\s*\d", t):
@@ -52,7 +59,10 @@ def _parse_change(text: str) -> tuple[str | None, float | None]:
 
 
 def _apply(current: float | None, mode: str, val: float, floor: float = 0.0) -> int:
-    """Aplica un delta o un objetivo absoluto y nunca baja del suelo (>=0)."""
+    """Aplica un delta, un % relativo o un objetivo absoluto (suelo >= 0)."""
+    if mode == "pct":
+        base_v = float(current or 0)
+        return int(max(floor, round(base_v * (1 + val / 100.0))))
     result = val if mode == "abs" else (current or 0) + val
     return int(round(max(floor, result)))
 
@@ -236,7 +246,48 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
         C = macros.get("carbs_g") or 0
         F = macros.get("fat_g") or 0
         macro_touched = protein_touched or carbs_touched or fat_touched
-        if kcal_touched and not macro_touched:
+        if kcal_vetoed and macro_touched and not kcal_engine:
+            # El §8 vetó las kcal: un cambio de macros de la IA no puede
+            # convertirse en un cambio ENERGÉTICO por la puerta de atrás
+            # ("bajar hidratos a 120 g" con hold = −400 kcal reales, auditoría
+            # #4). Se respetan los macros pedidos y el resto REBALANCEA hasta
+            # las kcal previas: primero los ejes NO tocados (C→G→P), y si se
+            # tocaron los tres, escala proporcional.
+            K = nut.get("target_kcal") or kcal_of(P, C, F)
+            gap = K - kcal_of(P, C, F)
+            if abs(gap) > 2:
+                buffers = [(name, per) for name, touched, per in (
+                    ("carbs_g", carbs_touched, 4), ("fat_g", fat_touched, 9),
+                    ("protein_g", protein_touched, 4)) if not touched]
+                for name, per in buffers:
+                    cur = float(macros.get(name) or 0)
+                    move = gap / per
+                    new = max(0.0, cur + move)
+                    gap -= (new - cur) * per
+                    macros[name] = int(round(new))
+                    if abs(gap) <= 2:
+                        break
+                if abs(gap) > 2 and kcal_of(
+                        macros.get("protein_g") or 0, macros.get("carbs_g") or 0,
+                        macros.get("fat_g") or 0) > 0:
+                    r = K / kcal_of(macros.get("protein_g") or 0,
+                                    macros.get("carbs_g") or 0,
+                                    macros.get("fat_g") or 0)
+                    for name in ("protein_g", "carbs_g", "fat_g"):
+                        macros[name] = int(round(float(macros.get(name) or 0) * r))
+                P = macros.get("protein_g") or 0
+                C = macros.get("carbs_g") or 0
+                F = macros.get("fat_g") or 0
+                items.append({
+                    "area": "dieta",
+                    "change": "Macros rebalanceados a las calorías previas",
+                    "reason": "La decisión determinista de la revisión indica no "
+                              "tocar las kcal: el cambio de macros se aplica sin "
+                              "alterar la energía total.",
+                    "applied": True,
+                    "detail": f"Totales mantenidos en {round(K)} kcal",
+                })
+        elif kcal_touched and not macro_touched:
             # Solo kcal → los TRES macros en proporción a la dieta del cliente
             t = macros_scaled_to_kcal(base.nutrition_json or {}, K)
             P, C, F = t["protein_g"], t["carbs_g"], t["fat_g"]
@@ -362,6 +413,37 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
     log_event(db, "plan", plan.id, "plan_adapted",
               {"from_plan": base.id, "period_index": period.period_index,
                "redo": existing_draft is not None})
+
+    # Guardarraíl ANTES de activar (auditoría #4): la adaptación se auto-activaba
+    # sin re-validar nutrición — cambios acumulados podían dejar activo un plan
+    # bajo el suelo por sexo o con ±% fuera de rango. Mismo patrón que la
+    # generación: con violación queda en BORRADOR retenido y el coach decide.
+    from app.services.guardrails import check_nutrition
+
+    violations: list[str] = []
+    try:
+        _c = db.get(Client, client_id)
+        rep = check_nutrition(
+            nut,
+            sex=(_c.sex if _c else None) or "male",
+            weight_kg=float((_c.current_weight_kg or _c.start_weight_kg or 0) if _c else 0) or 70.0,
+            bmr=0.0,  # sin BMR fiable aquí: aplica el suelo por sexo igualmente
+            tdee=float(nut.get("tdee_kcal") or 0),
+            is_recalibration=True,
+            previous_target_kcal=float((base.nutrition_json or {}).get("target_kcal") or 0) or None,
+        )
+        violations = [f"violation: {v}" for v in rep.violations]
+    except Exception:  # noqa: BLE001 — el chequeo nunca rompe la adaptación
+        violations = []
+    if violations:
+        plan.guardrail_flags = violations + [
+            "retenido: adaptación guardada como BORRADOR — revisa y activa tú "
+            "(el cliente no ha sido avisado)"
+        ]
+        db.commit()
+        db.refresh(plan)
+        return plan
+
     # La versión adaptada queda ACTIVA al momento (portal y PDF actualizados);
     # el coach puede retocarla con Editar y enviarla por WhatsApp.
     from app.services.plan_activation import activate_plan

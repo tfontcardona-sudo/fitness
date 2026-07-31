@@ -29,9 +29,14 @@ from app.services.metrics import weight_trend
 # Umbrales (una sola fuente).
 ADHERENCE_LOCK = 0.80          # < → no se tocan kcal, se trabaja adherencia
 FATIGUE_RED = 4.0             # ≥ (sobre 5) = fatiga en rojo
-KCAL_STEP_PCT = 0.06         # ±6% (dentro del 5-8% recomendado)
+# CONTRATO: kcal_delta_pct viaja en PUNTOS PORCENTUALES (±6.0 = ±6%). La
+# auditoría matemática encontró que se emitía la FRACCIÓN (0.06) y el consumidor
+# (`adapt_plan`) dividía entre 100: el ajuste determinista del §8 se aplicaba
+# como ±0,06% — un no-op. Unidades fijadas aquí y verificadas por test e2e.
+KCAL_STEP_PCT = 6.0          # ±6 puntos % (dentro del 5-8% recomendado)
 DEFICIT_WEEKS_FOR_BREAK = 8  # semanas de déficit → considerar refeed/diet break
 RATE_TOLERANCE = 0.1         # holgura del ritmo (%/sem) antes de considerarlo fuera
+DRIFT_RATE_PCT_WEEK = 0.45   # deriva sostenida (%/sem) intolerable fuera de fat_loss/gain
 
 
 @dataclass
@@ -142,14 +147,28 @@ def decide_biweekly(inp: CheckinInputs) -> Decision:
         # ganar demasiado lento → +kcal; demasiado rápido (grasa) → −kcal
         delta = +KCAL_STEP_PCT if rate < lo - RATE_TOLERANCE else -KCAL_STEP_PCT if rate > hi + RATE_TOLERANCE else 0.0
     else:
-        delta = 0.0
+        # Mantenimiento/recomposición/recuperación: la diana es ±0, pero una
+        # DERIVA sostenida (>0,45 %/sem ≈ >0,35 kg/sem a 80 kg) tampoco es
+        # aceptable — antes caía en "sin_cambio_neto" para siempre (auditoría).
+        if rate >= DRIFT_RATE_PCT_WEEK:
+            delta = -KCAL_STEP_PCT
+        elif rate <= -DRIFT_RATE_PCT_WEEK:
+            delta = +KCAL_STEP_PCT
+        else:
+            delta = 0.0
+        if delta:
+            return d("adjust_kcal", kcal_delta_pct=delta, protein_locked=True,
+                     rule="deriva_no_deseada",
+                     rationale=f"Peso derivando {rate:+.2f}%/sem con objetivo de "
+                     f"estabilidad: ajuste de kcal {delta:+.0f}% para frenar la "
+                     "deriva. La proteína NO se toca.")
     if delta == 0.0:
         return d("hold", rule="sin_cambio_neto",
                  rationale="El desvío no justifica un ajuste con signo claro: se mantiene.")
     return d("adjust_kcal", kcal_delta_pct=delta, protein_locked=True,
              rule="fuera_del_ritmo",
              rationale=f"Ritmo real {rate:+.2f}%/sem fuera de la diana "
-             f"{lo:+.2f}..{hi:+.2f}: ajuste de kcal {delta*100:+.0f}% moviendo "
+             f"{lo:+.2f}..{hi:+.2f}: ajuste de kcal {delta:+.0f}% moviendo "
              "hidratos y grasa. La proteína NO se toca.")
 
 

@@ -187,6 +187,22 @@ export default function PortalApp({ token }: { token: string }) {
         </header>
 
         <main className="relative z-[1] flex-1 px-5 pb-28 pt-2">
+          {/* Onboarding sin anamnesis: antes el cliente entraba a un portal
+              con pestañas vacías y NINGÚN camino hacia el cuestionario
+              (auditoría del ciclo). El enlace usa su mismo token. */}
+          {state.needs_anamnesis && (
+            <a href={`/anamnesis/${token}`}
+              className="mb-3 block rounded-2xl border p-4 text-sm font-medium shadow-sm transition-transform active:scale-[0.99]"
+              style={{ borderColor: state.brand.color_primary, background: `${state.brand.color_primary}14` }}>
+              <span className="font-bold" style={{ color: state.brand.color_primary }}>
+                Te falta un paso: completa tu anamnesis →
+              </span>
+              <span className="mt-1 block opacity-75">
+                Con ese cuestionario preparamos tu plan a medida. Son 2 pasos y
+                puedes hacerlo desde el móvil.
+              </span>
+            </a>
+          )}
           {state.package_tier === "pro" && (
             <VideoCallBanner api={apiClient} accent={state.brand.color_secondary} />
           )}
