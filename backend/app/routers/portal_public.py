@@ -332,6 +332,7 @@ def portal_state_full(
         # Banner del portal: se muestra ya (sin esperar los 15 min del push).
         photos_pending=photos_pending(db, client, min_minutes=0),
         needs_anamnesis=_needs_anamnesis(client),
+        today=portal_svc.today_local(),
     )
 
 
@@ -1185,7 +1186,11 @@ def portal_manifest(
         "description": "Tu portal de seguimiento: entreno, diario y revisión quincenal.",
         "lang": "es",
         "start_url": f"/p/{client.portal_token}",
-        "scope": f"/p/{client.portal_token}",
+        # Scope AMPLIO (/p/): si el coach rota el token del portal, el enlace
+        # nuevo sigue dentro del ámbito de la app instalada — con scope por
+        # token, abrir el enlace nuevo sacaba al cliente de la PWA al navegador
+        # y la app instalada quedaba muerta en el token viejo.
+        "scope": "/p/",
         "display": "standalone",
         "background_color": "#F6F1E7" if light else "#0C1420",
         "theme_color": brand.get("color_primary", "#E8833A"),

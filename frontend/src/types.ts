@@ -250,6 +250,7 @@ export interface AnamnesisSubmit {
   lifestyle_notes?: string | null;
   current_supplements?: string | null;
   diet_mode: DietMode;
+  diet_pattern?: string | null;
   strict_free_meal_enabled: boolean;
   consent_accepted: true;
 }
@@ -293,6 +294,8 @@ export interface ClientOut {
   lifestyle_notes: string | null;
   current_supplements: string | null;
   diet_mode: DietMode | null;
+  diet_pattern?: string | null;
+  reference_weight_kg?: number | null;
   strict_free_meal_enabled: boolean;
   status: ClientStatus;
   auto_pilot: boolean;
@@ -376,7 +379,6 @@ export interface BrandConfigOut {
   contact_email: string | null;
   contact_phone: string | null;
   contact_web: string | null;
-  docs_theme: Theme;
   portal_theme: Theme;
   // Página pública de enlaces (/dq): foto de fondo + afiliación del partner.
   links_photo_path: string | null;
@@ -576,6 +578,9 @@ export interface PortalState {
   photos_pending?: boolean;
   // Onboarding sin anamnesis: el portal enseña el camino a /anamnesis/{token}.
   needs_anamnesis?: boolean;
+  // Fecha de NEGOCIO (YYYY-MM-DD, zona del coach): Diario/Entreno registran
+  // sobre ella, no sobre el reloj del dispositivo (viajes con otra zona).
+  today?: string | null;
 }
 
 /** GET /api/p/{token}/push/pending — espejo de PushPendingOut. */

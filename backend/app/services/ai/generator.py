@@ -101,6 +101,9 @@ class ClientContext:
     # Peso objetivo declarado: da contexto de ritmo/plazo (el CÁLCULO de kcal
     # sigue siendo del backend; esto solo informa el diseño cualitativo).
     goal_weight_kg: float | None = None
+    # Patrón dietético (vegano|vegetariano|pescetariano|sin_cerdo|halal|kosher):
+    # restricción al 100%, ya aplicada por el filtro determinista de alimentos.
+    diet_pattern: str | None = None
 
 
 @dataclass
@@ -183,6 +186,7 @@ def _client_block(ctx: ClientContext) -> str:
             "duracion_max_sesion_min": ctx.session_max_min,
             "lugar_entrenamiento": ctx.training_place,
             "modo_dieta": ctx.diet_mode,
+            "patron_dietetico": ctx.diet_pattern or "ninguno",
             # El cliente puede DELEGAR el reparto de comidas: si no declara
             # número u horario, la IA elige el óptimo para su objetivo y rutina.
             "num_comidas": ctx.meals_per_day

@@ -42,6 +42,8 @@ GoalType = Literal["fat_loss", "muscle_gain", "recomp", "maintenance", "injury_r
 Level = Literal["beginner", "intermediate", "advanced"]
 TrainingPlace = Literal["gym", "home", "outdoor"]
 DietMode = Literal["flexible_7", "strict"]
+# Patrón dietético ético/religioso: se respeta al 100% (violación = veto).
+DietPattern = Literal["vegano", "vegetariano", "pescetariano", "sin_cerdo", "halal", "kosher"]
 # Paquete/plan contratado por el cliente (define qué incluye y cómo se le entrega):
 #   start = solo nutrición · full = nutrición + entreno · pro = full + contacto directo
 PackageTier = Literal["start", "full", "pro"]
@@ -121,6 +123,7 @@ class AnamnesisSubmit(BaseModel):
     lifestyle_notes: str | None = None
     current_supplements: str | None = None
     diet_mode: DietMode
+    diet_pattern: DietPattern | None = None
     strict_free_meal_enabled: bool = False
     # RGPD
     consent_accepted: Literal[True]  # checkbox obligatorio
@@ -165,6 +168,7 @@ class ClientUpdate(BaseModel):
     lifestyle_notes: str | None = None
     current_supplements: str | None = None
     diet_mode: DietMode | None = None
+    diet_pattern: DietPattern | None = None
     strict_free_meal_enabled: bool | None = None
     auto_pilot: bool | None = None
     emails_enabled: bool | None = None
@@ -211,6 +215,11 @@ class ClientOut(BaseModel):
     lifestyle_notes: str | None
     current_supplements: str | None
     diet_mode: DietMode | None
+    diet_pattern: DietPattern | None = None
+    # Peso de referencia ÚNICO (último registro > cierre > actual > inicial):
+    # lo calcula el GET del cliente para que el editor valide topes con el
+    # MISMO peso que usará el backend al guardar (auditoría de ediciones).
+    reference_weight_kg: float | None = None
     strict_free_meal_enabled: bool
     status: ClientStatus
     auto_pilot: bool
@@ -279,7 +288,9 @@ class BrandConfigIn(BaseModel):
     contact_email: EmailStr | None = None
     contact_phone: str | None = None
     contact_web: str | None = None
-    docs_theme: Theme = "light"
+    # `docs_theme` se retiró del contrato: la columna existe en DB pero ningún
+    # generador de documentos la consumía (control muerto — auditoría #6). Si
+    # algún día los Word tienen tema oscuro, reintroducir aquí Y en docs/.
     portal_theme: Theme = "light"
     # Página pública de enlaces (/dq): tienda del partner y código de descuento.
     partner_store_url: str | None = Field(default=None, max_length=300)
@@ -594,6 +605,11 @@ class PortalState(BaseModel):
     # Onboarding sin anamnesis: el portal muestra el camino a /anamnesis/{token}
     # (antes el cliente veía pestañas vacías sin ninguna ruta — auditoría).
     needs_anamnesis: bool = False
+    # Fecha de NEGOCIO (today_local, zona del coach): Diario y Entreno registran
+    # sobre ella, no sobre el reloj del dispositivo — un cliente de viaje con
+    # otra zona horaria ya no crea el registro en un día que el backend
+    # considera distinto (422 "fuera del período" o hueco en la adherencia).
+    today: date | None = None
 
 
 class PushKeyOut(BaseModel):

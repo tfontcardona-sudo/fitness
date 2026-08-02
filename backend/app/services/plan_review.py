@@ -32,6 +32,7 @@ def build_profile(client, ctx) -> dict:
         "tdee": getattr(ctx, "tdee", None),
         "meals_per_day": getattr(ctx, "meals_per_day", None) or getattr(client, "meals_per_day", None),
         "food_dislikes": getattr(client, "food_dislikes", None) or [],
+        "diet_pattern": getattr(client, "diet_pattern", None),
         "goal_type": getattr(client, "goal_type", None),
         "clinical_notes": getattr(ctx, "clinical_notes", None),
     })

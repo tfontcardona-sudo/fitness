@@ -300,10 +300,17 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
     # seguir sirviendo el alérgeno en el portal y el PDF (auditoría de
     # ediciones). Chequeo EN VIVO del banco publicado contra la ficha actual:
     # se enciende al editar la ficha y se apaga al corregir/regenerar el plan.
-    if client.food_allergies or client.food_dislikes:
-        from app.services.guardrails import _iter_options, option_allergen
+    if client.food_allergies or client.food_dislikes or getattr(client, "diet_pattern", None):
+        from app.services.guardrails import (
+            _DIET_PATTERN_FORBIDDEN, _all_option_texts, _iter_options,
+            _match_term, _norm_food, option_allergen,
+        )
 
-        hit_allergy = hit_dislike = None
+        forbidden_pat = (_DIET_PATTERN_FORBIDDEN.get(
+            _norm_food(client.diet_pattern).replace(" ", "_"))
+            if getattr(client, "diet_pattern", None) else None)
+
+        hit_allergy = hit_dislike = hit_pattern = None
         try:
             for slot, opt in _iter_options(published.nutrition_json or {}):
                 if hit_allergy is None and client.food_allergies:
@@ -314,7 +321,11 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
                     found = option_allergen(opt, client.food_dislikes)
                     if found:
                         hit_dislike = (slot, opt.get("title") or opt.get("key") or "?", found)
-                if hit_allergy and hit_dislike:
+                if hit_pattern is None and forbidden_pat:
+                    found = _match_term(forbidden_pat, _all_option_texts(opt))
+                    if found:
+                        hit_pattern = (slot, opt.get("title") or opt.get("key") or "?", found)
+                if hit_allergy and hit_dislike and (hit_pattern or not forbidden_pat):
                     break
         except Exception:  # noqa: BLE001 — un plan legado raro no tumba las alertas
             pass
@@ -324,6 +335,13 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
                 client, "plan_allergen_conflict", "alta",
                 f"⚠ Su plan activo contiene un ALÉRGENO de su ficha: «{t}» "
                 f"(toma {s}, contiene {f}). Edita esa comida o regenera el plan.",
+                "planificacion", "Corregir planificación"))
+        elif hit_pattern:
+            s, t, f = hit_pattern
+            out.append(_alert(
+                client, "plan_allergen_conflict", "alta",
+                f"⚠ Su plan activo viola su patrón «{client.diet_pattern}»: "
+                f"«{t}» (toma {s}, contiene {f}). Corrige esa comida o regenera.",
                 "planificacion", "Corregir planificación"))
         elif hit_dislike:
             s, t, f = hit_dislike

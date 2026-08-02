@@ -37,14 +37,16 @@ const EMPTY: DiaryForm = {
  * sueño, adherencia y cómo se siente); los ejercicios del día ya van en HOY.
  * Cada cambio se guarda con debounce para no perder nada (G.4: autosave).
  */
-export function PortalDiary({ api, brand, periodStatus = null }: {
-  api: Api; brand: PortalBrand; periodStatus?: string | null;
+export function PortalDiary({ api, brand, periodStatus = null, businessToday = null }: {
+  api: Api; brand: PortalBrand; periodStatus?: string | null; businessToday?: string | null;
 }) {
   const toast = usePortalToast();
   // Fecha CONGELADA al montar: recalcularla en cada render hacía que, pasada
   // la medianoche, cualquier re-render refetcheara el día nuevo pisando lo
   // tecleado y guardara lo pendiente con la fecha del día siguiente.
-  const [today] = useState(() => localToday());
+  // Manda la fecha de NEGOCIO del backend (zona del coach): un cliente de
+  // viaje con el móvil en otra zona ya no registra en el día equivocado.
+  const [today] = useState(() => businessToday || localToday());
   // Revisión enviada (período cerrado): el backend rechazaría el guardado —
   // se avisa y no se programan guardados.
   const readOnly = periodStatus != null && periodStatus !== "open";

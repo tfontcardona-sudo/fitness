@@ -375,9 +375,13 @@ def check_training(
                     f"lesión(es): {', '.join(sorted(clash))}"
                 )
 
-            # Volumen por grupo (primario cuenta completo)
+            # Volumen por grupo: primario completo y SECUNDARIOS a 0,5 — sin
+            # esto, el techo de 25 series/grupo se puenteaba metiendo el volumen
+            # por músculos secundarios (auditoría matemática #15).
             group = info.get("muscle_primary", "desconocido")
             weekly_sets_by_group[group] = weekly_sets_by_group.get(group, 0) + sets
+            for sec in (info.get("muscle_secondary") or []):
+                weekly_sets_by_group[sec] = weekly_sets_by_group.get(sec, 0) + sets * 0.5
 
             # 3) Incremento de carga máx +10% por recalibración
             if is_recalibration and previous_weights:
@@ -418,6 +422,21 @@ def check_training(
                 f"grupo '{group}': solo {total:.0f} series/semana — por debajo del "
                 f"mínimo productivo ({SETS_MIN_PER_GROUP_WEEK}); revisa si es intencionado"
             )
+
+    # 6) Estructura del mesociclo (avisos, no bloquean): el criterio del coach
+    # exige progresión explícita y deload en semana 4 — si el plan no los
+    # declara, el coach debe verlo antes de confiar en el entreno.
+    if sessions:
+        wp = training.get("weekly_progression")
+        if not wp:
+            r.warnings.append(
+                "el plan no declara progresión semanal (weekly_progression): "
+                "añádela o explícala en las notas")
+        dl = training.get("deload")
+        if not dl:
+            r.warnings.append(
+                "el plan no declara semana de descarga (deload): el criterio "
+                "es deload en semana 4 (volumen −40-50%)")
     return r
 
 

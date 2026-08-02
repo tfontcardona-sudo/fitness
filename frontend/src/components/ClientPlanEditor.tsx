@@ -312,10 +312,23 @@ export function ClientPlanEditor({
     });
   }
 
-  // Recomendación por objetivo (evidencia): TDEE del plan + peso de referencia
-  const rec = goal && weight && draft.nutrition.tdee_kcal
+  // Recomendación por objetivo: la calcula el BACKEND (misma fórmula que la
+  // generación, con tramos por % graso). La TS local queda solo de fallback
+  // si la petición falla (auditoría: dos fórmulas divergentes).
+  const [backendRec, setBackendRec] = useState<{ kcal: number; protein_g: number; carbs_g: number; fat_g: number } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    if (client?.id) {
+      api.macroRecommendation(client.id)
+        .then((r) => { if (alive && r.available && r.kcal) setBackendRec({ kcal: r.kcal, protein_g: r.protein_g!, carbs_g: r.carbs_g!, fat_g: r.fat_g! }); })
+        .catch(() => { /* fallback local */ });
+    }
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client?.id]);
+  const rec = backendRec ?? (goal && weight && draft.nutrition.tdee_kcal
     ? goalTargets(goal, weight, draft.nutrition.tdee_kcal)
-    : null;
+    : null);
 
   // Estructura de comidas del día (nº de tomas) SIN regenerar: al marcar/quitar
   // una toma se reparten las MISMAS kcal y macros del cliente entre las elegidas

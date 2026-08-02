@@ -5,6 +5,17 @@ import react from "@vitejs/plugin-react";
 // En producción, Caddy hace este papel.
 export default defineConfig({
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      output: {
+        // Vendor aparte: React y el router cambian poco entre despliegues →
+        // el navegador los conserva en caché aunque cambie el código propio.
+        manualChunks: {
+          vendor: ["react", "react-dom", "react-router-dom"],
+        },
+      },
+    },
+  },
   server: {
     // En Windows + Docker el watcher nativo no detecta cambios del bind mount;
     // el polling garantiza que el hot-reload SIEMPRE recoja las ediciones.

@@ -100,6 +100,11 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
   // Tras EDITAR el plan: recordatorio de descargar el PDF de nuevo (la versión
   // editada ya está guardada; el PDF descargado antes se queda antiguo).
   const [needsDownload, setNeedsDownload] = useState(false);
+  // Historial de versiones (§4): instantáneas guardadas antes de cada edición,
+  // restaurables si un cambio salió mal.
+  const [histOpen, setHistOpen] = useState(false);
+  const [hist, setHist] = useState<Awaited<ReturnType<typeof api.planHistory>> | null>(null);
+  const [reverting, setReverting] = useState<number | null>(null);
 
   // Al montar O AL CAMBIAR DE CLIENTE: carga el último plan + ejercicios +
   // períodos. El estado se RESETEA primero — sin esto, al saltar del cliente A
@@ -410,7 +415,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
         plan={plan}
         exMap={exMap}
         client={client}
-        refWeightKg={lastClosing?.closing_weight_kg ?? client.start_weight_kg ?? null}
+        refWeightKg={(client as any).reference_weight_kg ?? lastClosing?.closing_weight_kg ?? client.start_weight_kg ?? null}
         initialFocus={editFocus}
         onSaved={(p) => {
           // Solo avisar de "reenvía la actualización" si REALMENTE cambió algo:
@@ -577,6 +582,17 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
             <button onClick={() => setEditing(true)} className="btn btn-ghost">
               <Pencil size={15} /> Editar
             </button>
+            <button
+              onClick={() => {
+                setHistOpen(true);
+                setHist(null);
+                api.planHistory(plan.id).then(setHist).catch(() => setHist([]));
+              }}
+              className="btn btn-ghost"
+              title="Versiones anteriores del plan: restaura cualquiera si una edición salió mal"
+            >
+              <Archive size={15} /> Historial
+            </button>
             <button onClick={downloadPdf} className="btn btn-ghost">
               <Download size={15} /> Descargar PDF
             </button>
@@ -609,6 +625,68 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
             )}
           </div>
         </div>
+
+        {/* Historial de versiones (§4): instantáneas guardadas antes de cada
+            edición. Restaurar recupera aquella versión (y guarda la actual
+            primero, así el propio revert también es reversible). */}
+        {histOpen && (
+          <div className="mt-3 rounded-lg border border-zinc-700/60 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm font-semibold">Historial de versiones</span>
+              <button onClick={() => setHistOpen(false)} className="btn btn-ghost !px-2 !py-1">
+                <X size={14} />
+              </button>
+            </div>
+            {hist === null ? (
+              <div className="py-3"><Spinner /></div>
+            ) : hist.length === 0 ? (
+              <p className="text-xs text-zinc-500">
+                Aún no hay versiones guardadas: se crean automáticamente cada vez
+                que editas el plan.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {hist.map((v) => (
+                  <li key={v.index} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-zinc-800/40 px-3 py-2">
+                    <div className="text-xs">
+                      <span className="font-medium">
+                        {v.at ? new Date(v.at).toLocaleString("es-ES", { dateStyle: "medium", timeStyle: "short" }) : "—"}
+                      </span>
+                      <span className="text-zinc-500"> · {v.label}</span>
+                      {v.summary?.target_kcal != null && (
+                        <span className="text-zinc-500">
+                          {" "}· {v.summary.target_kcal} kcal · P {v.summary.protein_g ?? "—"} g ·
+                          C {v.summary.carbs_g ?? "—"} g · G {v.summary.fat_g ?? "—"} g
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      disabled={reverting !== null}
+                      onClick={async () => {
+                        if (!window.confirm("¿Restaurar esta versión del plan? La versión actual se guarda en el historial antes de restaurar.")) return;
+                        setReverting(v.index);
+                        try {
+                          const p = await api.revertPlan(plan.id, v.index);
+                          setPlan(normalize(p));
+                          setNeedsDownload(true);
+                          setHistOpen(false);
+                          toast.push("Versión restaurada — recuerda reenviar la actualización al cliente");
+                        } catch (e: any) {
+                          toast.push(e?.message || "No se pudo restaurar la versión", "error");
+                        } finally {
+                          setReverting(null);
+                        }
+                      }}
+                      className="btn btn-ghost !px-2 !py-1 text-xs"
+                    >
+                      {reverting === v.index ? "Restaurando…" : "Restaurar"}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
         {/* Seguimiento AUTÓNOMO: el período de 14 días se abre al activarse el
             plan y se renueva solo tras cada feedback — nada manual. */}

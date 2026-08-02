@@ -1,17 +1,25 @@
+import { Suspense, lazy } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { useAuth } from "./hooks/useAuth";
 import { PageLoader } from "./components/ui";
 import LoginPage from "./pages/LoginPage";
 import AppShell from "./components/AppShell";
-import DashboardPage from "./pages/DashboardPage";
-import ClientsPage from "./pages/ClientsPage";
-import ClientProfilePage from "./pages/ClientProfilePage";
-import RecursosPage from "./pages/RecursosPage";
-import PortalApp from "./portal/PortalApp";
-import PortalLogin from "./portal/PortalLogin";
-import PlansPage, { PaymentOkPage } from "./pages/PlansPage";
-import LinksPage from "./pages/LinksPage";
-import AnamnesisPage from "./pages/AnamnesisPage";
+
+// Code-splitting por ruta: el cliente del portal NO descarga el panel del
+// coach (ni al revés) — el bundle único de ~940 KB penalizaba el primer
+// arranque en móvil. Cada página cae en su chunk y se carga al navegar.
+const DashboardPage = lazy(() => import("./pages/DashboardPage"));
+const ClientsPage = lazy(() => import("./pages/ClientsPage"));
+const ClientProfilePage = lazy(() => import("./pages/ClientProfilePage"));
+const RecursosPage = lazy(() => import("./pages/RecursosPage"));
+const PortalApp = lazy(() => import("./portal/PortalApp"));
+const PortalLogin = lazy(() => import("./portal/PortalLogin"));
+const PlansPage = lazy(() => import("./pages/PlansPage"));
+const PaymentOkPage = lazy(() =>
+  import("./pages/PlansPage").then((m) => ({ default: m.PaymentOkPage }))
+);
+const LinksPage = lazy(() => import("./pages/LinksPage"));
+const AnamnesisPage = lazy(() => import("./pages/AnamnesisPage"));
 
 /**
  * Raíz. El portal del cliente (login en /portal y acceso por token en /p/:token)
@@ -21,18 +29,26 @@ import AnamnesisPage from "./pages/AnamnesisPage";
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/portal" element={<PortalLogin />} />
-        <Route path="/p/:token" element={<PortalRoute />} />
-        {/* Registro personal del cliente: página pública de planes (Stripe). */}
-        <Route path="/planes" element={<PlansPage />} />
-        <Route path="/pago-ok" element={<PaymentOkPage />} />
-        {/* Link del perfil de Instagram (landing pública de enlaces). */}
-        <Route path="/dq" element={<LinksPage />} />
-        {/* Anamnesis del cliente: descarga del PDF editable + subida (por token). */}
-        <Route path="/anamnesis/:token" element={<AnamnesisPage />} />
-        <Route path="/*" element={<CoachApp />} />
-      </Routes>
+      <Suspense
+        fallback={
+          <div className="flex h-screen items-center justify-center">
+            <PageLoader />
+          </div>
+        }
+      >
+        <Routes>
+          <Route path="/portal" element={<PortalLogin />} />
+          <Route path="/p/:token" element={<PortalRoute />} />
+          {/* Registro personal del cliente: página pública de planes (Stripe). */}
+          <Route path="/planes" element={<PlansPage />} />
+          <Route path="/pago-ok" element={<PaymentOkPage />} />
+          {/* Link del perfil de Instagram (landing pública de enlaces). */}
+          <Route path="/dq" element={<LinksPage />} />
+          {/* Anamnesis del cliente: descarga del PDF editable + subida (por token). */}
+          <Route path="/anamnesis/:token" element={<AnamnesisPage />} />
+          <Route path="/*" element={<CoachApp />} />
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

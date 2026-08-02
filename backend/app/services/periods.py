@@ -82,3 +82,25 @@ def ensure_open_period(db: Session, client_id: int, *, commit: bool = False) -> 
     if commit:
         db.commit()
     return period
+
+
+def reference_weight_kg(db: Session, client: Client) -> float | None:
+    """UNA SOLA VERDAD del peso de referencia (auditoría de ediciones): antes el
+    editor usaba cierre>inicio, el PATCH current>inicio y la generación
+    log>cierre>current>inicio — tres respuestas distintas para la misma
+    pregunta. Prioridad: último registro del portal > cierre quincenal >
+    current_weight_kg (anamnesis) > start_weight_kg."""
+    from app.models import DailyLog
+
+    latest_log_w = db.scalar(
+        select(DailyLog.weight_kg)
+        .join(Period, DailyLog.period_id == Period.id)
+        .where(Period.client_id == client.id, DailyLog.weight_kg.is_not(None))
+        .order_by(DailyLog.log_date.desc()).limit(1)
+    )
+    latest_close_w = db.scalar(
+        select(Period.closing_weight_kg)
+        .where(Period.client_id == client.id, Period.closing_weight_kg.is_not(None))
+        .order_by(Period.period_index.desc()).limit(1)
+    )
+    return latest_log_w or latest_close_w or client.current_weight_kg or client.start_weight_kg
