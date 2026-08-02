@@ -239,15 +239,24 @@ def reconcile_nutrition(nut: dict, weight_kg: float | None = None, *,
 
 
 def _align_bank_slots(nut: dict) -> None:
-    """Reescala las opciones de cada toma (banco flexible) hacia el objetivo de
-    ESA toma cuando se desvían más de un 5% en kcal. Muta `nut`."""
+    """Reescala las opciones/platos de cada toma hacia el objetivo de ESA toma
+    cuando se desvían más de un 5% en kcal. Muta `nut`. Cubre ambos modos del
+    banco: `flexible_7` (opciones por slot) y `strict` (plato fijo por día/slot)
+    — antes strict quedaba fuera y un cambio de reparto por tomas dejaba su menú
+    semanal con las cantidades de la versión anterior."""
     bank = nut.get("meal_bank")
-    if not isinstance(bank, dict) or bank.get("mode") != "flexible_7":
+    if not isinstance(bank, dict):
         return
     targets: dict[int, dict] = {}
     for i, m in enumerate(nut.get("meals") or []):
         if isinstance(m, dict) and isinstance(m.get("target"), dict):
             targets[int(m.get("slot") or (i + 1))] = m["target"]
+
+    if bank.get("mode") == "strict":
+        _align_strict_days(bank, targets)
+        return
+    if bank.get("mode") != "flexible_7":
+        return
     for slot in bank.get("slots") or []:
         t = targets.get(int(slot.get("slot") or 0))
         opts = [o for o in (slot.get("options") or []) if isinstance(o.get("macros"), dict)]
@@ -267,6 +276,29 @@ def _align_bank_slots(nut: dict) -> None:
         for o in slot.get("options") or []:
             _scale_dish(o, r_k, r_p, r_c, r_f)
         _scale_equivalences(slot.get("equivalences") or {}, r_k, r_p, r_c, r_f)
+
+
+def _align_strict_days(bank: dict, targets: dict[int, dict]) -> None:
+    """Modo strict: cada plato del menú semanal se compara con el objetivo de SU
+    toma y, si se desvía >5% en kcal, se reescala a él (cada eje por su ratio)."""
+    for day in bank.get("days") or []:
+        for meal in day.get("meals") or []:
+            t = targets.get(int(meal.get("slot") or 0))
+            dish = meal.get("dish")
+            if not t or not isinstance(dish, dict) or not isinstance(dish.get("macros"), dict):
+                continue
+            mac = dish["macros"]
+            dk, tk = float(mac.get("kcal") or 0), float(t.get("kcal") or 0)
+            if tk <= 0 or dk <= 0 or abs(dk - tk) / tk <= 0.05:
+                continue
+            r_k = tk / dk
+
+            def _r(axis: str) -> float:
+                d_ax = float(mac.get(axis) or 0)
+                t_ax = float(t.get(axis) or 0)
+                return (t_ax / d_ax) if d_ax > 0 else r_k
+
+            _scale_dish(dish, r_k, _r("protein_g"), _r("carbs_g"), _r("fat_g"))
 
 
 def macros_for_kcal(goal: str | None, weight_kg: float, kcal: float) -> dict:
@@ -375,8 +407,11 @@ def _scale_dish(o: dict, r_k: float, r_p: float, r_c: float, r_f: float) -> None
             r_dish = float(new_k) / old_k
     for ing in o.get("ingredients") or []:
         ing["grams"] = _scale_g(ing.get("grams"), r_dish)
-        # La medida casera ("1 taza ≈ 80 g") también lleva gramos dentro
-        ing["household"] = _scale_amount_text(ing.get("household"), r_dish)
+        # La medida casera ("1 taza ≈ 80 g") también lleva gramos dentro. Solo
+        # si existe: inyectar `household: None` en cada ingrediente ensuciaba el
+        # JSON persistido y rompía la paridad byte a byte con el editor TS.
+        if "household" in ing:
+            ing["household"] = _scale_amount_text(ing.get("household"), r_dish)
 
 
 def _scale_equivalences(eq: dict, r_k: float, r_p: float, r_c: float, r_f: float) -> None:
@@ -385,10 +420,12 @@ def _scale_equivalences(eq: dict, r_k: float, r_p: float, r_c: float, r_f: float
     hidratos, grasas…) para que el PDF salga en armonía con los macros."""
     if not eq:
         return
-    eq["intro"] = _scale_amount_text(eq.get("intro"), r_c)
+    if "intro" in eq:
+        eq["intro"] = _scale_amount_text(eq.get("intro"), r_c)
     for g in eq.get("groups") or []:
         r = _equiv_ratio(g.get("name"), r_k, r_p, r_c, r_f)
-        g["note"] = _scale_amount_text(g.get("note"), r)
+        if "note" in g:
+            g["note"] = _scale_amount_text(g.get("note"), r)
         for it in g.get("items") or []:
             it["amount"] = _scale_amount_text(it.get("amount"), r)
 

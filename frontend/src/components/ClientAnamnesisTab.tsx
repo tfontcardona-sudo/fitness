@@ -172,6 +172,13 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
       <Section title="Dieta">
         <Select label="Modo de dieta" value={(current("diet_mode") as string) ?? ""} onChange={(v) => set("diet_mode", v as any)}
           options={[["", "—"], ["flexible_7", "Flexible (equivalencias)"], ["strict", "Menú cerrado"]]} />
+        {/* Patrón ético/religioso: se respeta al 100% en generación, banco de
+            emergencia, Revisor 0 y alertas (violación = veto, no aviso). */}
+        <Select label="Patrón dietético (ético/religioso)"
+          value={(current("diet_pattern") as string) ?? ""} onChange={(v) => set("diet_pattern", (v || null) as any)}
+          options={[["", "Ninguno"], ["vegano", "Vegano"], ["vegetariano", "Vegetariano"],
+                    ["pescetariano", "Pescetariano"], ["sin_cerdo", "Sin cerdo"],
+                    ["halal", "Halal"], ["kosher", "Kosher"]]} />
         <CSV label="Alimentos que le gustan" value={current("food_likes") as string[]} onChange={(v) => set("food_likes", v as any)} />
         <CSV label="Alimentos que evita" value={current("food_dislikes") as string[]} onChange={(v) => set("food_dislikes", v as any)} />
         <CSV label="Alergias" value={current("food_allergies") as string[]} onChange={(v) => set("food_allergies", v as any)} />

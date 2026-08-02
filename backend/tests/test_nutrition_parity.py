@@ -40,6 +40,8 @@ from app.services.nutrition_scale import (
     kcal_of,
     macros_for_kcal,
     macros_scaled_to_kcal,
+    reconcile_nutrition,
+    rescale_nutrition,
 )
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -59,6 +61,17 @@ def _py_run(fn: str, args: list):
         return macros_for_kcal(*args)
     if fn == "macrosScaledToKcal":
         return macros_scaled_to_kcal(*args)
+    if fn == "rescaledPlan":
+        # Pipeline completo del backend: reescala + reconcilia (sin clamp, como
+        # el editor con clamp=false). Vector de PLAN entero: comidas + banco.
+        import copy as _copy
+
+        base, nxt = args
+        n = _copy.deepcopy(base)
+        rescale_nutrition(n, base, nxt["kcal"], nxt["protein_g"],
+                          nxt["carbs_g"], nxt["fat_g"])
+        reconcile_nutrition(n, None, clamp=False)
+        return n
     raise AssertionError(f"función desconocida en el contrato: {fn}")
 
 
@@ -101,7 +114,7 @@ def test_frontend_reproduce_el_contrato(tmp_path):
 
     driver = tmp_path / "driver.ts"
     driver.write_text(
-        "import { kcalOf, macrosForKcal, macrosScaledToKcal, "
+        "import { kcalOf, macrosForKcal, macrosScaledToKcal, rescaledFrom, "
         "MAX_DEFICIT_PCT, MAX_SURPLUS_PCT, GOAL_RULES } from "
         f'{json.dumps(str(_TS_LIB).removesuffix(".ts"))};\n'
         'import * as fs from "fs";\n'
@@ -112,6 +125,7 @@ def test_frontend_reproduce_el_contrato(tmp_path):
         "  if (c.fn === 'kcalOf') r = kcalOf(c.args[0], c.args[1], c.args[2]);\n"
         "  else if (c.fn === 'macrosForKcal') r = macrosForKcal(c.args[0], c.args[1], c.args[2]);\n"
         "  else if (c.fn === 'macrosScaledToKcal') r = macrosScaledToKcal(c.args[0], c.args[1]);\n"
+        "  else if (c.fn === 'rescaledPlan') r = rescaledFrom(c.args[0], c.args[1], null, false);\n"
         "  else throw new Error('fn desconocida: ' + c.fn);\n"
         "  out.cases.push(r);\n"
         "}\n"

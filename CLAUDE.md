@@ -402,10 +402,11 @@ cd backend && python -m pytest tests/ -q
   `temperature`): ahora el filtro vive en `AIClient._effective_temperature`.
 - ✅ El test antes frágil (`tests/test_phase2.py::test_export_with_accented_name`)
   ya usa un email único con uuid; pasa aunque la BD arrastre datos previos.
-- ⚠️ **Los tests de integración escriben en la MISMA BD de desarrollo** y dejan
-  clientes `@example.com` (p. ej. los del checklist A.3). Tras correr `pytest`,
-  aparecen en el panel. Pendiente: aislarlos (transacción con rollback o BD de
-  test aparte). Mientras tanto, se limpian borrando los `@example.com`.
+- ✅ **Los tests de integración escriben en la MISMA BD** que apunte
+  `DATABASE_URL`, pero `tests/conftest.py` limpia al FINAL de la suite los
+  clientes de dominios de prueba (`@example.com`, `@test.local`, `@x.com`) con
+  todas sus filas dependientes y archivos: `pytest` ya no deja rastro en el
+  panel. No uses esos dominios para clientes reales.
 
 ---
 
@@ -430,9 +431,9 @@ cd backend && python -m pytest tests/ -q
    se edita nutrición (kcal/macros/suplementos/reglas), entreno (sesiones,
    ejercicios, progresión, cardio, deload) y se guarda. Pendiente menor: editar el
    **banco de comidas** (28 opciones) y cambiar ejercicio (eso es el `swap`).
-   NOTA: el contenido/estructura/colores de la planificación se rehará a partir de
-   un **PDF de ejemplo** que subirá el dueño; la IA generará siguiéndolo. El
-   contenido educativo se omite en la UI.
+   El contenido educativo se omite en la UI. NOTA (agosto 2026): el dueño
+   DESCARTÓ rehacer el diseño desde un PDF de ejemplo — **se queda el diseño
+   actual de las planificaciones** como definitivo.
 2. ✅ **Lectura de PDF con IA probada contra la API real.** El esquema y el prompt
    de `extraction.py` se ampliaron para cubrir TODAS las secciones del PDF y se
    verificó con un PDF rellenado: extrae los 12 campos obligatorios + las notas por
@@ -447,10 +448,12 @@ cd backend && python -m pytest tests/ -q
    **fotos**), y **"Enviar al cliente"** → `FeedbackDoc.sent_at` + `review_pending→active`
    (cierra la notificación) + email. Solo al ENVIAR el cliente lo ve en su **"Progreso"**.
 4. ✅ **Test frágil robustecido** (email único, ver §7).
-5. **Aislar los tests de integración de la BD de desarrollo** (ver §7): hoy
-   ensucian `clients` con `@example.com` en cada `pytest`.
-6. **Subir el PDF de ejemplo de planificación** y ajustar el prompt/estructura del
-   plan para que la IA lo replique (estructura, contenido, colores).
+5. ✅ **Tests de integración limpian la BD al terminar** (`tests/conftest.py`):
+   al final de la suite se borran los clientes de dominios de prueba
+   (`@example.com`, `@test.local`, `@x.com`) con TODAS sus filas dependientes y
+   sus archivos — `pytest` ya no ensucia el panel de desarrollo.
+6. ~~Subir el PDF de ejemplo de planificación~~ **CANCELADO por el dueño**
+   (agosto 2026): se mantiene el diseño actual de las planificaciones.
 7. ✅ **Videollamadas Pro con Google Calendar / Meet** (guía: `GOOGLE.md`).
    Flujo: el coach conecta su Google UNA vez en **Recursos → Página de enlaces**
    (OAuth). Al **enviar la revisión quincenal**, al cliente Pro le aparece en su
@@ -625,24 +628,49 @@ cd backend && python -m pytest tests/ -q
      · Banco de perfiles reproducible en scratchpad (`audit100/run.py`):
        0 hallazgos tras las correcciones. Suite ampliada con
        `tests/test_auditoria_integral.py`.
-   - **Pendientes DETECTADOS y no aplicados** (por alcance, para próximas
-     sesiones): unificar la recomendación de macros del editor con
-     `metrics.macro_targets` (dos fórmulas hoy); vectores dorados de
-     clamp/reconcile en el contrato de paridad; cablear PlanState §4 (historial/
-     revert con before/after); control de concurrencia del PATCH de planes;
-     fecha de negocio vs zona del dispositivo en el portal (viajes); `scope`
-     de la PWA al rotar token; toggle manual "marcar pagado" en el perfil;
-     alerta `client_went_inactive`; patrón dietético real (vegano/halal) como
-     campo del cliente conectado a `filter_foods` (hoy `_DIET_PATTERN_FORBIDDEN`
-     no tiene fuente de datos); code-splitting del bundle (938 KB); helper único
-     `reference_weight` (editor usa cierre>inicio, PATCH usa current>inicio,
-     generate usa log>cierre>current>inicio — unificar y exponer al editor);
-     volumen por grupo contando secundarios a 0,5 en `check_training` (+ validar
-     progresión/deload); derivar `menstrual_confound` de sexo+cierre;
-     `weeks_in_deficit` cuenta TODOS los períodos ×2 (afinar con kcal<TDEE del
-     plan del período); alineado por toma del banco en modo `strict`
-     (`_align_bank_slots` solo cubre flexible_7); `docs_theme` de BrandConfig
-     sin consumidor; vectores dorados de rescale/clamp TS⇄backend.
+   - **Backlog técnico APLICADO (agosto 2026)** — todos los pendientes
+     detectados por la auditoría quedaron implementados y testeados:
+     · **Patrón dietético real** (`clients.diet_pattern`, mig. 0032, enum
+       vegano|vegetariano|pescetariano|sin_cerdo|halal|kosher): select en la
+       pestaña Anamnesis → `filter_foods` + prompt + Revisor 0 + banco fallback
+       (plantillas veganas propias) + alerta viva sobre el plan publicado.
+     · **Peso de referencia único** (`services/periods.reference_weight_kg`:
+       último diario > cierre > current > inicio) usado por generate-plan,
+       PATCH de planes, adaptación y expuesto en `ClientOut.reference_weight_kg`
+       para el editor.
+     · **Recomendación de macros unificada**: endpoint
+       `GET /clients/{id}/macro-recommendation` (energy_targets+macro_targets
+       reales del backend); el editor lo consume y solo cae a su fórmula local
+       sin red. Adiós a las "dos fórmulas".
+     · **Historial/revert de planes (§4 cableado)**:
+       `services/plan_history.py` (sidecar `_plan_{id}_history.json`, tope 20),
+       snapshot automático ANTES de cada PATCH,
+       `GET /plans/{id}/history` + `POST /plans/{id}/revert` (snapshotea lo
+       actual antes de restaurar → revert reversible; sube `rev` → 409 en
+       pestañas rancias), botón "Historial" en `ClientPlanPanel`.
+     · **Paridad de PLAN COMPLETO**: vectores `rescaledPlan` en el contrato
+       (backend `rescale_nutrition`+`reconcile_nutrition(clamp=False)` ⇄ editor
+       `rescaledFrom(clamp=false)` byte a byte, banco flexible Y strict); el
+       backend ya no inyecta `household: None` (rompía la paridad).
+     · **Motor quincenal**: `menstrual_confound` derivado (mujer + repunte
+       ≥0,5 kg en los últimos 3 días, ≥5 pesajes); `weeks_in_deficit` solo
+       cuenta períodos cuyo plan tenía `target_kcal < tdee_kcal`.
+     · **`_align_bank_slots` cubre strict**: el menú semanal también se
+       reescala al objetivo de su toma (>5% de desvío).
+     · **`check_training`**: volumen por grupo cuenta `muscle_secondary` a 0,5
+       y avisa si falta `weekly_progression`/deload declarados.
+     · **Portal**: fecha de NEGOCIO (`PortalState.today`, zona del coach) manda
+       sobre el reloj del dispositivo en Diario/Entreno (viajes); scope de la
+       PWA ampliado a `/p/` (sobrevive a la rotación del token).
+     · **Front**: code-splitting por ruta (React.lazy + chunk vendor) — el
+       portal baja de ~940 KB a ~290 KB; recharts (~385 KB) solo carga donde
+       hay gráficas. `docs_theme` retirado del contrato (control muerto).
+     · **"Marcar pagado" a mano** sella `paid_at`; borrado RGPD ya elimina
+       `video_calls` (FK NOT NULL sin ON DELETE que reventaba el commit).
+     · Regresiones nuevas en `tests/test_auditoria_integral.py` (historial/
+       revert, confound, déficit real, strict align).
+   - **Pendiente menor restante** (sin urgencia): editar el banco de comidas
+     opción a opción desde el editor y el `swap` de ejercicios desde la web.
 
 ---
 

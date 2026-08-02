@@ -12,7 +12,7 @@ from dataclasses import asdict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Client, DailyLog, Period
+from app.models import Client, DailyLog, Period, Plan
 from app.services import metrics as M
 from app.services.biweekly_engine import CheckinInputs, Decision, decide_biweekly
 
@@ -68,12 +68,49 @@ def _adherence_ratio(period: Period, adh: M.AdherenceSummary) -> float:
     return max(0.0, min(1.0, adh.diet_adherence_ratio))
 
 
-def _weeks_in_deficit(client: Client, period: Period) -> int:
-    """Semanas acumuladas en déficit (solo fat_loss). Aproximación robusta: cada
-    período de seguimiento son ~2 semanas."""
+def _weeks_in_deficit(db: Session, client: Client, period: Period) -> int:
+    """Semanas acumuladas en déficit REAL (solo fat_loss): ~2 semanas por cada
+    período hasta el actual cuyo plan tenía target_kcal < tdee_kcal. Antes se
+    contaban TODOS los períodos, así que un mantenimiento o diet break intermedio
+    seguía sumando y el aviso de refeed/diet break llegaba inflado."""
     if client.goal_type != "fat_loss":
         return 0
-    return max(0, period.period_index) * 2
+    rows = db.execute(
+        select(Plan.nutrition_json)
+        .join(Period, Period.plan_id == Plan.id)
+        .where(
+            Period.client_id == period.client_id,
+            Period.period_index <= period.period_index,
+        )
+    ).all()
+    n_deficit = 0
+    for (nut,) in rows:
+        nut = nut or {}
+        tk, td = nut.get("target_kcal"), nut.get("tdee_kcal")
+        if tk and td:
+            if float(tk) < float(td):
+                n_deficit += 1
+        else:
+            # Plan legado sin kcal/tdee: con objetivo fat_loss se asume déficit
+            # (mejor avisar de más del diet break que de menos).
+            n_deficit += 1
+    return n_deficit * 2
+
+
+def _menstrual_confound(client: Client, raw_points: list[tuple]) -> bool:
+    """Posible retención por ciclo menstrual: mujer + repunte de peso concentrado
+    en los últimos días de la ventana (≥0,5 kg sobre la media previa). Heurística
+    conservadora: exige ≥5 pesajes para no confundir ruido con retención. El motor
+    solo la usa en fat_loss con ritmo estancado (regla `posible_ciclo_menstrual`)."""
+    if (client.sex or "").lower() != "female":
+        return False
+    if len(raw_points) < 5:
+        return False
+    tail = [w for _, w in raw_points[-3:]]
+    head = [w for _, w in raw_points[:-3]]
+    if not head:
+        return False
+    return (sum(tail) / len(tail)) - (sum(head) / len(head)) >= 0.5
 
 
 def checkin_inputs_from_period(db: Session, period: Period, client: Client) -> CheckinInputs:
@@ -137,9 +174,9 @@ def checkin_inputs_from_period(db: Session, period: Period, client: Client) -> C
         strength_trend=_strength_trend(db, period, prev),
         fatigue_now=adh.mean_fatigue,
         fatigue_prev=fatigue_prev,
-        weeks_in_deficit=_weeks_in_deficit(client, period),
+        weeks_in_deficit=_weeks_in_deficit(db, client, period),
         single_measurement=len(raw_points) <= 1,
-        menstrual_confound=False,
+        menstrual_confound=_menstrual_confound(client, raw_points),
     )
 
 

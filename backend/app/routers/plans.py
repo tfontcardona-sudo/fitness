@@ -168,6 +168,12 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
             status.HTTP_409_CONFLICT,
             "El plan cambió desde que abriste el editor (otra pestaña o una "
             "adaptación): recarga para ver la versión actual antes de guardar.")
+    # Historial §4: instantánea completa del plan ANTES de mutarlo — el coach
+    # puede restaurar cualquier versión desde "Historial" si una edición sale mal.
+    if changes:
+        from app.services.plan_history import snapshot_plan
+
+        snapshot_plan(plan, "antes de editar")
     # Foto del plan ANTES de aplicar la edición: al final se calcula el diff
     # (determinista) de lo que el coach cambió a mano, para avisar y para el
     # mensaje al cliente ("he ajustado X → Y").
@@ -190,7 +196,8 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
                 from app.services.nutrition_scale import reconcile_nutrition
 
                 cli = db.get(Client, plan.client_id)
-                w = (cli.current_weight_kg or cli.start_weight_kg) if cli else None
+                from app.services.periods import reference_weight_kg
+                w = reference_weight_kg(db, cli) if cli else None
                 reconcile_nutrition(value, weight_kg=w)
                 if isinstance(old_nutrition, dict):
                     import copy
@@ -206,6 +213,7 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
                     value,
                     allergies=(cli.food_allergies or []) if cli else [],
                     dislikes=(cli.food_dislikes or []) if cli else [],
+                    diet_pattern=cli.diet_pattern if cli else None,
                 )
                 # Estructura de comidas: si el coach la cambió en el editor (nº de
                 # tomas), la anamnesis del cliente se sincroniza — las próximas
@@ -274,6 +282,61 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
         from app.services.plan_activation import activate_plan
 
         activate_plan(db, plan)
+    db.commit()
+    db.refresh(plan)
+    return PlanOut.model_validate(plan)
+
+
+class PlanRevertIn(BaseModel):
+    """Restauración de una versión del historial. `index` viene de
+    GET /api/plans/{id}/history."""
+
+    index: int
+
+
+@router.get("/api/plans/{plan_id}/history")
+def plan_history(plan_id: int, db: Session = Depends(get_db)) -> list[dict]:
+    """Historial de versiones del plan (§4): metadatos + resumen de cada
+    instantánea guardada antes de cada edición/restauración."""
+    plan = db.get(Plan, plan_id)
+    if not plan:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan no encontrado")
+    from app.services.plan_history import list_history
+
+    return list_history(plan)
+
+
+@router.post("/api/plans/{plan_id}/revert", response_model=PlanOut)
+def revert_plan(plan_id: int, body: PlanRevertIn, db: Session = Depends(get_db)) -> PlanOut:
+    """Restaura una versión del historial (§4). El estado ACTUAL se snapshotea
+    antes, así el revert también es reversible. Sube `rev` (concurrencia): una
+    pestaña con el editor abierto recibirá su 409 al guardar."""
+    plan = db.get(Plan, plan_id)
+    if not plan:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan no encontrado")
+    if plan.status == "superseded":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Esta versión del plan quedó sustituida: restaura desde la versión vigente.")
+    from app.services.plan_history import get_version, snapshot_plan
+
+    version = get_version(plan, body.index)
+    if version is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Versión del historial no encontrada")
+
+    current_rev = int((plan.nutrition_json or {}).get("rev") or 0) \
+        if isinstance(plan.nutrition_json, dict) else 0
+    snapshot_plan(plan, "antes de restaurar")
+
+    plan.nutrition_json = version.get("nutrition_json")
+    plan.training_json = version.get("training_json")
+    plan.education_json = version.get("education_json")
+    if isinstance(plan.nutrition_json, dict):
+        nj = dict(plan.nutrition_json)
+        nj["rev"] = current_rev + 1
+        plan.nutrition_json = nj
+    log_event(db, "plan", plan.id, "plan_reverted",
+              {"index": body.index, "snapshot_at": version.get("at")})
     db.commit()
     db.refresh(plan)
     return PlanOut.model_validate(plan)

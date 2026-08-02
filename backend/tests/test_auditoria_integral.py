@@ -367,3 +367,136 @@ def test_alerta_adaptar_sobrevive_al_envio_del_feedback(http):
     kinds = {a["kind"] for a in alerts}
     assert "adapt_plan" in kinds, kinds
     db.close()
+
+
+# ------------------------------------------- historial de planes (§4) ---
+
+@pytestmark_db
+def test_plan_history_y_revert(http, tmp_path, monkeypatch):
+    """El PATCH guarda una instantánea ANTES de mutar; el revert restaura esa
+    versión (y snapshotea la actual primero, así el revert es reversible)."""
+    from app.db import SessionLocal
+    from app.models import Client, Plan
+    from app.security import new_portal_token
+
+    db = SessionLocal()
+    uid = uuid.uuid4().hex[:8]
+    c = Client(full_name=f"Hist {uid}", email=f"hist-{uid}@test.local",
+               portal_token="p", status="active")
+    db.add(c); db.flush(); c.portal_token = new_portal_token(c.id)
+    plan = Plan(client_id=c.id, month_index=1, version=1, status="published",
+                nutrition_json={"target_kcal": 2000,
+                                 "macros": {"protein_g": 150, "carbs_g": 200, "fat_g": 60}},
+                training_json={"sessions": []}, education_json={})
+    db.add(plan); db.commit()
+    pid = plan.id
+    db.close()
+
+    auth = _auth()
+    # Edición: sube la proteína → snapshot de la versión de 150 g.
+    r = http.patch(f"/api/plans/{pid}", headers=auth, json={"nutrition_json": {
+        "target_kcal": 2000,
+        "macros": {"protein_g": 170, "carbs_g": 180, "fat_g": 60}}})
+    assert r.status_code == 200, r.text
+
+    r = http.get(f"/api/plans/{pid}/history", headers=auth)
+    assert r.status_code == 200
+    hist = r.json()
+    assert len(hist) >= 1
+    oldest = hist[-1]
+    assert oldest["summary"]["protein_g"] == 150
+
+    # Restaurar la versión original: la proteína vuelve a 150 y el rev sube
+    # (una pestaña con el editor abierto recibiría su 409).
+    r = http.post(f"/api/plans/{pid}/revert", headers=auth,
+                  json={"index": oldest["index"]})
+    assert r.status_code == 200, r.text
+    nut = r.json()["nutrition_json"]
+    assert nut["macros"]["protein_g"] == 150
+    assert nut.get("rev", 0) >= 1
+
+    # El revert también dejó snapshot: el historial creció.
+    r = http.get(f"/api/plans/{pid}/history", headers=auth)
+    assert len(r.json()) >= 2
+
+
+# ------------------------------ motor quincenal: confound y déficit real ---
+
+def test_menstrual_confound_derivado():
+    """Mujer + repunte ≥0,5 kg concentrado en los últimos 3 días → confound
+    (el motor no recorta kcal sobre retención de agua). Hombre: nunca."""
+    from app.services.biweekly_period import _menstrual_confound
+
+    class _C:  # doble mínimo (solo .sex)
+        def __init__(self, sex): self.sex = sex
+
+    pts_flat = [(i, 70.0) for i in range(10)]
+    pts_spike = [(i, 70.0) for i in range(7)] + [(7, 70.7), (8, 70.8), (9, 70.9)]
+    assert _menstrual_confound(_C("female"), pts_spike) is True
+    assert _menstrual_confound(_C("female"), pts_flat) is False
+    assert _menstrual_confound(_C("male"), pts_spike) is False
+    # Pocos pesajes: sin datos no se afirma nada.
+    assert _menstrual_confound(_C("female"), pts_spike[:4]) is False
+
+
+@pytestmark_db
+def test_weeks_in_deficit_solo_cuenta_planes_en_deficit():
+    """Un período cuyo plan estaba en mantenimiento (target ≥ TDEE) ya no suma
+    semanas de déficit: el aviso de diet break refleja el déficit REAL."""
+    from app.db import SessionLocal
+    from app.models import Client, Period, Plan
+    from app.security import new_portal_token
+    from app.services.biweekly_period import _weeks_in_deficit
+
+    db = SessionLocal()
+    uid = uuid.uuid4().hex[:8]
+    c = Client(full_name=f"Def {uid}", email=f"def-{uid}@test.local",
+               portal_token="p", status="active", goal_type="fat_loss")
+    db.add(c); db.flush(); c.portal_token = new_portal_token(c.id)
+    today = date.today()
+    p_def = Plan(client_id=c.id, month_index=1, version=1, status="superseded",
+                 nutrition_json={"target_kcal": 2000, "tdee_kcal": 2500})
+    p_mant = Plan(client_id=c.id, month_index=1, version=2, status="published",
+                  nutrition_json={"target_kcal": 2500, "tdee_kcal": 2500})
+    db.add_all([p_def, p_mant]); db.flush()
+    db.add(Period(client_id=c.id, plan_id=p_def.id, period_index=1,
+                  starts_on=today - timedelta(days=30), ends_on=today - timedelta(days=16),
+                  status="analyzed"))
+    per2 = Period(client_id=c.id, plan_id=p_mant.id, period_index=2,
+                  starts_on=today - timedelta(days=15), ends_on=today - timedelta(days=1),
+                  status="closed")
+    db.add(per2); db.commit()
+
+    # Período 1 en déficit + período 2 en mantenimiento → 2 semanas, no 4.
+    assert _weeks_in_deficit(db, c, per2) == 2
+    c.goal_type = "maintenance"
+    assert _weeks_in_deficit(db, c, per2) == 0
+    db.close()
+
+
+def test_align_bank_slots_cubre_modo_strict():
+    """Cambiar el reparto por tomas también reescala el MENÚ SEMANAL (strict):
+    antes solo el banco flexible seguía a los objetivos por toma."""
+    from app.services.nutrition_scale import _align_bank_slots
+
+    nut = {
+        "target_kcal": 2000,
+        "macros": {"protein_g": 150, "carbs_g": 200, "fat_g": 60},
+        "meals": [
+            {"slot": 1, "target": {"kcal": 1000, "protein_g": 75, "carbs_g": 100, "fat_g": 30}},
+            {"slot": 2, "target": {"kcal": 1000, "protein_g": 75, "carbs_g": 100, "fat_g": 30}},
+        ],
+        "meal_bank": {"mode": "strict", "days": [
+            {"day": "lunes", "meals": [
+                # Plato construido para un objetivo antiguo de 600 kcal: -40%.
+                {"slot": 1, "dish": {"name": "Plato", "macros":
+                    {"kcal": 600, "protein_g": 45, "carbs_g": 60, "fat_g": 18},
+                    "ingredients": [{"name": "Arroz", "grams": 60}]}},
+            ]},
+        ]},
+    }
+    _align_bank_slots(nut)
+    dish = nut["meal_bank"]["days"][0]["meals"][0]["dish"]
+    # Reescalado hacia el objetivo de SU toma (1000 kcal), no dejado a 600.
+    assert dish["macros"]["kcal"] > 900, dish["macros"]
+    assert dish["ingredients"][0]["grams"] > 60

@@ -431,6 +431,775 @@
         "carbs_g": 500,
         "fat_g": 0
       }
+    },
+    {
+      "fn": "rescaledPlan",
+      "args": [
+        {
+          "target_kcal": 2000,
+          "tdee_kcal": 2400,
+          "macros": {
+            "protein_g": 150,
+            "carbs_g": 200,
+            "fat_g": 60
+          },
+          "meals": [
+            {
+              "slot": 1,
+              "name": "Desayuno",
+              "target": {
+                "kcal": 500,
+                "protein_g": 35,
+                "carbs_g": 55,
+                "fat_g": 15
+              }
+            },
+            {
+              "slot": 2,
+              "name": "Comida",
+              "target": {
+                "kcal": 700,
+                "protein_g": 55,
+                "carbs_g": 70,
+                "fat_g": 20
+              }
+            },
+            {
+              "slot": 3,
+              "name": "Merienda",
+              "target": {
+                "kcal": 300,
+                "protein_g": 20,
+                "carbs_g": 30,
+                "fat_g": 10
+              }
+            },
+            {
+              "slot": 4,
+              "name": "Cena",
+              "target": {
+                "kcal": 500,
+                "protein_g": 40,
+                "carbs_g": 45,
+                "fat_g": 15
+              }
+            }
+          ],
+          "meal_bank": {
+            "mode": "flexible_7",
+            "slots": [
+              {
+                "slot": 1,
+                "options": [
+                  {
+                    "name": "Avena con fruta",
+                    "macros": {
+                      "kcal": 500,
+                      "protein_g": 35,
+                      "carbs_g": 55,
+                      "fat_g": 15
+                    },
+                    "ingredients": [
+                      {
+                        "name": "Avena",
+                        "grams": 80,
+                        "household": "8 cucharadas ≈ 80 g"
+                      },
+                      {
+                        "name": "Plátano",
+                        "grams": 120
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Tostadas con pavo",
+                    "macros": {
+                      "kcal": 495,
+                      "protein_g": 36,
+                      "carbs_g": 52,
+                      "fat_g": 16
+                    },
+                    "ingredients": [
+                      {
+                        "name": "Pan integral",
+                        "grams": 100
+                      }
+                    ]
+                  }
+                ],
+                "equivalences": {
+                  "intro": "Cambia 60 g de avena por:",
+                  "groups": [
+                    {
+                      "name": "Hidratos",
+                      "note": "80 g de pan",
+                      "items": [
+                        {
+                          "food": "Arroz",
+                          "amount": "70 g"
+                        }
+                      ]
+                    },
+                    {
+                      "name": "Proteínas",
+                      "note": null,
+                      "items": [
+                        {
+                          "food": "Pollo",
+                          "amount": "120 g"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "slot": 2,
+                "options": [
+                  {
+                    "name": "Arroz con pollo",
+                    "macros": {
+                      "kcal": 700,
+                      "protein_g": 55,
+                      "carbs_g": 70,
+                      "fat_g": 20
+                    },
+                    "ingredients": [
+                      {
+                        "name": "Arroz",
+                        "grams": 90
+                      },
+                      {
+                        "name": "Pollo",
+                        "grams": 180
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "kcal": 2230,
+          "protein_g": 170,
+          "carbs_g": 230,
+          "fat_g": 70
+        }
+      ],
+      "expected": {
+        "target_kcal": 2230,
+        "tdee_kcal": 2400,
+        "macros": {
+          "protein_g": 170,
+          "carbs_g": 230,
+          "fat_g": 70
+        },
+        "meals": [
+          {
+            "slot": 1,
+            "name": "Desayuno",
+            "target": {
+              "kcal": 574,
+              "protein_g": 40,
+              "carbs_g": 63,
+              "fat_g": 18
+            }
+          },
+          {
+            "slot": 2,
+            "name": "Comida",
+            "target": {
+              "kcal": 766,
+              "protein_g": 62,
+              "carbs_g": 80,
+              "fat_g": 22
+            }
+          },
+          {
+            "slot": 3,
+            "name": "Merienda",
+            "target": {
+              "kcal": 340,
+              "protein_g": 23,
+              "carbs_g": 35,
+              "fat_g": 12
+            }
+          },
+          {
+            "slot": 4,
+            "name": "Cena",
+            "target": {
+              "kcal": 550,
+              "protein_g": 45,
+              "carbs_g": 52,
+              "fat_g": 18
+            }
+          }
+        ],
+        "meal_bank": {
+          "mode": "flexible_7",
+          "slots": [
+            {
+              "slot": 1,
+              "options": [
+                {
+                  "name": "Avena con fruta",
+                  "macros": {
+                    "kcal": 574,
+                    "protein_g": 40,
+                    "carbs_g": 63,
+                    "fat_g": 18
+                  },
+                  "ingredients": [
+                    {
+                      "name": "Avena",
+                      "grams": 90,
+                      "household": "8 cucharadas ≈ 90 g"
+                    },
+                    {
+                      "name": "Plátano",
+                      "grams": 140
+                    }
+                  ]
+                },
+                {
+                  "name": "Tostadas con pavo",
+                  "macros": {
+                    "kcal": 575,
+                    "protein_g": 41,
+                    "carbs_g": 60,
+                    "fat_g": 19
+                  },
+                  "ingredients": [
+                    {
+                      "name": "Pan integral",
+                      "grams": 115
+                    }
+                  ]
+                }
+              ],
+              "equivalences": {
+                "intro": "Cambia 70 g de avena por:",
+                "groups": [
+                  {
+                    "name": "Hidratos",
+                    "note": "90 g de pan",
+                    "items": [
+                      {
+                        "food": "Arroz",
+                        "amount": "80 g"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Proteínas",
+                    "note": null,
+                    "items": [
+                      {
+                        "food": "Pollo",
+                        "amount": "135 g"
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "slot": 2,
+              "options": [
+                {
+                  "name": "Arroz con pollo",
+                  "macros": {
+                    "kcal": 779,
+                    "protein_g": 62,
+                    "carbs_g": 81,
+                    "fat_g": 23
+                  },
+                  "ingredients": [
+                    {
+                      "name": "Arroz",
+                      "grams": 100
+                    },
+                    {
+                      "name": "Pollo",
+                      "grams": 200
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "fn": "rescaledPlan",
+      "args": [
+        {
+          "target_kcal": 2000,
+          "tdee_kcal": 2400,
+          "macros": {
+            "protein_g": 150,
+            "carbs_g": 200,
+            "fat_g": 60
+          },
+          "meals": [
+            {
+              "slot": 1,
+              "name": "Desayuno",
+              "target": {
+                "kcal": 500,
+                "protein_g": 35,
+                "carbs_g": 55,
+                "fat_g": 15
+              }
+            },
+            {
+              "slot": 2,
+              "name": "Comida",
+              "target": {
+                "kcal": 700,
+                "protein_g": 55,
+                "carbs_g": 70,
+                "fat_g": 20
+              }
+            },
+            {
+              "slot": 3,
+              "name": "Merienda",
+              "target": {
+                "kcal": 300,
+                "protein_g": 20,
+                "carbs_g": 30,
+                "fat_g": 10
+              }
+            },
+            {
+              "slot": 4,
+              "name": "Cena",
+              "target": {
+                "kcal": 500,
+                "protein_g": 40,
+                "carbs_g": 45,
+                "fat_g": 15
+              }
+            }
+          ],
+          "meal_bank": {
+            "mode": "flexible_7",
+            "slots": [
+              {
+                "slot": 1,
+                "options": [
+                  {
+                    "name": "Avena con fruta",
+                    "macros": {
+                      "kcal": 500,
+                      "protein_g": 35,
+                      "carbs_g": 55,
+                      "fat_g": 15
+                    },
+                    "ingredients": [
+                      {
+                        "name": "Avena",
+                        "grams": 80,
+                        "household": "8 cucharadas ≈ 80 g"
+                      },
+                      {
+                        "name": "Plátano",
+                        "grams": 120
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Tostadas con pavo",
+                    "macros": {
+                      "kcal": 495,
+                      "protein_g": 36,
+                      "carbs_g": 52,
+                      "fat_g": 16
+                    },
+                    "ingredients": [
+                      {
+                        "name": "Pan integral",
+                        "grams": 100
+                      }
+                    ]
+                  }
+                ],
+                "equivalences": {
+                  "intro": "Cambia 60 g de avena por:",
+                  "groups": [
+                    {
+                      "name": "Hidratos",
+                      "note": "80 g de pan",
+                      "items": [
+                        {
+                          "food": "Arroz",
+                          "amount": "70 g"
+                        }
+                      ]
+                    },
+                    {
+                      "name": "Proteínas",
+                      "note": null,
+                      "items": [
+                        {
+                          "food": "Pollo",
+                          "amount": "120 g"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "slot": 2,
+                "options": [
+                  {
+                    "name": "Arroz con pollo",
+                    "macros": {
+                      "kcal": 700,
+                      "protein_g": 55,
+                      "carbs_g": 70,
+                      "fat_g": 20
+                    },
+                    "ingredients": [
+                      {
+                        "name": "Arroz",
+                        "grams": 90
+                      },
+                      {
+                        "name": "Pollo",
+                        "grams": 180
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "kcal": 1570,
+          "protein_g": 130,
+          "carbs_g": 150,
+          "fat_g": 50
+        }
+      ],
+      "expected": {
+        "target_kcal": 1570,
+        "tdee_kcal": 2400,
+        "macros": {
+          "protein_g": 130,
+          "carbs_g": 150,
+          "fat_g": 50
+        },
+        "meals": [
+          {
+            "slot": 1,
+            "name": "Desayuno",
+            "target": {
+              "kcal": 401,
+              "protein_g": 30,
+              "carbs_g": 41,
+              "fat_g": 13
+            }
+          },
+          {
+            "slot": 2,
+            "name": "Comida",
+            "target": {
+              "kcal": 544,
+              "protein_g": 48,
+              "carbs_g": 52,
+              "fat_g": 16
+            }
+          },
+          {
+            "slot": 3,
+            "name": "Merienda",
+            "target": {
+              "kcal": 232,
+              "protein_g": 17,
+              "carbs_g": 23,
+              "fat_g": 8
+            }
+          },
+          {
+            "slot": 4,
+            "name": "Cena",
+            "target": {
+              "kcal": 393,
+              "protein_g": 35,
+              "carbs_g": 34,
+              "fat_g": 13
+            }
+          }
+        ],
+        "meal_bank": {
+          "mode": "flexible_7",
+          "slots": [
+            {
+              "slot": 1,
+              "options": [
+                {
+                  "name": "Avena con fruta",
+                  "macros": {
+                    "kcal": 401,
+                    "protein_g": 30,
+                    "carbs_g": 41,
+                    "fat_g": 13
+                  },
+                  "ingredients": [
+                    {
+                      "name": "Avena",
+                      "grams": 65,
+                      "household": "8 cucharadas ≈ 65 g"
+                    },
+                    {
+                      "name": "Plátano",
+                      "grams": 95
+                    }
+                  ]
+                },
+                {
+                  "name": "Tostadas con pavo",
+                  "macros": {
+                    "kcal": 397,
+                    "protein_g": 31,
+                    "carbs_g": 39,
+                    "fat_g": 13
+                  },
+                  "ingredients": [
+                    {
+                      "name": "Pan integral",
+                      "grams": 80
+                    }
+                  ]
+                }
+              ],
+              "equivalences": {
+                "intro": "Cambia 45 g de avena por:",
+                "groups": [
+                  {
+                    "name": "Hidratos",
+                    "note": "60 g de pan",
+                    "items": [
+                      {
+                        "food": "Arroz",
+                        "amount": "55 g"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Proteínas",
+                    "note": null,
+                    "items": [
+                      {
+                        "food": "Pollo",
+                        "amount": "105 g"
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "slot": 2,
+              "options": [
+                {
+                  "name": "Arroz con pollo",
+                  "macros": {
+                    "kcal": 557,
+                    "protein_g": 48,
+                    "carbs_g": 53,
+                    "fat_g": 17
+                  },
+                  "ingredients": [
+                    {
+                      "name": "Arroz",
+                      "grams": 70
+                    },
+                    {
+                      "name": "Pollo",
+                      "grams": 145
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "fn": "rescaledPlan",
+      "args": [
+        {
+          "target_kcal": 1800,
+          "macros": {
+            "protein_g": 140,
+            "carbs_g": 170,
+            "fat_g": 60
+          },
+          "meals": [
+            {
+              "slot": 1,
+              "target": {
+                "kcal": 600,
+                "protein_g": 45,
+                "carbs_g": 60,
+                "fat_g": 20
+              }
+            },
+            {
+              "slot": 2,
+              "target": {
+                "kcal": 1200,
+                "protein_g": 95,
+                "carbs_g": 110,
+                "fat_g": 40
+              }
+            }
+          ],
+          "meal_bank": {
+            "mode": "strict",
+            "days": [
+              {
+                "day": "lunes",
+                "meals": [
+                  {
+                    "slot": 1,
+                    "dish": {
+                      "name": "Yogur con nueces",
+                      "macros": {
+                        "kcal": 600,
+                        "protein_g": 45,
+                        "carbs_g": 60,
+                        "fat_g": 20
+                      },
+                      "ingredients": [
+                        {
+                          "name": "Yogur",
+                          "grams": 250
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "slot": 2,
+                    "dish": {
+                      "name": "Pasta con atún",
+                      "macros": {
+                        "kcal": 1200,
+                        "protein_g": 95,
+                        "carbs_g": 110,
+                        "fat_g": 40
+                      },
+                      "ingredients": [
+                        {
+                          "name": "Pasta",
+                          "grams": 110
+                        },
+                        {
+                          "name": "Atún",
+                          "grams": 160
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "kcal": 1945,
+          "protein_g": 150,
+          "carbs_g": 190,
+          "fat_g": 65
+        }
+      ],
+      "expected": {
+        "target_kcal": 1945,
+        "macros": {
+          "protein_g": 150,
+          "carbs_g": 190,
+          "fat_g": 65
+        },
+        "meals": [
+          {
+            "slot": 1,
+            "target": {
+              "kcal": 658,
+              "protein_g": 48,
+              "carbs_g": 67,
+              "fat_g": 22
+            }
+          },
+          {
+            "slot": 2,
+            "target": {
+              "kcal": 1287,
+              "protein_g": 102,
+              "carbs_g": 123,
+              "fat_g": 43
+            }
+          }
+        ],
+        "meal_bank": {
+          "mode": "strict",
+          "days": [
+            {
+              "day": "lunes",
+              "meals": [
+                {
+                  "slot": 1,
+                  "dish": {
+                    "name": "Yogur con nueces",
+                    "macros": {
+                      "kcal": 658,
+                      "protein_g": 48,
+                      "carbs_g": 67,
+                      "fat_g": 22
+                    },
+                    "ingredients": [
+                      {
+                        "name": "Yogur",
+                        "grams": 275
+                      }
+                    ]
+                  }
+                },
+                {
+                  "slot": 2,
+                  "dish": {
+                    "name": "Pasta con atún",
+                    "macros": {
+                      "kcal": 1287,
+                      "protein_g": 102,
+                      "carbs_g": 123,
+                      "fat_g": 43
+                    },
+                    "ingredients": [
+                      {
+                        "name": "Pasta",
+                        "grams": 120
+                      },
+                      {
+                        "name": "Atún",
+                        "grams": 170
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
     }
   ]
 }

@@ -331,8 +331,9 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
     from app.services.nutrition_scale import reconcile_nutrition
 
     _cli = db.get(Client, client_id)
+    from app.services.periods import reference_weight_kg
     reconcile_nutrition(
-        nut, weight_kg=(_cli.current_weight_kg or _cli.start_weight_kg) if _cli else None
+        nut, weight_kg=reference_weight_kg(db, _cli) if _cli else None
     )
     # Ninguna toma sin contenido tras adaptar: los slots que quedaran vacíos
     # reciben 3 opciones por defecto escaladas a sus macros (nunca "toma libre").
@@ -342,6 +343,7 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
         nut,
         allergies=(_cli.food_allergies or []) if _cli else [],
         dislikes=(_cli.food_dislikes or []) if _cli else [],
+        diet_pattern=_cli.diet_pattern if _cli else None,
     )
 
     # Los DETALLES que verá el cliente ("Proteína: 150 → X g", "Totales

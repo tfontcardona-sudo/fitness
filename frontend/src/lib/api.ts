@@ -266,6 +266,17 @@ export const api = {
   updatePlan: (planId: number, patch: { nutrition_json?: any; training_json?: any; education_json?: any; base_rev?: number }) =>
     request<{ id: number; status: string; nutrition_json: any; training_json: any; education_json: any; guardrail_flags: string[] | null; month_index: number; version: number }>(
       "PATCH", `/plans/${planId}`, patch),
+  planHistory: (planId: number) =>
+    request<{ index: number; at: string | null; label: string;
+      summary: { target_kcal?: number; protein_g?: number; carbs_g?: number; fat_g?: number; n_meals?: number } }[]>(
+      "GET", `/plans/${planId}/history`),
+  revertPlan: (planId: number, index: number) =>
+    request<{ id: number; status: string; nutrition_json: any; training_json: any; education_json: any }>(
+      "POST", `/plans/${planId}/revert`, { index }),
+  macroRecommendation: (clientId: number) =>
+    request<{ available: boolean; weight_kg?: number; tdee?: number; adjustment_pct?: number;
+      kcal?: number; protein_g?: number; carbs_g?: number; fat_g?: number; warnings?: string[] }>(
+      "GET", `/clients/${clientId}/macro-recommendation`),
   readAnamnesis: (clientId: number) =>
     request<{ extracted: any; deep_analysis: string | null; message: string }>(
       "POST", `/clients/${clientId}/read-anamnesis`),

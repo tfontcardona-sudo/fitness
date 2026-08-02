@@ -352,9 +352,48 @@ def list_clients(
     return out
 
 
+@router.get("/{client_id}/macro-recommendation")
+def macro_recommendation(client_id: int, db: Session = Depends(get_db)) -> dict:
+    """Recomendación de energía/macros calculada por el BACKEND (misma fórmula
+    que la generación: tramos individualizados por % graso/experiencia + suelos).
+    El editor la muestra como referencia — antes usaba una fórmula TS propia
+    (−20% fijo) que podía contradecir a la generación (auditoría)."""
+    client = _get_or_404(db, client_id)
+    if not all([client.sex, client.height_cm, client.birth_date,
+                client.goal_type, client.training_days is not None]):
+        return {"available": False}
+    from app.services.metrics import age_from_birth, energy_targets
+    from app.services.metrics import macro_targets as _mt
+    from app.services.periods import reference_weight_kg
+
+    weight = reference_weight_kg(db, client)
+    if not weight:
+        return {"available": False}
+    age = age_from_birth(client.birth_date, date.today())
+    et = energy_targets(
+        sex=client.sex, weight_kg=weight, height_cm=client.height_cm, age=age,
+        goal_type=client.goal_type, training_days=client.training_days,
+        body_fat_pct=client.body_fat_pct, daily_activity=client.daily_activity_level,
+        level=client.level, session_min=client.session_max_min,
+    )
+    mp = _mt(client.sex, weight, client.goal_type, et.target_kcal,
+             client.training_days, tdee=et.tdee)
+    return {
+        "available": True, "weight_kg": weight,
+        "tdee": round(et.tdee), "adjustment_pct": et.adjustment_pct,
+        "kcal": mp.kcal, "protein_g": mp.protein_g, "carbs_g": mp.carbs_g,
+        "fat_g": mp.fat_g, "warnings": et.warnings + mp.notes,
+    }
+
+
 @router.get("/{client_id}", response_model=ClientOut)
 def get_client(client_id: int, db: Session = Depends(get_db)) -> ClientOut:
-    return ClientOut.model_validate(_get_or_404(db, client_id))
+    client = _get_or_404(db, client_id)
+    out = ClientOut.model_validate(client)
+    from app.services.periods import reference_weight_kg
+
+    out.reference_weight_kg = reference_weight_kg(db, client)
+    return out
 
 
 # ---------------------------------------------------- edición con audit ----
@@ -389,6 +428,11 @@ def update_client(client_id: int, body: ClientUpdate, db: Session = Depends(get_
         if old_value != serialized_new:
             diff[field] = {"from": _jsonable(old_value), "to": _jsonable(serialized_new)}
         setattr(client, field, serialized_new)
+
+    # "Marcar pagado" a mano (sin webhook de Stripe): sella también paid_at,
+    # para que las vistas/consultas por fecha de pago no lo lean como impagado.
+    if changes.get("payment_status") == "paid" and client.paid_at is None:
+        client.paid_at = datetime.now(timezone.utc)
 
     if diff:
         log_event(db, "client", client.id, "client_updated", {"fields": diff})
@@ -509,6 +553,10 @@ def delete_client(
     # push_subscriptions.client_id es NOT NULL sin ON DELETE: hay que borrarlas a
     # mano o el commit falla con ForeignKeyViolation (RGPD: borrado completo).
     db.execute(delete(PushSubscription).where(PushSubscription.client_id == client_id))
+    # video_calls.client_id también es NOT NULL sin ON DELETE (mig. 0023): sin
+    # esta línea, borrar a un cliente Pro con videollamadas revienta el commit.
+    from app.models import VideoCall
+    db.execute(delete(VideoCall).where(VideoCall.client_id == client_id))
     db.execute(delete(Period).where(Period.client_id == client_id))
     db.execute(delete(Plan).where(Plan.client_id == client_id))
     db.execute(delete(ChangeRequest).where(ChangeRequest.client_id == client_id))
@@ -1113,10 +1161,9 @@ def _food_catalog_for(db: Session, client: Client) -> list[dict]:
             foods,
             allergies=client.food_allergies or [],
             dislikes=client.food_dislikes or [],
-            # OJO: diet_mode ("flexible_7"/"strict") NO es un patrón ético
-            # (vegano/halal…) — pasarlo dejaba el filtro de patrón inerte y
-            # confundía (auditoría #25). El campo real está pendiente (§9).
-            diet_pattern=None,
+            # Patrón ético/religioso REAL del cliente (campo diet_pattern,
+            # migración 0032): vegano/halal… se respeta al 100%.
+            diet_pattern=client.diet_pattern,
         )
     except Exception:  # noqa: BLE001
         return []
@@ -1172,21 +1219,11 @@ def generate_client_plan(
 
     # 2) Métricas calculadas por el backend (la IA nunca calcula)
     age = age_from_birth(client.birth_date, date.today())
-    # Peso ACTUAL del cliente (último registro del portal o cierre quincenal):
-    # tras semanas de seguimiento —o al regenerar por cambio de objetivo— las
-    # calorías y macros deben partir del peso real de hoy, no del inicial.
-    latest_log_w = db.scalar(
-        select(DailyLog.weight_kg)
-        .join(Period, DailyLog.period_id == Period.id)
-        .where(Period.client_id == client_id, DailyLog.weight_kg.is_not(None))
-        .order_by(DailyLog.log_date.desc()).limit(1)
-    )
-    latest_close_w = db.scalar(
-        select(Period.closing_weight_kg)
-        .where(Period.client_id == client_id, Period.closing_weight_kg.is_not(None))
-        .order_by(Period.period_index.desc()).limit(1)
-    )
-    weight_now = latest_log_w or latest_close_w or client.current_weight_kg or client.start_weight_kg
+    # Peso ACTUAL del cliente: helper ÚNICO reference_weight_kg (misma verdad
+    # para generación, PATCH del plan, adaptación y editor).
+    from app.services.periods import reference_weight_kg
+
+    weight_now = reference_weight_kg(db, client)
 
     et = energy_targets(
         sex=client.sex, weight_kg=weight_now, height_cm=client.height_cm,
@@ -1310,7 +1347,8 @@ def generate_client_plan(
         weight_kg=weight_now, goal_type=client.goal_type,
         level=client.level, training_days=client.training_days,
         session_max_min=client.session_max_min, training_place=client.training_place,
-        diet_mode=client.diet_mode, meals_per_day=client.meals_per_day,
+        diet_mode=client.diet_mode, diet_pattern=client.diet_pattern,
+        meals_per_day=client.meals_per_day,
         meal_schedule=client.meal_schedule or [],
         food_allergies=client.food_allergies or [],
         food_dislikes=client.food_dislikes or [],
@@ -1359,7 +1397,8 @@ def generate_client_plan(
     from app.services.meal_fallback import ensure_bank_slots
 
     ensure_bank_slots(nutrition, allergies=client.food_allergies or [],
-                      dislikes=client.food_dislikes or [])
+                      dislikes=client.food_dislikes or [],
+                      diet_pattern=client.diet_pattern)
 
     # Avisos de COBERTURA (auditoría de perfiles) — no bloquean, pero el coach
     # debe verlos: biblioteca de ejercicios fina o tomas sin opciones seguras.
@@ -1395,6 +1434,7 @@ def generate_client_plan(
         "weight_kg": weight_now, "height_cm": client.height_cm,
         "level": client.level, "training_days": client.training_days,
         "training_place": client.training_place, "diet_mode": client.diet_mode,
+        "diet_pattern": client.diet_pattern,
     }
 
     # El TDEE que se persiste y se MUESTRA (déficit/superávit del PDF, del panel

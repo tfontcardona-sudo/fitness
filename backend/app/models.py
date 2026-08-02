@@ -106,6 +106,10 @@ class Client(Base):
     current_supplements: Mapped[str | None] = mapped_column(Text)
     diet_mode: Mapped[str | None] = mapped_column(String(20))  # flexible_7|strict
     strict_free_meal_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Patrón dietético ético/religioso (vegano|vegetariano|pescetariano|
+    # sin_cerdo|halal|kosher). Alimenta filter_foods, el banco de emergencia,
+    # el Revisor 0 y las alertas — antes el filtro existía sin fuente de datos.
+    diet_pattern: Mapped[str | None] = mapped_column(String(30))
 
     # Gestión
     status: Mapped[str] = mapped_column(String(30), default="onboarding", index=True)

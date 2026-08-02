@@ -19,16 +19,17 @@ interface HistSession { date: string; sets: HistSet[] }
  * hoy. Todo se guarda solo en el backend (workout_sets) y el coach lo ve al
  * instante. Las series se conservan aunque cambie de sesión o guarde el diario.
  */
-export function PortalWorkout({ api, brand, periodStatus = null }: {
-  api: Api; brand: PortalBrand; periodStatus?: string | null;
+export function PortalWorkout({ api, brand, periodStatus = null, businessToday = null }: {
+  api: Api; brand: PortalBrand; periodStatus?: string | null; businessToday?: string | null;
 }) {
   // Con la revisión ya ENVIADA (período cerrado) el backend rechaza el
   // guardado: mejor avisar y no dejar teclear datos que no se guardarían.
   const readOnly = periodStatus != null && periodStatus !== "open";
   const toast = usePortalToast();
   // Fecha CONGELADA al montar (ver PortalDiary): pasada la medianoche, un
-  // re-render no debe refetchear el día nuevo pisando lo tecleado.
-  const [today] = useState(() => localToday());
+  // re-render no debe refetchear el día nuevo pisando lo tecleado. Manda la
+  // fecha de NEGOCIO del backend (zona del coach) sobre la del dispositivo.
+  const [today] = useState(() => businessToday || localToday());
   const [sessions, setSessions] = useState<TodaySession[] | null>(null);
   const [planChanges, setPlanChanges] = useState<PlanChanges | null>(null);
   const [week, setWeek] = useState<TrainingWeek | null>(null);

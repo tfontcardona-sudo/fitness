@@ -50,6 +50,13 @@ _DESAYUNO: list[tuple[str, list[_ING]]] = [
     ("Tortitas de arroz con pavo y aguacate",
      [("Tortitas de arroz", 40, (8, 80, 3)), ("Pavo en lonchas", 80, (22, 1, 2)),
       ("Aguacate", 70, (2, 2, 15)), ("Tomate", 80, (1, 3.5, 0.2))]),
+    # VEGANAS (patrón dietético): sin producto animal.
+    ("Avena con plátano y crema de cacahuete",
+     [("Copos de avena", 70, (13, 60, 7)), ("Plátano", 120, (1, 21, 0.3)),
+      ("Crema de cacahuete 100%", 20, (25, 12, 50))]),
+    ("Tostadas integrales con aguacate y tomate",
+     [("Pan integral", 90, (9, 43, 3.5)), ("Aguacate", 80, (2, 2, 15)),
+      ("Tomate", 100, (1, 3.5, 0.2)), ("Aceite de oliva virgen extra", 5, (0, 0, 100))]),
 ]
 
 _SNACK: list[tuple[str, list[_ING]]] = [
@@ -78,6 +85,10 @@ _SNACK: list[tuple[str, list[_ING]]] = [
     ("Tortitas de arroz con aguacate y tomate",
      [("Tortitas de arroz", 40, (8, 80, 3)), ("Aguacate", 80, (2, 2, 15)),
       ("Tomate", 100, (1, 3.5, 0.2))]),
+    # VEGANA (patrón dietético): sin producto animal.
+    ("Hummus con tortitas de arroz",
+     [("Hummus", 120, (8, 15, 10)), ("Tortitas de arroz", 35, (8, 80, 3)),
+      ("Manzana", 120, (0.3, 12, 0.2))]),
 ]
 
 _PRINCIPAL: list[tuple[str, list[_ING]]] = [
@@ -115,6 +126,16 @@ _PRINCIPAL: list[tuple[str, list[_ING]]] = [
       ("Verduras variadas", 200, (2, 5, 0.3)), ("Aceite de oliva virgen extra", 8, (0, 0, 100))]),
     ("Pavo con boniato y verduras",
      [("Pechuga de pavo", 180, (22, 0, 1.5)), ("Boniato (en crudo)", 280, (1.5, 21, 0.2)),
+      ("Verduras variadas", 200, (2, 5, 0.3)), ("Aceite de oliva virgen extra", 10, (0, 0, 100))]),
+    # VEGANAS (patrón dietético): legumbre + tubérculo/cereal, sin producto animal.
+    ("Garbanzos salteados con arroz y verduras",
+     [("Garbanzos cocidos", 250, (8, 19, 2.5)), ("Arroz (en crudo)", 60, (7, 78, 0.6)),
+      ("Verduras variadas", 200, (2, 5, 0.3)), ("Aceite de oliva virgen extra", 10, (0, 0, 100))]),
+    ("Lentejas estofadas con patata y verduras",
+     [("Lentejas cocidas", 280, (9, 16, 0.5)), ("Patata (en crudo)", 250, (2, 17, 0.1)),
+      ("Verduras variadas", 200, (2, 5, 0.3)), ("Aceite de oliva virgen extra", 10, (0, 0, 100))]),
+    ("Tofu salteado con arroz y verduras",
+     [("Tofu firme", 200, (13, 2, 8)), ("Arroz (en crudo)", 70, (7, 78, 0.6)),
       ("Verduras variadas", 200, (2, 5, 0.3)), ("Aceite de oliva virgen extra", 10, (0, 0, 100))]),
 ]
 
@@ -190,8 +211,19 @@ def _scaled_option(key: str, title: str, ings: list[_ING], target_kcal: float) -
     }
 
 
+def _violates_pattern(opt: dict, diet_pattern: str | None) -> bool:
+    if not diet_pattern:
+        return False
+    forbidden = gr._DIET_PATTERN_FORBIDDEN.get(
+        gr._norm_food(diet_pattern).replace(" ", "_"))
+    if not forbidden:
+        return False
+    return gr._match_term(forbidden, gr._all_option_texts(opt)) is not None
+
+
 def build_fallback_options(meal: dict, allergies: list[str] | None = None,
-                           dislikes: list[str] | None = None) -> list[dict]:
+                           dislikes: list[str] | None = None,
+                           diet_pattern: str | None = None) -> list[dict]:
     """Hasta 3 opciones cerradas (clave A/B/C) escaladas al objetivo de la toma.
 
     Alergias Y aversiones EXCLUYEN candidatas siempre: el Revisor 0
@@ -209,7 +241,8 @@ def build_fallback_options(meal: dict, allergies: list[str] | None = None,
     scaled = [_scaled_option("?", t, ings, kcal) for t, ings in candidates]
     safe = [o for o in scaled
             if gr.option_allergen(o, allergies) is None
-            and gr.option_allergen(o, dislikes) is None]
+            and gr.option_allergen(o, dislikes) is None
+            and not _violates_pattern(o, diet_pattern)]
     chosen = safe[:3]
     for i, o in enumerate(chosen):
         o["key"] = chr(ord("A") + i)
@@ -226,7 +259,8 @@ def _slot_is_empty(entry: dict | None) -> bool:
 
 
 def ensure_bank_slots(nut: dict, allergies: list[str] | None = None,
-                      dislikes: list[str] | None = None) -> int:
+                      dislikes: list[str] | None = None,
+                      diet_pattern: str | None = None) -> int:
     """Garantiza que TODAS las tomas del plan flexible tengan contenido de banco.
 
     Para cada comida sin entrada (o con entrada vacía) inyecta 3 opciones por
@@ -252,7 +286,8 @@ def ensure_bank_slots(nut: dict, allergies: list[str] | None = None,
         entry = by_slot.get(slot_no)
         if not _slot_is_empty(entry):
             continue
-        options = build_fallback_options(m, allergies=allergies, dislikes=dislikes)
+        options = build_fallback_options(m, allergies=allergies, dislikes=dislikes,
+                                          diet_pattern=diet_pattern)
         if not options:
             continue
         titles = [o["title"] for o in options]
