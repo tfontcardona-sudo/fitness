@@ -1372,12 +1372,14 @@ def generate_client_plan(
     # Paquete Start = solo nutrición: la IA no genera entrenamiento (ni el
     # educativo de entreno). Full/Pro generan el plan completo.
     include_training = pkgs.has_training(client.package_tier)
+    include_nutrition = pkgs.has_nutrition(client.package_tier)
     # §2 (hardening): catálogo de alimentos FILTRADO (sin alérgenos/aversiones/patrón)
     # para que la IA seleccione por food_id y el solver fije los gramos.
     food_catalog = _food_catalog_for(db, client)
     try:
         generated = generate_monthly_plan(
-            ctx, AIClient(), include_training=include_training, food_catalog=food_catalog)
+            ctx, AIClient(), include_training=include_training,
+            food_catalog=food_catalog, include_nutrition=include_nutrition)
     except PlanGenerationError as exc:
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY,
@@ -1397,9 +1399,10 @@ def generate_client_plan(
     # el cliente siempre ve opciones concretas, nunca una "toma libre".
     from app.services.meal_fallback import ensure_bank_slots
 
-    ensure_bank_slots(nutrition, allergies=client.food_allergies or [],
-                      dislikes=client.food_dislikes or [],
-                      diet_pattern=client.diet_pattern)
+    if nutrition is not None:
+        ensure_bank_slots(nutrition, allergies=client.food_allergies or [],
+                          dislikes=client.food_dislikes or [],
+                          diet_pattern=client.diet_pattern)
 
     # Avisos de COBERTURA (auditoría de perfiles) — no bloquean, pero el coach
     # debe verlos: biblioteca de ejercicios fina o tomas sin opciones seguras.
@@ -1412,7 +1415,7 @@ def generate_client_plan(
             "o revisa lesiones/exclusiones antes de confiar en el entreno.")
     try:
         from app.services.meal_fallback import _slot_is_empty
-        _bank = (nutrition.get("meal_bank") or {})
+        _bank = ((nutrition or {}).get("meal_bank") or {})
         _by_slot = {sl.get("slot"): sl for sl in (_bank.get("slots") or [])}
         if (_bank.get("mode") or "") != "strict":
             for m in (nutrition.get("meals") or []):
@@ -1431,23 +1434,26 @@ def generate_client_plan(
     # Snapshot de los INPUTS con los que se generó (auditoría de ediciones):
     # si el coach corrige la ficha después (altura mal extraída, nivel, días…),
     # la alerta plan_stale_inputs compara contra esto y avisa en vez de callar.
-    nutrition["gen_inputs"] = {
-        "weight_kg": weight_now, "height_cm": client.height_cm,
-        "level": client.level, "training_days": client.training_days,
-        "training_place": client.training_place, "diet_mode": client.diet_mode,
-        "diet_pattern": client.diet_pattern,
-    }
+    if nutrition is not None:
+        nutrition["gen_inputs"] = {
+            "weight_kg": weight_now, "height_cm": client.height_cm,
+            "level": client.level, "training_days": client.training_days,
+            "training_place": client.training_place, "diet_mode": client.diet_mode,
+            "diet_pattern": client.diet_pattern,
+        }
 
     # El TDEE que se persiste y se MUESTRA (déficit/superávit del PDF, del panel
     # del coach y del editor) es el AUTORITATIVO del backend (et.tdee), no el eco
     # que devuelve la IA: si no, el % de ajuste mostrado podía contradecir al que
     # valida el guardrail (p. ej. "Mantenimiento 0%" en un plan de pérdida real).
-    nutrition["tdee_kcal"] = round(et.tdee)
+    if nutrition is not None:
+        nutrition["tdee_kcal"] = round(et.tdee)
 
     # La regeneración YA incorpora los ajustes de la última revisión analizada
     # (van en el prompt): se SELLA applied_adjustments para que la alerta
     # "sin adaptar" se apague y "Adaptar" no vuelva a aplicarlos encima.
-    if last_analyzed and (last_analyzed.ai_analysis_json or {}).get("plan_adjustments"):
+    if (nutrition is not None and last_analyzed
+            and (last_analyzed.ai_analysis_json or {}).get("plan_adjustments")):
         nutrition["applied_adjustments"] = {
             "period_index": last_analyzed.period_index,
             "items": [{
@@ -1469,10 +1475,14 @@ def generate_client_plan(
         review_ai = AIClient()
     except Exception:  # noqa: BLE001
         review_ai = None
-    nutrition, review_summary = review_generated_plan(
-        nutrition, client=client, ctx=ctx, ai=review_ai,
-        objective_macros=ctx.macro_plan,
-    )
+    review_summary = None
+    if nutrition is not None:
+        # El panel revisa la NUTRICIÓN: en un plan solo-entreno no aplica (el
+        # entrenamiento ya pasó por check_training en la generación).
+        nutrition, review_summary = review_generated_plan(
+            nutrition, client=client, ctx=ctx, ai=review_ai,
+            objective_macros=ctx.macro_plan,
+        )
     if review_summary and review_summary.get("color") == "rojo":
         flags = list(flags) + [
             "revisión: ROJO — el panel detectó puntos a revisar antes de enviar"

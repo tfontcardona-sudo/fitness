@@ -34,6 +34,7 @@ from app.schemas.ai import (
     NutritionOnlyCoreOutput,
     PlanCoreOutput,
     TrainingCore,
+    TrainingOnlyCoreOutput,
 )
 from app.services import guardrails as gr
 from app.services.ai.client import AIClient, AIGenerationError
@@ -42,6 +43,7 @@ from app.services.ai.prompts import (
     system_prompt_full,
     system_prompt_meals,
     system_prompt_nutrition_only,
+    system_prompt_training_only,
 )
 
 
@@ -108,19 +110,22 @@ class ClientContext:
 
 @dataclass
 class GeneratedPlan:
-    nutrition: NutritionCore
-    meals: MealsFlexibleOutput | MealsStrictOutput
-    # training/education son None en el paquete Start (solo-nutrición).
+    # nutrition/meals son None en el plan `train` (solo entrenamiento);
+    # training/education son None en el plan `nutri` (solo nutrición).
+    nutrition: NutritionCore | None
+    meals: MealsFlexibleOutput | MealsStrictOutput | None
     training: TrainingCore | None
     education: EducationOutput | None
     guardrail_flags: list[str]
     generated_by: str
 
-    def to_persistable(self) -> tuple[dict, dict | None, dict | None, list[str]]:
+    def to_persistable(self) -> tuple[dict | None, dict | None, dict | None, list[str]]:
         """(nutrition_json, training_json, education_json, guardrail_flags).
-        training_json/education_json van a None cuando el plan es solo-nutrición."""
-        nutrition = self.nutrition.model_dump()
-        nutrition["meal_bank"] = self.meals.model_dump()
+        Cada bloque va a None cuando el plan contratado no incluye ese servicio."""
+        nutrition = None
+        if self.nutrition is not None:
+            nutrition = self.nutrition.model_dump()
+            nutrition["meal_bank"] = self.meals.model_dump() if self.meals else None
         return (
             nutrition,
             self.training.model_dump() if self.training is not None else None,
@@ -376,6 +381,58 @@ sin explicar el porqué salvo que sea imprescindible para cumplirla bien).
 Respeta TODOS los guardrails. La suma de los targets de slot debe acercarse al target_kcal."""
 
 
+def _core_user_prompt_training_only(ctx: ClientContext) -> str:
+    """Núcleo SOLO-ENTRENAMIENTO (plan `train`): mismos datos clínicos y de
+    contexto que el completo, pero se pide EXCLUSIVAMENTE el entrenamiento (sin
+    dieta, macros ni comidas). La metodología de entreno viaja en el system
+    prompt (`system_prompt_training_only`), así que aquí van datos y forma."""
+    lib = [
+        {"id": e["id"], "nombre": e["canonical_name"],
+         "patron": e["movement_pattern"], "musculo": e["muscle_primary"]}
+        for e in ctx.exercise_library
+    ]
+    max_sets = max(
+        1,
+        (ctx.session_max_min - gr.SESSION_MINUTES_FIXED_OVERHEAD)
+        // gr.SESSION_MINUTES_FORMULA_PER_SET,
+    )
+    return f"""Genera el NÚCLEO DE ENTRENAMIENTO del plan mensual para este cliente.
+
+Este cliente tiene un plan SOLO ENTRENAMIENTO: NO generes dieta (ni kcal, ni
+macros, ni comidas, ni suplementos). Céntrate al 100% en el entrenamiento.
+
+DATOS DEL CLIENTE (ya calculados por el backend, NO recalcules):
+{_client_block(ctx)}
+{_clinical_block(ctx)}
+{_analysis_block(ctx)}
+IMPORTANTE: lee "objetivo_en_palabras_del_cliente" y entiende EXACTAMENTE qué
+quiere conseguir esta persona. El entrenamiento debe estar diseñado para ESE fin
+concreto, no solo para la etiqueta genérica del objetivo. Refléjalo en
+split_rationale.
+
+BIBLIOTECA DE EJERCICIOS DISPONIBLE (usa SOLO estos exercise_id):
+{json.dumps(lib, ensure_ascii=False)}
+
+RESTRICCIÓN DE DURACIÓN: la duración de cada sesión se estima como (total de series × \
+{gr.SESSION_MINUTES_FORMULA_PER_SET} min) + {gr.SESSION_MINUTES_FIXED_OVERHEAD} min. El cliente \
+declaró un máximo de {ctx.session_max_min} min/sesión, así que NO pongas más de {max_sets} series \
+por sesión (sumando TODOS los ejercicios de esa sesión).
+
+Devuelve un JSON con esta forma EXACTA (sin texto fuera del JSON). TODOS los campos
+son OBLIGATORIOS salvo los marcados como (null si no aplica). No omitas NINGUNO:
+- "training": split_name, split_rationale,
+  weekly_progression[] (EXACTAMENTE 4 objetos para las semanas 1,2,3,4; cada uno con los 5
+  campos: week (1-4), intent (Base|Progresión|Pico|Deload), load_pct (número), rir_target,
+  volume_note). En volume_note explica QUÉ debe hacer esa semana y con qué intención
+  (el cliente lo lee en su portal).
+  sessions[] (day, name, warmup, exercises[], cooldown),
+  cardio{{daily_steps, sessions[] (cada uno: type "liss"|"hiit", minutes, times_per_week, notes)}},
+  deload_instructions.
+  Cada ejercicio: exercise_id (de la biblioteca), sets, rep_range, rir, tempo, rest_sec,
+  start_weight_hint_kg, progression_rule, technique_cue, biomech_cue.
+"""
+
+
 def _core_user_prompt_nutrition_only(ctx: ClientContext) -> str:
     """Núcleo SOLO-NUTRICIÓN (paquete Start): mismo bloque de datos clínicos y de
     contexto que el completo, pero se pide EXCLUSIVAMENTE la nutrición (sin
@@ -516,22 +573,85 @@ Temas de píldoras a rotar: sobrecarga progresiva, RIR, tempo, volumen, proteín
 balance energético, sueño y recuperación, NEAT, hidratación, deload."""
 
 
+def _education_user_prompt_training(training: TrainingCore) -> str:
+    """Educativo del plan SOLO ENTRENAMIENTO: mismos temas pero sin las píldoras
+    de dieta (el cliente no tiene plan nutricional que explicar)."""
+    patterns = sorted({
+        "empuje_horizontal", "empuje_vertical", "traccion_horizontal",
+        "traccion_vertical", "sentadilla", "bisagra_cadera",
+    })
+    return f"""Genera el CONTENIDO EDUCATIVO del plan de entrenamiento.
+
+Este cliente NO tiene plan de dieta: no incluyas píldoras ni FAQ sobre
+alimentación, macros o calorías.
+
+Split del cliente: {training.split_name}.
+JSON: {{"pills":[{{"topic":...,"for_client":...}} (3–5 píldoras)],
+"biomech_by_pattern":[{{"pattern":...,"cues":[...],"why":...}}],
+"faq":[{{"q":...,"a":...}}]}}.
+Patrones sugeridos para biomech_by_pattern: {patterns}.
+Temas de píldoras a rotar: sobrecarga progresiva, RIR, tempo, volumen, técnica,
+sueño y recuperación, NEAT, hidratación, deload, gestión de la fatiga."""
+
+
 # --------------------------------------------------------------- pipeline ----
 
 def generate_monthly_plan(
     ctx: ClientContext, ai: AIClient, include_training: bool = True,
-    food_catalog: list[dict] | None = None,
+    food_catalog: list[dict] | None = None, include_nutrition: bool = True,
 ) -> GeneratedPlan:
     """Ejecuta las llamadas con guardrails y devuelve el plan.
 
-    - include_training=True (Full/Pro): núcleo (nutrición + entrenamiento) →
-      comidas → educativo.
-    - include_training=False (Start, solo-nutrición): núcleo de nutrición →
-      comidas. Sin entrenamiento ni educativo (que trata de entreno).
+    Un plan por cada combinación de servicios contratados:
+    - `full`  (nutrición + entreno): núcleo completo → comidas → educativo.
+    - `nutri` (solo nutrición): núcleo de nutrición → comidas.
+    - `train` (solo entreno): núcleo de entrenamiento → educativo. Sin dieta.
 
     Lanza PlanGenerationError si no se puede producir un plan seguro."""
     flags: list[str] = []
     model = settings.model_heavy
+
+    if not include_nutrition:
+        # --- Plan SOLO ENTRENAMIENTO -------------------------------------
+        if not include_training:
+            raise PlanGenerationError(
+                "un plan debe incluir al menos nutrición o entrenamiento")
+        try:
+            tcore = ai.generate_json(
+                model=model, system=system_prompt_training_only(),
+                user=_core_user_prompt_training_only(ctx),
+                schema=TrainingOnlyCoreOutput,
+            )
+        except AIGenerationError as exc:
+            raise PlanGenerationError(f"núcleo de entrenamiento: {exc}") from exc
+
+        tr_report = gr.check_training(
+            tcore.training.model_dump(),
+            training_days_declared=ctx.training_days,
+            session_max_min=ctx.session_max_min,
+            client_contraindications=ctx.contraindications,
+            exercise_lookup=_exercise_lookup(ctx.exercise_library),
+        )
+        if not tr_report.ok:
+            raise PlanGenerationError(
+                "el entrenamiento viola guardrails: " + "; ".join(tr_report.violations),
+                flags=tr_report.as_flags())
+        flags += tr_report.as_flags()
+
+        education_t: EducationOutput | None = None
+        try:
+            education_t = ai.generate_json(
+                model=model, system=system_prompt_education(),
+                user=_education_user_prompt_training(tcore.training), schema=EducationOutput,
+            )
+        except AIGenerationError:
+            # El educativo es complementario: su fallo no tumba el plan.
+            flags.append("aviso: no se pudo generar el contenido educativo")
+
+        return GeneratedPlan(
+            nutrition=None, meals=None, training=tcore.training,
+            education=education_t, guardrail_flags=flags, generated_by=model,
+        )
 
     # ① Núcleo
     if include_training:
