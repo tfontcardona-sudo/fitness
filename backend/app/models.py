@@ -639,6 +639,9 @@ class WhatsAppRound(Base):
     round_date: Mapped[date] = mapped_column(Date, unique=True, index=True)
     brief_index: Mapped[int] = mapped_column(Integer)
     brief_key: Mapped[str] = mapped_column(String(60))
+    # {client_id: texto}: lo redactado HOY. La IA escribe una vez por cliente y
+    # día; reabrir el panel no vuelve a gastar llamadas (solo "Reescribir").
+    texts_json: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

@@ -28,9 +28,10 @@ class MarkSentIn(BaseModel):
 
 
 @router.get("/round")
-def get_round(use_ai: bool = True, db: Session = Depends(get_db)) -> dict:
-    """Ronda de hoy. `use_ai=false` devuelve los textos de reserva (sin gastar
-    créditos) — útil para previsualizar."""
+def get_round(use_ai: bool = True, force: bool = False,
+              db: Session = Depends(get_db)) -> dict:
+    """Ronda de hoy. Los textos quedan guardados en la ronda: reabrir no gasta
+    IA. `force=true` (Reescribir) regenera; `use_ai=false` usa los de reserva."""
     ai = None
     if use_ai:
         try:
@@ -39,7 +40,7 @@ def get_round(use_ai: bool = True, db: Session = Depends(get_db)) -> dict:
             ai = AIClient()
         except Exception:  # noqa: BLE001 — sin clave, ronda con textos de reserva
             ai = None
-    return wa.build_round(db, ai=ai)
+    return wa.build_round(db, ai=ai, force=force)
 
 
 @router.post("/round/sent")
@@ -48,5 +49,6 @@ def mark_sent(body: MarkSentIn, db: Session = Depends(get_db)) -> dict:
 
     if db.get(WhatsAppRound, body.round_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Ronda no encontrada")
-    wa.mark_sent(db, round_id=body.round_id, client_id=body.client_id, text=body.text)
+    if not wa.mark_sent(db, round_id=body.round_id, client_id=body.client_id, text=body.text):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Ese cliente ya no existe")
     return {"ok": True}

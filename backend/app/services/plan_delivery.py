@@ -79,6 +79,11 @@ def build_plan_pdf(db: Session, plan: Plan, client: Client,
         exercise_names=exercise_names,
         food_allergies=client.food_allergies,
         food_dislikes=client.food_dislikes,
+        # Plan `train` (sin dieta): documento SOLO de entrenamiento. Con dieta se
+        # mantiene el comportamiento de siempre (solo dieta; el entreno va en el
+        # tracker del portal).
+        include_nutrition=bool(plan.nutrition_json),
+        include_training=not plan.nutrition_json and bool(training),
     )
 
     ascii_name = unicodedata.normalize("NFKD", client.full_name).encode("ascii", "ignore").decode()

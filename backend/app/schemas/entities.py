@@ -331,6 +331,16 @@ class PublicRegisterIn(BaseModel):
     tier: PackageTier
     period: BillingPeriod = "1m"
 
+    @field_validator("tier", mode="before")
+    @classmethod
+    def _tier_legado(cls, v):
+        # Una pestaña de /planes abierta ANTES del deploy envía los nombres
+        # antiguos ("start"/"pro"): se traducen en vez de responder 422 en pleno
+        # embudo de captación.
+        if isinstance(v, str):
+            return {"start": "nutri", "pro": "full"}.get(v.strip().lower(), v)
+        return v
+
 
 class LandingProductOut(BaseModel):
     """Producto recomendado tal y como se muestra en la landing pública."""

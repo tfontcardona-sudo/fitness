@@ -147,14 +147,20 @@ def test_webhook_selfserve_existing_email_is_idempotent(monkeypatch):
 
 # ---- resolución de precios: .env nuevo → lookup_key → .env antiguo ----
 
-def test_resolucion_precio_prioriza_env_nuevo(monkeypatch):
+def test_resolucion_precio_prioriza_lookup(monkeypatch):
+    # El lookup de Stripe manda: el .env del servidor arrastra IDs del plan Full
+    # ANTIGUO (otro importe) y no debe pisar los precios nuevos del script.
     from app.config import settings
     from app.services import stripe_service as ss
 
-    monkeypatch.setattr(settings, "stripe_price_nutri_1m", "price_nuevo")
+    monkeypatch.setattr(settings, "stripe_price_nutri_1m", "price_env")
     monkeypatch.setattr(settings, "stripe_price_start_1m", "price_viejo")
     monkeypatch.setattr(ss, "_price_by_lookup", lambda t, p: "price_lookup")
-    assert ss._resolve_price_id("nutri", "1m") == "price_nuevo"
+    assert ss._resolve_price_id("nutri", "1m") == "price_lookup"
+
+    # Sin lookup (Stripe caído o script no ejecutado), el .env nuevo es la reserva.
+    monkeypatch.setattr(ss, "_price_by_lookup", lambda t, p: "")
+    assert ss._resolve_price_id("nutri", "1m") == "price_env"
 
 
 def test_resolucion_precio_lookup_gana_al_env_antiguo(monkeypatch):
@@ -190,3 +196,32 @@ def test_importes_del_script_cumplen_lo_pedido():
         assert A["nutri"][p] > A["train"][p]
         assert A["full"][p] < A["train"][p] + A["nutri"][p]
     assert A["train"]["1m"] == 6900 and A["nutri"]["1m"] == 7900 and A["full"]["1m"] == 12900
+
+
+def test_webhook_metadata_antigua_crea_el_plan_correcto(monkeypatch):
+    # Una Checkout Session creada ANTES del deploy lleva metadata tier="start"
+    # (el plan solo-dieta viejo): el webhook debe dar de alta NUTRI, no Full
+    # (que incluiría entreno y videollamada que el cliente NO pagó).
+    stripe_service = _prep(monkeypatch)
+    from app.db import SessionLocal
+    from app.models import Client
+    from sqlalchemy import func, select
+
+    email = f"legacy-{uuid.uuid4().hex[:8]}@x.com"
+    event = _completed({
+        "metadata": {"tier": "start", "billing_period": "1m"},
+        "payment_status": "paid",
+        "customer_details": {"email": email, "name": "Legacy Buyer", "phone": "600000111"},
+    })
+    monkeypatch.setattr(stripe_service, "_stripe", _fake_stripe(event))
+
+    db = SessionLocal()
+    try:
+        res = stripe_service.handle_webhook(db, b"{}", "sig")
+        assert "created" in res
+        c = db.scalar(select(Client).where(func.lower(Client.email) == email))
+        assert c is not None and c.package_tier == "nutri"
+        # Limpieza: el conftest borra los clientes @x.com (con dependientes) al
+        # final de la suite, como en el resto de tests del webhook.
+    finally:
+        db.close()

@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models import Client
 from app.security import new_portal_token
+from app.services import packages as pkgs
 from app.services.audit import log_event
 
 _log = logging.getLogger("app.stripe")
@@ -80,16 +81,18 @@ def _price_by_lookup(tier: str, period: str) -> str:
 
 def _resolve_price_id(tier: str, period: str) -> str:
     """Precio a cobrar para tier×period, por orden de prioridad:
-    1) .env con nombre nuevo (mando explícito del coach),
-    2) lookup_key en Stripe (precios creados por el script — el camino normal),
-    3) .env con nombre antiguo (START/PRO), para no romper una config previa.
-    """
-    direct = settings.stripe_price_for(tier, period)
-    if direct:
-        return direct
+    1) lookup_key en Stripe (precios creados por el script — la verdad vigente),
+    2) .env con nombre nuevo (reserva si Stripe no responde o no hay lookup),
+    3) .env con nombre antiguo (START/PRO), último recurso.
+    El lookup va PRIMERO a propósito: el .env del servidor arrastra
+    STRIPE_PRICE_FULL_* del plan Full antiguo (otro importe) y no debe pisar
+    los precios nuevos."""
     by_lookup = _price_by_lookup(tier, period)
     if by_lookup:
         return by_lookup
+    direct = settings.stripe_price_for(tier, period)
+    if direct:
+        return direct
     return settings.stripe_price_legacy(tier, period)
 
 
@@ -211,6 +214,29 @@ def _notify_coach_payment(db: Session, client: Client, *, new_client: bool) -> N
         pass
 
 
+def _notify_orphan_payment(db: Session, session: dict) -> None:
+    """Push al COACH: entró un pago que no se pudo asociar a ningún cliente
+    (cliente borrado entre el alta y el pago, o checkout sin email). El dinero
+    está cobrado: alguien tiene que enterarse y resolverlo a mano en Stripe.
+    Nunca rompe el webhook."""
+    try:
+        from app.services import push as push_svc
+
+        details = session.get("customer_details") or {}
+        who = details.get("email") or details.get("name") or "desconocido"
+        amount = (session.get("amount_total") or 0) / 100.0
+        push_svc.send_to_coach(db, {
+            "title": "Pago sin cliente asociado ⚠️",
+            "body": (f"Stripe cobró {amount:.2f} € a {who} pero no hay ficha a la "
+                     "que asociarlo. Revísalo en el panel de Stripe."),
+            "count": 1,
+            "url": "https://dashboard.stripe.com/payments",
+            "tag": "dq-pago-huerfano",
+        })
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _mark_paid(db: Session, client: Client, period: str | None = None) -> None:
     # La duración que el cliente pagó de verdad manda sobre la de la ficha.
     if period in _PERIODS and client.billing_period != period:
@@ -230,7 +256,9 @@ def _create_selfserve_client(db: Session, *, name: str, email: str,
         full_name=(name or email.split("@")[0]).strip(),
         email=email,
         phone=phone,
-        package_tier=tier if tier in _TIERS else "full",
+        # pkgs.normalize traduce la metadata ANTIGUA ("start"→nutri, "pro"→full)
+        # de Checkout Sessions creadas antes del renombrado y aún en vuelo.
+        package_tier=pkgs.normalize(tier),
         billing_period=period if period in _PERIODS else "1m",
         status="onboarding",
         auto_pilot=settings.auto_pilot_default,
@@ -293,7 +321,7 @@ def handle_webhook(db: Session, payload: bytes, sig_header: str | None) -> dict:
         return {"ignored": "unpaid"}
 
     meta = session.get("metadata") or {}
-    tier = meta.get("tier")
+    tier = pkgs.normalize(meta.get("tier"))
     period = meta.get("billing_period")
     client_id = meta.get("client_id") or session.get("client_reference_id")
 
@@ -323,5 +351,5 @@ def handle_webhook(db: Session, payload: bytes, sig_header: str | None) -> dict:
 
     client = _create_selfserve_client(
         db, name=details.get("name") or "", email=email,
-        phone=details.get("phone"), tier=tier or "full", period=period)
+        phone=details.get("phone"), tier=tier, period=period)
     return {"created": client.id}

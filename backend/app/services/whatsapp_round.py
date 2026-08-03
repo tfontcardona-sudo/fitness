@@ -17,6 +17,7 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import Client, WhatsAppRound, WhatsAppSend
@@ -53,7 +54,16 @@ def get_or_create_round(db: Session, *, today: date | None = None) -> WhatsAppRo
     brief = brief_for_index(index)
     row = WhatsAppRound(round_date=today, brief_index=index, brief_key=brief.key)
     db.add(row)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Dos aperturas simultáneas del panel: la otra ganó el unique de
+        # round_date. Se usa la suya (misma ronda, mismo brief).
+        db.rollback()
+        row = db.scalar(select(WhatsAppRound).where(WhatsAppRound.round_date == today))
+        if row is None:  # carrera + rollback ajeno: reintento único
+            raise
+        return row
     db.refresh(row)
     return row
 
@@ -164,25 +174,49 @@ def compose_for_client(brief: Brief, ctx: dict, *, ai=None, now: datetime | None
         return fallback_text(brief, ctx)
 
 
-def build_round(db: Session, *, ai=None, now: datetime | None = None) -> dict:
+def build_round(db: Session, *, ai=None, now: datetime | None = None,
+                force: bool = False) -> dict:
     """Ronda de hoy lista para revisar y enviar: un mensaje por cliente activo.
 
-    Los clientes cuyo plan no encaja con el brief del día (p. ej. un brief de
-    dieta para un cliente de solo entreno) reciben el SIGUIENTE brief que sí les
-    aplica, para que nadie se quede sin mensaje ni reciba algo que no le toca.
+    Los textos se redactan UNA vez por cliente y día y quedan guardados en la
+    ronda (texts_json): reabrir el panel no vuelve a gastar llamadas de IA.
+    `force=True` (botón "Reescribir") regenera todos. Los clientes cuyo plan no
+    encaja con el brief del día reciben el SIGUIENTE brief que sí les aplica.
     """
     now = now or datetime.now(TZ)
     round_row = get_or_create_round(db, today=now.date())
     sent_ids = set(db.scalars(
         select(WhatsAppSend.client_id).where(WhatsAppSend.round_id == round_row.id)
     ))
+    cached: dict = dict(round_row.texts_json or {}) if not force else {}
 
-    items = []
-    for client in active_clients(db):
+    clients = active_clients(db)
+    # Contextos y briefs en el hilo principal (la sesión de BD no es thread-safe);
+    # a los hilos solo va la LLAMADA de redacción.
+    prepared = []
+    for client in clients:
         has_n = pkgs.has_nutrition(client.package_tier)
         has_t = pkgs.has_training(client.package_tier)
         brief = _brief_for_client(round_row.brief_index, has_nutrition=has_n, has_training=has_t)
-        ctx = client_context(db, client)
+        prepared.append((client, brief, client_context(db, client)))
+
+    missing = [(c, b, ctx) for c, b, ctx in prepared if str(c.id) not in cached]
+    if missing:
+        if ai is not None and len(missing) > 1:
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                texts = list(pool.map(
+                    lambda t: compose_for_client(t[1], t[2], ai=ai, now=now), missing))
+        else:
+            texts = [compose_for_client(b, ctx, ai=ai, now=now) for _, b, ctx in missing]
+        for (client, _b, _ctx), text in zip(missing, texts):
+            cached[str(client.id)] = text
+        round_row.texts_json = cached
+        db.commit()
+
+    items = []
+    for client, brief, _ctx in prepared:
         items.append({
             "client_id": client.id,
             "name": client.full_name,
@@ -190,7 +224,7 @@ def build_round(db: Session, *, ai=None, now: datetime | None = None) -> dict:
             "tier": pkgs.normalize(client.package_tier),
             "brief_key": brief.key,
             "brief_tema": brief.tema,
-            "text": compose_for_client(brief, ctx, ai=ai, now=now),
+            "text": cached.get(str(client.id), ""),
             "already_sent": client.id in sent_ids,
         })
     return {
@@ -215,13 +249,17 @@ def _brief_for_client(index: int, *, has_nutrition: bool, has_training: bool) ->
     return brief_for_index(index)
 
 
-def mark_sent(db: Session, *, round_id: int, client_id: int, text: str | None = None) -> None:
-    """Marca que la ronda de hoy ya se le envió a este cliente (idempotente)."""
+def mark_sent(db: Session, *, round_id: int, client_id: int, text: str | None = None) -> bool:
+    """Marca que la ronda de hoy ya se le envió a este cliente (idempotente).
+    Devuelve False si el cliente ya no existe (borrado entre la carga y el clic)."""
+    if db.get(Client, client_id) is None:
+        return False
     exists = db.scalar(
         select(WhatsAppSend).where(WhatsAppSend.round_id == round_id,
                                    WhatsAppSend.client_id == client_id)
     )
     if exists is not None:
-        return
+        return True
     db.add(WhatsAppSend(round_id=round_id, client_id=client_id, text=text))
     db.commit()
+    return True

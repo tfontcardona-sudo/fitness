@@ -82,19 +82,22 @@ def activate_plan(db: Session, plan: Plan, *, notify: bool = True) -> None:
             brand = brand_from_config(db)
             portal_url = f"{settings.public_base_url}/p/{client.portal_token}"
             first = ((client.full_name or "").split() or [(client.email or "cliente").split("@")[0]])[0]
-            # Paquete solo-nutrición (Start): sin mención a entreno en los avisos.
+            # El aviso solo menciona los servicios que el plan INCLUYE.
             has_training = pkgs.has_training(getattr(client, "package_tier", None))
+            has_nutrition = pkgs.has_nutrition(getattr(client, "package_tier", None))
             if same_month_replaced:
                 # ADAPTACIÓN/actualización del mes en curso: email de "plan
                 # actualizado", no otro "¡Bienvenido!" ni "nuevo mes".
-                ajuste = "tu dieta y entrenamiento" if has_training else "tu dieta"
+                ajuste = ("tu dieta y entrenamiento" if (has_training and has_nutrition)
+                          else "tu entrenamiento" if has_training else "tu dieta")
                 resumen = (f"Hemos ajustado {ajuste} a tu última revisión. "
                            "Todo está ya aplicado en tu portal y en tu PDF.")
                 subject, html = tpl.plan_republished(brand, first, portal_url, resumen)
                 kind = "plan_republished"
             else:
                 subject, html = tpl.plan_published(
-                    brand, first, portal_url, plan.month_index > 1, has_training=has_training,
+                    brand, first, portal_url, plan.month_index > 1,
+                    has_training=has_training, has_nutrition=has_nutrition,
                 )
                 kind = "plan_published"
             EmailService(db).send(to=client.email, subject=subject, html=html,

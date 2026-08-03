@@ -106,51 +106,60 @@ def test_prompt_lleva_cliente_franja_y_dia():
 
 # ---- rotación persistida y envíos ----
 
+def _clean_rounds(db, dates):
+    """Borra SOLO las rondas de esas fechas (BD compartida con el panel de dev:
+    un delete-all se llevaría el historial real de rondas del coach)."""
+    from app.models import WhatsAppRound, WhatsAppSend
+
+    ids = [r.id for r in db.query(WhatsAppRound).filter(WhatsAppRound.round_date.in_(dates))]
+    if ids:
+        db.query(WhatsAppSend).filter(WhatsAppSend.round_id.in_(ids)).delete()
+        db.query(WhatsAppRound).filter(WhatsAppRound.id.in_(ids)).delete()
+    db.commit()
+
+
 @needs_db
 def test_ronda_del_dia_es_estable_y_avanza_al_siguiente():
     from app.db import SessionLocal
-    from app.models import WhatsAppRound, WhatsAppSend
 
+    d1, d2 = date(2099, 1, 4), date(2099, 1, 5)
     with SessionLocal() as db:
-        db.query(WhatsAppSend).delete()
-        db.query(WhatsAppRound).delete()
-        db.commit()
+        _clean_rounds(db, [d1, d2])
 
-        hoy = date(2026, 8, 3)
-        r1 = wa.get_or_create_round(db, today=hoy)
-        r2 = wa.get_or_create_round(db, today=hoy)
-        assert r1.id == r2.id and r1.brief_index == 0  # reabrir no cambia el mensaje
+        r1 = wa.get_or_create_round(db, today=d1)
+        r2 = wa.get_or_create_round(db, today=d1)
+        assert r1.id == r2.id and r1.brief_key == r2.brief_key  # reabrir no cambia
 
-        r3 = wa.get_or_create_round(db, today=hoy + timedelta(days=1))
-        assert r3.brief_index == 1 and r3.brief_key != r1.brief_key
+        r3 = wa.get_or_create_round(db, today=d2)
+        assert r3.brief_index == (r1.brief_index + 1) % 100  # avanza sin saltos
+        assert r3.brief_key != r1.brief_key
 
-        db.query(WhatsAppSend).delete()
-        db.query(WhatsAppRound).delete()
-        db.commit()
+        _clean_rounds(db, [d1, d2])
 
 
 @needs_db
-def test_marcar_enviado_es_idempotente():
+def test_marcar_enviado_es_idempotente_y_cliente_borrado_no_revienta():
     from app.db import SessionLocal
-    from app.models import Client, WhatsAppRound, WhatsAppSend
+    from app.models import Client, WhatsAppSend
 
+    d = date(2099, 1, 10)
     with SessionLocal() as db:
-        db.query(WhatsAppSend).delete()
-        db.query(WhatsAppRound).delete()
-        db.commit()
+        _clean_rounds(db, [d])
         c = Client(full_name="WA Test", email=f"wa-{uuid.uuid4().hex[:8]}@x.com",
                    portal_token=uuid.uuid4().hex, phone="600000000", status="active")
         db.add(c)
         db.commit()
 
-        rnd = wa.get_or_create_round(db, today=date(2026, 8, 10))
-        wa.mark_sent(db, round_id=rnd.id, client_id=c.id, text="hola")
-        wa.mark_sent(db, round_id=rnd.id, client_id=c.id, text="hola otra vez")
+        rnd = wa.get_or_create_round(db, today=d)
+        assert wa.mark_sent(db, round_id=rnd.id, client_id=c.id, text="hola") is True
+        assert wa.mark_sent(db, round_id=rnd.id, client_id=c.id, text="otra vez") is True
         n = db.query(WhatsAppSend).filter(WhatsAppSend.round_id == rnd.id).count()
         assert n == 1  # no duplica
 
-        db.query(WhatsAppSend).delete()
-        db.query(WhatsAppRound).delete()
+        # Cliente inexistente (borrado entre la carga y el clic) → False, no 500.
+        assert wa.mark_sent(db, round_id=rnd.id, client_id=99_999_999) is False
+
+        _clean_rounds(db, [d])
         db.delete(c)
         db.commit()
 
@@ -158,12 +167,11 @@ def test_marcar_enviado_es_idempotente():
 @needs_db
 def test_build_round_solo_clientes_activos_con_telefono():
     from app.db import SessionLocal
-    from app.models import Client, WhatsAppRound, WhatsAppSend
+    from app.models import Client
 
+    now = datetime(2099, 1, 17, 10, tzinfo=TZ)
     with SessionLocal() as db:
-        db.query(WhatsAppSend).delete()
-        db.query(WhatsAppRound).delete()
-        db.commit()
+        _clean_rounds(db, [now.date()])
         activo = Client(full_name="Activo Uno", email=f"act-{uuid.uuid4().hex[:8]}@x.com",
                         portal_token=uuid.uuid4().hex, phone="600111222",
                         status="active", package_tier="train")
@@ -174,7 +182,7 @@ def test_build_round_solo_clientes_activos_con_telefono():
         db.add_all([activo, sin_tel, inactivo])
         db.commit()
 
-        out = wa.build_round(db, ai=None, now=datetime(2026, 8, 17, 10, tzinfo=TZ))
+        out = wa.build_round(db, ai=None, now=now)
         ids = {i["client_id"] for i in out["items"]}
         assert activo.id in ids
         assert sin_tel.id not in ids and inactivo.id not in ids
@@ -184,8 +192,49 @@ def test_build_round_solo_clientes_activos_con_telefono():
         assert next(b for b in POOL if b.key == item["brief_key"]).scope != "nutri"
         assert out["pool_size"] == 100
 
-        db.query(WhatsAppSend).delete()
-        db.query(WhatsAppRound).delete()
+        _clean_rounds(db, [now.date()])
         for c in (activo, sin_tel, inactivo):
             db.delete(c)
+        db.commit()
+
+
+@needs_db
+def test_textos_del_dia_se_cachean_y_reescribir_regenera():
+    """La IA redacta UNA vez por cliente y día: reabrir el panel no gasta
+    llamadas; force=True (Reescribir) sí regenera."""
+    from app.db import SessionLocal
+    from app.models import Client
+
+    class CountingAI:
+        def __init__(self):
+            self.calls = 0
+
+        def _raw_call(self, *, model, system, user, temperature=None):
+            self.calls += 1
+            return f"Mensaje nº {self.calls}"
+
+    now = datetime(2099, 2, 3, 9, tzinfo=TZ)
+    with SessionLocal() as db:
+        _clean_rounds(db, [now.date()])
+        c = Client(full_name="Cache Uno", email=f"ca-{uuid.uuid4().hex[:8]}@x.com",
+                   portal_token=uuid.uuid4().hex, phone="600555666", status="active")
+        db.add(c)
+        db.commit()
+
+        ai = CountingAI()
+        out1 = wa.build_round(db, ai=ai, now=now)
+        calls_tras_primera = ai.calls
+        assert calls_tras_primera >= 1
+
+        out2 = wa.build_round(db, ai=ai, now=now)  # reabrir: 0 llamadas nuevas
+        assert ai.calls == calls_tras_primera
+        t1 = next(i["text"] for i in out1["items"] if i["client_id"] == c.id)
+        t2 = next(i["text"] for i in out2["items"] if i["client_id"] == c.id)
+        assert t1 == t2  # mismo texto persistido
+
+        wa.build_round(db, ai=ai, now=now, force=True)  # Reescribir sí regenera
+        assert ai.calls > calls_tras_primera
+
+        _clean_rounds(db, [now.date()])
+        db.delete(c)
         db.commit()

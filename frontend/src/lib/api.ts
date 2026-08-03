@@ -385,8 +385,8 @@ export const api = {
       "POST", "/resources/products/scrape", { url }),
 
   // --- ronda diaria de WhatsApp ---
-  getWhatsAppRound: (useAi = true) =>
-    request<WhatsAppRoundOut>("GET", `/whatsapp/round?use_ai=${useAi}`),
+  getWhatsAppRound: (useAi = true, force = false) =>
+    request<WhatsAppRoundOut>("GET", `/whatsapp/round?use_ai=${useAi}&force=${force}`),
   markWhatsAppSent: (round_id: number, client_id: number, text: string) =>
     request<{ ok: boolean }>("POST", "/whatsapp/round/sent", { round_id, client_id, text }),
 

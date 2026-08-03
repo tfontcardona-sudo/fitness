@@ -23,11 +23,11 @@ export function WhatsAppRound() {
   // Texto editable por cliente: el coach puede retocar antes de enviar.
   const [drafts, setDrafts] = useState<Record<number, string>>({});
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     setLoading(true);
     setError(null);
     try {
-      const r = await api.getWhatsAppRound(true);
+      const r = await api.getWhatsAppRound(true, force);
       setRound(r);
       setDrafts(Object.fromEntries(r.items.map((i) => [i.client_id, i.text])));
     } catch (e) {
@@ -115,9 +115,10 @@ export function WhatsAppRound() {
                   <strong style={{ color: "var(--text)" }}>{round.brief_tema}</strong>
                 </span>
                 <button
-                  onClick={() => void load()}
+                  onClick={() => void load(true)}
                   className="tap flex items-center gap-1.5 font-semibold"
                   style={{ color: "var(--brand-accent)" }}
+                  title="Vuelve a redactar todos los mensajes de hoy con IA"
                 >
                   <RefreshCw size={12} /> Reescribir
                 </button>

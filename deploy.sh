@@ -10,6 +10,9 @@ git checkout main
 git pull origin main
 echo "== rebuild + restart =="
 docker compose up -d --build
+echo "== precios de Stripe (idempotente: crea/actualiza los 9 precios) =="
+docker compose exec -T api python scripts/setup_stripe_prices.py \
+  || echo "aviso: precios de Stripe sin configurar (¿falta STRIPE_SECRET_KEY?) — la web funciona igual"
 echo "== estado =="
 docker compose ps
 echo

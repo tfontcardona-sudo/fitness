@@ -5,6 +5,7 @@ mandó ya hoy). Idempotente.
 """
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects.postgresql import JSONB
 
 revision = "0034"
 down_revision = "0033"
@@ -25,6 +26,12 @@ def upgrade() -> None:
                       server_default=sa.func.now(), nullable=False),
         )
         op.create_index("ix_whatsapp_rounds_round_date", "whatsapp_rounds", ["round_date"])
+    # Textos ya redactados de la ronda (cache: la IA escribe UNA vez al día por
+    # cliente, no en cada apertura del panel). Idempotente sobre BD ya migrada.
+    insp = sa.inspect(op.get_bind())
+    cols = {c["name"] for c in insp.get_columns("whatsapp_rounds")}
+    if "texts_json" not in cols:
+        op.add_column("whatsapp_rounds", sa.Column("texts_json", JSONB, nullable=True))
     if "whatsapp_sends" not in tables:
         op.create_table(
             "whatsapp_sends",

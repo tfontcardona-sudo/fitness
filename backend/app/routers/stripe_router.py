@@ -15,7 +15,7 @@ igual que pasó en public_site.py.
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from slowapi import Limiter
 from sqlalchemy.orm import Session
 
@@ -34,6 +34,17 @@ class CheckoutIn(BaseModel):
     tier: PackageTier
     # Duración elegida: mensual (1m), trimestral (3m) o semestral (6m).
     period: BillingPeriod = "1m"
+
+    @field_validator("tier", mode="before")
+    @classmethod
+    def _tier_legado(cls, v):
+        # Una pestaña de /planes abierta ANTES del deploy envía los nombres
+        # antiguos ("start"/"pro"): se traducen en vez de responder 422 en pleno
+        # embudo de captación.
+        if isinstance(v, str):
+            return {"start": "nutri", "pro": "full"}.get(v.strip().lower(), v)
+        return v
+
 
 
 @router.post("/api/public/checkout")
