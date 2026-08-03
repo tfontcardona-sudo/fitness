@@ -60,7 +60,11 @@ portal) y el cliente registra su seguimiento diario hasta el cierre quincenal.
 >   (§4 versionado + propagación), `biweekly_engine` (§8), `continuous_learning` (§13),
 >   `progressive_unlock` (§12), `plan_stability` (§11/§14). Migraciones 0028 (foods),
 >   0029 (plan_edits, segment_unlock).
-> - **Criterio de coach**: `CRITERIOS_ASESORIA.md` (rellenar `[PENDIENTE TONI]`).
+> - **Criterio de coach**: `CRITERIOS_ASESORIA.md` — COMPLETO (agosto 2026):
+>   la anamnesis manda (§0), arranque en el extremo conservador (también en
+>   `metrics.individualized_energy_adjustment`), sin alimentos/estructuras
+>   predefinidos (todo sale de la anamnesis), tono único serio-profesional-
+>   cercano, y patologías comunes añadidas a la lista roja (`safety_gate`).
 > - **Historia antigua**: `docs/HISTORICO.md` (referencia, NO fuente de verdad viva).
 
 ---

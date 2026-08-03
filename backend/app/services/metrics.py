@@ -165,7 +165,8 @@ def individualized_energy_adjustment(
     experiencia. La adherencia histórica (si se conoce) elige el punto dentro del
     rango: buena adherencia → extremo más agresivo (lo sostiene); mala → extremo
     conservador (un déficit fuerte que no se cumple no sirve). Sin historial →
-    punto medio (arranque prudente, principio del canario del §12)."""
+    extremo CONSERVADOR (criterio del coach, CRITERIOS_ASESORIA §1: el arranque
+    siempre prudente; solo la adherencia demostrada da derecho a apretar)."""
     if goal_type == "fat_loss":
         key = ("fat_loss", _fat_bracket(sex, body_fat_pct))
     elif goal_type == "muscle_gain":
@@ -177,7 +178,7 @@ def individualized_energy_adjustment(
     (cons, aggr), (rate_lo, rate_hi) = _ADJUSTMENT_TABLE[key]
 
     if adherence_ratio is None:
-        pct = (cons + aggr) / 2
+        pct = cons
     elif adherence_ratio >= 0.85:
         pct = aggr
     elif adherence_ratio < 0.60:

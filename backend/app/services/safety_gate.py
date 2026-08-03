@@ -9,9 +9,12 @@ color queda un plan. El semáforo:
 La lista roja (§12) cubre poblaciones y condiciones de riesgo: menores/mayores,
 embarazo/lactancia, IMC<18,5, señales o historial de TCA, patologías (diabetes,
 renal, hepática, cardiovascular, tiroidea, EII, celiaquía, SOP, HTA no controlada,
-dislipemia en tratamiento), medicación con interacción nutricional (anticoagulantes,
-IMAO, levotiroxina, corticoides, GLP-1, diuréticos), antecedente de anafilaxia,
-cirugía bariátrica y contradicciones sin resolver. Esta lista NO se desactiva.
+dislipemia en tratamiento, gota, intestino irritable/SIBO, reflujo/gastritis,
+anemia, osteoporosis, apnea del sueño — las comunes añadidas por criterio del
+coach, CRITERIOS_ASESORIA §7), medicación con interacción (anticoagulantes, IMAO,
+levotiroxina, corticoides, GLP-1, diuréticos, betabloqueantes, antidepresivos),
+antecedente de anafilaxia, cirugía bariátrica y contradicciones sin resolver.
+Esta lista NO se desactiva.
 
 Se apoya en el texto libre de la anamnesis (notas médicas, medicación, estilo de
 vida) con normalización acento-insensible.
@@ -37,7 +40,7 @@ _RED_TERMS: list[tuple[str, str, tuple[str, ...]]] = [
       "miedo a engordar", "ortorexia")),
     ("diabetes", "Diabetes",
      ("diabetes tipo 1", "diabetes tipo 2", "diabetico", "diabetica", "insulinodependiente",
-      "diabetes mellitus")),
+      "diabetes mellitus", "prediabetes", "metformina")),
     ("renal", "Enfermedad renal",
      ("insuficiencia renal", "enfermedad renal", "dialisis", "nefropatia", "trasplante de rinon")),
     ("hepatica", "Enfermedad hepática",
@@ -62,6 +65,21 @@ _RED_TERMS: list[tuple[str, str, tuple[str, ...]]] = [
      ("anafilaxia", "shock anafilactico", "epipen", "adrenalina autoinyectable")),
     ("bariatrica", "Cirugía bariátrica",
      ("cirugia bariatrica", "bypass gastrico", "manga gastrica", "gastrectomia", "balon gastrico")),
+    # Patologías COMUNES añadidas por criterio del coach (CRITERIOS_ASESORIA §7):
+    # frecuentes en consulta y con pauta dietética/de entreno propia — el plan
+    # queda retenido para revisión, no se auto-envía.
+    ("gota", "Gota / hiperuricemia",
+     ("gota", "hiperuricemia", "acido urico alto", "urico alto", "ataque de gota")),
+    ("sii", "Intestino irritable / digestivo funcional",
+     ("intestino irritable", "colon irritable", "sibo", "dispepsia funcional")),
+    ("reflujo", "Reflujo / hernia de hiato / gastritis",
+     ("reflujo", "hernia de hiato", "gastritis", "esofagitis", "acidez cronica")),
+    ("anemia", "Anemia / ferropenia",
+     ("anemia", "ferropenia", "ferritina baja", "hierro bajo", "deficit de hierro")),
+    ("osteoporosis", "Osteoporosis / osteopenia",
+     ("osteoporosis", "osteopenia", "densidad osea baja")),
+    ("apnea", "Apnea del sueño",
+     ("apnea del sueno", "apnea obstructiva", "cpap")),
     # Medicación con interacción nutricional relevante.
     ("med_anticoagulante", "Medicación: anticoagulantes",
      ("sintrom", "warfarina", "acenocumarol", "anticoagulante", "heparina")),
@@ -76,6 +94,11 @@ _RED_TERMS: list[tuple[str, str, tuple[str, ...]]] = [
       "tirzepatida")),
     ("med_diureticos", "Medicación: diuréticos",
      ("diuretico", "furosemida", "seguril", "hidroclorotiazida", "espironolactona")),
+    ("med_betabloqueante", "Medicación: betabloqueantes",
+     ("betabloqueante", "bisoprolol", "atenolol", "propranolol", "metoprolol", "carvedilol")),
+    ("med_antidepresivo", "Medicación: antidepresivos/ansiolíticos",
+     ("antidepresivo", "sertralina", "fluoxetina", "escitalopram", "paroxetina",
+      "venlafaxina", "mirtazapina", "ansiolitico", "benzodiacepina", "lorazepam", "diazepam")),
 ]
 
 # Umbral de ICP para el verde (por defecto). Configurable por el caller.
