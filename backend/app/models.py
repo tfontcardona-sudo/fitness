@@ -625,6 +625,36 @@ class AiUsageEvent(Base):
     )
 
 
+class WhatsAppRound(Base):
+    """Ronda diaria de seguimiento por WhatsApp (§ pool de 100 mensajes).
+
+    Una fila por DÍA: fija qué brief del pool toca, de modo que dos aperturas del
+    panel el mismo día no cambien el mensaje. `brief_index` avanza uno por día y
+    vuelve a empezar al llegar a 100.
+    """
+
+    __tablename__ = "whatsapp_rounds"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    round_date: Mapped[date] = mapped_column(Date, unique=True, index=True)
+    brief_index: Mapped[int] = mapped_column(Integer)
+    brief_key: Mapped[str] = mapped_column(String(60))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class WhatsAppSend(Base):
+    """Envío de la ronda a UN cliente (lo marca el coach al pulsar enviar)."""
+
+    __tablename__ = "whatsapp_sends"
+    __table_args__ = (UniqueConstraint("round_id", "client_id", name="uq_wa_send_round_client"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    round_id: Mapped[int] = mapped_column(ForeignKey("whatsapp_rounds.id"), index=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), index=True)
+    text: Mapped[str | None] = mapped_column(Text)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 # ------------------------------------------------------------ audit_log ----
 class AuditLog(Base):
     __tablename__ = "audit_log"
