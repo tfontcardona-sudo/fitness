@@ -21,6 +21,7 @@ import type { ClientOut, CoachAlert, VideoCallAgendaItem } from "../types";
 import { PageLoader, StatusBadge } from "../components/ui";
 import { goalReviewDue, initials, relativeDays } from "../lib/format";
 import { pkg } from "../lib/packages";
+import { WhatsAppRound } from "../components/WhatsAppRound";
 
 /**
  * Dashboard = "qué toca hacer AHORA con cada cliente". Cada cliente se traduce
@@ -244,6 +245,11 @@ export default function DashboardPage() {
           <UserPlus size={16} /> Nuevo cliente
         </Link>
       </header>
+
+      {/* Seguimiento diario: el mensaje del día para cada cliente activo. */}
+      <div className="mt-4">
+        <WhatsAppRound />
+      </div>
 
       {loadFailed && (
         <div className="card mt-4 p-3 text-sm text-zinc-300">

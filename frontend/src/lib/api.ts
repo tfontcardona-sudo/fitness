@@ -34,6 +34,7 @@ export function keepIfSame<T>(prev: T, next: T): T {
 }
 
 import type {
+  WhatsAppRoundOut,
   AiCreditOut,
   BrandConfigOut,
   CoachAlert,
@@ -382,6 +383,12 @@ export const api = {
   scrapeProduct: (url: string) =>
     request<{ title: string | null; description: string | null; image_url: string | null }>(
       "POST", "/resources/products/scrape", { url }),
+
+  // --- ronda diaria de WhatsApp ---
+  getWhatsAppRound: (useAi = true) =>
+    request<WhatsAppRoundOut>("GET", `/whatsapp/round?use_ai=${useAi}`),
+  markWhatsAppSent: (round_id: number, client_id: number, text: string) =>
+    request<{ ok: boolean }>("POST", "/whatsapp/round/sent", { round_id, client_id, text }),
 
   // --- créditos IA (Anthropic) ---
   getAiCredit: () => request<AiCreditOut>("GET", "/ai-credit"),
