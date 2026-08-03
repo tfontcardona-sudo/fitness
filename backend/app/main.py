@@ -20,6 +20,7 @@ from app.db import engine
 from app.routers import (
     ai_credit, alerts, auth, brand, clients, coach_push, email, exercises,
     google_oauth, plans, portal_public, public_site, resources, stripe_router,
+    whatsapp,
 )
 
 APP_VERSION = "0.2.0"
@@ -43,12 +44,14 @@ async def lifespan(app: FastAPI):
         _missing = ["STRIPE_WEBHOOK_SECRET"] if not settings.stripe_webhook_secret else []
         _missing += [
             f"STRIPE_PRICE_{t.upper()}_{p.upper()}"
-            for t in ("start", "full", "pro") for p in ("1m", "3m", "6m")
+            for t in ("nutri", "train", "full") for p in ("1m", "3m", "6m")
             if not settings.stripe_price_for(t, p)
         ]
         if _missing:
             logging.getLogger("app.stripe").warning(
-                "STRIPE INCOMPLETO: los pagos pueden fallar. Falta: %s.", ", ".join(_missing))
+                "Stripe sin IDs en el .env (%s): se resolverán por lookup_key. "
+                "Si aún no existen, ejecuta scripts/setup_stripe_prices.py.",
+                ", ".join(_missing))
 
     # El scheduler se desactiva en tests/CI con SCHEDULER_ENABLED=false.
     # Vive en Settings como el resto de la config (una sola fuente de verdad).
@@ -144,6 +147,7 @@ app.include_router(stripe_router.router)
 app.include_router(coach_push.router)
 app.include_router(google_oauth.router)
 app.include_router(public_site.router)
+app.include_router(whatsapp.router)
 app.include_router(portal_public.router)
 
 

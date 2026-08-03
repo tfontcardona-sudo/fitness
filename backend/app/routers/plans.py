@@ -31,6 +31,7 @@ from app.schemas.entities import ChangeRequestOut, PeriodCreateIn
 from app.services import email_templates as tpl
 from app.services.audit import log_event
 from app.services.email_service import EmailService, brand_from_config
+from app.services import packages as pkgs
 
 router = APIRouter(tags=["plans"], dependencies=[Depends(get_current_user)])
 
@@ -619,7 +620,7 @@ def send_feedback(doc_id: int, db: Session = Depends(get_db)) -> dict:
             portal_url = f"{settings.public_base_url}/p/{client.portal_token}"
             subject, html = tpl.feedback_ready(
                 brand, _first_name_of(client), portal_url,
-                has_training=client.package_tier != "start")
+                has_training=pkgs.has_training(client.package_tier))
             EmailService(db).send(to=client.email, subject=subject, html=html,
                                   kind="feedback_ready", client=client)
         except Exception:

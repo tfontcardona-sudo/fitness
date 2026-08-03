@@ -277,10 +277,11 @@ def generate_plan_doc(
     diet_mode: str | None, nutrition: dict, training: dict, education: dict,
     exercise_names: dict | None = None,
     food_allergies: list[str] | None = None, food_dislikes: list[str] | None = None,
-    include_training: bool = False,
+    include_training: bool = False, include_nutrition: bool = True,
 ) -> bytes:
-    # El PLAN es SOLO DIETA: el entrenamiento vive en el tracker del portal.
-    # include_training queda como opción por si alguna vez se quiere el doc completo.
+    # Por defecto el PLAN es SOLO DIETA (el entrenamiento vive en el tracker del
+    # portal). include_nutrition=False es el plan `train`: documento SOLO de
+    # entrenamiento (sin un "PLAN NUTRICIONAL" lleno de ceros).
     exercise_names = exercise_names or {}
     blocked = {_norm(x) for x in (food_allergies or []) + (food_dislikes or []) if x}
 
@@ -293,8 +294,9 @@ def generate_plan_doc(
     from app.services.meal_fallback import ensure_bank_slots
 
     nutrition = _copy.deepcopy(nutrition)
-    ensure_bank_slots(nutrition, allergies=food_allergies or [],
-                      dislikes=food_dislikes or [])
+    if include_nutrition:
+        ensure_bank_slots(nutrition, allergies=food_allergies or [],
+                          dislikes=food_dislikes or [])
 
     doc = init_document(brand)
     # El ejemplo usa Calibri (en el contenedor se sustituye por Carlito, idéntico).
@@ -310,164 +312,167 @@ def generate_plan_doc(
 
     setup_reference_pages(
         doc, logo_path=str(ASSETS / "dq_logo.png"),
-        right_title=f"PLAN NUTRICIONAL | {client_name}",
+        right_title=(f"PLAN NUTRICIONAL | {client_name}" if include_nutrition
+                     else f"PLAN DE ENTRENAMIENTO | {client_name}"),
         right_sub=str(_date.today().year),
         footer_text="David Quiceno · Dietista & Entrenador Personal",
     )
 
-    # ======================= NUTRICIÓN =======================
-    _title(doc, "PLAN NUTRICIONAL", client_name)
-    macros = nutrition.get("macros", {})
+    if include_nutrition:
+        # ======================= NUTRICIÓN =======================
+        _title(doc, "PLAN NUTRICIONAL", client_name)
+        macros = nutrition.get("macros", {})
 
-    section_bar(doc, "Objetivos", WINE)
-    info_box(doc, _objetivo_pairs(goal_type), fill=CREAM, label_color=WINE)
+        section_bar(doc, "Objetivos", WINE)
+        info_box(doc, _objetivo_pairs(goal_type), fill=CREAM, label_color=WINE)
 
-    section_bar(doc, "Resumen energético diario", BLUE)
-    clean_table(
-        doc, ["Calorías", "Reparto de macros", "Ajuste aplicado"],
-        [[f"≈ {round(nutrition.get('target_kcal', 0))} kcal",
-          f"CH {round(macros.get('carbs_g', 0))} g · P {round(macros.get('protein_g', 0))} g · "
-          f"G {round(macros.get('fat_g', 0))} g",
-          _ajuste_text(nutrition, goal_type)]],
-        brand, header_color=WINE, header_text_color="FFFFFF",
-        col_widths=[2400, 4226, 2400],
-    )
+        section_bar(doc, "Resumen energético diario", BLUE)
+        clean_table(
+            doc, ["Calorías", "Reparto de macros", "Ajuste aplicado"],
+            [[f"≈ {round(nutrition.get('target_kcal', 0))} kcal",
+              f"CH {round(macros.get('carbs_g', 0))} g · P {round(macros.get('protein_g', 0))} g · "
+              f"G {round(macros.get('fat_g', 0))} g",
+              _ajuste_text(nutrition, goal_type)]],
+            brand, header_color=WINE, header_text_color="FFFFFF",
+            col_widths=[2400, 4226, 2400],
+        )
 
-    meals = nutrition.get("meals", [])
-    section_bar(doc, "Notas del ajuste", BLUE)
-    info_box(doc, _concise_notas(nutrition, goal_type, meals))
+        meals = nutrition.get("meals", [])
+        section_bar(doc, "Notas del ajuste", BLUE)
+        info_box(doc, _concise_notas(nutrition, goal_type, meals))
 
-    # Cambios aplicados en la última adaptación (revisión quincenal): el cliente
-    # ve QUÉ cambió, DÓNDE y POR QUÉ directamente en su PDF.
-    aa = nutrition.get("applied_adjustments") or {}
-    aa_items = aa.get("items") or []
-    if aa_items:
-        section_bar(doc, f"Cambios de tu plan · revisión #{aa.get('period_index', '')}", GOLD)
-        rows = [[
-            (it.get("area") or "").capitalize(),
-            it.get("detail") or it.get("change") or "",
-            it.get("reason") or "",
-        ] for it in aa_items]
-        # "Qué cambia"/"Por qué" son texto libre (IA/coach): pueden ser largos,
-        # así que las filas se parten y la tabla pagina con cabecera repetida.
-        clean_table(doc, ["Área", "Qué cambia", "Por qué"], rows, brand,
-                    header_color=WINE, header_text_color="FFFFFF",
-                    col_widths=[1400, 3800, 3826],
-                    cant_split_rows=False, keep_together=False)
+        # Cambios aplicados en la última adaptación (revisión quincenal): el cliente
+        # ve QUÉ cambió, DÓNDE y POR QUÉ directamente en su PDF.
+        aa = nutrition.get("applied_adjustments") or {}
+        aa_items = aa.get("items") or []
+        if aa_items:
+            section_bar(doc, f"Cambios de tu plan · revisión #{aa.get('period_index', '')}", GOLD)
+            rows = [[
+                (it.get("area") or "").capitalize(),
+                it.get("detail") or it.get("change") or "",
+                it.get("reason") or "",
+            ] for it in aa_items]
+            # "Qué cambia"/"Por qué" son texto libre (IA/coach): pueden ser largos,
+            # así que las filas se parten y la tabla pagina con cabecera repetida.
+            clean_table(doc, ["Área", "Qué cambia", "Por qué"], rows, brand,
+                        header_color=WINE, header_text_color="FFFFFF",
+                        col_widths=[1400, 3800, 3826],
+                        cant_split_rows=False, keep_together=False)
 
-    if meals:
-        section_bar(doc, "Estructura diaria", GOLD)
-        rows = [[m.get("time", ""), m.get("name", f"Comida {m.get('slot')}"),
-                 _estrategia(m.get("name", ""))] for m in meals]
-        clean_table(doc, ["Hora", "Toma", "Estrategia"], rows, brand,
-                    header_color=WINE, header_text_color="FFFFFF",
-                    col_widths=[1500, 3000, 4526], keep_together=False)
+        if meals:
+            section_bar(doc, "Estructura diaria", GOLD)
+            rows = [[m.get("time", ""), m.get("name", f"Comida {m.get('slot')}"),
+                     _estrategia(m.get("name", ""))] for m in meals]
+            clean_table(doc, ["Hora", "Toma", "Estrategia"], rows, brand,
+                        header_color=WINE, header_text_color="FFFFFF",
+                        col_widths=[1500, 3000, 4526], keep_together=False)
 
-    # Alimentos por grupos (plantilla, filtrada con precisión por alergias).
-    # Es UNA sola fila con listas largas: puede ser más alta que la página, así
-    # que la fila debe poder partirse (cant_split_rows=False) y la tabla paginar
-    # repitiendo la cabecera (keep_together=False) para no recortar alimentos.
-    section_bar(doc, "Alimentos por grupos", WINE)
-    names = list(FOOD_GROUPS.keys())
-    clean_table(
-        doc, names, [[_food_group_lines(n, blocked) for n in names]],
-        brand, header_colors=FOOD_GROUP_COLORS, header_text_color="FFFFFF",
-        cant_split_rows=False, keep_together=False,
-    )
+        # Alimentos por grupos (plantilla, filtrada con precisión por alergias).
+        # Es UNA sola fila con listas largas: puede ser más alta que la página, así
+        # que la fila debe poder partirse (cant_split_rows=False) y la tabla paginar
+        # repitiendo la cabecera (keep_together=False) para no recortar alimentos.
+        section_bar(doc, "Alimentos por grupos", WINE)
+        names = list(FOOD_GROUPS.keys())
+        clean_table(
+            doc, names, [[_food_group_lines(n, blocked) for n in names]],
+            brand, header_colors=FOOD_GROUP_COLORS, header_text_color="FFFFFF",
+            cant_split_rows=False, keep_together=False,
+        )
 
-    # El plato saludable (plantilla + foto)
-    section_bar(doc, "El plato saludable", BLUE)
-    # La foto del plato va DENTRO de la caja y la caja entera es indivisible
-    # (cant_split): si no cabe, la tarjeta completa salta a la página siguiente
-    # con su barra — la foto nunca queda sola en un fragmento de caja.
-    info_box(doc, PLATO_TEXT, fill=CREAM, label_color=WINE,
-             cant_split=True, image_path=str(ASSETS / "plate.png"))
+        # El plato saludable (plantilla + foto)
+        section_bar(doc, "El plato saludable", BLUE)
+        # La foto del plato va DENTRO de la caja y la caja entera es indivisible
+        # (cant_split): si no cabe, la tarjeta completa salta a la página siguiente
+        # con su barra — la foto nunca queda sola en un fragmento de caja.
+        info_box(doc, PLATO_TEXT, fill=CREAM, label_color=WINE,
+                 cant_split=True, image_path=str(ASSETS / "plate.png"))
 
-    # Comidas detalladas (flexible) — como el ejemplo: comida/cena con sistema de
-    # equivalencias por grupos; el resto, 3 opciones numeradas en prosa (sin kcal).
-    # Comidas detalladas: cada comida = barra + CAJA CREMA con el contenido dentro
-    # (como el ejemplo). Comida/cena en equivalencias; resto, 3 opciones numeradas.
-    bank = nutrition.get("meal_bank") or {}
-    # El formato lo decide el banco PERSISTIDO (bank["mode"]); diet_mode del
-    # cliente es solo fallback: si el coach cambia diet_mode sin regenerar, el
-    # PDF sigue mostrando el menú que existe (no una sección vacía/equivocada).
-    diet_mode = bank.get("mode") or diet_mode
-    if diet_mode != "strict" and meals:
-        blocks = {s.get("slot"): s for s in bank.get("slots", [])}
-        for m in meals:
-            section_bar(doc, f"{m.get('name','Comida')} · {m.get('time','')}", WINE, size=10)
-            sb = blocks.get(m.get("slot"), {})
-            # Regla del diseño de referencia: NINGÚN corte visible. Las cajas de
-            # opciones/toma libre (contenido acotado, ≤3 opciones) viajan ENTERAS
-            # a la página siguiente si no caben. Las equivalencias (sin cota) sí
-            # pueden fluir, pero cada grupo lleva keepLines: el corte cae ENTRE
-            # grupos, nunca a mitad de una frase.
-            is_equiv = bool(sb.get("fmt") == "equivalences" and sb.get("equivalences"))
-            cell = open_box(doc, CREAM, cant_split=not is_equiv)
-            if sb.get("fmt") == "equivalences" and sb.get("equivalences"):
-                # foto redonda flotante en la cena (como el ejemplo del coach)
-                img = str(ASSETS / "food_round.png") if "cena" in _norm(m.get("name", "")) else None
-                _render_equivalences(cell, sb["equivalences"], image_path=img)
-            else:
-                first = True
-                for n, opt in enumerate(sb.get("options", [])[:3], start=1):
-                    p = cell.paragraphs[0] if first else cell.add_paragraph()
-                    first = False
-                    p.paragraph_format.space_after = Pt(4)
-                    _keep_lines(p)  # una opción nunca se parte entre páginas
-                    rl = p.add_run(f"Opción {n}. ")
-                    rl.font.bold = True
-                    rl.font.color.rgb = _hex(WINE)
-                    p.add_run(f"{opt.get('title','')} — {_ingredients_str(opt)}.")
-                if first:
-                    # Toma añadida a mano (sin recetario aún): guía digna en vez
-                    # de una caja vacía — sus macros están en Estructura diaria.
-                    t = m.get("target") or {}
-                    detail = ""
-                    if t.get("kcal"):
-                        detail = (f" (~{round(t['kcal'])} kcal · P {round(t.get('protein_g') or 0)} g · "
-                                  f"CH {round(t.get('carbs_g') or 0)} g · G {round(t.get('fat_g') or 0)} g)")
-                    cell.paragraphs[0].add_run(
-                        "Toma libre: elige alimentos de los grupos de arriba que cuadren "
-                        f"con los macros objetivo de esta comida{detail}."
-                    )
+        # Comidas detalladas (flexible) — como el ejemplo: comida/cena con sistema de
+        # equivalencias por grupos; el resto, 3 opciones numeradas en prosa (sin kcal).
+        # Comidas detalladas: cada comida = barra + CAJA CREMA con el contenido dentro
+        # (como el ejemplo). Comida/cena en equivalencias; resto, 3 opciones numeradas.
+        bank = nutrition.get("meal_bank") or {}
+        # El formato lo decide el banco PERSISTIDO (bank["mode"]); diet_mode del
+        # cliente es solo fallback: si el coach cambia diet_mode sin regenerar, el
+        # PDF sigue mostrando el menú que existe (no una sección vacía/equivocada).
+        diet_mode = bank.get("mode") or diet_mode
+        if diet_mode != "strict" and meals:
+            blocks = {s.get("slot"): s for s in bank.get("slots", [])}
+            for m in meals:
+                section_bar(doc, f"{m.get('name','Comida')} · {m.get('time','')}", WINE, size=10)
+                sb = blocks.get(m.get("slot"), {})
+                # Regla del diseño de referencia: NINGÚN corte visible. Las cajas de
+                # opciones/toma libre (contenido acotado, ≤3 opciones) viajan ENTERAS
+                # a la página siguiente si no caben. Las equivalencias (sin cota) sí
+                # pueden fluir, pero cada grupo lleva keepLines: el corte cae ENTRE
+                # grupos, nunca a mitad de una frase.
+                is_equiv = bool(sb.get("fmt") == "equivalences" and sb.get("equivalences"))
+                cell = open_box(doc, CREAM, cant_split=not is_equiv)
+                if sb.get("fmt") == "equivalences" and sb.get("equivalences"):
+                    # foto redonda flotante en la cena (como el ejemplo del coach)
+                    img = str(ASSETS / "food_round.png") if "cena" in _norm(m.get("name", "")) else None
+                    _render_equivalences(cell, sb["equivalences"], image_path=img)
+                else:
+                    first = True
+                    for n, opt in enumerate(sb.get("options", [])[:3], start=1):
+                        p = cell.paragraphs[0] if first else cell.add_paragraph()
+                        first = False
+                        p.paragraph_format.space_after = Pt(4)
+                        _keep_lines(p)  # una opción nunca se parte entre páginas
+                        rl = p.add_run(f"Opción {n}. ")
+                        rl.font.bold = True
+                        rl.font.color.rgb = _hex(WINE)
+                        p.add_run(f"{opt.get('title','')} — {_ingredients_str(opt)}.")
+                    if first:
+                        # Toma añadida a mano (sin recetario aún): guía digna en vez
+                        # de una caja vacía — sus macros están en Estructura diaria.
+                        t = m.get("target") or {}
+                        detail = ""
+                        if t.get("kcal"):
+                            detail = (f" (~{round(t['kcal'])} kcal · P {round(t.get('protein_g') or 0)} g · "
+                                      f"CH {round(t.get('carbs_g') or 0)} g · G {round(t.get('fat_g') or 0)} g)")
+                        cell.paragraphs[0].add_run(
+                            "Toma libre: elige alimentos de los grupos de arriba que cuadren "
+                            f"con los macros objetivo de esta comida{detail}."
+                        )
 
-    # Ejemplo de dieta semanal
-    _weekly_section(doc, brand, diet_mode, nutrition, bank)
+        # Ejemplo de dieta semanal
+        _weekly_section(doc, brand, diet_mode, nutrition, bank)
 
-    # Tarjetas informativas de cierre: contenido FIJO y acotado (menos de media
-    # página cada una) → cada tarjeta viaja ENTERA a la página siguiente si no
-    # cabe. Regla del diseño de referencia: un título abre una tarjeta nueva y
-    # una tarjeta jamás aparece partida con líneas sueltas en otra página.
+        # Tarjetas informativas de cierre: contenido FIJO y acotado (menos de media
+        # página cada una) → cada tarjeta viaja ENTERA a la página siguiente si no
+        # cabe. Regla del diseño de referencia: un título abre una tarjeta nueva y
+        # una tarjeta jamás aparece partida con líneas sueltas en otra página.
 
-    # Ideas rápidas
-    section_bar(doc, "Ideas rápidas de desayunos, snacks y meriendas", WINE)
-    info_box(doc, [f"• {x}" for x in IDEAS_RAPIDAS], fill=CREAM, cant_split=True)
+        # Ideas rápidas
+        section_bar(doc, "Ideas rápidas de desayunos, snacks y meriendas", WINE)
+        info_box(doc, [f"• {x}" for x in IDEAS_RAPIDAS], fill=CREAM, cant_split=True)
 
-    # Salsas recomendables
-    section_bar(doc, "Salsas recomendables", BLUE)
-    info_box(doc, SALSAS_TEXT, fill=CREAM, cant_split=True)
+        # Salsas recomendables
+        section_bar(doc, "Salsas recomendables", BLUE)
+        info_box(doc, SALSAS_TEXT, fill=CREAM, cant_split=True)
 
-    # Yogures recomendables
-    section_bar(doc, "Yogures recomendables", BLUE)
-    info_box(doc, YOGURES_TEXT, fill=CREAM, cant_split=True)
+        # Yogures recomendables
+        section_bar(doc, "Yogures recomendables", BLUE)
+        info_box(doc, YOGURES_TEXT, fill=CREAM, cant_split=True)
 
-    # Quesos recomendables
-    section_bar(doc, "Quesos recomendables", BLUE)
-    info_box(doc, QUESOS_TEXT, fill=CREAM, cant_split=True)
+        # Quesos recomendables
+        section_bar(doc, "Quesos recomendables", BLUE)
+        info_box(doc, QUESOS_TEXT, fill=CREAM, cant_split=True)
 
-    # Recomendaciones generales
-    section_bar(doc, "Recomendaciones generales", WINE)
-    info_box(doc, RECOMENDACIONES, fill=CREAM, cant_split=True)
+        # Recomendaciones generales
+        section_bar(doc, "Recomendaciones generales", WINE)
+        info_box(doc, RECOMENDACIONES, fill=CREAM, cant_split=True)
 
-    # Suplementación
-    section_bar(doc, "Suplementación recomendada", BLUE)
-    supps = nutrition.get("supplements", [])
-    if supps:
-        items = [f"{s.get('name','')} — {s.get('dose','')} ({s.get('timing','')})" for s in supps]
-    else:
-        items = SUPLEMENTACION_DEFAULT
-    info_box(doc, items, fill=CREAM, cant_split=True)
+        # Suplementación
+        section_bar(doc, "Suplementación recomendada", BLUE)
+        supps = nutrition.get("supplements", [])
+        if supps:
+            items = [f"{s.get('name','')} — {s.get('dose','')} ({s.get('timing','')})" for s in supps]
+        else:
+            items = SUPLEMENTACION_DEFAULT
+        info_box(doc, items, fill=CREAM, cant_split=True)
+
 
     if not include_training or not training:
         buf = io.BytesIO()
@@ -475,7 +480,8 @@ def generate_plan_doc(
         return buf.getvalue()
 
     # ======================= ENTRENAMIENTO =======================
-    doc.add_page_break()
+    if include_nutrition:
+        doc.add_page_break()
     _title(doc, "PLAN DE ENTRENAMIENTO", client_name)
 
     section_bar(doc, f"Estructura · {training.get('split_name','')}", BLUE)

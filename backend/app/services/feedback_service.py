@@ -21,6 +21,7 @@ from app.services.audit import log_event
 from app.services.docs.feedback_doc import generate_feedback_doc
 from app.services.docs.word_base import DocBrand
 from app.services.storage import abs_path, client_dir, storage_root
+from app.services import packages as pkgs
 
 
 class FeedbackError(RuntimeError):
@@ -319,7 +320,7 @@ def build_period_feedback(db: Session, period_id: int, ai=None) -> FeedbackDoc:
         raise FeedbackError("El período aún no está cerrado por el cliente")
     client = db.get(Client, period.client_id)
     # Paquete solo-nutrición (Start): el feedback no habla de entreno.
-    nutrition_only = getattr(client, "package_tier", None) == "start"
+    nutrition_only = not pkgs.has_training(getattr(client, "package_tier", None))
 
     inputs = _gather_doc_inputs(db, period, client)
     logs_q = list(db.scalars(

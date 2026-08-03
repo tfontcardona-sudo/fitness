@@ -70,12 +70,22 @@ class Settings(BaseSettings):
     # o "subscription" (cuota recurrente) según cómo hayas creado los precios.
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
-    stripe_price_start_1m: str = ""
-    stripe_price_start_3m: str = ""
-    stripe_price_start_6m: str = ""
+    # IDs de precio por plan × duración. OPCIONALES: si están vacíos, el sistema
+    # resuelve el precio en Stripe por lookup_key ("dqr_nutri_1m"…) — los crea
+    # scripts/setup_stripe_prices.py, así no hay que copiar IDs a mano.
+    stripe_price_nutri_1m: str = ""
+    stripe_price_nutri_3m: str = ""
+    stripe_price_nutri_6m: str = ""
+    stripe_price_train_1m: str = ""
+    stripe_price_train_3m: str = ""
+    stripe_price_train_6m: str = ""
     stripe_price_full_1m: str = ""
     stripe_price_full_3m: str = ""
     stripe_price_full_6m: str = ""
+    # Nombres antiguos (start/pro): se aceptan para no romper un .env previo.
+    stripe_price_start_1m: str = ""
+    stripe_price_start_3m: str = ""
+    stripe_price_start_6m: str = ""
     stripe_price_pro_1m: str = ""
     stripe_price_pro_3m: str = ""
     stripe_price_pro_6m: str = ""
@@ -86,7 +96,16 @@ class Settings(BaseSettings):
         return bool(self.stripe_secret_key)
 
     def stripe_price_for(self, tier: str, period: str) -> str:
+        """ID de precio del .env (nombres nuevos). La resolución completa —con
+        lookup_key en Stripe y nombres antiguos como último recurso— vive en
+        stripe_service._resolve_price_id (los antiguos NO deben pisar los
+        precios nuevos creados por lookup_key)."""
         return getattr(self, f"stripe_price_{tier}_{period}", "")
+
+    def stripe_price_legacy(self, tier: str, period: str) -> str:
+        """Nombre antiguo equivalente (START→nutri, PRO→full), último recurso."""
+        legacy = {"nutri": "start", "full": "pro"}.get(tier)
+        return getattr(self, f"stripe_price_{legacy}_{period}", "") if legacy else ""
 
     # --- Google Calendar / Meet (videollamadas Pro) ---
     # client_id/secret: credenciales del cliente OAuth creado en Google Cloud

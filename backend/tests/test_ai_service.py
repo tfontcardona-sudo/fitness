@@ -371,3 +371,31 @@ def test_create_message_reintenta_sin_temperature():
     client._create_message({"model": "m", "temperature": 0, "messages": []})
     assert len(calls) == 2
     assert "temperature" in calls[0] and "temperature" not in calls[1]
+
+
+def _training_only_core_json() -> str:
+    core = json.loads(_valid_core_json())
+    return json.dumps({"training": core["training"]})
+
+
+def test_plan_solo_entrenamiento_sin_dieta():
+    """Plan `train`: núcleo de entreno + educativo. NADA de dieta."""
+    sc = ScriptedClient([_training_only_core_json(), _education_json()])
+    plan = generate_monthly_plan(_ctx(), sc, include_training=True,
+                                 include_nutrition=False)
+    assert len(sc.calls) == 2  # núcleo de entreno + educativo (sin comidas)
+    nutrition_json, training_json, education_json, _flags = plan.to_persistable()
+    assert nutrition_json is None          # no se persiste dieta
+    assert training_json is not None and training_json["sessions"]
+    assert education_json is not None
+    # El prompt prohíbe explícitamente generar dieta y no pide comidas.
+    assert "SOLO ENTRENAMIENTO" in sc.calls[0]["user"]
+    assert "NO generes dieta" in sc.calls[0]["user"]
+
+
+def test_plan_sin_nutricion_ni_entreno_es_error():
+    from app.services.ai.generator import PlanGenerationError
+
+    with pytest.raises(PlanGenerationError):
+        generate_monthly_plan(_ctx(), ScriptedClient([]), include_training=False,
+                              include_nutrition=False)

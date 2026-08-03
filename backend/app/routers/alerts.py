@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.deps import get_current_user
 from app.models import Client, DailyLog, FeedbackDoc, Period, Plan
+from app.services import packages as pkgs
 
 router = APIRouter(prefix="/api", tags=["alerts"], dependencies=[Depends(get_current_user)])
 
@@ -238,7 +239,7 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
     from app.models import VideoCall
     from app.services.portal import format_when_es
 
-    if client.package_tier == "pro":
+    if pkgs.has_video_call(client.package_tier):
         last_review = db.scalar(
             select(Period).where(Period.client_id == client.id,
                                  Period.status.in_(("closed", "analyzed")))

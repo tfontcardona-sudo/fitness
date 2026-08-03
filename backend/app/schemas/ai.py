@@ -134,10 +134,17 @@ class PlanCoreOutput(BaseModel):
 
 
 class NutritionOnlyCoreOutput(BaseModel):
-    """Núcleo SOLO-NUTRICIÓN (paquete Start): la IA no genera entrenamiento.
+    """Núcleo SOLO-NUTRICIÓN (plan `nutri`): la IA no genera entrenamiento.
     Se persiste en plans.nutrition_json; plans.training_json queda vacío."""
 
     nutrition: NutritionCore
+
+
+class TrainingOnlyCoreOutput(BaseModel):
+    """Núcleo SOLO-ENTRENAMIENTO (plan `train`): la IA no genera dieta.
+    Se persiste en plans.training_json; plans.nutrition_json queda vacío."""
+
+    training: TrainingCore
 
 
 # ============================================================ llamada ② ====

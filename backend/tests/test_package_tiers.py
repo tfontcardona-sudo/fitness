@@ -106,15 +106,15 @@ def _nutrition_only_plan_content():
 
 def test_portal_state_exposes_package_tier(client, auth):
     # Pro (por defecto) y Start deben verse tal cual en el estado del portal.
-    _, token_pro = _create(client, auth, "pro")
-    assert client.get(f"/api/p/{token_pro}/state").json()["package_tier"] == "pro"
+    _, token_pro = _create(client, auth, "full")
+    assert client.get(f"/api/p/{token_pro}/state").json()["package_tier"] == "full"
 
-    _, token_start = _create(client, auth, "start")
-    assert client.get(f"/api/p/{token_start}/state").json()["package_tier"] == "start"
+    _, token_start = _create(client, auth, "nutri")
+    assert client.get(f"/api/p/{token_start}/state").json()["package_tier"] == "nutri"
 
 
 def test_start_plan_is_nutrition_only(client, auth):
-    cid, token = _create(client, auth, "start")
+    cid, token = _create(client, auth, "nutri")
     assert client.post(f"/api/p/{token}/anamnesis", json=_ANAM).status_code == 200
 
     nutrition, training, education, flags = _nutrition_only_plan_content()
@@ -128,7 +128,7 @@ def test_start_plan_is_nutrition_only(client, auth):
 
     # El portal sirve el plan sin entreno y no se rompe.
     state = client.get(f"/api/p/{token}/state").json()
-    assert state["package_tier"] == "start" and state["has_plan"] is True
+    assert state["package_tier"] == "nutri" and state["has_plan"] is True
     full = client.get(f"/api/p/{token}/plan").json()
     assert full["nutrition"] and full["training"] is None
     # La pantalla de entreno responde vacía (sin sesiones), no un error.

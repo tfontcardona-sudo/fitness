@@ -287,10 +287,10 @@ function LinksPageManager() {
         </button>
       </div>
 
-      {/* Videollamadas quincenales (plan Pro): Google Meet + enlace de reservas */}
+      {/* Videollamadas de revisión (plan Full): Google Meet + enlace de reservas */}
       <div className="card p-5">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold text-zinc-200">
-          <Video size={15} /> Videollamadas (plan Pro)
+          <Video size={15} /> Videollamadas (plan Full)
         </h3>
 
         {/* Conexión con Google Calendar / Meet: agendar con 1 clic */}

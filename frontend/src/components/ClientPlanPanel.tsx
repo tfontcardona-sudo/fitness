@@ -70,6 +70,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
   // por email; Full por email; Pro por WhatsApp.
   const info = pkg(client.package_tier);
   const hasTraining = info.hasTraining;
+  const hasNutrition = info.hasNutrition;
   const byEmail = info.delivery === "email";
   const [plan, setPlan] = useState<PlanData | null>(null);
   const [exMap, setExMap] = useState<Record<number, string>>({});
@@ -969,7 +970,8 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
         </details>
       ) : null}
 
-      {/* Nutrición */}
+      {/* Nutrición (los planes Train no la incluyen: sin tarjeta de ceros) */}
+      {hasNutrition && (
       <div className="card p-5">
         <SectionTitle icon={Utensils} title="Nutrición"
           onEdit={() => { setEditFocus("nutrition"); setEditing(true); }} />
@@ -1076,6 +1078,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
           </MemoDetails>
         )}
       </div>
+      )}
 
       {/* El BANCO DE COMIDAS ya no se muestra aquí (el coach no lo necesita en
           pantalla): va completo en el PDF que recibe el cliente. */}

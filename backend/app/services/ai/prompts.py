@@ -155,6 +155,13 @@ def system_prompt_nutrition_only() -> str:
         SYSTEM_BASE, METHODOLOGY_NUTRITION, criterios_reference()]))
 
 
+def system_prompt_training_only() -> str:
+    """System prompt para el núcleo SOLO-ENTRENAMIENTO (plan `train`): base +
+    metodología de entrenamiento + criterio del coach, sin la de nutrición."""
+    return "\n\n".join(filter(None, [
+        SYSTEM_BASE, METHODOLOGY_TRAINING, criterios_reference()]))
+
+
 def system_prompt_meals() -> str:
     """System prompt para la llamada ② (comidas): base + reglas de comida."""
     return "\n\n".join([SYSTEM_BASE, METHODOLOGY_NUTRITION_BRIEF])

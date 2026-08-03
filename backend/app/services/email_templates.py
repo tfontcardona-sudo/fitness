@@ -158,7 +158,7 @@ def onboarding_pay_anamnesis(brand: Brand, first_name: str, plan_label: str,
 
 
 def plan_published(brand: Brand, first_name: str, portal_url: str, is_new_month: bool,
-                   has_training: bool = True) -> tuple[str, str]:
+                   has_training: bool = True, has_nutrition: bool = True) -> tuple[str, str]:
     first_name = _esc(first_name)
     if is_new_month:
         subject = f"Tu nuevo plan del mes ya está listo · {brand.name}"
@@ -167,7 +167,8 @@ def plan_published(brand: Brand, first_name: str, portal_url: str, is_new_month:
             "tus resultados y tu feedback. Encontrarás los ajustes en tu portal."
         )
     else:
-        que = "de nutrición y entrenamiento" if has_training else "de nutrición"
+        que = ("de nutrición y entrenamiento" if (has_training and has_nutrition)
+               else "de entrenamiento" if has_training else "de nutrición")
         subject = f"¡Bienvenido/a! Tu plan ya está disponible · {brand.name}"
         intro = (
             f"Hola {first_name}, tu planificación personalizada {que} ya está lista. "

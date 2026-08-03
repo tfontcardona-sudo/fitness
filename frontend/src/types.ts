@@ -11,7 +11,7 @@ export type GoalType = "fat_loss" | "muscle_gain" | "recomp" | "maintenance" | "
 export type Level = "beginner" | "intermediate" | "advanced";
 export type TrainingPlace = "gym" | "home" | "outdoor";
 export type DietMode = "flexible_7" | "strict";
-export type PackageTier = "start" | "full" | "pro";
+export type PackageTier = "nutri" | "train" | "full";
 // Duración contratada del plan (decide el precio de Stripe que se cobra):
 // mensual, trimestral o semestral.
 export type BillingPeriod = "1m" | "3m" | "6m";
@@ -751,4 +751,27 @@ export interface CoachAlert {
   message: string;
   tab: string;
   action: string;
+}
+
+/** Ronda diaria de seguimiento por WhatsApp (pool de 100 mensajes). */
+export interface WhatsAppRoundItem {
+  client_id: number;
+  name: string;
+  phone: string | null;
+  tier: PackageTier;
+  brief_key: string;
+  brief_tema: string;
+  text: string;
+  already_sent: boolean;
+}
+
+export interface WhatsAppRoundOut {
+  round_id: number;
+  date: string;
+  brief_index: number;
+  brief_key: string;
+  brief_tema: string;
+  pool_size: number;
+  items: WhatsAppRoundItem[];
+  pending: number;
 }

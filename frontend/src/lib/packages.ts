@@ -1,65 +1,87 @@
-/** Paquetes/planes DQR: qué incluye cada uno y cómo se adapta la app.
- *  Fuente única de capacidades para la web del coach y (más adelante) el portal.
+/** Planes DQR: qué incluye cada uno y cómo se adapta la app.
+ *  ESPEJO de backend/app/services/packages.py — si cambias uno, cambia el otro.
  *
- *  - start: solo nutrición. Portal y planificación solo de dieta. Entrega email.
- *  - full:  nutrición + entreno. Sin contacto directo. Entrega email.
- *  - pro:   full + contacto directo (WhatsApp + videollamada). Entrega WhatsApp.
+ *  Los tres comparten la MISMA maquinaria interna (anamnesis → plan → portal →
+ *  seguimiento → revisión); solo cambian los servicios:
+ *   - nutri: solo nutrición.
+ *   - train: solo entrenamiento.
+ *   - full:  las dos cosas + videollamada de revisión.
+ *
+ *  El WhatsApp diario está en los TRES: es el canal con el cliente, no un extra.
  */
 import type { BillingPeriod, PackageTier } from "../types";
 
 export interface PackageInfo {
   tier: PackageTier;
-  label: string; // "DQR Start"
-  short: string; // "Start"
-  tagline: string; // "solo dieta"
+  label: string; // "DQR Nutri"
+  short: string; // "Nutri"
+  tagline: string; // "solo nutrición"
   includes: string; // resumen de qué incluye (para el selector del alta)
+  hasNutrition: boolean; // incluye dieta
   hasTraining: boolean; // incluye entrenamiento
-  directContact: boolean; // WhatsApp directo + videollamada
+  directContact: boolean; // WhatsApp diario (los tres)
+  hasVideoCall: boolean; // videollamada de revisión (solo full)
   delivery: "email" | "whatsapp"; // vía por defecto para enviar plan/feedback
+  /** Precio de referencia al mes (€). El COBRO real lo fija Stripe. */
+  priceMonthEur: number;
   color: string; // color de la etiqueta
 }
 
 export const PACKAGES: Record<PackageTier, PackageInfo> = {
-  start: {
-    tier: "start",
-    label: "DQR Start",
-    short: "Start",
-    tagline: "solo dieta",
-    includes: "Solo nutrición: dieta, revisión y portal. Entrega por email.",
-    hasTraining: false,
-    directContact: false,
-    delivery: "email",
+  train: {
+    tier: "train",
+    label: "DQR Train",
+    short: "Train",
+    tagline: "solo entrenamiento",
+    includes: "Entrenamiento completo + WhatsApp diario. Sin plan de dieta.",
+    hasNutrition: false,
+    hasTraining: true,
+    directContact: true,
+    hasVideoCall: false,
+    delivery: "whatsapp",
+    priceMonthEur: 69,
     color: "#4A7BA8",
+  },
+  nutri: {
+    tier: "nutri",
+    label: "DQR Nutri",
+    short: "Nutri",
+    tagline: "solo nutrición",
+    includes: "Plan de nutrición completo + WhatsApp diario. Sin entrenamiento.",
+    hasNutrition: true,
+    hasTraining: false,
+    directContact: true,
+    hasVideoCall: false,
+    delivery: "whatsapp",
+    priceMonthEur: 79,
+    color: "#8B1A2B",
   },
   full: {
     tier: "full",
     label: "DQR Full",
     short: "Full",
-    tagline: "dieta + entreno",
-    includes: "Dieta + entrenamiento completos. Sin contacto directo. Entrega por email.",
-    hasTraining: true,
-    directContact: false,
-    delivery: "email",
-    color: "#8B1A2B",
-  },
-  pro: {
-    tier: "pro",
-    label: "DQR Pro",
-    short: "Pro",
-    tagline: "acompañamiento directo",
-    includes: "Todo lo de Full + WhatsApp directo y videollamada de revisión.",
+    tagline: "nutrición + entrenamiento",
+    includes:
+      "Nutrición y entrenamiento + WhatsApp diario + videollamada de revisión.",
+    hasNutrition: true,
     hasTraining: true,
     directContact: true,
+    hasVideoCall: true,
     delivery: "whatsapp",
+    priceMonthEur: 129,
     color: "#E8833A",
   },
 };
 
-export const PACKAGE_ORDER: PackageTier[] = ["start", "full", "pro"];
+export const PACKAGE_ORDER: PackageTier[] = ["train", "nutri", "full"];
 
-/** Info del paquete de un cliente. Sin plan conocido → 'pro' (sistema completo). */
+/** Nombres antiguos → nuevos (espejo de LEGACY_TIERS del backend). */
+const LEGACY: Record<string, PackageTier> = { start: "nutri", pro: "full" };
+
+/** Info del paquete de un cliente. Traduce los nombres antiguos; por defecto full. */
 export function pkg(tier: string | null | undefined): PackageInfo {
-  return PACKAGES[(tier as PackageTier)] ?? PACKAGES.pro;
+  const t = (tier ?? "").trim().toLowerCase();
+  return PACKAGES[(LEGACY[t] ?? t) as PackageTier] ?? PACKAGES.full;
 }
 
 /** Duraciones contratables de cada plan (cada una con su precio en Stripe). */
