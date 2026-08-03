@@ -49,7 +49,9 @@ async def lifespan(app: FastAPI):
         ]
         if _missing:
             logging.getLogger("app.stripe").warning(
-                "STRIPE INCOMPLETO: los pagos pueden fallar. Falta: %s.", ", ".join(_missing))
+                "Stripe sin IDs en el .env (%s): se resolverán por lookup_key. "
+                "Si aún no existen, ejecuta scripts/setup_stripe_prices.py.",
+                ", ".join(_missing))
 
     # El scheduler se desactiva en tests/CI con SCHEDULER_ENABLED=false.
     # Vive en Settings como el resto de la config (una sola fuente de verdad).

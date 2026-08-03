@@ -143,3 +143,50 @@ def test_webhook_selfserve_existing_email_is_idempotent(monkeypatch):
         assert res.get("marked_paid") == cid and res.get("existing") is True
     finally:
         db.close()
+
+
+# ---- resolución de precios: .env nuevo → lookup_key → .env antiguo ----
+
+def test_resolucion_precio_prioriza_env_nuevo(monkeypatch):
+    from app.config import settings
+    from app.services import stripe_service as ss
+
+    monkeypatch.setattr(settings, "stripe_price_nutri_1m", "price_nuevo")
+    monkeypatch.setattr(settings, "stripe_price_start_1m", "price_viejo")
+    monkeypatch.setattr(ss, "_price_by_lookup", lambda t, p: "price_lookup")
+    assert ss._resolve_price_id("nutri", "1m") == "price_nuevo"
+
+
+def test_resolucion_precio_lookup_gana_al_env_antiguo(monkeypatch):
+    # Con el script ejecutado (lookup_key en Stripe), los IDs viejos del .env
+    # (START/PRO, con los importes antiguos) NO deben pisar los precios nuevos.
+    from app.config import settings
+    from app.services import stripe_service as ss
+
+    monkeypatch.setattr(settings, "stripe_price_nutri_1m", "")
+    monkeypatch.setattr(settings, "stripe_price_start_1m", "price_viejo")
+    monkeypatch.setattr(ss, "_price_by_lookup", lambda t, p: "price_lookup")
+    assert ss._resolve_price_id("nutri", "1m") == "price_lookup"
+
+
+def test_resolucion_precio_cae_al_env_antiguo_sin_lookup(monkeypatch):
+    from app.config import settings
+    from app.services import stripe_service as ss
+
+    monkeypatch.setattr(settings, "stripe_price_full_1m", "")
+    monkeypatch.setattr(settings, "stripe_price_pro_1m", "price_pro_viejo")
+    monkeypatch.setattr(ss, "_price_by_lookup", lambda t, p: "")
+    assert ss._resolve_price_id("full", "1m") == "price_pro_viejo"
+
+
+def test_importes_del_script_cumplen_lo_pedido():
+    # Nutri > Train en cada duración; Full < Train+Nutri en cada duración.
+    import importlib.util, pathlib
+    spec = importlib.util.spec_from_file_location(
+        "setup_prices", pathlib.Path(__file__).parents[1] / "scripts" / "setup_stripe_prices.py")
+    mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+    A = mod.AMOUNTS
+    for p in ("1m", "3m", "6m"):
+        assert A["nutri"][p] > A["train"][p]
+        assert A["full"][p] < A["train"][p] + A["nutri"][p]
+    assert A["train"]["1m"] == 6900 and A["nutri"]["1m"] == 7900 and A["full"]["1m"] == 12900

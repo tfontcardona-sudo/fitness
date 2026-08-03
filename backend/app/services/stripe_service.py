@@ -40,6 +40,59 @@ def _stripe():
     return stripe
 
 
+# --------------------------------------------------- resolución de precios ----
+
+# lookup_key canónico de cada precio en Stripe: dqr_{tier}_{period}. Los crea
+# scripts/setup_stripe_prices.py; con ellos NO hace falta copiar IDs al .env.
+_LOOKUP_TTL_S = 600
+_lookup_cache: dict = {"at": 0.0, "ids": {}}
+
+
+def _lookup_key(tier: str, period: str) -> str:
+    return f"dqr_{tier}_{period}"
+
+
+def _price_by_lookup(tier: str, period: str) -> str:
+    """ID del precio ACTIVO con lookup_key dqr_{tier}_{period}, con caché.
+    Best-effort: ante cualquier fallo devuelve "" (el caller decide qué hacer)."""
+    import time
+
+    now = time.time()
+    if now - _lookup_cache["at"] > _LOOKUP_TTL_S:
+        _lookup_cache["ids"] = {}
+        _lookup_cache["at"] = now
+    key = _lookup_key(tier, period)
+    if key in _lookup_cache["ids"]:
+        return _lookup_cache["ids"][key]
+    try:
+        stripe = _stripe()
+        keys = [_lookup_key(t, p) for t in _TIERS for p in _PERIODS]
+        found = {pr["lookup_key"]: pr["id"]
+                 for pr in stripe.Price.list(lookup_keys=keys, active=True, limit=100)["data"]
+                 if pr.get("lookup_key")}
+        for k in keys:
+            _lookup_cache["ids"][k] = found.get(k, "")
+    except Exception as exc:  # noqa: BLE001 — sin red/clave: se cae a los .env
+        _log.warning("No se pudieron resolver precios por lookup_key: %s", exc)
+        return ""
+    return _lookup_cache["ids"].get(key, "")
+
+
+def _resolve_price_id(tier: str, period: str) -> str:
+    """Precio a cobrar para tier×period, por orden de prioridad:
+    1) .env con nombre nuevo (mando explícito del coach),
+    2) lookup_key en Stripe (precios creados por el script — el camino normal),
+    3) .env con nombre antiguo (START/PRO), para no romper una config previa.
+    """
+    direct = settings.stripe_price_for(tier, period)
+    if direct:
+        return direct
+    by_lookup = _price_by_lookup(tier, period)
+    if by_lookup:
+        return by_lookup
+    return settings.stripe_price_legacy(tier, period)
+
+
 def create_checkout_url(db: Session, tier: str, period: str = "1m", *,
                         client: Client | None = None) -> str:
     """Crea una Checkout Session de Stripe para `tier` × `period` (duración
@@ -54,11 +107,12 @@ def create_checkout_url(db: Session, tier: str, period: str = "1m", *,
         raise StripeError(f"Plan desconocido: {tier}")
     if period not in _PERIODS:
         raise StripeError(f"Duración desconocida: {period}")
-    price = settings.stripe_price_for(tier, period)
+    price = _resolve_price_id(tier, period)
     if not price:
         raise StripeError(
-            f"Falta el precio de Stripe del plan {tier} {period} "
-            f"(STRIPE_PRICE_{tier.upper()}_{period.upper()} en el .env).")
+            f"Falta el precio de Stripe del plan {tier} {period}: ejecuta "
+            "scripts/setup_stripe_prices.py (o pon "
+            f"STRIPE_PRICE_{tier.upper()}_{period.upper()} en el .env).")
 
     stripe = _stripe()
     base = settings.public_base_url
@@ -109,7 +163,7 @@ def get_plan_prices() -> dict:
         stripe = _stripe()
         for tier in _TIERS:
             for period, months in _PERIOD_MONTHS.items():
-                price_id = settings.stripe_price_for(tier, period)
+                price_id = _resolve_price_id(tier, period)
                 if not price_id:
                     continue
                 try:
