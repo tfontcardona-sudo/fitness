@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Client, Plan
 from app.services.audit import log_event
+from app.services import packages as pkgs
 
 
 def activate_plan(db: Session, plan: Plan, *, notify: bool = True) -> None:
@@ -82,7 +83,7 @@ def activate_plan(db: Session, plan: Plan, *, notify: bool = True) -> None:
             portal_url = f"{settings.public_base_url}/p/{client.portal_token}"
             first = ((client.full_name or "").split() or [(client.email or "cliente").split("@")[0]])[0]
             # Paquete solo-nutrición (Start): sin mención a entreno en los avisos.
-            has_training = getattr(client, "package_tier", None) != "start"
+            has_training = pkgs.has_training(getattr(client, "package_tier", None))
             if same_month_replaced:
                 # ADAPTACIÓN/actualización del mes en curso: email de "plan
                 # actualizado", no otro "¡Bienvenido!" ni "nuevo mes".

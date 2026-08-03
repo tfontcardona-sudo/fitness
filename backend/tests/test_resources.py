@@ -236,7 +236,7 @@ def test_start_client_resources_without_training(client, auth):
     body = client.post("/api/clients", headers=auth, json={
         "full_name": "Start Recursos",
         "email": f"startrec-{uuid.uuid4().hex[:8]}@example.com",
-        "package_tier": "start",
+        "package_tier": "nutri",
     }).json()
     cid, token = body["client"]["id"], body["links"]["portal_token"]
 

@@ -43,7 +43,7 @@ async def lifespan(app: FastAPI):
         _missing = ["STRIPE_WEBHOOK_SECRET"] if not settings.stripe_webhook_secret else []
         _missing += [
             f"STRIPE_PRICE_{t.upper()}_{p.upper()}"
-            for t in ("start", "full", "pro") for p in ("1m", "3m", "6m")
+            for t in ("nutri", "train", "full") for p in ("1m", "3m", "6m")
             if not settings.stripe_price_for(t, p)
         ]
         if _missing:

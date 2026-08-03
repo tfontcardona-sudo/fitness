@@ -98,7 +98,7 @@ def test_webhook_selfserve_creates_paid_client(monkeypatch):
 
     email = f"self-{uuid.uuid4().hex[:8]}@x.com"
     event = _completed({
-        "metadata": {"tier": "start", "billing_period": "3m"},
+        "metadata": {"tier": "nutri", "billing_period": "3m"},
         "payment_status": "paid",
         "customer_details": {"email": email, "name": "Nuevo Cliente", "phone": "600111222"},
     })
@@ -110,7 +110,7 @@ def test_webhook_selfserve_creates_paid_client(monkeypatch):
         assert "created" in res
         c = db.scalar(select(Client).where(func.lower(Client.email) == email))
         assert c is not None
-        assert c.package_tier == "start"
+        assert c.package_tier == "nutri"
         assert c.billing_period == "3m"
         assert c.payment_status == "paid"
         assert c.status == "onboarding"
@@ -128,7 +128,7 @@ def test_webhook_selfserve_existing_email_is_idempotent(monkeypatch):
     email = f"dup-{uuid.uuid4().hex[:8]}@x.com"
     db = SessionLocal()
     try:
-        c = Client(full_name="Ya existe", email=email, package_tier="pro",
+        c = Client(full_name="Ya existe", email=email, package_tier="full",
                    status="onboarding", portal_token="p", payment_status="pending")
         db.add(c)
         db.flush()
@@ -136,7 +136,7 @@ def test_webhook_selfserve_existing_email_is_idempotent(monkeypatch):
         db.commit()
         cid = c.id
 
-        event = _completed({"metadata": {"tier": "pro"}, "payment_status": "paid",
+        event = _completed({"metadata": {"tier": "full"}, "payment_status": "paid",
                             "customer_details": {"email": email, "name": "Ya existe"}})
         monkeypatch.setattr(stripe_service, "_stripe", _fake_stripe(event))
         res = stripe_service.handle_webhook(db, b"{}", "sig")

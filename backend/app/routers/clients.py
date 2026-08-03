@@ -40,6 +40,7 @@ from app.schemas.entities import (
 )
 from app.security import new_portal_token
 from app.services.audit import log_event
+from app.services import packages as pkgs
 from app.services.storage import (
     DocumentValidationError,
     abs_path,
@@ -1370,7 +1371,7 @@ def generate_client_plan(
     )
     # Paquete Start = solo nutrición: la IA no genera entrenamiento (ni el
     # educativo de entreno). Full/Pro generan el plan completo.
-    include_training = client.package_tier != "start"
+    include_training = pkgs.has_training(client.package_tier)
     # §2 (hardening): catálogo de alimentos FILTRADO (sin alérgenos/aversiones/patrón)
     # para que la IA seleccione por food_id y el solver fije los gramos.
     food_catalog = _food_catalog_for(db, client)

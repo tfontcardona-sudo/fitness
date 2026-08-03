@@ -13,7 +13,7 @@ from app.services import email_templates as tpl
 from app.services.audit import log_event
 from app.services.email_service import EmailService, brand_from_config
 
-TIER_LABEL = {"start": "DQR Start", "full": "DQR Full", "pro": "DQR Pro"}
+TIER_LABEL = {"nutri": "DQR Nutri", "train": "DQR Train", "full": "DQR Full"}
 
 
 def send_onboarding_email(db: Session, client: Client) -> str:

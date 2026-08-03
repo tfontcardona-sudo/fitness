@@ -65,6 +65,7 @@ from app.services.email_service import EmailService, brand_from_config
 from app.services import email_templates as tpl
 from app.services.metrics import epley_1rm, weight_trend
 from app.services.storage import PhotoValidationError, abs_path, save_photo
+from app.services import packages as pkgs
 
 router = APIRouter(prefix="/api/p", tags=["portal-public"])
 limiter = Limiter(key_func=client_key)
@@ -317,7 +318,7 @@ def portal_state_full(
     # Clientes START (solo nutrición): sin pestaña Entreno, /training nunca se
     # llama y el aviso "plan nuevo" no se apagaría jamás — abrir el portal ya
     # cuenta como visto (su dieta va en el PDF enlazado desde la portada).
-    if client.package_tier == "start" and client.plan_notice_pending and plan is not None:
+    if not pkgs.has_training(client.package_tier) and client.plan_notice_pending and plan is not None:
         client.plan_notice_pending = False
         db.commit()
 
@@ -372,7 +373,7 @@ def portal_video_call(
     """
     from app.models import VideoCall
 
-    if client.package_tier != "pro":
+    if not pkgs.has_video_call(client.package_tier):
         return {"state": "none"}
     today = portal_svc.today_local()
 
@@ -433,7 +434,7 @@ def portal_video_call_propose(
 
     from app.models import VideoCall
 
-    if client.package_tier != "pro":
+    if not pkgs.has_video_call(client.package_tier):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "No disponible en tu plan")
     last_review = _last_review_period(db, client.id)
     if last_review is None:
@@ -496,7 +497,7 @@ def portal_video_call_reschedule(
 
     from app.models import VideoCall
 
-    if client.package_tier != "pro":
+    if not pkgs.has_video_call(client.package_tier):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "No disponible en tu plan")
 
     today = portal_svc.today_local()

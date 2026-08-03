@@ -37,6 +37,7 @@ from app.config import settings
 from app.models import Client, DailyLog, PushSubscription, WorkoutLog
 from app.services import portal as portal_svc
 from app.services.audit import log_event
+from app.services import packages as pkgs
 
 logger = logging.getLogger("push")
 
@@ -196,7 +197,7 @@ def videocall_pending(db: Session, client: Client) -> bool:
     True si su última revisión (cerrada/analizada) aún no tiene una videollamada
     propuesta por él ni agendada/en curso por el coach — es decir, el portal le
     muestra el formulario para agendar y todavía no lo ha usado."""
-    if client.package_tier != "pro":
+    if not pkgs.has_video_call(client.package_tier):
         return False
     from app.models import Period, VideoCall
 

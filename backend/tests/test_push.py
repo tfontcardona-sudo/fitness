@@ -202,8 +202,16 @@ def test_pending_for_client(db, client_with_plan) -> None:
     p = push_svc.pending_for_client(db, client, today)
     assert p["quincenal"] is True and p["count"] == 1
 
-    # Período cerrado → nada pendiente para el cliente
+    # Período cerrado → ya no toca diario/entreno/quincenal. Con el pack FULL,
+    # que incluye videollamada, queda pendiente agendarla (aviso legítimo).
     period.status = "closed"
+    db.flush()
+    p = push_svc.pending_for_client(db, client, today)
+    assert p["diary"] is False and p["workout"] is False and p["quincenal"] is False
+    assert p["videocall"] is True and p["count"] == 1
+
+    # En un plan SIN videollamada (nutri/train) no queda nada pendiente.
+    client.package_tier = "nutri"
     db.flush()
     assert push_svc.pending_for_client(db, client, today)["count"] == 0
 

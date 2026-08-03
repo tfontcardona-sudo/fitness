@@ -18,6 +18,7 @@ from app.security import hash_password
 from app.services import email_templates as tpl
 from app.services.email_service import EmailService, brand_from_config
 from app.services.audit import log_event
+from app.services import packages as pkgs
 
 # Alfabeto sin caracteres ambiguos (nada de l, I, 1, O, 0) para que la clave del
 # email se lea y se teclee sin confusión.
@@ -49,7 +50,7 @@ def send_portal_access(db: Session, client: Client) -> dict:
     first = (client.full_name or client.email).split()[0]
     subject, html = tpl.portal_access(
         brand, first, login_url, client.email, password,
-        has_training=client.package_tier != "start")
+        has_training=pkgs.has_training(client.package_tier))
     status = EmailService(db).send(
         to=client.email, subject=subject, html=html, kind="portal_access", client=client,
     )

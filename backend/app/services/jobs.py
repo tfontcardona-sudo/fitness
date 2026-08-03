@@ -26,6 +26,7 @@ from app.models import Client, DailyLog, EmailLog, Period
 from app.services import email_templates as tpl
 from app.services.audit import log_event
 from app.services.email_service import EmailService, brand_from_config
+from app.services import packages as pkgs
 from app.services.state_machine import (
     ClientFacts,
     can_transition,
@@ -157,7 +158,7 @@ def _maintain_client(db: Session, client: Client, today: date,
         subject, html = tpl.reminder_no_logs(
             brand, _first_name(client),
             f"{base}/p/{client.portal_token}", days_left,
-            has_training=getattr(client, "package_tier", None) != "start",
+            has_training=pkgs.has_training(getattr(client, "package_tier", None)),
         )
         emailer.send(to=client.email, subject=subject, html=html,
                      kind="reminder_no_logs", client=client)
@@ -180,7 +181,7 @@ def _maintain_client(db: Session, client: Client, today: date,
     # 1c) Recordatorio (email) de la videollamada de MAÑANA (Pro con evento
     # agendado en Google Meet). Complementa la invitación nativa de Google y el
     # push del portal: capa extra "para que no pase por alto". Uno al día.
-    if getattr(client, "package_tier", None) == "pro":
+    if pkgs.has_video_call(getattr(client, "package_tier", None)):
         from datetime import timedelta
 
         from app.models import VideoCall

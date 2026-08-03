@@ -70,13 +70,13 @@ def test_register_creates_pending_client_and_reuses_on_retry(http):
         db.close()
 
     # Reintento con otra elección: actualiza la MISMA ficha (no duplica).
-    r2 = http.post("/api/public/register", json={**body, "tier": "pro", "period": "1m"})
+    r2 = http.post("/api/public/register", json={**body, "tier": "full", "period": "1m"})
     assert r2.status_code == 200, r2.text
     db = SessionLocal()
     try:
         rows = db.scalars(select(Client).where(func.lower(Client.email) == email)).all()
         assert len(rows) == 1 and rows[0].id == cid
-        assert rows[0].package_tier == "pro" and rows[0].billing_period == "1m"
+        assert rows[0].package_tier == "full" and rows[0].billing_period == "1m"
     finally:
         db.close()
 
@@ -115,7 +115,7 @@ def test_public_anamnesis_template_and_upload(http, monkeypatch):
     email = f"anam-{uuid.uuid4().hex[:8]}@x.com"
     r = http.post("/api/public/register", json={
         "full_name": "Anamnesis Publica", "email": email, "phone": "600222444",
-        "tier": "start", "period": "6m"})
+        "tier": "nutri", "period": "6m"})
     assert r.status_code == 200, r.text
 
     db = SessionLocal()

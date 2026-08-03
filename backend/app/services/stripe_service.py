@@ -24,7 +24,7 @@ from app.services.audit import log_event
 
 _log = logging.getLogger("app.stripe")
 
-_TIERS = {"start", "full", "pro"}
+_TIERS = {"nutri", "train", "full"}
 # Duraciones contratables de cada plan: mensual, trimestral, semestral.
 _PERIODS = {"1m", "3m", "6m"}
 

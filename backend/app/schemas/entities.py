@@ -46,7 +46,7 @@ DietMode = Literal["flexible_7", "strict"]
 DietPattern = Literal["vegano", "vegetariano", "pescetariano", "sin_cerdo", "halal", "kosher"]
 # Paquete/plan contratado por el cliente (define qué incluye y cómo se le entrega):
 #   start = solo nutrición · full = nutrición + entreno · pro = full + contacto directo
-PackageTier = Literal["start", "full", "pro"]
+PackageTier = Literal["nutri", "train", "full"]
 # Duración contratada del plan: mensual, trimestral o semestral. Cada paquete
 # tiene un precio de Stripe por duración (9 combinaciones en total).
 BillingPeriod = Literal["1m", "3m", "6m"]
@@ -181,7 +181,7 @@ class ClientOut(BaseModel):
     full_name: str
     email: str
     phone: str | None
-    package_tier: PackageTier = "pro"
+    package_tier: PackageTier = "full"
     billing_period: BillingPeriod = "1m"
     payment_status: PaymentStatus = "paid"
     paid_at: datetime | None = None

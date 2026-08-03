@@ -58,7 +58,7 @@ def pro_client_reviewed(db):
         email=f"vc-{uid}@test.local",
         portal_token=f"tok-vc-{uid}-{uuid.uuid4().hex}",
         status="active",
-        package_tier="pro",
+        package_tier="full",
     )
     db.add(client)
     db.flush()
@@ -157,8 +157,10 @@ def test_video_call_alert_cycle(db, pro_client_reviewed) -> None:
 
 @needs_db
 def test_no_video_call_alert_outside_pro(db, pro_client_reviewed) -> None:
+    # La videollamada es exclusiva del pack completo: un plan sin ella (nutri)
+    # no genera aviso. Antes el "sin videollamada" era `full`; ahora es `nutri`.
     client, _plan, _period = pro_client_reviewed
-    client.package_tier = "full"
+    client.package_tier = "nutri"
     db.flush()
     assert _vc_alerts(db, client) == []
 
@@ -352,7 +354,7 @@ def test_client_reschedules_scheduled_call(db, pro_client_reviewed, monkeypatch)
 @needs_db
 def test_videocall_pending_nudge(db, pro_client_reviewed) -> None:
     """El recordatorio de 'agenda tu videollamada' se enciende para un Pro con la
-    revisión cerrada sin propuesta y se apaga en cuanto propone o si no es Pro."""
+    revisión cerrada sin propuesta y se apaga al proponer o si el plan no la incluye."""
     from app.models import VideoCall
 
     client, _plan, _period = pro_client_reviewed
@@ -367,10 +369,10 @@ def test_videocall_pending_nudge(db, pro_client_reviewed) -> None:
     db.flush()
     assert push_svc.videocall_pending(db, client) is False
 
-    # Un cliente que no es Pro nunca recibe este aviso.
+    # Un plan SIN videollamada (nutri/train) nunca recibe este aviso.
     db.delete(vc)
     db.flush()
-    client.package_tier = "full"
+    client.package_tier = "nutri"
     db.flush()
     assert push_svc.videocall_pending(db, client) is False
 

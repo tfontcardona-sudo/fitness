@@ -57,12 +57,13 @@ class Client(Base):
     full_name: Mapped[str] = mapped_column(String(160))
     email: Mapped[str] = mapped_column(String(160), unique=True, index=True)
     phone: Mapped[str | None] = mapped_column(String(40))
-    # Paquete/plan contratado: start (solo dieta) | full (dieta+entreno) |
-    # pro (full + contacto directo). Define qué se genera, qué ve el cliente en
-    # el portal y cómo se le entrega. Los clientes previos quedan en 'pro' (el
-    # sistema completo que ya usaban).
+    # Paquete/plan contratado: nutri (solo dieta) | train (solo entreno) |
+    # full (las dos + videollamada). Define qué se genera, qué ve el cliente en
+    # el portal y cómo se le entrega. El WhatsApp diario está en los TRES.
+    # Las capacidades se consultan en services/packages.py, nunca comparando
+    # cadenas sueltas (migración 0032 renombró start→nutri y pro→full).
     package_tier: Mapped[str] = mapped_column(
-        String(10), default="full", server_default=text("'pro'"), nullable=False
+        String(10), default="full", server_default=text("'full'"), nullable=False
     )
     # Duración contratada del plan (decide qué precio de Stripe se cobra):
     # 1m (mensual) | 3m (trimestral) | 6m (semestral). Informativo, como el
