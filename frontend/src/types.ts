@@ -11,7 +11,7 @@ export type GoalType = "fat_loss" | "muscle_gain" | "recomp" | "maintenance" | "
 export type Level = "beginner" | "intermediate" | "advanced";
 export type TrainingPlace = "gym" | "home" | "outdoor";
 export type DietMode = "flexible_7" | "strict";
-export type PackageTier = "start" | "full" | "pro";
+export type PackageTier = "nutri" | "train" | "full";
 // Duración contratada del plan (decide el precio de Stripe que se cobra):
 // mensual, trimestral o semestral.
 export type BillingPeriod = "1m" | "3m" | "6m";

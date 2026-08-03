@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { Bell, BellOff, CalendarCheck, Camera, Check, ChevronDown, Dumbbell, LineChart, Library, LogOut, NotebookPen, Share, Smartphone, Video, X } from "lucide-react";
 import { portalApi, portalSession, PortalError } from "./portalApi";
 import type { VideoCallStatus } from "./portalApi";
+import { pkg } from "../lib/packages";
 import type { PortalState } from "../types";
 import { PortalWorkout } from "./PortalWorkout";
 import { PortalDiary } from "./PortalDiary";
@@ -136,9 +137,10 @@ export default function PortalApp({ token }: { token: string }) {
   const light = state.brand.portal_theme === "light";
   const canClose = state.period?.can_close ?? false;
 
-  // Paquete Start = solo nutrición: sin pestaña de entreno. La vista por defecto
-  // pasa a ser el Diario (si la URL trae ?tab=entreno, se reencamina a diario).
-  const isStart = state.package_tier === "start";
+  // Plan sin entreno (nutri): sin pestaña de entreno. La vista por defecto pasa
+  // a ser el Diario (si la URL trae ?tab=entreno, se reencamina a diario).
+  const caps = pkg(state.package_tier);
+  const isStart = !caps.hasTraining;
   const effTab: Tab = isStart && tab === "entreno" ? "diario" : tab;
 
   const TABS: { id: Tab; label: string; icon: typeof Dumbbell }[] = [
@@ -203,7 +205,7 @@ export default function PortalApp({ token }: { token: string }) {
               </span>
             </a>
           )}
-          {state.package_tier === "pro" && (
+          {caps.hasVideoCall && (
             <VideoCallBanner api={apiClient} accent={state.brand.color_secondary} />
           )}
           {state.photos_pending && (
@@ -228,7 +230,7 @@ export default function PortalApp({ token }: { token: string }) {
                 closeDate={state.period?.ends_on ?? null}
                 periodStatus={state.period?.status ?? null}
                 hasTraining={!isStart}
-                directContact={state.package_tier === "pro"}
+                directContact={caps.directContact}
               />
             )}
           </div>

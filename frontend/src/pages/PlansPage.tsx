@@ -114,12 +114,12 @@ export default function PlansPage() {
             Empieza tu cambio <span style={{ color: "#F6A560" }}>hoy</span>
           </h1>
           <p className="mt-1 max-w-lg text-sm text-white/85">
-            Plan de dieta y entreno 100 % a tu medida, con seguimiento real de tu coach.
+            Plan 100 % a tu medida y tu coach contigo cada día por WhatsApp.
           </p>
           {/* Gancho de confianza: qué incluye SIEMPRE, de un vistazo */}
           <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs font-semibold">
             <span style={{ color: "#6FE39A" }}>✓ Plan personalizado</span>
-            <span style={{ color: "#6FE39A" }}>✓ Revisión quincenal</span>
+            <span style={{ color: "#6FE39A" }}>✓ WhatsApp a diario</span>
             <span style={{ color: "#6FE39A" }}>✓ App de seguimiento</span>
             <span style={{ color: "#6FE39A" }}>✓ Pago seguro</span>
           </div>
@@ -177,7 +177,7 @@ export default function PlansPage() {
         <div className="grid gap-4 sm:grid-cols-3">
           {PACKAGE_ORDER.map((t) => {
             const p = PACKAGES[t];
-            const destacado = t === "full"; // el equilibrio dieta+entreno: el más elegido
+            const destacado = t === "full"; // el pack completo: el más elegido
             const pr = prices?.tiers?.[t]?.[period];
             const ahorro = savingsPct(t);
             return (
