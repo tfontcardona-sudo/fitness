@@ -210,6 +210,13 @@ REGLA DE ORO: si un dato no aparece, está en blanco o pone "no aplica", déjalo
 sería grave. El coach revisará todo antes de generar el plan. MAPEAR o INFERIR un valor \
 a partir de lo que el cliente escribió NO es inventar; es obligatorio.
 
+LECTURA EXHAUSTIVA: la anamnesis es la BASE de toda la asesoría (plan, seguimiento y \
+revisiones parten de ella). Lee el documento ENTERO, frase a frase, incluidos márgenes, \
+anotaciones a mano, respuestas fuera de su casilla y comentarios sueltos: cada dato debe \
+acabar en su campo o en el resumen de su sección. No des ninguna sección por vacía sin \
+haberla leído completa; si el cliente escribió algo ambiguo o contradictorio, recógelo \
+tal cual en la nota de la sección (el coach decide), nunca lo omitas.
+
 CAMPOS ESTRUCTURADOS OBLIGATORIOS — recórrelos UNO A UNO y rellénalos SIEMPRE que el dato \
 aparezca en CUALQUIER parte del documento. NO dejes en null un campo cuyo dato esté presente:
   · birth_date ← "Fecha de nacimiento": convierte DD/MM/AAAA a YYYY-MM-DD (12/03/1990 → 1990-03-12).

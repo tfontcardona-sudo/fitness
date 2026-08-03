@@ -22,9 +22,10 @@ def test_perdida_grasa_alto_vs_bajo_reciben_deficit_distinto():
     assert alto.pct < bajo.pct   # alto = déficit MÁS negativo
     assert alto.bracket == "fat_loss/high"
     assert bajo.bracket == "fat_loss/low"
-    # punto medio de cada rango (sin adherencia): high=(−0.20,−0.25)→−0.225
-    assert alto.pct == pytest.approx(-0.225)
-    assert bajo.pct == pytest.approx(-0.125)  # low=(−0.10,−0.15)
+    # Sin historial de adherencia: extremo CONSERVADOR del rango (criterio del
+    # coach, CRITERIOS_ASESORIA §1) — high=(−0.20,−0.25)→−0.20.
+    assert alto.pct == pytest.approx(-0.20)
+    assert bajo.pct == pytest.approx(-0.10)  # low=(−0.10,−0.15)
 
 
 def test_umbral_de_grasa_por_sexo():
@@ -37,8 +38,8 @@ def test_ganancia_novato_vs_avanzado():
     nov = individualized_energy_adjustment("muscle_gain", "male", None, level="beginner")
     adv = individualized_energy_adjustment("muscle_gain", "male", None, level="advanced")
     assert nov.pct > adv.pct    # novato tolera más superávit
-    assert nov.pct == pytest.approx(0.135)  # (0.12,0.15) mid
-    assert adv.pct == pytest.approx(0.075)  # (0.05,0.10) mid
+    assert nov.pct == pytest.approx(0.12)  # (0.12,0.15) → arranque conservador
+    assert adv.pct == pytest.approx(0.05)  # (0.05,0.10) → arranque conservador
 
 
 def test_adherencia_mueve_el_punto_del_rango():
@@ -49,7 +50,8 @@ def test_adherencia_mueve_el_punto_del_rango():
 
 
 def test_recomp_y_mantenimiento():
-    assert individualized_energy_adjustment("recomp", "male", 18).pct == pytest.approx(-0.025)
+    # Arranque conservador: recomp parte de 0% (el −5% solo con adherencia ≥0,85).
+    assert individualized_energy_adjustment("recomp", "male", 18).pct == pytest.approx(0.0)
     assert individualized_energy_adjustment("maintenance", "male", 18).pct == 0.0
 
 

@@ -8,8 +8,22 @@
 >
 > **Estado**: arrancado automáticamente extrayendo lo que YA está implícito en el
 > código (`services/ai/prompts.py`, `services/guardrails.py`, `services/metrics.py`,
-> `services/nutrition_scale.py`). Los huecos que solo tú puedes rellenar están
-> marcados **`[PENDIENTE TONI]`** — complétalos cuando puedas.
+> `services/nutrition_scale.py`) y COMPLETADO con el criterio del coach
+> (agosto 2026). Edítalo con libertad cuando tu criterio evolucione.
+
+---
+
+## 0. Principio rector: la anamnesis manda
+
+**Toda la asesoría parte de la anamnesis del cliente.** No hay plantillas ni
+preferencias del coach por encima de lo que el cliente declaró: objetivo, número
+de comidas, alimentos que le gustan o rechaza, alergias, lesiones, medicación,
+horarios y contexto salen de SU anamnesis, leída completa y sin omitir nada. El
+sistema debe entender el documento entero — frase a frase, incluidas notas a
+mano y comentarios sueltos — porque el plan, el seguimiento diario y las
+revisiones quincenales se construyen y se juzgan contra esa información. Si un
+dato de la anamnesis es ambiguo o contradictorio, se recoge y lo resuelve el
+coach: nunca se descarta en silencio.
 
 ---
 
@@ -36,9 +50,13 @@
 - **Regla innegociable**: si los suelos no caben en las kcal, se **suben las kcal**
   (se reduce el déficit). Nunca se rompe un suelo ni un tope de ritmo por un plazo.
 
-`[PENDIENTE TONI]`: ¿ajustas estos rangos para algún perfil concreto (mujer en
-menopausia, mayores de 60, deportista de resistencia)? ¿Prefieres un extremo del
-rango por defecto (más conservador / más agresivo)?
+**Criterio del coach**: por defecto se arranca SIEMPRE en el **extremo
+conservador** del rango (déficit/superávit más suave). Solo la adherencia
+demostrada en el seguimiento (≥85%) da derecho a moverse hacia el extremo
+agresivo; sin historial, prudencia. Los rangos no se personalizan por plantillas
+de perfil: la individualización sale del perfil REAL que aparezca en la
+anamnesis subida (sexo, % graso, experiencia, contexto), que es la que fija el
+bracket de la tabla.
 
 ## 2. Estructura de comidas
 
@@ -47,23 +65,33 @@ rango por defecto (más conservador / más agresivo)?
 - Doble medida siempre (gramos crudos + medida casera).
 - Comidas pre/post entreno sobre la **hora real** declarada.
 
-`[PENDIENTE TONI]`: ¿estructuras de comida que usas por defecto (ej. desayuno
-salado, cena ligera)? ¿alimentos "bandera" que casi siempre metes? ¿alimentos que
-NO usas nunca aunque cuadren macros?
+**Criterio del coach**: el número y reparto de comidas lo define la ANAMNESIS
+(lo que el cliente declaró) o el coach a mano en la ficha; si el cliente lo
+delega, decide la IA dentro del marco 3–5. **No hay estructuras por defecto**
+(ni "desayuno salado" ni "cena ligera" impuestos): la estructura se adapta al
+horario y contexto real del cliente.
 
 ## 3. Alimentos que priorizo / evito
 
-`[PENDIENTE TONI]`: lista tus **fuentes preferidas** por macro (proteínas, hidratos,
-grasas, verduras, lácteos/alternativas) y las que **descartas** por criterio propio
-(no solo por alergia). Esto es lo que más "suena a ti" en un plan.
+**Criterio del coach**: **no hay alimentos "estrella" ni vetos predefinidos del
+coach.** Los alimentos a priorizar y a evitar son EXACTAMENTE los que el cliente
+especifica en su anamnesis: preferencias (`food_likes`), aversiones
+(`food_dislikes`), alergias/intolerancias (`food_allergies`) y patrón dietético
+(vegano, halal…). La IA construye el banco de comidas con alimentos comunes,
+frescos y fáciles de encontrar, respetando al 100% lo declarado — las aversiones
+vetan igual que las alergias en la práctica del menú.
 
 ## 4. Suplementación que contemplo
 
 - Con evidencia: creatina 5 g/día · cafeína 3–6 mg/kg pre-entreno si tolera ·
   proteína en polvo (conveniencia) · vitamina D · omega-3. **Nunca** fármacos.
 
-`[PENDIENTE TONI]`: ¿algún protocolo propio (magnesio nocturno, electrolitos en
-definición, etc.)? ¿marcas o formatos que recomiendas?
+**Criterio del coach**: no hay protocolos fijos propios — la suplementación la
+propone la IA **según los datos y objetivos del cliente en su anamnesis**
+(sueño, estrés, dieta real, entrenamiento, analítica declarada), siempre dentro
+del marco con evidencia de arriba y justificando cada suplemento con su porqué.
+Menos es más: solo lo que aporte a ESE cliente. Los productos concretos se
+enlazan desde Recursos (partner ESN) cuando existen.
 
 ## 5. Entrenamiento
 
@@ -76,8 +104,12 @@ definición, etc.)? ¿marcas o formatos que recomiendas?
 - Volumen e intensidad ajustados a la profundidad del déficit (nada de mesociclo
   de sobrecarga con −25% de kcal).
 
-`[PENDIENTE TONI]`: ¿ejercicios que prefieres/evitas por criterio? ¿rangos de reps
-por objetivo que uses siempre? ¿cómo planteas la progresión con tus palabras?
+**Criterio del coach**: no hay ejercicios favoritos ni vetados por sistema — la
+selección la hace la IA **a partir de la anamnesis** (nivel, lesiones, material,
+días, duración de sesión, historial deportivo), dentro de los guardrails
+deterministas que filtran por lesión y material. Los rangos de repeticiones y la
+progresión siguen el marco de arriba (doble progresión + RIR, deload semana 4),
+adaptados al nivel real declarado.
 
 ## 6. Cómo redacto / tono
 
@@ -85,8 +117,18 @@ por objetivo que uses siempre? ¿cómo planteas la progresión con tus palabras?
   aritmética. Reglas de flexibilidad explícitas (comidas sociales 1–2/sem, alcohol,
   viajes, qué hacer si falla una comida: compensación simple, nunca castigo).
 
-`[PENDIENTE TONI]`: ¿muletillas o frases que usas? ¿cómo abres y cierras un plan?
-¿qué NO dices nunca a un cliente?
+**Criterio del coach**: tono **serio y profesional con un toque cercano**, y
+COHERENTE en todos los mensajes que recibe el cliente, sean del tipo que sean
+(plan, revisión quincenal, modificación, videollamada, recordatorio, email,
+push). Una sola voz de marca:
+- Se abre saludando por el nombre y yendo al grano; se cierra con un refuerzo
+  breve y la puerta abierta ("cualquier duda, me escribes").
+- Se explica siempre el PORQUÉ de cada decisión en lenguaje claro, sin
+  aritmética ni jerga innecesaria.
+- Nunca: culpabilizar ("has fallado"), lenguaje de castigo o compensación
+  punitiva, promesas de plazos ("en X semanas pesarás Y"), diagnósticos médicos
+  ni alarmismo. Los tropiezos se tratan con normalidad y plan de acción, no con
+  bronca.
 
 ## 7. Seguridad clínica (ya en el sistema)
 
@@ -95,10 +137,43 @@ por objetivo que uses siempre? ¿cómo planteas la progresión con tus palabras?
 - Lista roja de auto-envío (ver §12 del prompt de hardening): menores/mayores,
   embarazo/lactancia, IMC<18,5, TCA, patologías y medicación con interacción.
 
-`[PENDIENTE TONI]`: ¿patologías adicionales para las que tienes pautas propias?
-¿cuándo derivas a médico?
+**Patologías comunes con pauta propia** (añadidas a la lista roja del sistema:
+el plan queda retenido para revisión del coach, nunca se auto-envía):
+- **Gota / hiperuricemia**: moderar carnes rojas, vísceras, marisco y alcohol
+  (cerveza sobre todo); limitar fructosa añadida; hidratación alta; el déficit,
+  si lo hay, gradual (una pérdida brusca puede disparar un ataque).
+- **Intestino irritable / SIBO**: menú simple y repetible, cocciones suaves,
+  fibra progresiva (no un salto brusco), cuidado con FODMAP evidentes si el
+  cliente ya identificó gatillos; nada de "detox" ni restricciones extremas.
+- **Reflujo / hernia de hiato / gastritis**: cena ligera y ≥2-3 h antes de
+  acostarse; moderar café, alcohol, picante y fritos; comidas más pequeñas y
+  frecuentes si hay síntomas; evitar entrenar tumbado justo tras comer.
+- **Anemia / ferropenia**: priorizar hierro hemo (carnes magras, posible
+  pescado) + vitamina C en la misma comida; separar café/té y lácteos de las
+  comidas ricas en hierro; vigilar energía en el entreno y no forzar volumen
+  con síntomas.
+- **Osteoporosis / osteopenia**: calcio y vitamina D cubiertos; entrenamiento
+  de fuerza CON carga progresiva (es terapéutico), evitando flexión espinal
+  cargada y saltos de impacto alto sin progresión; nunca déficits agresivos.
+- **Apnea del sueño**: el sueño manda — la pérdida de grasa suele mejorar el
+  cuadro; recuperación vigilada (la fatiga real es mayor que la percibida) y
+  cafeína con más cautela.
+- **Betabloqueantes**: la frecuencia cardíaca NO sirve como referencia de
+  intensidad → prescribir por RPE/RIR, nunca por pulsaciones.
+- **Antidepresivos / ansiolíticos**: posibles cambios de apetito y peso no
+  atribuibles a la dieta — se tiene en cuenta en las revisiones antes de tocar
+  kcal; adherencia flexible, cero culpabilización.
+
+**Cuándo derivo a médico** (no se asesora hasta tener el visto bueno o el dato):
+HTA no controlada, dolor torácico o arritmias con esfuerzo, sospecha de TCA,
+embarazo, patología renal/hepática/cardiovascular activa sin seguimiento,
+analítica claramente alterada sin explicación, dolor articular agudo que no
+remite, o cualquier medicación cuya interacción con dieta/entreno no esté clara.
+Ante la duda: primero el médico, después el plan.
 
 ---
 
 *Este documento es la fuente de verdad de "mi criterio". Edítalo con libertad; el
-sistema lo usará como referencia de generación y de revisión.*
+sistema lo usará como referencia de generación y de revisión. Resumen en una
+frase: la anamnesis del cliente manda, el arranque es conservador, y el tono es
+serio, profesional y cercano en todo lo que le llega al cliente.*
