@@ -364,6 +364,10 @@ class LandingOut(BaseModel):
     plans_photo_url: str | None = None
     partner_store_url: str | None
     partner_discount_code: str | None
+    # Contacto público del coach (Marca → contacto): /planes abre WhatsApp con
+    # este teléfono para pedir información (los precios no se publican).
+    contact_phone: str | None = None
+    contact_email: str | None = None
     # Catálogo de productos recomendados (comprables con el código de arriba).
     products: list[LandingProductOut] = []
 

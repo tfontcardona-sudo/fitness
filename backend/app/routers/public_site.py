@@ -64,6 +64,8 @@ def public_landing(request: Request, db: Session = Depends(get_db)) -> LandingOu
         plans_photo_url=media_url(brand.plans_photo_path),
         partner_store_url=brand.partner_store_url,
         partner_discount_code=brand.partner_discount_code,
+        contact_phone=brand.contact_phone,
+        contact_email=brand.contact_email,
         products=[LandingProductOut(
             title=p.title, url=p.url, category=p.category,
             image_url=product_image_url(p),

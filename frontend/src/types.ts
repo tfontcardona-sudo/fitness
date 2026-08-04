@@ -451,6 +451,9 @@ export interface LandingOut {
   plans_photo_url: string | null;
   partner_store_url: string | null;
   partner_discount_code: string | null;
+  /** Contacto público del coach: /planes abre WhatsApp con este teléfono. */
+  contact_phone: string | null;
+  contact_email: string | null;
   products: { title: string; url: string; category: string; image_url: string | null }[];
 }
 

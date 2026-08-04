@@ -1,94 +1,89 @@
 import { useEffect, useState } from "react";
-import { Loader2, X } from "lucide-react";
+import { MessageCircle } from "lucide-react";
 import { api } from "../lib/api";
 import { BILLING_PERIODS, PACKAGES, PACKAGE_ORDER, billingLabel } from "../lib/packages";
-import type { BillingPeriod, PackageTier, PlanPricesOut } from "../types";
-
-/** "49" o "49,50" — precios sin decimales de relleno. */
-function euros(n: number): string {
-  return (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(".", ",")) + " €";
-}
+import { waPhone, waUrl } from "../lib/whatsapp";
+import type { BillingPeriod, PackageTier } from "../types";
 
 /**
- * Página PÚBLICA de planes (registro personal del cliente). El cliente elige la
- * duración (mensual/trimestral/semestral) y el plan, deja sus datos (nombre,
- * email y teléfono) y: (1) se crea su ficha en el sistema, (2) recibe por email
- * su anamnesis (PDF editable) y (3) va directo a la pantalla de pago de Stripe.
- * El webhook marca el pago; la anamnesis subida se ingiere sola.
+ * Página PÚBLICA de asesorías (el enlace del perfil). SIN PRECIOS a propósito:
+ * cada plan × duración (9 combinaciones) se presenta con una descripción que
+ * invita a pedir información, y el botón "Contacta conmigo" abre WhatsApp con
+ * el mensaje ya escrito. El precio se habla en la conversación y el pago llega
+ * después con el enlace personal de Stripe que envía el coach.
  */
+
+/** Descripción propia de cada plan × duración (los "9 planes"). */
+const DURATION_PITCH: Record<PackageTier, Record<BillingPeriod, string>> = {
+  train: {
+    "1m": "Un mes para probarlo en serio: en 4 semanas notas lo que es entrenar con un plan pensado solo para ti.",
+    "3m": "12 semanas: un ciclo completo de progresión. Resultados que se ven en el espejo y se sienten en cada sesión.",
+    "6m": "6 meses de progresión planificada: fuerza y físico a otro nivel, con condiciones especiales por compromiso.",
+  },
+  nutri: {
+    "1m": "Un mes para ordenar tu alimentación y comprobar que se puede comer bien sin pasar hambre ni vivir a dieta.",
+    "3m": "12 semanas: margen real para ver resultados y consolidar hábitos, ajustando tu plan con datos, no con sensaciones.",
+    "6m": "6 meses para transformar tu relación con la comida: resultados que se quedan contigo, con condiciones especiales.",
+  },
+  full: {
+    "1m": "Un mes para arrancar con todo: entrenamiento y dieta coordinados desde el primer día, y primeros cambios visibles.",
+    "3m": "12 semanas de trabajo conjunto: la opción favorita de quien busca un cambio visible y que se mantenga.",
+    "6m": "6 meses de asesoría completa: la transformación de verdad, con las mejores condiciones de todas.",
+  },
+};
+
+/** Qué incluye cada plan (los ganchos comunes van en la cabecera). */
+const PLAN_BULLETS: Record<PackageTier, string[]> = {
+  train: [
+    "Entrenamiento 100 % a tu medida: tu material, tu horario, tus lesiones y tu nivel",
+    "Progresión clara semana a semana, con ajustes según tu evolución real",
+    "Tu coach en WhatsApp todos los días",
+    "App con tu rutina, registro de series y progreso",
+  ],
+  nutri: [
+    "Nutrición 100 % a tu medida: tus gustos, tus horarios, tus alergias",
+    "Objetivos calculados sobre TU caso, no plantillas",
+    "Tu coach en WhatsApp todos los días",
+    "App con tu plan y tu seguimiento diario",
+  ],
+  full: [
+    "Entrenamiento + nutrición coordinados: todo empuja en la misma dirección",
+    "Videollamada de revisión con tu coach",
+    "Tu coach en WhatsApp todos los días",
+    "App con rutina, dieta y seguimiento",
+  ],
+};
+
+/** Mensaje prellenado del botón (sin emojis: WhatsApp los corrompe a veces). */
+function contactMessage(tier: PackageTier, period: BillingPeriod): string {
+  const dur = billingLabel(period).toLowerCase();
+  return (
+    `Hola! He visto la asesoría ${PACKAGES[tier].label} (${dur}) en tu página ` +
+    `y me gustaría saber más: cómo funciona, el precio y cómo empezar.`
+  );
+}
+
 export default function PlansPage() {
-  const [period, setPeriod] = useState<BillingPeriod>("1m");
-  // Importes reales leídos de Stripe (total + equivalente al mes).
-  const [prices, setPrices] = useState<PlanPricesOut | null>(null);
-  // Marca pública: foto de fondo propia de esta página.
+  const [period, setPeriod] = useState<BillingPeriod>("3m");
+  // Marca pública: foto de fondo + teléfono de contacto del coach (WhatsApp).
   const [landing, setLanding] = useState<import("../types").LandingOut | null>(null);
-  // Plan elegido → abre el mini-formulario de datos antes del pago.
-  const [formTier, setFormTier] = useState<PackageTier | null>(null);
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // Registro hecho pero sin URL de pago (Stripe caído/incompleto): el email de
-  // arranque ya lleva su enlace de pago, se lo decimos y no se pierde nada.
-  const [registeredNoPay, setRegisteredNoPay] = useState(false);
-  // El email de arranque falló/está apagado: no prometer "revisa tu correo".
-  const [emailFailed, setEmailFailed] = useState(false);
 
   useEffect(() => {
-    api.publicPlanPrices().then(setPrices).catch(() => setPrices(null));
     api.publicLanding().then(setLanding).catch(() => setLanding(null));
   }, []);
 
-  /** % de ahorro del período elegido frente a pagar mes a mes. */
-  function savingsPct(tier: PackageTier): number | null {
-    const pr = prices?.tiers?.[tier]?.[period];
-    const monthly = prices?.tiers?.[tier]?.["1m"];
-    if (!pr || !monthly || pr.months <= 1 || monthly.per_month <= 0) return null;
-    const pct = Math.round((1 - pr.per_month / monthly.per_month) * 100);
-    return pct >= 3 ? pct : null;
-  }
+  const coachDigits = waPhone(landing?.contact_phone);
 
-  function choose(tier: PackageTier) {
-    setError(null);
-    setFormTier(tier);
-  }
-
-  async function submit() {
-    if (!formTier || busy) return;
-    if (name.trim().length < 2 || !email.includes("@") || phone.trim().length < 6) {
-      setError("Rellena tu nombre, un email válido y tu teléfono.");
-      return;
+  /** Enlace de contacto del plan: WhatsApp si hay teléfono; email de reserva. */
+  function contactHref(tier: PackageTier): string | null {
+    if (coachDigits) return waUrl(coachDigits, contactMessage(tier, period));
+    if (landing?.contact_email) {
+      const subject = `Información ${PACKAGES[tier].label} (${billingLabel(period)})`;
+      return `mailto:${landing.contact_email}?subject=${encodeURIComponent(subject)}`;
     }
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await api.publicRegister({
-        full_name: name.trim(), email: email.trim(), phone: phone.trim(),
-        tier: formTier, period,
-      });
-      // Si el email de arranque NO salió, no podemos decirle "revisa tu correo".
-      setEmailFailed(r.email_status === "failed" || r.email_status === "disabled");
-      if (r.url) {
-        window.location.href = r.url;
-        return;
-      }
-      setRegisteredNoPay(true);
-      setBusy(false);
-    } catch (e: any) {
-      // Un 422 de validación llega en inglés técnico: a un visitante público se
-      // le habla en su idioma.
-      setError(e?.status === 422
-        ? "Revisa el email introducido: no parece una dirección válida."
-        : (e?.message ?? "No se pudo completar el registro. Inténtalo de nuevo en un momento."));
-      setBusy(false);
-    }
+    return null;
   }
 
-  // Mismo tratamiento de fondo que la pantalla principal (/dq): la FOTO se ve
-  // clara, solo con un degradado oscuro por debajo para que el texto blanco de
-  // la cabecera se lea — nada de velo que la lave. Las tarjetas siguen blancas
-  // (heredan el texto oscuro del root) y resaltan sobre la foto.
   const bg = landing?.color_bg ?? "#0B111C";
   return (
     <div className="relative" style={{ minHeight: "100vh", background: bg, color: "#26211a" }}>
@@ -115,26 +110,20 @@ export default function PlansPage() {
           </h1>
           <p className="mt-1 max-w-lg text-sm text-white/85">
             Plan 100 % a tu medida y tu coach contigo cada día por WhatsApp.
+            Escríbeme, me cuentas tu caso y te digo exactamente cómo te puedo ayudar.
           </p>
           {/* Gancho de confianza: qué incluye SIEMPRE, de un vistazo */}
           <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs font-semibold">
             <span style={{ color: "#6FE39A" }}>✓ Plan personalizado</span>
             <span style={{ color: "#6FE39A" }}>✓ WhatsApp a diario</span>
             <span style={{ color: "#6FE39A" }}>✓ App de seguimiento</span>
-            <span style={{ color: "#6FE39A" }}>✓ Pago seguro</span>
+            <span style={{ color: "#6FE39A" }}>✓ Sin compromiso al preguntar</span>
           </div>
         </header>
 
-        {error && (
-          <div className="mx-auto mb-5 max-w-lg rounded-xl border p-3 text-center text-sm"
-            style={{ borderColor: "#C2453A", background: "#fdecea", color: "#8B1A2B" }}>
-            {error}
-          </div>
-        )}
-
-        {/* Duración: un conmutador común a los 3 planes (cada combinación tiene
-            su precio en Stripe; se muestra en la pantalla de pago). */}
-        <div className="mb-6 flex justify-center">
+        {/* Duración: cada plan tiene su versión mensual, trimestral y semestral
+            (9 opciones en total). Las duraciones largas, con mejores condiciones. */}
+        <div className="mb-2 flex justify-center">
           <div className="inline-flex rounded-xl border bg-white p-1 shadow-sm" style={{ borderColor: "#e6ddca" }}>
             {BILLING_PERIODS.map((b) => {
               const sel = period === b.value;
@@ -155,31 +144,16 @@ export default function PlansPage() {
             })}
           </div>
         </div>
+        <p className="mb-6 text-center text-xs font-semibold text-white/75"
+          style={{ textShadow: "0 1px 3px rgba(0,0,0,0.6)" }}>
+          Trimestral y semestral con condiciones especiales — pregúntame sin compromiso.
+        </p>
 
-        {registeredNoPay ? (
-          <div className="mx-auto max-w-lg rounded-2xl border bg-white p-6 text-center shadow-sm"
-            style={{ borderColor: "#cfe3cf" }}>
-            <h2 className="text-lg font-bold">¡Registro completado!</h2>
-            {emailFailed ? (
-              <p className="mt-2 text-sm opacity-75">
-                No hemos podido enviarte el correo de bienvenida ahora mismo.
-                No te preocupes: tu registro está hecho — escríbenos y te
-                mandamos tu cuestionario inicial y el enlace de pago al momento.
-              </p>
-            ) : (
-              <p className="mt-2 text-sm opacity-75">
-                Revisa tu correo: te hemos enviado tu cuestionario inicial (anamnesis)
-                y tu enlace de pago para terminar la contratación.
-              </p>
-            )}
-          </div>
-        ) : (
         <div className="grid gap-4 sm:grid-cols-3">
           {PACKAGE_ORDER.map((t) => {
             const p = PACKAGES[t];
             const destacado = t === "full"; // el pack completo: el más elegido
-            const pr = prices?.tiers?.[t]?.[period];
-            const ahorro = savingsPct(t);
+            const href = contactHref(t);
             return (
               <div key={t}
                 className={`relative flex flex-col rounded-2xl border bg-white p-5 shadow-sm ${destacado ? "shadow-lg sm:-mt-2 sm:mb-[-8px]" : ""}`}
@@ -198,119 +172,46 @@ export default function PlansPage() {
                   {p.label}
                 </span>
                 <p className="mt-3 text-sm font-medium">{p.tagline}</p>
-                <p className="mt-1 flex-1 text-sm opacity-70">{p.includes}</p>
-                {/* Precio REAL siempre visible (leído de Stripe): total del pago,
-                    equivalente al mes y % de ahorro frente a mensual. */}
-                {pr && (
-                  // Precio en una sola línea (whitespace-nowrap: el € nunca
-                  // salta de línea) y el ahorro alineado a la derecha.
-                  <div className="mt-3 flex items-end justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="whitespace-nowrap text-3xl font-extrabold leading-none" style={{ color: p.color }}>
-                        {euros(pr.total)}
-                        <span className="ml-1 align-baseline text-xs font-medium opacity-60">
-                          / {billingLabel(period).toLowerCase()}
-                        </span>
-                      </p>
-                      {pr.months > 1 && (
-                        <p className="mt-1 whitespace-nowrap text-xs font-semibold" style={{ color: "#2E7D46" }}>
-                          sale a {euros(pr.per_month)} al mes
-                        </p>
-                      )}
-                    </div>
-                    {ahorro && (
-                      <span className="shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-bold text-white"
-                        style={{ background: "#2E7D46" }}>
-                        Ahorra {ahorro}%
-                      </span>
-                    )}
-                  </div>
+                {/* La descripción de ESTA duración: el gancho de la combinación. */}
+                <p className="mt-2 text-sm font-semibold leading-snug" style={{ color: p.color }}>
+                  {DURATION_PITCH[t][period]}
+                </p>
+                <ul className="mt-3 flex-1 space-y-1.5">
+                  {PLAN_BULLETS[t].map((b) => (
+                    <li key={b} className="flex gap-2 text-[13px] leading-snug opacity-80">
+                      <span className="mt-[1px] shrink-0 font-bold" style={{ color: "#2E7D46" }}>✓</span>
+                      <span>{b}</span>
+                    </li>
+                  ))}
+                </ul>
+                {href ? (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noopener"
+                    className="mt-4 flex items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-sm font-bold text-white shadow-md transition-transform hover:brightness-110 active:scale-[0.98]"
+                    style={{ background: p.color }}
+                  >
+                    <MessageCircle size={16} /> Contacta conmigo
+                  </a>
+                ) : (
+                  <p className="mt-4 rounded-xl border p-3 text-center text-xs opacity-70"
+                    style={{ borderColor: "#e6ddca" }}>
+                    Escríbeme por redes para saber más.
+                  </p>
                 )}
-                <button
-                  onClick={() => choose(t)}
-                  className="mt-4 rounded-xl px-4 py-3.5 text-sm font-bold text-white shadow-md transition-transform hover:brightness-110 active:scale-[0.98]"
-                  style={{ background: p.color }}
-                >
-                  Empezar ahora →
-                </button>
               </div>
             );
           })}
         </div>
-        )}
 
         <p className="mt-8 text-center text-xs text-white/60"
           style={{ textShadow: "0 1px 3px rgba(0,0,0,0.6)" }}>
-          {prices
-            ? "Pago seguro con Stripe."
-            : "Pago seguro con Stripe. El precio de cada plan se muestra en la pantalla de pago."}
+          Te respondo personalmente. Sin compromiso: me cuentas tu caso y te digo
+          qué plan te encaja y su precio. El pago, cuando lo tengas claro, es
+          seguro con Stripe.
         </p>
       </div>
-
-      {/* Mini-formulario previo al pago: nombre + email + teléfono. Con esto se
-          crea la ficha, se envía la anamnesis por email y se va directo a Stripe. */}
-      {formTier && !registeredNoPay && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 sm:items-center"
-          onClick={() => !busy && setFormTier(null)}>
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"
-            role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-bold">
-                  {PACKAGES[formTier].label} · {billingLabel(period)}
-                  {(() => {
-                    const pr = prices?.tiers?.[formTier]?.[period];
-                    return pr ? (
-                      <span className="ml-2" style={{ color: PACKAGES[formTier].color }}>
-                        {euros(pr.total)}
-                      </span>
-                    ) : null;
-                  })()}
-                </h2>
-                <p className="mt-0.5 text-sm opacity-70">
-                  Déjanos tus datos: te enviamos tu cuestionario inicial por email
-                  y pasas directo al pago seguro.
-                </p>
-              </div>
-              <button onClick={() => !busy && setFormTier(null)} aria-label="Cerrar"
-                className="rounded-lg p-1.5 opacity-60 transition-colors hover:opacity-100">
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              <input value={name} onChange={(e) => setName(e.target.value)} autoFocus
-                placeholder="Nombre y apellidos"
-                className="w-full rounded-xl border px-3.5 py-3 text-base outline-none focus:border-[#2E5E8C]"
-                style={{ borderColor: "#cbbfa5" }} />
-              <input value={email} onChange={(e) => setEmail(e.target.value)} type="email"
-                placeholder="Tu email"
-                className="w-full rounded-xl border px-3.5 py-3 text-base outline-none focus:border-[#2E5E8C]"
-                style={{ borderColor: "#cbbfa5" }} />
-              <input value={phone} onChange={(e) => setPhone(e.target.value)} type="tel"
-                placeholder="Tu teléfono (WhatsApp)"
-                className="w-full rounded-xl border px-3.5 py-3 text-base outline-none focus:border-[#2E5E8C]"
-                style={{ borderColor: "#cbbfa5" }} />
-            </div>
-
-            {error && (
-              <p className="mt-3 rounded-xl border p-3 text-center text-sm"
-                style={{ borderColor: "#C2453A", background: "#fdecea", color: "#8B1A2B" }}>
-                {error}
-              </p>
-            )}
-
-            <button onClick={submit} disabled={busy}
-              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-sm font-bold text-white transition-transform active:scale-[0.98] disabled:opacity-60"
-              style={{ background: PACKAGES[formTier].color }}>
-              {busy ? <><Loader2 size={16} className="animate-spin" /> Un momento…</> : "Continuar al pago"}
-            </button>
-            <p className="mt-3 text-center text-xs opacity-50">
-              Usamos tus datos solo para gestionar tu asesoría.
-            </p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

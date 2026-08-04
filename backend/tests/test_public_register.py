@@ -161,5 +161,8 @@ def test_public_landing_shape(http):
     assert r.status_code == 200
     data = r.json()
     for key in ("name", "color_primary", "partner_store_url", "partner_discount_code",
-                "links_photo_url", "logo_url"):
+                "links_photo_url", "logo_url",
+                # Contacto público del coach: /planes abre WhatsApp con este
+                # teléfono para pedir información (sin precios publicados).
+                "contact_phone", "contact_email"):
         assert key in data
