@@ -185,6 +185,131 @@ def test_resolucion_precio_cae_al_env_antiguo_sin_lookup(monkeypatch):
     assert ss._resolve_price_id("full", "1m") == "price_pro_viejo"
 
 
+class FakeStripe:
+    """Stripe mínimo en memoria: productos y precios con lookup_keys, para
+    probar el auto-alta sin red. Imita los métodos que usa el servicio."""
+
+    def __init__(self):
+        self.products: list[dict] = []
+        self.prices: list[dict] = []
+        fake = self
+
+        class Product:
+            @staticmethod
+            def list(**kw):
+                return {"data": list(fake.products)}
+
+            @staticmethod
+            def create(**kw):
+                prod = {"id": f"prod_{len(fake.products) + 1}", **kw}
+                fake.products.append(prod)
+                return prod
+
+        class Price:
+            @staticmethod
+            def list(lookup_keys=None, **kw):
+                data = [p for p in fake.prices if p.get("active", True)
+                        and (not lookup_keys or p.get("lookup_key") in lookup_keys)]
+                return {"data": data}
+
+            @staticmethod
+            def create(**kw):
+                pr = {"id": f"price_{len(fake.prices) + 1}", "active": True, **kw}
+                fake.prices.append(pr)
+                return pr
+
+            @staticmethod
+            def modify(price_id, **kw):
+                for p in fake.prices:
+                    if p["id"] == price_id:
+                        p.update(kw)
+
+        self.Product = Product
+        self.Price = Price
+
+
+def _reset_stripe_caches(monkeypatch, ss):
+    monkeypatch.setattr(ss, "_lookup_cache", {"at": 0.0, "ids": {}})
+    monkeypatch.setattr(ss, "_ensure_state", {"at": 0.0})
+    monkeypatch.setattr(ss, "_prices_cache", {"at": 0.0, "data": None})
+
+
+def test_auto_alta_crea_los_9_precios_que_faltan(monkeypatch):
+    # Sin script ejecutado (Stripe vacío), resolver un precio los CREA todos:
+    # la primera visita a /planes o el primer checkout dejan Stripe configurado.
+    from app.services import stripe_service as ss
+
+    fake = FakeStripe()
+    monkeypatch.setattr(ss, "_stripe", lambda: fake)
+    _reset_stripe_caches(monkeypatch, ss)
+
+    pid = ss._price_by_lookup("train", "1m")
+    assert pid
+    assert len(fake.products) == 3 and len(fake.prices) == 9
+    creado = next(p for p in fake.prices if p["lookup_key"] == "dqr_train_1m")
+    assert creado["unit_amount"] == 6900 and creado["currency"] == "eur"
+    assert pid == creado["id"]
+
+    # Idempotente: resolver otra combinación después no crea nada más.
+    _reset_stripe_caches(monkeypatch, ss)
+    assert ss._price_by_lookup("nutri", "3m")
+    assert len(fake.prices) == 9
+
+
+def test_auto_alta_transfiere_lookup_si_cambia_el_importe(monkeypatch):
+    # Un precio existente con OTRO importe no se pisa: precio nuevo con el mismo
+    # lookup_key (transferido) y el antiguo desactivado.
+    from app.services import stripe_service as ss
+
+    fake = FakeStripe()
+    fake.products.append({"id": "prod_x", "metadata": {"dqr_tier": "train"}})
+    fake.prices.append({"id": "price_old", "active": True, "product": "prod_x",
+                        "lookup_key": "dqr_train_1m", "unit_amount": 4900,
+                        "currency": "eur"})
+    ss.ensure_canonical_prices(fake, log=lambda m: None)
+
+    old = next(p for p in fake.prices if p["id"] == "price_old")
+    assert old["active"] is False
+    nuevo = next(p for p in fake.prices
+                 if p.get("lookup_key") == "dqr_train_1m" and p["active"])
+    assert nuevo["unit_amount"] == 6900
+    assert nuevo.get("transfer_lookup_key") is True
+
+
+def test_planes_muestra_precios_de_reserva_sin_stripe(monkeypatch):
+    # Sin STRIPE_SECRET_KEY (dev) la página de planes enseña igualmente los
+    # importes canónicos de las 9 combinaciones — nunca tarjetas sin precio.
+    from app.config import settings
+    from app.services import stripe_service as ss
+
+    monkeypatch.setattr(settings, "stripe_secret_key", "")
+    _reset_stripe_caches(monkeypatch, ss)
+
+    data = ss.get_plan_prices()
+    t = data["tiers"]
+    assert t["train"]["1m"]["total"] == 69.0
+    assert t["train"]["3m"] == {"total": 195.0, "months": 3, "per_month": 65.0}
+    assert t["nutri"]["1m"]["total"] == 79.0
+    assert t["nutri"]["6m"]["per_month"] == 72.0
+    assert t["full"]["1m"]["total"] == 129.0
+    assert t["full"]["6m"] == {"total": 708.0, "months": 6, "per_month": 118.0}
+
+
+def test_planes_reserva_con_stripe_caido_no_se_cachea(monkeypatch):
+    # Con Stripe configurado pero sin responder, se enseña la reserva canónica
+    # pero NO se cachea: la siguiente visita reintenta leer los precios reales.
+    from app.config import settings
+    from app.services import stripe_service as ss
+
+    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_x")
+    monkeypatch.setattr(ss, "_resolve_price_id", lambda t, p: "")
+    _reset_stripe_caches(monkeypatch, ss)
+
+    data = ss.get_plan_prices()
+    assert data["tiers"]["train"]["1m"]["total"] == 69.0
+    assert ss._prices_cache["data"] is None  # sin cachear → reintenta
+
+
 def test_importes_del_script_cumplen_lo_pedido():
     # Nutri > Train en cada duración; Full < Train+Nutri en cada duración.
     import importlib.util, pathlib

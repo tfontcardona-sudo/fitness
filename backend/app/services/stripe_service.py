@@ -29,6 +29,26 @@ _TIERS = {"nutri", "train", "full"}
 # Duraciones contratables de cada plan: mensual, trimestral, semestral.
 _PERIODS = {"1m", "3m", "6m"}
 
+# Orden estable para recorrer/crear (los sets de arriba validan pertenencia).
+TIER_ORDER = ("train", "nutri", "full")
+PERIOD_ORDER = ("1m", "3m", "6m")
+
+# ------------------------------------------ precios canónicos (la verdad) ----
+
+# Importes en CÉNTIMOS de cada plan × duración: 69/79/129 € al mes; trimestre y
+# semestre con un descuento pequeño por compromiso; Nutri > Train y Full <
+# Train+Nutri en cada duración. De esta tabla beben el script
+# scripts/setup_stripe_prices.py, el AUTO-ALTA (si a Stripe le faltan precios,
+# la api los crea sola con estos importes) y la reserva visual de /planes.
+CANONICAL_AMOUNTS: dict[str, dict[str, int]] = {
+    "train": {"1m": 6900, "3m": 19500, "6m": 37200},
+    "nutri": {"1m": 7900, "3m": 22500, "6m": 43200},
+    "full": {"1m": 12900, "3m": 36900, "6m": 70800},
+}
+PRODUCT_NAMES = {"train": "DQR Train", "nutri": "DQR Nutri", "full": "DQR Full"}
+PERIOD_LABEL = {"1m": "1 mes", "3m": "3 meses", "6m": "6 meses"}
+CURRENCY = "eur"
+
 
 class StripeError(RuntimeError):
     """Error recuperable de Stripe (config ausente, plan inválido, firma mala)."""
@@ -53,9 +73,78 @@ def _lookup_key(tier: str, period: str) -> str:
     return f"dqr_{tier}_{period}"
 
 
+def ensure_canonical_prices(stripe, log=None) -> list[str]:
+    """Asegura EN STRIPE los 9 precios canónicos, de forma IDEMPOTENTE:
+    un Producto por plan (marcado con metadata dqr_tier) y un Precio por
+    plan × duración con lookup_key dqr_{tier}_{period}. Si un precio existe
+    con OTRO importe, crea el nuevo y le transfiere el lookup_key (el antiguo
+    queda desactivado; los pagos pasados no se tocan).
+
+    Lo usan el script scripts/setup_stripe_prices.py (log=print) y el
+    auto-alta de _price_by_lookup (log al logger). Devuelve el resumen."""
+    say = log or (lambda msg: _log.info("%s", msg))
+    out: list[str] = []
+
+    def note(msg: str) -> None:
+        out.append(msg)
+        say(msg)
+
+    products = {(p.get("metadata") or {}).get("dqr_tier"): p["id"]
+                for p in stripe.Product.list(active=True, limit=100)["data"]}
+    keys = [_lookup_key(t, p) for t in TIER_ORDER for p in PERIOD_ORDER]
+    existing = {pr["lookup_key"]: pr
+                for pr in stripe.Price.list(lookup_keys=keys, active=True,
+                                            limit=100)["data"]
+                if pr.get("lookup_key")}
+
+    for tier in TIER_ORDER:
+        product_id = products.get(tier)
+        if not product_id:
+            prod = stripe.Product.create(
+                name=PRODUCT_NAMES[tier], metadata={"dqr_tier": tier},
+                description=f"Asesoría {PRODUCT_NAMES[tier]} — pago por período",
+            )
+            product_id = prod["id"]
+            note(f"  + producto creado: {PRODUCT_NAMES[tier]} ({product_id})")
+        for period in PERIOD_ORDER:
+            key = _lookup_key(tier, period)
+            amount = CANONICAL_AMOUNTS[tier][period]
+            nickname = f"{PRODUCT_NAMES[tier]} · {PERIOD_LABEL[period]}"
+            pr = existing.get(key)
+            if pr and pr["unit_amount"] == amount and pr["currency"] == CURRENCY:
+                note(f"  = {key}: ya existe con {amount / 100:.2f} € (sin cambios)")
+                continue
+            if pr:
+                # Importe distinto: precio nuevo con el MISMO lookup_key.
+                stripe.Price.create(
+                    product=pr["product"], currency=CURRENCY, unit_amount=amount,
+                    lookup_key=key, transfer_lookup_key=True, nickname=nickname,
+                )
+                stripe.Price.modify(pr["id"], active=False)
+                note(f"  ~ {key}: {pr['unit_amount'] / 100:.2f} € → "
+                     f"{amount / 100:.2f} € (precio nuevo, el antiguo desactivado)")
+            else:
+                stripe.Price.create(
+                    product=product_id, currency=CURRENCY, unit_amount=amount,
+                    lookup_key=key, nickname=nickname,
+                )
+                note(f"  + {key}: creado con {amount / 100:.2f} €")
+    return out
+
+
+# Freno del auto-alta: como mucho un intento cada 10 min por proceso (si Stripe
+# rechaza la creación, no hay que insistir en cada visita a /planes).
+_ensure_state: dict = {"at": 0.0}
+_ENSURE_RETRY_S = 600
+
+
 def _price_by_lookup(tier: str, period: str) -> str:
     """ID del precio ACTIVO con lookup_key dqr_{tier}_{period}, con caché.
-    Best-effort: ante cualquier fallo devuelve "" (el caller decide qué hacer)."""
+
+    AUTO-ALTA: si a Stripe le faltan precios canónicos (script aún no ejecutado
+    o fallido en el deploy), se crean aquí mismo con ensure_canonical_prices —
+    la primera visita a /planes o el primer checkout los deja creados sin pasos
+    manuales. Best-effort: ante cualquier fallo devuelve "" (el caller decide)."""
     import time
 
     now = time.time()
@@ -67,10 +156,23 @@ def _price_by_lookup(tier: str, period: str) -> str:
         return _lookup_cache["ids"][key]
     try:
         stripe = _stripe()
-        keys = [_lookup_key(t, p) for t in _TIERS for p in _PERIODS]
-        found = {pr["lookup_key"]: pr["id"]
-                 for pr in stripe.Price.list(lookup_keys=keys, active=True, limit=100)["data"]
-                 if pr.get("lookup_key")}
+        keys = [_lookup_key(t, p) for t in TIER_ORDER for p in PERIOD_ORDER]
+
+        def _list_ids() -> dict:
+            return {pr["lookup_key"]: pr["id"]
+                    for pr in stripe.Price.list(lookup_keys=keys, active=True,
+                                                limit=100)["data"]
+                    if pr.get("lookup_key")}
+
+        found = _list_ids()
+        if any(k not in found for k in keys) and now - _ensure_state["at"] > _ENSURE_RETRY_S:
+            _ensure_state["at"] = now
+            try:
+                ensure_canonical_prices(stripe)
+                found = _list_ids()
+                _log.info("Auto-alta de precios de Stripe completada (faltaban lookup_keys).")
+            except Exception as exc:  # noqa: BLE001 — clave sin permisos, red…
+                _log.warning("Auto-alta de precios en Stripe fallida: %s", exc)
         for k in keys:
             _lookup_cache["ids"][k] = found.get(k, "")
     except Exception as exc:  # noqa: BLE001 — sin red/clave: se cae a los .env
@@ -149,11 +251,15 @@ _PRICES_TTL_S = 600  # los precios cambian poco; 10 min de caché evita latencia
 
 
 def get_plan_prices() -> dict:
-    """Importes REALES de los 9 precios (plan × duración) leídos de Stripe, para
-    mostrarlos en la página de planes (total + equivalente al mes). Con caché.
+    """Importes de los 9 precios (plan × duración) para la página de planes
+    (total + equivalente al mes). Con caché. Primero los REALES de Stripe; una
+    combinación ilegible (Stripe caído, clave ausente, precio borrado) se rellena
+    con el importe CANÓNICO — /planes nunca se queda sin precios. El cobro real
+    sigue siendo siempre el precio de Stripe (el auto-alta lo crea con estos
+    mismos importes).
 
     Devuelve {"currency": "eur", "tiers": {tier: {period: {"total": €, "months": n,
-    "per_month": €}}}}; una combinación sin precio configurado o con error → None.
+    "per_month": €}}}}.
     """
     import time
 
@@ -162,6 +268,7 @@ def get_plan_prices() -> dict:
 
     tiers: dict = {t: {p: None for p in _PERIOD_MONTHS} for t in _TIERS}
     currency = "eur"
+    leidos_de_stripe = 0
     if settings.stripe_enabled:
         stripe = _stripe()
         for tier in _TIERS:
@@ -178,15 +285,25 @@ def get_plan_prices() -> dict:
                         "months": months,
                         "per_month": round(amount / months, 2),
                     }
+                    leidos_de_stripe += 1
                 except Exception as exc:  # precio borrado/ID malo: no rompe la página
                     _log.warning("Precio %s (%s %s) ilegible: %s", price_id, tier, period, exc)
 
+    for tier in _TIERS:  # reserva canónica para lo que Stripe no haya dado
+        for period, months in _PERIOD_MONTHS.items():
+            if tiers[tier][period] is None:
+                amount = CANONICAL_AMOUNTS[tier][period] / 100.0
+                tiers[tier][period] = {
+                    "total": amount,
+                    "months": months,
+                    "per_month": round(amount / months, 2),
+                }
+
     data = {"currency": currency, "tiers": tiers}
-    # Un fallo TRANSITORIO de Stripe no puede dejar /planes sin precios 10 min:
-    # el resultado totalmente vacío (con Stripe configurado) no se cachea — la
-    # siguiente visita reintenta.
-    all_empty = all(v is None for t in tiers.values() for v in t.values())
-    if not (settings.stripe_enabled and all_empty):
+    # Con Stripe configurado pero SIN un solo precio legible (fallo transitorio),
+    # no se cachea: la siguiente visita reintenta leer los reales en vez de
+    # servir la reserva 10 minutos.
+    if not (settings.stripe_enabled and leidos_de_stripe == 0):
         _prices_cache.update(at=time.time(), data=data)
     return data
 

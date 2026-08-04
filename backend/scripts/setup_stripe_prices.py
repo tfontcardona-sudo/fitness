@@ -18,64 +18,30 @@ Importes (EUR, pago único por período — STRIPE_MODE=payment):
   Full  129 €/mes · 369 € trimestre · 708 € semestre
 (El trimestre/semestre llevan un descuento pequeño por compromiso; Full siempre
 por debajo de la suma de Train+Nutri.)
+
+La tabla de importes y la lógica de alta viven en
+app.services.stripe_service (CANONICAL_AMOUNTS + ensure_canonical_prices):
+este script solo las invoca desde la terminal. Además, la propia api hace
+AUTO-ALTA de los precios que falten al resolverlos — este script queda como
+vía manual/explícita.
 """
 from __future__ import annotations
 
+import pathlib
 import sys
 
-# Importes en CÉNTIMOS por plan × duración.
-AMOUNTS: dict[str, dict[str, int]] = {
-    "train": {"1m": 6900, "3m": 19500, "6m": 37200},
-    "nutri": {"1m": 7900, "3m": 22500, "6m": 43200},
-    "full": {"1m": 12900, "3m": 36900, "6m": 70800},
-}
-PRODUCT_NAMES = {"train": "DQR Train", "nutri": "DQR Nutri", "full": "DQR Full"}
-PERIOD_LABEL = {"1m": "1 mes", "3m": "3 meses", "6m": "6 meses"}
-CURRENCY = "eur"
+# GOTCHA: lanzado como `python scripts/setup_stripe_prices.py`, sys.path[0] es
+# scripts/ (no el WORKDIR del contenedor), y `app` no se puede importar. Sin
+# esta línea el script moría con ModuleNotFoundError y el deploy lo silenciaba.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
+from app.services.stripe_service import (  # noqa: E402
+    CANONICAL_AMOUNTS,
+    ensure_canonical_prices,
+)
 
-def lookup_key(tier: str, period: str) -> str:
-    return f"dqr_{tier}_{period}"
-
-
-def ensure_product(stripe, tier: str) -> str:
-    """Producto del plan (uno por tier, marcado con metadata dqr_tier)."""
-    for prod in stripe.Product.list(active=True, limit=100)["data"]:
-        if (prod.get("metadata") or {}).get("dqr_tier") == tier:
-            return prod["id"]
-    prod = stripe.Product.create(
-        name=PRODUCT_NAMES[tier], metadata={"dqr_tier": tier},
-        description=f"Asesoría {PRODUCT_NAMES[tier]} — pago por período",
-    )
-    print(f"  + producto creado: {PRODUCT_NAMES[tier]} ({prod['id']})")
-    return prod["id"]
-
-
-def ensure_price(stripe, tier: str, period: str, product_id: str) -> None:
-    key = lookup_key(tier, period)
-    amount = AMOUNTS[tier][period]
-    existing = stripe.Price.list(lookup_keys=[key], active=True, limit=1)["data"]
-    if existing:
-        pr = existing[0]
-        if pr["unit_amount"] == amount and pr["currency"] == CURRENCY:
-            print(f"  = {key}: ya existe con {amount / 100:.2f} € (sin cambios)")
-            return
-        # Importe distinto: precio nuevo con el MISMO lookup_key (transferido).
-        stripe.Price.create(
-            product=pr["product"], currency=CURRENCY, unit_amount=amount,
-            lookup_key=key, transfer_lookup_key=True,
-            nickname=f"{PRODUCT_NAMES[tier]} · {PERIOD_LABEL[period]}",
-        )
-        stripe.Price.modify(pr["id"], active=False)
-        print(f"  ~ {key}: {pr['unit_amount'] / 100:.2f} € → {amount / 100:.2f} € "
-              "(precio nuevo, el antiguo desactivado)")
-        return
-    stripe.Price.create(
-        product=product_id, currency=CURRENCY, unit_amount=amount,
-        lookup_key=key,
-        nickname=f"{PRODUCT_NAMES[tier]} · {PERIOD_LABEL[period]}",
-    )
-    print(f"  + {key}: creado con {amount / 100:.2f} €")
+# Alias para quien importe la tabla desde el script (tests, otros scripts).
+AMOUNTS = CANONICAL_AMOUNTS
 
 
 def main() -> int:
@@ -90,14 +56,9 @@ def main() -> int:
     live = settings.stripe_secret_key.startswith("sk_live")
     print(f"Stripe en modo {'LIVE (cobros reales)' if live else 'TEST'}.\n")
 
-    for tier in ("train", "nutri", "full"):
-        print(f"{PRODUCT_NAMES[tier]}:")
-        product_id = ensure_product(stripe, tier)
-        for period in ("1m", "3m", "6m"):
-            ensure_price(stripe, tier, period, product_id)
-        print()
+    ensure_canonical_prices(stripe, log=print)
 
-    print("Listo. El backend resuelve estos precios por lookup_key: no hay que "
+    print("\nListo. El backend resuelve estos precios por lookup_key: no hay que "
           "copiar IDs al .env. La página /planes los mostrará en ~10 min como "
           "máximo (caché) o al reiniciar la api.")
     return 0
