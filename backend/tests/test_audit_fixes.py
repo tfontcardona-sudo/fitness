@@ -139,6 +139,31 @@ def test_delete_client_with_push_subscription_does_not_500(client, auth):
 
 
 @needs_db
+def test_delete_client_with_edited_plan_does_not_fail(client, auth):
+    """Un cliente cuyo plan se editó alguna vez desde el panel (lo normal: el
+    editor registra cada edición en plan_edits, §13) debía borrarse igual: la
+    fila de plan_edits, sin ON DELETE, bloqueaba el DELETE de plans con
+    ForeignKeyViolation y el coach solo veía "No se pudo borrar el cliente"."""
+    from app.db import SessionLocal
+    from app.models import Plan, PlanEdit
+
+    body = client.post("/api/clients", headers=auth,
+                       json={"full_name": "Editado User", "email": _email()}).json()
+    cid = body["client"]["id"]
+    db = SessionLocal()
+    try:
+        plan = Plan(client_id=cid, month_index=1, version=1, status="draft")
+        db.add(plan)
+        db.flush()
+        db.add(PlanEdit(plan_id=plan.id, category="calculo", note="ajuste manual"))
+        db.commit()
+    finally:
+        db.close()
+    r = client.delete(f"/api/clients/{cid}?confirm=Editado User", headers=auth)
+    assert r.status_code == 204
+
+
+@needs_db
 def test_create_period_rejects_when_closed_period_pending(client, auth):
     """B6: con una revisión cerrada pendiente de feedback no se abre otro período."""
     from app.db import SessionLocal

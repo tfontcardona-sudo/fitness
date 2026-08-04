@@ -559,6 +559,15 @@ def delete_client(
     from app.models import VideoCall
     db.execute(delete(VideoCall).where(VideoCall.client_id == client_id))
     db.execute(delete(Period).where(Period.client_id == client_id))
+    # plan_edits.plan_id tampoco tiene ON DELETE (§13, continuous_learning): CUALQUIER
+    # cliente con un plan editado alguna vez desde el panel (lo normal) dejaba
+    # filas en plan_edits que bloqueaban el DELETE de plans con
+    # ForeignKeyViolation — el borrado RGPD entero fallaba en silencio (solo un
+    # 400/500 genérico en el toast, sin decir por qué). Hay que vaciarlas antes.
+    from app.models import PlanEdit
+    plan_ids = list(db.scalars(select(Plan.id).where(Plan.client_id == client_id)))
+    if plan_ids:
+        db.execute(delete(PlanEdit).where(PlanEdit.plan_id.in_(plan_ids)))
     db.execute(delete(Plan).where(Plan.client_id == client_id))
     db.execute(delete(ChangeRequest).where(ChangeRequest.client_id == client_id))
     db.execute(update(EmailLog).where(EmailLog.client_id == client_id).values(client_id=None))
