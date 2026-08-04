@@ -156,6 +156,37 @@ def test_public_anamnesis_template_and_upload(http, monkeypatch):
     assert rclosed.status_code == 409
 
 
+def test_seed_rellena_el_whatsapp_del_coach_solo_si_falta():
+    """El seed pone el WhatsApp del coach como contacto público SOLO si el campo
+    está vacío: lo que el coach escriba en Marca nunca se pisa. (Se restaura el
+    valor original: la BD de dev es compartida con el panel.)"""
+    from sqlalchemy import select
+
+    from app.db import SessionLocal
+    from app.models import BrandConfig
+    from app.seeds.run import COACH_WHATSAPP, seed_brand, seed_coach_contact
+
+    with SessionLocal() as db:
+        seed_brand(db)  # garantiza la fila de marca en BD recién creada
+        brand = db.scalar(select(BrandConfig).limit(1))
+        original = brand.contact_phone
+        try:
+            brand.contact_phone = None
+            db.commit()
+            assert seed_coach_contact(db) is True
+            db.refresh(brand)
+            assert brand.contact_phone == COACH_WHATSAPP
+
+            brand.contact_phone = "+34 600 000 000"  # puesto por el coach
+            db.commit()
+            assert seed_coach_contact(db) is False
+            db.refresh(brand)
+            assert brand.contact_phone == "+34 600 000 000"
+        finally:
+            brand.contact_phone = original
+            db.commit()
+
+
 def test_public_landing_shape(http):
     r = http.get("/api/public/landing")
     assert r.status_code == 200

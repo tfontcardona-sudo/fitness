@@ -79,6 +79,21 @@ def seed_brand(db) -> bool:
     return True
 
 
+# WhatsApp público del coach: destino del botón "Contacta conmigo" de /planes
+# (y de cualquier contacto público futuro). Se rellena solo si el campo está
+# VACÍO — lo que el coach escriba en Marca → teléfono de contacto siempre manda.
+COACH_WHATSAPP = "+34 634 79 32 50"
+
+
+def seed_coach_contact(db) -> bool:
+    brand = db.scalar(select(BrandConfig).limit(1))
+    if brand is None or (brand.contact_phone or "").strip():
+        return False
+    brand.contact_phone = COACH_WHATSAPP
+    db.commit()
+    return True
+
+
 def seed_admins(db) -> int:
     created = 0
     for username, password in (
@@ -104,6 +119,7 @@ def main() -> None:
         n_home = seed_home_exercises(db)
         n_food = seed_foods(db)
         brand = seed_brand(db)
+        contacto = seed_coach_contact(db)
         n_admins = seed_admins(db)
         print(
             f"[seed] ejercicios: {n_ex or 'ya existían'} · "
@@ -111,6 +127,7 @@ def main() -> None:
             f"casa/bandas nuevos: {n_home} · "
             f"alimentos nuevos: {n_food} · "
             f"brand: {'creada' if brand else 'ya existía'} · "
+            f"whatsapp del coach: {'rellenado' if contacto else 'ya estaba'} · "
             f"admins creados: {n_admins}"
         )
     finally:
