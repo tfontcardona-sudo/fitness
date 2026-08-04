@@ -58,6 +58,53 @@ def public_checkout(request: Request, body: CheckoutIn, db: Session = Depends(ge
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
 
+@router.get("/api/pay/plan/{tier}/{period}")
+@limiter.limit("10/minute")
+def pay_plan_link(request: Request, tier: str, period: str,
+                  db: Session = Depends(get_db)):
+    """Enlace de pago DIRECTO de un plan × duración, para enviarlo por WhatsApp
+    a un interesado SIN darlo de alta antes (kit de ventas del panel). Crea una
+    Checkout Session self-serve y redirige a Stripe; al pagar, el webhook crea
+    su ficha con el plan pagado y le envía portal + anamnesis (mismo circuito
+    del registro personal). El enlace es permanente: cada clic abre un pago
+    nuevo; las sesiones no pagadas caducan solas en Stripe."""
+    from app.config import settings
+    from app.services import packages as pkgs
+
+    base = settings.public_base_url.rstrip("/")
+    t = pkgs.LEGACY_TIERS.get(tier.strip().lower(), tier.strip().lower())
+    # Estricto A PROPÓSITO (sin caer al plan por defecto): un enlace mal escrito
+    # no puede acabar cobrando el plan más caro. Ante cualquier duda → /planes.
+    if t not in pkgs.TIERS or period not in ("1m", "3m", "6m"):
+        return RedirectResponse(f"{base}/planes", status_code=302)
+
+    # Los bots de vista previa (WhatsApp/Facebook/Telegram) visitan el enlace al
+    # renderizar el mensaje: se les da una mini-página con título y descripción
+    # SIN crear una sesión de Stripe por cada previsualización.
+    ua = (request.headers.get("user-agent") or "").lower()
+    if any(bot in ua for bot in ("whatsapp", "facebookexternalhit", "telegrambot")):
+        from fastapi.responses import HTMLResponse
+
+        title = f"{pkgs.label(t)} — pago seguro"
+        desc = "Asesoría 100 % personalizada. Pago seguro con Stripe."
+        return HTMLResponse(
+            "<!doctype html><html><head><meta charset='utf-8'>"
+            f"<title>{title}</title>"
+            f"<meta property='og:title' content='{title}'>"
+            f"<meta property='og:description' content='{desc}'>"
+            f"</head><body>{desc}</body></html>"
+        )
+
+    try:
+        url = create_checkout_url(db, t, period)
+    except StripeError as exc:
+        import logging
+        logging.getLogger("app.stripe").warning(
+            "pay_plan_link %s %s sin checkout: %s", t, period, exc)
+        return RedirectResponse(f"{base}/planes", status_code=302)
+    return RedirectResponse(url, status_code=302)
+
+
 @router.get("/api/pay/{token}")
 def pay_link(client: Client = Depends(get_client_by_token), db: Session = Depends(get_db)):
     """Enlace estable de pago del alta manual: redirige a Stripe con el plan y la

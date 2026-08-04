@@ -22,6 +22,7 @@ import { PageLoader, StatusBadge } from "../components/ui";
 import { goalReviewDue, initials, relativeDays } from "../lib/format";
 import { pkg } from "../lib/packages";
 import { WhatsAppRound } from "../components/WhatsAppRound";
+import { SalesKit } from "../components/SalesKit";
 
 /**
  * Dashboard = "qué toca hacer AHORA con cada cliente". Cada cliente se traduce
@@ -249,6 +250,12 @@ export default function DashboardPage() {
       {/* Seguimiento diario: el mensaje del día para cada cliente activo. */}
       <div className="mt-4">
         <WhatsAppRound />
+      </div>
+
+      {/* Kit de ventas: catálogo de precios y enlaces de pago por plan, listos
+          para responder a un interesado que escribe desde /planes. */}
+      <div className="mt-4">
+        <SalesKit />
       </div>
 
       {loadFailed && (

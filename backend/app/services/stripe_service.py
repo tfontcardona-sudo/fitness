@@ -35,15 +35,20 @@ PERIOD_ORDER = ("1m", "3m", "6m")
 
 # ------------------------------------------ precios canónicos (la verdad) ----
 
-# Importes en CÉNTIMOS de cada plan × duración: 69/79/129 € al mes; trimestre y
-# semestre con un descuento pequeño por compromiso; Nutri > Train y Full <
-# Train+Nutri en cada duración. De esta tabla beben el script
-# scripts/setup_stripe_prices.py, el AUTO-ALTA (si a Stripe le faltan precios,
-# la api los crea sola con estos importes) y la reserva visual de /planes.
+# Importes en CÉNTIMOS de cada plan × duración: 69/79/129 € al mes. El ancla
+# la fijó el dueño: Full trimestral = 330 € (110 €/mes) y el resto se adapta
+# con la misma escala de descuento — trimestral ≈ −15 % por mes y semestral
+# ≈ −22 % por mes, siempre con Nutri > Train y Full < Train+Nutri por duración:
+#   Train  69 · 177 (59/mes) · 324 (54/mes)
+#   Nutri  79 · 201 (67/mes) · 372 (62/mes)
+#   Full  129 · 330 (110/mes) · 600 (100/mes)
+# De esta tabla beben el script scripts/setup_stripe_prices.py, el AUTO-ALTA
+# (si a Stripe le faltan precios, la api los crea sola; si cambia el importe,
+# precio nuevo con el lookup_key transferido) y la reserva visual del catálogo.
 CANONICAL_AMOUNTS: dict[str, dict[str, int]] = {
-    "train": {"1m": 6900, "3m": 19500, "6m": 37200},
-    "nutri": {"1m": 7900, "3m": 22500, "6m": 43200},
-    "full": {"1m": 12900, "3m": 36900, "6m": 70800},
+    "train": {"1m": 6900, "3m": 17700, "6m": 32400},
+    "nutri": {"1m": 7900, "3m": 20100, "6m": 37200},
+    "full": {"1m": 12900, "3m": 33000, "6m": 60000},
 }
 PRODUCT_NAMES = {"train": "DQR Train", "nutri": "DQR Nutri", "full": "DQR Full"}
 PERIOD_LABEL = {"1m": "1 mes", "3m": "3 meses", "6m": "6 meses"}

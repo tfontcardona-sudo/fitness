@@ -288,11 +288,12 @@ def test_planes_muestra_precios_de_reserva_sin_stripe(monkeypatch):
     data = ss.get_plan_prices()
     t = data["tiers"]
     assert t["train"]["1m"]["total"] == 69.0
-    assert t["train"]["3m"] == {"total": 195.0, "months": 3, "per_month": 65.0}
+    assert t["train"]["3m"] == {"total": 177.0, "months": 3, "per_month": 59.0}
     assert t["nutri"]["1m"]["total"] == 79.0
-    assert t["nutri"]["6m"]["per_month"] == 72.0
+    assert t["nutri"]["6m"]["per_month"] == 62.0
     assert t["full"]["1m"]["total"] == 129.0
-    assert t["full"]["6m"] == {"total": 708.0, "months": 6, "per_month": 118.0}
+    assert t["full"]["3m"] == {"total": 330.0, "months": 3, "per_month": 110.0}
+    assert t["full"]["6m"] == {"total": 600.0, "months": 6, "per_month": 100.0}
 
 
 def test_planes_reserva_con_stripe_caido_no_se_cachea(monkeypatch):
@@ -310,6 +311,47 @@ def test_planes_reserva_con_stripe_caido_no_se_cachea(monkeypatch):
     assert ss._prices_cache["data"] is None  # sin cachear → reintenta
 
 
+def test_enlace_de_pago_directo_por_plan(monkeypatch):
+    """GET /api/pay/plan/{tier}/{period}: el enlace del kit de ventas redirige a
+    Stripe con el plan correcto; los nombres antiguos se traducen; un enlace mal
+    escrito NUNCA cobra el plan por defecto (→ /planes); los bots de vista
+    previa de WhatsApp no crean sesiones de pago."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.routers import stripe_router as sr
+
+    monkeypatch.setattr(sr, "create_checkout_url",
+                        lambda db, t, p, **kw: f"https://stripe.test/{t}/{p}")
+    with TestClient(app) as http:
+        r = http.get("/api/pay/plan/full/3m", follow_redirects=False)
+        assert r.status_code == 302
+        assert r.headers["location"] == "https://stripe.test/full/3m"
+
+        # Nombres antiguos: pro → full (mismo circuito que el webhook).
+        r = http.get("/api/pay/plan/pro/1m", follow_redirects=False)
+        assert r.headers["location"] == "https://stripe.test/full/1m"
+
+        # Tier o duración desconocidos → /planes, jamás un cobro "por defecto".
+        for path in ("/api/pay/plan/fulll/3m", "/api/pay/plan/full/9m"):
+            r = http.get(path, follow_redirects=False)
+            assert r.status_code == 302 and r.headers["location"].endswith("/planes")
+
+        # Bot de vista previa (WhatsApp renderizando el enlace): mini-página OG,
+        # sin crear una sesión de Stripe por cada previsualización.
+        r = http.get("/api/pay/plan/full/3m",
+                     headers={"User-Agent": "WhatsApp/2.24.1"},
+                     follow_redirects=False)
+        assert r.status_code == 200 and "DQR Full" in r.text
+
+        # Stripe caído/no configurado → /planes (nunca un 500 al interesado).
+        def _boom(db, t, p, **kw):
+            raise sr.StripeError("sin clave")
+        monkeypatch.setattr(sr, "create_checkout_url", _boom)
+        r = http.get("/api/pay/plan/full/3m", follow_redirects=False)
+        assert r.status_code == 302 and r.headers["location"].endswith("/planes")
+
+
 def test_importes_del_script_cumplen_lo_pedido():
     # Nutri > Train en cada duración; Full < Train+Nutri en cada duración.
     import importlib.util, pathlib
@@ -321,6 +363,14 @@ def test_importes_del_script_cumplen_lo_pedido():
         assert A["nutri"][p] > A["train"][p]
         assert A["full"][p] < A["train"][p] + A["nutri"][p]
     assert A["train"]["1m"] == 6900 and A["nutri"]["1m"] == 7900 and A["full"]["1m"] == 12900
+    # Ancla del dueño (agosto 2026): Full trimestral 330 €; el resto adaptado.
+    assert A["full"]["3m"] == 33000 and A["full"]["6m"] == 60000
+    assert A["train"]["3m"] == 17700 and A["train"]["6m"] == 32400
+    assert A["nutri"]["3m"] == 20100 and A["nutri"]["6m"] == 37200
+    # El descuento por compromiso crece con la duración (precio/mes decreciente).
+    for t in ("train", "nutri", "full"):
+        assert A[t]["3m"] / 3 < A[t]["1m"]
+        assert A[t]["6m"] / 6 < A[t]["3m"] / 3
 
 
 def test_webhook_metadata_antigua_crea_el_plan_correcto(monkeypatch):

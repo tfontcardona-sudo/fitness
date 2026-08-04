@@ -8,9 +8,9 @@ import type { BillingPeriod, PackageTier } from "../types";
 /**
  * Página PÚBLICA de asesorías (el enlace del perfil). SIN PRECIOS a propósito:
  * cada plan × duración (9 combinaciones) se presenta con una descripción que
- * invita a pedir información, y el botón "Contacta conmigo" abre WhatsApp con
- * el mensaje ya escrito. El precio se habla en la conversación y el pago llega
- * después con el enlace personal de Stripe que envía el coach.
+ * invita a pedir información, y los botones "Contacta conmigo" abren WhatsApp
+ * con el mensaje ya escrito. El precio se habla en la conversación (el coach
+ * responde con el kit de ventas del panel: catálogo + enlace de pago directo).
  */
 
 /** Descripción propia de cada plan × duración (los "9 planes"). */
@@ -18,12 +18,12 @@ const DURATION_PITCH: Record<PackageTier, Record<BillingPeriod, string>> = {
   train: {
     "1m": "Un mes para probarlo en serio: en 4 semanas notas lo que es entrenar con un plan pensado solo para ti.",
     "3m": "12 semanas: un ciclo completo de progresión. Resultados que se ven en el espejo y se sienten en cada sesión.",
-    "6m": "6 meses de progresión planificada: fuerza y físico a otro nivel, con condiciones especiales por compromiso.",
+    "6m": "6 meses de progresión planificada: fuerza y físico a otro nivel, con las mejores condiciones por compromiso.",
   },
   nutri: {
     "1m": "Un mes para ordenar tu alimentación y comprobar que se puede comer bien sin pasar hambre ni vivir a dieta.",
     "3m": "12 semanas: margen real para ver resultados y consolidar hábitos, ajustando tu plan con datos, no con sensaciones.",
-    "6m": "6 meses para transformar tu relación con la comida: resultados que se quedan contigo, con condiciones especiales.",
+    "6m": "6 meses para transformar tu relación con la comida: resultados que se quedan contigo, con las mejores condiciones.",
   },
   full: {
     "1m": "Un mes para arrancar con todo: entrenamiento y dieta coordinados desde el primer día, y primeros cambios visibles.",
@@ -32,7 +32,14 @@ const DURATION_PITCH: Record<PackageTier, Record<BillingPeriod, string>> = {
   },
 };
 
-/** Qué incluye cada plan (los ganchos comunes van en la cabecera). */
+/** "Para ti si…": que cada visitante se reconozca en un plan al primer vistazo. */
+const PLAN_FOR_YOU: Record<PackageTier, string> = {
+  train: "Para ti si con la comida te apañas, pero en el gimnasio vas sin rumbo y quieres progresar de verdad.",
+  nutri: "Para ti si tu punto débil está en la comida: picas, no sabes cuánto comer o las dietas nunca te duran.",
+  full: "Para ti si quieres el cambio completo, con todo pensado y alguien encima de tu caso cada día.",
+};
+
+/** Qué incluye cada plan. */
 const PLAN_BULLETS: Record<PackageTier, string[]> = {
   train: [
     "Entrenamiento 100 % a tu medida: tu material, tu horario, tus lesiones y tu nivel",
@@ -63,6 +70,10 @@ function contactMessage(tier: PackageTier, period: BillingPeriod): string {
   );
 }
 
+const GENERIC_MESSAGE =
+  "Hola! He visto tus asesorías en la página y me gustaría saber más. " +
+  "¿Te cuento mi caso y me dices qué plan me encaja y su precio?";
+
 export default function PlansPage() {
   const [period, setPeriod] = useState<BillingPeriod>("3m");
   // Marca pública: foto de fondo + teléfono de contacto del coach (WhatsApp).
@@ -74,11 +85,10 @@ export default function PlansPage() {
 
   const coachDigits = waPhone(landing?.contact_phone);
 
-  /** Enlace de contacto del plan: WhatsApp si hay teléfono; email de reserva. */
-  function contactHref(tier: PackageTier): string | null {
-    if (coachDigits) return waUrl(coachDigits, contactMessage(tier, period));
+  /** Enlace de contacto: WhatsApp si hay teléfono; email de reserva. */
+  function contactHref(text: string, subject: string): string | null {
+    if (coachDigits) return waUrl(coachDigits, text);
     if (landing?.contact_email) {
-      const subject = `Información ${PACKAGES[tier].label} (${billingLabel(period)})`;
       return `mailto:${landing.contact_email}?subject=${encodeURIComponent(subject)}`;
     }
     return null;
@@ -108,21 +118,21 @@ export default function PlansPage() {
           <h1 className="mt-4 text-3xl font-extrabold tracking-tight">
             Empieza tu cambio <span style={{ color: "#F6A560" }}>hoy</span>
           </h1>
-          <p className="mt-1 max-w-lg text-sm text-white/85">
-            Plan 100 % a tu medida y tu coach contigo cada día por WhatsApp.
-            Escríbeme, me cuentas tu caso y te digo exactamente cómo te puedo ayudar.
+          <p className="mt-2 max-w-lg text-sm text-white/90">
+            Nada de plantillas: estudio tu caso a fondo, monto tu plan a tu medida
+            y me tienes <strong>cada día</strong> en WhatsApp hasta que el cambio se ve.
           </p>
           {/* Gancho de confianza: qué incluye SIEMPRE, de un vistazo */}
           <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs font-semibold">
-            <span style={{ color: "#6FE39A" }}>✓ Plan personalizado</span>
-            <span style={{ color: "#6FE39A" }}>✓ WhatsApp a diario</span>
+            <span style={{ color: "#6FE39A" }}>✓ Plan 100 % a tu medida</span>
+            <span style={{ color: "#6FE39A" }}>✓ Tu coach a diario por WhatsApp</span>
             <span style={{ color: "#6FE39A" }}>✓ App de seguimiento</span>
-            <span style={{ color: "#6FE39A" }}>✓ Sin compromiso al preguntar</span>
+            <span style={{ color: "#6FE39A" }}>✓ Preguntar no cuesta nada</span>
           </div>
         </header>
 
         {/* Duración: cada plan tiene su versión mensual, trimestral y semestral
-            (9 opciones en total). Las duraciones largas, con mejores condiciones. */}
+            (9 opciones). Las duraciones largas, con mejores condiciones. */}
         <div className="mb-2 flex justify-center">
           <div className="inline-flex rounded-xl border bg-white p-1 shadow-sm" style={{ borderColor: "#e6ddca" }}>
             {BILLING_PERIODS.map((b) => {
@@ -153,7 +163,10 @@ export default function PlansPage() {
           {PACKAGE_ORDER.map((t) => {
             const p = PACKAGES[t];
             const destacado = t === "full"; // el pack completo: el más elegido
-            const href = contactHref(t);
+            const href = contactHref(
+              contactMessage(t, period),
+              `Información ${p.label} (${billingLabel(period)})`,
+            );
             return (
               <div key={t}
                 className={`relative flex flex-col rounded-2xl border bg-white p-5 shadow-sm ${destacado ? "shadow-lg sm:-mt-2 sm:mb-[-8px]" : ""}`}
@@ -171,7 +184,9 @@ export default function PlansPage() {
                   style={{ background: `color-mix(in srgb, ${p.color} 14%, transparent)`, color: p.color }}>
                   {p.label}
                 </span>
-                <p className="mt-3 text-sm font-medium">{p.tagline}</p>
+                <p className="mt-2 text-[13px] font-medium italic opacity-75">
+                  {PLAN_FOR_YOU[t]}
+                </p>
                 {/* La descripción de ESTA duración: el gancho de la combinación. */}
                 <p className="mt-2 text-sm font-semibold leading-snug" style={{ color: p.color }}>
                   {DURATION_PITCH[t][period]}
@@ -205,11 +220,55 @@ export default function PlansPage() {
           })}
         </div>
 
+        {/* Cómo funciona: 3 pasos — quita el miedo a "¿y ahora qué?". */}
+        <div className="mt-8 rounded-2xl bg-white/95 p-5 shadow-sm">
+          <h2 className="text-center text-sm font-extrabold uppercase tracking-wide opacity-70">
+            Así de fácil es empezar
+          </h2>
+          <div className="mt-4 grid gap-4 text-sm sm:grid-cols-3">
+            {[
+              ["1", "Me escribes por WhatsApp", "Me cuentas tu caso y tu objetivo. Te respondo yo, no un bot, y resolvemos precio y dudas."],
+              ["2", "Estudio tu caso a fondo", "Cuestionario inicial completo: salud, lesiones, gustos, horarios y material. De ahí sale TU plan, no una plantilla."],
+              ["3", "Empezamos y te acompaño", "Tu plan en tu app, seguimiento diario por WhatsApp y ajustes según tu progreso real."],
+            ].map(([n, titulo, texto]) => (
+              <div key={n} className="flex gap-3">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-extrabold text-white"
+                  style={{ background: "#2E5E8C" }}>
+                  {n}
+                </span>
+                <div>
+                  <p className="font-bold">{titulo}</p>
+                  <p className="mt-0.5 text-[13px] leading-snug opacity-75">{texto}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* CTA final: para quien duda entre planes. */}
+        <div className="mt-6 rounded-2xl border-2 bg-white p-5 text-center shadow-lg"
+          style={{ borderColor: "#F6A560" }}>
+          <p className="text-base font-extrabold">¿No tienes claro cuál es para ti?</p>
+          <p className="mx-auto mt-1 max-w-md text-sm opacity-75">
+            Escríbeme, me cuentas tu caso en dos líneas y te digo yo qué plan te
+            encaja y su precio. Sin compromiso: preguntar es gratis.
+          </p>
+          {(() => {
+            const href = contactHref(GENERIC_MESSAGE, "Información asesorías DQ");
+            return href ? (
+              <a href={href} target="_blank" rel="noopener"
+                className="mx-auto mt-3 inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-bold text-white shadow-md transition-transform hover:brightness-110 active:scale-[0.98]"
+                style={{ background: "#25D366" }}>
+                <MessageCircle size={16} /> Escríbeme por WhatsApp
+              </a>
+            ) : null;
+          })()}
+        </div>
+
         <p className="mt-8 text-center text-xs text-white/60"
           style={{ textShadow: "0 1px 3px rgba(0,0,0,0.6)" }}>
-          Te respondo personalmente. Sin compromiso: me cuentas tu caso y te digo
-          qué plan te encaja y su precio. El pago, cuando lo tengas claro, es
-          seguro con Stripe.
+          Te respondo personalmente. Cuando lo tengas claro, el pago es seguro con
+          Stripe, con tu enlace personal.
         </p>
       </div>
     </div>

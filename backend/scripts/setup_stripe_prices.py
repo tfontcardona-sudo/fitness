@@ -13,11 +13,12 @@ Qué hace, de forma IDEMPOTENTE (se puede ejecutar mil veces):
      lookup_key (el antiguo queda desactivado; los pagos pasados no se tocan).
 
 Importes (EUR, pago único por período — STRIPE_MODE=payment):
-  Train  69 €/mes · 195 € trimestre · 372 € semestre
-  Nutri  79 €/mes · 225 € trimestre · 432 € semestre
-  Full  129 €/mes · 369 € trimestre · 708 € semestre
-(El trimestre/semestre llevan un descuento pequeño por compromiso; Full siempre
-por debajo de la suma de Train+Nutri.)
+  Train  69 €/mes · 177 € trimestre (59/mes) · 324 € semestre (54/mes)
+  Nutri  79 €/mes · 201 € trimestre (67/mes) · 372 € semestre (62/mes)
+  Full  129 €/mes · 330 € trimestre (110/mes) · 600 € semestre (100/mes)
+(Ancla fijada por el dueño: Full trimestral 330 €. Descuento por compromiso
+~15 % al mes en trimestral y ~22 % en semestral; Full siempre por debajo de
+la suma de Train+Nutri.)
 
 La tabla de importes y la lógica de alta viven en
 app.services.stripe_service (CANONICAL_AMOUNTS + ensure_canonical_prices):
