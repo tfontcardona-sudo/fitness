@@ -18,7 +18,7 @@ const DURATION_PITCH: Record<PackageTier, Record<BillingPeriod, string>> = {
   train: {
     "1m": "Un mes para probarlo en serio: en 4 semanas notas lo que es entrenar con un plan pensado solo para ti.",
     "3m": "12 semanas: un ciclo completo de progresión. Resultados que se ven en el espejo y se sienten en cada sesión.",
-    "6m": "6 meses de progresión planificada: fuerza y físico a otro nivel, con las mejores condiciones por compromiso.",
+    "6m": "6 meses de progresión planificada: fuerza y físico a otro nivel, con las mejores condiciones al comprometerte.",
   },
   nutri: {
     "1m": "Un mes para ordenar tu alimentación y comprobar que se puede comer bien sin pasar hambre ni vivir a dieta.",
@@ -36,7 +36,7 @@ const DURATION_PITCH: Record<PackageTier, Record<BillingPeriod, string>> = {
 const PLAN_FOR_YOU: Record<PackageTier, string> = {
   train: "Para ti si con la comida te apañas, pero en el gimnasio vas sin rumbo y quieres progresar de verdad.",
   nutri: "Para ti si tu punto débil está en la comida: picas, no sabes cuánto comer o las dietas nunca te duran.",
-  full: "Para ti si quieres el cambio completo, con todo pensado y alguien encima de tu caso cada día.",
+  full: "Para ti si quieres el cambio completo, con todo pensado y conmigo pendiente de ti cada día.",
 };
 
 /** Qué incluye cada plan. */
@@ -65,13 +65,13 @@ const PLAN_BULLETS: Record<PackageTier, string[]> = {
 function contactMessage(tier: PackageTier, period: BillingPeriod): string {
   const dur = billingLabel(period).toLowerCase();
   return (
-    `Hola! He visto la asesoría ${PACKAGES[tier].label} (${dur}) en tu página ` +
+    `¡Hola! He visto la asesoría ${PACKAGES[tier].label} (${dur}) en tu página ` +
     `y me gustaría saber más: cómo funciona, el precio y cómo empezar.`
   );
 }
 
 const GENERIC_MESSAGE =
-  "Hola! He visto tus asesorías en la página y me gustaría saber más. " +
+  "¡Hola! He visto tus asesorías en la página y me gustaría saber más. " +
   "¿Te cuento mi caso y me dices qué plan me encaja y su precio?";
 
 export default function PlansPage() {
@@ -120,14 +120,13 @@ export default function PlansPage() {
           </h1>
           <p className="mt-2 max-w-lg text-sm text-white/90">
             Nada de plantillas: estudio tu caso a fondo, monto tu plan a tu medida
-            y me tienes <strong>cada día</strong> en WhatsApp hasta que el cambio se ve.
+            y me tienes <strong>cada día</strong> en WhatsApp durante todo el proceso.
           </p>
           {/* Gancho de confianza: qué incluye SIEMPRE, de un vistazo */}
           <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs font-semibold">
             <span style={{ color: "#6FE39A" }}>✓ Plan 100 % a tu medida</span>
             <span style={{ color: "#6FE39A" }}>✓ Tu coach a diario por WhatsApp</span>
             <span style={{ color: "#6FE39A" }}>✓ App de seguimiento</span>
-            <span style={{ color: "#6FE39A" }}>✓ Preguntar no cuesta nada</span>
           </div>
         </header>
 
@@ -227,7 +226,7 @@ export default function PlansPage() {
           </h2>
           <div className="mt-4 grid gap-4 text-sm sm:grid-cols-3">
             {[
-              ["1", "Me escribes por WhatsApp", "Me cuentas tu caso y tu objetivo. Te respondo yo, no un bot, y resolvemos precio y dudas."],
+              ["1", "Me escribes por WhatsApp", "Me cuentas tu caso y tu objetivo. Te respondo yo, no un bot: te digo el precio y resolvemos tus dudas."],
               ["2", "Estudio tu caso a fondo", "Cuestionario inicial completo: salud, lesiones, gustos, horarios y material. De ahí sale TU plan, no una plantilla."],
               ["3", "Empezamos y te acompaño", "Tu plan en tu app, seguimiento diario por WhatsApp y ajustes según tu progreso real."],
             ].map(([n, titulo, texto]) => (
@@ -267,8 +266,8 @@ export default function PlansPage() {
 
         <p className="mt-8 text-center text-xs text-white/60"
           style={{ textShadow: "0 1px 3px rgba(0,0,0,0.6)" }}>
-          Te respondo personalmente. Cuando lo tengas claro, el pago es seguro con
-          Stripe, con tu enlace personal.
+          Te respondo personalmente. Cuando lo tengas claro, pagas de forma segura
+          con Stripe a través de tu enlace personal.
         </p>
       </div>
     </div>

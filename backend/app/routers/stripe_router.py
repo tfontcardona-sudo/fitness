@@ -78,11 +78,18 @@ def pay_plan_link(request: Request, tier: str, period: str,
     if t not in pkgs.TIERS or period not in ("1m", "3m", "6m"):
         return RedirectResponse(f"{base}/planes", status_code=302)
 
-    # Los bots de vista previa (WhatsApp/Facebook/Telegram) visitan el enlace al
-    # renderizar el mensaje: se les da una mini-página con título y descripción
-    # SIN crear una sesión de Stripe por cada previsualización.
+    # Los bots de vista previa (WhatsApp/Facebook/Slack/Discord/Twitter…) y los
+    # escáneres de enlaces visitan la URL al renderizar el mensaje: se les da
+    # una mini-página con título y descripción SIN crear una sesión de Stripe
+    # por cada previsualización. Las HEAD (prefetch) tampoco crean sesión —
+    # Starlette ejecuta el handler entero también para HEAD. Un bot con UA de
+    # navegador se cuela igualmente: solo genera sesiones huérfanas que caducan
+    # solas en Stripe (sin cobro), acotadas por el rate limit.
     ua = (request.headers.get("user-agent") or "").lower()
-    if any(bot in ua for bot in ("whatsapp", "facebookexternalhit", "telegrambot")):
+    es_bot = any(b in ua for b in (
+        "whatsapp", "facebookexternalhit", "bot", "crawler", "spider",
+        "preview", "curl", "wget", "python-requests"))
+    if es_bot or request.method == "HEAD":
         from fastapi.responses import HTMLResponse
 
         title = f"{pkgs.label(t)} — pago seguro"

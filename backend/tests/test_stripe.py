@@ -256,6 +256,92 @@ def test_auto_alta_crea_los_9_precios_que_faltan(monkeypatch):
     assert len(fake.prices) == 9
 
 
+def test_auto_reprecio_detecta_importes_desviados(monkeypatch):
+    """REGRESIÓN (revisión adversarial): con los 9 lookup_keys YA en Stripe pero
+    con importes VIEJOS (p. ej. tras un reprecio en el código, desplegado por el
+    cron de auto-deploy que NO ejecuta el script), la resolución debe detectar
+    la deriva y alinear los precios sola — antes solo actuaba si FALTABAN keys
+    y el reprecio no llegaba nunca a Stripe."""
+    from app.services import stripe_service as ss
+
+    fake = FakeStripe()
+    viejos = {"train": {"1m": 6900, "3m": 19500, "6m": 37200},
+              "nutri": {"1m": 7900, "3m": 22500, "6m": 43200},
+              "full": {"1m": 12900, "3m": 36900, "6m": 70800}}
+    for i, t in enumerate(("train", "nutri", "full")):
+        fake.products.append({"id": f"prod_{t}", "metadata": {"dqr_tier": t}})
+        for p in ("1m", "3m", "6m"):
+            fake.prices.append({"id": f"price_old_{t}_{p}", "active": True,
+                                "product": f"prod_{t}", "lookup_key": f"dqr_{t}_{p}",
+                                "unit_amount": viejos[t][p], "currency": "eur"})
+    monkeypatch.setattr(ss, "_stripe", lambda: fake)
+    _reset_stripe_caches(monkeypatch, ss)
+
+    pid = ss._price_by_lookup("full", "3m")
+    nuevo = next(p for p in fake.prices
+                 if p.get("lookup_key") == "dqr_full_3m" and p["active"])
+    assert pid == nuevo["id"] and nuevo["unit_amount"] == 33000  # ancla: 330 €
+    viejo = next(p for p in fake.prices if p["id"] == "price_old_full_3m")
+    assert viejo["active"] is False  # el precio antiguo queda archivado
+    # Todas las combinaciones quedaron alineadas con la tabla canónica.
+    for t in ("train", "nutri", "full"):
+        for p in ("1m", "3m", "6m"):
+            activo = next(x for x in fake.prices
+                          if x.get("lookup_key") == f"dqr_{t}_{p}" and x["active"])
+            assert activo["unit_amount"] == ss.CANONICAL_AMOUNTS[t][p]
+    # La caché del catálogo se invalidó: la próxima lectura trae los nuevos.
+    assert ss._prices_cache["data"] is None
+
+
+def test_error_del_sdk_de_stripe_no_revienta_el_enlace_de_pago(monkeypatch):
+    """REGRESIÓN (revisión adversarial): un error de la LIBRERÍA de Stripe
+    (precio recién archivado, timeout, rate limit) no hereda de nuestra
+    StripeError; antes se propagaba como 500 al navegador del interesado. Debe
+    traducirse a StripeError → 302 a /planes, y vaciar la caché de precios
+    para que el siguiente clic se auto-repare."""
+    from fastapi.testclient import TestClient
+
+    from app.config import settings
+    from app.main import app
+    from app.services import stripe_service as ss
+
+    class _SdkBoom:
+        class checkout:
+            class Session:
+                @staticmethod
+                def create(**kw):
+                    raise ValueError("The price specified is archived")
+
+    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_x")
+    monkeypatch.setattr(ss, "_resolve_price_id", lambda t, p: "price_x")
+    monkeypatch.setattr(ss, "_stripe", lambda: _SdkBoom())
+    _reset_stripe_caches(monkeypatch, ss)
+    ss._lookup_cache["ids"]["dqr_full_3m"] = "price_x"  # caché "envenenada"
+
+    with TestClient(app) as http:
+        r = http.get("/api/pay/plan/full/3m", follow_redirects=False)
+        assert r.status_code == 302 and r.headers["location"].endswith("/planes")
+    assert ss._lookup_cache["ids"] == {}  # el siguiente clic re-resuelve
+
+
+def test_head_del_enlace_de_pago_no_crea_sesion(monkeypatch):
+    """El prefetch HEAD (escáneres de enlaces) no debe crear sesiones de pago."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.routers import stripe_router as sr
+
+    llamadas = []
+    monkeypatch.setattr(sr, "create_checkout_url",
+                        lambda *a, **k: llamadas.append(1) or "https://stripe.test/x")
+    with TestClient(app) as http:
+        r = http.head("/api/pay/plan/full/3m", follow_redirects=False)
+        # En esta versión de FastAPI el HEAD ni llega al handler (405); si una
+        # futura versión lo auto-registra, el handler lo trata como bot (200).
+        assert r.status_code in (200, 405)
+    assert llamadas == []
+
+
 def test_auto_alta_transfiere_lookup_si_cambia_el_importe(monkeypatch):
     # Un precio existente con OTRO importe no se pisa: precio nuevo con el mismo
     # lookup_key (transferido) y el antiguo desactivado.

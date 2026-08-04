@@ -146,10 +146,14 @@ _ENSURE_RETRY_S = 600
 def _price_by_lookup(tier: str, period: str) -> str:
     """ID del precio ACTIVO con lookup_key dqr_{tier}_{period}, con caché.
 
-    AUTO-ALTA: si a Stripe le faltan precios canónicos (script aún no ejecutado
-    o fallido en el deploy), se crean aquí mismo con ensure_canonical_prices —
-    la primera visita a /planes o el primer checkout los deja creados sin pasos
-    manuales. Best-effort: ante cualquier fallo devuelve "" (el caller decide)."""
+    AUTO-ALTA Y AUTO-REPRECIO: si a Stripe le faltan precios canónicos O alguno
+    tiene un importe/moneda DISTINTOS de CANONICAL_AMOUNTS (p. ej. tras un
+    reprecio en el código — el cron de auto-deploy NO ejecuta el script), se
+    alinean aquí mismo con ensure_canonical_prices. La primera resolución de
+    precios tras el deploy deja Stripe cuadrado sin pasos manuales. ⚠️ La tabla
+    canónica MANDA: un importe cambiado a mano en el dashboard de Stripe se
+    revierte — los precios se cambian en el código, no en Stripe.
+    Best-effort: ante cualquier fallo devuelve "" (el caller decide)."""
     import time
 
     now = time.time()
@@ -163,23 +167,37 @@ def _price_by_lookup(tier: str, period: str) -> str:
         stripe = _stripe()
         keys = [_lookup_key(t, p) for t in TIER_ORDER for p in PERIOD_ORDER]
 
-        def _list_ids() -> dict:
-            return {pr["lookup_key"]: pr["id"]
+        def _list_prices() -> dict:
+            return {pr["lookup_key"]: pr
                     for pr in stripe.Price.list(lookup_keys=keys, active=True,
                                                 limit=100)["data"]
                     if pr.get("lookup_key")}
 
-        found = _list_ids()
-        if any(k not in found for k in keys) and now - _ensure_state["at"] > _ENSURE_RETRY_S:
+        found = _list_prices()
+
+        def _desalineado() -> bool:
+            for t in TIER_ORDER:
+                for p in PERIOD_ORDER:
+                    pr = found.get(_lookup_key(t, p))
+                    if (pr is None or pr.get("unit_amount") != CANONICAL_AMOUNTS[t][p]
+                            or pr.get("currency") != CURRENCY):
+                        return True
+            return False
+
+        if _desalineado() and now - _ensure_state["at"] > _ENSURE_RETRY_S:
             _ensure_state["at"] = now
             try:
                 ensure_canonical_prices(stripe)
-                found = _list_ids()
-                _log.info("Auto-alta de precios de Stripe completada (faltaban lookup_keys).")
+                found = _list_prices()
+                # El catálogo mostrado (get_plan_prices) puede llevar importes
+                # recién sustituidos: se invalida para que la próxima lectura
+                # traiga los nuevos en vez de servir la caché 10 minutos.
+                _prices_cache.update(at=0.0, data=None)
+                _log.info("Precios de Stripe alineados con la tabla canónica (auto-alta).")
             except Exception as exc:  # noqa: BLE001 — clave sin permisos, red…
                 _log.warning("Auto-alta de precios en Stripe fallida: %s", exc)
         for k in keys:
-            _lookup_cache["ids"][k] = found.get(k, "")
+            _lookup_cache["ids"][k] = (found.get(k) or {}).get("id", "")
     except Exception as exc:  # noqa: BLE001 — sin red/clave: se cae a los .env
         _log.warning("No se pudieron resolver precios por lookup_key: %s", exc)
         return ""
@@ -236,15 +254,27 @@ def create_checkout_url(db: Session, tier: str, period: str = "1m", *,
         # Registro personal: pedimos teléfono para poder contactar al cliente.
         extra["phone_number_collection"] = {"enabled": True}
 
-    session = stripe.checkout.Session.create(
-        mode=settings.stripe_mode,
-        line_items=[{"price": price, "quantity": 1}],
-        success_url=f"{base}/pago-ok",
-        cancel_url=f"{base}/planes",
-        metadata=metadata,
-        client_reference_id=(str(client.id) if client else None),
-        **extra,
-    )
+    try:
+        session = stripe.checkout.Session.create(
+            mode=settings.stripe_mode,
+            line_items=[{"price": price, "quantity": 1}],
+            success_url=f"{base}/pago-ok",
+            cancel_url=f"{base}/planes",
+            metadata=metadata,
+            client_reference_id=(str(client.id) if client else None),
+            **extra,
+        )
+    except Exception as exc:  # noqa: BLE001 — errores del SDK de Stripe
+        # Los errores de la librería (precio recién archivado por un reprecio,
+        # red, rate limit…) NO heredan de nuestra StripeError: sin esto se
+        # propagaban como 500 al navegador del interesado. Además, el precio
+        # cacheado puede ser el recién desactivado: se vacía la caché para que
+        # el SIGUIENTE clic re-resuelva y se auto-repare en segundos.
+        _lookup_cache["ids"] = {}
+        _log.warning("Stripe rechazó la Checkout Session (%s %s): %s", tier, period, exc)
+        raise StripeError(
+            "La pasarela de pago no ha respondido; prueba de nuevo en un momento."
+        ) from exc
     return session.url
 
 

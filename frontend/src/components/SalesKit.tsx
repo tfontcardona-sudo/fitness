@@ -97,25 +97,37 @@ export function SalesKit() {
 
   function pick(next: { tier: PackageTier; period: BillingPeriod } | "catalog") {
     if (!prices) return;
+    // Re-pulsar el chip YA seleccionado no regenera el texto: machacaría en
+    // silencio lo que el coach haya editado en el cuadro.
+    const same = next === "catalog"
+      ? sel === "catalog"
+      : sel !== "catalog" && sel?.tier === next.tier && sel?.period === next.period;
+    if (same) return;
     setSel(next);
     setCopied(false);
     setText(next === "catalog" ? catalogText(prices) : planText(prices, next.tier, next.period));
   }
 
   async function copy() {
+    let ok = true;
     try {
       await navigator.clipboard.writeText(text);
     } catch {
-      // Safari/HTTP antiguos: selección manual como reserva.
+      // Safari/HTTP antiguos: selección manual como reserva — comprobando el
+      // resultado de verdad (un "Copiado" en falso haría pegar un chat vacío).
       const ta = document.createElement("textarea");
       ta.value = text;
       document.body.appendChild(ta);
+      ta.focus();
       ta.select();
-      document.execCommand("copy");
+      ta.setSelectionRange(0, text.length);
+      ok = document.execCommand("copy");
       ta.remove();
     }
-    setCopied(true);
-    toast.push("Mensaje copiado — pégalo en el chat de WhatsApp");
+    setCopied(ok);
+    toast.push(ok
+      ? "Mensaje copiado — pégalo en el chat de WhatsApp"
+      : "No se pudo copiar: selecciona el texto del cuadro y cópialo a mano");
   }
 
   function sendWhatsApp() {
@@ -150,8 +162,8 @@ export function SalesKit() {
           <p className="text-xs" style={{ color: "var(--text-faint)" }}>
             Te escriben desde la página de planes (ahí no hay precios): elige qué
             responder. El enlace de pago abre Stripe con el importe correcto y, al
-            pagar, el sistema crea la ficha del cliente y le envía el acceso y la
-            anamnesis él solo.
+            pagar, el sistema crea la ficha del cliente y le envía automáticamente
+            el acceso y la anamnesis.
           </p>
 
           {error && (

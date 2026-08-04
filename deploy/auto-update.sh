@@ -20,4 +20,12 @@ REMOTE=$(git rev-parse origin/main)
 echo "[$(date '+%F %T')] Cambios detectados: $LOCAL -> $REMOTE. Desplegando…"
 git merge --ff-only origin/main -q
 docker compose up -d --build
+
+# Precios de Stripe (idempotente). Best-effort: si la api aún está arrancando o
+# Stripe no responde, no pasa nada — la propia api detecta precios que faltan o
+# con importe desviado de la tabla canónica y los alinea sola (auto-alta).
+sleep 15
+docker compose exec -T api python scripts/setup_stripe_prices.py \
+  || echo "[$(date '+%F %T')] aviso: precios de Stripe pendientes (la api los alineará sola)"
+
 echo "[$(date '+%F %T')] Desplegado $REMOTE ✔"
