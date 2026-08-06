@@ -75,7 +75,10 @@ def pay_plan_link(request: Request, tier: str, period: str,
     t = pkgs.LEGACY_TIERS.get(tier.strip().lower(), tier.strip().lower())
     # Estricto A PROPÓSITO (sin caer al plan por defecto): un enlace mal escrito
     # no puede acabar cobrando el plan más caro. Ante cualquier duda → /planes.
-    if t not in pkgs.TIERS or period not in ("1m", "3m", "6m"):
+    # "oferta" (1 € el primer mes → suscripción) solo existe para el plan Full.
+    valido = (t in pkgs.TIERS and period in ("1m", "3m", "6m")) or \
+             (t == "full" and period == "oferta")
+    if not valido:
         return RedirectResponse(f"{base}/planes", status_code=302)
 
     # Los bots de vista previa (WhatsApp/Facebook/Slack/Discord/Twitter…) y los
@@ -92,8 +95,12 @@ def pay_plan_link(request: Request, tier: str, period: str,
     if es_bot or request.method == "HEAD":
         from fastapi.responses import HTMLResponse
 
-        title = f"{pkgs.label(t)} — pago seguro"
-        desc = "Asesoría 100 % personalizada. Pago seguro con Stripe."
+        if period == "oferta":
+            title = f"{pkgs.label(t)} — primer mes 1 €"
+            desc = "Oferta: tu primer mes del plan completo por 1 €. Pago seguro con Stripe."
+        else:
+            title = f"{pkgs.label(t)} — pago seguro"
+            desc = "Asesoría 100 % personalizada. Pago seguro con Stripe."
         return HTMLResponse(
             "<!doctype html><html><head><meta charset='utf-8'>"
             f"<title>{title}</title>"

@@ -47,9 +47,11 @@ DietPattern = Literal["vegano", "vegetariano", "pescetariano", "sin_cerdo", "hal
 # Paquete/plan contratado por el cliente (define qué incluye y cómo se le entrega):
 #   start = solo nutrición · full = nutrición + entreno · pro = full + contacto directo
 PackageTier = Literal["nutri", "train", "full"]
-# Duración contratada del plan: mensual, trimestral o semestral. Cada paquete
-# tiene un precio de Stripe por duración (9 combinaciones en total).
-BillingPeriod = Literal["1m", "3m", "6m"]
+# Duración contratada del plan: mensual, trimestral o semestral (cada paquete
+# tiene un precio de Stripe por duración, 9 combinaciones) + "oferta": la
+# promoción de captación del plan Full — 1 € el primer mes y después
+# 120 €/mes en SUSCRIPCIÓN de Stripe (renovación automática).
+BillingPeriod = Literal["1m", "3m", "6m", "oferta"]
 PaymentStatus = Literal["pending", "paid"]
 ClientStatus = Literal[
     "onboarding", "active", "awaiting_feedback", "at_risk", "review_pending", "inactive"

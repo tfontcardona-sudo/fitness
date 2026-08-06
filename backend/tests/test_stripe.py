@@ -186,12 +186,14 @@ def test_resolucion_precio_cae_al_env_antiguo_sin_lookup(monkeypatch):
 
 
 class FakeStripe:
-    """Stripe mínimo en memoria: productos y precios con lookup_keys, para
-    probar el auto-alta sin red. Imita los métodos que usa el servicio."""
+    """Stripe mínimo en memoria: productos, precios (con lookup_keys), cupones
+    y suscripciones, para probar el auto-alta y la oferta sin red."""
 
     def __init__(self):
         self.products: list[dict] = []
         self.prices: list[dict] = []
+        self.coupons: dict[str, dict] = {}
+        self.sub_modifications: list[tuple[str, dict]] = []
         fake = self
 
         class Product:
@@ -224,8 +226,36 @@ class FakeStripe:
                     if p["id"] == price_id:
                         p.update(kw)
 
+        class Coupon:
+            @staticmethod
+            def retrieve(coupon_id):
+                if coupon_id not in fake.coupons:
+                    raise KeyError(coupon_id)  # como el InvalidRequestError real
+                return fake.coupons[coupon_id]
+
+            @staticmethod
+            def create(**kw):
+                cup = {"valid": True, **kw}
+                fake.coupons[kw["id"]] = cup
+                return cup
+
+            @staticmethod
+            def delete(coupon_id):
+                fake.coupons.pop(coupon_id, None)
+
+        class Subscription:
+            @staticmethod
+            def modify(sub_id, **kw):
+                fake.sub_modifications.append((sub_id, kw))
+
+            @staticmethod
+            def retrieve(sub_id):
+                raise KeyError(sub_id)
+
         self.Product = Product
         self.Price = Price
+        self.Coupon = Coupon
+        self.Subscription = Subscription
 
 
 def _reset_stripe_caches(monkeypatch, ss):
@@ -245,15 +275,21 @@ def test_auto_alta_crea_los_9_precios_que_faltan(monkeypatch):
 
     pid = ss._price_by_lookup("train", "1m")
     assert pid
-    assert len(fake.products) == 3 and len(fake.prices) == 9
+    # 9 pagos únicos + 1 recurrente de la oferta; cupón del primer mes creado.
+    assert len(fake.products) == 3 and len(fake.prices) == 10
     creado = next(p for p in fake.prices if p["lookup_key"] == "dqr_train_1m")
     assert creado["unit_amount"] == 6900 and creado["currency"] == "eur"
     assert pid == creado["id"]
+    oferta = next(p for p in fake.prices if p["lookup_key"] == "dqr_full_oferta")
+    assert oferta["unit_amount"] == 12000
+    assert oferta["recurring"] == {"interval": "month"}
+    cupon = fake.coupons["dqr_oferta_primer_mes"]
+    assert cupon["amount_off"] == 11900 and cupon["duration"] == "once"
 
     # Idempotente: resolver otra combinación después no crea nada más.
     _reset_stripe_caches(monkeypatch, ss)
     assert ss._price_by_lookup("nutri", "3m")
-    assert len(fake.prices) == 9
+    assert len(fake.prices) == 10 and len(fake.coupons) == 1
 
 
 def test_auto_reprecio_detecta_importes_desviados(monkeypatch):
@@ -436,6 +472,190 @@ def test_enlace_de_pago_directo_por_plan(monkeypatch):
         monkeypatch.setattr(sr, "create_checkout_url", _boom)
         r = http.get("/api/pay/plan/full/3m", follow_redirects=False)
         assert r.status_code == 302 and r.headers["location"].endswith("/planes")
+
+
+# ---- OFERTA: 1 € el primer mes → 120 €/mes en suscripción ----
+
+def test_oferta_checkout_es_suscripcion_con_cupon(monkeypatch):
+    """El checkout de la oferta va en modo SUSCRIPCIÓN con el cupón del primer
+    mes a 1 €, y la metadata viaja también en la suscripción (para mapear las
+    renovaciones). La oferta es solo del plan Full."""
+    from types import SimpleNamespace
+
+    from app.config import settings
+    from app.services import stripe_service as ss
+
+    capturas = []
+
+    class _FakeCheckout:
+        class checkout:
+            class Session:
+                @staticmethod
+                def create(**kw):
+                    capturas.append(kw)
+                    return SimpleNamespace(url="https://stripe.test/oferta")
+
+    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_x")
+    monkeypatch.setattr(ss, "_resolve_price_id", lambda t, p: "price_oferta")
+    monkeypatch.setattr(ss, "_stripe", lambda: _FakeCheckout())
+
+    url = ss.create_checkout_url(None, "full", "oferta")
+    assert url == "https://stripe.test/oferta"
+    kw = capturas[0]
+    assert kw["mode"] == "subscription"
+    assert kw["discounts"] == [{"coupon": ss.OFFER_COUPON_ID}]
+    assert kw["subscription_data"]["metadata"]["billing_period"] == "oferta"
+    assert kw["subscription_data"]["metadata"]["tier"] == "full"
+    assert kw["phone_number_collection"] == {"enabled": True}  # self-serve
+
+    # Solo Full: train/nutri con oferta se rechazan.
+    with pytest.raises(ss.StripeError):
+        ss.create_checkout_url(None, "train", "oferta")
+
+
+def test_enlace_de_pago_de_la_oferta(monkeypatch):
+    """GET /api/pay/plan/full/oferta redirige al checkout; con otro plan, a
+    /planes (la oferta no existe para train/nutri). El bot de vista previa ve
+    el titular del euro sin crear sesión."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.routers import stripe_router as sr
+
+    monkeypatch.setattr(sr, "create_checkout_url",
+                        lambda db, t, p, **kw: f"https://stripe.test/{t}/{p}")
+    with TestClient(app) as http:
+        r = http.get("/api/pay/plan/full/oferta", follow_redirects=False)
+        assert r.status_code == 302
+        assert r.headers["location"] == "https://stripe.test/full/oferta"
+
+        r = http.get("/api/pay/plan/train/oferta", follow_redirects=False)
+        assert r.status_code == 302 and r.headers["location"].endswith("/planes")
+
+        r = http.get("/api/pay/plan/full/oferta",
+                     headers={"User-Agent": "WhatsApp/2.24.1"}, follow_redirects=False)
+        assert r.status_code == 200 and "primer mes 1 €" in r.text
+
+
+def test_webhook_checkout_oferta_crea_cliente_y_etiqueta_suscripcion(monkeypatch):
+    """El pago de la oferta (self-serve) crea el cliente con billing 'oferta' y
+    graba su client_id en la metadata de la suscripción — así las facturas de
+    renovación se mapean solas."""
+    stripe_service = _prep(monkeypatch)
+    from sqlalchemy import func, select
+
+    from app.db import SessionLocal
+    from app.models import Client
+
+    email = f"oferta-{uuid.uuid4().hex[:8]}@x.com"
+    event = _completed({
+        "metadata": {"tier": "full", "billing_period": "oferta"},
+        "payment_status": "paid",
+        "subscription": "sub_test_1",
+        "customer_details": {"email": email, "name": "Cliente Oferta", "phone": "600222333"},
+    })
+
+    fake = FakeStripe()
+
+    class _Hooked:
+        Webhook = type("W", (), {"construct_event": staticmethod(lambda *a, **k: event)})
+        Subscription = fake.Subscription
+
+    monkeypatch.setattr(stripe_service, "_stripe", lambda: _Hooked)
+
+    db = SessionLocal()
+    try:
+        res = stripe_service.handle_webhook(db, b"{}", "sig")
+        assert "created" in res
+        c = db.scalar(select(Client).where(func.lower(Client.email) == email))
+        assert c is not None
+        assert c.package_tier == "full" and c.billing_period == "oferta"
+        assert c.payment_status == "paid"
+        sub_id, kw = fake.sub_modifications[0]
+        assert sub_id == "sub_test_1"
+        assert kw["metadata"]["client_id"] == str(c.id)
+    finally:
+        db.close()
+
+
+def test_webhook_renovaciones_de_la_oferta(monkeypatch):
+    """invoice.payment_failed pasa al cliente a 'pendiente' y avisa al coach;
+    invoice.paid lo devuelve a 'pagado' y refresca paid_at — ningún impago de
+    la renovación mensual pasa desapercibido."""
+    stripe_service = _prep(monkeypatch)
+    from app.db import SessionLocal
+    from app.models import Client
+    from app.security import new_portal_token
+    from app.services import push as push_svc
+
+    avisos = []
+    monkeypatch.setattr(push_svc, "send_to_coach", lambda db, payload: avisos.append(payload))
+
+    db = SessionLocal()
+    try:
+        c = Client(full_name="Renueva Oferta", email=f"ren-{uuid.uuid4().hex[:8]}@x.com",
+                   package_tier="full", billing_period="oferta", status="active",
+                   portal_token="p", payment_status="paid")
+        db.add(c)
+        db.flush()
+        c.portal_token = new_portal_token(c.id)
+        db.commit()
+        cid = c.id
+
+        def _invoice_event(kind, **inv):
+            ev = {"type": kind, "data": {"object": {
+                "subscription": "sub_x",
+                "subscription_details": {"metadata": {"client_id": str(cid)}},
+                "billing_reason": "subscription_cycle", **inv,
+            }}}
+            monkeypatch.setattr(stripe_service, "_stripe", _fake_stripe(ev))
+            return stripe_service.handle_webhook(db, b"{}", "sig")
+
+        res = _invoice_event("invoice.payment_failed", amount_due=12000)
+        assert res == {"invoice": "failed", "client_id": cid}
+        db.expire_all()
+        assert db.get(Client, cid).payment_status == "pending"
+        assert any("no se pudo cobrar" in a["body"] for a in avisos)
+
+        res = _invoice_event("invoice.paid", amount_paid=12000)
+        assert res == {"invoice": "paid", "client_id": cid}
+        db.expire_all()
+        c = db.get(Client, cid)
+        assert c.payment_status == "paid" and c.paid_at is not None
+    finally:
+        db.close()
+
+
+def test_alta_manual_con_oferta_valida_el_plan(monkeypatch):
+    """El alta manual acepta billing 'oferta' SOLO con el plan Full (422 con
+    train/nutri): no puede existir un cliente con una oferta que no existe."""
+    from fastapi.testclient import TestClient
+
+    from app.config import settings
+    from app.db import SessionLocal
+    from app.main import app
+    from app.models import User
+    from app.security import create_access_token, hash_password
+    from sqlalchemy import select as _select
+
+    monkeypatch.setattr(settings, "emails_enabled", False)
+    with SessionLocal() as db:
+        if not db.scalar(_select(User).where(User.username == "coach1")):
+            db.add(User(username="coach1", password_hash=hash_password("test")))
+            db.commit()
+    auth = {"Authorization": f"Bearer {create_access_token('coach1')}"}
+
+    with TestClient(app) as http:
+        r = http.post("/api/clients", headers=auth, json={
+            "full_name": "Oferta Train", "email": f"ot-{uuid.uuid4().hex[:8]}@x.com",
+            "package_tier": "train", "billing_period": "oferta"})
+        assert r.status_code == 422
+
+        r = http.post("/api/clients", headers=auth, json={
+            "full_name": "Oferta Full", "email": f"of-{uuid.uuid4().hex[:8]}@x.com",
+            "package_tier": "full", "billing_period": "oferta"})
+        assert r.status_code == 201
+        assert r.json()["client"]["billing_period"] == "oferta"
 
 
 def test_importes_del_script_cumplen_lo_pedido():

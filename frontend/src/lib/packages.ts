@@ -9,7 +9,7 @@
  *
  *  El WhatsApp diario está en los TRES: es el canal con el cliente, no un extra.
  */
-import type { BillingPeriod, PackageTier } from "../types";
+import type { BillingPeriod, PackageTier, PublicBillingPeriod } from "../types";
 
 export interface PackageInfo {
   tier: PackageTier;
@@ -84,14 +84,23 @@ export function pkg(tier: string | null | undefined): PackageInfo {
   return PACKAGES[(LEGACY[t] ?? t) as PackageTier] ?? PACKAGES.full;
 }
 
-/** Duraciones contratables de cada plan (cada una con su precio en Stripe). */
-export const BILLING_PERIODS: { value: BillingPeriod; label: string }[] = [
+/** Duraciones contratables de cada plan (cada una con su precio en Stripe).
+ *  La OFERTA va aparte (no es una duración pública del conmutador de /planes). */
+export const BILLING_PERIODS: { value: PublicBillingPeriod; label: string }[] = [
   { value: "1m", label: "Mensual" },
   { value: "3m", label: "Trimestral" },
   { value: "6m", label: "Semestral" },
 ];
 
+/** Oferta de captación (solo plan Full): 1 € el primer mes → 120 €/mes en
+ *  SUSCRIPCIÓN de Stripe (renovación automática). Espejo de las constantes
+ *  OFFER_* de backend/app/services/stripe_service.py. */
+export const OFFER_PERIOD: BillingPeriod = "oferta";
+export const OFFER_FIRST_EUR = 1;
+export const OFFER_MONTHLY_EUR = 120;
+
 /** Etiqueta de una duración ("1m" → "Mensual"). Desconocida → mensual. */
 export function billingLabel(period: string | null | undefined): string {
+  if (period === OFFER_PERIOD) return "Oferta 1 €";
   return BILLING_PERIODS.find((b) => b.value === period)?.label ?? "Mensual";
 }

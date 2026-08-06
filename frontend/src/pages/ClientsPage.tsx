@@ -8,7 +8,7 @@ import { EmptyState, PageLoader, StatusBadge, useToast } from "../components/ui"
 import { Avatar } from "./DashboardPage";
 import { GOAL_LABEL, goalReviewDue, relativeDays } from "../lib/format";
 import { onboardingMessage, openWhatsApp, portalAccessMessage, waPhone } from "../lib/whatsapp";
-import { BILLING_PERIODS, PACKAGES, PACKAGE_ORDER, pkg } from "../lib/packages";
+import { BILLING_PERIODS, OFFER_MONTHLY_EUR, PACKAGES, PACKAGE_ORDER, pkg } from "../lib/packages";
 import type { BillingPeriod, PackageTier } from "../types";
 
 /** CARPETAS de la cartera según LO QUE FALTA de cada cliente (agrupado como
@@ -516,7 +516,12 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
                       <button
                         key={t}
                         type="button"
-                        onClick={() => setTier(t)}
+                        onClick={() => {
+                          setTier(t);
+                          // La oferta es SOLO del plan Full: al cambiar de plan
+                          // se vuelve a mensual (sin sorpresas en el cobro).
+                          if (t !== "full" && period === "oferta") setPeriod("1m");
+                        }}
                         aria-pressed={sel}
                         className="flex w-full items-start gap-2.5 rounded-xl border p-3 text-left transition-colors"
                         style={{
@@ -568,6 +573,28 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
                     );
                   })}
                 </div>
+                {/* Oferta de captación: 1 € el primer mes → 120 €/mes en
+                    suscripción. Elegirla fuerza el plan Full (es solo de Full). */}
+                <button
+                  type="button"
+                  onClick={() => { setPeriod("oferta"); setTier("full"); }}
+                  aria-pressed={period === "oferta"}
+                  className="mt-2 w-full rounded-xl border px-3 py-2 text-left transition-colors"
+                  style={{
+                    borderColor: period === "oferta" ? "var(--brand-accent)" : "var(--line-strong)",
+                    background: period === "oferta"
+                      ? "color-mix(in srgb, var(--brand-accent) 10%, transparent)" : "transparent",
+                  }}
+                >
+                  <span className="block text-sm font-semibold"
+                    style={{ color: period === "oferta" ? "var(--brand-accent)" : "var(--text)" }}>
+                    Oferta: primer mes 1 €
+                  </span>
+                  <span className="mt-0.5 block text-xs text-zinc-500">
+                    Después {OFFER_MONTHLY_EUR} €/mes en suscripción (Stripe cobra solo
+                    cada mes). Solo plan Full; al elegirla se marca Full.
+                  </span>
+                </button>
               </div>
             </div>
             {/* Pie FIJO: los botones quedan siempre a la vista, no dependen del

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { BadgeEuro, Check, Copy, MessageCircle, Send } from "lucide-react";
 import { api } from "../lib/api";
-import { PACKAGES, PACKAGE_ORDER, billingLabel } from "../lib/packages";
+import { OFFER_FIRST_EUR, OFFER_MONTHLY_EUR, PACKAGES, PACKAGE_ORDER, billingLabel } from "../lib/packages";
 import { openWhatsApp, waPhone } from "../lib/whatsapp";
 import { useToast } from "./ui";
-import type { BillingPeriod, PackageTier, PlanPricesOut } from "../types";
+import type { PackageTier, PlanPricesOut, PublicBillingPeriod } from "../types";
 
 /**
  * Kit de ventas: cuando un interesado escribe por WhatsApp (desde /planes),
@@ -17,7 +17,7 @@ import type { BillingPeriod, PackageTier, PlanPricesOut } from "../types";
  * *negrita* de WhatsApp. Todo es editable antes de copiar/enviar.
  */
 
-const PERIODS: BillingPeriod[] = ["1m", "3m", "6m"];
+const PERIODS: PublicBillingPeriod[] = ["1m", "3m", "6m"];
 
 /** "69" o "110,50" — importes sin decimales de relleno. */
 function euros(n: number): string {
@@ -25,7 +25,7 @@ function euros(n: number): string {
 }
 
 /** Línea de precio de una duración: "Trimestral: 330 € (sale a 110 €/mes)". */
-function priceLine(prices: PlanPricesOut, tier: PackageTier, period: BillingPeriod): string {
+function priceLine(prices: PlanPricesOut, tier: PackageTier, period: PublicBillingPeriod): string {
   const pr = prices.tiers?.[tier]?.[period];
   if (!pr) return "";
   const extra = pr.months > 1 ? ` (sale a ${euros(pr.per_month)}/mes)` : "";
@@ -54,7 +54,21 @@ function catalogText(prices: PlanPricesOut): string {
   );
 }
 
-function planText(prices: PlanPricesOut, tier: PackageTier, period: BillingPeriod): string {
+/** Mensaje de la OFERTA (1 € el primer mes → 120 €/mes en suscripción). */
+function offerText(): string {
+  const link = `${window.location.origin}/api/pay/plan/full/oferta`;
+  return (
+    `*Oferta DQR Full* - tu primer mes por ${OFFER_FIRST_EUR} €\n` +
+    `Después, ${OFFER_MONTHLY_EUR} €/mes en suscripción (menos de lo que cuestan ` +
+    "entreno y nutrición por separado) y sin permanencia: cancelas cuando quieras.\n" +
+    "Incluye el plan completo: entrenamiento y nutrición 100 % a tu medida, " +
+    "WhatsApp conmigo a diario, app de seguimiento y videollamada de revisión.\n\n" +
+    `Empieza hoy por ${OFFER_FIRST_EUR} €: ${link}\n` +
+    "Pago seguro con Stripe; la renovación es automática cada mes."
+  );
+}
+
+function planText(prices: PlanPricesOut, tier: PackageTier, period: PublicBillingPeriod): string {
   const pr = prices.tiers?.[tier]?.[period];
   const dur = billingLabel(period).toLowerCase();
   const precio = pr
@@ -75,8 +89,8 @@ export function SalesKit() {
   const [open, setOpen] = useState(false);
   const [prices, setPrices] = useState<PlanPricesOut | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Qué hay en el cuadro: el catálogo o un plan concreto.
-  const [sel, setSel] = useState<{ tier: PackageTier; period: BillingPeriod } | "catalog" | null>(null);
+  // Qué hay en el cuadro: el catálogo, la oferta 1 € o un plan concreto.
+  const [sel, setSel] = useState<{ tier: PackageTier; period: PublicBillingPeriod } | "catalog" | "oferta" | null>(null);
   const [text, setText] = useState("");
   const [phone, setPhone] = useState("");
   const [copied, setCopied] = useState(false);
@@ -95,17 +109,19 @@ export function SalesKit() {
     if (open && prices === null) void load();
   }, [open, prices, load]);
 
-  function pick(next: { tier: PackageTier; period: BillingPeriod } | "catalog") {
+  function pick(next: { tier: PackageTier; period: PublicBillingPeriod } | "catalog" | "oferta") {
     if (!prices) return;
     // Re-pulsar el chip YA seleccionado no regenera el texto: machacaría en
     // silencio lo que el coach haya editado en el cuadro.
-    const same = next === "catalog"
-      ? sel === "catalog"
-      : sel !== "catalog" && sel?.tier === next.tier && sel?.period === next.period;
+    const same = typeof next === "string"
+      ? sel === next
+      : typeof sel !== "string" && sel?.tier === next.tier && sel?.period === next.period;
     if (same) return;
     setSel(next);
     setCopied(false);
-    setText(next === "catalog" ? catalogText(prices) : planText(prices, next.tier, next.period));
+    setText(next === "catalog" ? catalogText(prices)
+      : next === "oferta" ? offerText()
+      : planText(prices, next.tier, next.period));
   }
 
   async function copy() {
@@ -195,6 +211,16 @@ export function SalesKit() {
                 >
                   Catálogo completo
                 </button>
+                <button
+                  onClick={() => pick("oferta")}
+                  className="tap rounded-lg border px-3 py-1.5 text-xs font-bold"
+                  style={sel === "oferta"
+                    ? { background: "#2E7D46", color: "white", borderColor: "#2E7D46" }
+                    : { borderColor: "#2E7D46", color: "#2E7D46" }}
+                  title={`Primer mes ${OFFER_FIRST_EUR} € y después ${OFFER_MONTHLY_EUR} €/mes en suscripción (solo Full)`}
+                >
+                  Oferta 1 €
+                </button>
                 <span className="text-xs" style={{ color: "var(--text-faint)" }}>o un plan:</span>
               </div>
               <div className="space-y-1.5">
@@ -205,7 +231,7 @@ export function SalesKit() {
                       {PACKAGES[t].short}
                     </span>
                     {PERIODS.map((p) => {
-                      const activo = sel !== "catalog" && sel?.tier === t && sel?.period === p;
+                      const activo = typeof sel !== "string" && sel?.tier === t && sel?.period === p;
                       return (
                         <button
                           key={p}
@@ -228,7 +254,7 @@ export function SalesKit() {
                   <textarea
                     value={text}
                     onChange={(e) => { setText(e.target.value); setCopied(false); }}
-                    rows={sel === "catalog" ? 14 : 6}
+                    rows={sel === "catalog" ? 14 : sel === "oferta" ? 8 : 6}
                     className="w-full resize-y rounded-lg border bg-transparent p-2.5 font-mono text-xs outline-none"
                     style={{ borderColor: "var(--line)", color: "var(--text)" }}
                   />

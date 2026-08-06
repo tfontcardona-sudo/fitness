@@ -66,10 +66,11 @@ class Client(Base):
         String(10), default="full", server_default=text("'full'"), nullable=False
     )
     # Duración contratada del plan (decide qué precio de Stripe se cobra):
-    # 1m (mensual) | 3m (trimestral) | 6m (semestral). Informativo, como el
-    # estado de pago; el enlace de pago del cliente usa SU duración.
+    # 1m (mensual) | 3m (trimestral) | 6m (semestral) | oferta (1 € el primer
+    # mes → 120 €/mes en suscripción). Informativo, como el estado de pago; el
+    # enlace de pago del cliente usa SU duración. (mig. 0035: VARCHAR(12))
     billing_period: Mapped[str] = mapped_column(
-        String(4), default="1m", server_default=text("'1m'"), nullable=False
+        String(12), default="1m", server_default=text("'1m'"), nullable=False
     )
 
     # Anamnesis — nullable hasta que el cliente la complete vía link público

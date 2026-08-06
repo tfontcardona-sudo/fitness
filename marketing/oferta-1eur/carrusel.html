@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Carrusel oferta DQ</title>
+<style>
+  :root {
+    --bg: #0B111C;
+    --bg2: #101a2b;
+    --accent: #E8833A;
+    --accent-soft: #F6A560;
+    --red: #C2453A;
+    --green: #2E7D46;
+    --green-soft: #6FE39A;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #333; font-family: "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif; }
+  .slide {
+    position: relative; overflow: hidden; color: white;
+    background:
+      radial-gradient(130% 75% at 50% -5%, #23375455 0%, transparent 60%),
+      linear-gradient(180deg, var(--bg2) 0%, var(--bg) 55%);
+    display: flex; flex-direction: column; align-items: center;
+    margin: 20px auto;
+  }
+  .story { width: 1080px; height: 1920px; padding: 120px 90px 110px; }
+  .post  { width: 1080px; height: 1350px; padding: 90px 90px 80px; }
+  .serif { font-family: Georgia, "Times New Roman", serif; }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 12px;
+    background: var(--red); color: #fff; font-weight: 800;
+    letter-spacing: 4px; text-transform: uppercase;
+    border-radius: 999px; padding: 18px 42px; font-size: 30px;
+  }
+  .kicker { color: var(--green-soft); font-weight: 700; font-size: 34px; letter-spacing: 1px; }
+  .big { font-weight: 900; line-height: 1.04; letter-spacing: -1px; }
+  .euro { color: var(--accent-soft); }
+  .muted { color: rgba(255,255,255,0.78); }
+  .card {
+    background: rgba(255,255,255,0.05);
+    border: 2px solid rgba(255,255,255,0.14);
+    border-radius: 36px; backdrop-filter: blur(2px);
+  }
+  .foot {
+    position: absolute; left: 0; right: 0; bottom: 44px;
+    display: flex; align-items: center; justify-content: center; gap: 18px;
+    color: rgba(255,255,255,0.55); font-size: 26px; font-weight: 600;
+  }
+  .foot img { height: 52px; border-radius: 12px; }
+  .swipe {
+    position: absolute; right: 70px; bottom: 110px;
+    color: var(--accent-soft); font-size: 34px; font-weight: 800;
+  }
+  .check { color: var(--green-soft); font-weight: 900; }
+  .shadowtxt { text-shadow: 0 4px 24px rgba(0,0,0,0.55); }
+
+  /* fotos */
+  .photo-frame {
+    border-radius: 36px; overflow: hidden;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.55);
+    border: 2px solid rgba(255,255,255,0.14);
+  }
+  .photo-frame img { display: block; width: 100%; height: 100%; object-fit: cover; }
+</style>
+</head>
+<body>
+
+<!-- ============================ STORY (1080x1920) ============================ -->
+
+<!-- S1: portada, máxima expectación -->
+<section class="slide story" id="story-1">
+  <span class="pill">⚡ Oferta de lanzamiento</span>
+  <div class="photo-frame" style="width:820px;height:330px;margin-top:100px;">
+    <img src="cover.png" alt="">
+  </div>
+  <h1 class="big serif shadowtxt" style="font-size:108px;text-align:center;margin-top:110px;">
+    Tu primer mes<br>del plan completo
+  </h1>
+  <div class="big shadowtxt" style="font-size:300px;margin-top:60px;" >
+    <span class="euro">1 €</span>
+  </div>
+  <p class="muted" style="font-size:40px;text-align:center;margin-top:70px;max-width:760px;">
+    Entrenamiento + nutrición hechos <b style="color:#fff;">solo para ti</b>,
+    con tu coach cada día. Un mes entero. Un euro.
+  </p>
+  <span class="swipe">Desliza →</span>
+  <div class="foot"><img src="dq-logo.png" alt=""> David Quiceno · Asesorías DQ</div>
+</section>
+
+<!-- S2: qué incluye -->
+<section class="slide story" id="story-2">
+  <span class="kicker">TODO ESTO, DESDE EL DÍA 1</span>
+  <h2 class="big serif" style="font-size:84px;text-align:center;margin-top:36px;">
+    Nada de plantillas.<br>Un plan <span class="euro">solo para ti</span>.
+  </h2>
+  <div class="card" style="margin-top:80px;padding:70px 64px;width:100%;">
+    <div style="display:flex;flex-direction:column;gap:44px;font-size:42px;font-weight:600;">
+      <div><span class="check">✓</span>&nbsp; Entrenamiento a tu medida: tu material, tu horario, tus lesiones</div>
+      <div><span class="check">✓</span>&nbsp; Nutrición a tu medida: tus gustos, tus horarios, tus alergias</div>
+      <div><span class="check">✓</span>&nbsp; Tu coach en WhatsApp todos los días</div>
+      <div><span class="check">✓</span>&nbsp; App con tu rutina, tu dieta y tu progreso</div>
+      <div><span class="check">✓</span>&nbsp; Videollamada de revisión</div>
+    </div>
+  </div>
+  <div class="photo-frame" style="width:100%;height:400px;margin-top:80px;">
+    <img src="header_food.png" alt="">
+  </div>
+  <span class="swipe">Desliza →</span>
+  <div class="foot"><img src="dq-logo.png" alt=""> David Quiceno · Asesorías DQ</div>
+</section>
+
+<!-- S3: después del primer mes + garantía -->
+<section class="slide story" id="story-3">
+  <span class="kicker">¿Y DESPUÉS DEL PRIMER MES?</span>
+  <h2 class="big serif" style="font-size:88px;text-align:center;margin-top:40px;">
+    Sigues por <span class="euro">menos</span> de lo que cuestan entreno y nutrición por separado
+  </h2>
+  <div style="display:flex;justify-content:center;margin-top:90px;">
+    <div class="photo-frame" style="width:560px;height:520px;background:#fff;">
+      <img src="plate.png" alt="" style="object-fit:contain;padding:30px;">
+    </div>
+  </div>
+  <div class="card" style="margin-top:90px;padding:60px 64px;width:100%;border-color:#2E7D46;">
+    <p style="font-size:46px;font-weight:800;color:var(--green-soft);"><svg width="40" height="44" viewBox="0 0 24 24" fill="none" style="vertical-align:-8px;margin-right:6px;"><path d="M12 2 L20 5.5 V11 C20 16.5 16.6 20.6 12 22 C7.4 20.6 4 16.5 4 11 V5.5 Z" fill="#2E7D46" stroke="#6FE39A" stroke-width="1.6"/><path d="M8.5 11.5 L11 14 L15.5 9" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>Garantía de satisfacción</p>
+    <p class="muted" style="font-size:38px;margin-top:24px;line-height:1.35;">
+      Sin permanencia: si no te convence, cancelas y no pagas nada más.
+      Tú decides cada mes.
+    </p>
+  </div>
+  <span class="swipe">Desliza →</span>
+  <div class="foot"><img src="dq-logo.png" alt=""> David Quiceno · Asesorías DQ</div>
+</section>
+
+<!-- S4: CTA -->
+<section class="slide story" id="story-4">
+  <div class="photo-frame" style="width:760px;height:300px;margin-top:40px;">
+    <img src="cover.png" alt="">
+  </div>
+  <h2 class="big serif shadowtxt" style="font-size:100px;text-align:center;margin-top:130px;">
+    Empieza <span class="euro">hoy</span>.<br>Decide tu cambio.
+  </h2>
+  <div class="big" style="font-size:190px;margin-top:80px;">
+    <span class="euro">1 €</span>
+  </div>
+  <p class="muted" style="font-size:42px;margin-top:30px;">tu primer mes · plazas limitadas</p>
+  <div style="margin-top:110px;background:var(--accent);border-radius:32px;padding:44px 90px;
+              font-size:52px;font-weight:900;box-shadow:0 24px 70px rgba(232,131,58,0.35);">
+    LINK EN LA BIO →
+  </div>
+  <p class="muted" style="font-size:32px;margin-top:60px;">Pago seguro con Stripe · Cancela cuando quieras</p>
+  <div class="foot"><img src="dq-logo.png" alt=""> David Quiceno · Asesorías DQ</div>
+</section>
+
+<!-- ============================ POST (1080x1350) ============================ -->
+
+<section class="slide post" id="post-1">
+  <span class="pill">⚡ Oferta de lanzamiento</span>
+  <div class="photo-frame" style="width:740px;height:290px;margin-top:64px;">
+    <img src="cover.png" alt="">
+  </div>
+  <h1 class="big serif shadowtxt" style="font-size:88px;text-align:center;margin-top:70px;">
+    Tu primer mes<br>del plan completo
+  </h1>
+  <div class="big shadowtxt" style="font-size:230px;margin-top:30px;">
+    <span class="euro">1 €</span>
+  </div>
+  <p class="muted" style="font-size:34px;text-align:center;margin-top:40px;max-width:720px;">
+    Entrenamiento + nutrición hechos <b style="color:#fff;">solo para ti</b>,
+    con tu coach cada día. Un mes entero. Un euro.
+  </p>
+  <span class="swipe" style="bottom:120px;">Desliza →</span>
+  <div class="foot"><img src="dq-logo.png" alt=""> David Quiceno · Asesorías DQ</div>
+</section>
+
+<section class="slide post" id="post-2">
+  <span class="kicker" style="font-size:30px;">TODO ESTO, DESDE EL DÍA 1</span>
+  <h2 class="big serif" style="font-size:64px;text-align:center;margin-top:28px;">
+    Nada de plantillas.<br>Un plan <span class="euro">solo para ti</span>.
+  </h2>
+  <div class="card" style="margin-top:54px;padding:52px 56px;width:100%;">
+    <div style="display:flex;flex-direction:column;gap:34px;font-size:35px;font-weight:600;">
+      <div><span class="check">✓</span>&nbsp; Entrenamiento a tu medida: material, horario, lesiones</div>
+      <div><span class="check">✓</span>&nbsp; Nutrición a tu medida: gustos, horarios, alergias</div>
+      <div><span class="check">✓</span>&nbsp; Tu coach en WhatsApp todos los días</div>
+      <div><span class="check">✓</span>&nbsp; App con tu rutina, tu dieta y tu progreso</div>
+      <div><span class="check">✓</span>&nbsp; Videollamada de revisión</div>
+    </div>
+  </div>
+  <div class="photo-frame" style="width:100%;height:300px;margin-top:56px;">
+    <img src="header_food.png" alt="">
+  </div>
+  <span class="swipe" style="bottom:120px;">Desliza →</span>
+  <div class="foot"><img src="dq-logo.png" alt=""> David Quiceno · Asesorías DQ</div>
+</section>
+
+<section class="slide post" id="post-3">
+  <span class="kicker" style="font-size:30px;">¿Y DESPUÉS DEL PRIMER MES?</span>
+  <h2 class="big serif" style="font-size:66px;text-align:center;margin-top:30px;">
+    Sigues por <span class="euro">menos</span> de lo que cuestan entreno y nutrición por separado
+  </h2>
+  <div style="display:flex;justify-content:center;margin-top:56px;">
+    <div class="photo-frame" style="width:430px;height:400px;background:#fff;">
+      <img src="plate.png" alt="" style="object-fit:contain;padding:24px;">
+    </div>
+  </div>
+  <div class="card" style="margin-top:60px;padding:46px 56px;width:100%;border-color:#2E7D46;">
+    <p style="font-size:38px;font-weight:800;color:var(--green-soft);"><svg width="40" height="44" viewBox="0 0 24 24" fill="none" style="vertical-align:-8px;margin-right:6px;"><path d="M12 2 L20 5.5 V11 C20 16.5 16.6 20.6 12 22 C7.4 20.6 4 16.5 4 11 V5.5 Z" fill="#2E7D46" stroke="#6FE39A" stroke-width="1.6"/><path d="M8.5 11.5 L11 14 L15.5 9" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>Garantía de satisfacción</p>
+    <p class="muted" style="font-size:32px;margin-top:18px;line-height:1.35;">
+      Sin permanencia: si no te convence, cancelas y no pagas nada más.
+      Tú decides cada mes.
+    </p>
+  </div>
+  <span class="swipe" style="bottom:120px;">Desliza →</span>
+  <div class="foot"><img src="dq-logo.png" alt=""> David Quiceno · Asesorías DQ</div>
+</section>
+
+<section class="slide post" id="post-4">
+  <div class="photo-frame" style="width:680px;height:260px;margin-top:20px;">
+    <img src="cover.png" alt="">
+  </div>
+  <h2 class="big serif shadowtxt" style="font-size:80px;text-align:center;margin-top:80px;">
+    Empieza <span class="euro">hoy</span>.<br>Decide tu cambio.
+  </h2>
+  <div class="big" style="font-size:150px;margin-top:44px;">
+    <span class="euro">1 €</span>
+  </div>
+  <p class="muted" style="font-size:34px;margin-top:18px;">tu primer mes · plazas limitadas</p>
+  <div style="margin-top:70px;background:var(--accent);border-radius:28px;padding:36px 76px;
+              font-size:44px;font-weight:900;box-shadow:0 24px 70px rgba(232,131,58,0.35);">
+    LINK EN LA BIO →
+  </div>
+  <p class="muted" style="font-size:28px;margin-top:44px;">Pago seguro con Stripe · Cancela cuando quieras</p>
+  <div class="foot"><img src="dq-logo.png" alt=""> David Quiceno · Asesorías DQ</div>
+</section>
+
+</body>
+</html>

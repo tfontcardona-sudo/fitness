@@ -3,7 +3,7 @@ import { MessageCircle } from "lucide-react";
 import { api } from "../lib/api";
 import { BILLING_PERIODS, PACKAGES, PACKAGE_ORDER, billingLabel } from "../lib/packages";
 import { waPhone, waUrl } from "../lib/whatsapp";
-import type { BillingPeriod, PackageTier } from "../types";
+import type { PackageTier, PublicBillingPeriod } from "../types";
 
 /**
  * Página PÚBLICA de asesorías (el enlace del perfil). SIN PRECIOS a propósito:
@@ -14,7 +14,7 @@ import type { BillingPeriod, PackageTier } from "../types";
  */
 
 /** Descripción propia de cada plan × duración (los "9 planes"). */
-const DURATION_PITCH: Record<PackageTier, Record<BillingPeriod, string>> = {
+const DURATION_PITCH: Record<PackageTier, Record<PublicBillingPeriod, string>> = {
   train: {
     "1m": "Un mes para probarlo en serio: en 4 semanas notas lo que es entrenar con un plan pensado solo para ti.",
     "3m": "12 semanas: un ciclo completo de progresión. Resultados que se ven en el espejo y se sienten en cada sesión.",
@@ -62,7 +62,7 @@ const PLAN_BULLETS: Record<PackageTier, string[]> = {
 };
 
 /** Mensaje prellenado del botón (sin emojis: WhatsApp los corrompe a veces). */
-function contactMessage(tier: PackageTier, period: BillingPeriod): string {
+function contactMessage(tier: PackageTier, period: PublicBillingPeriod): string {
   const dur = billingLabel(period).toLowerCase();
   return (
     `¡Hola! He visto la asesoría ${PACKAGES[tier].label} (${dur}) en tu página ` +
@@ -75,7 +75,7 @@ const GENERIC_MESSAGE =
   "¿Te cuento mi caso y me dices qué plan me encaja y su precio?";
 
 export default function PlansPage() {
-  const [period, setPeriod] = useState<BillingPeriod>("3m");
+  const [period, setPeriod] = useState<PublicBillingPeriod>("3m");
   // Marca pública: foto de fondo + teléfono de contacto del coach (WhatsApp).
   const [landing, setLanding] = useState<import("../types").LandingOut | null>(null);
 

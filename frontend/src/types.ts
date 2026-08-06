@@ -12,9 +12,12 @@ export type Level = "beginner" | "intermediate" | "advanced";
 export type TrainingPlace = "gym" | "home" | "outdoor";
 export type DietMode = "flexible_7" | "strict";
 export type PackageTier = "nutri" | "train" | "full";
+// Duraciones PÚBLICAS con precio propio en el catálogo (conmutador de /planes).
+export type PublicBillingPeriod = "1m" | "3m" | "6m";
 // Duración contratada del plan (decide el precio de Stripe que se cobra):
-// mensual, trimestral o semestral.
-export type BillingPeriod = "1m" | "3m" | "6m";
+// mensual, trimestral, semestral, u "oferta" (1 € el primer mes → 120 €/mes
+// en suscripción, solo plan Full).
+export type BillingPeriod = PublicBillingPeriod | "oferta";
 export type PaymentStatus = "pending" | "paid";
 export type ClientStatus =
   | "onboarding"
@@ -457,10 +460,11 @@ export interface LandingOut {
   products: { title: string; url: string; category: string; image_url: string | null }[];
 }
 
-/** GET /api/public/plan-prices — importes reales de cada plan × duración. */
+/** GET /api/public/plan-prices — importes reales de cada plan × duración
+ *  (solo las 3 duraciones públicas; la oferta no sale en el catálogo). */
 export interface PlanPricesOut {
   currency: string;
-  tiers: Record<PackageTier, Record<BillingPeriod,
+  tiers: Record<PackageTier, Record<PublicBillingPeriod,
     { total: number; months: number; per_month: number } | null>>;
 }
 

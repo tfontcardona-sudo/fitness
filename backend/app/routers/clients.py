@@ -241,6 +241,13 @@ def _get_or_404(db: Session, client_id: int) -> Client:
 def create_client(body: ClientCreate, db: Session = Depends(get_db)) -> ClientCreatedOut:
     """Alta mínima: nombre + email (+ teléfono). El resto lo aporta el cliente
     en el wizard de anamnesis vía el link público que devuelve esta llamada."""
+    # La periodicidad "oferta" (1 € → 120 €/mes en suscripción) es SOLO del plan
+    # Full: un alta train/nutri con oferta cobraría un plan que no existe.
+    from app.services import packages as pkgs
+    if body.billing_period == "oferta" and pkgs.normalize(body.package_tier) != "full":
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "La oferta (1 € el primer mes) es solo del plan Full")
+
     # Email normalizado a minúsculas: así el login (que compara en minúsculas) y
     # la unicidad usan la MISMA clave y no pueden crearse "A@x" y "a@x".
     email = (body.email or "").strip().lower()
