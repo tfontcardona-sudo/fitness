@@ -131,6 +131,16 @@ def pay_link(client: Client = Depends(get_client_by_token), db: Session = Depend
     # gracias en vez de a un checkout nuevo.
     if client.payment_status == "paid":
         return RedirectResponse(f"{base}/pago-ok", status_code=302)
+    # OFERTA con suscripción YA creada: reabrir el enlace tras un impago no
+    # puede montar una SEGUNDA suscripción (doble cobro mensual y otro primer
+    # mes a 1 €). Si su suscripción tiene una factura abierta, se le manda ahí
+    # (paga lo pendiente y actualiza la tarjeta); si no la hay, la suscripción
+    # está al día y no toca cobrar nada.
+    if client.billing_period == "oferta" and client.stripe_subscription_id:
+        from app.services.stripe_service import open_invoice_url
+
+        pendiente = open_invoice_url(client)
+        return RedirectResponse(pendiente or f"{base}/pago-ok", status_code=302)
     try:
         url = create_checkout_url(db, client.package_tier, client.billing_period,
                                   client=client)

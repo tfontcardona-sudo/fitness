@@ -413,6 +413,19 @@ def update_client(client_id: int, body: ClientUpdate, db: Session = Depends(get_
     if not changes:
         return ClientOut.model_validate(client)
 
+    # Combinación RESULTANTE válida: la oferta (1 € → suscripción) es solo del
+    # plan Full. Cubre tanto poner billing "oferta" a un train/nutri como
+    # cambiar de plan a un cliente que YA está en la oferta.
+    if "billing_period" in changes or "package_tier" in changes:
+        from app.services import packages as pkgs
+        billing_final = changes.get("billing_period", client.billing_period)
+        tier_final = changes.get("package_tier", client.package_tier)
+        if billing_final == "oferta" and pkgs.normalize(tier_final) != "full":
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "La oferta (1 € el primer mes) es solo del plan Full: cambia "
+                "antes la duración si quieres otro plan.")
+
     # Cambio de ESTADO manual (auditoría del ciclo: `inactive` era una trampa
     # sin salida — la transición "reactivación manual" existía en la máquina
     # pero no tenía ningún llamador). Validado SIEMPRE contra la máquina.

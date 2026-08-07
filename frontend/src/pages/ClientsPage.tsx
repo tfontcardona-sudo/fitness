@@ -591,8 +591,8 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
                     Oferta: primer mes 1 €
                   </span>
                   <span className="mt-0.5 block text-xs text-zinc-500">
-                    Después {OFFER_MONTHLY_EUR} €/mes en suscripción (Stripe cobra solo
-                    cada mes). Solo plan Full; al elegirla se marca Full.
+                    Después {OFFER_MONTHLY_EUR} €/mes en suscripción: Stripe renueva el
+                    cobro automáticamente. Solo plan Full; al elegirla se marca Full.
                   </span>
                 </button>
               </div>

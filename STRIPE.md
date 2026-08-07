@@ -155,9 +155,13 @@ El webhook es cómo Stripe le dice a la app "este pago se ha completado". Sin
    ```
    https://app.dqrassessories.com/api/stripe/webhook
    ```
-3. **Eventos a escuchar**: selecciona solo
-   **`checkout.session.completed`**. (El backend ignora cualquier otro evento,
-   así que no hace falta más.)
+3. **Eventos a escuchar**: selecciona
+   **`checkout.session.completed`**, **`invoice.paid`**,
+   **`invoice.payment_failed`** y **`customer.subscription.deleted`** (los
+   tres últimos mantienen al día las renovaciones y bajas de la OFERTA de
+   suscripción — impagos incluidos). Si el endpoint ya existe con solo el
+   primero, no hace falta tocarlo a mano: el propio sistema añade los que
+   falten por API al alinear los precios (script del deploy o auto-alta).
 4. Al crearlo, abre el endpoint y copia el **Secreto de firma** (Signing
    secret): empieza por `whsec_...`. Sirve para que el servidor compruebe que
    el aviso viene DE VERDAD de Stripe.

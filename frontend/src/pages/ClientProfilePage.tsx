@@ -551,6 +551,12 @@ function BillingRow({ client, onSaved }: { client: ClientOut; onSaved: () => voi
           {BILLING_PERIODS.map((b) => (
             <option key={b.value} value={b.value}>{b.label}</option>
           ))}
+          {/* La oferta se muestra y se puede (re)aplicar SOLO en plan Full:
+              sin esta opción, un cliente de la oferta salía con el select en
+              blanco y cambiarlo era un billete de ida sin vuelta. */}
+          {pkg(client.package_tier).tier === "full" && (
+            <option value="oferta">Oferta 1 € → 120 €/mes</option>
+          )}
         </select>
       </dd>
     </div>

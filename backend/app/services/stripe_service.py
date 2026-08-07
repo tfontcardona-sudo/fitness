@@ -142,9 +142,12 @@ def ensure_canonical_prices(stripe, log=None) -> list[str]:
                 note(f"  ~ {key}: {pr['unit_amount'] / 100:.2f} € → "
                      f"{amount / 100:.2f} € (precio nuevo, el antiguo desactivado)")
             else:
+                # transfer_lookup_key TAMBIÉN al crear: un precio ARCHIVADO a
+                # mano conserva su lookup_key y sin transferencia Stripe
+                # rechaza el alta ("lookup key already in use") en bucle.
                 stripe.Price.create(
                     product=product_id, currency=CURRENCY, unit_amount=amount,
-                    lookup_key=key, nickname=nickname,
+                    lookup_key=key, transfer_lookup_key=True, nickname=nickname,
                 )
                 note(f"  + {key}: creado con {amount / 100:.2f} €")
 
@@ -170,7 +173,7 @@ def ensure_canonical_prices(stripe, log=None) -> list[str]:
                 product=products["full"], currency=CURRENCY,
                 unit_amount=OFFER_MONTHLY_CENTS,
                 recurring={"interval": "month"},
-                lookup_key=OFFER_LOOKUP,
+                lookup_key=OFFER_LOOKUP, transfer_lookup_key=True,
                 nickname="DQR Full · oferta (120 €/mes)",
             )
             note(f"  + {OFFER_LOOKUP}: creado (suscripción {OFFER_MONTHLY_CENTS / 100:.2f} €/mes)")
@@ -203,6 +206,29 @@ def ensure_canonical_prices(stripe, log=None) -> list[str]:
              f"{OFFER_FIRST_MONTH_CENTS / 100:.2f} € (−{descuento / 100:.2f} €)")
     else:
         note(f"  = cupón {OFFER_COUPON_ID}: ya existe (sin cambios)")
+
+    # ---- Webhook: los eventos de la suscripción deben estar SUSCRITOS ----
+    # La guía original decía escuchar SOLO checkout.session.completed; sin
+    # invoice.paid/payment_failed y customer.subscription.deleted, todo el
+    # seguimiento de renovaciones sería código muerto. Se añaden por API al
+    # endpoint del dashboard (best-effort: sin permisos, aviso y a mano).
+    try:
+        necesarios = {"checkout.session.completed", "invoice.paid",
+                      "invoice.payment_failed", "customer.subscription.deleted"}
+        for ep in stripe.WebhookEndpoint.list(limit=100)["data"]:
+            if "/api/stripe/webhook" not in (ep.get("url") or ""):
+                continue
+            actuales = set(ep.get("enabled_events") or [])
+            if "*" in actuales or necesarios <= actuales:
+                note("  = webhook: ya escucha los eventos de la suscripción")
+            else:
+                stripe.WebhookEndpoint.modify(
+                    ep["id"], enabled_events=sorted(actuales | necesarios))
+                note("  ~ webhook: añadidos invoice.paid / invoice.payment_failed / "
+                     "customer.subscription.deleted")
+    except Exception as exc:  # noqa: BLE001 — clave restringida, sin red…
+        note(f"  ! webhook sin comprobar ({exc}): añade a mano invoice.paid, "
+             "invoice.payment_failed y customer.subscription.deleted en el dashboard")
     return out
 
 
@@ -252,8 +278,20 @@ def _price_by_lookup(tier: str, period: str) -> str:
                             or pr.get("currency") != CURRENCY):
                         return True
             of = found.get(OFFER_LOOKUP)  # el precio recurrente de la oferta
-            return (of is None or of.get("unit_amount") != OFFER_MONTHLY_CENTS
-                    or (of.get("recurring") or {}).get("interval") != "month")
+            if (of is None or of.get("unit_amount") != OFFER_MONTHLY_CENTS
+                    or (of.get("recurring") or {}).get("interval") != "month"):
+                return True
+            # El CUPÓN del primer mes también es reparable: borrado a mano en el
+            # dashboard dejaría la promo muerta en silencio (cada checkout
+            # fallaría con "No such coupon") y los precios seguirían alineados.
+            try:
+                cup = stripe.Coupon.retrieve(OFFER_COUPON_ID)
+                return not (cup.get("amount_off") == OFFER_MONTHLY_CENTS - OFFER_FIRST_MONTH_CENTS
+                            and cup.get("currency") == CURRENCY
+                            and cup.get("duration") == "once"
+                            and cup.get("valid", True))
+            except Exception:  # noqa: BLE001 — no existe: hay que recrearlo
+                return True
 
         if _desalineado() and now - _ensure_state["at"] > _ENSURE_RETRY_S:
             _ensure_state["at"] = now
@@ -348,17 +386,36 @@ def create_checkout_url(db: Session, tier: str, period: str = "1m", *,
             **extra,
         )
     except Exception as exc:  # noqa: BLE001 — errores del SDK de Stripe
-        # Los errores de la librería (precio recién archivado por un reprecio,
+        # Los errores de la librería (precio archivado, cupón borrado a mano,
         # red, rate limit…) NO heredan de nuestra StripeError: sin esto se
-        # propagaban como 500 al navegador del interesado. Además, el precio
-        # cacheado puede ser el recién desactivado: se vacía la caché para que
-        # el SIGUIENTE clic re-resuelva y se auto-repare en segundos.
+        # propagaban como 500 al navegador del interesado. Se vacía la caché de
+        # precios Y el freno del auto-alta para que el SIGUIENTE clic
+        # re-resuelva y repare lo que falte (precio nuevo, cupón recreado…).
         _lookup_cache["ids"] = {}
+        _ensure_state["at"] = 0.0
         _log.warning("Stripe rechazó la Checkout Session (%s %s): %s", tier, period, exc)
         raise StripeError(
             "La pasarela de pago no ha respondido; prueba de nuevo en un momento."
         ) from exc
     return session.url
+
+
+def open_invoice_url(client: Client) -> str | None:
+    """URL de la factura ABIERTA de la suscripción de la oferta del cliente
+    (página alojada por Stripe: actualiza la tarjeta y paga lo pendiente), o
+    None si no hay ninguna. La usa el enlace de pago estable para NO crear una
+    SEGUNDA suscripción con otro primer mes a 1 € tras un impago. Best-effort."""
+    if not (client.billing_period == OFFER_PERIOD and client.stripe_subscription_id
+            and settings.stripe_enabled):
+        return None
+    try:
+        stripe = _stripe()
+        invs = stripe.Invoice.list(subscription=client.stripe_subscription_id,
+                                   status="open", limit=1)["data"]
+        return invs[0].get("hosted_invoice_url") if invs else None
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("Sin factura abierta para el cliente %s: %s", client.id, exc)
+        return None
 
 
 # ---------------------------------------------------------------- precios ----
@@ -535,14 +592,20 @@ def _create_selfserve_client(db: Session, *, name: str, email: str,
     return client
 
 
-def _tag_subscription(session: dict, client: Client) -> None:
-    """Graba el client_id en la metadata de la SUSCRIPCIÓN de la oferta: las
-    facturas de renovación (invoice.paid/payment_failed) llegan sin la metadata
-    de la sesión, y con esto se mapean solas al cliente. Best-effort: nunca
-    rompe el webhook (en el peor caso queda la reserva por email)."""
+def _tag_subscription(db: Session, session: dict, client: Client) -> None:
+    """Ancla la SUSCRIPCIÓN de la oferta al cliente: graba el client_id en la
+    metadata de la suscripción (las facturas de renovación llegan sin la
+    metadata de la sesión) Y el sub_… en la ficha (para no crear una segunda
+    suscripción al reabrir el enlace de pago y para mapear cancelaciones).
+    Best-effort: nunca rompe el webhook."""
     sub_id = session.get("subscription")
     if not sub_id:
         return
+    try:
+        client.stripe_subscription_id = sub_id
+        db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()
     try:
         stripe = _stripe()
         stripe.Subscription.modify(sub_id, metadata={
@@ -575,21 +638,52 @@ def _notify_coach_payment_failed(db: Session, client: Client) -> None:
         pass
 
 
+def _invoice_subscription_bits(invoice: dict) -> tuple[str | None, dict]:
+    """(sub_id, metadata) de la factura, tolerante con las DOS formas del
+    payload: la clásica (invoice.subscription / invoice.subscription_details) y
+    la de las versiones de API 2025-03-31+ (invoice.parent.subscription_details)
+    — la forma la decide la versión anclada al ENDPOINT del webhook, no el SDK."""
+    parent_details = ((invoice.get("parent") or {}).get("subscription_details") or {})
+    details = invoice.get("subscription_details") or parent_details
+    meta = details.get("metadata") or {}
+    sub = invoice.get("subscription") or parent_details.get("subscription")
+    sub_id = sub.get("id") if isinstance(sub, dict) else sub
+    return sub_id, meta
+
+
+def _invoice_es_de_la_oferta(invoice: dict) -> bool:
+    """¿La factura pertenece a NUESTRA oferta? Mira el lookup_key del precio de
+    sus líneas (dqr_full_oferta). Sin esto, una cuenta de Stripe con OTROS
+    productos (facturas manuales, suscripciones antiguas…) contaminaría el
+    estado de pago de clientes homónimos vía la reserva por email."""
+    for line in ((invoice.get("lines") or {}).get("data") or []):
+        price = line.get("price") or {}
+        if price.get("lookup_key") == OFFER_LOOKUP:
+            return True
+        # Forma 2025-03-31+: la línea lleva pricing.price_details, sin
+        # lookup_key. Reserva: metadata de la propia línea/suscripción.
+        if (line.get("metadata") or {}).get("billing_period") == OFFER_PERIOD:
+            return True
+    _sub, meta = _invoice_subscription_bits(invoice)
+    return meta.get("billing_period") == OFFER_PERIOD or bool(meta.get("client_id"))
+
+
 def _client_from_invoice(db: Session, invoice: dict) -> Client | None:
     """Cliente al que pertenece una factura de suscripción: metadata de la
-    suscripción (subscription_details/las líneas/la API) y, como último
-    recurso, el email de la factura."""
-    meta = (invoice.get("subscription_details") or {}).get("metadata") or {}
+    suscripción (en cualquiera de las dos formas del payload), metadata de las
+    líneas, la API y, como último recurso, el email de la factura — este último
+    SOLO si la factura es verificablemente de la oferta (el caller lo filtra)."""
+    sub_id, meta = _invoice_subscription_bits(invoice)
     cid = meta.get("client_id")
     if not cid:
         for line in ((invoice.get("lines") or {}).get("data") or []):
             cid = (line.get("metadata") or {}).get("client_id")
             if cid:
                 break
-    if not cid and invoice.get("subscription"):
+    if not cid and sub_id:
         try:
             stripe = _stripe()
-            sub = stripe.Subscription.retrieve(invoice["subscription"])
+            sub = stripe.Subscription.retrieve(sub_id)
             cid = (sub.get("metadata") or {}).get("client_id")
         except Exception:  # noqa: BLE001
             cid = None
@@ -600,6 +694,11 @@ def _client_from_invoice(db: Session, invoice: dict) -> Client | None:
                 return client
         except (TypeError, ValueError):
             pass
+    # Ancla inversa: la ficha guarda el sub_… al pagar (mig. 0036).
+    if sub_id:
+        client = db.scalar(select(Client).where(Client.stripe_subscription_id == sub_id))
+        if client is not None:
+            return client
     email = (invoice.get("customer_email") or "").strip().lower()
     if email:
         return db.scalar(select(Client).where(func.lower(Client.email) == email))
@@ -609,38 +708,135 @@ def _client_from_invoice(db: Session, invoice: dict) -> Client | None:
 def _handle_invoice_event(db: Session, event: dict) -> dict:
     """Renovaciones de la suscripción de la oferta: cada mes Stripe cobra solo y
     avisa aquí. invoice.paid refresca el pago del cliente; invoice.payment_failed
-    lo pasa a 'pendiente' y avisa al coach al momento — ningún impago se pierde."""
+    lo pasa a 'pendiente' y avisa al coach al momento — ningún impago se pierde.
+    Idempotente por factura (los reintentos de Stripe no duplican avisos)."""
     invoice = event["data"]["object"]
     pagada = event["type"] == "invoice.paid"
+    if not _invoice_es_de_la_oferta(invoice):
+        # Factura de OTRO producto de la misma cuenta de Stripe: no es nuestra.
+        return {"ignored": "invoice_ajena"}
     # La PRIMERA factura de la suscripción (billing_reason=subscription_create)
-    # ya la gestiona checkout.session.completed: aquí no se duplica el aviso.
+    # convive con checkout.session.completed y puede llegar ANTES o DESPUÉS.
     primera = invoice.get("billing_reason") == "subscription_create"
     client = _client_from_invoice(db, invoice)
     if client is None:
-        if pagada and not primera and (invoice.get("amount_paid") or 0) > 0:
+        # Es de la oferta pero no se pudo mapear: alguien tiene que enterarse
+        # (también de los IMPAGOS — el caso más peligroso de perder).
+        if not primera:
             _notify_orphan_payment(db, {
                 "customer_details": {"email": invoice.get("customer_email"),
                                      "name": invoice.get("customer_name")},
-                "amount_total": invoice.get("amount_paid"),
+                "amount_total": (invoice.get("amount_paid") if pagada
+                                 else invoice.get("amount_due")),
             })
         return {"ignored": "invoice_sin_cliente"}
+
+    # Idempotencia: si esta factura ya se procesó (reintento de entrega de
+    # Stripe), no se re-avisa ni se re-escribe nada.
+    invoice_id = invoice.get("id")
+    if invoice_id:
+        from app.models import AuditLog
+
+        ya = db.scalar(
+            select(AuditLog.id).where(
+                AuditLog.entity == "client", AuditLog.entity_id == client.id,
+                AuditLog.event == ("payment_received" if pagada else "payment_failed"),
+                AuditLog.detail_json["invoice_id"].astext == invoice_id,
+            ).limit(1))
+        if ya:
+            return {"ignored": "invoice_repetida", "client_id": client.id}
+
     if pagada:
+        transicion = client.payment_status != "paid"
         client.payment_status = "paid"
         client.paid_at = datetime.now(timezone.utc)
         log_event(db, "client", client.id, "payment_received",
-                  {"source": "invoice",
+                  {"source": "invoice", "invoice_id": invoice_id,
                    "amount_eur": (invoice.get("amount_paid") or 0) / 100.0,
                    "billing_reason": invoice.get("billing_reason")})
-        if not primera:
+        # Aviso por TRANSICIÓN o por renovación: si la primera factura llega
+        # antes que el checkout, el push del alta no se pierde; si llega
+        # después, no se duplica (el checkout ya avisó y esto no transiciona).
+        if transicion or not primera:
             _notify_coach_payment(db, client, new_client=False)
     else:
+        # Un payment_failed REZAGADO (reintento de webhook posterior al cobro
+        # que lo resolvió) no debe tapar un pago más nuevo.
+        creado = invoice.get("created") or event.get("created")
+        if (client.paid_at is not None and creado
+                and client.paid_at.timestamp() > float(creado)):
+            return {"ignored": "invoice_fallida_antigua", "client_id": client.id}
         client.payment_status = "pending"
         log_event(db, "client", client.id, "payment_failed",
-                  {"source": "invoice",
+                  {"source": "invoice", "invoice_id": invoice_id,
                    "amount_eur": (invoice.get("amount_due") or 0) / 100.0})
         _notify_coach_payment_failed(db, client)
     db.commit()
     return {"invoice": "paid" if pagada else "failed", "client_id": client.id}
+
+
+def _handle_subscription_deleted(db: Session, event: dict) -> dict:
+    """La suscripción de la oferta se canceló (por el cliente, por impagos
+    agotados o a mano en Stripe): el cliente deja de pagar → pasa a 'pendiente'
+    (badge rojo + filtro de pagos) y el coach recibe push. Sin esto, la ficha
+    quedaría 'pagado' para siempre tras la baja."""
+    sub = event["data"]["object"]
+    sub_id = sub.get("id")
+    cid = (sub.get("metadata") or {}).get("client_id")
+    client = None
+    if cid:
+        try:
+            client = db.get(Client, int(cid))
+        except (TypeError, ValueError):
+            client = None
+    if client is None and sub_id:
+        client = db.scalar(select(Client).where(Client.stripe_subscription_id == sub_id))
+    if client is None:
+        return {"ignored": "subscription_sin_cliente"}
+    client.payment_status = "pending"
+    if client.stripe_subscription_id == sub_id:
+        client.stripe_subscription_id = None
+    log_event(db, "client", client.id, "subscription_cancelled",
+              {"subscription": sub_id})
+    try:
+        from app.services import push as push_svc
+
+        first = ((client.full_name or "").split() or ["Un cliente"])[0]
+        base = settings.public_base_url.rstrip("/")
+        push_svc.send_to_coach(db, {
+            "title": "Suscripción cancelada",
+            "body": (f"{first} ha dejado la suscripción de la oferta: no habrá "
+                     "más cobros mensuales. Revisa su ficha."),
+            "count": 1,
+            "url": f"{base}/clientes/{client.id}",
+            "tag": "dq-sub-cancelada",
+        })
+    except Exception:  # noqa: BLE001
+        pass
+    db.commit()
+    return {"subscription_cancelled": client.id}
+
+
+def _notify_coach_offer_reused(db: Session, client: Client) -> None:
+    """Push DISTINTIVO: un cliente que YA existía ha contratado la oferta de
+    1 € por el enlace público. Puede ser legítimo (venía de un plan suelto) o
+    un atajo para rebajarse el plan — el coach decide, pero se entera SIEMPRE."""
+    try:
+        from app.services import push as push_svc
+
+        first = ((client.full_name or "").split() or ["Un cliente"])[0]
+        base = settings.public_base_url.rstrip("/")
+        push_svc.send_to_coach(db, {
+            "title": "Cliente EXISTENTE con la oferta ⚠️",
+            "body": (f"{first} ya estaba dado de alta y ha contratado la oferta "
+                     "de 1 €. Revisa que te cuadre (puedes cancelar la "
+                     "suscripción en Stripe si no)."),
+            "count": 1,
+            "url": f"{base}/clientes/{client.id}",
+            "tag": "dq-oferta-existente",
+        })
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def handle_webhook(db: Session, payload: bytes, sig_header: str | None) -> dict:
@@ -659,6 +855,8 @@ def handle_webhook(db: Session, payload: bytes, sig_header: str | None) -> dict:
 
     if event["type"] in ("invoice.paid", "invoice.payment_failed"):
         return _handle_invoice_event(db, event)
+    if event["type"] == "customer.subscription.deleted":
+        return _handle_subscription_deleted(db, event)
     if event["type"] != "checkout.session.completed":
         return {"ignored": event["type"]}
 
@@ -681,7 +879,7 @@ def handle_webhook(db: Session, payload: bytes, sig_header: str | None) -> dict:
             return {"error": "client_not_found", "client_id": client_id}
         _mark_paid(db, client, period)
         db.commit()
-        _tag_subscription(session, client)
+        _tag_subscription(db, session, client)
         return {"marked_paid": client.id}
 
     # Registro personal: crear el perfil desde los datos de Stripe.
@@ -693,13 +891,20 @@ def handle_webhook(db: Session, payload: bytes, sig_header: str | None) -> dict:
         return {"error": "no_email"}
     existing = db.scalar(select(Client).where(func.lower(Client.email) == email))
     if existing:  # ya existía (o webhook reenviado): idempotente
+        # Un cliente EXISTENTE redimiendo la oferta pública de 1 € no es un
+        # alta normal: puede ser un atajo para rebajarse el plan. Se procesa
+        # (el dinero entró y la suscripción existe) pero con push DISTINTIVO
+        # para que el coach lo revise y decida (idempotente: solo si cambia).
+        era_oferta = existing.billing_period == OFFER_PERIOD
         _mark_paid(db, existing, period)
         db.commit()
-        _tag_subscription(session, existing)
+        _tag_subscription(db, session, existing)
+        if period == OFFER_PERIOD and not era_oferta:
+            _notify_coach_offer_reused(db, existing)
         return {"marked_paid": existing.id, "existing": True}
 
     client = _create_selfserve_client(
         db, name=details.get("name") or "", email=email,
         phone=details.get("phone"), tier=tier, period=period)
-    _tag_subscription(session, client)
+    _tag_subscription(db, session, client)
     return {"created": client.id}

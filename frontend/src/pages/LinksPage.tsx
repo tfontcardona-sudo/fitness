@@ -67,6 +67,18 @@ export default function LinksPage() {
         {data?.tagline && <p className="mt-1 text-sm text-white/80">{data.tagline}</p>}
 
         <div className="mt-8 w-full space-y-3">
+          {/* OFERTA de la campaña de story/post ("link en la bio" → aquí):
+              arriba del todo y con su gancho, para que el que viene del
+              carrusel la encuentre al primer toque. */}
+          <Link to="/oferta"
+            className="flex w-full flex-col items-center justify-center rounded-2xl px-5 py-4 text-white shadow-xl transition-transform active:scale-[0.97]"
+            style={{ background: "#C2453A" }}>
+            <span className="text-base font-extrabold">⚡ Oferta: tu primer mes por 1 €</span>
+            <span className="mt-0.5 text-xs font-semibold text-white/85">
+              Plan completo · plazas limitadas
+            </span>
+          </Link>
+
           {/* Trabaja conmigo → página de planes con pago */}
           <Link to="/planes"
             className="flex w-full items-center justify-center gap-2.5 rounded-2xl px-5 py-4 text-base font-bold text-white shadow-xl transition-transform active:scale-[0.97]"

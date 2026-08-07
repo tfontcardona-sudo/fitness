@@ -17,9 +17,9 @@ const WA_MESSAGE =
 const INCLUYE = [
   "Entrenamiento 100 % a tu medida: tu material, tu horario, tus lesiones y tu nivel",
   "Nutrición 100 % a tu medida: tus gustos, tus horarios, tus alergias",
-  "Tu coach en WhatsApp todos los días",
+  "Conmigo en WhatsApp todos los días",
   "App con tu rutina, tu dieta y tu seguimiento",
-  "Videollamada de revisión con tu coach",
+  "Videollamada de revisión conmigo",
 ];
 
 export default function OfertaPage() {
@@ -54,7 +54,7 @@ export default function OfertaPage() {
           <img src="/dq-logo.png" alt="" className="h-14 w-auto rounded-xl shadow-lg" />
           <span className="mt-4 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-extrabold uppercase tracking-widest text-white"
             style={{ background: "#C2453A" }}>
-            <Zap size={12} /> Oferta de lanzamiento · plazas de este mes
+            <Zap size={12} /> Oferta de lanzamiento · plazas limitadas este mes
           </span>
           <h1 className="mt-3 text-4xl font-extrabold leading-tight tracking-tight">
             Tu primer mes,
@@ -62,8 +62,8 @@ export default function OfertaPage() {
             <span style={{ color: "#F6A560" }}>por 1 €</span>
           </h1>
           <p className="mt-3 max-w-md text-sm text-white/90">
-            El plan completo — entrenamiento y nutrición hechos SOLO para ti,
-            conmigo cada día en WhatsApp. Un mes entero para probarlo en serio.
+            El plan completo: entrenamiento y nutrición hechos SOLO para ti,
+            conmigo cada día por WhatsApp. Un mes entero para probarlo en serio.
             Un euro. Eso es todo.
           </p>
         </header>
