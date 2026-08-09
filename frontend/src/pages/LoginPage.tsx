@@ -31,17 +31,17 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center p-6">
-      {/* Atmósfera: azul arriba, naranja abajo — la firma visual DQ */}
+      {/* Atmósfera: petróleo arriba, dorado abajo — la firma visual de la marca */}
       <div
         className="pointer-events-none fixed inset-0"
         style={{
           background:
-            "radial-gradient(60% 50% at 50% 0%, rgba(46,94,140,0.10), transparent 70%)," +
-            "radial-gradient(50% 40% at 50% 100%, rgba(232,131,58,0.07), transparent 70%)",
+            "radial-gradient(60% 50% at 50% 0%, rgba(44,95,115,0.10), transparent 70%)," +
+            "radial-gradient(50% 40% at 50% 100%, rgba(201,162,39,0.07), transparent 70%)",
         }}
       />
       <div className="animate-rise card relative w-full max-w-sm p-8">
-        <img src="/dq-logo.png" alt="DQ" className="mb-6 h-11 w-auto rounded-lg" />
+        <img src="/brand-logo.png" alt="Professional Girona" className="mb-6 h-11 w-auto rounded-lg" />
         <h1 className="text-xl font-semibold text-zinc-100">
           {brand?.name ?? "Asesorías Fitness"}
         </h1>

@@ -13,7 +13,7 @@
 Dos formas de cobrar, ya funcionando en el código:
 
 1. **Registro personal (self-serve)** — página pública
-   `https://app.dqrassessories.com/planes`: el cliente elige la **duración**
+   `https://app.professionalgirona.com/planes`: el cliente elige la **duración**
    (mensual / trimestral / semestral) y el plan, paga en Stripe y **el sistema
    crea su ficha solo** (marcada como "Pagado", con su plan y duración), le
    pide el teléfono en la pantalla de pago y le envía por email el acceso a su
@@ -153,7 +153,7 @@ El webhook es cómo Stripe le dice a la app "este pago se ha completado". Sin
 2. **URL del endpoint**:
 
    ```
-   https://app.dqrassessories.com/api/stripe/webhook
+   https://app.professionalgirona.com/api/stripe/webhook
    ```
 3. **Eventos a escuchar**: selecciona
    **`checkout.session.completed`**, **`invoice.paid`**,
@@ -229,8 +229,8 @@ futura (p. ej. 12/34), CVC cualquiera (p. ej. 123), cualquier nombre y CP.
 
 **Flujo A — registro personal:**
 
-1. Abre `https://app.dqrassessories.com/planes` (mejor en ventana de incógnito),
-   o llega desde la landing pública `/dq` (el link del perfil de Instagram) con
+1. Abre `https://app.professionalgirona.com/planes` (mejor en ventana de incógnito),
+   o llega desde la landing pública `/professional` (el link del perfil de Instagram) con
    el botón "Trabaja conmigo".
 2. Elige una duración (mensual/trimestral/semestral) y un plan → **deja tus
    datos** (nombre, email real y teléfono). Al continuar: se crea la ficha en

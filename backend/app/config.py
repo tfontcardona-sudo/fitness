@@ -9,6 +9,8 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app import branding
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -44,13 +46,14 @@ class Settings(BaseSettings):
 
     # --- Email ---
     # Remitente por defecto: los correos del cliente (acceso al portal, plan,
-    # feedback…) salen a nombre de David. Para enviar DE VERDAD hay que rellenar
-    # smtp_user + smtp_pass (contraseña de aplicación de Gmail) y EMAILS_ENABLED=true.
+    # feedback…) salen a nombre de la marca (app/branding.py). Para enviar DE
+    # VERDAD hay que rellenar smtp_user + smtp_pass (contraseña de aplicación
+    # de Gmail) y EMAILS_ENABLED=true.
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
     smtp_pass: str = ""
-    smtp_from: str = "David Quiceno <david.dqr57@gmail.com>"
+    smtp_from: str = branding.SMTP_FROM_DEFAULT
     emails_enabled: bool = True
 
     # --- Web Push (VAPID) ---
@@ -71,7 +74,7 @@ class Settings(BaseSettings):
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
     # IDs de precio por plan × duración. OPCIONALES: si están vacíos, el sistema
-    # resuelve el precio en Stripe por lookup_key ("dqr_nutri_1m"…) — los crea
+    # resuelve el precio en Stripe por lookup_key ("pgirona_nutri_1m"…) — los crea
     # scripts/setup_stripe_prices.py, así no hay que copiar IDs a mano.
     stripe_price_nutri_1m: str = ""
     stripe_price_nutri_3m: str = ""
@@ -119,7 +122,7 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
     google_calendar_id: str = "primary"
-    # Email de la cuenta de Google de la asesoría (p. ej. asesoriasdqr@gmail.com):
+    # Email de la cuenta de Google de la asesoría (p. ej. info@professionalgirona.com):
     # al pulsar "Conectar", Google abre YA con esta cuenta en vez de la que el
     # navegador tenga por defecto (evita conectar sin querer la cuenta personal).
     google_login_hint: str = ""

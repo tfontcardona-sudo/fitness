@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.security import hash_password, verify_password
 
+from app import branding
 from app.config import settings
 from app.db import get_db
 from app.deps import get_client_by_token
@@ -1021,7 +1022,7 @@ def portal_close_period(
             "body": f"{first} ha cerrado su revisión #{period.period_index}. Genera su feedback.",
             "count": 1,
             "url": f"{base}/clientes/{client.id}?tab=feedback",
-            "tag": "dq-revision",
+            "tag": "pg-revision",
         })
     except Exception:
         pass
@@ -1179,11 +1180,11 @@ def portal_manifest(
 
     brand = portal_svc.brand_payload(db)
     light = brand.get("portal_theme") == "light"
-    # Identidad de la app instalada: "DQR" grande (etiqueta bajo el icono) y
+    # Identidad de la app instalada: la marca grande (etiqueta bajo el icono) y
     # "Assessories" como subtítulo (nombre completo en splash/ajustes).
     manifest = {
-        "name": brand.get("name") or "DQR · Assessories",
-        "short_name": "DQR",
+        "name": brand.get("name") or branding.BRAND_NAME,
+        "short_name": branding.BRAND_SHORT,
         "description": "Tu portal de seguimiento: entreno, diario y revisión quincenal.",
         "lang": "es",
         "start_url": f"/p/{client.portal_token}",

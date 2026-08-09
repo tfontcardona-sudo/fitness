@@ -6,7 +6,7 @@ deportista 6 días, viajero, opositor sedentario, madre reciente…) y casos de
 check-in (estancamiento con buena adherencia, bajada rápida, adherencia 50%, peso
 plano con perímetros bajando…).
 
-**Estado: `POR_VALIDAR = True`.** Los rangos esperados los generó el sistema; David
+**Estado: `POR_VALIDAR = True`.** Los rangos esperados los generó el sistema; el coach
 y Toni deben revisarlos antes de darlos por buenos. Mientras tanto sirven como
 regresión de la CAPA DETERMINISTA (energía, macros, validador, motor quincenal):
 la CI falla si un caso produce un bloqueante o si un número se sale de un rango

@@ -17,6 +17,8 @@ por CAPACIDAD, nunca por el nombre del plan.
 """
 from __future__ import annotations
 
+from app import branding
+
 # Planes vigentes, en orden de presentación.
 TIERS: tuple[str, ...] = ("train", "nutri", "full")
 
@@ -26,7 +28,7 @@ LEGACY_TIERS = {"start": "nutri", "pro": "full"}
 
 DEFAULT_TIER = "full"
 
-LABELS = {"nutri": "DQR Nutri", "train": "DQR Train", "full": "DQR Full"}
+LABELS = branding.TIER_LABELS
 TAGLINES = {
     "nutri": "solo nutrición",
     "train": "solo entrenamiento",

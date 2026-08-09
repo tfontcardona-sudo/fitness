@@ -162,14 +162,14 @@ def test_invalid_transitions():
 
 # ------------------------------------------------------------ plantillas ----
 
-BRAND = Brand(name="DQ Coaching", color_primary="#6EE7B7", color_bg="#0A0A0F",
+BRAND = Brand(name="Professional Coaching", color_primary="#6EE7B7", color_bg="#0A0A0F",
               contact_email="david@example.com")
 
 
 def test_template_plan_published_welcome():
     subject, html = plan_published(BRAND, "Marta", "https://x/p/tok", is_new_month=False)
     assert "Bienvenido" in subject
-    assert "Marta" in html and "Abrir mi portal" in html and "DQ Coaching" in html
+    assert "Marta" in html and "Abrir mi portal" in html and "Professional Coaching" in html
 
 
 def test_template_plan_published_new_month():

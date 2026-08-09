@@ -60,7 +60,7 @@ def test_coach_notes_en_el_doc_completo(client, auth):
     tr["sessions"][0]["exercises"][0]["coach_notes"] = "Agarre neutro por la muñeca."
 
     raw = generate_plan_doc(
-        brand=DocBrand(name="DQR", color_primary="#8B1A2B",
+        brand=DocBrand(name="Professional", color_primary="#8B1A2B",
                        color_secondary="#4A7BA8", font_family="Inter"),
         client_name="Test", month_index=1, goal_type="fat_loss",
         diet_mode="flexible_7", nutrition=plan["nutrition_json"], training=tr,

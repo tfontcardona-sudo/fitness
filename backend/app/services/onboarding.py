@@ -7,13 +7,14 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+from app import branding
 from app.config import settings
 from app.models import Client
 from app.services import email_templates as tpl
 from app.services.audit import log_event
 from app.services.email_service import EmailService, brand_from_config
 
-TIER_LABEL = {"nutri": "DQR Nutri", "train": "DQR Train", "full": "DQR Full"}
+TIER_LABEL = branding.TIER_LABELS
 
 
 def send_onboarding_email(db: Session, client: Client) -> str:

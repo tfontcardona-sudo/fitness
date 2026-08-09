@@ -1,4 +1,4 @@
-"""Documento Word del plan — diseño de marca DQ (réplica del ejemplo del coach).
+"""Documento Word del plan — diseño de la marca (app/branding.py).
 
 Un único documento con la estética del plan oficial: portada con logo, banda de
 comida en la cabecera, barras de sección de color, tablas con cabecera de color,
@@ -22,6 +22,7 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches, Pt
 
+from app import branding
 from app.services.docs.word_base import (
     DocBrand,
     clean_table,
@@ -311,11 +312,11 @@ def generate_plan_doc(
     from datetime import date as _date
 
     setup_reference_pages(
-        doc, logo_path=str(ASSETS / "dq_logo.png"),
+        doc, logo_path=str(ASSETS / "brand_logo.png"),
         right_title=(f"PLAN NUTRICIONAL | {client_name}" if include_nutrition
                      else f"PLAN DE ENTRENAMIENTO | {client_name}"),
         right_sub=str(_date.today().year),
-        footer_text="David Quiceno · Dietista & Entrenador Personal",
+        footer_text=branding.DOC_FOOTER,
     )
 
     if include_nutrition:

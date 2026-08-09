@@ -63,15 +63,15 @@ def test_within_active_hours() -> None:
 def test_build_reminder_payload() -> None:
     one = push_svc.build_reminder_payload(
         {"diary": True, "workout": False, "quincenal": False, "count": 1},
-        "DQ", "https://x/p/abc",
+        "PG", "https://x/p/abc",
     )
-    assert one["title"] == "DQ"
+    assert one["title"] == "PG"
     assert one["count"] == 1
     assert one["url"] == "https://x/p/abc"
     assert "el diario de hoy" in one["body"]
 
     three = push_svc.build_reminder_payload(
-        {"diary": True, "workout": True, "quincenal": True, "count": 3}, "DQ", "u"
+        {"diary": True, "workout": True, "quincenal": True, "count": 3}, "PG", "u"
     )
     assert three["count"] == 3
     assert "entreno" in three["body"] and "diario" in three["body"]

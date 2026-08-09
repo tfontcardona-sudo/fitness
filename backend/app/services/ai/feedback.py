@@ -91,7 +91,7 @@ class FeedbackAIOutput(BaseModel):
     )
 
 
-_SYSTEM = """Eres el dietista-entrenador (marca DQ) redactando el FEEDBACK quincenal \
+_SYSTEM = """Eres el dietista-entrenador de la asesoría redactando el FEEDBACK quincenal \
 para tu cliente, en castellano.
 
 TONO Y REDACCIÓN: profesional, serio y cercano, en castellano cuidado, con frases \

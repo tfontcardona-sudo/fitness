@@ -1,7 +1,7 @@
 """0022: foto de fondo propia para la página pública de planes (/planes).
 
 `brand_config.plans_photo_path` (media/…): segunda foto, independiente de la
-de la landing /dq. Idempotente.
+de la landing pública de enlaces. Idempotente.
 """
 import sqlalchemy as sa
 from alembic import op

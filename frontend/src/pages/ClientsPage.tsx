@@ -21,10 +21,10 @@ const CATEGORIES: {
 }[] = [
   { id: "all", label: "Todos", color: "var(--brand-accent)", icon: null },
   { id: "anamnesis", label: "Falta anamnesis", color: "#6366F1", icon: ClipboardList },
-  { id: "plan", label: "Falta planificación", color: "#E8833A", icon: CalendarPlus },
+  { id: "plan", label: "Falta planificación", color: "#C9A227", icon: CalendarPlus },
   { id: "revision", label: "Falta revisión", color: "#8B5CF6", icon: Flag },
   { id: "pago", label: "Falta pago", color: "#2E7D46", icon: CreditCard },
-  { id: "aldia", label: "Al día", color: "#2E5E8C", icon: CheckCircle2 },
+  { id: "aldia", label: "Al día", color: "#2C5F73", icon: CheckCircle2 },
 ];
 
 function inCategory(c: ClientOut, cat: Category): boolean {

@@ -93,7 +93,7 @@ export default function AppShell() {
         style={{ borderColor: "var(--line)", width: collapsed ? 64 : 232, background: "var(--surface)" }}
       >
         <div className="flex h-16 items-center gap-3 border-b px-4" style={{ borderColor: "var(--line)" }}>
-          <img src="/dq-logo.png" alt="DQ" className="h-8 w-auto shrink-0 rounded-md" />
+          <img src="/brand-logo.png" alt="Professional Girona" className="h-8 w-auto shrink-0 rounded-md" />
           {!collapsed && (
             <span className="truncate text-sm font-semibold tracking-wide text-zinc-100">
               {brand?.name ?? "Asesorías"}

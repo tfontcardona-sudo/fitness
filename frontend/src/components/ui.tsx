@@ -105,12 +105,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           >
             <span
               className="flex h-5 w-5 items-center justify-center rounded-full"
-              style={{ background: t.tone === "error" ? "#C2453A22" : "#E8833A22" }}
+              style={{ background: t.tone === "error" ? "#C2453A22" : "#C9A22722" }}
             >
               {t.tone === "error" ? (
                 <AlertTriangle size={13} color="#C2453A" />
               ) : (
-                <Check size={13} color="#E8833A" />
+                <Check size={13} color="#C9A227" />
               )}
             </span>
             <span className="text-zinc-100">{t.message}</span>

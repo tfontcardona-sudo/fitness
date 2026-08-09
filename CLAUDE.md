@@ -1,4 +1,11 @@
-# CLAUDE.md — Sistema de Asesorías Fitness (DQ)
+# CLAUDE.md — Sistema de Asesorías Fitness (instancia white-label: PROFESSIONAL Girona)
+
+> **⚠️ ESTA RAMA ES LA COPIA WHITE-LABEL para PROFESSIONAL (Girona)** — el
+> sistema original de DQ vive en `main` y NO se toca desde aquí. Toda la
+> identidad de marca está centralizada en `backend/app/branding.py` +
+> `frontend/src/lib/branding.ts` (ver **`BRANDING.md`**: guía completa para
+> vender instancias a otras marcas). Las menciones a "DQ" que quedan en este
+> documento describen la historia y la arquitectura del motor, que es la misma.
 
 > **Documento de traspaso.** Si eres Claude Code y este archivo está en la raíz
 > del repositorio, se carga automáticamente como contexto. Léelo entero antes de

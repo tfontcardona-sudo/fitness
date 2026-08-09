@@ -187,7 +187,7 @@ def _save_public_image(raw: bytes, dest_dir: Path, stem: str, what: str) -> str:
 
 
 def save_links_photo(raw: bytes, filename_hint: str) -> str:
-    """Foto de fondo de la página pública de enlaces (/dq)."""
+    """Foto de fondo de la página pública de enlaces (/professional)."""
     return _save_public_image(raw, media_dir("brand"), "links-photo", "La foto")
 
 

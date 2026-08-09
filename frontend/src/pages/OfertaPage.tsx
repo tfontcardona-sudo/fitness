@@ -33,7 +33,7 @@ export default function OfertaPage() {
   const waHref = coachDigits ? waUrl(coachDigits, WA_MESSAGE) : null;
   const payHref = "/api/pay/plan/full/oferta";
 
-  const bg = landing?.color_bg ?? "#0B111C";
+  const bg = landing?.color_bg ?? "#0C1216";
   return (
     <div className="relative" style={{ minHeight: "100vh", background: bg, color: "#26211a" }}>
       {landing?.plans_photo_url ? (
@@ -45,13 +45,13 @@ export default function OfertaPage() {
         </>
       ) : (
         <div className="pointer-events-none fixed inset-0"
-          style={{ background: `radial-gradient(120% 80% at 50% 0%, ${(landing?.color_secondary ?? "#2E5E8C")}55 0%, ${bg} 60%)` }} />
+          style={{ background: `radial-gradient(120% 80% at 50% 0%, ${(landing?.color_secondary ?? "#2C5F73")}55 0%, ${bg} 60%)` }} />
       )}
 
       <div className="relative mx-auto max-w-xl px-5 py-10">
         <header className="flex flex-col items-center text-center text-white"
           style={{ textShadow: "0 2px 12px rgba(0,0,0,0.55), 0 1px 3px rgba(0,0,0,0.7)" }}>
-          <img src="/dq-logo.png" alt="" className="h-14 w-auto rounded-xl shadow-lg" />
+          <img src="/brand-logo.png" alt="" className="h-14 w-auto rounded-xl shadow-lg" />
           <span className="mt-4 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-extrabold uppercase tracking-widest text-white"
             style={{ background: "#C2453A" }}>
             <Zap size={12} /> Oferta de lanzamiento · plazas limitadas este mes
@@ -98,7 +98,7 @@ export default function OfertaPage() {
         <div className="mt-5 space-y-2.5">
           <a href={payHref}
             className="flex items-center justify-center gap-2 rounded-xl px-6 py-4 text-base font-extrabold text-white shadow-lg transition-transform hover:brightness-110 active:scale-[0.98]"
-            style={{ background: "#E8833A" }}>
+            style={{ background: "#C9A227" }}>
             Empezar hoy por 1 € →
           </a>
           {waHref && (
@@ -123,7 +123,7 @@ export default function OfertaPage() {
             ].map(([n, titulo, texto]) => (
               <div key={n} className="flex gap-3">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-extrabold text-white"
-                  style={{ background: "#2E5E8C" }}>
+                  style={{ background: "#2C5F73" }}>
                   {n}
                 </span>
                 <div>

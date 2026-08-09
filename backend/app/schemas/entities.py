@@ -294,7 +294,7 @@ class BrandConfigIn(BaseModel):
     # generador de documentos la consumía (control muerto — auditoría #6). Si
     # algún día los Word tienen tema oscuro, reintroducir aquí Y en docs/.
     portal_theme: Theme = "light"
-    # Página pública de enlaces (/dq): tienda del partner y código de descuento.
+    # Página pública de enlaces (/professional): tienda del partner y código de descuento.
     partner_store_url: str | None = Field(default=None, max_length=300)
     partner_discount_code: str | None = Field(default=None, max_length=40)
     # Enlace de reservas de videollamada (Google Calendar/Meet, Calendly…).
@@ -354,7 +354,7 @@ class LandingProductOut(BaseModel):
 
 
 class LandingOut(BaseModel):
-    """GET /api/public/landing — datos públicos de la página de enlaces (/dq)."""
+    """GET /api/public/landing — datos públicos de la página de enlaces (/professional)."""
 
     name: str
     tagline: str | None

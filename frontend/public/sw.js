@@ -27,7 +27,7 @@ self.addEventListener("push", (event) => {
       body: data.body || "Tienes registros pendientes de hoy.",
       icon: "/icons/icon-192.png",
       badge: "/icons/badge-72.png", // Android: icono monocromo de la barra
-      tag: data.tag || "dq-seguimiento", // misma tag → sustituye a la anterior
+      tag: data.tag || "pg-seguimiento", // misma tag → sustituye a la anterior
       renotify: true, // que vuelva a sonar/vibrar aunque sustituya
       data: { url: data.url || "/" },
     }),

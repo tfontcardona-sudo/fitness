@@ -1,5 +1,10 @@
-/** Planes DQR: qué incluye cada uno y cómo se adapta la app.
+/** Planes de la asesoría: qué incluye cada uno y cómo se adapta la app.
  *  ESPEJO de backend/app/services/packages.py — si cambias uno, cambia el otro.
+ *
+ *  ⚠️ PROVISIONAL (white-label): las tarifas reales de Professional Girona
+ *  están pendientes de confirmar; los importes de referencia de abajo (y los
+ *  canónicos de Stripe en backend/app/services/stripe_service.py) se cambian
+ *  en un solo paso cuando lleguen.
  *
  *  Los tres comparten la MISMA maquinaria interna (anamnesis → plan → portal →
  *  seguimiento → revisión); solo cambian los servicios:
@@ -10,10 +15,11 @@
  *  El WhatsApp diario está en los TRES: es el canal con el cliente, no un extra.
  */
 import type { BillingPeriod, PackageTier, PublicBillingPeriod } from "../types";
+import { BRAND_SHORT } from "./branding";
 
 export interface PackageInfo {
   tier: PackageTier;
-  label: string; // "DQR Nutri"
+  label: string; // "Professional Nutri"
   short: string; // "Nutri"
   tagline: string; // "solo nutrición"
   includes: string; // resumen de qué incluye (para el selector del alta)
@@ -30,7 +36,7 @@ export interface PackageInfo {
 export const PACKAGES: Record<PackageTier, PackageInfo> = {
   train: {
     tier: "train",
-    label: "DQR Train",
+    label: `${BRAND_SHORT} Train`,
     short: "Train",
     tagline: "solo entrenamiento",
     includes: "Entrenamiento completo + WhatsApp diario. Sin plan de dieta.",
@@ -40,11 +46,11 @@ export const PACKAGES: Record<PackageTier, PackageInfo> = {
     hasVideoCall: false,
     delivery: "whatsapp",
     priceMonthEur: 69,
-    color: "#4A7BA8",
+    color: "#2C5F73",
   },
   nutri: {
     tier: "nutri",
-    label: "DQR Nutri",
+    label: `${BRAND_SHORT} Nutri`,
     short: "Nutri",
     tagline: "solo nutrición",
     includes: "Plan de nutrición completo + WhatsApp diario. Sin entrenamiento.",
@@ -54,11 +60,11 @@ export const PACKAGES: Record<PackageTier, PackageInfo> = {
     hasVideoCall: false,
     delivery: "whatsapp",
     priceMonthEur: 79,
-    color: "#8B1A2B",
+    color: "#5C7A3A",
   },
   full: {
     tier: "full",
-    label: "DQR Full",
+    label: `${BRAND_SHORT} Full`,
     short: "Full",
     tagline: "nutrición + entrenamiento",
     includes:
@@ -69,7 +75,7 @@ export const PACKAGES: Record<PackageTier, PackageInfo> = {
     hasVideoCall: true,
     delivery: "whatsapp",
     priceMonthEur: 129,
-    color: "#E8833A",
+    color: "#C9A227",
   },
 };
 

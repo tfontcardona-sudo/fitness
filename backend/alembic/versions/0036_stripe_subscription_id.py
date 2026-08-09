@@ -17,7 +17,13 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("clients", sa.Column("stripe_subscription_id", sa.String(64), nullable=True))
+    # Idempotente: 0001 hace create_all desde los modelos ACTUALES, así que en
+    # una BD NUEVA esta columna ya existe (sin la guarda, una instalación desde
+    # cero revienta aquí); solo se añade si falta (BDs antiguas que migran).
+    insp = sa.inspect(op.get_bind())
+    cols = {c["name"] for c in insp.get_columns("clients")}
+    if "stripe_subscription_id" not in cols:
+        op.add_column("clients", sa.Column("stripe_subscription_id", sa.String(64), nullable=True))
 
 
 def downgrade() -> None:

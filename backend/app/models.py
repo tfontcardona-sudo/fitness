@@ -30,6 +30,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app import branding
 from app.db import Base
 
 
@@ -404,11 +405,12 @@ class BrandConfig(Base):
     __tablename__ = "brand_config"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(120), default="Mi Asesoría")
+    name: Mapped[str] = mapped_column(String(120), default=branding.BRAND_NAME)
     logo_path: Mapped[str | None] = mapped_column(String(500))
-    color_primary: Mapped[str] = mapped_column(String(9), default="#E8833A")   # naranja DQ
-    color_secondary: Mapped[str] = mapped_column(String(9), default="#2E5E8C") # azul DQ
-    color_bg: Mapped[str] = mapped_column(String(9), default="#0B111C")        # azul noche
+    # Paleta por defecto de la instancia (app/branding.py); la página Marca manda.
+    color_primary: Mapped[str] = mapped_column(String(9), default=branding.COLOR_PRIMARY)
+    color_secondary: Mapped[str] = mapped_column(String(9), default=branding.COLOR_SECONDARY)
+    color_bg: Mapped[str] = mapped_column(String(9), default=branding.COLOR_BG)
     font_family: Mapped[str] = mapped_column(String(40), default="Inter")
     tagline: Mapped[str | None] = mapped_column(String(200))
     contact_email: Mapped[str | None] = mapped_column(String(160))
@@ -416,18 +418,18 @@ class BrandConfig(Base):
     contact_web: Mapped[str | None] = mapped_column(String(200))
     docs_theme: Mapped[str] = mapped_column(String(10), default="light")  # light|dark
     portal_theme: Mapped[str] = mapped_column(String(10), default="light")  # light|dark
-    # Página pública de enlaces (link del perfil de Instagram, /dq): foto de
+    # Página pública de enlaces (link del perfil de Instagram, /professional): foto de
     # fondo + afiliación del partner (tienda ESN y código de descuento del coach).
     links_photo_path: Mapped[str | None] = mapped_column(String(500))
     partner_store_url: Mapped[str | None] = mapped_column(String(300))
     # Código de descuento ÚNICO del coach (afiliación): se muestra en la landing
-    # /dq, en los productos del portal y en Recursos. Cambiarlo aquí lo cambia
+    # /professional, en los productos del portal y en Recursos. Cambiarlo aquí lo cambia
     # en TODOS los sitios a la vez.
     partner_discount_code: Mapped[str | None] = mapped_column(String(40))
     # Portada única para TODOS los vídeos de ejercicios (media/…).
     video_cover_path: Mapped[str | None] = mapped_column(String(500))
     # Foto de fondo de la página pública de PLANES (/planes), independiente de
-    # la de la landing /dq (media/…).
+    # la de la landing /professional (media/…).
     plans_photo_path: Mapped[str | None] = mapped_column(String(500))
     # Enlace de RESERVAS de videollamada del coach (página de citas de Google
     # Calendar/Meet, Calendly…): va en el WhatsApp de "agendar videollamada".

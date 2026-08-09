@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app import branding
 from app.config import settings
 from app.models import Client
 from app.security import new_portal_token
@@ -35,13 +36,15 @@ PERIOD_ORDER = ("1m", "3m", "6m")
 
 # ------------------------------------------ precios canónicos (la verdad) ----
 
-# Importes en CÉNTIMOS de cada plan × duración: 69/79/129 € al mes. El ancla
-# la fijó el dueño: Full trimestral = 330 € (110 €/mes) y el resto se adapta
-# con la misma escala de descuento — trimestral ≈ −15 % por mes y semestral
-# ≈ −22 % por mes, siempre con Nutri > Train y Full < Train+Nutri por duración:
+# Importes en CÉNTIMOS de cada plan × duración: 69/79/129 € al mes, con
+# trimestral ≈ −15 % por mes y semestral ≈ −22 % por mes, siempre con
+# Nutri > Train y Full < Train+Nutri por duración:
 #   Train  69 · 177 (59/mes) · 324 (54/mes)
 #   Nutri  79 · 201 (67/mes) · 372 (62/mes)
 #   Full  129 · 330 (110/mes) · 600 (100/mes)
+# ⚠️ PROVISIONAL (white-label): tarifas reales de Professional Girona pendientes
+# de confirmar — al fijarlas, cambia SOLO esta tabla (y su espejo visual del
+# front) y ensure_canonical_prices repreciará Stripe de forma idempotente.
 # De esta tabla beben el script scripts/setup_stripe_prices.py, el AUTO-ALTA
 # (si a Stripe le faltan precios, la api los crea sola; si cambia el importe,
 # precio nuevo con el lookup_key transferido) y la reserva visual del catálogo.
@@ -50,7 +53,7 @@ CANONICAL_AMOUNTS: dict[str, dict[str, int]] = {
     "nutri": {"1m": 7900, "3m": 20100, "6m": 37200},
     "full": {"1m": 12900, "3m": 33000, "6m": 60000},
 }
-PRODUCT_NAMES = {"train": "DQR Train", "nutri": "DQR Nutri", "full": "DQR Full"}
+PRODUCT_NAMES = branding.TIER_LABELS
 PERIOD_LABEL = {"1m": "1 mes", "3m": "3 meses", "6m": "6 meses"}
 CURRENCY = "eur"
 
@@ -63,8 +66,8 @@ OFFER_PERIOD = "oferta"               # billing_period del cliente en la oferta
 OFFER_TIER = "full"                   # la oferta es SOLO del plan completo
 OFFER_MONTHLY_CENTS = 12000           # 120 €/mes a partir del segundo mes
 OFFER_FIRST_MONTH_CENTS = 100         # 1 € el primer mes
-OFFER_LOOKUP = "dqr_full_oferta"      # lookup_key del precio RECURRENTE
-OFFER_COUPON_ID = "dqr_oferta_primer_mes"  # id estable del cupón (duration=once)
+OFFER_LOOKUP = branding.OFFER_LOOKUP        # lookup_key del precio RECURRENTE
+OFFER_COUPON_ID = branding.OFFER_COUPON_ID  # id estable del cupón (duration=once)
 
 
 class StripeError(RuntimeError):
@@ -80,20 +83,21 @@ def _stripe():
 
 # --------------------------------------------------- resolución de precios ----
 
-# lookup_key canónico de cada precio en Stripe: dqr_{tier}_{period}. Los crea
+# lookup_key canónico de cada precio en Stripe: {prefijo}_{tier}_{period}
+# (prefijo de la marca en app/branding.py). Los crea
 # scripts/setup_stripe_prices.py; con ellos NO hace falta copiar IDs al .env.
 _LOOKUP_TTL_S = 600
 _lookup_cache: dict = {"at": 0.0, "ids": {}}
 
 
 def _lookup_key(tier: str, period: str) -> str:
-    return f"dqr_{tier}_{period}"
+    return f"{branding.STRIPE_LOOKUP_PREFIX}_{tier}_{period}"
 
 
 def ensure_canonical_prices(stripe, log=None) -> list[str]:
     """Asegura EN STRIPE los 9 precios canónicos, de forma IDEMPOTENTE:
-    un Producto por plan (marcado con metadata dqr_tier) y un Precio por
-    plan × duración con lookup_key dqr_{tier}_{period}. Si un precio existe
+    un Producto por plan (marcado con metadata de tier) y un Precio por
+    plan × duración con lookup_key {prefijo}_{tier}_{period}. Si un precio existe
     con OTRO importe, crea el nuevo y le transfiere el lookup_key (el antiguo
     queda desactivado; los pagos pasados no se tocan).
 
@@ -106,7 +110,7 @@ def ensure_canonical_prices(stripe, log=None) -> list[str]:
         out.append(msg)
         say(msg)
 
-    products = {(p.get("metadata") or {}).get("dqr_tier"): p["id"]
+    products = {(p.get("metadata") or {}).get(branding.STRIPE_TIER_METADATA_KEY): p["id"]
                 for p in stripe.Product.list(active=True, limit=100)["data"]}
     keys = [_lookup_key(t, p) for t in TIER_ORDER for p in PERIOD_ORDER] + [OFFER_LOOKUP]
     existing = {pr["lookup_key"]: pr
@@ -118,7 +122,7 @@ def ensure_canonical_prices(stripe, log=None) -> list[str]:
         product_id = products.get(tier)
         if not product_id:
             prod = stripe.Product.create(
-                name=PRODUCT_NAMES[tier], metadata={"dqr_tier": tier},
+                name=PRODUCT_NAMES[tier], metadata={branding.STRIPE_TIER_METADATA_KEY: tier},
                 description=f"Asesoría {PRODUCT_NAMES[tier]} — pago por período",
             )
             product_id = prod["id"]
@@ -163,7 +167,7 @@ def ensure_canonical_prices(stripe, log=None) -> list[str]:
                 unit_amount=OFFER_MONTHLY_CENTS,
                 recurring={"interval": "month"},
                 lookup_key=OFFER_LOOKUP, transfer_lookup_key=True,
-                nickname="DQR Full · oferta (120 €/mes)",
+                nickname=f"{PRODUCT_NAMES['full']} · oferta (120 €/mes)",
             )
             stripe.Price.modify(pr["id"], active=False)
             note(f"  ~ {OFFER_LOOKUP}: reprecio a {OFFER_MONTHLY_CENTS / 100:.2f} €/mes "
@@ -174,7 +178,7 @@ def ensure_canonical_prices(stripe, log=None) -> list[str]:
                 unit_amount=OFFER_MONTHLY_CENTS,
                 recurring={"interval": "month"},
                 lookup_key=OFFER_LOOKUP, transfer_lookup_key=True,
-                nickname="DQR Full · oferta (120 €/mes)",
+                nickname=f"{PRODUCT_NAMES['full']} · oferta (120 €/mes)",
             )
             note(f"  + {OFFER_LOOKUP}: creado (suscripción {OFFER_MONTHLY_CENTS / 100:.2f} €/mes)")
     else:
@@ -239,7 +243,7 @@ _ENSURE_RETRY_S = 600
 
 
 def _price_by_lookup(tier: str, period: str) -> str:
-    """ID del precio ACTIVO con lookup_key dqr_{tier}_{period}, con caché.
+    """ID del precio ACTIVO con lookup_key {prefijo}_{tier}_{period}, con caché.
 
     AUTO-ALTA Y AUTO-REPRECIO: si a Stripe le faltan precios canónicos O alguno
     tiene un importe/moneda DISTINTOS de CANONICAL_AMOUNTS (p. ej. tras un
@@ -500,7 +504,7 @@ def _notify_coach_payment(db: Session, client: Client, *, new_client: bool) -> N
                      f"{first} ha completado el pago de su plan {client.package_tier}."),
             "count": 1,
             "url": f"{base}/clientes/{client.id}",
-            "tag": "dq-pago",
+            "tag": "pg-pago",
         })
     except Exception:  # noqa: BLE001
         pass
@@ -523,7 +527,7 @@ def _notify_orphan_payment(db: Session, session: dict) -> None:
                      "que asociarlo. Revísalo en el panel de Stripe."),
             "count": 1,
             "url": "https://dashboard.stripe.com/payments",
-            "tag": "dq-pago-huerfano",
+            "tag": "pg-pago-huerfano",
         })
     except Exception:  # noqa: BLE001
         pass
@@ -632,7 +636,7 @@ def _notify_coach_payment_failed(db: Session, client: Client) -> None:
                      "reintentará; si no entra, escríbele o revisa Stripe."),
             "count": 1,
             "url": f"{base}/clientes/{client.id}",
-            "tag": "dq-pago-fallido",
+            "tag": "pg-pago-fallido",
         })
     except Exception:  # noqa: BLE001
         pass
@@ -653,7 +657,7 @@ def _invoice_subscription_bits(invoice: dict) -> tuple[str | None, dict]:
 
 def _invoice_es_de_la_oferta(invoice: dict) -> bool:
     """¿La factura pertenece a NUESTRA oferta? Mira el lookup_key del precio de
-    sus líneas (dqr_full_oferta). Sin esto, una cuenta de Stripe con OTROS
+    sus líneas (el lookup de la oferta). Sin esto, una cuenta de Stripe con OTROS
     productos (facturas manuales, suscripciones antiguas…) contaminaría el
     estado de pago de clientes homónimos vía la reserva por email."""
     for line in ((invoice.get("lines") or {}).get("data") or []):
@@ -809,7 +813,7 @@ def _handle_subscription_deleted(db: Session, event: dict) -> dict:
                      "más cobros mensuales. Revisa su ficha."),
             "count": 1,
             "url": f"{base}/clientes/{client.id}",
-            "tag": "dq-sub-cancelada",
+            "tag": "pg-sub-cancelada",
         })
     except Exception:  # noqa: BLE001
         pass
@@ -833,7 +837,7 @@ def _notify_coach_offer_reused(db: Session, client: Client) -> None:
                      "suscripción en Stripe si no)."),
             "count": 1,
             "url": f"{base}/clientes/{client.id}",
-            "tag": "dq-oferta-existente",
+            "tag": "pg-oferta-existente",
         })
     except Exception:  # noqa: BLE001
         pass

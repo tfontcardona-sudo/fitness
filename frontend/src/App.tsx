@@ -1,6 +1,7 @@
 import { Suspense, lazy } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { useAuth } from "./hooks/useAuth";
+import { PUBLIC_SLUG } from "./lib/branding";
 import { PageLoader } from "./components/ui";
 import LoginPage from "./pages/LoginPage";
 import AppShell from "./components/AppShell";
@@ -46,7 +47,7 @@ export default function App() {
           <Route path="/oferta" element={<OfertaPage />} />
           <Route path="/pago-ok" element={<PaymentOkPage />} />
           {/* Link del perfil de Instagram (landing pública de enlaces). */}
-          <Route path="/dq" element={<LinksPage />} />
+          <Route path={`/${PUBLIC_SLUG}`} element={<LinksPage />} />
           {/* Anamnesis del cliente: descarga del PDF editable + subida (por token). */}
           <Route path="/anamnesis/:token" element={<AnamnesisPage />} />
           <Route path="/*" element={<CoachApp />} />

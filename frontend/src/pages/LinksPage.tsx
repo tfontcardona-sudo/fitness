@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Copy, Dumbbell, Search, ShoppingBag } from "lucide-react";
 import { api } from "../lib/api";
+import { BRAND_NAME } from "../lib/branding";
 import type { LandingOut } from "../types";
 
 /**
- * Página PÚBLICA de enlaces (/dq) — el link del perfil de Instagram del coach.
+ * Página PÚBLICA de enlaces (/professional) — el link del perfil de Instagram del coach.
  * Foto del coach de fondo (configurable en Recursos → Página de enlaces) y dos
- * accesos: "Trabaja conmigo" (planes DQR con pago) y la tienda del partner (ESN)
+ * accesos: "Trabaja conmigo" (planes con pago) y la tienda del partner
  * con el código de descuento del coach.
  */
 export default function LinksPage() {
@@ -29,9 +30,9 @@ export default function LinksPage() {
       || (p.category ?? "").toLowerCase().includes(needle));
   }, [data, q]);
 
-  const primary = data?.color_primary ?? "#E8833A";
-  const secondary = data?.color_secondary ?? "#2E5E8C";
-  const bg = data?.color_bg ?? "#0B111C";
+  const primary = data?.color_primary ?? "#C9A227";
+  const secondary = data?.color_secondary ?? "#2C5F73";
+  const bg = data?.color_bg ?? "#0C1216";
 
   function copyCode() {
     if (!data?.partner_discount_code) return;
@@ -61,9 +62,9 @@ export default function LinksPage() {
         {data?.logo_url ? (
           <img src={data.logo_url} alt="" className="h-16 w-auto rounded-2xl shadow-lg" />
         ) : (
-          <img src="/dq-logo.png" alt="" className="h-16 w-auto rounded-2xl shadow-lg" />
+          <img src="/brand-logo.png" alt="" className="h-16 w-auto rounded-2xl shadow-lg" />
         )}
-        <h1 className="mt-4 text-2xl font-bold text-white drop-shadow">{data?.name ?? "DQR Assessories"}</h1>
+        <h1 className="mt-4 text-2xl font-bold text-white drop-shadow">{data?.name ?? BRAND_NAME}</h1>
         {data?.tagline && <p className="mt-1 text-sm text-white/80">{data.tagline}</p>}
 
         <div className="mt-8 w-full space-y-3">

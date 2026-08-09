@@ -11,6 +11,7 @@ import sys
 
 from sqlalchemy import func, select
 
+from app import branding
 from app.config import settings
 from app.db import SessionLocal
 from app.models import BrandConfig, Exercise, Food, User
@@ -79,10 +80,10 @@ def seed_brand(db) -> bool:
     return True
 
 
-# WhatsApp público del coach: destino del botón "Contacta conmigo" de /planes
+# Teléfono público del negocio: destino del botón "Contacta conmigo" de /planes
 # (y de cualquier contacto público futuro). Se rellena solo si el campo está
 # VACÍO — lo que el coach escriba en Marca → teléfono de contacto siempre manda.
-COACH_WHATSAPP = "+34 634 79 32 50"
+COACH_WHATSAPP = branding.CONTACT_PHONE
 
 
 def seed_coach_contact(db) -> bool:

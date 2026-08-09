@@ -1,4 +1,4 @@
-"""Tests de los paquetes/planes DQR (Start / Full / Pro).
+"""Tests de los paquetes/planes de la asesoría (Start / Full / Pro).
 
 Verifica la adaptación de la app al paquete del cliente:
 - El portal expone `package_tier` para ocultar el entreno en Start.

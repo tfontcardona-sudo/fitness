@@ -383,7 +383,7 @@ export interface BrandConfigOut {
   contact_phone: string | null;
   contact_web: string | null;
   portal_theme: Theme;
-  // Página pública de enlaces (/dq): foto de fondo + afiliación del partner.
+  // Página pública de enlaces (/professional): foto de fondo + afiliación del partner.
   links_photo_path: string | null;
   partner_store_url: string | null;
   partner_discount_code: string | null;
@@ -442,7 +442,7 @@ export interface AiCreditOut {
   plans_left: number | null;
 }
 
-/** GET /api/public/landing — datos públicos de la página de enlaces (/dq). */
+/** GET /api/public/landing — datos públicos de la página de enlaces (/professional). */
 export interface LandingOut {
   name: string;
   tagline: string | null;

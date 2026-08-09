@@ -1,6 +1,6 @@
 """0020: página pública de enlaces (Instagram) — foto de fondo + afiliación.
 
-`brand_config.links_photo_path`: foto de fondo de la landing /dq.
+`brand_config.links_photo_path`: foto de fondo de la landing pública de enlaces.
 `brand_config.partner_store_url` / `partner_discount_code`: tienda del partner
 (ESN) y código de descuento del coach que se muestran en la landing.
 Idempotente.

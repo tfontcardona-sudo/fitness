@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { MessageCircle } from "lucide-react";
 import { api } from "../lib/api";
+import { BRAND_SHORT } from "../lib/branding";
 import { BILLING_PERIODS, PACKAGES, PACKAGE_ORDER, billingLabel } from "../lib/packages";
 import { waPhone, waUrl } from "../lib/whatsapp";
 import type { PackageTier, PublicBillingPeriod } from "../types";
@@ -94,11 +95,11 @@ export default function PlansPage() {
     return null;
   }
 
-  const bg = landing?.color_bg ?? "#0B111C";
+  const bg = landing?.color_bg ?? "#0C1216";
   return (
     <div className="relative" style={{ minHeight: "100vh", background: bg, color: "#26211a" }}>
       {/* Foto de fondo propia (Recursos → Página de enlaces → Foto de los
-          planes), visible como en /dq. Sin foto: degradado de marca. */}
+          planes), visible como en la página de enlaces. Sin foto: degradado de marca. */}
       {landing?.plans_photo_url ? (
         <>
           <img src={landing.plans_photo_url} alt=""
@@ -108,13 +109,13 @@ export default function PlansPage() {
         </>
       ) : (
         <div className="pointer-events-none fixed inset-0"
-          style={{ background: `radial-gradient(120% 80% at 50% 0%, ${(landing?.color_secondary ?? "#2E5E8C")}44 0%, ${bg} 60%)` }} />
+          style={{ background: `radial-gradient(120% 80% at 50% 0%, ${(landing?.color_secondary ?? "#2C5F73")}44 0%, ${bg} 60%)` }} />
       )}
       <div className="relative mx-auto max-w-4xl px-5 py-10">
-        {/* Cabecera en BLANCO sobre la foto (como /dq), con sombra para leerse. */}
+        {/* Cabecera en BLANCO sobre la foto (como la página de enlaces), con sombra para leerse. */}
         <header className="mb-6 flex flex-col items-center text-center text-white"
           style={{ textShadow: "0 2px 12px rgba(0,0,0,0.55), 0 1px 3px rgba(0,0,0,0.7)" }}>
-          <img src="/dq-logo.png" alt="" className="h-14 w-auto rounded-xl shadow-lg" />
+          <img src="/brand-logo.png" alt="" className="h-14 w-auto rounded-xl shadow-lg" />
           <h1 className="mt-4 text-3xl font-extrabold tracking-tight">
             Empieza tu cambio <span style={{ color: "#F6A560" }}>hoy</span>
           </h1>
@@ -144,7 +145,7 @@ export default function PlansPage() {
                   aria-pressed={sel}
                   className="rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
                   style={sel
-                    ? { background: "#2E5E8C", color: "white" }
+                    ? { background: "#2C5F73", color: "white" }
                     : { color: "#26211a", opacity: 0.65 }}
                 >
                   {b.label}
@@ -232,7 +233,7 @@ export default function PlansPage() {
             ].map(([n, titulo, texto]) => (
               <div key={n} className="flex gap-3">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-extrabold text-white"
-                  style={{ background: "#2E5E8C" }}>
+                  style={{ background: "#2C5F73" }}>
                   {n}
                 </span>
                 <div>
@@ -253,7 +254,7 @@ export default function PlansPage() {
             encaja y su precio. Sin compromiso: preguntar es gratis.
           </p>
           {(() => {
-            const href = contactHref(GENERIC_MESSAGE, "Información asesorías DQ");
+            const href = contactHref(GENERIC_MESSAGE, `Información asesorías ${BRAND_SHORT}`);
             return href ? (
               <a href={href} target="_blank" rel="noopener"
                 className="mx-auto mt-3 inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-bold text-white shadow-md transition-transform hover:brightness-110 active:scale-[0.98]"
@@ -279,7 +280,7 @@ export function PaymentOkPage() {
   return (
     <div style={{ minHeight: "100vh", background: "#f6f1e7", color: "#26211a" }}
       className="flex flex-col items-center justify-center px-8 text-center">
-      <img src="/dq-logo.png" alt="" className="h-14 w-auto rounded-xl shadow-sm" />
+      <img src="/brand-logo.png" alt="" className="h-14 w-auto rounded-xl shadow-sm" />
       <h1 className="mt-5 text-2xl font-bold">¡Pago recibido!</h1>
       <p className="mt-2 max-w-md text-sm opacity-75">
         Gracias. Ya tienes en tu correo tu cuestionario inicial (anamnesis):

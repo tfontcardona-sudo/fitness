@@ -95,11 +95,11 @@ def test_prompt_lleva_cliente_franja_y_dia():
             return "  \"¿Cómo llevas la semana, Ana?\"  "
 
     now = datetime(2026, 8, 3, 9, 0, tzinfo=TZ)  # lunes por la mañana
-    txt = wa.compose_for_client(POOL[0], {"nombre": "Ana", "plan": "DQR Full"},
+    txt = wa.compose_for_client(POOL[0], {"nombre": "Ana", "plan": "Professional Full"},
                                 ai=FakeAI(), now=now)
     assert txt == "¿Cómo llevas la semana, Ana?"  # limpia comillas y espacios
     user = calls[0]["user"]
-    assert "Ana" in user and "DQR Full" in user
+    assert "Ana" in user and "Professional Full" in user
     assert "lunes" in user and "manana" in user
     assert "2-4 frases" in calls[0]["system"]
 

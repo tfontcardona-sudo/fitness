@@ -54,7 +54,7 @@ export default function AnamnesisPage() {
     <div style={{ minHeight: "100vh", background: "#f6f1e7", color: "#26211a" }}>
       <div className="mx-auto max-w-lg px-5 py-10">
         <header className="mb-8 flex flex-col items-center text-center">
-          <img src="/dq-logo.png" alt="" className="h-14 w-auto rounded-xl shadow-sm" />
+          <img src="/brand-logo.png" alt="" className="h-14 w-auto rounded-xl shadow-sm" />
           <h1 className="mt-4 text-2xl font-bold">Tu cuestionario inicial</h1>
           <p className="mt-1 max-w-md text-sm opacity-70">
             Con esta anamnesis preparamos tu plan a medida. Son dos pasos y puedes
@@ -90,7 +90,7 @@ export default function AnamnesisPage() {
               </p>
               <a href={templateUrl}
                 className="mt-3 inline-flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white transition-transform active:scale-[0.98]"
-                style={{ background: "#2E5E8C" }}>
+                style={{ background: "#2C5F73" }}>
                 <Download size={16} /> Descargar anamnesis
               </a>
             </div>
@@ -117,7 +117,7 @@ export default function AnamnesisPage() {
               )}
               <button onClick={upload} disabled={!file || state === "uploading"}
                 className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white transition-transform active:scale-[0.98] disabled:opacity-60"
-                style={{ background: "#E8833A" }}>
+                style={{ background: "#C9A227" }}>
                 {state === "uploading"
                   ? <><Loader2 size={16} className="animate-spin" /> Subiendo…</>
                   : "Enviar mi anamnesis"}

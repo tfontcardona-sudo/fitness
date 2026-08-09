@@ -227,9 +227,9 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
 // clínica en rojo/ámbar, vida). "Editar datos" abre el formulario clásico.
 
 const V_COLORS = {
-  datos: "#3D6E9E",      // azul: identidad
-  cuerpo: "#E8833A",     // naranja: cuerpo y objetivo
-  entreno: "#2E5E8C",    // azul marca: entrenamiento
+  datos: "#3D7A91",      // azul: identidad
+  cuerpo: "#C9A227",     // dorado: cuerpo y objetivo
+  entreno: "#2C5F73",    // petróleo marca: entrenamiento
   dieta: "#3F7446",      // verde: alimentación
   clinica: "#9A6B15",    // ámbar: salud
   lesiones: "#B3261E",   // rojo: lo crítico

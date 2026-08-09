@@ -158,7 +158,7 @@ export default function PortalApp({ token }: { token: string }) {
         {/* Cabecera con marca */}
         <header className="relative z-[1] flex items-center justify-between gap-2 px-5 pb-2 pt-6">
           <div className="flex min-w-0 items-center gap-3">
-            <img src="/dq-logo.png" alt="" className="h-9 w-auto shrink-0 rounded-lg shadow-sm" />
+            <img src="/brand-logo.png" alt="" className="h-9 w-auto shrink-0 rounded-lg shadow-sm" />
             <div className="min-w-0">
               <p className="truncate text-[10px] uppercase tracking-widest opacity-50">{state.brand.name}</p>
               <h1 className="truncate text-xl font-semibold">Hola, {state.first_name}</h1>

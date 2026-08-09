@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { BadgeEuro, Check, Copy, MessageCircle, Send } from "lucide-react";
 import { api } from "../lib/api";
+import { BRAND_SHORT } from "../lib/branding";
 import { OFFER_FIRST_EUR, OFFER_MONTHLY_EUR, PACKAGES, PACKAGE_ORDER, billingLabel } from "../lib/packages";
 import { openWhatsApp, waPhone } from "../lib/whatsapp";
 import { useToast } from "./ui";
@@ -48,7 +49,7 @@ function catalogText(prices: PlanPricesOut): string {
     return `*${PACKAGES[t].label}* - ${PACKAGES[t].tagline}${extra}\n${lineas}`;
   }).join("\n\n");
   return (
-    `*Asesorías DQ - catálogo de planes*\n\n${bloques}\n\n` +
+    `*Asesorías ${BRAND_SHORT} - catálogo de planes*\n\n${bloques}\n\n` +
     "Los tres incluyen plan 100 % a tu medida, WhatsApp conmigo a diario y app de seguimiento.\n" +
     "Dime cuál te encaja y te paso el enlace de pago seguro (Stripe) para empezar hoy mismo."
   );
@@ -58,7 +59,7 @@ function catalogText(prices: PlanPricesOut): string {
 function offerText(): string {
   const link = `${window.location.origin}/api/pay/plan/full/oferta`;
   return (
-    `*Oferta DQR Full* - tu primer mes por ${OFFER_FIRST_EUR} €\n` +
+    `*Oferta ${PACKAGES.full.label}* - tu primer mes por ${OFFER_FIRST_EUR} €\n` +
     `Después, ${OFFER_MONTHLY_EUR} €/mes en suscripción (menos de lo que cuestan ` +
     "entreno y nutrición por separado) y sin permanencia: cancelas cuando quieras.\n" +
     "Incluye el plan completo: entrenamiento y nutrición 100 % a tu medida, " +

@@ -14,6 +14,7 @@ from slowapi import Limiter
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app import branding
 from app.db import get_db
 from app.deps import get_current_user
 from app.models import RecommendedProduct
@@ -84,7 +85,7 @@ def scrape_product(request: Request, body: ScrapeIn, db: Session = Depends(get_d
     try:
         html = ""
         with httpx.Client(timeout=8, follow_redirects=False, headers={
-            "User-Agent": "Mozilla/5.0 (compatible; DQRBot/1.0)",
+            "User-Agent": f"Mozilla/5.0 (compatible; {branding.USER_AGENT_BOT})",
             "Accept-Language": "es-ES,es;q=0.9",
         }) as cli:
             for _hop in range(4):

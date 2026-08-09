@@ -22,7 +22,7 @@ from app.services.docs.shopping_list import (
 )
 from app.services.docs.word_base import DocBrand
 
-BRAND = DocBrand(name="DQ Coaching", color_primary="#6EE7B7",
+BRAND = DocBrand(name="Professional Coaching", color_primary="#6EE7B7",
                  color_secondary="#8B9DF7", font_family="Inter")
 
 

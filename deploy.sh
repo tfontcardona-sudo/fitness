@@ -19,4 +19,4 @@ echo
 echo "Últimas líneas de la api (migraciones):"
 docker compose logs --tail 15 api
 echo
-echo "Hecho. Web: https://app.dqrassessories.com"
+echo "Hecho. Web: https://app.professionalgirona.com"

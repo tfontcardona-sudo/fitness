@@ -407,7 +407,7 @@ export const api = {
     fd.append("file", file);
     return request<BrandConfigOut>("POST", "/brand/logo", fd);
   },
-  // Foto de fondo de la página pública de enlaces (/dq).
+  // Foto de fondo de la página pública de enlaces (/professional).
   uploadLinksPhoto: (file: File) => {
     const fd = new FormData();
     fd.append("file", file);

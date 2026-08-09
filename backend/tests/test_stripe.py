@@ -13,6 +13,9 @@ import warnings
 
 import pytest
 
+from app import branding
+from app.services import stripe_service as ss
+
 warnings.filterwarnings("ignore")
 
 
@@ -277,13 +280,13 @@ def test_auto_alta_crea_los_9_precios_que_faltan(monkeypatch):
     assert pid
     # 9 pagos únicos + 1 recurrente de la oferta; cupón del primer mes creado.
     assert len(fake.products) == 3 and len(fake.prices) == 10
-    creado = next(p for p in fake.prices if p["lookup_key"] == "dqr_train_1m")
+    creado = next(p for p in fake.prices if p["lookup_key"] == ss._lookup_key("train", "1m"))
     assert creado["unit_amount"] == 6900 and creado["currency"] == "eur"
     assert pid == creado["id"]
-    oferta = next(p for p in fake.prices if p["lookup_key"] == "dqr_full_oferta")
+    oferta = next(p for p in fake.prices if p["lookup_key"] == ss.OFFER_LOOKUP)
     assert oferta["unit_amount"] == 12000
     assert oferta["recurring"] == {"interval": "month"}
-    cupon = fake.coupons["dqr_oferta_primer_mes"]
+    cupon = fake.coupons[ss.OFFER_COUPON_ID]
     assert cupon["amount_off"] == 11900 and cupon["duration"] == "once"
 
     # Idempotente: resolver otra combinación después no crea nada más.
@@ -305,17 +308,17 @@ def test_auto_reprecio_detecta_importes_desviados(monkeypatch):
               "nutri": {"1m": 7900, "3m": 22500, "6m": 43200},
               "full": {"1m": 12900, "3m": 36900, "6m": 70800}}
     for i, t in enumerate(("train", "nutri", "full")):
-        fake.products.append({"id": f"prod_{t}", "metadata": {"dqr_tier": t}})
+        fake.products.append({"id": f"prod_{t}", "metadata": {branding.STRIPE_TIER_METADATA_KEY: t}})
         for p in ("1m", "3m", "6m"):
             fake.prices.append({"id": f"price_old_{t}_{p}", "active": True,
-                                "product": f"prod_{t}", "lookup_key": f"dqr_{t}_{p}",
+                                "product": f"prod_{t}", "lookup_key": ss._lookup_key(t, p),
                                 "unit_amount": viejos[t][p], "currency": "eur"})
     monkeypatch.setattr(ss, "_stripe", lambda: fake)
     _reset_stripe_caches(monkeypatch, ss)
 
     pid = ss._price_by_lookup("full", "3m")
     nuevo = next(p for p in fake.prices
-                 if p.get("lookup_key") == "dqr_full_3m" and p["active"])
+                 if p.get("lookup_key") == ss._lookup_key("full", "3m") and p["active"])
     assert pid == nuevo["id"] and nuevo["unit_amount"] == 33000  # ancla: 330 €
     viejo = next(p for p in fake.prices if p["id"] == "price_old_full_3m")
     assert viejo["active"] is False  # el precio antiguo queda archivado
@@ -323,7 +326,7 @@ def test_auto_reprecio_detecta_importes_desviados(monkeypatch):
     for t in ("train", "nutri", "full"):
         for p in ("1m", "3m", "6m"):
             activo = next(x for x in fake.prices
-                          if x.get("lookup_key") == f"dqr_{t}_{p}" and x["active"])
+                          if x.get("lookup_key") == ss._lookup_key(t, p) and x["active"])
             assert activo["unit_amount"] == ss.CANONICAL_AMOUNTS[t][p]
     # La caché del catálogo se invalidó: la próxima lectura trae los nuevos.
     assert ss._prices_cache["data"] is None
@@ -352,7 +355,7 @@ def test_error_del_sdk_de_stripe_no_revienta_el_enlace_de_pago(monkeypatch):
     monkeypatch.setattr(ss, "_resolve_price_id", lambda t, p: "price_x")
     monkeypatch.setattr(ss, "_stripe", lambda: _SdkBoom())
     _reset_stripe_caches(monkeypatch, ss)
-    ss._lookup_cache["ids"]["dqr_full_3m"] = "price_x"  # caché "envenenada"
+    ss._lookup_cache["ids"][ss._lookup_key("full", "3m")] = "price_x"  # caché "envenenada"
 
     with TestClient(app) as http:
         r = http.get("/api/pay/plan/full/3m", follow_redirects=False)
@@ -384,16 +387,16 @@ def test_auto_alta_transfiere_lookup_si_cambia_el_importe(monkeypatch):
     from app.services import stripe_service as ss
 
     fake = FakeStripe()
-    fake.products.append({"id": "prod_x", "metadata": {"dqr_tier": "train"}})
+    fake.products.append({"id": "prod_x", "metadata": {branding.STRIPE_TIER_METADATA_KEY: "train"}})
     fake.prices.append({"id": "price_old", "active": True, "product": "prod_x",
-                        "lookup_key": "dqr_train_1m", "unit_amount": 4900,
+                        "lookup_key": ss._lookup_key("train", "1m"), "unit_amount": 4900,
                         "currency": "eur"})
     ss.ensure_canonical_prices(fake, log=lambda m: None)
 
     old = next(p for p in fake.prices if p["id"] == "price_old")
     assert old["active"] is False
     nuevo = next(p for p in fake.prices
-                 if p.get("lookup_key") == "dqr_train_1m" and p["active"])
+                 if p.get("lookup_key") == ss._lookup_key("train", "1m") and p["active"])
     assert nuevo["unit_amount"] == 6900
     assert nuevo.get("transfer_lookup_key") is True
 
@@ -464,7 +467,7 @@ def test_enlace_de_pago_directo_por_plan(monkeypatch):
         r = http.get("/api/pay/plan/full/3m",
                      headers={"User-Agent": "WhatsApp/2.24.1"},
                      follow_redirects=False)
-        assert r.status_code == 200 and "DQR Full" in r.text
+        assert r.status_code == 200 and branding.TIER_LABELS["full"] in r.text
 
         # Stripe caído/no configurado → /planes (nunca un 500 al interesado).
         def _boom(db, t, p, **kw):
@@ -634,21 +637,21 @@ def test_cupon_borrado_se_detecta_y_recrea(monkeypatch):
 
     fake = FakeStripe()
     for t in ("train", "nutri", "full"):
-        fake.products.append({"id": f"prod_{t}", "metadata": {"dqr_tier": t}})
+        fake.products.append({"id": f"prod_{t}", "metadata": {branding.STRIPE_TIER_METADATA_KEY: t}})
         for p in ("1m", "3m", "6m"):
             fake.prices.append({"id": f"price_{t}_{p}", "active": True,
-                                "product": f"prod_{t}", "lookup_key": f"dqr_{t}_{p}",
+                                "product": f"prod_{t}", "lookup_key": ss._lookup_key(t, p),
                                 "unit_amount": ss.CANONICAL_AMOUNTS[t][p],
                                 "currency": "eur"})
     fake.prices.append({"id": "price_of", "active": True, "product": "prod_full",
-                        "lookup_key": "dqr_full_oferta", "unit_amount": 12000,
+                        "lookup_key": ss.OFFER_LOOKUP, "unit_amount": 12000,
                         "currency": "eur", "recurring": {"interval": "month"}})
     assert not fake.coupons  # todo alineado EXCEPTO el cupón (borrado)
 
     monkeypatch.setattr(ss, "_stripe", lambda: fake)
     _reset_stripe_caches(monkeypatch, ss)
     ss._price_by_lookup("full", "oferta")
-    cupon = fake.coupons.get("dqr_oferta_primer_mes")
+    cupon = fake.coupons.get(ss.OFFER_COUPON_ID)
     assert cupon and cupon["amount_off"] == 11900 and cupon["duration"] == "once"
 
 

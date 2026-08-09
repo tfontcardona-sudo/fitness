@@ -79,7 +79,7 @@ export function WhatsAppRound() {
             className="shrink-0 rounded-full px-2.5 py-0.5 text-xs font-bold"
             style={
               pending > 0
-                ? { background: "rgba(232,131,58,0.15)", color: "#B45309" }
+                ? { background: "rgba(201,162,39,0.15)", color: "#B45309" }
                 : { background: "rgba(22,163,74,0.12)", color: "#15803D" }
             }
           >

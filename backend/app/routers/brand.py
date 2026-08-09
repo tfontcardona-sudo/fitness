@@ -62,7 +62,7 @@ def upload_logo(file: UploadFile = File(...), db: Session = Depends(get_db)) -> 
 
 @router.post("/links-photo", response_model=BrandConfigOut)
 def upload_links_photo(file: UploadFile = File(...), db: Session = Depends(get_db)) -> BrandConfigOut:
-    """Foto de fondo de la página pública de enlaces (/dq, link de Instagram)."""
+    """Foto de fondo de la página pública de enlaces (/professional, link de Instagram)."""
     brand = _brand(db)
     try:
         brand.links_photo_path = save_links_photo(file.file.read(), file.filename or "foto")

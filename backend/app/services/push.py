@@ -292,7 +292,7 @@ def build_reminder_payload(pending: dict, brand_name: str, portal_url: str) -> d
         "body": body,
         "count": pending.get("count", 0),
         "url": portal_url,
-        "tag": "dq-seguimiento",  # misma tag → la nueva sustituye a la anterior
+        "tag": "pg-seguimiento",  # misma tag → la nueva sustituye a la anterior
     }
 
 
@@ -310,7 +310,7 @@ def build_plan_published_payload(brand_name: str, portal_url: str, *, republishe
         "body": body,
         "count": 1,
         "url": portal_url,
-        "tag": "dq-plan",  # tag propia: no pisa la de los recordatorios
+        "tag": "pg-plan",  # tag propia: no pisa la de los recordatorios
     }
 
 
@@ -339,7 +339,7 @@ def notify_video_call_scheduled(db: Session, client: Client, when_label: str,
         "body": f"Tu coach ha confirmado tu videollamada: {when_label}. Enlace de Meet listo, toca para verlo.",
         "count": 1,
         "url": meet_url,
-        "tag": "dq-videollamada",
+        "tag": "pg-videollamada",
     }
     return send_to_client(db, client, payload)
 
@@ -356,7 +356,7 @@ def notify_coach_video_call_proposed(db: Session, client: Client, when_label: st
         "body": f"{name} propuso videollamada: {when_label}. Acéptala o modifícala.",
         "count": 1,
         "url": f"{base}/clientes/{client.id}?tab=feedback",
-        "tag": "dq-vc-propuesta",
+        "tag": "pg-vc-propuesta",
     }
     return send_to_coach(db, payload)
 
@@ -374,7 +374,7 @@ def notify_coach_video_call_rescheduled(db: Session, client: Client, when_label:
         "body": f"{name} no puede a la hora agendada y propone: {when_label}. Acéptala o modifícala.",
         "count": 1,
         "url": f"{base}/clientes/{client.id}?tab=feedback",
-        "tag": "dq-vc-propuesta",
+        "tag": "pg-vc-propuesta",
     }
     return send_to_coach(db, payload)
 
@@ -449,11 +449,11 @@ def _send_videocall_reminder(db: Session, client: Client, vc, brand_name: str,
     base = settings.public_base_url.rstrip("/")
     n = send_to_client(db, client, {
         "title": brand_name, "body": client_body, "count": 1,
-        "url": vc.meet_url or f"{base}/p/{client.portal_token}", "tag": "dq-videollamada",
+        "url": vc.meet_url or f"{base}/p/{client.portal_token}", "tag": "pg-videollamada",
     })
     n += send_to_coach(db, {
         "title": "Videollamada", "body": coach_body, "count": 1,
-        "url": vc.meet_url or f"{base}/clientes/{client.id}?tab=feedback", "tag": "dq-vc-coach",
+        "url": vc.meet_url or f"{base}/clientes/{client.id}?tab=feedback", "tag": "pg-vc-coach",
     })
     return n
 
@@ -599,7 +599,7 @@ def run_coach_digest(db: Session, now: datetime | None = None) -> dict:
         "body": "\n".join(lines),
         "count": len(alerts),
         "url": f"{settings.public_base_url.rstrip('/')}/",
-        "tag": "dq-coach",  # misma tag → el resumen nuevo sustituye al anterior
+        "tag": "pg-coach",  # misma tag → el resumen nuevo sustituye al anterior
     }
     devices = send_to_coach(db, payload)
     db.commit()

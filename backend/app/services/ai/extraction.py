@@ -61,7 +61,7 @@ _ENUM_MAPS: dict[str, dict[str, str]] = {
 
 
 class AnamnesisExtraction(BaseModel):
-    """Datos extraídos del PDF oficial de anamnesis (DQ). Campos opcionales: si
+    """Datos extraídos del PDF oficial de anamnesis de la asesoría. Campos opcionales: si
     la IA no los encuentra, los deja en null (o lista/texto vacío) y el coach
     los completa.
 
@@ -202,7 +202,7 @@ class AnamnesisExtraction(BaseModel):
 
 
 _EXTRACTION_SYSTEM = """Eres un dietista-entrenador experto leyendo la ficha de \
-ANAMNESIS oficial (marca DQ) que un cliente ha rellenado a mano. Tu tarea es EXTRAER \
+ANAMNESIS oficial de la asesoría que un cliente ha rellenado a mano. Tu tarea es EXTRAER \
 toda la información del documento de forma fiel y estructurada, sin inventar nada.
 
 REGLA DE ORO: si un dato no aparece, está en blanco o pone "no aplica", déjalo en null \
@@ -269,7 +269,7 @@ lesiones, hábitos, sueño, estrés y conducta alimentaria. Concreto y accionabl
 
 Devuelve SOLO un objeto JSON válido que cumpla el esquema. Sin texto adicional."""
 
-_EXTRACTION_USER = """Lee la ficha de anamnesis adjunta (PDF oficial DQ, ~10 páginas) y \
+_EXTRACTION_USER = """Lee la ficha de anamnesis adjunta (PDF oficial de la asesoría, ~10 páginas) y \
 extrae TODA la información en JSON según el esquema. Recorre el documento sección por \
 sección y rellena tanto los campos estructurados (antropometría, objetivo, entrenamiento, \
 dieta) como los resúmenes por sección (clínica, medicación, suplementos, deportes, lesiones, \

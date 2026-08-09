@@ -1,7 +1,7 @@
 """Página pública de enlaces (Instagram) y registro self-serve.
 
 - GET  /api/public/landing   → marca + foto de fondo + afiliación (tienda ESN y
-                               código de descuento) para la landing /dq.
+                               código de descuento) para la landing pública de enlaces.
 - POST /api/public/register  → registro personal ANTES del pago: el cliente deja
                                nombre/email/teléfono en /planes; se crea su ficha
                                (pago pendiente), se le envía el email de arranque
@@ -41,7 +41,7 @@ _log = logging.getLogger("app.public")
 @router.get("/landing", response_model=LandingOut)
 @limiter.limit("60/minute")
 def public_landing(request: Request, db: Session = Depends(get_db)) -> LandingOut:
-    """Datos públicos de la página de enlaces (/dq): marca, foto, afiliación y
+    """Datos públicos de la página de enlaces (/professional): marca, foto, afiliación y
     catálogo de productos (comprables con el código único del coach)."""
     brand = db.scalar(select(BrandConfig).limit(1))
     if brand is None:  # BD recién creada sin seed: valores por defecto
@@ -57,7 +57,7 @@ def public_landing(request: Request, db: Session = Depends(get_db)) -> LandingOu
         color_primary=brand.color_primary,
         color_secondary=brand.color_secondary,
         color_bg=brand.color_bg,
-        # El logo servible es el empaquetado en el frontend (/dq-logo.png):
+        # El logo servible es el empaquetado en el frontend (/brand-logo.png):
         # /storage/... no pasa por Caddy en producción, así que no se promete.
         logo_url=None,
         links_photo_url=media_url(brand.links_photo_path),

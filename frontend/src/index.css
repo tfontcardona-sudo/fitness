@@ -3,15 +3,15 @@
 @tailwind utilities;
 
 :root {
-  /* Marca DQ configurable en runtime (brand_config la sobreescribe):
-     naranja = acción/energía · azul = estructura/datos.
+  /* Marca configurable en runtime (brand_config la sobreescribe):
+     dorado = acción/energía · petróleo = estructura/datos.
      Tonos afinados para gradientes premium (claro→sombra). */
-  --brand-accent: #e8833a;
-  --brand-accent-hi: #f2a25f;   /* naranja luz (borde superior de relieve) */
-  --brand-accent-lo: #c86a24;   /* naranja sombra (base del gradiente) */
-  --brand-accent-2: #2e5e8c;
-  --brand-accent-2-hi: #3f77aa; /* azul luz */
-  --brand-accent-2-lo: #234b72; /* azul profundo */
+  --brand-accent: #c9a227;
+  --brand-accent-hi: #ddba4e;   /* dorado luz (borde superior de relieve) */
+  --brand-accent-lo: #a8861b;   /* dorado sombra (base del gradiente) */
+  --brand-accent-2: #2c5f73;
+  --brand-accent-2-hi: #3d7a91; /* petróleo luz */
+  --brand-accent-2-lo: #224b5b; /* petróleo profundo */
 
   /* Paleta de la app del coach — crema premium, serena y profesional */
   --bg: #f4eee3;
@@ -42,8 +42,8 @@ body,
 body {
   margin: 0;
   background:
-    radial-gradient(100% 42% at 50% -6%, rgba(46, 94, 140, 0.07), transparent 62%),
-    radial-gradient(100% 40% at 50% 108%, rgba(232, 131, 58, 0.05), transparent 60%),
+    radial-gradient(100% 42% at 50% -6%, rgba(44, 95, 115, 0.07), transparent 62%),
+    radial-gradient(100% 40% at 50% 108%, rgba(201, 162, 39, 0.05), transparent 60%),
     var(--bg);
   background-attachment: fixed;
   color: var(--ink);
@@ -77,8 +77,8 @@ body::before {
   background: rgba(38, 33, 26, 0.24);
 }
 
-/* Anillo de foco AZUL (secundario de marca): visible también sobre los
-   botones naranjas, donde un anillo naranja desaparecería. */
+/* Anillo de foco PETRÓLEO (secundario de marca): visible también sobre los
+   botones dorados, donde un anillo dorado desaparecería. */
 :focus-visible {
   outline: 2px solid var(--brand-accent-2);
   outline-offset: 2px;
@@ -100,7 +100,7 @@ body::before {
   .card-hover:hover {
     transform: translateY(-2px);
     border-color: color-mix(in srgb, var(--brand-accent) 30%, var(--line-strong));
-    box-shadow: var(--hairline-top), 0 0 0 1px rgba(232, 131, 58, 0.10), var(--shadow-2);
+    box-shadow: var(--hairline-top), 0 0 0 1px rgba(201, 162, 39, 0.10), var(--shadow-2);
   }
   .card-hover:active { transform: translateY(0); }
 
@@ -111,16 +111,16 @@ body::before {
   }
   .btn:active { transform: translateY(1px); }
   .btn-primary {
-    /* Relieve naranja: luz arriba, sombra abajo, halo de marca */
+    /* Relieve del acento: luz arriba, sombra abajo, halo de marca */
     background: linear-gradient(180deg, var(--brand-accent-hi) 0%, var(--brand-accent) 45%, var(--brand-accent-lo) 100%);
-    color: #2a1806;
+    color: #241c04;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), inset 0 -1px 0 rgba(0, 0, 0, 0.12),
-                0 2px 8px rgba(200, 106, 36, 0.35), 0 0 0 0 rgba(232, 131, 58, 0);
+                0 2px 8px rgba(168, 134, 27, 0.35), 0 0 0 0 rgba(201, 162, 39, 0);
   }
   .btn-primary:hover {
     filter: brightness(1.04);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), inset 0 -1px 0 rgba(0, 0, 0, 0.12),
-                0 4px 14px rgba(200, 106, 36, 0.42), 0 0 16px rgba(232, 131, 58, 0.28);
+                0 4px 14px rgba(168, 134, 27, 0.42), 0 0 16px rgba(201, 162, 39, 0.28);
   }
   /* Botón secundario AZUL de marca (acciones de estructura/datos) */
   .btn-blue {
@@ -160,7 +160,7 @@ body::before {
   }
   .input:focus {
     border-color: var(--brand-accent-2);
-    box-shadow: 0 0 0 3px rgba(46, 94, 140, 0.12);
+    box-shadow: 0 0 0 3px rgba(44, 95, 115, 0.12);
     outline: none;
   }
 
@@ -183,7 +183,7 @@ body::before {
 /* El subrayado activo (span absoluto) con degradado y halo naranja */
 .tab-btn > span[class*="h-0.5"], .tab-underline {
   background: linear-gradient(90deg, var(--brand-accent-hi), var(--brand-accent)) !important;
-  box-shadow: 0 0 8px rgba(232, 131, 58, 0.5);
+  box-shadow: 0 0 8px rgba(201, 162, 39, 0.5);
 }
 /* Contenido de pestaña: aparece con un leve rise al cambiar */
 .tab-panel { animation: rise 0.28s cubic-bezier(0.16, 1, 0.3, 1) both; }
@@ -279,19 +279,19 @@ button, [role="button"], summary, a {
   min-width: 44px;
 }
 
-/* ============== PORTAL DEL CLIENTE — crema suave + azul/naranja DQ ==============
+/* ============== PORTAL DEL CLIENTE — crema suave + petróleo/dorado de marca ==============
    La paleta vive en variables para que el tema oscuro solo las sobrescriba. */
 .portal-root {
   --p-cream: #f6f1e7;
   --p-cream-2: #efe7d8;
   --p-ink: #26211a;          /* texto cálido oscuro */
   --p-ink-soft: #6e6455;
-  --p-accent: var(--brand-accent, #e8833a);   /* naranja: acción */
-  --p-accent-2: var(--brand-accent-2, #2e5e8c); /* azul: estructura */
+  --p-accent: var(--brand-accent, #c9a227);   /* dorado: acción */
+  --p-accent-2: var(--brand-accent-2, #2c5f73); /* petróleo: estructura */
   --p-line: rgba(38, 33, 26, 0.12);
   --p-bg: var(--p-cream);
-  --p-glow-top: rgba(46, 94, 140, 0.10);
-  --p-glow-bottom: rgba(232, 131, 58, 0.12);
+  --p-glow-top: rgba(44, 95, 115, 0.10);
+  --p-glow-bottom: rgba(201, 162, 39, 0.12);
   --p-dots: rgba(38, 33, 26, 0.04);
   --p-card-top: #ffffff;
   --p-card-bottom: var(--p-cream-2);
@@ -311,8 +311,8 @@ button, [role="button"], summary, a {
   --p-ink-soft: #a3a89f;
   --p-line: rgba(234, 231, 224, 0.10);
   --p-bg: #0c1420;
-  --p-glow-top: rgba(46, 94, 140, 0.22);
-  --p-glow-bottom: rgba(232, 131, 58, 0.16);
+  --p-glow-top: rgba(44, 95, 115, 0.22);
+  --p-glow-bottom: rgba(201, 162, 39, 0.16);
   --p-dots: rgba(255, 255, 255, 0.035);
   --p-card-top: #16202f;
   --p-card-bottom: #101823;
@@ -357,15 +357,15 @@ button, [role="button"], summary, a {
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.35) inset,
     0 -2px 0 rgba(0, 0, 0, 0.28) inset,
-    0 6px 16px rgba(232, 131, 58, 0.38),
-    0 0 0 1px rgba(232, 131, 58, 0.4),
-    0 0 18px rgba(232, 131, 58, 0.22);
+    0 6px 16px rgba(201, 162, 39, 0.38),
+    0 0 0 1px rgba(201, 162, 39, 0.4),
+    0 0 18px rgba(201, 162, 39, 0.22);
   transition: transform 0.12s ease, box-shadow 0.2s ease, filter 0.2s ease;
 }
 .portal-btn3d:hover { filter: brightness(1.06); }
 .portal-btn3d:active {
   transform: translateY(2px);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.2) inset, 0 2px 6px rgba(232, 131, 58, 0.3);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.2) inset, 0 2px 6px rgba(201, 162, 39, 0.3);
 }
 .portal-btn3d:disabled { filter: grayscale(0.4) opacity(0.55); }
 
@@ -377,8 +377,8 @@ button, [role="button"], summary, a {
   box-shadow: 0 1px 0 var(--p-card-inset) inset, 0 6px 18px var(--p-card-shadow);
 }
 /* Halos de detalle (marca) */
-.portal-neon-accent { box-shadow: 0 0 0 1px rgba(232, 131, 58, 0.55), 0 0 12px rgba(232, 131, 58, 0.5), 0 0 26px rgba(232, 131, 58, 0.25); }
-.portal-neon-blue { box-shadow: 0 0 0 1px rgba(46, 94, 140, 0.55), 0 0 12px rgba(46, 94, 140, 0.5), 0 0 26px rgba(46, 94, 140, 0.25); }
+.portal-neon-accent { box-shadow: 0 0 0 1px rgba(201, 162, 39, 0.55), 0 0 12px rgba(201, 162, 39, 0.5), 0 0 26px rgba(201, 162, 39, 0.25); }
+.portal-neon-blue { box-shadow: 0 0 0 1px rgba(44, 95, 115, 0.55), 0 0 12px rgba(44, 95, 115, 0.5), 0 0 26px rgba(44, 95, 115, 0.25); }
 
 /* Nav inferior con relieve. padding-bottom respeta la safe area (barra
    inferior del iPhone / notch): la nav nunca queda medio tapada. */
@@ -390,11 +390,11 @@ button, [role="button"], summary, a {
 }
 .portal-nav .nav-active {
   color: var(--p-accent);
-  text-shadow: 0 0 10px rgba(232, 131, 58, 0.35);
+  text-shadow: 0 0 10px rgba(201, 162, 39, 0.35);
 }
 .portal-nav .nav-active .nav-ico {
   border-radius: 10px;
-  box-shadow: 0 0 0 1px rgba(232, 131, 58, 0.35), 0 0 14px rgba(232, 131, 58, 0.35);
+  box-shadow: 0 0 0 1px rgba(201, 162, 39, 0.35), 0 0 14px rgba(201, 162, 39, 0.35);
 }
 /* Badge "!" en pestaña */
 .portal-tab-badge {
@@ -403,7 +403,7 @@ button, [role="button"], summary, a {
   display: flex; align-items: center; justify-content: center;
   background: var(--p-accent); color: #fff;
   border-radius: 999px; font-size: 10px; font-weight: 800; line-height: 1;
-  box-shadow: 0 0 10px rgba(232, 131, 58, 0.6);
+  box-shadow: 0 0 10px rgba(201, 162, 39, 0.6);
 }
 @keyframes portal-badge-pop { 0% { transform: translateX(16px) scale(0); } 60% { transform: translateX(16px) scale(1.25); } 100% { transform: translateX(16px) scale(1); } }
 .portal-tab-badge { animation: portal-badge-pop 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
@@ -415,5 +415,5 @@ button, [role="button"], summary, a {
   padding: 2px 6px; border-radius: 999px;
   font-size: 9px; font-weight: 800; letter-spacing: 0.06em; line-height: 1.2;
   color: #fff; background: var(--p-accent-2);
-  box-shadow: 0 0 0 1px rgba(46, 94, 140, 0.4), 0 0 10px rgba(46, 94, 140, 0.55);
+  box-shadow: 0 0 0 1px rgba(44, 95, 115, 0.4), 0 0 10px rgba(44, 95, 115, 0.55);
 }

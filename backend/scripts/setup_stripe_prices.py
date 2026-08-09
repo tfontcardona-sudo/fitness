@@ -1,12 +1,13 @@
-"""Crea (o actualiza) en Stripe los 9 precios de los planes DQR — sin tocar el .env.
+"""Crea (o actualiza) en Stripe los 9 precios de los planes — sin tocar el .env.
 
 Uso, EN EL SERVIDOR (usa la STRIPE_SECRET_KEY que ya está en el .env):
 
     docker compose exec api python scripts/setup_stripe_prices.py
 
 Qué hace, de forma IDEMPOTENTE (se puede ejecutar mil veces):
-  1. Asegura un Producto por plan (DQR Train / DQR Nutri / DQR Full).
-  2. Asegura un Precio por plan × duración con lookup_key "dqr_{tier}_{period}".
+  1. Asegura un Producto por plan (Train / Nutri / Full, con la etiqueta
+     comercial de la marca — app/branding.py).
+  2. Asegura un Precio por plan × duración con lookup_key "{prefijo}_{tier}_{period}".
      El backend resuelve los precios por ese lookup_key, así que NO hay que
      copiar ningún ID al .env.
   3. Si un precio existe con OTRO importe, crea el nuevo y le TRANSFIERE el
@@ -16,9 +17,10 @@ Importes (EUR, pago único por período — STRIPE_MODE=payment):
   Train  69 €/mes · 177 € trimestre (59/mes) · 324 € semestre (54/mes)
   Nutri  79 €/mes · 201 € trimestre (67/mes) · 372 € semestre (62/mes)
   Full  129 €/mes · 330 € trimestre (110/mes) · 600 € semestre (100/mes)
-(Ancla fijada por el dueño: Full trimestral 330 €. Descuento por compromiso
-~15 % al mes en trimestral y ~22 % en semestral; Full siempre por debajo de
-la suma de Train+Nutri.)
+(⚠️ PROVISIONAL white-label: tarifas reales de la marca pendientes de
+confirmar; se cambian en CANONICAL_AMOUNTS y este script/auto-alta reprecia.
+Descuento por compromiso ~15 % al mes en trimestral y ~22 % en semestral;
+Full siempre por debajo de la suma de Train+Nutri.)
 
 La tabla de importes y la lógica de alta viven en
 app.services.stripe_service (CANONICAL_AMOUNTS + ensure_canonical_prices):

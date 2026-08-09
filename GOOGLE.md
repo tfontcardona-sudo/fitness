@@ -75,7 +75,7 @@ GOOGLE_CLIENT_ID=xxxxxxxx.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=xxxxxxxx
 GOOGLE_CALENDAR_ID=primary
 # La cuenta de Google de la asesoría: Google abrirá "Conectar" ya con ella.
-GOOGLE_LOGIN_HINT=asesoriasdqr@gmail.com
+GOOGLE_LOGIN_HINT=info@professionalgirona.com
 ```
 
 Reinicia el backend. En el arranque, si las claves están puestas, la integración

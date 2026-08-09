@@ -48,7 +48,7 @@ export default function PortalLogin() {
     <div className="portal-root mx-auto flex min-h-screen max-w-md flex-col justify-center px-6"
       style={{ paddingBottom: "10vh" }}>
       <div className="mb-6 flex flex-col items-center text-center">
-        <img src="/dq-logo.png" alt="" className="mb-3 h-12 w-auto rounded-xl shadow-sm" />
+        <img src="/brand-logo.png" alt="" className="mb-3 h-12 w-auto rounded-xl shadow-sm" />
         <h1 className="text-2xl font-semibold">Entra a tu portal</h1>
         <p className="mt-1 text-sm opacity-60">Usa el email y la contraseña que te enviamos por correo.</p>
       </div>

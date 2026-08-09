@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
+import { PUBLIC_SLUG } from "../lib/branding";
 import { youtubeId } from "../lib/video";
 import type {
   ExerciseOut,
@@ -73,7 +74,7 @@ export default function RecursosPage() {
 
 /* ============================================ Página de enlaces (Instagram) ============================================ */
 
-/** Gestión de la landing pública /dq (el link del perfil de Instagram): foto de
+/** Gestión de la landing pública de enlaces (el link del perfil de Instagram): foto de
  *  fondo del coach + tienda del partner (ESN) con su código de descuento. */
 function LinksPageManager() {
   const toast = useToast();
@@ -86,7 +87,7 @@ function LinksPageManager() {
   const [uploadingPlans, setUploadingPlans] = useState(false);
   const photoRef = useRef<HTMLInputElement>(null);
   const plansPhotoRef = useRef<HTMLInputElement>(null);
-  const publicUrl = `${window.location.origin}/dq`;
+  const publicUrl = `${window.location.origin}/${PUBLIC_SLUG}`;
 
   // Estado de la conexión con Google (Calendar + Meet) para agendar en 1 clic.
   const [google, setGoogle] = useState<{ enabled: boolean; connected: boolean; email: string | null } | null>(null);
@@ -278,7 +279,7 @@ function LinksPageManager() {
           </div>
           <div>
             <label className="label">Código de descuento</label>
-            <input className="input" placeholder="DAVIDQUICENO" value={code}
+            <input className="input" placeholder="PROFESSIONAL10" value={code}
               onChange={(e) => setCode(e.target.value)} />
           </div>
         </div>
