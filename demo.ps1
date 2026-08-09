@@ -19,6 +19,17 @@ if (-not (Test-Path ".env")) {
   Write-Host "   Para IA en vivo (leer anamnesis / generar plan): añade ANTHROPIC_API_KEY al .env"
 }
 
+# Si DQR (u otro proyecto) esta arrancado en este PC, usa los mismos puertos:
+# hay que pararlo primero (los proyectos estan AISLADOS, pero no caben a la vez).
+foreach ($port in 5173, 8000, 5432, 8025) {
+  $busy = Test-NetConnection -ComputerName localhost -Port $port -InformationLevel Quiet -WarningAction SilentlyContinue
+  if ($busy) {
+    Write-Host "X El puerto $port ya esta en uso. ¿Tienes DQR u otro proyecto arrancado?" -ForegroundColor Red
+    Write-Host "  Paralo primero desde su carpeta:  docker compose down"
+    Read-Host "Pulsa Enter para salir"; exit 1
+  }
+}
+
 Write-Host "-> Levantando la demo (la primera vez tarda unos minutos)..." -ForegroundColor Cyan
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 

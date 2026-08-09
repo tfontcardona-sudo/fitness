@@ -22,6 +22,17 @@ if [ ! -f .env ]; then
   echo "  · Para IA en vivo (leer anamnesis / generar plan): añade ANTHROPIC_API_KEY al .env"
 fi
 
+# Si DQR (u otro proyecto) está arrancado en este PC, usa los mismos puertos:
+# hay que pararlo primero (los proyectos están AISLADOS, pero no caben a la vez).
+for port in 5173 8000 5432 8025; do
+  if (exec 3<>"/dev/tcp/localhost/$port") 2>/dev/null; then
+    exec 3>&- 3<&-
+    echo "✗ El puerto $port ya está en uso. ¿Tienes DQR u otro proyecto arrancado?"
+    echo "  Páralo primero desde su carpeta:  docker compose down"
+    exit 1
+  fi
+done
+
 echo "→ Levantando la demo (la primera vez tarda unos minutos)…"
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 

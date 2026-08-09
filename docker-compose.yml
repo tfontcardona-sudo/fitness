@@ -1,4 +1,7 @@
-name: fitness-system
+# Nombre PROPIO del proyecto: aísla contenedores, red y VOLÚMENES de otras
+# instancias del motor en el mismo PC (p. ej. DQR usa "fitness-system"; con el
+# mismo nombre, Docker compartiría su base de datos — nunca deben mezclarse).
+name: professional-fitness
 
 services:
   db:

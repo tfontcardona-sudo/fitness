@@ -145,6 +145,11 @@ falta para arrancar de verdad: su Stripe, su dominio y su email
 
 ## 4. Reset y trucos
 
+- **¿Mismo PC que DQR?** Sin problema: los proyectos están AISLADOS (Docker
+  los separa en `professional-fitness` y `fitness-system`, cada uno con su
+  base de datos). Pero usan los mismos puertos, así que **no pueden correr a
+  la vez**: para el otro primero (`docker compose down` en su carpeta); el
+  lanzador te avisa si detecta los puertos ocupados.
 - **Reiniciar la demo**: re-ejecuta `./demo.sh` (o `demo.ps1`) — borra y
   recrea los `@demo.local` e imprime enlaces nuevos del portal. La Laura creada
   en vivo se borra desde el panel (o quedará para la siguiente demo).
