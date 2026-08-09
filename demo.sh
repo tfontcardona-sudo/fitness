@@ -25,7 +25,7 @@ fi
 # Si DQR (u otro proyecto) está arrancado en este PC, usa los mismos puertos:
 # hay que pararlo primero (los proyectos están AISLADOS, pero no caben a la vez).
 for port in 5173 8000 5432 8025; do
-  if (exec 3<>"/dev/tcp/localhost/$port") 2>/dev/null; then
+  if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
     exec 3>&- 3<&-
     echo "✗ El puerto $port ya está en uso. ¿Tienes DQR u otro proyecto arrancado?"
     echo "  Páralo primero desde su carpeta:  docker compose down"
