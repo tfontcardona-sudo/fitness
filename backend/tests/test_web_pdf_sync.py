@@ -181,7 +181,9 @@ def test_editar_macro_recalcula_kcal_y_documento(client, auth, plan_ids):
 
     w = client.get(f"/api/plans/{plan_id}/document?format=docx", headers=auth)
     text = _docx_text(w.content)
-    assert f"P {m['protein_g']} g" in text  # el reparto nuevo, en el documento
+    # El reparto nuevo, en el documento (formato prosa del dossier:
+    # "… 190 g de proteina …" en la sección "Tu objetivo").
+    assert f"{m['protein_g']} g de proteina" in text
 
 
 def test_cambiar_numero_de_comidas_redistribuye_y_documenta(client, auth, plan_ids):
