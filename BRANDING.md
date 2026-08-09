@@ -35,6 +35,10 @@ Cambia los valores de ambos y el 95 % del rebrand está hecho.
   los documentos Word.
 - `frontend/public/icons/icon-192.png`, `icon-512.png`, `icon-maskable-512.png`,
   `badge-72.png` — iconos PWA (portal instalable) y badge de notificaciones.
+- `backend/app/assets/plan/cover_full.png`, `cover_train.png`, `cover_nutri.png`
+  — portadas del DOSSIER del plan (una por producto; mapeo en
+  `branding.DOC_PRODUCTS`). La entrega del día 1 es el dossier con esta
+  portada + el enlace al portal (día a día).
 
 ## 3. Paleta CSS por defecto
 

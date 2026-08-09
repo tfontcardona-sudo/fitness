@@ -70,6 +70,16 @@ PUBLIC_TIERS = ("full",)
 # precio/cupón en Stripe, sin botón en el kit de ventas).
 OFFER_ENABLED = False
 
+# --- Dossier del plan (documento Word) ---------------------------------------
+# Título comercial, subtítulo y arte de portada del dossier según el tier del
+# cliente (assets en backend/app/assets/plan/). El dossier es la ENTREGA
+# premium del día 1; el día a día vive en el portal.
+DOC_PRODUCTS = {
+    "full": ("Génesis.99", "Preparación personal", "cover_full.png"),
+    "train": ("Entreno Personal", "Plan de entrenamiento", "cover_train.png"),
+    "nutri": ("Plan Nutrición", "Plan de nutrición", "cover_nutri.png"),
+}
+
 # --- Stripe ------------------------------------------------------------------
 # Prefijo de los lookup_key de precios ({prefix}_{tier}_{period}) y claves de
 # la oferta de captación. Cada instancia usa SU cuenta de Stripe, así que el

@@ -38,16 +38,20 @@ from app.services.docs.word_base import (
 
 ASSETS = Path(__file__).resolve().parent.parent.parent / "assets" / "plan"
 
-# Paleta EXACTA extraída del PDF de ejemplo del coach
-WINE = "8B1A2B"
-BLUE = "4A7BA8"
-GOLD = "C9A961"   # barra de "Estructura diaria"
+# Paleta editorial del DOSSIER — identidad Professional (app/branding.py):
+# negro cálido + dorado + pizarra sobre crema. La estructura del documento es
+# la del plan de referencia; solo cambia el vestido de marca.
+NOIR = "1C1913"        # barras principales (texto dorado)
+SLATE = "37474F"       # barras secundarias (texto blanco)
+GOLD = "E9A90F"        # barra de acento (texto casi negro)
+GOLD_TEXT = "F7C33A"   # texto dorado sobre noir
+INK = "26211A"         # títulos grandes sobre papel
 CREAM = "F5F0E8"  # relleno de cajas y zebra de tablas
-# Colores de las 4 columnas de "Alimentos por grupos" (verbatim del ejemplo)
+# Colores de las 4 columnas de "Alimentos por grupos" (armonizados a la marca)
 FG_GREEN = "2E7D32"
-FG_YELLOW = "F1C232"
-FG_WINE = "8B1A2B"
-FG_ORANGE = "E69138"
+FG_YELLOW = "E9A90F"
+FG_SLATE = "37474F"
+FG_BRONZE = "BC8604"
 
 DAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
 
@@ -82,7 +86,7 @@ FOOD_GROUPS = {
     ],
 }
 FOOD_GROUP_FOOTNOTE = {"LÍPIDOS": "*El cacahuete es una legumbre."}
-FOOD_GROUP_COLORS = [FG_GREEN, FG_YELLOW, FG_WINE, FG_ORANGE]
+FOOD_GROUP_COLORS = [FG_GREEN, FG_YELLOW, FG_SLATE, FG_BRONZE]
 
 PLATO_TEXT = [
     "El plato saludable es una herramienta muy útil para crear platos equilibrados de forma "
@@ -183,7 +187,7 @@ def _title(doc: Document, text: str, sub: str | None = None) -> None:
     r = p.add_run(text)
     r.font.size = Pt(24)
     r.font.bold = True
-    r.font.color.rgb = _hex(WINE)
+    r.font.color.rgb = _hex(INK)
     if sub:
         ps = doc.add_paragraph()
         ps.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -273,12 +277,62 @@ def _ingredients_str(opt: dict) -> str:
     return ", ".join(out)
 
 
+MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
+         "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+
+
+def _dossier_cover(doc: Document, cover_path: Path, client_name: str,
+                   month_index: int, product_sub: str) -> None:
+    """Portada del DOSSIER (Propuesta 1): arte de marca a página completa con el
+    nombre del cliente y el mes debajo. La página 1 va SIN cabecera ni pie
+    (first-page header vacío) para que el dossier abra limpio; el contenido
+    empieza en la página 2 con la cabecera de siempre."""
+    from datetime import date as _date
+
+    if not os.path.exists(str(cover_path)):
+        return  # sin arte de portada: el documento empieza directo (como antes)
+    sec = doc.sections[0]
+    sec.different_first_page_header_footer = True
+    # Desvincular el header/footer de primera página del principal: si quedan
+    # enlazados, Word/LibreOffice pintan el pie normal también en la portada.
+    sec.first_page_header.is_linked_to_previous = False
+    sec.first_page_footer.is_linked_to_previous = False
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_before = Pt(6)
+    p.paragraph_format.space_after = Pt(0)
+    try:
+        p.add_run().add_picture(str(cover_path), width=Inches(5.55))
+    except Exception:
+        # Arte ilegible: portada tipográfica mínima en su lugar.
+        r = p.add_run(branding.BRAND_WORDMARK)
+        r.font.size = Pt(28)
+        r.font.bold = True
+    np_ = doc.add_paragraph()
+    np_.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    np_.paragraph_format.space_before = Pt(16)
+    np_.paragraph_format.space_after = Pt(0)
+    rn = np_.add_run(client_name)
+    rn.font.size = Pt(17)
+    rn.font.bold = True
+    rn.font.color.rgb = _hex(INK)
+    hoy = _date.today()
+    sp = doc.add_paragraph()
+    sp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    sp.paragraph_format.space_before = Pt(2)
+    rs = sp.add_run(f"{product_sub} · Mes {month_index} · {MESES[hoy.month - 1].capitalize()} {hoy.year}")
+    rs.font.size = Pt(10.5)
+    rs.font.color.rgb = _hex("8A8578")
+    doc.add_page_break()
+
+
 def generate_plan_doc(
     *, brand: DocBrand, client_name: str, month_index: int, goal_type: str | None,
     diet_mode: str | None, nutrition: dict, training: dict, education: dict,
     exercise_names: dict | None = None,
     food_allergies: list[str] | None = None, food_dislikes: list[str] | None = None,
     include_training: bool = False, include_nutrition: bool = True,
+    package_tier: str | None = None,
 ) -> bytes:
     # Por defecto el PLAN es SOLO DIETA (el entrenamiento vive en el tracker del
     # portal). include_nutrition=False es el plan `train`: documento SOLO de
@@ -306,40 +360,47 @@ def generate_plan_doc(
             doc.styles[_sname].font.name = "Calibri"
         except Exception:
             pass
-    # Cabecera de la REFERENCIA (logo + "PLAN NUTRICIONAL | Cliente" y año) en
-    # todas las páginas; sin banda de fondo ni portada — el documento empieza
-    # directamente con el contenido, como la copia del coach.
+    # DOSSIER de marca (Propuesta 1): portada por producto + cabecera con el
+    # nombre comercial del plan en todas las páginas de contenido. El tier del
+    # cliente decide el producto; sin tier (llamadas antiguas), Génesis por
+    # contenido completo o el documento de entrenamiento suelto.
     from datetime import date as _date
+
+    tier = (package_tier or "").strip().lower()
+    tier = {"start": "nutri", "pro": "full"}.get(tier, tier)
+    if tier not in branding.DOC_PRODUCTS:
+        tier = "train" if (include_training and not include_nutrition) else "full"
+    product, product_sub, cover_file = branding.DOC_PRODUCTS[tier]
 
     setup_reference_pages(
         doc, logo_path=str(ASSETS / "brand_logo.png"),
-        right_title=(f"PLAN NUTRICIONAL | {client_name}" if include_nutrition
-                     else f"PLAN DE ENTRENAMIENTO | {client_name}"),
+        right_title=f"{product.upper()} | {client_name}",
         right_sub=str(_date.today().year),
         footer_text=branding.DOC_FOOTER,
     )
+    _dossier_cover(doc, ASSETS / cover_file, client_name, month_index, product_sub)
 
     if include_nutrition:
         # ======================= NUTRICIÓN =======================
         _title(doc, "PLAN NUTRICIONAL", client_name)
         macros = nutrition.get("macros", {})
 
-        section_bar(doc, "Objetivos", WINE)
-        info_box(doc, _objetivo_pairs(goal_type), fill=CREAM, label_color=WINE)
+        section_bar(doc, "Objetivos", NOIR, text_color=GOLD_TEXT)
+        info_box(doc, _objetivo_pairs(goal_type), fill=CREAM, label_color=NOIR)
 
-        section_bar(doc, "Resumen energético diario", BLUE)
+        section_bar(doc, "Resumen energético diario", SLATE)
         clean_table(
             doc, ["Calorías", "Reparto de macros", "Ajuste aplicado"],
             [[f"≈ {round(nutrition.get('target_kcal', 0))} kcal",
               f"CH {round(macros.get('carbs_g', 0))} g · P {round(macros.get('protein_g', 0))} g · "
               f"G {round(macros.get('fat_g', 0))} g",
               _ajuste_text(nutrition, goal_type)]],
-            brand, header_color=WINE, header_text_color="FFFFFF",
+            brand, header_color=NOIR, header_text_color=GOLD_TEXT,
             col_widths=[2400, 4226, 2400],
         )
 
         meals = nutrition.get("meals", [])
-        section_bar(doc, "Notas del ajuste", BLUE)
+        section_bar(doc, "Notas del ajuste", SLATE)
         info_box(doc, _concise_notas(nutrition, goal_type, meals))
 
         # Cambios aplicados en la última adaptación (revisión quincenal): el cliente
@@ -347,7 +408,7 @@ def generate_plan_doc(
         aa = nutrition.get("applied_adjustments") or {}
         aa_items = aa.get("items") or []
         if aa_items:
-            section_bar(doc, f"Cambios de tu plan · revisión #{aa.get('period_index', '')}", GOLD)
+            section_bar(doc, f"Cambios de tu plan · revisión #{aa.get('period_index', '')}", GOLD, text_color="241C04")
             rows = [[
                 (it.get("area") or "").capitalize(),
                 it.get("detail") or it.get("change") or "",
@@ -356,23 +417,23 @@ def generate_plan_doc(
             # "Qué cambia"/"Por qué" son texto libre (IA/coach): pueden ser largos,
             # así que las filas se parten y la tabla pagina con cabecera repetida.
             clean_table(doc, ["Área", "Qué cambia", "Por qué"], rows, brand,
-                        header_color=WINE, header_text_color="FFFFFF",
+                        header_color=NOIR, header_text_color=GOLD_TEXT,
                         col_widths=[1400, 3800, 3826],
                         cant_split_rows=False, keep_together=False)
 
         if meals:
-            section_bar(doc, "Estructura diaria", GOLD)
+            section_bar(doc, "Estructura diaria", GOLD, text_color="241C04")
             rows = [[m.get("time", ""), m.get("name", f"Comida {m.get('slot')}"),
                      _estrategia(m.get("name", ""))] for m in meals]
             clean_table(doc, ["Hora", "Toma", "Estrategia"], rows, brand,
-                        header_color=WINE, header_text_color="FFFFFF",
+                        header_color=NOIR, header_text_color=GOLD_TEXT,
                         col_widths=[1500, 3000, 4526], keep_together=False)
 
         # Alimentos por grupos (plantilla, filtrada con precisión por alergias).
         # Es UNA sola fila con listas largas: puede ser más alta que la página, así
         # que la fila debe poder partirse (cant_split_rows=False) y la tabla paginar
         # repitiendo la cabecera (keep_together=False) para no recortar alimentos.
-        section_bar(doc, "Alimentos por grupos", WINE)
+        section_bar(doc, "Alimentos por grupos", NOIR, text_color=GOLD_TEXT)
         names = list(FOOD_GROUPS.keys())
         clean_table(
             doc, names, [[_food_group_lines(n, blocked) for n in names]],
@@ -381,11 +442,11 @@ def generate_plan_doc(
         )
 
         # El plato saludable (plantilla + foto)
-        section_bar(doc, "El plato saludable", BLUE)
+        section_bar(doc, "El plato saludable", SLATE)
         # La foto del plato va DENTRO de la caja y la caja entera es indivisible
         # (cant_split): si no cabe, la tarjeta completa salta a la página siguiente
         # con su barra — la foto nunca queda sola en un fragmento de caja.
-        info_box(doc, PLATO_TEXT, fill=CREAM, label_color=WINE,
+        info_box(doc, PLATO_TEXT, fill=CREAM, label_color=NOIR,
                  cant_split=True, image_path=str(ASSETS / "plate.png"))
 
         # Comidas detalladas (flexible) — como el ejemplo: comida/cena con sistema de
@@ -400,7 +461,7 @@ def generate_plan_doc(
         if diet_mode != "strict" and meals:
             blocks = {s.get("slot"): s for s in bank.get("slots", [])}
             for m in meals:
-                section_bar(doc, f"{m.get('name','Comida')} · {m.get('time','')}", WINE, size=10)
+                section_bar(doc, f"{m.get('name','Comida')} · {m.get('time','')}", NOIR, text_color=GOLD_TEXT, size=10)
                 sb = blocks.get(m.get("slot"), {})
                 # Regla del diseño de referencia: NINGÚN corte visible. Las cajas de
                 # opciones/toma libre (contenido acotado, ≤3 opciones) viajan ENTERAS
@@ -422,7 +483,7 @@ def generate_plan_doc(
                         _keep_lines(p)  # una opción nunca se parte entre páginas
                         rl = p.add_run(f"Opción {n}. ")
                         rl.font.bold = True
-                        rl.font.color.rgb = _hex(WINE)
+                        rl.font.color.rgb = _hex(NOIR)
                         p.add_run(f"{opt.get('title','')} — {_ingredients_str(opt)}.")
                     if first:
                         # Toma añadida a mano (sin recetario aún): guía digna en vez
@@ -446,27 +507,27 @@ def generate_plan_doc(
         # una tarjeta jamás aparece partida con líneas sueltas en otra página.
 
         # Ideas rápidas
-        section_bar(doc, "Ideas rápidas de desayunos, snacks y meriendas", WINE)
+        section_bar(doc, "Ideas rápidas de desayunos, snacks y meriendas", NOIR, text_color=GOLD_TEXT)
         info_box(doc, [f"• {x}" for x in IDEAS_RAPIDAS], fill=CREAM, cant_split=True)
 
         # Salsas recomendables
-        section_bar(doc, "Salsas recomendables", BLUE)
+        section_bar(doc, "Salsas recomendables", SLATE)
         info_box(doc, SALSAS_TEXT, fill=CREAM, cant_split=True)
 
         # Yogures recomendables
-        section_bar(doc, "Yogures recomendables", BLUE)
+        section_bar(doc, "Yogures recomendables", SLATE)
         info_box(doc, YOGURES_TEXT, fill=CREAM, cant_split=True)
 
         # Quesos recomendables
-        section_bar(doc, "Quesos recomendables", BLUE)
+        section_bar(doc, "Quesos recomendables", SLATE)
         info_box(doc, QUESOS_TEXT, fill=CREAM, cant_split=True)
 
         # Recomendaciones generales
-        section_bar(doc, "Recomendaciones generales", WINE)
+        section_bar(doc, "Recomendaciones generales", NOIR, text_color=GOLD_TEXT)
         info_box(doc, RECOMENDACIONES, fill=CREAM, cant_split=True)
 
         # Suplementación
-        section_bar(doc, "Suplementación recomendada", BLUE)
+        section_bar(doc, "Suplementación recomendada", SLATE)
         supps = nutrition.get("supplements", [])
         if supps:
             items = [f"{s.get('name','')} — {s.get('dose','')} ({s.get('timing','')})" for s in supps]
@@ -485,22 +546,22 @@ def generate_plan_doc(
         doc.add_page_break()
     _title(doc, "PLAN DE ENTRENAMIENTO", client_name)
 
-    section_bar(doc, f"Estructura · {training.get('split_name','')}", BLUE)
+    section_bar(doc, f"Estructura · {training.get('split_name','')}", SLATE)
     info_box(doc, [
         (f"{len(training.get('sessions', []))} días/semana", training.get("split_rationale", "")),
     ])
 
     prog = training.get("weekly_progression", [])
     if prog:
-        section_bar(doc, "Progresión semanal", WINE)
+        section_bar(doc, "Progresión semanal", NOIR, text_color=GOLD_TEXT)
         rows = [[f"Sem {w.get('week')}", w.get("intent", ""), f"{w.get('load_pct','')}%",
                  f"RIR {w.get('rir_target','')}", w.get("volume_note", "")] for w in prog]
         clean_table(doc, ["Semana", "Enfoque", "Carga", "RIR", "Notas"], rows, brand,
-                    header_color=WINE, header_text_color="FFFFFF",
+                    header_color=NOIR, header_text_color=GOLD_TEXT,
                     col_widths=[1100, 1800, 1100, 1100, 3926], keep_together=False)
 
     for sess in training.get("sessions", []):
-        section_bar(doc, f"{sess.get('day','')} · {sess.get('name','')}", WINE, size=10)
+        section_bar(doc, f"{sess.get('day','')} · {sess.get('name','')}", NOIR, text_color=GOLD_TEXT, size=10)
         # Calentamiento en caja opaca (legible aunque caiga sobre la banda)
         if sess.get("warmup"):
             info_box(doc, [("Calentamiento", sess["warmup"])])
@@ -519,14 +580,14 @@ def generate_plan_doc(
             ])
         if rows:
             clean_table(doc, ["Ejercicio", "Series", "RIR", "Descanso", "Clave técnica"], rows,
-                        brand, header_color=WINE, header_text_color="FFFFFF",
+                        brand, header_color=NOIR, header_text_color=GOLD_TEXT,
                         col_widths=[2600, 1300, 1100, 1100, 2926], keep_together=False)
         if sess.get("cooldown"):
             info_box(doc, [("Vuelta a la calma", sess["cooldown"])])
 
     cardio = training.get("cardio") or {}
     if cardio.get("daily_steps") or cardio.get("sessions"):
-        section_bar(doc, "Cardio y NEAT", BLUE)
+        section_bar(doc, "Cardio y NEAT", SLATE)
         items = [("Pasos diarios objetivo", str(cardio.get("daily_steps", "—")))]
         for cs in cardio.get("sessions", []):
             items.append((cs.get("type", "").upper(),
@@ -535,7 +596,7 @@ def generate_plan_doc(
         info_box(doc, items)
 
     if training.get("deload_instructions"):
-        section_bar(doc, "Semana de descarga (deload)", BLUE)
+        section_bar(doc, "Semana de descarga (deload)", SLATE)
         info_box(doc, [training["deload_instructions"]])
 
     buf = io.BytesIO()
@@ -576,7 +637,7 @@ def _render_equivalences(container, eq: dict, image_path: str | None = None) -> 
         _keep_lines(p)  # un grupo de equivalencias no se parte entre páginas
         rl = p.add_run(f"{g.get('name','')}: ")
         rl.font.bold = True
-        rl.font.color.rgb = _hex(WINE)
+        rl.font.color.rgb = _hex(NOIR)
         note = (g.get("note") or "").strip()
         items = [f"{it.get('food','')} ({it.get('amount','')})"
                  for it in g.get("items", []) if it.get("food")]
@@ -608,7 +669,7 @@ def _weekly_section(doc: Document, brand: DocBrand, diet_mode: str | None,
     meals = nutrition.get("meals", [])
     if not meals:
         return
-    section_bar(doc, "Ejemplo de dieta semanal", WINE)
+    section_bar(doc, "Ejemplo de dieta semanal", NOIR, text_color=GOLD_TEXT)
 
     headers = ["Toma"] + DAYS
     rows: list[list[str]] = []
@@ -648,5 +709,5 @@ def _weekly_section(doc: Document, brand: DocBrand, diet_mode: str | None,
         # 8 columnas estrechas: fuente 8pt para que los nombres de plato no
         # desborden, y paginación con cabecera repetida (keep_together=False)
         # por si hay muchas tomas.
-        clean_table(doc, headers, rows, brand, header_color=WINE, header_text_color="FFFFFF",
+        clean_table(doc, headers, rows, brand, header_color=NOIR, header_text_color=GOLD_TEXT,
                     col_widths=[1500] + [1075] * 7, font_pt=8, keep_together=False)

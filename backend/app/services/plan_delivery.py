@@ -84,6 +84,9 @@ def build_plan_pdf(db: Session, plan: Plan, client: Client,
         # tracker del portal).
         include_nutrition=bool(plan.nutrition_json),
         include_training=not plan.nutrition_json and bool(training),
+        # El tier decide el producto del dossier (portada y cabecera):
+        # Génesis.99 / Entreno Personal / Plan Nutrición.
+        package_tier=client.package_tier,
     )
 
     ascii_name = unicodedata.normalize("NFKD", client.full_name).encode("ascii", "ignore").decode()

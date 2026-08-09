@@ -180,3 +180,32 @@ def test_feedback_doc_limits_changes_to_5_bullets():
         xml = zf.read("word/document.xml").decode("utf-8")
     assert "Cambio 0" in xml and "Cambio 4" in xml
     assert "Cambio 5" not in xml and "Cambio 7" not in xml
+
+
+def test_dossier_incluye_portada_de_marca():
+    """Propuesta 1 (dossier): el docx abre con la portada del producto (arte de
+    marca embebido) y la página 1 va sin cabecera/pie (w:titlePg)."""
+    nutrition, training, education = _plan_inputs()
+    data = generate_plan_doc(
+        brand=BRAND, client_name="Marta López", month_index=1, goal_type="fat_loss",
+        diet_mode="flexible_7", nutrition=nutrition, training=training,
+        education=education, package_tier="full")
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        media = [n for n in zf.namelist() if n.startswith("word/media/")]
+        assert len(media) >= 2  # portada + imágenes de plantilla
+        xml = zf.read("word/document.xml").decode("utf-8", "ignore")
+        assert "<w:titlePg" in xml  # portada sin cabecera ni pie
+
+
+def test_dossier_entreno_personal_por_tier():
+    """El tier train produce el dossier de Entreno Personal (solo entrenamiento),
+    con su propia portada — y sin secciones de nutrición."""
+    nutrition, training, education = _plan_inputs()
+    data = generate_plan_doc(
+        brand=BRAND, client_name="Jordi Vila", month_index=1, goal_type="muscle_gain",
+        diet_mode=None, nutrition={}, training=training, education=education,
+        include_nutrition=False, include_training=True, package_tier="train")
+    assert _is_valid_docx(data)
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        xml = zf.read("word/document.xml").decode("utf-8", "ignore")
+        assert "PLAN DE ENTRENAMIENTO" in xml and "PLAN NUTRICIONAL" not in xml
