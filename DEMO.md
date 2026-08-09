@@ -16,7 +16,7 @@ Con Docker Desktop instalado, clona la rama y lanza el script de demo:
 ```bash
 git clone -b claude/dqr-white-label-4ojp01 <repo> professional && cd professional
 ./demo.sh              # Mac/Linux
-# Windows: clic derecho a demo.ps1 → "Ejecutar con PowerShell"
+# Windows: DOBLE CLIC a demo.bat (evita el bloqueo de scripts de Windows)
 ```
 
 El script lo hace TODO: crea el `.env` de demo (panel: `professional` /
