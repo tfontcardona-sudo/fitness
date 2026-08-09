@@ -23,6 +23,7 @@ import { goalReviewDue, initials, relativeDays } from "../lib/format";
 import { pkg } from "../lib/packages";
 import { WhatsAppRound } from "../components/WhatsAppRound";
 import { SalesKit } from "../components/SalesKit";
+import { AiCreditButton } from "../components/AiCreditButton";
 
 /**
  * Dashboard = "qué toca hacer AHORA con cada cliente". Cada cliente se traduce
@@ -246,6 +247,13 @@ export default function DashboardPage() {
           <UserPlus size={16} /> Nuevo cliente
         </Link>
       </header>
+
+      {/* Créditos IA: en móvil no hay barra lateral (nav inferior), así que el
+          widget del saldo/gasto vive aquí, arriba del panel. En escritorio se
+          oculta: ya está en el sidebar. */}
+      <div className="card mt-4 px-1.5 py-1 md:hidden">
+        <AiCreditButton collapsed={false} />
+      </div>
 
       {/* Seguimiento diario: el mensaje del día para cada cliente activo. */}
       <div className="mt-4">
