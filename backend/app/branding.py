@@ -46,6 +46,11 @@ COLOR_PRIMARY = "#E9A90F"    # dorado (acción/energía)
 COLOR_SECONDARY = "#37474F"  # gris pizarra (estructura/datos)
 COLOR_BG = "#0F0E0C"         # negro cálido (portal oscuro, theme-color PWA)
 
+# Tema del PORTAL del cliente por defecto: la identidad de la marca es
+# oscura (negro/dorado), así que el portal nace en oscuro; la página Marca
+# permite cambiarlo en runtime.
+PORTAL_THEME = "dark"
+
 # --- Documentos Word / emails ------------------------------------------------
 DOC_FOOTER = f"{BRAND_NAME} · Centre Salut & Fitness"
 SMTP_FROM_DEFAULT = f"{BRAND_NAME} <{CONTACT_EMAIL}>"
@@ -69,6 +74,15 @@ PUBLIC_TIERS = ("full",)
 # en el motor, pero esta marca NO la usa: apagada de raíz (sin checkout, sin
 # precio/cupón en Stripe, sin botón en el kit de ventas).
 OFFER_ENABLED = False
+
+# --- Método del banco de comidas de la marca ---------------------------------
+# "options": TODAS las tomas del plan flexible llevan opciones CERRADAS (combos
+# completos con gramos) — el método de Professional: sencillo y directo.
+# "equivalences": comida/cena por grupos de alimentos intercambiables (el
+# método del plan de origen del motor; sigue soportado en validación, escalado,
+# portal y documento para planes legado u otras instancias).
+MEAL_BANK_STYLE = "options"
+MEAL_BANK_OPTIONS = 3  # opciones por toma (el schema admite 1-4)
 
 # --- Dossier del plan (documento Word) ---------------------------------------
 # Título comercial, subtítulo y arte de portada del dossier según el tier del

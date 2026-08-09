@@ -8,6 +8,7 @@ import re
 from datetime import date, datetime
 from typing import Annotated, Literal
 
+from app import branding
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
@@ -293,7 +294,7 @@ class BrandConfigIn(BaseModel):
     # `docs_theme` se retiró del contrato: la columna existe en DB pero ningún
     # generador de documentos la consumía (control muerto — auditoría #6). Si
     # algún día los Word tienen tema oscuro, reintroducir aquí Y en docs/.
-    portal_theme: Theme = "light"
+    portal_theme: Theme = branding.PORTAL_THEME
     # Página pública de enlaces (/professional): tienda del partner y código de descuento.
     partner_store_url: str | None = Field(default=None, max_length=300)
     partner_discount_code: str | None = Field(default=None, max_length=40)

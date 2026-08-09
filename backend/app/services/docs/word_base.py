@@ -444,6 +444,44 @@ def spacer(doc: Document, pt: float = SPACE_SECTION, keep_next: bool = True) -> 
         _keep_with_next(p)
 
 
+def section_rule(doc: Document, text: str, rule_color: str = "E9A90F",
+                 text_color: str = "1C1913", size: float = 12) -> None:
+    """Título de sección del DOSSIER (lenguaje editorial de la instancia):
+    texto en MAYÚSCULAS alineado a la IZQUIERDA con interletrado y una regla
+    fina de color debajo, a ancho de contenido. Sin barra rellena — el aire y
+    la regla hacen el trabajo (serio, sobrio). Mismo contrato de paginación que
+    section_bar: keepNext para no dejar el título huérfano al pie de página."""
+    spacer(doc, SPACE_SECTION)
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    pf = p.paragraph_format
+    pf.space_before = Pt(0)
+    pf.space_after = Pt(6)
+    sec = doc.sections[0]
+    usable_emu = int(sec.page_width) - int(sec.left_margin) - int(sec.right_margin)
+    indent_emu = (usable_emu - int(Pt(CONTENT_WIDTH_DXA / 20))) // 2
+    if indent_emu > 0:
+        pf.left_indent = indent_emu
+        pf.right_indent = indent_emu
+    r = p.add_run(text.upper())
+    r.font.bold = True
+    r.font.size = Pt(size)
+    r.font.color.rgb = _hex(text_color)
+    # interletrado sutil (w:spacing va en veinteavos de punto)
+    rPr = r._r.get_or_add_rPr()
+    sp = rPr.makeelement(qn("w:spacing"), {qn("w:val"): "16"})
+    rPr.append(sp)
+    _keep_with_next(p)
+    pPr = p._p.get_or_add_pPr()
+    pbdr = pPr.makeelement(qn("w:pBdr"), {})
+    e = pbdr.makeelement(qn("w:bottom"), {
+        qn("w:val"): "single", qn("w:sz"): "12",
+        qn("w:space"): "3", qn("w:color"): rule_color.lstrip("#"),
+    })
+    pbdr.append(e)
+    pPr.append(pbdr)
+
+
 def section_bar(doc: Document, text: str, color: str, text_color: str = "FFFFFF",
                 size: float = 11) -> None:
     """Barra de sección a ancho de contenido con fondo de color y texto centrado.

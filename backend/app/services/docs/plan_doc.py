@@ -1,10 +1,13 @@
-"""Documento Word del plan — diseño de la marca (app/branding.py).
+"""Documento Word del plan — DOSSIER con el lenguaje visual de la instancia.
 
-Un único documento con la estética del plan oficial: portada con logo, banda de
-comida en la cabecera, barras de sección de color, tablas con cabecera de color,
-cajas crema. Incluye NUTRICIÓN (objetivos, resumen energético, estructura diaria,
-alimentos por grupos, plato saludable, comidas, dieta semanal, ideas, recomenda-
-ciones, suplementación) y, a continuación, ENTRENAMIENTO en el mismo estilo.
+Diseño editorial propio (app/branding.py), deliberadamente DISTINTO del plan
+de origen del motor: portada de producto (arte negro/dorado con laurel),
+títulos a la izquierda, reglas finas doradas en vez de barras rellenas, cajas
+marfil sobrias y sin imágenes decorativas. La ESTRUCTURA interna del contenido
+es la del motor: NUTRICIÓN (objetivos, resumen energético, estructura diaria,
+alimentos por grupos, plato saludable, comidas, dieta semanal, ideas,
+recomendaciones, suplementación) y ENTRENAMIENTO (estructura, progresión,
+sesiones, cardio, deload) en el mismo estilo.
 
 El contenido cambia según el cliente (datos ya calculados); el diseño es fijo.
 Secciones genéricas (alimentos por grupos, plato, ideas, recomendaciones) son
@@ -30,7 +33,7 @@ from app.services.docs.word_base import (
     info_box,
     init_document,
     open_box,
-    section_bar,
+    section_rule,
     setup_reference_pages,
     _hex,
     _keep_lines,
@@ -46,7 +49,7 @@ SLATE = "37474F"       # barras secundarias (texto blanco)
 GOLD = "E9A90F"        # barra de acento (texto casi negro)
 GOLD_TEXT = "F7C33A"   # texto dorado sobre noir
 INK = "26211A"         # títulos grandes sobre papel
-CREAM = "F5F0E8"  # relleno de cajas y zebra de tablas
+CREAM = "FAF7F0"  # marfil claro: relleno de cajas (propio, no el crema DQ)
 # Colores de las 4 columnas de "Alimentos por grupos" (armonizados a la marca)
 FG_GREEN = "2E7D32"
 FG_YELLOW = "E9A90F"
@@ -181,20 +184,29 @@ def _objetivo_pairs(goal: str | None) -> list[tuple[str, str]]:
 
 
 def _title(doc: Document, text: str, sub: str | None = None) -> None:
+    """Cabecera editorial del dossier: título grande a la IZQUIERDA en tinta,
+    subtítulo (cliente) en bronce con mayúsculas — nada centrado ni de colores
+    de relleno (lenguaje propio de la instancia, distinto del plan de origen)."""
     p = doc.add_paragraph()
-    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
     p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after = Pt(0)
     r = p.add_run(text)
-    r.font.size = Pt(24)
+    r.font.size = Pt(25)
     r.font.bold = True
     r.font.color.rgb = _hex(INK)
     if sub:
         ps = doc.add_paragraph()
-        ps.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        rs = ps.add_run(sub)
-        rs.font.size = Pt(16)
+        ps.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        ps.paragraph_format.space_before = Pt(2)
+        rs = ps.add_run(sub.upper())
+        rs.font.size = Pt(11)
         rs.font.bold = True
-        rs.font.color.rgb = _hex("#1A1A1A")
+        rs.font.color.rgb = _hex("8A6403")
+        rPr = rs._r.get_or_add_rPr()
+        from docx.oxml.ns import qn as _qn
+        sp = rPr.makeelement(_qn("w:spacing"), {_qn("w:val"): "22"})
+        rPr.append(sp)
 
 
 def _norm(s: str) -> str:
@@ -385,10 +397,10 @@ def generate_plan_doc(
         _title(doc, "PLAN NUTRICIONAL", client_name)
         macros = nutrition.get("macros", {})
 
-        section_bar(doc, "Objetivos", NOIR, text_color=GOLD_TEXT)
+        section_rule(doc, "Objetivos")
         info_box(doc, _objetivo_pairs(goal_type), fill=CREAM, label_color=NOIR)
 
-        section_bar(doc, "Resumen energético diario", SLATE)
+        section_rule(doc, "Resumen energético diario")
         clean_table(
             doc, ["Calorías", "Reparto de macros", "Ajuste aplicado"],
             [[f"≈ {round(nutrition.get('target_kcal', 0))} kcal",
@@ -400,7 +412,7 @@ def generate_plan_doc(
         )
 
         meals = nutrition.get("meals", [])
-        section_bar(doc, "Notas del ajuste", SLATE)
+        section_rule(doc, "Notas del ajuste")
         info_box(doc, _concise_notas(nutrition, goal_type, meals))
 
         # Cambios aplicados en la última adaptación (revisión quincenal): el cliente
@@ -408,7 +420,7 @@ def generate_plan_doc(
         aa = nutrition.get("applied_adjustments") or {}
         aa_items = aa.get("items") or []
         if aa_items:
-            section_bar(doc, f"Cambios de tu plan · revisión #{aa.get('period_index', '')}", GOLD, text_color="241C04")
+            section_rule(doc, f"Cambios de tu plan · revisión #{aa.get('period_index', '')}")
             rows = [[
                 (it.get("area") or "").capitalize(),
                 it.get("detail") or it.get("change") or "",
@@ -422,7 +434,7 @@ def generate_plan_doc(
                         cant_split_rows=False, keep_together=False)
 
         if meals:
-            section_bar(doc, "Estructura diaria", GOLD, text_color="241C04")
+            section_rule(doc, "Estructura diaria")
             rows = [[m.get("time", ""), m.get("name", f"Comida {m.get('slot')}"),
                      _estrategia(m.get("name", ""))] for m in meals]
             clean_table(doc, ["Hora", "Toma", "Estrategia"], rows, brand,
@@ -433,7 +445,7 @@ def generate_plan_doc(
         # Es UNA sola fila con listas largas: puede ser más alta que la página, así
         # que la fila debe poder partirse (cant_split_rows=False) y la tabla paginar
         # repitiendo la cabecera (keep_together=False) para no recortar alimentos.
-        section_bar(doc, "Alimentos por grupos", NOIR, text_color=GOLD_TEXT)
+        section_rule(doc, "Alimentos por grupos")
         names = list(FOOD_GROUPS.keys())
         clean_table(
             doc, names, [[_food_group_lines(n, blocked) for n in names]],
@@ -442,12 +454,11 @@ def generate_plan_doc(
         )
 
         # El plato saludable (plantilla + foto)
-        section_bar(doc, "El plato saludable", SLATE)
+        section_rule(doc, "El plato saludable")
         # La foto del plato va DENTRO de la caja y la caja entera es indivisible
         # (cant_split): si no cabe, la tarjeta completa salta a la página siguiente
         # con su barra — la foto nunca queda sola en un fragmento de caja.
-        info_box(doc, PLATO_TEXT, fill=CREAM, label_color=NOIR,
-                 cant_split=True, image_path=str(ASSETS / "plate.png"))
+        info_box(doc, PLATO_TEXT, fill=CREAM, label_color=NOIR, cant_split=True)
 
         # Comidas detalladas (flexible) — como el ejemplo: comida/cena con sistema de
         # equivalencias por grupos; el resto, 3 opciones numeradas en prosa (sin kcal).
@@ -461,7 +472,7 @@ def generate_plan_doc(
         if diet_mode != "strict" and meals:
             blocks = {s.get("slot"): s for s in bank.get("slots", [])}
             for m in meals:
-                section_bar(doc, f"{m.get('name','Comida')} · {m.get('time','')}", NOIR, text_color=GOLD_TEXT, size=10)
+                section_rule(doc, f"{m.get('name','Comida')} · {m.get('time','')}", rule_color=SLATE, size=10)
                 sb = blocks.get(m.get("slot"), {})
                 # Regla del diseño de referencia: NINGÚN corte visible. Las cajas de
                 # opciones/toma libre (contenido acotado, ≤3 opciones) viajan ENTERAS
@@ -471,9 +482,9 @@ def generate_plan_doc(
                 is_equiv = bool(sb.get("fmt") == "equivalences" and sb.get("equivalences"))
                 cell = open_box(doc, CREAM, cant_split=not is_equiv)
                 if sb.get("fmt") == "equivalences" and sb.get("equivalences"):
-                    # foto redonda flotante en la cena (como el ejemplo del coach)
-                    img = str(ASSETS / "food_round.png") if "cena" in _norm(m.get("name", "")) else None
-                    _render_equivalences(cell, sb["equivalences"], image_path=img)
+                    # Sin foto decorativa: el dossier de la instancia es sobrio
+                    # (las equivalencias siguen soportadas para planes legado).
+                    _render_equivalences(cell, sb["equivalences"])
                 else:
                     first = True
                     for n, opt in enumerate(sb.get("options", [])[:3], start=1):
@@ -507,27 +518,27 @@ def generate_plan_doc(
         # una tarjeta jamás aparece partida con líneas sueltas en otra página.
 
         # Ideas rápidas
-        section_bar(doc, "Ideas rápidas de desayunos, snacks y meriendas", NOIR, text_color=GOLD_TEXT)
+        section_rule(doc, "Ideas rápidas de desayunos, snacks y meriendas")
         info_box(doc, [f"• {x}" for x in IDEAS_RAPIDAS], fill=CREAM, cant_split=True)
 
         # Salsas recomendables
-        section_bar(doc, "Salsas recomendables", SLATE)
+        section_rule(doc, "Salsas recomendables")
         info_box(doc, SALSAS_TEXT, fill=CREAM, cant_split=True)
 
         # Yogures recomendables
-        section_bar(doc, "Yogures recomendables", SLATE)
+        section_rule(doc, "Yogures recomendables")
         info_box(doc, YOGURES_TEXT, fill=CREAM, cant_split=True)
 
         # Quesos recomendables
-        section_bar(doc, "Quesos recomendables", SLATE)
+        section_rule(doc, "Quesos recomendables")
         info_box(doc, QUESOS_TEXT, fill=CREAM, cant_split=True)
 
         # Recomendaciones generales
-        section_bar(doc, "Recomendaciones generales", NOIR, text_color=GOLD_TEXT)
+        section_rule(doc, "Recomendaciones generales")
         info_box(doc, RECOMENDACIONES, fill=CREAM, cant_split=True)
 
         # Suplementación
-        section_bar(doc, "Suplementación recomendada", SLATE)
+        section_rule(doc, "Suplementación recomendada")
         supps = nutrition.get("supplements", [])
         if supps:
             items = [f"{s.get('name','')} — {s.get('dose','')} ({s.get('timing','')})" for s in supps]
@@ -546,14 +557,14 @@ def generate_plan_doc(
         doc.add_page_break()
     _title(doc, "PLAN DE ENTRENAMIENTO", client_name)
 
-    section_bar(doc, f"Estructura · {training.get('split_name','')}", SLATE)
+    section_rule(doc, f"Estructura · {training.get('split_name','')}")
     info_box(doc, [
         (f"{len(training.get('sessions', []))} días/semana", training.get("split_rationale", "")),
     ])
 
     prog = training.get("weekly_progression", [])
     if prog:
-        section_bar(doc, "Progresión semanal", NOIR, text_color=GOLD_TEXT)
+        section_rule(doc, "Progresión semanal")
         rows = [[f"Sem {w.get('week')}", w.get("intent", ""), f"{w.get('load_pct','')}%",
                  f"RIR {w.get('rir_target','')}", w.get("volume_note", "")] for w in prog]
         clean_table(doc, ["Semana", "Enfoque", "Carga", "RIR", "Notas"], rows, brand,
@@ -561,7 +572,7 @@ def generate_plan_doc(
                     col_widths=[1100, 1800, 1100, 1100, 3926], keep_together=False)
 
     for sess in training.get("sessions", []):
-        section_bar(doc, f"{sess.get('day','')} · {sess.get('name','')}", NOIR, text_color=GOLD_TEXT, size=10)
+        section_rule(doc, f"{sess.get('day','')} · {sess.get('name','')}", rule_color=SLATE, size=10)
         # Calentamiento en caja opaca (legible aunque caiga sobre la banda)
         if sess.get("warmup"):
             info_box(doc, [("Calentamiento", sess["warmup"])])
@@ -587,7 +598,7 @@ def generate_plan_doc(
 
     cardio = training.get("cardio") or {}
     if cardio.get("daily_steps") or cardio.get("sessions"):
-        section_bar(doc, "Cardio y NEAT", SLATE)
+        section_rule(doc, "Cardio y NEAT")
         items = [("Pasos diarios objetivo", str(cardio.get("daily_steps", "—")))]
         for cs in cardio.get("sessions", []):
             items.append((cs.get("type", "").upper(),
@@ -596,7 +607,7 @@ def generate_plan_doc(
         info_box(doc, items)
 
     if training.get("deload_instructions"):
-        section_bar(doc, "Semana de descarga (deload)", SLATE)
+        section_rule(doc, "Semana de descarga (deload)")
         info_box(doc, [training["deload_instructions"]])
 
     buf = io.BytesIO()
@@ -669,7 +680,7 @@ def _weekly_section(doc: Document, brand: DocBrand, diet_mode: str | None,
     meals = nutrition.get("meals", [])
     if not meals:
         return
-    section_bar(doc, "Ejemplo de dieta semanal", NOIR, text_color=GOLD_TEXT)
+    section_rule(doc, "Ejemplo de dieta semanal")
 
     headers = ["Toma"] + DAYS
     rows: list[list[str]] = []

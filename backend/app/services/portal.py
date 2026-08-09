@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app import branding
 from app.models import BrandConfig, Client, DailyLog, Exercise, Period, Plan, RecommendedProduct
 from app.services.storage import media_url
 
@@ -195,7 +196,7 @@ def brand_payload(db: Session) -> dict:
         return {
             "name": "Tu asesoría", "color_primary": "#E8833A",
             "color_secondary": "#2E5E8C", "color_bg": "#0B111C",
-            "font_family": "Inter", "portal_theme": "light", "logo_path": None,
+            "font_family": "Inter", "portal_theme": branding.PORTAL_THEME, "logo_path": None,
         }
     return {
         "name": cfg.name, "color_primary": cfg.color_primary,

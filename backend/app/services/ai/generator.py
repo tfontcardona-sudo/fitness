@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from app import branding
 from app.config import settings
 from app.schemas.ai import (
     EducationOutput,
@@ -506,6 +507,34 @@ alergias/intolerancias={ctx.food_allergies}, aversiones={ctx.food_dislikes}. \
 PREFERIR / INCLUIR cuando encaje en los macros (alimentos que le gustan): {ctx.food_likes}.\
 {(' SALUD A TENER EN CUENTA EN LA DIETA (patologías, medicación, digestivo): ' + ctx.clinical_notes.replace(chr(10), ' ')) if ctx.clinical_notes else ''}\
 {_food_catalog_block(food_catalog)}"""
+
+    if ctx.diet_mode == "flexible_7" and branding.MEAL_BANK_STYLE == "options":
+        n = branding.MEAL_BANK_OPTIONS
+        return common + f"""
+
+FORMATO POR TOMA (método de la casa — sencillo y directo):
+
+• TODAS las tomas → fmt="options": EXACTAMENTE {n} opciones (combos CERRADOS y
+  completos) que cumplan los macros del slot ±5%, con ingredients
+  (food/grams/household). grams en CRUDO. Las {n} opciones de una toma deben ser
+  VARIADAS entre sí (p. ej. una rápida de montar, una de plato elaborado y una
+  fácil de comer fuera de casa) y variadas también entre tomas — que la semana
+  no aburra.
+
+• OBLIGATORIO: TODAS las tomas del listado deben aparecer en slots CON contenido.
+  Ninguna toma puede quedar vacía o "libre": al cliente siempre se le dan
+  opciones concretas, no se le complica la vida.
+
+• weekly_examples (TODOS los slots): 7 nombres CORTOS de plato, uno por día,
+  variados, para la tabla "Ejemplo de dieta semanal" (p. ej. "Pollo con arroz y
+  brócoli", "Salmón con patata").
+
+Respeta SIEMPRE alergias y aversiones. Devuelve SOLO JSON:
+{{"mode":"flexible_7","slots":[
+ {{"slot":N,"fmt":"options","options":[{{"key":"A","title":...,"ingredients":[{{"food":...,
+   "grams":N,"household":...}}],"prep":...,"prep_minutes":N,"macros":{{"kcal":N,"protein_g":N,
+   "carbs_g":N,"fat_g":N}},"tags":[...]}}, ...{n} opciones],"weekly_examples":[...7 textos]}},
+ ...un objeto por toma]}}"""
 
     if ctx.diet_mode == "flexible_7":
         return common + """
