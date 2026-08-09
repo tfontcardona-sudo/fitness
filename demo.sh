@@ -12,14 +12,12 @@ fi
 # .env de demo si no existe (credenciales del panel: professional / cámbialas si quieres)
 if [ ! -f .env ]; then
   cp .env.example .env
-  python3 - <<'EOF' 2>/dev/null || python - <<'EOF'
-import re
-s = open(".env").read()
-s = re.sub(r"^ADMIN_1_USER=.*$", "ADMIN_1_USER=professional", s, flags=re.M)
-s = re.sub(r"^ADMIN_1_PASS=.*$", "ADMIN_1_PASS=Professional-Demo-2026", s, flags=re.M)
-s = re.sub(r"^EMAILS_ENABLED=.*$", "EMAILS_ENABLED=false", s, flags=re.M)
-open(".env", "w").write(s)
-EOF
+  # sed -i.bak funciona igual en GNU (Linux) y BSD (macOS)
+  sed -i.bak \
+    -e 's/^ADMIN_1_USER=.*/ADMIN_1_USER=professional/' \
+    -e 's/^ADMIN_1_PASS=.*/ADMIN_1_PASS=Professional-Demo-2026/' \
+    -e 's/^EMAILS_ENABLED=.*/EMAILS_ENABLED=false/' .env
+  rm -f .env.bak
   echo "✓ .env creado (panel: professional / Professional-Demo-2026)"
   echo "  · Para IA en vivo (leer anamnesis / generar plan): añade ANTHROPIC_API_KEY al .env"
 fi
