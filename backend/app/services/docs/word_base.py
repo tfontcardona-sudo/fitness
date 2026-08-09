@@ -203,7 +203,8 @@ def _keep_rows_together(table) -> None:
                 _keep_with_next(p)
 
 
-def open_box(doc: Document, fill: str = "F5F0E8", cant_split: bool = False):
+def open_box(doc: Document, fill: str = "F5F0E8", cant_split: bool = False,
+             border_color: str = "999999"):
     """Crea una caja (cell) a todo el ancho con relleno y devuelve la celda para
     rellenarla con párrafos. Sin bordes.
 
@@ -218,7 +219,7 @@ def open_box(doc: Document, fill: str = "F5F0E8", cant_split: bool = False):
     cell.width = Pt(CONTENT_WIDTH_DXA / 20)
     _shade_cell(cell, fill)
     _set_cell_margins(cell, top=140, bottom=140, left=160, right=160)
-    _box_border(table)  # marco gris fino, como la referencia
+    _box_border(table, border_color)  # marco fino del color del tema
     if cant_split:
         _cant_split_rows(table)
     return cell
@@ -346,7 +347,9 @@ def clean_table(doc: Document, headers: list[str], rows: list[list[str]],
                 brand: DocBrand, col_widths: list[int] | None = None,
                 header_color: str | None = None, header_colors: list[str] | None = None,
                 header_text_color: str = "0A0A0F", font_pt: float = 9.5,
-                cant_split_rows: bool = True, keep_together: bool = True):
+                cant_split_rows: bool = True, keep_together: bool = True,
+                body_fills: tuple[str, str] = ("FFFFFF", "F5F0E8"),
+                border_color: str = "E0E0E6"):
     """Tabla limpia con cabecera de color, ancho explícito y padding (skill).
 
     header_color: color único de la cabecera (por defecto el de marca).
@@ -384,9 +387,9 @@ def clean_table(doc: Document, headers: list[str], rows: list[list[str]],
         for i, val in enumerate(row):
             cells[i].width = Pt(col_widths[i] / 20)
             _set_cell_margins(cells[i])
-            # SIEMPRE relleno opaco (blanco/crema) para que el texto sea legible
-            # aunque la fila quede sobre la banda de comida de la cabecera.
-            _shade_cell(cells[i], "F5F0E8" if r_idx % 2 == 1 else "FFFFFF")
+            # SIEMPRE relleno opaco (zebra par/impar de body_fills) para que el
+            # texto sea legible sobre cualquier fondo de página.
+            _shade_cell(cells[i], body_fills[r_idx % 2].lstrip("#"))
             # Valor LISTA = varias líneas en la celda, cada una su párrafo, con
             # etiqueta opcional en negrita: [("Cereales", "avena, arroz…"), …]
             # — el formato de subgrupos del plan de referencia.
@@ -407,7 +410,7 @@ def clean_table(doc: Document, headers: list[str], rows: list[list[str]],
                 p = cells[i].paragraphs[0]
                 run = p.add_run(str(val))
                 run.font.size = Pt(font_pt)
-    _thin_borders(table)
+    _thin_borders(table, border_color)
     # Cabecera repetible: si la tabla se parte, la cabecera de color reaparece
     # en la página siguiente (nunca filas huérfanas sin encabezado).
     _mark_header_repeat(table)
@@ -442,6 +445,21 @@ def spacer(doc: Document, pt: float = SPACE_SECTION, keep_next: bool = True) -> 
     pf.line_spacing = Pt(pt)
     if keep_next:
         _keep_with_next(p)
+
+
+def set_page_background(doc: Document, color: str) -> None:
+    """Color de PÁGINA de todo el documento (w:background como primer hijo de
+    w:document + w:displayBackgroundShape en settings). Word y LibreOffice lo
+    pintan en pantalla y en la exportación a PDF — verificado en el pipeline
+    real (soffice → PDF)."""
+    from docx.oxml import OxmlElement
+
+    bg = OxmlElement("w:background")
+    bg.set(qn("w:color"), color.lstrip("#"))
+    doc.element.insert(0, bg)
+    settings = doc.settings.element
+    if settings.find(qn("w:displayBackgroundShape")) is None:
+        settings.append(OxmlElement("w:displayBackgroundShape"))
 
 
 def section_rule(doc: Document, text: str, rule_color: str = "E9A90F",
@@ -530,7 +548,8 @@ def section_bar(doc: Document, text: str, color: str, text_color: str = "FFFFFF"
 
 
 def info_box(doc: Document, items, fill: str = "F5F0E8", label_color: str = "8B1A2B",
-             cant_split: bool = False, image_path: str | None = None) -> None:
+             cant_split: bool = False, image_path: str | None = None,
+             border_color: str = "999999") -> None:
     """Recuadro con fondo crema. items: str (línea) o (label, valor).
 
     cant_split=False (por defecto): si el recuadro no cabe en la página, se parte
@@ -575,7 +594,7 @@ def info_box(doc: Document, items, fill: str = "F5F0E8", label_color: str = "8B1
                 pimg.add_run().add_picture(image_path, width=Inches(2.4))
             except Exception:
                 pass
-    _box_border(table)  # marco gris fino, como la referencia
+    _box_border(table, border_color)  # marco fino del color del tema
     if cant_split:
         _cant_split_rows(table)
 
@@ -701,14 +720,14 @@ def branded_cover(doc: Document, cover_path: str | None) -> None:
     doc.add_page_break()
 
 
-def _thin_borders(table) -> None:
+def _thin_borders(table, color: str = "E0E0E6") -> None:
     tbl = table._tbl
     tblPr = tbl.tblPr
     borders = tblPr.makeelement(qn("w:tblBorders"), {})
     for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
         e = borders.makeelement(qn(f"w:{edge}"), {
             qn("w:val"): "single", qn("w:sz"): "4",
-            qn("w:space"): "0", qn("w:color"): "E0E0E6",
+            qn("w:space"): "0", qn("w:color"): color.lstrip("#"),
         })
         borders.append(e)
     _insert_tbl_borders(tblPr, borders)
