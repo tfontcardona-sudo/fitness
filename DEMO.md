@@ -9,19 +9,21 @@ y sin email: el sistema funciona igual (esas piezas se activan luego, ver
 
 ## 1. Preparar el entorno (una vez, ~15 min)
 
-### Opción A — Portátil con Docker (demo en persona)
+### Opción A — Tu PC con Docker (demo en persona) ← UN SOLO COMANDO
+
+Con Docker Desktop instalado, clona la rama y lanza el script de demo:
 
 ```bash
 git clone -b claude/dqr-white-label-4ojp01 <repo> professional && cd professional
-cp .env.example .env
-# Edita .env: pon ADMIN_1_USER / ADMIN_1_PASS (tu login del panel)
-# Opcional para IA en vivo: ANTHROPIC_API_KEY con algo de saldo
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+./demo.sh              # Mac/Linux
+# Windows: clic derecho a demo.ps1 → "Ejecutar con PowerShell"
 ```
 
-- Panel del coach: http://localhost:5173 · Página de planes: http://localhost:5173/planes
-- Los enlaces del portal que imprime el script (abajo) usan `http://localhost` →
-  en dev añade el puerto: `http://localhost:5173/p/…`
+El script lo hace TODO: crea el `.env` de demo (panel: `professional` /
+`Professional-Demo-2026`), levanta Docker, espera a la API, siembra los 3
+clientes y te imprime los enlaces (panel http://localhost:5173, planes y los
+portales de cada cliente con el puerto correcto). Re-ejecutarlo reinicia la
+demo. Para IA en vivo, añade `ANTHROPIC_API_KEY` al `.env` y re-lanza.
 
 ### Opción B — VPS con subdominio temporal (demo remota, portal en SU móvil)
 
@@ -39,16 +41,21 @@ como app (icono dorado). Vende más que cualquier pantalla compartida.
 docker compose exec api python scripts/demo_seed.py
 ```
 
-Crea (y REINICIA si se re-ejecuta — idempotente, solo toca `@demo.local`):
+Crea (y REINICIA si se re-ejecuta — idempotente, solo toca `@demo.local`)
+**tres clientes = tres fases del ciclo**, para que se vea TODO el producto:
 
-| Cliente | Escenario | Para enseñar |
+| Cliente | Fase del ciclo | Para enseñar |
 |---|---|---|
-| **Marta Serra** | Génesis.99, día **8 de 14**, peso bajando (74,8→73,9), comidas elegidas, 4 entrenos con series | Ficha completa, dossier, portal vivo |
-| **Jordi Puig** | Entreno Personal, día 5, 2 sesiones registradas, pagado en el centro | El flujo de sesiones presenciales |
-| **Laura Vidal** | Alta de ayer SIN anamnesis | Las colas de atención del panel |
+| **Marta Serra** | Génesis.99 a MITAD de seguimiento (día **8 de 14**, peso 74,8→73,9, comidas elegidas, 4 entrenos con series) | El portal vivo + el dossier |
+| **Carlos Bosch** | Génesis.99 con la revisión quincenal **CERRADA ayer** (14/14 días, cierre completo con perímetros y sensaciones) | La notificación al coach + el **Resumen** de métricas (peso −1,2 kg, adherencia 89 %, fuerza e1RM) |
+| **Jordi Puig** | **Entreno Personal** presencial (día 5, 2 sesiones registradas, pagado en el centro) | El segundo producto del catálogo |
 
-El script imprime los **enlaces del portal** de Marta y Jordi: guárdalos a mano
-(o re-ejecuta el script justo antes de la demo para regenerarlos).
+La CUARTA situación —el alta de un cliente nuevo— se enseña **en vivo** durante
+la demo (paso 3 del guión): crear a "Laura Vidal" desde el panel tarda 2
+minutos y demuestra el onboarding real delante de ellos.
+
+El script imprime los **enlaces del portal** de los tres: tenlos a mano
+(o re-ejecútalo justo antes de la demo para regenerarlos).
 
 ---
 
@@ -65,12 +72,17 @@ cual vuestra web, con reserva por WhatsApp. Baja hasta el bloque del centro
 sistema*.
 
 **2) El panel del coach — "Hoy" (2')**
-Login. El dashboard prioriza el trabajo: fíjate en **Laura Vidal** — se
-registró ayer y aún no ha enviado su anamnesis: el sistema la tiene en cola y
-le recuerda solo (D+3/D+7). Mensaje: *nadie se pierde; el sistema persigue,
-vosotros decidís*.
+Login. El dashboard prioriza el trabajo: fíjate en **Carlos Bosch** — cerró su
+revisión quincenal ayer y el sistema tiene al coach avisado y la revisión en
+cola. Mensaje: *nadie se pierde; el sistema persigue, vosotros decidís*.
 
-**3) La ficha de Marta — anamnesis y plan (3')**
+**3) Alta EN VIVO de un cliente (2')**
+Crea a "Laura Vidal" delante de ellos: alta manual → selector de plan
+(Génesis.99 / Entreno Personal) → queda en cola de anamnesis con
+recordatorios automáticos (D+3/D+7). Mensaje: *dar de alta cuesta 2 minutos
+y el sistema se encarga de perseguir la anamnesis*.
+
+**3b) La ficha de Marta — anamnesis y plan (3')**
 Abre Marta → pestaña **Anamnesis**: todo estructurado (objetivo, medidas,
 lesiones, gustos, alergias). Cuenta el flujo real: *el cliente rellena un PDF,
 lo sube, y la IA lee hasta la letra manuscrita y rellena esta ficha; vosotros
@@ -94,12 +106,14 @@ día 1). Instala la PWA (añadir a pantalla de inicio → icono dorado). Mensaje
 *el cliente vive aquí; el papel es solo la entrega inicial*.
 
 **6) El ciclo quincenal — donde está el negocio (2')**
-En la ficha de Marta → **Seguimiento/Feedback**: al día 14 el cliente cierra
-su revisión (peso, medidas, fotos, sensaciones) y el coach ve el **Resumen**
-con métricas calculadas (tendencia de peso real, adherencia, fuerza). El
-sistema propone el ajuste del plan con reglas fijas y genera el feedback (IA)
-que el coach revisa y ENVÍA. Mensaje: *la revisión quincenal, que es lo que os
-come horas, queda a un clic — y siempre con vuestra supervisión*.
+Abre la ficha de **Carlos Bosch** → **Seguimiento/Feedback**: su revisión está
+CERRADA de ayer — cierre completo (peso final, perímetros, sensaciones 1-5,
+adherencia 9/8, qué le costó más) y el botón **"Resumen"** enseña las métricas
+calculadas al momento y SIN IA: peso 84,6 → 83,4 (−1,2 kg), adherencia de
+dieta 89 %, registro 14/14 días y la fuerza por ejercicio (e1RM). Desde aquí,
+"Generar feedback" redacta el informe (IA) que el coach revisa y ENVÍA — con
+clave de IA puedes enseñarlo en vivo. Mensaje: *la revisión quincenal, que es
+lo que os come horas, queda a un clic — siempre con vuestra supervisión*.
 
 **7) Cierre (1')**
 Kit de ventas (Recursos): responder a un interesado con el catálogo o el
@@ -131,8 +145,9 @@ falta para arrancar de verdad: su Stripe, su dominio y su email
 
 ## 4. Reset y trucos
 
-- **Reiniciar la demo**: re-ejecuta `scripts/demo_seed.py` (borra y recrea los
-  `@demo.local`; imprime enlaces nuevos del portal).
+- **Reiniciar la demo**: re-ejecuta `./demo.sh` (o `demo.ps1`) — borra y
+  recrea los `@demo.local` e imprime enlaces nuevos del portal. La Laura creada
+  en vivo se borra desde el panel (o quedará para la siguiente demo).
 - **Sin clave de IA**: no toques "Generar plan"/"Leer con IA" en vivo; todo lo
   demás funciona (el plan de Marta ya está generado).
 - **No enseñes** `/oferta` (redirige a planes: correcto, esta marca no la usa).

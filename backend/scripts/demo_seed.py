@@ -1,15 +1,20 @@
 """Datos de DEMOSTRACIÓN para enseñar el producto a un cliente (Professional).
 
-Monta un escenario VIVO e idempotente (re-ejecutar lo reinicia) sin gastar IA:
+Monta un escenario VIVO e idempotente (re-ejecutar lo reinicia) sin gastar IA.
+TRES clientes = TRES fases del ciclo, para enseñar todas las funcionalidades:
 
-  · Marta Serra  — Génesis.99 a mitad de ciclo: anamnesis completa, plan
-    publicado (nutrición con 3 opciones por comida + entrenamiento), período
-    abierto en el día 8 de 14, diario con peso bajando, comidas elegidas y
-    entrenos con series registradas. El dossier negro se descarga de su ficha.
-  · Jordi Puig   — Entreno Personal: plan de solo entrenamiento publicado,
-    período abierto en el día 5, dos entrenos registrados, pagado en el centro.
-  · Laura Vidal  — alta nueva en onboarding SIN anamnesis: enciende las colas
-    de atención del panel (se ve que el sistema avisa solo).
+  · Marta Serra  — Génesis.99 A MITAD de seguimiento (día 8 de 14): plan
+    publicado con 3 opciones por comida + entrenamiento, diario con el peso
+    bajando, comidas elegidas y entrenos con series. El portal vivo.
+  · Carlos Bosch — Génesis.99 con la REVISIÓN QUINCENAL CERRADA ayer:
+    14 días de diario, cierre completo (peso final, perímetros, sensaciones,
+    adherencia) y el cliente en review_pending → notificación al coach y
+    "Resumen" de métricas listo para enseñar (sin IA).
+  · Jordi Puig   — ENTRENO PERSONAL (sesiones presenciales): plan de solo
+    entrenamiento, día 5, dos sesiones registradas, pagado en el centro.
+
+(El alta de un cliente NUEVO —la cola de anamnesis— se enseña EN VIVO en la
+demo creando a "Laura Vidal" desde el panel: es parte del guión, ver DEMO.md.)
 
 Uso (con la BD migrada y sembrada, p. ej. dentro del contenedor):
 
@@ -78,90 +83,106 @@ def _macros(p: int, c: int, f: int) -> dict:
     return {"kcal": 4 * p + 4 * c + 9 * f, "protein_g": p, "carbs_g": c, "fat_g": f}
 
 
-def marta_nutrition() -> dict:
+def build_nutrition(targets: list[tuple[int, int, int]], tdee: int, bmr: int,
+                    rationale: str) -> dict:
     """Plan de nutrición realista y CUADRADO: Σ comidas = día, kcal = 4/4/9,
-    3 opciones por toma (método de la casa)."""
-    # Reparto por tomas (suma exacta del día: P130 C175 G60 → 1760 kcal)
+    3 opciones por toma (método de la casa). `targets` = (P, C, G) por toma."""
+    t1, t2, t3, t4 = (_macros(*t) for t in targets)
     meals = [
-        {"slot": 1, "name": "Desayuno", "time": "08:00", "target": _macros(30, 45, 12)},
-        {"slot": 2, "name": "Comida", "time": "14:00", "target": _macros(45, 60, 20)},
-        {"slot": 3, "name": "Merienda", "time": "18:00", "target": _macros(20, 30, 8)},
-        {"slot": 4, "name": "Cena", "time": "21:30", "target": _macros(35, 40, 20)},
+        {"slot": 1, "name": "Desayuno", "time": "08:00", "target": t1},
+        {"slot": 2, "name": "Comida", "time": "14:00", "target": t2},
+        {"slot": 3, "name": "Merienda", "time": "18:00", "target": t3},
+        {"slot": 4, "name": "Cena", "time": "21:30", "target": t4},
     ]
     slots = [
         {"slot": 1, "fmt": "options", "options": [
             _opt("A", "Yogur griego con avena, arándanos y nueces",
                  [("Yogur griego 0%", 250, "1 tarrina grande"), ("Copos de avena", 45, "5 cucharadas"),
                   ("Arándanos", 80, "1 puñado grande"), ("Nueces", 12, "3 nueces")],
-                 "Mezcla y deja reposar 5 minutos.", 5, _macros(30, 45, 12)),
+                 "Mezcla y deja reposar 5 minutos.", 5, dict(t1)),
             _opt("B", "Tostadas integrales con pavo y aguacate",
                  [("Pan integral", 70, "2 rebanadas"), ("Fiambre de pavo", 80, "4 lonchas"),
                   ("Aguacate", 45, "1/4 pieza"), ("Tomate", 60, "1/2 tomate")],
-                 "Tuesta el pan y monta.", 6, _macros(30, 45, 12)),
+                 "Tuesta el pan y monta.", 6, dict(t1)),
             _opt("C", "Tortilla con pan integral y plátano",
                  [("Huevo entero", 60, "1 huevo"), ("Claras de huevo", 180, "5 claras"),
                   ("Pan integral", 50, "1 rebanada y media"), ("Plátano", 100, "1 pieza")],
-                 "Tortilla a la plancha con una gota de AOVE.", 8, _macros(30, 45, 12)),
+                 "Tortilla a la plancha con una gota de AOVE.", 8, dict(t1)),
         ], "weekly_examples": ["Yogur con avena", "Tostadas de pavo", "Tortilla y fruta",
                                "Yogur con avena", "Tostadas de pavo", "Tortilla y fruta", "Yogur con avena"]},
         {"slot": 2, "fmt": "options", "options": [
             _opt("A", "Pollo a la plancha con arroz y verduras",
                  [("Pechuga de pollo", 160, "1 filete grande"), ("Arroz blanco", 70, "70 g en crudo"),
                   ("Verduras salteadas", 200, "1 plato"), ("Aceite de oliva virgen extra", 12, "1 cucharada")],
-                 "Plancha y salteado; el arroz, hervido.", 20, _macros(45, 60, 20)),
+                 "Plancha y salteado; el arroz, hervido.", 20, dict(t2)),
             _opt("B", "Salmón al horno con patata y ensalada",
                  [("Salmón", 150, "1 lomo"), ("Patata", 280, "2 patatas medianas"),
                   ("Ensalada verde", 150, "1 bol"), ("Aceite de oliva virgen extra", 10, "1 cucharada")],
-                 "Horno 180º, 15 minutos.", 25, _macros(45, 60, 20)),
+                 "Horno 180º, 15 minutos.", 25, dict(t2)),
             _opt("C", "Garbanzos salteados con atún",
                  [("Garbanzos cocidos", 220, "1 bote pequeño"), ("Atún al natural", 120, "2 latas"),
                   ("Pimiento y cebolla", 120, "1 plato"), ("Aceite de oliva virgen extra", 12, "1 cucharada")],
-                 "Saltea todo junto 8 minutos.", 12, _macros(45, 60, 20)),
+                 "Saltea todo junto 8 minutos.", 12, dict(t2)),
         ], "weekly_examples": ["Pollo con arroz", "Salmón con patata", "Garbanzos con atún",
                                "Pollo con arroz", "Salmón con patata", "Garbanzos con atún", "Pollo con arroz"]},
         {"slot": 3, "fmt": "options", "options": [
             _opt("A", "Queso fresco batido con fruta",
                  [("Queso fresco batido 0%", 250, "1 tarrina"), ("Manzana", 150, "1 pieza"),
                   ("Almendras", 10, "8 almendras")],
-                 "Trocea la fruta y mezcla.", 3, _macros(20, 30, 8)),
+                 "Trocea la fruta y mezcla.", 3, dict(t3)),
             _opt("B", "Sándwich de atún",
                  [("Pan integral", 60, "2 rebanadas"), ("Atún al natural", 80, "1 lata y media"),
                   ("Tomate", 50, "rodajas")],
-                 "Monta el sándwich.", 5, _macros(20, 30, 8)),
+                 "Monta el sándwich.", 5, dict(t3)),
             _opt("C", "Batido de proteína con plátano",
                  [("Proteína de suero", 25, "1 cazo"), ("Plátano", 120, "1 pieza"),
                   ("Leche semidesnatada", 200, "1 vaso")],
-                 "Batidora, 1 minuto.", 2, _macros(20, 30, 8)),
+                 "Batidora, 1 minuto.", 2, dict(t3)),
         ], "weekly_examples": ["Queso batido y fruta", "Sándwich de atún", "Batido y plátano",
                                "Queso batido y fruta", "Sándwich de atún", "Batido y plátano", "Queso batido y fruta"]},
         {"slot": 4, "fmt": "options", "options": [
             _opt("A", "Merluza con boniato y brócoli",
                  [("Merluza", 180, "1 lomo grande"), ("Boniato", 200, "1 pieza mediana"),
                   ("Brócoli", 200, "1 plato"), ("Aceite de oliva virgen extra", 12, "1 cucharada")],
-                 "Plancha y vapor.", 20, _macros(35, 40, 20)),
+                 "Plancha y vapor.", 20, dict(t4)),
             _opt("B", "Tacos de pavo con tortillas integrales",
                  [("Pavo picado", 160, "1 bandeja pequeña"), ("Tortillas integrales", 80, "2 tortillas"),
                   ("Pimiento y cebolla", 150, "1 plato"), ("Aguacate", 40, "1/4 pieza")],
-                 "Saltea el pavo con las verduras y monta.", 15, _macros(35, 40, 20)),
+                 "Saltea el pavo con las verduras y monta.", 15, dict(t4)),
             _opt("C", "Revuelto de huevos con champiñones y pan",
                  [("Huevo entero", 120, "2 huevos"), ("Claras de huevo", 100, "3 claras"),
                   ("Champiñones", 200, "1 plato"), ("Pan integral", 50, "1 rebanada y media")],
-                 "Revuelto a fuego medio.", 12, _macros(35, 40, 20)),
+                 "Revuelto a fuego medio.", 12, dict(t4)),
         ], "weekly_examples": ["Merluza con boniato", "Tacos de pavo", "Revuelto y pan",
                                "Merluza con boniato", "Tacos de pavo", "Revuelto y pan", "Merluza con boniato"]},
     ]
-    total = _macros(130, 175, 60)
+    P = sum(t[0] for t in targets); C = sum(t[1] for t in targets); F = sum(t[2] for t in targets)
+    total = _macros(P, C, F)
     return {
-        "target_kcal": total["kcal"], "tdee_kcal": 2200, "bmr_kcal": 1450,
-        "macros": {"protein_g": 130, "carbs_g": 175, "fat_g": 60},
+        "target_kcal": total["kcal"], "tdee_kcal": tdee, "bmr_kcal": bmr,
+        "macros": {"protein_g": P, "carbs_g": C, "fat_g": F},
         "meals": meals,
         "meal_bank": {"mode": "flexible_7", "slots": slots},
         "supplements": [
             {"name": "Creatina monohidrato", "dose": "5 g", "timing": "diaria, con cualquier comida"},
             {"name": "Omega 3", "dose": "2 g", "timing": "con la comida principal"},
         ],
-        "rationale": "Déficit moderado priorizando proteína y adherencia.",
+        "rationale": rationale,
     }
+
+
+def marta_nutrition() -> dict:
+    # P130 C175 G60 → 1760 kcal (déficit 20% sobre TDEE 2200)
+    return build_nutrition([(30, 45, 12), (45, 60, 20), (20, 30, 8), (35, 40, 20)],
+                           tdee=2200, bmr=1450,
+                           rationale="Déficit moderado priorizando proteína y adherencia.")
+
+
+def carlos_nutrition() -> dict:
+    # P160 C210 G70 → 2110 kcal (recomp: déficit suave sobre TDEE 2250)
+    return build_nutrition([(38, 55, 15), (55, 70, 22), (25, 35, 10), (42, 50, 23)],
+                           tdee=2250, bmr=1650,
+                           rationale="Recomposición: déficit suave con proteína alta.")
 
 
 def check_cuadre(nutrition: dict) -> None:
@@ -382,16 +403,80 @@ def crear_jordi(db) -> Client:
     return c
 
 
-def crear_laura(db) -> Client:
+def crear_carlos(db) -> Client:
+    """Génesis.99 con la revisión quincenal CERRADA ayer: el coach tiene la
+    notificación viva y el "Resumen" de métricas listo (sin IA)."""
+    hoy = date.today()
     c = Client(
-        full_name="Laura Vidal", email=f"laura{DEMO_DOMAIN}", phone="+34 600 555 666",
-        package_tier="full", billing_period="1m", status="onboarding",
-        payment_status="paid", paid_at=datetime.now(timezone.utc) - timedelta(hours=20),
-        portal_token="pendiente",
+        full_name="Carlos Bosch", email=f"carlos{DEMO_DOMAIN}", phone="+34 600 555 666",
+        package_tier="full", billing_period="1m", status="review_pending",
+        payment_status="paid", paid_at=datetime.now(timezone.utc) - timedelta(days=16),
+        sex="male", birth_date=date(1985, 1, 22), height_cm=181,
+        start_weight_kg=84.6, current_weight_kg=83.4, body_fat_pct=21.0,
+        goal_type="recomp", goal_weight_kg=82.0, level="intermediate",
+        training_days=4, session_max_min=70, training_place="gym",
+        daily_activity_level="light", meals_per_day=4,
+        food_allergies=[], food_dislikes=[], food_likes=["arroz", "salmón"],
+        lifestyle_notes="Turnos de oficina; entrena al salir del trabajo.",
+        sport_history="Años de gimnasio; base técnica sólida.",
+        diet_mode="flexible_7", portal_token="pendiente",
+        plan_notice_pending=False,
     )
     db.add(c)
     db.flush()
     c.portal_token = new_portal_token(c.id)
+
+    nutrition = carlos_nutrition()
+    check_cuadre(nutrition)
+    plan = Plan(client_id=c.id, month_index=1, version=1, status="published",
+                nutrition_json=nutrition, training_json=jordi_training(db),
+                education_json=None, guardrail_flags=[], generated_by="demo",
+                goal_type="recomp",
+                published_at=datetime.now(timezone.utc) - timedelta(days=16))
+    db.add(plan)
+    db.flush()
+
+    starts = hoy - timedelta(days=15)          # período COMPLETO: cerró ayer
+    ends = starts + timedelta(days=13)
+    period = Period(
+        client_id=c.id, plan_id=plan.id, period_index=1,
+        starts_on=starts, ends_on=ends, status="closed",
+        closing_weight_kg=83.4, closing_waist_cm=90.5, closing_hip_cm=99.0,
+        closing_arm_cm=36.5, closing_thigh_cm=58.0,
+        closing_feelings_json={"energia": 4, "hambre": 2, "sueno": 4,
+                               "recuperacion": 4, "animo": 5, "digestiones": 4},
+        adherence_diet_0_10=9, adherence_training_0_10=8, free_meals_count=2,
+        closing_hardest="Las cenas del fin de semana.",
+        closing_changes="Mucha más energía en los entrenos desde la semana 2.",
+        closing_next_goal="Bajar de 83 kg manteniendo las cargas.",
+        closing_submitted_at=datetime.now(timezone.utc) - timedelta(hours=18),
+        photos_confirmed=True,
+        coach_reviewed_at=None,  # la notificación del coach sigue VIVA
+    )
+    db.add(period)
+    db.flush()
+
+    pesos = [84.6, 84.4, 84.5, 84.2, 84.0, 84.1, 83.9, 83.8, 83.9, 83.6, 83.5, 83.6, 83.5, 83.4]
+    for i in range(14):
+        d = DailyLog(
+            period_id=period.id, log_date=starts + timedelta(days=i),
+            weight_kg=pesos[i], sleep_hours=7.0 + (i % 2) * 0.5,
+            steps=str(9000 + (i % 5) * 400), water_liters=2.5,
+            diet_adherence=("yes" if i % 5 else "partial"),
+            energy_1_5=4 if i > 3 else 3, mood_1_5=4, fatigue_1_5=2,
+            chosen_options_json={"1": ["A", "B"][i % 2], "2": ["A", "B", "C"][i % 3],
+                                 "3": "C", "4": ["A", "C"][i % 2]},
+        )
+        db.add(d)
+        db.flush()
+        if i in (0, 2, 4, 7, 9, 11):
+            sess = plan.training_json["sessions"][i % len(plan.training_json["sessions"])]
+            for ex in sess["exercises"][:4]:
+                base = 55.0 + (ex["exercise_id"] % 4) * 10
+                extra = 2.5 * (i // 5)  # progresión visible en el Resumen
+                for set_n in range(1, 4):
+                    db.add(WorkoutLog(daily_log_id=d.id, exercise_id=ex["exercise_id"],
+                                      set_number=set_n, reps=8, weight_kg=base + extra, rpe=8.0))
     db.commit()
     return c
 
@@ -401,16 +486,21 @@ def main() -> None:
     try:
         borrados = wipe_demo_clients(db)
         marta = crear_marta(db)
+        carlos = crear_carlos(db)
         jordi = crear_jordi(db)
-        laura = crear_laura(db)
         base = settings.public_base_url.rstrip("/")
+        # En desarrollo (docker compose dev) el frontend sirve en el puerto 5173.
+        web = f"{base}:5173" if base == "http://localhost" else base
         print(f"[demo] clientes de demo previos borrados: {borrados}")
-        print("[demo] escenario creado:")
-        print(f"  · Marta Serra (Génesis.99, día 8 de 14) → {base}/p/{marta.portal_token}")
-        print(f"  · Jordi Puig (Entreno Personal, día 5)  → {base}/p/{jordi.portal_token}")
-        print(f"  · Laura Vidal (alta sin anamnesis: enciende las colas del panel)")
-        print(f"[demo] panel del coach: {base}/  (usuario del .env: ADMIN_1_USER)")
-        print(f"[demo] página pública de planes: {base}/planes")
+        print("[demo] escenario creado — tres fases del ciclo:")
+        print(f"  1· Marta Serra  — Génesis.99, día 8 de 14 (portal vivo)")
+        print(f"      portal: {web}/p/{marta.portal_token}")
+        print(f"  2· Carlos Bosch — Génesis.99, revisión CERRADA ayer (notificación + Resumen)")
+        print(f"      portal: {web}/p/{carlos.portal_token}")
+        print(f"  3· Jordi Puig   — Entreno Personal, día 5 (sesiones presenciales)")
+        print(f"      portal: {web}/p/{jordi.portal_token}")
+        print(f"[demo] panel del coach: {web}/  · página de planes: {web}/planes")
+        print("[demo] el alta EN VIVO (Laura) se hace desde el panel durante la demo (DEMO.md).")
         print("[demo] re-ejecutar este script REINICIA la demo (idempotente).")
     finally:
         db.close()
