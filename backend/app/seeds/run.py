@@ -87,12 +87,27 @@ COACH_WHATSAPP = branding.CONTACT_PHONE
 
 
 def seed_coach_contact(db) -> bool:
+    """Rellena los datos de contacto/tagline de la marca SOLO si están vacíos —
+    lo que el coach escriba en la página Marca siempre manda."""
     brand = db.scalar(select(BrandConfig).limit(1))
-    if brand is None or (brand.contact_phone or "").strip():
+    if brand is None:
         return False
-    brand.contact_phone = COACH_WHATSAPP
-    db.commit()
-    return True
+    changed = False
+    if not (brand.contact_phone or "").strip():
+        brand.contact_phone = COACH_WHATSAPP
+        changed = True
+    if not (brand.contact_email or "").strip():
+        brand.contact_email = branding.CONTACT_EMAIL
+        changed = True
+    if not (brand.contact_web or "").strip():
+        brand.contact_web = branding.CONTACT_WEB
+        changed = True
+    if not (brand.tagline or "").strip():
+        brand.tagline = branding.BRAND_TAGLINE
+        changed = True
+    if changed:
+        db.commit()
+    return changed
 
 
 def seed_admins(db) -> int:

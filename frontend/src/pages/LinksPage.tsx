@@ -30,9 +30,9 @@ export default function LinksPage() {
       || (p.category ?? "").toLowerCase().includes(needle));
   }, [data, q]);
 
-  const primary = data?.color_primary ?? "#C9A227";
-  const secondary = data?.color_secondary ?? "#2C5F73";
-  const bg = data?.color_bg ?? "#0C1216";
+  const primary = data?.color_primary ?? "#E9A90F";
+  const secondary = data?.color_secondary ?? "#37474F";
+  const bg = data?.color_bg ?? "#0F0E0C";
 
   function copyCode() {
     if (!data?.partner_discount_code) return;

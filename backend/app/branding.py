@@ -9,42 +9,66 @@ Espejo en el frontend: `frontend/src/lib/branding.ts` (si cambias uno, cambia
 el otro). Los colores son solo el DEFAULT inicial: la fila `brand_config` de la
 BD (página Marca del panel) manda en runtime y permite afinarlos sin desplegar.
 
-Instancia actual: PROFESSIONAL (Girona) — centro de salud y fitness con más de
-25 años, de Lídia Miralpeix y Toni Pérez (professionalgirona.com).
+Instancia actual: PROFESSIONAL (Girona) — Centre Salut & Fitness, by Lidia
+Miralpeix & Toni Pérez (professionalgirona.com). Identidad del sitio: serif
+blanco + dorado sobre negro, con el laurel como emblema. Los colores exactos
+pueden afinarse en runtime desde la página Marca (sin desplegar); el logo
+definitivo del cliente se sube desde esa misma página.
 
-⚠️ PROVISIONAL: los colores exactos del sitio web y las tarifas reales de sus
-asesorías están pendientes de confirmar con el cliente; la paleta de abajo es
-una propuesta premium editable desde la página Marca sin tocar código.
+Catálogo REAL de la marca (de su web):
+  - Génesis.99 (99 €/mes): preparación personal COMPLETA (nutrición +
+    entrenamiento) → tier interno `full`. Es el producto online del sistema.
+  - Entreno Personal (50/60 €/h; pack 10 sesiones 350/450 € socios/no socios):
+    sesiones PRESENCIALES en el centro → tier interno `train`. Se reservan por
+    WhatsApp y se cobran en el centro (el coach marca pagado a mano); el
+    cliente usa el portal de entreno (rutina, series, progreso).
+  - No venden asesoría de solo nutrición → el tier `nutri` queda INTERNO
+    (el coach puede usarlo a mano, pero no aparece en la página pública ni
+    tiene pago online).
 """
 
 # --- Identidad ---------------------------------------------------------------
 BRAND_NAME = "Professional Girona"
 BRAND_SHORT = "Professional"          # etiqueta corta (PWA, chips, prefijos)
-BRAND_WORDMARK = "PROFESSIONAL"       # rótulo del logo
-BRAND_TAGLINE = "Salud y fitness en Girona desde hace más de 25 años"
+BRAND_WORDMARK = "PROFESSIONAL"       # rótulo del logo (serif + laurel)
+BRAND_TAGLINE = "Centre Salut & Fitness · by Lidia Miralpeix & Toni Pérez"
 
 # --- Contacto público (defaults del seed; la página Marca manda) -------------
-CONTACT_PHONE = "+34 972 40 60 51"
+CONTACT_PHONE = "+34 640 756 220"     # WhatsApp del centro (CTA públicos)
+CONTACT_EMAIL = "professionalsaludifitness@gmail.com"
 CONTACT_WEB = "https://professionalgirona.com"
-CONTACT_ADDRESS = "C. de Santa Eugènia, 99 · 17006 Girona"
+CONTACT_ADDRESS = "Carretera Pierre Vilar, 2 · 17002 Girona"
 
 # --- Paleta por defecto (brand_config la sobreescribe en runtime) ------------
-COLOR_PRIMARY = "#C9A227"    # dorado (acción/energía)
-COLOR_SECONDARY = "#2C5F73"  # petróleo (estructura/datos)
-COLOR_BG = "#0C1216"         # grafito noche (portal oscuro, theme-color PWA)
+# Del sitio real: dorado vivo (chips de tarifas) sobre negro cálido, con
+# blanco serif. El secundario es un gris pizarra neutro para datos/estructura.
+COLOR_PRIMARY = "#E9A90F"    # dorado (acción/energía)
+COLOR_SECONDARY = "#37474F"  # gris pizarra (estructura/datos)
+COLOR_BG = "#0F0E0C"         # negro cálido (portal oscuro, theme-color PWA)
 
 # --- Documentos Word / emails ------------------------------------------------
-DOC_FOOTER = f"{BRAND_NAME} · Entrenamiento & Nutrición"
-SMTP_FROM_DEFAULT = f"{BRAND_NAME} <info@professionalgirona.com>"
+DOC_FOOTER = f"{BRAND_NAME} · Centre Salut & Fitness"
+SMTP_FROM_DEFAULT = f"{BRAND_NAME} <{CONTACT_EMAIL}>"
 
 # --- Planes (tiers) ----------------------------------------------------------
 # La maquinaria interna (nutri/train/full) es del producto; la marca solo pone
 # la etiqueta comercial. Espejo: frontend/src/lib/packages.ts.
 TIER_LABELS = {
-    "nutri": f"{BRAND_SHORT} Nutri",
-    "train": f"{BRAND_SHORT} Train",
-    "full": f"{BRAND_SHORT} Full",
+    "nutri": "Plan Nutrición",        # interno: la marca no lo vende suelto
+    "train": "Entreno Personal",      # sesiones presenciales en el centro
+    "full": "Génesis.99",             # preparación personal completa (online)
 }
+
+# Tiers con VENTA ONLINE self-serve (checkout de Stripe desde la web pública).
+# Los demás existen para el coach (alta manual + cobro en el centro), y el
+# backend RECHAZA crear un checkout suyo — así un enlace mal construido no
+# puede cobrar online un plan que se paga presencialmente.
+PUBLIC_TIERS = ("full",)
+
+# Oferta de captación (1 € el primer mes → suscripción). La maquinaria existe
+# en el motor, pero esta marca NO la usa: apagada de raíz (sin checkout, sin
+# precio/cupón en Stripe, sin botón en el kit de ventas).
+OFFER_ENABLED = False
 
 # --- Stripe ------------------------------------------------------------------
 # Prefijo de los lookup_key de precios ({prefix}_{tier}_{period}) y claves de

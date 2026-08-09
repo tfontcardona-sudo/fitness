@@ -120,20 +120,16 @@ def portal_access(brand: Brand, first_name: str, login_url: str,
 
 
 def onboarding_pay_anamnesis(brand: Brand, first_name: str, plan_label: str,
-                             pay_url: str, anamnesis_url: str) -> tuple[str, str]:
+                             pay_url: str | None, anamnesis_url: str) -> tuple[str, str]:
     """Mensaje de arranque (email): pagar el plan + descargar/rellenar/subir la
     anamnesis (PDF editable, página pública /anamnesis/{token}), con la
-    instrucción EN MAYÚSCULAS de enviarla completa."""
+    instrucción EN MAYÚSCULAS de enviarla completa.
+
+    `pay_url=None` → el plan NO se paga online (p. ej. sesiones que se cobran
+    en el centro): el email pide solo la anamnesis, sin botón de pago."""
     first_name = _esc(first_name)
     plan_label = _esc(plan_label)
     subject = f"Tus primeros pasos con {brand.name}"
-    pay_btn = (
-        f'<table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0">'
-        f'<tr><td style="border-radius:10px;background:{brand.color_primary}">'
-        f'<a href="{pay_url}" style="display:inline-block;padding:13px 26px;font-weight:600;'
-        f'color:#0A0A0F;text-decoration:none;border-radius:10px">Pagar mi plan ({plan_label})</a>'
-        f'</td></tr></table>'
-    )
     anamnesis_btn = (
         f'<table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0">'
         f'<tr><td style="border-radius:10px;background:{brand.color_secondary}">'
@@ -141,14 +137,32 @@ def onboarding_pay_anamnesis(brand: Brand, first_name: str, plan_label: str,
         f'color:#FFFFFF;text-decoration:none;border-radius:10px">Rellenar mi anamnesis</a>'
         f'</td></tr></table>'
     )
-    body = (
-        f"<p>Hola {first_name}, ¡bienvenido/a! Para empezar tu asesoría con "
-        f"{brand.name} necesito dos cosas:</p>"
-        f"<p><strong>1) Realiza el pago de tu plan {plan_label}:</strong></p>"
-        f"{pay_btn}"
-        f"<p><strong>2) Descarga tu cuestionario inicial (anamnesis), rellénalo "
-        f"y súbelo desde este enlace:</strong></p>"
-        f"{anamnesis_btn}"
+    if pay_url:
+        pay_btn = (
+            f'<table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0">'
+            f'<tr><td style="border-radius:10px;background:{brand.color_primary}">'
+            f'<a href="{pay_url}" style="display:inline-block;padding:13px 26px;font-weight:600;'
+            f'color:#0A0A0F;text-decoration:none;border-radius:10px">Pagar mi plan ({plan_label})</a>'
+            f'</td></tr></table>'
+        )
+        body = (
+            f"<p>Hola {first_name}, ¡bienvenido/a! Para empezar tu asesoría con "
+            f"{brand.name} necesito dos cosas:</p>"
+            f"<p><strong>1) Realiza el pago de tu plan {plan_label}:</strong></p>"
+            f"{pay_btn}"
+            f"<p><strong>2) Descarga tu cuestionario inicial (anamnesis), rellénalo "
+            f"y súbelo desde este enlace:</strong></p>"
+            f"{anamnesis_btn}"
+        )
+    else:
+        body = (
+            f"<p>Hola {first_name}, ¡bienvenido/a! Para empezar con tu plan "
+            f"{plan_label} de {brand.name} solo necesito una cosa:</p>"
+            f"<p><strong>Descarga tu cuestionario inicial (anamnesis), rellénalo "
+            f"y súbelo desde este enlace:</strong></p>"
+            f"{anamnesis_btn}"
+        )
+    body += (
         f"<p>En esa página puedes descargar el PDF editable, rellenarlo con calma "
         f"desde el móvil o el ordenador y subirlo cuando lo tengas.</p>"
         f'<p style="background:#fff7e6;border-radius:10px;padding:12px 14px;font-weight:700">'

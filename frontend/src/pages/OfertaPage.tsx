@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { Navigate } from "react-router-dom";
 import { MessageCircle, ShieldCheck, Zap } from "lucide-react";
 import { api } from "../lib/api";
+import { OFFER_ENABLED } from "../lib/branding";
 import { waPhone, waUrl } from "../lib/whatsapp";
 
 /**
@@ -26,14 +28,19 @@ export default function OfertaPage() {
   const [landing, setLanding] = useState<import("../types").LandingOut | null>(null);
 
   useEffect(() => {
+    if (!OFFER_ENABLED) return;
     api.publicLanding().then(setLanding).catch(() => setLanding(null));
   }, []);
+
+  // Esta marca no usa la oferta de captación: un enlace antiguo o escrito a
+  // mano aterriza en el catálogo real (el backend también veta su checkout).
+  if (!OFFER_ENABLED) return <Navigate to="/planes" replace />;
 
   const coachDigits = waPhone(landing?.contact_phone);
   const waHref = coachDigits ? waUrl(coachDigits, WA_MESSAGE) : null;
   const payHref = "/api/pay/plan/full/oferta";
 
-  const bg = landing?.color_bg ?? "#0C1216";
+  const bg = landing?.color_bg ?? "#0F0E0C";
   return (
     <div className="relative" style={{ minHeight: "100vh", background: bg, color: "#26211a" }}>
       {landing?.plans_photo_url ? (
@@ -45,7 +52,7 @@ export default function OfertaPage() {
         </>
       ) : (
         <div className="pointer-events-none fixed inset-0"
-          style={{ background: `radial-gradient(120% 80% at 50% 0%, ${(landing?.color_secondary ?? "#2C5F73")}55 0%, ${bg} 60%)` }} />
+          style={{ background: `radial-gradient(120% 80% at 50% 0%, ${(landing?.color_secondary ?? "#37474F")}55 0%, ${bg} 60%)` }} />
       )}
 
       <div className="relative mx-auto max-w-xl px-5 py-10">
@@ -98,7 +105,7 @@ export default function OfertaPage() {
         <div className="mt-5 space-y-2.5">
           <a href={payHref}
             className="flex items-center justify-center gap-2 rounded-xl px-6 py-4 text-base font-extrabold text-white shadow-lg transition-transform hover:brightness-110 active:scale-[0.98]"
-            style={{ background: "#C9A227" }}>
+            style={{ background: "#E9A90F" }}>
             Empezar hoy por 1 € →
           </a>
           {waHref && (
@@ -123,7 +130,7 @@ export default function OfertaPage() {
             ].map(([n, titulo, texto]) => (
               <div key={n} className="flex gap-3">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-extrabold text-white"
-                  style={{ background: "#2C5F73" }}>
+                  style={{ background: "#37474F" }}>
                   {n}
                 </span>
                 <div>

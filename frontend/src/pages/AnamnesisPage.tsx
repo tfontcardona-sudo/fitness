@@ -90,7 +90,7 @@ export default function AnamnesisPage() {
               </p>
               <a href={templateUrl}
                 className="mt-3 inline-flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white transition-transform active:scale-[0.98]"
-                style={{ background: "#2C5F73" }}>
+                style={{ background: "#37474F" }}>
                 <Download size={16} /> Descargar anamnesis
               </a>
             </div>
@@ -117,7 +117,7 @@ export default function AnamnesisPage() {
               )}
               <button onClick={upload} disabled={!file || state === "uploading"}
                 className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white transition-transform active:scale-[0.98] disabled:opacity-60"
-                style={{ background: "#C9A227" }}>
+                style={{ background: "#E9A90F" }}>
                 {state === "uploading"
                   ? <><Loader2 size={16} className="animate-spin" /> Subiendo…</>
                   : "Enviar mi anamnesis"}

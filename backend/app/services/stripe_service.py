@@ -36,22 +36,20 @@ PERIOD_ORDER = ("1m", "3m", "6m")
 
 # ------------------------------------------ precios canónicos (la verdad) ----
 
-# Importes en CÉNTIMOS de cada plan × duración: 69/79/129 € al mes, con
-# trimestral ≈ −15 % por mes y semestral ≈ −22 % por mes, siempre con
-# Nutri > Train y Full < Train+Nutri por duración:
-#   Train  69 · 177 (59/mes) · 324 (54/mes)
-#   Nutri  79 · 201 (67/mes) · 372 (62/mes)
-#   Full  129 · 330 (110/mes) · 600 (100/mes)
-# ⚠️ PROVISIONAL (white-label): tarifas reales de Professional Girona pendientes
-# de confirmar — al fijarlas, cambia SOLO esta tabla (y su espejo visual del
-# front) y ensure_canonical_prices repreciará Stripe de forma idempotente.
+# Importes en CÉNTIMOS de cada plan × duración. Catálogo REAL de la marca
+# (ver app/branding.py): solo Génesis.99 (full, 99 €/mes) se vende ONLINE;
+# la web no anuncia descuento por compromiso → 3m/6m son 99 €/mes exactos.
+# train/nutri NO tienen venta online (create_checkout_url los rechaza —
+# branding.PUBLIC_TIERS): sus importes de abajo son valores internos de
+# referencia por si el dueño decide activarlos algún día, nunca se muestran
+# ni se cobran mientras no estén en PUBLIC_TIERS.
 # De esta tabla beben el script scripts/setup_stripe_prices.py, el AUTO-ALTA
 # (si a Stripe le faltan precios, la api los crea sola; si cambia el importe,
 # precio nuevo con el lookup_key transferido) y la reserva visual del catálogo.
 CANONICAL_AMOUNTS: dict[str, dict[str, int]] = {
     "train": {"1m": 6900, "3m": 17700, "6m": 32400},
     "nutri": {"1m": 7900, "3m": 20100, "6m": 37200},
-    "full": {"1m": 12900, "3m": 33000, "6m": 60000},
+    "full": {"1m": 9900, "3m": 29700, "6m": 59400},
 }
 PRODUCT_NAMES = branding.TIER_LABELS
 PERIOD_LABEL = {"1m": "1 mes", "3m": "3 meses", "6m": "6 meses"}
@@ -112,7 +110,9 @@ def ensure_canonical_prices(stripe, log=None) -> list[str]:
 
     products = {(p.get("metadata") or {}).get(branding.STRIPE_TIER_METADATA_KEY): p["id"]
                 for p in stripe.Product.list(active=True, limit=100)["data"]}
-    keys = [_lookup_key(t, p) for t in TIER_ORDER for p in PERIOD_ORDER] + [OFFER_LOOKUP]
+    keys = [_lookup_key(t, p) for t in TIER_ORDER for p in PERIOD_ORDER]
+    if branding.OFFER_ENABLED:
+        keys.append(OFFER_LOOKUP)
     existing = {pr["lookup_key"]: pr
                 for pr in stripe.Price.list(lookup_keys=keys, active=True,
                                             limit=100)["data"]
@@ -156,60 +156,67 @@ def ensure_canonical_prices(stripe, log=None) -> list[str]:
                 note(f"  + {key}: creado con {amount / 100:.2f} €")
 
     # ---- OFERTA: precio RECURRENTE mensual (suscripción) + cupón 1er mes 1 € ----
-    pr = existing.get(OFFER_LOOKUP)
-    ok = (pr is not None and pr.get("unit_amount") == OFFER_MONTHLY_CENTS
-          and pr.get("currency") == CURRENCY
-          and (pr.get("recurring") or {}).get("interval") == "month")
-    if not ok:
-        if pr is not None:
-            stripe.Price.create(
-                product=pr["product"], currency=CURRENCY,
-                unit_amount=OFFER_MONTHLY_CENTS,
-                recurring={"interval": "month"},
-                lookup_key=OFFER_LOOKUP, transfer_lookup_key=True,
-                nickname=f"{PRODUCT_NAMES['full']} · oferta (120 €/mes)",
-            )
-            stripe.Price.modify(pr["id"], active=False)
-            note(f"  ~ {OFFER_LOOKUP}: reprecio a {OFFER_MONTHLY_CENTS / 100:.2f} €/mes "
-                 "(precio nuevo, el antiguo desactivado)")
+    # Con la oferta APAGADA en esta marca (branding.OFFER_ENABLED) no se
+    # crea ni el precio recurrente ni el cupón: la cuenta de Stripe de la
+    # instancia queda limpia y el checkout de la oferta ya está vetado.
+    if not branding.OFFER_ENABLED:
+        note("  · oferta de captación: desactivada en esta marca (sin precio ni cupón)")
+    else:
+        pr = existing.get(OFFER_LOOKUP)
+        ok = (pr is not None and pr.get("unit_amount") == OFFER_MONTHLY_CENTS
+              and pr.get("currency") == CURRENCY
+              and (pr.get("recurring") or {}).get("interval") == "month")
+        if not ok:
+            if pr is not None:
+                stripe.Price.create(
+                    product=pr["product"], currency=CURRENCY,
+                    unit_amount=OFFER_MONTHLY_CENTS,
+                    recurring={"interval": "month"},
+                    lookup_key=OFFER_LOOKUP, transfer_lookup_key=True,
+                    nickname=f"{PRODUCT_NAMES['full']} · oferta (120 €/mes)",
+                )
+                stripe.Price.modify(pr["id"], active=False)
+                note(f"  ~ {OFFER_LOOKUP}: reprecio a {OFFER_MONTHLY_CENTS / 100:.2f} €/mes "
+                     "(precio nuevo, el antiguo desactivado)")
+            else:
+                stripe.Price.create(
+                    product=products["full"], currency=CURRENCY,
+                    unit_amount=OFFER_MONTHLY_CENTS,
+                    recurring={"interval": "month"},
+                    lookup_key=OFFER_LOOKUP, transfer_lookup_key=True,
+                    nickname=f"{PRODUCT_NAMES['full']} · oferta (120 €/mes)",
+                )
+                note(f"  + {OFFER_LOOKUP}: creado (suscripción {OFFER_MONTHLY_CENTS / 100:.2f} €/mes)")
         else:
-            stripe.Price.create(
-                product=products["full"], currency=CURRENCY,
-                unit_amount=OFFER_MONTHLY_CENTS,
-                recurring={"interval": "month"},
-                lookup_key=OFFER_LOOKUP, transfer_lookup_key=True,
-                nickname=f"{PRODUCT_NAMES['full']} · oferta (120 €/mes)",
-            )
-            note(f"  + {OFFER_LOOKUP}: creado (suscripción {OFFER_MONTHLY_CENTS / 100:.2f} €/mes)")
-    else:
-        note(f"  = {OFFER_LOOKUP}: ya existe ({OFFER_MONTHLY_CENTS / 100:.2f} €/mes, sin cambios)")
+            note(f"  = {OFFER_LOOKUP}: ya existe ({OFFER_MONTHLY_CENTS / 100:.2f} €/mes, sin cambios)")
 
-    # Cupón del primer mes a 1 €: id ESTABLE, un solo cobro con descuento
-    # (duration=once). Un cupón no se puede editar: si existe con otro importe,
-    # se borra y se recrea (los clientes que ya lo redimieron no se tocan).
-    descuento = OFFER_MONTHLY_CENTS - OFFER_FIRST_MONTH_CENTS
-    cupon = None
-    try:
-        cupon = stripe.Coupon.retrieve(OFFER_COUPON_ID)
-    except Exception:  # noqa: BLE001 — no existe (o borrado): se crea abajo
+        # Cupón del primer mes a 1 €: id ESTABLE, un solo cobro con descuento
+        # (duration=once). Un cupón no se puede editar: si existe con otro importe,
+        # se borra y se recrea (los clientes que ya lo redimieron no se tocan).
+        descuento = OFFER_MONTHLY_CENTS - OFFER_FIRST_MONTH_CENTS
         cupon = None
-    cupon_ok = (cupon is not None and cupon.get("amount_off") == descuento
-                and cupon.get("currency") == CURRENCY
-                and cupon.get("duration") == "once" and cupon.get("valid", True))
-    if not cupon_ok:
-        if cupon is not None:
-            try:
-                stripe.Coupon.delete(OFFER_COUPON_ID)
-            except Exception:  # noqa: BLE001
-                pass
-        stripe.Coupon.create(
-            id=OFFER_COUPON_ID, amount_off=descuento, currency=CURRENCY,
-            duration="once", name="Oferta: primer mes 1 €",
-        )
-        note(f"  + cupón {OFFER_COUPON_ID}: primer mes a "
-             f"{OFFER_FIRST_MONTH_CENTS / 100:.2f} € (−{descuento / 100:.2f} €)")
-    else:
-        note(f"  = cupón {OFFER_COUPON_ID}: ya existe (sin cambios)")
+        try:
+            cupon = stripe.Coupon.retrieve(OFFER_COUPON_ID)
+        except Exception:  # noqa: BLE001 — no existe (o borrado): se crea abajo
+            cupon = None
+        cupon_ok = (cupon is not None and cupon.get("amount_off") == descuento
+                    and cupon.get("currency") == CURRENCY
+                    and cupon.get("duration") == "once" and cupon.get("valid", True))
+        if not cupon_ok:
+            if cupon is not None:
+                try:
+                    stripe.Coupon.delete(OFFER_COUPON_ID)
+                except Exception:  # noqa: BLE001
+                    pass
+            stripe.Coupon.create(
+                id=OFFER_COUPON_ID, amount_off=descuento, currency=CURRENCY,
+                duration="once", name="Oferta: primer mes 1 €",
+            )
+            note(f"  + cupón {OFFER_COUPON_ID}: primer mes a "
+                 f"{OFFER_FIRST_MONTH_CENTS / 100:.2f} € (−{descuento / 100:.2f} €)")
+        else:
+            note(f"  = cupón {OFFER_COUPON_ID}: ya existe (sin cambios)")
+
 
     # ---- Webhook: los eventos de la suscripción deben estar SUSCRITOS ----
     # La guía original decía escuchar SOLO checkout.session.completed; sin
@@ -264,7 +271,9 @@ def _price_by_lookup(tier: str, period: str) -> str:
         return _lookup_cache["ids"][key]
     try:
         stripe = _stripe()
-        keys = [_lookup_key(t, p) for t in TIER_ORDER for p in PERIOD_ORDER] + [OFFER_LOOKUP]
+        keys = [_lookup_key(t, p) for t in TIER_ORDER for p in PERIOD_ORDER]
+        if branding.OFFER_ENABLED:
+            keys.append(OFFER_LOOKUP)
 
         def _list_prices() -> dict:
             return {pr["lookup_key"]: pr
@@ -281,6 +290,11 @@ def _price_by_lookup(tier: str, period: str) -> str:
                     if (pr is None or pr.get("unit_amount") != CANONICAL_AMOUNTS[t][p]
                             or pr.get("currency") != CURRENCY):
                         return True
+            # Con la oferta apagada (branding.OFFER_ENABLED) su precio y cupón
+            # NO existen a propósito: comprobarlos aquí forzaría un ciclo de
+            # "reparación" eterno en cada resolución de precios.
+            if not branding.OFFER_ENABLED:
+                return False
             of = found.get(OFFER_LOOKUP)  # el precio recurrente de la oferta
             if (of is None or of.get("unit_amount") != OFFER_MONTHLY_CENTS
                     or (of.get("recurring") or {}).get("interval") != "month"):
@@ -346,7 +360,17 @@ def create_checkout_url(db: Session, tier: str, period: str = "1m", *,
         raise StripeError("Stripe no está configurado (falta STRIPE_SECRET_KEY en el .env).")
     if tier not in _TIERS:
         raise StripeError(f"Plan desconocido: {tier}")
+    # Solo los planes con venta online (branding.PUBLIC_TIERS) pueden cobrarse
+    # por Stripe: los demás (p. ej. las sesiones de Entreno Personal) se
+    # contratan y cobran EN EL CENTRO — ningún enlace, ni bien ni mal
+    # construido, puede acabar en un cobro online equivocado.
+    if tier not in branding.PUBLIC_TIERS:
+        raise StripeError(
+            f"El plan {pkgs.label(tier)} se contrata directamente en el centro "
+            "(sin pago online).")
     es_oferta = period == OFFER_PERIOD
+    if es_oferta and not branding.OFFER_ENABLED:
+        raise StripeError("La oferta de captación no está activa en esta marca.")
     if es_oferta and tier != OFFER_TIER:
         raise StripeError("La oferta (1 € el primer mes) es solo del plan Full.")
     if not es_oferta and period not in _PERIODS:
@@ -445,12 +469,15 @@ def get_plan_prices() -> dict:
     if _prices_cache["data"] is not None and time.time() - _prices_cache["at"] < _PRICES_TTL_S:
         return _prices_cache["data"]
 
-    tiers: dict = {t: {p: None for p in _PERIOD_MONTHS} for t in _TIERS}
+    # Solo los planes con venta online (branding.PUBLIC_TIERS): los importes
+    # internos de train/nutri no se publican en un endpoint abierto.
+    publicos = [t for t in TIER_ORDER if t in branding.PUBLIC_TIERS]
+    tiers: dict = {t: {p: None for p in _PERIOD_MONTHS} for t in publicos}
     currency = "eur"
     leidos_de_stripe = 0
     if settings.stripe_enabled:
         stripe = _stripe()
-        for tier in _TIERS:
+        for tier in publicos:
             for period, months in _PERIOD_MONTHS.items():
                 price_id = _resolve_price_id(tier, period)
                 if not price_id:
@@ -468,7 +495,7 @@ def get_plan_prices() -> dict:
                 except Exception as exc:  # precio borrado/ID malo: no rompe la página
                     _log.warning("Precio %s (%s %s) ilegible: %s", price_id, tier, period, exc)
 
-    for tier in _TIERS:  # reserva canónica para lo que Stripe no haya dado
+    for tier in publicos:  # reserva canónica para lo que Stripe no haya dado
         for period, months in _PERIOD_MONTHS.items():
             if tiers[tier][period] is None:
                 amount = CANONICAL_AMOUNTS[tier][period] / 100.0

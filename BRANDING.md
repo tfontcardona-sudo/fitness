@@ -6,10 +6,14 @@ seguimiento → revisión quincenal → feedback) es idéntico al original; lo �
 que cambia entre instancias es la **marca**. Esta guía lista TODO lo que hay
 que tocar para montar la siguiente instancia (otro gimnasio/empresa).
 
-> Regla de oro: **nunca** escribas el nombre de la marca, sus colores o su
-> prefijo de Stripe en un módulo cualquiera. Todo vive en los dos módulos de
-> marca (backend y frontend) y en los assets. Si un texto de marca aparece en
-> otro sitio, es un bug de white-label.
+> Regla de oro: **nunca** escribas el nombre de la marca, sus colores, sus
+> tarifas o su prefijo de Stripe en un módulo cualquiera. Todo vive en los dos
+> módulos de marca (backend y frontend) y en los assets. Si un texto de marca
+> aparece en otro sitio, es un bug de white-label.
+>
+> Catálogo actual de la instancia: **Génesis.99** (full, 99 €/mes, online) +
+> **Entreno Personal** (sesiones presenciales, tarifas en `PT_RATES`, cobro en
+> el centro) + `nutri` interno sin venta pública.
 
 ---
 
@@ -40,22 +44,27 @@ sobreescribe desde `brand_config` (BD) sin recompilar; los del CSS son solo el
 primer arranque. Los derivados hi/lo (luz/sombra de los gradientes) no vienen
 de la BD: ajústalos en el CSS al tono nuevo. Hay fallbacks del mismo tono
 repartidos como literales en componentes — búscalos por hex antes de entregar
-(`grep -rniE "#c9a227|#2c5f73|#0c1216" frontend/src`).
+(`grep -rniE "#e9a90f|#37474f|#0f0e0c" frontend/src` con los hex de la
+  instancia actual).
 
-## 4. Tarifas y planes
+## 4. Tarifas, catálogo y venta
 
 - Importes canónicos de Stripe: `CANONICAL_AMOUNTS` en
   `backend/app/services/stripe_service.py` (céntimos, por plan × duración).
-- Espejo visual: `priceMonthEur` en `frontend/src/lib/packages.ts` y las
-  constantes `OFFER_*` (ambos lados) si la instancia usa la oferta de captación.
+- Espejo visual: `priceMonthEur` en `frontend/src/lib/packages.ts`; tarifas
+  presenciales informativas (por sesión/pack) en `PT_RATES` de `branding.ts`.
+- **`PUBLIC_TIERS`** (ambos módulos de marca): qué planes tienen venta ONLINE.
+  El backend **veta el checkout** del resto (se contratan/cobran en el local) y
+  el endpoint público de precios no los expone. En esta instancia: solo `full`
+  (Génesis.99, 99 €/mes); el Entreno Personal se reserva por WhatsApp y se
+  cobra en el centro (alta manual + "Marcar pagado").
+- **`OFFER_ENABLED`**: la oferta de captación (1 € el primer mes) del motor.
+  Apagada aquí: sin checkout, sin precio/cupón en Stripe, sin botón en el kit
+  de ventas y `/oferta` redirige a `/planes`.
 - Cada instancia usa **su propia cuenta de Stripe**: con la clave en el `.env`,
   `scripts/setup_stripe_prices.py` (o el auto-alta) crea productos y precios
-  con el prefijo de la marca. No hay nada que migrar de la cuenta anterior.
-
-> ⚠️ Estado actual: los importes de esta instancia son PROVISIONALES (heredados
-> como referencia); las tarifas reales de Professional Girona están pendientes
-> de confirmar. Al fijarlas: cambiar `CANONICAL_AMOUNTS` + `packages.ts` y
-> ejecutar el script — reprecia Stripe de forma idempotente.
+  con el prefijo de la marca. Cambiar un importe = editar `CANONICAL_AMOUNTS`
+  y ejecutar el script (reprecia Stripe de forma idempotente).
 
 ## 5. Configuración por instancia (`.env`)
 

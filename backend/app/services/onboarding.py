@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app import branding
 from app.config import settings
 from app.models import Client
+from app.services import packages as pkgs
 from app.services import email_templates as tpl
 from app.services.audit import log_event
 from app.services.email_service import EmailService, brand_from_config
@@ -21,7 +22,11 @@ def send_onboarding_email(db: Session, client: Client) -> str:
     """Envía el mensaje de arranque (pago + anamnesis) y registra el evento.
     Devuelve el status del email (sent | disabled | failed…). NO hace commit."""
     base = settings.public_base_url
-    pay_url = f"{base}/api/pay/{client.portal_token}"
+    # Solo los planes con venta online llevan botón de pago; los demás (p. ej.
+    # Entreno Personal, que se cobra en el centro) piden solo la anamnesis.
+    tier = pkgs.normalize(client.package_tier)
+    pay_url = (f"{base}/api/pay/{client.portal_token}"
+               if tier in branding.PUBLIC_TIERS else None)
     anamnesis_url = f"{base}/anamnesis/{client.portal_token}"
     first = ((client.full_name or "").split() or [(client.email or "cliente").split("@")[0]])[0]
     label = TIER_LABEL.get(client.package_tier, "tu plan")

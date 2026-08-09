@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { BadgeEuro, Check, Copy, MessageCircle, Send } from "lucide-react";
 import { api } from "../lib/api";
-import { BRAND_SHORT } from "../lib/branding";
+import { BRAND_SHORT, OFFER_ENABLED, PT_RATES, PUBLIC_TIERS } from "../lib/branding";
 import { OFFER_FIRST_EUR, OFFER_MONTHLY_EUR, PACKAGES, PACKAGE_ORDER, billingLabel } from "../lib/packages";
 import { openWhatsApp, waPhone } from "../lib/whatsapp";
 import { useToast } from "./ui";
@@ -40,18 +40,34 @@ const PLAN_SELL: Record<PackageTier, string> = {
 };
 
 function catalogText(prices: PlanPricesOut): string {
-  const bloques = PACKAGE_ORDER.map((t) => {
-    const extra = t === "full" ? " (el más completo)" : "";
+  // Solo los planes con venta online llevan precios de Stripe; el entreno
+  // personal va con sus tarifas presenciales (branding.PT_RATES).
+  const bloques = PACKAGE_ORDER.filter((t) => PUBLIC_TIERS.includes(t)).map((t) => {
     const lineas = PERIODS.map((p) => priceLine(prices, t, p))
       .filter(Boolean)
       .map((l) => `· ${l}`)
       .join("\n");
-    return `*${PACKAGES[t].label}* - ${PACKAGES[t].tagline}${extra}\n${lineas}`;
+    return `*${PACKAGES[t].label}* - ${PACKAGES[t].tagline}\n${lineas}`;
   }).join("\n\n");
+  const entreno =
+    `*${PACKAGES.train.label}* - sesiones presenciales en el centro\n` +
+    PT_RATES.map((r) => `· ${r.label}: ${r.price}`).join("\n");
   return (
-    `*Asesorías ${BRAND_SHORT} - catálogo de planes*\n\n${bloques}\n\n` +
-    "Los tres incluyen plan 100 % a tu medida, WhatsApp conmigo a diario y app de seguimiento.\n" +
-    "Dime cuál te encaja y te paso el enlace de pago seguro (Stripe) para empezar hoy mismo."
+    `*${BRAND_SHORT} - catálogo*\n\n${bloques}\n\n${entreno}\n\n` +
+    "La preparación incluye plan 100 % a tu medida, seguimiento en tu app y tu " +
+    "preparador por WhatsApp; las sesiones se reservan por aquí y se pagan en el centro.\n" +
+    "Dime qué te encaja y te paso el siguiente paso."
+  );
+}
+
+/** Mensaje de tarifas del entreno personal (reserva por WhatsApp, cobro en el centro). */
+function entrenoText(): string {
+  return (
+    `*${PACKAGES.train.label}* - sesiones 1:1 en el centro\n` +
+    PT_RATES.map((r) => `· ${r.label}: ${r.price}`).join("\n") +
+    "\n\nIncluye tu rutina y tu progreso en la app, y seguimiento de composición " +
+    "corporal para ajustar con datos.\n" +
+    "Dime qué día y hora te va bien y lo reservamos; el pago se hace en el centro."
   );
 }
 
@@ -91,7 +107,7 @@ export function SalesKit() {
   const [prices, setPrices] = useState<PlanPricesOut | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Qué hay en el cuadro: el catálogo, la oferta 1 € o un plan concreto.
-  const [sel, setSel] = useState<{ tier: PackageTier; period: PublicBillingPeriod } | "catalog" | "oferta" | null>(null);
+  const [sel, setSel] = useState<{ tier: PackageTier; period: PublicBillingPeriod } | "catalog" | "oferta" | "entreno" | null>(null);
   const [text, setText] = useState("");
   const [phone, setPhone] = useState("");
   const [copied, setCopied] = useState(false);
@@ -110,7 +126,7 @@ export function SalesKit() {
     if (open && prices === null) void load();
   }, [open, prices, load]);
 
-  function pick(next: { tier: PackageTier; period: PublicBillingPeriod } | "catalog" | "oferta") {
+  function pick(next: { tier: PackageTier; period: PublicBillingPeriod } | "catalog" | "oferta" | "entreno") {
     if (!prices) return;
     // Re-pulsar el chip YA seleccionado no regenera el texto: machacaría en
     // silencio lo que el coach haya editado en el cuadro.
@@ -122,6 +138,7 @@ export function SalesKit() {
     setCopied(false);
     setText(next === "catalog" ? catalogText(prices)
       : next === "oferta" ? offerText()
+      : next === "entreno" ? entrenoText()
       : planText(prices, next.tier, next.period));
   }
 
@@ -177,10 +194,10 @@ export function SalesKit() {
       {open && (
         <div className="mt-3 space-y-3">
           <p className="text-xs" style={{ color: "var(--text-faint)" }}>
-            Te escriben desde la página de planes (ahí no hay precios): elige qué
-            responder. El enlace de pago abre Stripe con el importe correcto y, al
+            Te escriben desde la página de planes: elige qué responder. El enlace
+            de pago de la preparación abre Stripe con el importe correcto y, al
             pagar, el sistema crea la ficha del cliente y le envía automáticamente
-            el acceso y la anamnesis.
+            el acceso y la anamnesis. Las sesiones de entreno se cobran en el centro.
           </p>
 
           {error && (
@@ -212,20 +229,32 @@ export function SalesKit() {
                 >
                   Catálogo completo
                 </button>
+                {OFFER_ENABLED && (
+                  <button
+                    onClick={() => pick("oferta")}
+                    className="tap rounded-lg border px-3 py-1.5 text-xs font-bold"
+                    style={sel === "oferta"
+                      ? { background: "#2E7D46", color: "white", borderColor: "#2E7D46" }
+                      : { borderColor: "#2E7D46", color: "#2E7D46" }}
+                    title={`Primer mes ${OFFER_FIRST_EUR} € y después ${OFFER_MONTHLY_EUR} €/mes en suscripción (solo Full)`}
+                  >
+                    Oferta 1 €
+                  </button>
+                )}
                 <button
-                  onClick={() => pick("oferta")}
+                  onClick={() => pick("entreno")}
                   className="tap rounded-lg border px-3 py-1.5 text-xs font-bold"
-                  style={sel === "oferta"
-                    ? { background: "#2E7D46", color: "white", borderColor: "#2E7D46" }
-                    : { borderColor: "#2E7D46", color: "#2E7D46" }}
-                  title={`Primer mes ${OFFER_FIRST_EUR} € y después ${OFFER_MONTHLY_EUR} €/mes en suscripción (solo Full)`}
+                  style={sel === "entreno"
+                    ? { background: PACKAGES.train.color, color: "white", borderColor: PACKAGES.train.color }
+                    : { borderColor: PACKAGES.train.color, color: PACKAGES.train.color }}
+                  title="Tarifas de las sesiones presenciales (se pagan en el centro)"
                 >
-                  Oferta 1 €
+                  Entreno (tarifas)
                 </button>
                 <span className="text-xs" style={{ color: "var(--text-faint)" }}>o un plan:</span>
               </div>
               <div className="space-y-1.5">
-                {PACKAGE_ORDER.map((t) => (
+                {PACKAGE_ORDER.filter((t) => PUBLIC_TIERS.includes(t)).map((t) => (
                   <div key={t} className="flex flex-wrap items-center gap-1.5">
                     <span className="w-24 shrink-0 rounded-full px-2 py-0.5 text-center text-[11px] font-bold text-white"
                       style={{ background: PACKAGES[t].color }}>
@@ -255,7 +284,7 @@ export function SalesKit() {
                   <textarea
                     value={text}
                     onChange={(e) => { setText(e.target.value); setCopied(false); }}
-                    rows={sel === "catalog" ? 14 : sel === "oferta" ? 8 : 6}
+                    rows={sel === "catalog" ? 14 : sel === "oferta" || sel === "entreno" ? 8 : 6}
                     className="w-full resize-y rounded-lg border bg-transparent p-2.5 font-mono text-xs outline-none"
                     style={{ borderColor: "var(--line)", color: "var(--text)" }}
                   />

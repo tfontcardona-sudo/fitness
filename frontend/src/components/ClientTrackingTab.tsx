@@ -196,7 +196,7 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
                 </span>
                 <span className="flex items-center gap-2">
                   {q.feelings_score_10 != null && (
-                    <span className="rounded-full px-2 py-0.5 text-xs font-semibold" style={{ background: "color-mix(in srgb, var(--brand-accent-2, #2C5F73) 25%, transparent)", color: "#3D7A91" }}>
+                    <span className="rounded-full px-2 py-0.5 text-xs font-semibold" style={{ background: "color-mix(in srgb, var(--brand-accent-2, #37474F) 25%, transparent)", color: "#4E626C" }}>
                       {q.feelings_score_10}/10
                     </span>
                   )}

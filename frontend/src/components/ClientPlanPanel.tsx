@@ -1652,7 +1652,7 @@ function GoalStageCard({ client, currentMonth, onClientChanged, onRegenerated }:
  *  lleva el mismo color, en tonos oscuros legibles sobre el fondo crema). */
 const AREA_CHIPS: { match: RegExp; label: string; bg: string; fg: string }[] = [
   { match: /diet|nutri|calor|comid/i, label: "Dieta", bg: "color-mix(in srgb, var(--brand-accent) 18%, transparent)", fg: "var(--brand-accent)" },
-  { match: /entren|train|fuerza|pesas/i, label: "Entreno", bg: "color-mix(in srgb, var(--brand-accent-2, #2C5F73) 22%, transparent)", fg: "var(--brand-accent-2, #3D7A91)" },
+  { match: /entren|train|fuerza|pesas/i, label: "Entreno", bg: "color-mix(in srgb, var(--brand-accent-2, #37474F) 22%, transparent)", fg: "var(--brand-accent-2, #4E626C)" },
   { match: /sue|sleep|descans/i, label: "Sueño", bg: "rgba(107,90,168,0.15)", fg: "#63519E" },
   { match: /activ|pasos|neat|cardio|steps/i, label: "Actividad diaria", bg: "rgba(71,124,78,0.15)", fg: "#3F7446" },
   { match: /hidrat|agua|water/i, label: "Hidratación", bg: "rgba(46,126,138,0.15)", fg: "#28707C" },

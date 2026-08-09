@@ -36,8 +36,8 @@ export default function LoginPage() {
         className="pointer-events-none fixed inset-0"
         style={{
           background:
-            "radial-gradient(60% 50% at 50% 0%, rgba(44,95,115,0.10), transparent 70%)," +
-            "radial-gradient(50% 40% at 50% 100%, rgba(201,162,39,0.07), transparent 70%)",
+            "radial-gradient(60% 50% at 50% 0%, rgba(55, 71, 79,0.10), transparent 70%)," +
+            "radial-gradient(50% 40% at 50% 100%, rgba(233, 169, 15,0.07), transparent 70%)",
         }}
       />
       <div className="animate-rise card relative w-full max-w-sm p-8">

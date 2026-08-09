@@ -1,10 +1,11 @@
 /** Planes de la asesoría: qué incluye cada uno y cómo se adapta la app.
  *  ESPEJO de backend/app/services/packages.py — si cambias uno, cambia el otro.
  *
- *  ⚠️ PROVISIONAL (white-label): las tarifas reales de Professional Girona
- *  están pendientes de confirmar; los importes de referencia de abajo (y los
- *  canónicos de Stripe en backend/app/services/stripe_service.py) se cambian
- *  en un solo paso cuando lleguen.
+ *  Catálogo REAL de la marca (professionalgirona.com):
+ *   - full  → Génesis.99 (99 €/mes): preparación personal completa, ONLINE.
+ *   - train → Entreno Personal: sesiones presenciales (tarifas por hora/pack
+ *     en branding.PT_RATES); se cobran en el centro, sin pago online.
+ *   - nutri → interno (la marca no vende nutrición suelta).
  *
  *  Los tres comparten la MISMA maquinaria interna (anamnesis → plan → portal →
  *  seguimiento → revisión); solo cambian los servicios:
@@ -15,7 +16,6 @@
  *  El WhatsApp diario está en los TRES: es el canal con el cliente, no un extra.
  */
 import type { BillingPeriod, PackageTier, PublicBillingPeriod } from "../types";
-import { BRAND_SHORT } from "./branding";
 
 export interface PackageInfo {
   tier: PackageTier;
@@ -36,37 +36,37 @@ export interface PackageInfo {
 export const PACKAGES: Record<PackageTier, PackageInfo> = {
   train: {
     tier: "train",
-    label: `${BRAND_SHORT} Train`,
-    short: "Train",
-    tagline: "solo entrenamiento",
-    includes: "Entrenamiento completo + WhatsApp diario. Sin plan de dieta.",
+    label: "Entreno Personal",
+    short: "Entreno",
+    tagline: "sesiones presenciales en el centro",
+    includes: "Sesiones 1:1 en el centro + rutina y progreso en la app. Sin plan de dieta.",
     hasNutrition: false,
     hasTraining: true,
     directContact: true,
     hasVideoCall: false,
     delivery: "whatsapp",
-    priceMonthEur: 69,
-    color: "#2C5F73",
+    priceMonthEur: 0, // se cobra por sesión/pack en el centro (branding.PT_RATES)
+    color: "#37474F",
   },
   nutri: {
     tier: "nutri",
-    label: `${BRAND_SHORT} Nutri`,
-    short: "Nutri",
-    tagline: "solo nutrición",
+    label: "Plan Nutrición",
+    short: "Nutrición",
+    tagline: "solo nutrición (uso interno)",
     includes: "Plan de nutrición completo + WhatsApp diario. Sin entrenamiento.",
     hasNutrition: true,
     hasTraining: false,
     directContact: true,
     hasVideoCall: false,
     delivery: "whatsapp",
-    priceMonthEur: 79,
+    priceMonthEur: 79, // interno: la marca no lo vende suelto
     color: "#5C7A3A",
   },
   full: {
     tier: "full",
-    label: `${BRAND_SHORT} Full`,
-    short: "Full",
-    tagline: "nutrición + entrenamiento",
+    label: "Génesis.99",
+    short: "Génesis",
+    tagline: "preparación personal: nutrición + entrenamiento",
     includes:
       "Nutrición y entrenamiento + WhatsApp diario + videollamada de revisión.",
     hasNutrition: true,
@@ -74,8 +74,8 @@ export const PACKAGES: Record<PackageTier, PackageInfo> = {
     directContact: true,
     hasVideoCall: true,
     delivery: "whatsapp",
-    priceMonthEur: 129,
-    color: "#C9A227",
+    priceMonthEur: 99,
+    color: "#E9A90F",
   },
 };
 

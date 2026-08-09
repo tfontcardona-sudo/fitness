@@ -270,8 +270,11 @@ def _reset_stripe_caches(monkeypatch, ss):
 def test_auto_alta_crea_los_9_precios_que_faltan(monkeypatch):
     # Sin script ejecutado (Stripe vacío), resolver un precio los CREA todos:
     # la primera visita a /planes o el primer checkout dejan Stripe configurado.
+    # La oferta está apagada en esta marca: se enciende SOLO aquí para cubrir
+    # la maquinaria completa del motor (otra instancia puede activarla).
     from app.services import stripe_service as ss
 
+    monkeypatch.setattr(branding, "OFFER_ENABLED", True)
     fake = FakeStripe()
     monkeypatch.setattr(ss, "_stripe", lambda: fake)
     _reset_stripe_caches(monkeypatch, ss)
@@ -282,6 +285,8 @@ def test_auto_alta_crea_los_9_precios_que_faltan(monkeypatch):
     assert len(fake.products) == 3 and len(fake.prices) == 10
     creado = next(p for p in fake.prices if p["lookup_key"] == ss._lookup_key("train", "1m"))
     assert creado["unit_amount"] == 6900 and creado["currency"] == "eur"
+    genesis = next(p for p in fake.prices if p["lookup_key"] == ss._lookup_key("full", "1m"))
+    assert genesis["unit_amount"] == 9900  # Génesis.99: 99 €/mes reales
     assert pid == creado["id"]
     oferta = next(p for p in fake.prices if p["lookup_key"] == ss.OFFER_LOOKUP)
     assert oferta["unit_amount"] == 12000
@@ -319,7 +324,7 @@ def test_auto_reprecio_detecta_importes_desviados(monkeypatch):
     pid = ss._price_by_lookup("full", "3m")
     nuevo = next(p for p in fake.prices
                  if p.get("lookup_key") == ss._lookup_key("full", "3m") and p["active"])
-    assert pid == nuevo["id"] and nuevo["unit_amount"] == 33000  # ancla: 330 €
+    assert pid == nuevo["id"] and nuevo["unit_amount"] == 29700  # Génesis: 99 €/mes
     viejo = next(p for p in fake.prices if p["id"] == "price_old_full_3m")
     assert viejo["active"] is False  # el precio antiguo queda archivado
     # Todas las combinaciones quedaron alineadas con la tabla canónica.
@@ -403,7 +408,9 @@ def test_auto_alta_transfiere_lookup_si_cambia_el_importe(monkeypatch):
 
 def test_planes_muestra_precios_de_reserva_sin_stripe(monkeypatch):
     # Sin STRIPE_SECRET_KEY (dev) la página de planes enseña igualmente los
-    # importes canónicos de las 9 combinaciones — nunca tarjetas sin precio.
+    # importes canónicos del catálogo ONLINE — nunca tarjetas sin precio. Los
+    # tiers sin venta online (Entreno Personal/nutri) NO se exponen en el
+    # endpoint público: sus tarifas presenciales viven en el frontend.
     from app.config import settings
     from app.services import stripe_service as ss
 
@@ -412,13 +419,10 @@ def test_planes_muestra_precios_de_reserva_sin_stripe(monkeypatch):
 
     data = ss.get_plan_prices()
     t = data["tiers"]
-    assert t["train"]["1m"]["total"] == 69.0
-    assert t["train"]["3m"] == {"total": 177.0, "months": 3, "per_month": 59.0}
-    assert t["nutri"]["1m"]["total"] == 79.0
-    assert t["nutri"]["6m"]["per_month"] == 62.0
-    assert t["full"]["1m"]["total"] == 129.0
-    assert t["full"]["3m"] == {"total": 330.0, "months": 3, "per_month": 110.0}
-    assert t["full"]["6m"] == {"total": 600.0, "months": 6, "per_month": 100.0}
+    assert t["full"]["1m"]["total"] == 99.0
+    assert t["full"]["3m"] == {"total": 297.0, "months": 3, "per_month": 99.0}
+    assert t["full"]["6m"] == {"total": 594.0, "months": 6, "per_month": 99.0}
+    assert "train" not in t and "nutri" not in t  # internos: no se publican
 
 
 def test_planes_reserva_con_stripe_caido_no_se_cachea(monkeypatch):
@@ -432,7 +436,7 @@ def test_planes_reserva_con_stripe_caido_no_se_cachea(monkeypatch):
     _reset_stripe_caches(monkeypatch, ss)
 
     data = ss.get_plan_prices()
-    assert data["tiers"]["train"]["1m"]["total"] == 69.0
+    assert data["tiers"]["full"]["1m"]["total"] == 99.0
     assert ss._prices_cache["data"] is None  # sin cachear → reintenta
 
 
@@ -480,6 +484,7 @@ def test_enlace_de_pago_directo_por_plan(monkeypatch):
 # ---- OFERTA: 1 € el primer mes → 120 €/mes en suscripción ----
 
 def test_oferta_checkout_es_suscripcion_con_cupon(monkeypatch):
+    monkeypatch.setattr(branding, "OFFER_ENABLED", True)
     """El checkout de la oferta va en modo SUSCRIPCIÓN con el cupón del primer
     mes a 1 €, y la metadata viaja también en la suscripción (para mapear las
     renovaciones). La oferta es solo del plan Full."""
@@ -630,6 +635,7 @@ def test_webhook_renovaciones_de_la_oferta(monkeypatch):
 
 
 def test_cupon_borrado_se_detecta_y_recrea(monkeypatch):
+    monkeypatch.setattr(branding, "OFFER_ENABLED", True)
     """REGRESIÓN (revisión adversarial): con los precios alineados pero el
     CUPÓN del primer mes borrado a mano en el dashboard, la promo moría en
     silencio. El detector de deriva vigila también el cupón y lo recrea."""
@@ -886,7 +892,9 @@ def test_alta_manual_con_oferta_valida_el_plan(monkeypatch):
 
 
 def test_importes_del_script_cumplen_lo_pedido():
-    # Nutri > Train en cada duración; Full < Train+Nutri en cada duración.
+    # Catálogo de la marca: Génesis.99 (full) a 99 €/mes EXACTOS en todas las
+    # duraciones (su web no anuncia descuento por compromiso); los internos
+    # conservan Nutri > Train y Full < Train+Nutri por duración.
     import importlib.util, pathlib
     spec = importlib.util.spec_from_file_location(
         "setup_prices", pathlib.Path(__file__).parents[1] / "scripts" / "setup_stripe_prices.py")
@@ -895,13 +903,12 @@ def test_importes_del_script_cumplen_lo_pedido():
     for p in ("1m", "3m", "6m"):
         assert A["nutri"][p] > A["train"][p]
         assert A["full"][p] < A["train"][p] + A["nutri"][p]
-    assert A["train"]["1m"] == 6900 and A["nutri"]["1m"] == 7900 and A["full"]["1m"] == 12900
-    # Ancla del dueño (agosto 2026): Full trimestral 330 €; el resto adaptado.
-    assert A["full"]["3m"] == 33000 and A["full"]["6m"] == 60000
-    assert A["train"]["3m"] == 17700 and A["train"]["6m"] == 32400
-    assert A["nutri"]["3m"] == 20100 and A["nutri"]["6m"] == 37200
-    # El descuento por compromiso crece con la duración (precio/mes decreciente).
-    for t in ("train", "nutri", "full"):
+    assert A["full"]["1m"] == 9900 and A["full"]["3m"] == 29700 and A["full"]["6m"] == 59400
+    assert A["train"]["1m"] == 6900 and A["nutri"]["1m"] == 7900
+    # Génesis: precio por mes CONSTANTE (99 €) — sin descuento anunciado.
+    assert A["full"]["3m"] / 3 == A["full"]["1m"] and A["full"]["6m"] / 6 == A["full"]["1m"]
+    # Los internos mantienen el descuento por compromiso (precio/mes decreciente).
+    for t in ("train", "nutri"):
         assert A[t]["3m"] / 3 < A[t]["1m"]
         assert A[t]["6m"] / 6 < A[t]["3m"] / 3
 
@@ -933,3 +940,59 @@ def test_webhook_metadata_antigua_crea_el_plan_correcto(monkeypatch):
         # final de la suite, como en el resto de tests del webhook.
     finally:
         db.close()
+
+
+# ---- catálogo white-label: guardas de venta online (Professional Girona) ----
+
+def test_checkout_de_plan_sin_venta_online_se_rechaza(monkeypatch):
+    # Entreno Personal (train) y nutri se cobran EN EL CENTRO: crear su
+    # checkout debe fallar aunque Stripe esté configurado — ningún enlace,
+    # ni bien ni mal construido, puede cobrarlos online.
+    from app.config import settings
+    from app.db import SessionLocal
+    from app.services import stripe_service as ss
+
+    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_x")
+    db = SessionLocal()
+    try:
+        for tier in ("train", "nutri"):
+            with pytest.raises(ss.StripeError, match="en el centro"):
+                ss.create_checkout_url(db, tier, "1m")
+    finally:
+        db.close()
+
+
+def test_checkout_de_oferta_apagada_se_rechaza(monkeypatch):
+    # La oferta de captación está APAGADA en esta marca: su checkout se veta
+    # (un enlace antiguo /api/pay/plan/full/oferta no puede cobrar 1 €).
+    from app.config import settings
+    from app.db import SessionLocal
+    from app.services import stripe_service as ss
+
+    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_x")
+    assert branding.OFFER_ENABLED is False
+    db = SessionLocal()
+    try:
+        with pytest.raises(ss.StripeError, match="[Oo]ferta"):
+            ss.create_checkout_url(db, "full", "oferta")
+    finally:
+        db.close()
+
+
+def test_auto_alta_sin_oferta_no_crea_precio_ni_cupon(monkeypatch):
+    # Con la oferta apagada, el auto-alta deja Stripe limpio: 9 precios y
+    # ningún cupón — y la resolución NO entra en bucle de reparación eterno
+    # por un precio de oferta que no existe a propósito.
+    from app.services import stripe_service as ss
+
+    fake = FakeStripe()
+    monkeypatch.setattr(ss, "_stripe", lambda: fake)
+    _reset_stripe_caches(monkeypatch, ss)
+
+    assert ss._price_by_lookup("full", "1m")
+    assert len(fake.prices) == 9 and not fake.coupons
+
+    # Segunda resolución: nada nuevo que crear (sin bucle de reparación).
+    _reset_stripe_caches(monkeypatch, ss)
+    assert ss._price_by_lookup("train", "3m")
+    assert len(fake.prices) == 9 and not fake.coupons

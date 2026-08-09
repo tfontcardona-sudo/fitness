@@ -47,7 +47,7 @@ export function ClientSummaryTab({ client }: { client: ClientOut }) {
 
   const accent = getComputedStyle(document.documentElement)
     .getPropertyValue("--brand-accent")
-    .trim() || "#C9A227";
+    .trim() || "#E9A90F";
 
   return (
     <div className="space-y-5">
@@ -133,7 +133,7 @@ export function ClientSummaryTab({ client }: { client: ClientOut }) {
 const NOTE_SECTIONS: { label: string; color: string; get: (c: ClientOut) => string | null | undefined }[] = [
   { label: "Lesiones", color: "#B3261E", get: (c) => c.injuries_notes },
   { label: "Patologías y salud", color: "#9A6B15", get: (c) => c.medical_notes },
-  { label: "Medicación", color: "#3D7A91", get: (c) => c.medication_notes },
+  { label: "Medicación", color: "#4E626C", get: (c) => c.medication_notes },
   { label: "Alergias e intolerancias", color: "#B3261E", get: (c) => c.food_allergies?.length ? c.food_allergies.join(", ") : null },
 ];
 
@@ -192,7 +192,7 @@ function Kpi({
   const display =
     value == null ? "—" : `${signed && value > 0 ? "+" : ""}${value} ${unit}`;
   const improving = value != null && (lowerBetter ? value < 0 : value > 0);
-  const tone = signed && value != null && value !== 0 ? (improving ? "#C9A227" : "#9A6B15") : undefined;
+  const tone = signed && value != null && value !== 0 ? (improving ? "#E9A90F" : "#9A6B15") : undefined;
   return (
     <div className="card p-4">
       <p className="text-xl font-semibold" style={{ color: tone ?? "#26211A" }}>

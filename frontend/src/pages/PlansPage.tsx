@@ -1,101 +1,71 @@
 import { useEffect, useState } from "react";
-import { MessageCircle } from "lucide-react";
+import { Clock, Mail, MapPin, MessageCircle } from "lucide-react";
 import { api } from "../lib/api";
-import { BRAND_SHORT } from "../lib/branding";
-import { BILLING_PERIODS, PACKAGES, PACKAGE_ORDER, billingLabel } from "../lib/packages";
+import {
+  CENTER_ADDRESS,
+  CENTER_EMAIL,
+  CENTER_SCHEDULE,
+  CENTER_WHATSAPP_DISPLAY,
+  PT_RATES,
+} from "../lib/branding";
+import { PACKAGES } from "../lib/packages";
 import { waPhone, waUrl } from "../lib/whatsapp";
-import type { PackageTier, PublicBillingPeriod } from "../types";
 
 /**
- * Página PÚBLICA de asesorías (el enlace del perfil). SIN PRECIOS a propósito:
- * cada plan × duración (9 combinaciones) se presenta con una descripción que
- * invita a pedir información, y los botones "Contacta conmigo" abren WhatsApp
- * con el mensaje ya escrito. El precio se habla en la conversación (el coach
- * responde con el kit de ventas del panel: catálogo + enlace de pago directo).
+ * Página PÚBLICA de planes — catálogo REAL de la marca (professionalgirona.com):
+ *
+ *  · Génesis.99 (99 €/mes): preparación personal COMPLETA (nutrición +
+ *    entrenamiento), el producto online del sistema. Precio visible (es público
+ *    en su web) + CTA de WhatsApp y pago online con Stripe.
+ *  · Entreno Personal: sesiones presenciales en el centro, con las tarifas
+ *    por hora y pack tal cual las publica el sitio; se reservan por WhatsApp
+ *    y se cobran en el centro (sin pago online, el backend lo veta).
  */
 
-/** Descripción propia de cada plan × duración (los "9 planes"). */
-const DURATION_PITCH: Record<PackageTier, Record<PublicBillingPeriod, string>> = {
-  train: {
-    "1m": "Un mes para probarlo en serio: en 4 semanas notas lo que es entrenar con un plan pensado solo para ti.",
-    "3m": "12 semanas: un ciclo completo de progresión. Resultados que se ven en el espejo y se sienten en cada sesión.",
-    "6m": "6 meses de progresión planificada: fuerza y físico a otro nivel, con las mejores condiciones al comprometerte.",
-  },
-  nutri: {
-    "1m": "Un mes para ordenar tu alimentación y comprobar que se puede comer bien sin pasar hambre ni vivir a dieta.",
-    "3m": "12 semanas: margen real para ver resultados y consolidar hábitos, ajustando tu plan con datos, no con sensaciones.",
-    "6m": "6 meses para transformar tu relación con la comida: resultados que se quedan contigo, con las mejores condiciones.",
-  },
-  full: {
-    "1m": "Un mes para arrancar con todo: entrenamiento y dieta coordinados desde el primer día, y primeros cambios visibles.",
-    "3m": "12 semanas de trabajo conjunto: la opción favorita de quien busca un cambio visible y que se mantenga.",
-    "6m": "6 meses de asesoría completa: la transformación de verdad, con las mejores condiciones de todas.",
-  },
-};
+const GENESIS_BULLETS = [
+  "Nutrición y entrenamiento 100 % a tu medida, a partir de tu cuestionario inicial",
+  "Tu app personal: plan, diario, registro de entrenos y progreso",
+  "Revisión cada 15 días con ajustes sobre tus datos reales",
+  "Videollamada de revisión con tu preparador",
+  "Tu preparador en WhatsApp durante todo el proceso",
+];
 
-/** "Para ti si…": que cada visitante se reconozca en un plan al primer vistazo. */
-const PLAN_FOR_YOU: Record<PackageTier, string> = {
-  train: "Para ti si con la comida te apañas, pero en el gimnasio vas sin rumbo y quieres progresar de verdad.",
-  nutri: "Para ti si tu punto débil está en la comida: picas, no sabes cuánto comer o las dietas nunca te duran.",
-  full: "Para ti si quieres el cambio completo, con todo pensado y conmigo pendiente de ti cada día.",
-};
+const PT_BULLETS = [
+  "Sesiones 1:1 con nuestros entrenadores en el centro",
+  "Tu rutina y tus marcas siempre contigo en la app",
+  "Seguimiento de composición corporal para ajustar con datos",
+];
 
-/** Qué incluye cada plan. */
-const PLAN_BULLETS: Record<PackageTier, string[]> = {
-  train: [
-    "Entrenamiento 100 % a tu medida: tu material, tu horario, tus lesiones y tu nivel",
-    "Progresión clara semana a semana, con ajustes según tu evolución real",
-    "Tu coach en WhatsApp todos los días",
-    "App con tu rutina, registro de series y progreso",
-  ],
-  nutri: [
-    "Nutrición 100 % a tu medida: tus gustos, tus horarios, tus alergias",
-    "Objetivos calculados sobre TU caso, no plantillas",
-    "Tu coach en WhatsApp todos los días",
-    "App con tu plan y tu seguimiento diario",
-  ],
-  full: [
-    "Entrenamiento + nutrición coordinados: todo empuja en la misma dirección",
-    "Videollamada de revisión con tu coach",
-    "Tu coach en WhatsApp todos los días",
-    "App con rutina, dieta y seguimiento",
-  ],
-};
+const GENESIS_MESSAGE =
+  "¡Hola! He visto la preparación Génesis.99 en vuestra página y me gustaría " +
+  "empezar: ¿me contáis cómo funciona y los siguientes pasos?";
 
-/** Mensaje prellenado del botón (sin emojis: WhatsApp los corrompe a veces). */
-function contactMessage(tier: PackageTier, period: PublicBillingPeriod): string {
-  const dur = billingLabel(period).toLowerCase();
-  return (
-    `¡Hola! He visto la asesoría ${PACKAGES[tier].label} (${dur}) en tu página ` +
-    `y me gustaría saber más: cómo funciona, el precio y cómo empezar.`
-  );
-}
+const PT_MESSAGE =
+  "¡Hola! Quiero reservar una sesión de entreno personal. ¿Qué disponibilidad tenéis?";
 
 const GENERIC_MESSAGE =
-  "¡Hola! He visto tus asesorías en la página y me gustaría saber más. " +
-  "¿Te cuento mi caso y me dices qué plan me encaja y su precio?";
+  "¡Hola! He visto vuestros planes en la página y me gustaría saber más. " +
+  "¿Os cuento mi caso y me decís qué me encaja mejor?";
 
 export default function PlansPage() {
-  const [period, setPeriod] = useState<PublicBillingPeriod>("3m");
-  // Marca pública: foto de fondo + teléfono de contacto del coach (WhatsApp).
+  // Marca pública: foto de fondo + contacto del centro (WhatsApp).
   const [landing, setLanding] = useState<import("../types").LandingOut | null>(null);
 
   useEffect(() => {
     api.publicLanding().then(setLanding).catch(() => setLanding(null));
   }, []);
 
-  const coachDigits = waPhone(landing?.contact_phone);
+  // WhatsApp del centro: el de la página Marca manda; si aún no cargó la
+  // marca, el número público del centro (branding.ts) evita botones muertos.
+  const coachDigits = waPhone(landing?.contact_phone) || waPhone(CENTER_WHATSAPP_DISPLAY.startsWith("+") ? CENTER_WHATSAPP_DISPLAY : `+34 ${CENTER_WHATSAPP_DISPLAY}`);
+  const contactHref = (text: string): string | null =>
+    coachDigits ? waUrl(coachDigits, text) : null;
 
-  /** Enlace de contacto: WhatsApp si hay teléfono; email de reserva. */
-  function contactHref(text: string, subject: string): string | null {
-    if (coachDigits) return waUrl(coachDigits, text);
-    if (landing?.contact_email) {
-      return `mailto:${landing.contact_email}?subject=${encodeURIComponent(subject)}`;
-    }
-    return null;
-  }
+  const gold = PACKAGES.full.color;
+  const slate = PACKAGES.train.color;
+  const bg = landing?.color_bg ?? "#0F0E0C";
+  const payOnline = `${window.location.origin}/api/pay/plan/full/1m`;
 
-  const bg = landing?.color_bg ?? "#0C1216";
   return (
     <div className="relative" style={{ minHeight: "100vh", background: bg, color: "#26211a" }}>
       {/* Foto de fondo propia (Recursos → Página de enlaces → Foto de los
@@ -109,115 +79,116 @@ export default function PlansPage() {
         </>
       ) : (
         <div className="pointer-events-none fixed inset-0"
-          style={{ background: `radial-gradient(120% 80% at 50% 0%, ${(landing?.color_secondary ?? "#2C5F73")}44 0%, ${bg} 60%)` }} />
+          style={{ background: `radial-gradient(120% 80% at 50% 0%, ${gold}2E 0%, ${bg} 60%)` }} />
       )}
       <div className="relative mx-auto max-w-4xl px-5 py-10">
-        {/* Cabecera en BLANCO sobre la foto (como la página de enlaces), con sombra para leerse. */}
-        <header className="mb-6 flex flex-col items-center text-center text-white"
+        {/* Cabecera en BLANCO sobre la foto, con sombra para leerse. */}
+        <header className="mb-8 flex flex-col items-center text-center text-white"
           style={{ textShadow: "0 2px 12px rgba(0,0,0,0.55), 0 1px 3px rgba(0,0,0,0.7)" }}>
-          <img src="/brand-logo.png" alt="" className="h-14 w-auto rounded-xl shadow-lg" />
+          <img src="/brand-logo.png" alt="Professional Girona" className="h-16 w-auto rounded-xl shadow-lg" />
           <h1 className="mt-4 text-3xl font-extrabold tracking-tight">
-            Empieza tu cambio <span style={{ color: "#F6A560" }}>hoy</span>
+            Tu cambio empieza en <span style={{ color: gold }}>Professional</span>
           </h1>
           <p className="mt-2 max-w-lg text-sm text-white/90">
-            Nada de plantillas: estudio tu caso a fondo, monto tu plan a tu medida
-            y me tienes <strong>cada día</strong> en WhatsApp durante todo el proceso.
+            Más de 25 años cuidando la salud y el entreno en Girona. Elige cómo
+            quieres que te acompañemos: preparación completa o sesiones con
+            nuestros entrenadores.
           </p>
-          {/* Gancho de confianza: qué incluye SIEMPRE, de un vistazo */}
           <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs font-semibold">
             <span style={{ color: "#6FE39A" }}>✓ Plan 100 % a tu medida</span>
-            <span style={{ color: "#6FE39A" }}>✓ Tu coach a diario por WhatsApp</span>
-            <span style={{ color: "#6FE39A" }}>✓ App de seguimiento</span>
+            <span style={{ color: "#6FE39A" }}>✓ Tu app de seguimiento</span>
+            <span style={{ color: "#6FE39A" }}>✓ Tu preparador por WhatsApp</span>
           </div>
         </header>
 
-        {/* Duración: cada plan tiene su versión mensual, trimestral y semestral
-            (9 opciones). Las duraciones largas, con mejores condiciones. */}
-        <div className="mb-2 flex justify-center">
-          <div className="inline-flex rounded-xl border bg-white p-1 shadow-sm" style={{ borderColor: "#e6ddca" }}>
-            {BILLING_PERIODS.map((b) => {
-              const sel = period === b.value;
-              return (
-                <button
-                  key={b.value}
-                  type="button"
-                  onClick={() => setPeriod(b.value)}
-                  aria-pressed={sel}
-                  className="rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
-                  style={sel
-                    ? { background: "#2C5F73", color: "white" }
-                    : { color: "#26211a", opacity: 0.65 }}
-                >
-                  {b.label}
-                </button>
-              );
-            })}
+        <div className="grid gap-5 md:grid-cols-2">
+          {/* ============== GÉNESIS.99 — preparación personal completa ============== */}
+          <div className="relative flex flex-col rounded-2xl border-2 bg-white p-6 shadow-lg"
+            style={{ borderColor: gold }}>
+            <span className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full px-3 py-0.5 text-[11px] font-bold shadow"
+              style={{ background: gold, color: "#241C04" }}>
+              ⭐ Preparación personal
+            </span>
+            <span className="inline-flex w-fit items-center rounded-full px-2.5 py-0.5 text-xs font-bold"
+              style={{ background: `color-mix(in srgb, ${gold} 16%, transparent)`, color: "#8A6403" }}>
+              {PACKAGES.full.label}
+            </span>
+            <div className="mt-3 flex items-baseline gap-2">
+              <span className="text-4xl font-extrabold tracking-tight">99 €</span>
+              <span className="text-sm font-semibold opacity-60">/ mes</span>
+            </div>
+            <p className="mt-1 text-[13px] font-medium italic opacity-75">
+              Nutrición y entrenamiento coordinados, contigo de principio a fin.
+              Para quien quiere el cambio completo.
+            </p>
+            <ul className="mt-4 flex-1 space-y-2">
+              {GENESIS_BULLETS.map((b) => (
+                <li key={b} className="flex gap-2 text-[13px] leading-snug opacity-85">
+                  <span className="mt-[1px] shrink-0 font-bold" style={{ color: "#2E7D46" }}>✓</span>
+                  <span>{b}</span>
+                </li>
+              ))}
+            </ul>
+            {(() => {
+              const href = contactHref(GENESIS_MESSAGE);
+              return href ? (
+                <a href={href} target="_blank" rel="noopener"
+                  className="mt-5 flex items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-sm font-bold shadow-md transition-transform hover:brightness-105 active:scale-[0.98]"
+                  style={{ background: gold, color: "#241C04" }}>
+                  <MessageCircle size={16} /> Empezar — hablamos por WhatsApp
+                </a>
+              ) : null;
+            })()}
+            {/* Pago online directo (Stripe). Sin Stripe configurado, el backend
+                redirige de vuelta a esta página: el enlace nunca rompe. */}
+            <a href={payOnline} className="mt-2 text-center text-xs font-semibold underline opacity-60 hover:opacity-90">
+              o empieza ya con pago online seguro (Stripe)
+            </a>
           </div>
-        </div>
-        <p className="mb-6 text-center text-xs font-semibold text-white/75"
-          style={{ textShadow: "0 1px 3px rgba(0,0,0,0.6)" }}>
-          Trimestral y semestral con condiciones especiales — pregúntame sin compromiso.
-        </p>
 
-        <div className="grid gap-4 sm:grid-cols-3">
-          {PACKAGE_ORDER.map((t) => {
-            const p = PACKAGES[t];
-            const destacado = t === "full"; // el pack completo: el más elegido
-            const href = contactHref(
-              contactMessage(t, period),
-              `Información ${p.label} (${billingLabel(period)})`,
-            );
-            return (
-              <div key={t}
-                className={`relative flex flex-col rounded-2xl border bg-white p-5 shadow-sm ${destacado ? "shadow-lg sm:-mt-2 sm:mb-[-8px]" : ""}`}
-                style={{
-                  borderColor: destacado ? p.color : `color-mix(in srgb, ${p.color} 40%, #e6ddca)`,
-                  borderWidth: destacado ? 2 : 1,
-                }}>
-                {destacado && (
-                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full px-3 py-0.5 text-[11px] font-bold text-white shadow"
-                    style={{ background: p.color }}>
-                    ⭐ El más elegido
+          {/* ============== ENTRENO PERSONAL — sesiones en el centro ============== */}
+          <div className="flex flex-col rounded-2xl border bg-white p-6 shadow-sm"
+            style={{ borderColor: `color-mix(in srgb, ${slate} 45%, #e6ddca)` }}>
+            <span className="inline-flex w-fit items-center rounded-full px-2.5 py-0.5 text-xs font-bold text-white"
+              style={{ background: slate }}>
+              Entreno Personal
+            </span>
+            <p className="mt-3 text-[13px] font-medium italic opacity-75">
+              Sesiones presenciales 1:1 en el centro, a tu ritmo y con tu
+              entrenador. Reserva por WhatsApp y paga en el centro.
+            </p>
+            {/* Tarifas tal cual las publica la web: etiqueta + chip dorado. */}
+            <div className="mt-4 space-y-2">
+              {PT_RATES.map((r) => (
+                <div key={r.label} className="flex items-center justify-between gap-3 border-b pb-2"
+                  style={{ borderColor: "#eee7d7" }}>
+                  <span className="text-[13px] font-medium opacity-85">{r.label}</span>
+                  <span className="shrink-0 rounded-md px-2.5 py-1 text-[13px] font-extrabold"
+                    style={{ background: gold, color: "#241C04" }}>
+                    {r.price}
                   </span>
-                )}
-                <span className="inline-flex w-fit items-center rounded-full px-2.5 py-0.5 text-xs font-semibold"
-                  style={{ background: `color-mix(in srgb, ${p.color} 14%, transparent)`, color: p.color }}>
-                  {p.label}
-                </span>
-                <p className="mt-2 text-[13px] font-medium italic opacity-75">
-                  {PLAN_FOR_YOU[t]}
-                </p>
-                {/* La descripción de ESTA duración: el gancho de la combinación. */}
-                <p className="mt-2 text-sm font-semibold leading-snug" style={{ color: p.color }}>
-                  {DURATION_PITCH[t][period]}
-                </p>
-                <ul className="mt-3 flex-1 space-y-1.5">
-                  {PLAN_BULLETS[t].map((b) => (
-                    <li key={b} className="flex gap-2 text-[13px] leading-snug opacity-80">
-                      <span className="mt-[1px] shrink-0 font-bold" style={{ color: "#2E7D46" }}>✓</span>
-                      <span>{b}</span>
-                    </li>
-                  ))}
-                </ul>
-                {href ? (
-                  <a
-                    href={href}
-                    target="_blank"
-                    rel="noopener"
-                    className="mt-4 flex items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-sm font-bold text-white shadow-md transition-transform hover:brightness-110 active:scale-[0.98]"
-                    style={{ background: p.color }}
-                  >
-                    <MessageCircle size={16} /> Contacta conmigo
-                  </a>
-                ) : (
-                  <p className="mt-4 rounded-xl border p-3 text-center text-xs opacity-70"
-                    style={{ borderColor: "#e6ddca" }}>
-                    Escríbeme por redes para saber más.
-                  </p>
-                )}
-              </div>
-            );
-          })}
+                </div>
+              ))}
+            </div>
+            <ul className="mt-4 flex-1 space-y-2">
+              {PT_BULLETS.map((b) => (
+                <li key={b} className="flex gap-2 text-[13px] leading-snug opacity-85">
+                  <span className="mt-[1px] shrink-0 font-bold" style={{ color: "#2E7D46" }}>✓</span>
+                  <span>{b}</span>
+                </li>
+              ))}
+            </ul>
+            {(() => {
+              const href = contactHref(PT_MESSAGE);
+              return href ? (
+                <a href={href} target="_blank" rel="noopener"
+                  className="mt-5 flex items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-sm font-bold text-white shadow-md transition-transform hover:brightness-110 active:scale-[0.98]"
+                  style={{ background: slate }}>
+                  <MessageCircle size={16} /> Reserva tu sesión
+                </a>
+              ) : null;
+            })()}
+          </div>
         </div>
 
         {/* Cómo funciona: 3 pasos — quita el miedo a "¿y ahora qué?". */}
@@ -227,13 +198,13 @@ export default function PlansPage() {
           </h2>
           <div className="mt-4 grid gap-4 text-sm sm:grid-cols-3">
             {[
-              ["1", "Me escribes por WhatsApp", "Me cuentas tu caso y tu objetivo. Te respondo yo, no un bot: te digo el precio y resolvemos tus dudas."],
-              ["2", "Estudio tu caso a fondo", "Cuestionario inicial completo: salud, lesiones, gustos, horarios y material. De ahí sale TU plan, no una plantilla."],
-              ["3", "Empezamos y te acompaño", "Tu plan en tu app, seguimiento diario por WhatsApp y ajustes según tu progreso real."],
+              ["1", "Escríbenos por WhatsApp", "Nos cuentas tu caso y tu objetivo. Te respondemos nosotros, no un bot, y resolvemos tus dudas."],
+              ["2", "Estudiamos tu caso a fondo", "Cuestionario inicial completo: salud, lesiones, gustos, horarios. De ahí sale TU plan, no una plantilla."],
+              ["3", "Empezamos y te acompañamos", "Tu plan en tu app, seguimiento diario y revisión cada 15 días con ajustes según tu progreso real."],
             ].map(([n, titulo, texto]) => (
               <div key={n} className="flex gap-3">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-extrabold text-white"
-                  style={{ background: "#2C5F73" }}>
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-extrabold"
+                  style={{ background: gold, color: "#241C04" }}>
                   {n}
                 </span>
                 <div>
@@ -245,30 +216,64 @@ export default function PlansPage() {
           </div>
         </div>
 
-        {/* CTA final: para quien duda entre planes. */}
+        {/* CTA final: para quien duda. */}
         <div className="mt-6 rounded-2xl border-2 bg-white p-5 text-center shadow-lg"
-          style={{ borderColor: "#F6A560" }}>
-          <p className="text-base font-extrabold">¿No tienes claro cuál es para ti?</p>
+          style={{ borderColor: gold }}>
+          <p className="text-base font-extrabold">¿No tienes claro qué te encaja?</p>
           <p className="mx-auto mt-1 max-w-md text-sm opacity-75">
-            Escríbeme, me cuentas tu caso en dos líneas y te digo yo qué plan te
-            encaja y su precio. Sin compromiso: preguntar es gratis.
+            Escríbenos, nos cuentas tu caso en dos líneas y te decimos qué opción
+            es para ti. Sin compromiso: preguntar es gratis.
           </p>
           {(() => {
-            const href = contactHref(GENERIC_MESSAGE, `Información asesorías ${BRAND_SHORT}`);
+            const href = contactHref(GENERIC_MESSAGE);
             return href ? (
               <a href={href} target="_blank" rel="noopener"
                 className="mx-auto mt-3 inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-bold text-white shadow-md transition-transform hover:brightness-110 active:scale-[0.98]"
                 style={{ background: "#25D366" }}>
-                <MessageCircle size={16} /> Escríbeme por WhatsApp
+                <MessageCircle size={16} /> Escríbenos por WhatsApp
               </a>
             ) : null;
           })()}
         </div>
 
+        {/* El centro: dirección, horario y contacto (professionalgirona.com). */}
+        <div className="mt-6 grid gap-4 rounded-2xl bg-white/95 p-5 text-sm shadow-sm sm:grid-cols-3">
+          <div className="flex gap-2.5">
+            <MapPin size={16} className="mt-0.5 shrink-0" style={{ color: "#8A6403" }} />
+            <div>
+              <p className="font-bold">El centro</p>
+              <p className="mt-0.5 text-[13px] leading-snug opacity-75">{CENTER_ADDRESS}</p>
+            </div>
+          </div>
+          <div className="flex gap-2.5">
+            <Clock size={16} className="mt-0.5 shrink-0" style={{ color: "#8A6403" }} />
+            <div>
+              <p className="font-bold">Horario</p>
+              {CENTER_SCHEDULE.map(([dias, horas]) => (
+                <p key={dias} className="mt-0.5 text-[13px] leading-snug opacity-75">
+                  {dias}: {horas}
+                </p>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-2.5">
+            <Mail size={16} className="mt-0.5 shrink-0" style={{ color: "#8A6403" }} />
+            <div>
+              <p className="font-bold">Contacto</p>
+              <p className="mt-0.5 text-[13px] leading-snug opacity-75">
+                WhatsApp {landing?.contact_phone ?? CENTER_WHATSAPP_DISPLAY}
+              </p>
+              <p className="mt-0.5 break-all text-[13px] leading-snug opacity-75">
+                {landing?.contact_email ?? CENTER_EMAIL}
+              </p>
+            </div>
+          </div>
+        </div>
+
         <p className="mt-8 text-center text-xs text-white/60"
           style={{ textShadow: "0 1px 3px rgba(0,0,0,0.6)" }}>
-          Te respondo personalmente. Cuando lo tengas claro, pagas de forma segura
-          con Stripe a través de tu enlace personal.
+          Te respondemos personalmente. El pago online es seguro a través de Stripe;
+          las sesiones de entreno personal se abonan en el centro.
         </p>
       </div>
     </div>

@@ -77,7 +77,7 @@ function nextAction(c: ClientOut): Accion | null {
     };
   if (c.status === "onboarding")
     return {
-      client: c, prio: 3, tone: "#C9A227", icon: CalendarPlus, category: "Falta planificación",
+      client: c, prio: 3, tone: "#E9A90F", icon: CalendarPlus, category: "Falta planificación",
       title: "Anamnesis lista · falta su planificación",
       detail: "Revisa los datos y genera su primera planificación con la IA.",
       cta: "Crear planificación", tab: "planificacion",
@@ -86,7 +86,7 @@ function nextAction(c: ClientOut): Accion | null {
   const dueDays = goalReviewDue(c);
   if (dueDays != null)
     return {
-      client: c, prio: 3, tone: "#2C5F73", icon: Flag, category: "Objetivo",
+      client: c, prio: 3, tone: "#37474F", icon: Flag, category: "Objetivo",
       title: `${dueDays} días con el mismo objetivo`,
       detail: "Genera el análisis de la etapa y valora con el cliente si toca cambiar de objetivo.",
       cta: "Valorar objetivo", tab: "planificacion",
