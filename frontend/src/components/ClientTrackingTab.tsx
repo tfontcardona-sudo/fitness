@@ -274,7 +274,7 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
    sin que el coach tenga que rebuscar. */
 
 type Aviso = { sev: "alto" | "medio"; text: string };
-const SEV_COLOR: Record<Aviso["sev"], string> = { alto: "#C2453A", medio: "#9A6B15" };
+const SEV_COLOR: Record<Aviso["sev"], string> = { alto: "#F0716A", medio: "#E5B94E" };
 // Claves REALES que envía el portal (PortalClose.FEELINGS) + variantes de
 // datos antiguos/semilla: todas con etiqueta bonita.
 const FEELING_LABEL: Record<string, string> = {
@@ -351,7 +351,7 @@ function Vigilar({ q, goal, extras }: {
         ? { borderColor: "rgba(27,127,77,0.35)", background: "rgba(27,127,77,0.05)" }
         : { borderColor: "rgba(194,69,58,0.35)", background: "rgba(194,69,58,0.04)" }}
     >
-      <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide" style={{ color: ok ? "#1B7F4D" : "#C2453A" }}>
+      <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide" style={{ color: ok ? "#4CC38A" : "#F0716A" }}>
         {ok ? "Período sólido" : "Puntos a vigilar"}
       </p>
       {ok ? (
@@ -381,9 +381,9 @@ function MiniTitle({ children }: { children: React.ReactNode }) {
 }
 
 function scoreTone(v: number | null | undefined, of = 10): string {
-  if (v == null) return "#7A7060";
+  if (v == null) return "#948C7D";
   const pct = v / of;
-  return pct >= 0.8 ? "#1B7F4D" : pct >= 0.6 ? "#9A6B15" : "#C2453A";
+  return pct >= 0.8 ? "#4CC38A" : pct >= 0.6 ? "#E5B94E" : "#F0716A";
 }
 
 function ScoreStat({ label, value }: { label: string; value: number | null }) {
@@ -398,7 +398,7 @@ function ScoreStat({ label, value }: { label: string; value: number | null }) {
 }
 
 function CountStat({ label, value }: { label: string; value: number | null }) {
-  const tone = value == null ? "#7A7060" : value <= 2 ? "#1B7F4D" : value <= 3 ? "#9A6B15" : "#C2453A";
+  const tone = value == null ? "#948C7D" : value <= 2 ? "#4CC38A" : value <= 3 ? "#E5B94E" : "#F0716A";
   return (
     <div className="rounded-lg p-2.5 text-center" style={{ background: "var(--surface-raised)" }}>
       <div className="text-base font-bold" style={{ color: tone }}>{value ?? "—"}</div>
@@ -408,11 +408,11 @@ function CountStat({ label, value }: { label: string; value: number | null }) {
 }
 
 function FeelingChip({ name, value }: { name: string; value: number }) {
-  const tone = value >= 4 ? "#1B7F4D" : value === 3 ? "#9A6B15" : "#C2453A";
+  const tone = value >= 4 ? "#4CC38A" : value === 3 ? "#E5B94E" : "#F0716A";
   return (
     <span
       className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs"
-      style={{ borderColor: `${tone}55`, color: "#3D362B" }}
+      style={{ borderColor: `${tone}55`, color: "#DAD5C9" }}
     >
       {FEELING_LABEL[name] ?? name}
       <b style={{ color: tone }}>{value}/5</b>
@@ -429,7 +429,7 @@ function TextCard({ label, text, highlight }: { label: string; text: string | nu
         ? { borderColor: "rgba(154,107,21,0.4)", background: "rgba(154,107,21,0.06)" }
         : { borderColor: "var(--line)", background: "var(--surface-raised)" }}
     >
-      <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: highlight ? "#9A6B15" : "#7A7060" }}>
+      <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: highlight ? "#E5B94E" : "#948C7D" }}>
         {label}
       </p>
       <p className="mt-1 text-sm leading-relaxed text-zinc-200">{text}</p>
@@ -459,7 +459,7 @@ function BeforeAfter({ label, before, after, lowerBetter }: {
         <span className="text-zinc-600">→</span>
         <span className="font-semibold">{after ?? "—"}</span>
         {delta != null && delta !== 0 && (
-          <span className="text-xs" style={{ color: good ? "var(--brand-accent)" : bad ? "#C2453A" : "#7A7060" }}>
+          <span className="text-xs" style={{ color: good ? "var(--brand-accent)" : bad ? "#F0716A" : "#948C7D" }}>
             {delta > 0 ? "+" : ""}{delta}
           </span>
         )}

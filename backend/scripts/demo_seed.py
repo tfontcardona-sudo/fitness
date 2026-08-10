@@ -213,8 +213,10 @@ def _ex_id(db, *candidates: str) -> int:
 
 def marta_training(db) -> dict:
     def e(cands, sets, reps, rir, rest, cue):
+        # rir SIEMPRE como cadena: el contrato del motor es str ("2" | "1-2") y
+        # el portal (TodayView) lo valida — un int aquí rompe la pestaña Entreno.
         return {"exercise_id": _ex_id(db, *cands), "sets": sets, "rep_range": reps,
-                "rir": rir, "rest_sec": rest, "technique_cue": cue}
+                "rir": str(rir), "rest_sec": rest, "technique_cue": cue}
 
     return {
         "split_name": "Full body · 3 días",

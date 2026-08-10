@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LogIn } from "lucide-react";
 import { portalLogin, portalSession, PortalError } from "./portalApi";
+import { PORTAL_THEME } from "../lib/branding";
 
 /**
  * Login del portal del cliente (ruta /portal). Entra con su email y la
@@ -45,7 +46,7 @@ export default function PortalLogin() {
   }
 
   return (
-    <div className="portal-root mx-auto flex min-h-screen max-w-md flex-col justify-center px-6"
+    <div className={`portal-root ${PORTAL_THEME === "dark" ? "portal-dark" : ""} mx-auto flex min-h-screen max-w-md flex-col justify-center px-6`}
       style={{ paddingBottom: "10vh" }}>
       <div className="mb-6 flex flex-col items-center text-center">
         <img src="/brand-logo.png" alt="" className="mb-3 h-12 w-auto rounded-xl shadow-sm" />
@@ -82,7 +83,7 @@ export default function PortalLogin() {
         </label>
 
         {error && (
-          <p className="rounded-lg px-3 py-2 text-sm" style={{ background: "rgba(179,38,30,0.10)", color: "#b3261e" }}>
+          <p className="rounded-lg px-3 py-2 text-sm" style={{ background: "rgba(240,113,106,0.14)", color: "#F0716A" }}>
             {error}
           </p>
         )}
@@ -90,7 +91,6 @@ export default function PortalLogin() {
         <button
           type="submit" disabled={busy}
           className="portal-btn3d flex w-full items-center justify-center gap-2 py-3 text-sm font-semibold"
-          style={{ background: "var(--p-accent)", color: "#fff" }}
         >
           <LogIn size={16} /> {busy ? "Entrando…" : "Entrar"}
         </button>

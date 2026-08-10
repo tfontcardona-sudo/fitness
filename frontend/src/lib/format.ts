@@ -17,14 +17,14 @@ export const STATUS_LABEL: Record<ClientStatus, string> = {
   inactive: "Inactivo",
 };
 
-// Color de acento por estado (para badges y puntos). Tonos con contraste sobre crema.
+// Color de acento por estado (para badges y puntos). Tonos con contraste sobre el negro.
 export const STATUS_TONE: Record<ClientStatus, string> = {
   onboarding: "#4C66C9", // índigo: aún configurándose
-  active: "#C96A1E", // naranja marca (oscurecido para texto): todo en marcha
-  awaiting_feedback: "#9A6B15", // ámbar: requiere acción próxima
-  at_risk: "#C2453A", // rojo: atención
+  active: "#F0883E", // naranja marca (oscurecido para texto): todo en marcha
+  awaiting_feedback: "#E5B94E", // ámbar: requiere acción próxima
+  at_risk: "#F0716A", // rojo: atención
   review_pending: "#7B4FC9", // violeta: en cola del coach
-  inactive: "#8B8172", // gris cálido: dormido
+  inactive: "#9A9284", // gris cálido: dormido
 };
 
 export const GOAL_LABEL: Record<GoalType, string> = {

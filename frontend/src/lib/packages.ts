@@ -16,6 +16,7 @@
  *  El WhatsApp diario está en los TRES: es el canal con el cliente, no un extra.
  */
 import type { BillingPeriod, PackageTier, PublicBillingPeriod } from "../types";
+import { FEATURE_VIDEO_CALLS } from "./branding";
 
 export interface PackageInfo {
   tier: PackageTier;
@@ -68,11 +69,12 @@ export const PACKAGES: Record<PackageTier, PackageInfo> = {
     short: "Génesis",
     tagline: "preparación personal: nutrición + entrenamiento",
     includes:
-      "Nutrición y entrenamiento + WhatsApp diario + videollamada de revisión.",
+      "Nutrición y entrenamiento + WhatsApp diario + revisión quincenal.",
     hasNutrition: true,
     hasTraining: true,
     directContact: true,
-    hasVideoCall: true,
+    // La videollamada solo existe si la instancia la tiene encendida.
+    hasVideoCall: FEATURE_VIDEO_CALLS,
     delivery: "whatsapp",
     priceMonthEur: 99,
     color: "#E9A90F",

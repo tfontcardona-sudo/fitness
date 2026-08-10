@@ -231,7 +231,7 @@ const V_COLORS = {
   cuerpo: "#E9A90F",     // dorado: cuerpo y objetivo
   entreno: "#37474F",    // petróleo marca: entrenamiento
   dieta: "#3F7446",      // verde: alimentación
-  clinica: "#9A6B15",    // ámbar: salud
+  clinica: "#E5B94E",    // ámbar: salud
   lesiones: "#B3261E",   // rojo: lo crítico
   vida: "#63519E",       // morado: estilo de vida
 };

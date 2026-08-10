@@ -60,8 +60,9 @@ def has_direct_contact(tier: str | None) -> bool:
 
 
 def has_video_call(tier: str | None) -> bool:
-    """Videollamada de revisión (Google Meet): solo en el pack completo."""
-    return normalize(tier) == "full"
+    """Videollamada de revisión (Google Meet): solo en el pack completo, y solo
+    si la instancia la tiene encendida (branding.FEATURE_VIDEO_CALLS)."""
+    return branding.FEATURE_VIDEO_CALLS and normalize(tier) == "full"
 
 
 def label(tier: str | None) -> str:

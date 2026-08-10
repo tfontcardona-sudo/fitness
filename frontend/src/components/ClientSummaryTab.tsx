@@ -96,16 +96,16 @@ export function ClientSummaryTab({ client }: { client: ClientOut }) {
                   </linearGradient>
                 </defs>
                 <CartesianGrid stroke="rgba(38,33,26,0.08)" vertical={false} />
-                <XAxis dataKey="label" stroke="#8B8172" fontSize={12} tickLine={false} axisLine={false} />
-                <YAxis stroke="#8B8172" fontSize={12} tickLine={false} axisLine={false} domain={["dataMin - 2", "dataMax + 2"]} />
+                <XAxis dataKey="label" stroke="#9A9284" fontSize={12} tickLine={false} axisLine={false} />
+                <YAxis stroke="#9A9284" fontSize={12} tickLine={false} axisLine={false} domain={["dataMin - 2", "dataMax + 2"]} />
                 <Tooltip
                   contentStyle={{
-                    background: "#fffdf9",
+                    background: "#1C1913",
                     border: "1px solid rgba(38,33,26,0.15)",
                     borderRadius: 12,
                     fontSize: 13,
                   }}
-                  labelStyle={{ color: "#6E6455" }}
+                  labelStyle={{ color: "#B3AB9C" }}
                 />
                 {client.goal_weight_kg != null && (
                   <ReferenceLine
@@ -113,7 +113,7 @@ export function ClientSummaryTab({ client }: { client: ClientOut }) {
                     stroke={accent}
                     strokeDasharray="4 4"
                     strokeOpacity={0.5}
-                    label={{ value: "Objetivo", fill: "#6E6455", fontSize: 11, position: "right" }}
+                    label={{ value: "Objetivo", fill: "#B3AB9C", fontSize: 11, position: "right" }}
                   />
                 )}
                 <Area type="monotone" dataKey="peso" stroke={accent} strokeWidth={2} fill="url(#pesoFill)" />
@@ -132,7 +132,7 @@ export function ClientSummaryTab({ client }: { client: ClientOut }) {
 
 const NOTE_SECTIONS: { label: string; color: string; get: (c: ClientOut) => string | null | undefined }[] = [
   { label: "Lesiones", color: "#B3261E", get: (c) => c.injuries_notes },
-  { label: "Patologías y salud", color: "#9A6B15", get: (c) => c.medical_notes },
+  { label: "Patologías y salud", color: "#E5B94E", get: (c) => c.medical_notes },
   { label: "Medicación", color: "#4E626C", get: (c) => c.medication_notes },
   { label: "Alergias e intolerancias", color: "#B3261E", get: (c) => c.food_allergies?.length ? c.food_allergies.join(", ") : null },
 ];
@@ -192,10 +192,10 @@ function Kpi({
   const display =
     value == null ? "—" : `${signed && value > 0 ? "+" : ""}${value} ${unit}`;
   const improving = value != null && (lowerBetter ? value < 0 : value > 0);
-  const tone = signed && value != null && value !== 0 ? (improving ? "#E9A90F" : "#9A6B15") : undefined;
+  const tone = signed && value != null && value !== 0 ? (improving ? "#E9A90F" : "#E5B94E") : undefined;
   return (
     <div className="card p-4">
-      <p className="text-xl font-semibold" style={{ color: tone ?? "#26211A" }}>
+      <p className="text-xl font-semibold" style={{ color: tone ?? "#F5F3EE" }}>
         {display}
       </p>
       <p className="mt-0.5 text-xs text-zinc-500">{label}</p>

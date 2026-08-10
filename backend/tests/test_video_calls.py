@@ -36,6 +36,16 @@ def _db_available() -> bool:
 needs_db = pytest.mark.skipif(not _db_available(), reason="Requiere PostgreSQL")
 
 
+@pytest.fixture(autouse=True)
+def _videollamadas_encendidas(monkeypatch):
+    """Estos tests prueban el MOTOR de videollamadas; la instancia actual las
+    tiene apagadas (branding.FEATURE_VIDEO_CALLS=False), así que se encienden
+    solo durante este archivo."""
+    from app import branding
+
+    monkeypatch.setattr(branding, "FEATURE_VIDEO_CALLS", True)
+
+
 @pytest.fixture()
 def db():
     from app.db import SessionLocal

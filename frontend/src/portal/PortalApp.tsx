@@ -4,6 +4,7 @@ import { Bell, BellOff, CalendarCheck, Camera, Check, ChevronDown, Dumbbell, Lin
 import { portalApi, portalSession, PortalError } from "./portalApi";
 import type { VideoCallStatus } from "./portalApi";
 import { pkg } from "../lib/packages";
+import { FEATURE_RESOURCES, PORTAL_THEME } from "../lib/branding";
 import type { PortalState } from "../types";
 import { PortalWorkout } from "./PortalWorkout";
 import { PortalDiary } from "./PortalDiary";
@@ -49,8 +50,9 @@ export default function PortalApp({ token }: { token: string }) {
   const [params, setParams] = useSearchParams();
   const rawTab = params.get("tab");
   const tab: Tab =
-    rawTab === "diario" || rawTab === "cierre" || rawTab === "progreso" || rawTab === "recursos"
-      ? rawTab
+    rawTab === "diario" || rawTab === "cierre" || rawTab === "progreso"
+      || (rawTab === "recursos" && FEATURE_RESOURCES)
+      ? (rawTab as Tab)
       : "entreno";
   const setTab = (t: Tab) => setParams(t === "entreno" ? {} : { tab: t });
 
@@ -143,13 +145,14 @@ export default function PortalApp({ token }: { token: string }) {
   const isStart = !caps.hasTraining;
   const effTab: Tab = isStart && tab === "entreno" ? "diario" : tab;
 
-  const TABS: { id: Tab; label: string; icon: typeof Dumbbell }[] = [
+  const ALL_TABS: { id: Tab; label: string; icon: typeof Dumbbell }[] = [
     { id: "entreno", label: "Entreno", icon: Dumbbell },
     { id: "recursos", label: "Recursos", icon: Library },
     { id: "diario", label: "Diario", icon: NotebookPen },
     { id: "progreso", label: "Progreso", icon: LineChart },
     { id: "cierre", label: "Quincenal", icon: CalendarCheck },
   ];
+  const TABS = ALL_TABS.filter((t) => FEATURE_RESOURCES || t.id !== "recursos");
   const visibleTabs = isStart ? TABS.filter((t) => t.id !== "entreno") : TABS;
 
   return (
@@ -534,7 +537,6 @@ function PhotosReminder({ api, accent, onConfirmed }: {
               onClick={confirm}
               disabled={busy}
               className="portal-btn3d min-h-[36px] px-4 py-1.5 text-xs font-semibold"
-              style={{ background: accent, color: "#fff" }}
             >
               <span className="inline-flex items-center gap-1"><Check size={13} /> Sí, ya las envié</span>
             </button>
@@ -687,7 +689,6 @@ function WelcomeSetup({ api, token, accent, secondary, hasTraining = true }: {
                 onClick={activate}
                 disabled={busy}
                 className="portal-btn3d mt-1.5 min-h-[38px] px-4 py-1.5 text-xs font-semibold"
-                style={{ background: accent, color: "#fff" }}
               >
                 {busy ? "Activando…" : "Activar recordatorios"}
               </button>
@@ -740,9 +741,14 @@ function applyBrand(s: PortalState) {
 }
 
 function Centered({ children }: { children: React.ReactNode }) {
+  // Antes de conocer la marca (cargando/errores) se usa el tema por defecto de
+  // la instancia: Professional es oscuro (negro cálido + marfil).
+  const dark = PORTAL_THEME === "dark";
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center px-8 text-center"
-      style={{ background: "#f6f1e7", color: "#26211a" }}>
+      style={dark
+        ? { background: "#0F0E0C", color: "#F5F3EE" }
+        : { background: "#f6f1e7", color: "#26211a" }}>
       {children}
     </div>
   );

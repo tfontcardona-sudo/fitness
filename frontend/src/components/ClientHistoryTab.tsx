@@ -9,8 +9,8 @@ type Hist = Awaited<ReturnType<typeof api.getClientHistory>>;
 const STATUS: Record<string, string> = { open: "Abierto", closed: "Cerrado", analyzed: "Analizado" };
 function badge(s: string): React.CSSProperties {
   if (s === "analyzed") return { background: "color-mix(in srgb, var(--brand-accent) 15%, transparent)", color: "var(--brand-accent)" };
-  if (s === "closed") return { background: "rgba(154,107,21,0.14)", color: "#9A6B15" };
-  return { background: "rgba(38,33,26,0.08)", color: "#7A7060" };
+  if (s === "closed") return { background: "rgba(154,107,21,0.14)", color: "#E5B94E" };
+  return { background: "rgba(38,33,26,0.08)", color: "#948C7D" };
 }
 
 /**
@@ -130,7 +130,7 @@ function BA({ label, before, after, lowerBetter }: {
         <span className="text-zinc-600">→</span>
         <span className="font-semibold">{after ?? "—"}</span>
         {delta != null && delta !== 0 && (
-          <span className="text-xs" style={{ color: good ? "var(--brand-accent)" : bad ? "#C2453A" : "#7A7060" }}>
+          <span className="text-xs" style={{ color: good ? "var(--brand-accent)" : bad ? "#F0716A" : "#948C7D" }}>
             {delta > 0 ? "+" : ""}{delta}
           </span>
         )}
@@ -151,7 +151,7 @@ function Title({ icon: Icon, text, accent }: { icon: typeof History; text: strin
 function Stat({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
     <div className="rounded-lg p-3 text-center" style={{ background: "var(--surface-raised)" }}>
-      <div className="text-lg font-bold" style={{ color: highlight ? "var(--brand-accent)" : "#26211A" }}>{value}</div>
+      <div className="text-lg font-bold" style={{ color: highlight ? "var(--brand-accent)" : "#F5F3EE" }}>{value}</div>
       <div className="text-xs text-zinc-500">{label}</div>
     </div>
   );
@@ -242,7 +242,7 @@ function ReviewComparison({ h, lowerBetter }: { h: Hist; lowerBetter: boolean })
 function DeltaCell({ v, unit, lowerBetter }: { v: number | null; unit: string; lowerBetter: boolean }) {
   if (v == null) return <span className="text-zinc-500">—</span>;
   const good = lowerBetter ? v < 0 : v > 0;
-  const color = v === 0 ? "#7A7060" : good ? "var(--brand-accent)" : "#C2453A";
+  const color = v === 0 ? "#948C7D" : good ? "var(--brand-accent)" : "#F0716A";
   return <span className="font-medium" style={{ color }}>{v > 0 ? "+" : ""}{v} {unit}</span>;
 }
 
@@ -278,11 +278,11 @@ function WeightLine({ points }: { points: { label: string; value: number }[] }) 
             <title>{p.label}: {p.value} kg</title>
           </circle>
           {showLabel(i) && (
-            <text x={x(i)} y={y(p.value) - 10} textAnchor="middle" fontSize="11" fontWeight="600" fill="#26211A">
+            <text x={x(i)} y={y(p.value) - 10} textAnchor="middle" fontSize="11" fontWeight="600" fill="#F5F3EE">
               {p.value}
             </text>
           )}
-          <text x={x(i)} y={H - 6} textAnchor="middle" fontSize="10" fill="#7A7060">{p.label}</text>
+          <text x={x(i)} y={H - 6} textAnchor="middle" fontSize="10" fill="#948C7D">{p.label}</text>
         </g>
       ))}
     </svg>

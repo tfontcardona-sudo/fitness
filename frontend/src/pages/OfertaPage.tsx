@@ -21,7 +21,7 @@ const INCLUYE = [
   "Nutrición 100 % a tu medida: tus gustos, tus horarios, tus alergias",
   "Conmigo en WhatsApp todos los días",
   "App con tu rutina, tu dieta y tu seguimiento",
-  "Videollamada de revisión conmigo",
+  "Revisión quincenal con informe de progreso",
 ];
 
 export default function OfertaPage() {

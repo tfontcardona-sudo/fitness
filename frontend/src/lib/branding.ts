@@ -32,6 +32,18 @@ export const PUBLIC_TIERS: ReadonlyArray<string> = ["full"];
  *  en el kit de ventas y sin página /oferta (el backend también la veta). */
 export const OFFER_ENABLED = false;
 
+/** Tema del portal del cliente ANTES de cargar la marca (login del portal,
+ *  pantallas de error): la identidad de Professional es oscura. Espejo de
+ *  branding.PORTAL_THEME del backend. */
+export const PORTAL_THEME: "dark" | "light" = "dark";
+
+/** Funciones del motor APAGADAS en esta instancia (espejo de los FEATURE_* del
+ *  backend). El motor las conserva; la marca quiere la web solo para el ciclo
+ *  esencial: subir anamnesis → generar plan → portal → revisiones. */
+export const FEATURE_VIDEO_CALLS: boolean = false; // videollamadas de revisión
+export const FEATURE_RESOURCES: boolean = false;   // Recursos (coach y portal)
+export const FEATURE_SALES_KIT: boolean = false;   // kit de ventas del panel Hoy
+
 // --- El centro (de professionalgirona.com) ----------------------------------
 export const CENTER_ADDRESS = "Carretera Pierre Vilar, 2 · 17002 Girona";
 export const CENTER_WHATSAPP_DISPLAY = "640 756 220";

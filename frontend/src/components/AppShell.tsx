@@ -10,14 +10,17 @@ import {
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useBrand } from "../hooks/useBrand";
+import { BRAND_NAME, FEATURE_RESOURCES } from "../lib/branding";
 import { AlertsBell } from "./AlertsBell";
 import { AiCreditButton } from "./AiCreditButton";
 
+// La web del coach se queda con el ciclo esencial (anamnesis → plan →
+// seguimiento): Recursos solo aparece si la instancia lo tiene encendido.
 const NAV = [
   { to: "/", label: "Hoy", icon: LayoutDashboard, end: true },
   { to: "/clientes", label: "Clientes", icon: Users, end: false },
   { to: "/recursos", label: "Recursos", icon: Library, end: false },
-];
+].filter((item) => FEATURE_RESOURCES || item.to !== "/recursos");
 
 /** ¿Pantalla de móvil? (reactiva al girar el dispositivo) */
 function useIsMobile(): boolean {
@@ -96,7 +99,7 @@ export default function AppShell() {
           <img src="/brand-logo.png" alt="Professional Girona" className="h-8 w-auto shrink-0 rounded-md" />
           {!collapsed && (
             <span className="truncate text-sm font-semibold tracking-wide text-zinc-100">
-              {brand?.name ?? "Asesorías"}
+              {brand?.name ?? BRAND_NAME}
             </span>
           )}
         </div>

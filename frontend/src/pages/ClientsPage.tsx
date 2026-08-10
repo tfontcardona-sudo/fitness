@@ -200,7 +200,7 @@ function PackageBadge({ tier }: { tier: string }) {
 /** Estado de pago del plan (Stripe): pagado / pendiente. */
 function PaymentBadge({ status }: { status: string }) {
   const paid = status === "paid";
-  const color = paid ? "#2E7D46" : "#C2453A";
+  const color = paid ? "#2E7D46" : "#F0716A";
   return (
     <span
       className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold"
@@ -673,7 +673,7 @@ function PortalAccessResult({
   status, email, password,
 }: { status: ClientCreatedOut["portal_access"]; email: string; password: string | null }) {
   const ok = status === "sent";
-  const color = ok ? "var(--brand-accent)" : "#C2453A";
+  const color = ok ? "var(--brand-accent)" : "#F0716A";
   const Icon = ok ? CheckCircle2 : AlertTriangle;
   const text = ok
     ? `Acceso al portal enviado a ${email}: usuario, contraseña y enlace.`

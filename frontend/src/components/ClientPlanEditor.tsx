@@ -465,7 +465,7 @@ export function ClientPlanEditor({
         </h3>
         <div className="flex items-center gap-2">
           {nutritionBlocked && (
-            <span className="hidden text-xs text-[#9A6B15] sm:inline">
+            <span className="hidden text-xs text-[#E5B94E] sm:inline">
               {kcalInvalid ? "Pon las calorías objetivo para guardar" : "Los números no cuadran: mira el aviso de Nutrición"}
             </span>
           )}
@@ -531,7 +531,7 @@ export function ClientPlanEditor({
               const p = deficitSelectValue(tdee, nut.target_kcal ?? 0);
               if (p >= -MAX_DEFICIT_PCT && p <= MAX_SURPLUS_PCT) return null;
               return (
-                <span className="inline-flex items-center gap-1 font-semibold" style={{ color: "#9A6B15" }}>
+                <span className="inline-flex items-center gap-1 font-semibold" style={{ color: "#E5B94E" }}>
                   <AlertTriangle size={12} />
                   {p < 0 ? `déficit >${MAX_DEFICIT_PCT}%` : `superávit >${MAX_SURPLUS_PCT}%`}: agresivo, revisa
                 </span>
@@ -566,8 +566,8 @@ export function ClientPlanEditor({
           <span
             className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold"
             style={totalsOk
-              ? { background: "color-mix(in srgb, #1b7f4d 14%, transparent)", color: "#1b7f4d" }
-              : { background: "color-mix(in srgb, #9A6B15 16%, transparent)", color: "#9A6B15" }}
+              ? { background: "color-mix(in srgb, #4CC38A 14%, transparent)", color: "#4CC38A" }
+              : { background: "color-mix(in srgb, #E5B94E 16%, transparent)", color: "#E5B94E" }}
           >
             {totalsOk ? <Check size={12} /> : <AlertTriangle size={12} />}
             Macros: {mp.total}%
@@ -597,7 +597,7 @@ export function ClientPlanEditor({
             bloqueado (si el coach ha tocado la nutrición). */}
         {!totalsOk && (
           <div className="mt-2 rounded-lg border p-3 text-xs"
-            style={{ background: "color-mix(in srgb, #9A6B15 10%, transparent)", borderColor: "color-mix(in srgb, #9A6B15 40%, transparent)", color: "#9A6B15" }}>
+            style={{ background: "color-mix(in srgb, #E5B94E 10%, transparent)", borderColor: "color-mix(in srgb, #E5B94E 40%, transparent)", color: "#E5B94E" }}>
             <div className="flex items-start gap-2">
               <AlertTriangle size={14} className="mt-0.5 shrink-0" />
               <div>

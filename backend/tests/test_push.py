@@ -25,6 +25,15 @@ from app.services import push as push_svc  # noqa: E402
 from app.services.portal import DAY_LABELS  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _videollamadas_encendidas(monkeypatch):
+    """Estos tests cubren el MOTOR (incluida la videollamada pendiente del pack
+    Full); la instancia actual las tiene apagadas, así que se encienden aquí."""
+    from app import branding
+
+    monkeypatch.setattr(branding, "FEATURE_VIDEO_CALLS", True)
+
+
 # ------------------------------------------------------------- puros ----
 
 def test_has_session_on() -> None:

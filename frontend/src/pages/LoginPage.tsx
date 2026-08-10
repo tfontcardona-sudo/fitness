@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { useBrand } from "../hooks/useBrand";
+import { BRAND_NAME } from "../lib/branding";
 import { Spinner } from "../components/ui";
 import { ApiError } from "../lib/api";
 
@@ -43,7 +44,7 @@ export default function LoginPage() {
       <div className="animate-rise card relative w-full max-w-sm p-8">
         <img src="/brand-logo.png" alt="Professional Girona" className="mb-6 h-11 w-auto rounded-lg" />
         <h1 className="text-xl font-semibold text-zinc-100">
-          {brand?.name ?? "Asesorías Fitness"}
+          {brand?.name ?? BRAND_NAME}
         </h1>
         <p className="mt-1 text-sm text-zinc-500">Panel del coach</p>
 
@@ -70,7 +71,7 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <p className="rounded-lg px-3 py-2 text-sm" style={{ background: "rgba(194,69,58,0.10)", color: "#B4453A" }}>
+            <p className="rounded-lg px-3 py-2 text-sm" style={{ background: "rgba(194,69,58,0.10)", color: "#F0716A" }}>
               {error}
             </p>
           )}

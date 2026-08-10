@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app import branding
 from app.db import get_db
 from app.deps import get_current_user
 from app.models import Client, DailyLog, FeedbackDoc, Period, Plan
@@ -215,7 +216,7 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
     from app.models import RecommendedProduct
     from app.services.product_match import match_products, plan_supplement_names
 
-    sups = plan_supplement_names(published.nutrition_json)
+    sups = plan_supplement_names(published.nutrition_json) if branding.FEATURE_RESOURCES else []
     if sups:
         titles = list(db.scalars(
             select(RecommendedProduct.title).where(RecommendedProduct.active.is_(True))
@@ -260,9 +261,10 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
     # ya no sea Pro: una propuesta sin responder o una llamada agendada no puede
     # esfumarse en silencio (antes, al cerrar la revisión siguiente quedaban
     # huérfanas y desaparecían de las alertas para siempre).
-    for vc in db.scalars(select(VideoCall).where(
+    for vc in (db.scalars(select(VideoCall).where(
             VideoCall.client_id == client.id,
-            VideoCall.status.in_(("proposed", "pending_manual", "scheduled")))):
+            VideoCall.status.in_(("proposed", "pending_manual", "scheduled"))))
+            if branding.FEATURE_VIDEO_CALLS else ()):
         if vc.status == "proposed" and vc.scheduled_at is not None:
             out.append(_alert(
                 client, "video_call_proposed", "alta",

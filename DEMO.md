@@ -116,10 +116,10 @@ clave de IA puedes enseñarlo en vivo. Mensaje: *la revisión quincenal, que es
 lo que os come horas, queda a un clic — siempre con vuestra supervisión*.
 
 **7) Cierre (1')**
-Kit de ventas (Recursos): responder a un interesado con el catálogo o el
-enlace de pago en dos clics. Página **Marca**: cambia el color en vivo — *todo
-esto es vuestro, con vuestra marca, y se ajusta sin tocar código*. Y lo que
-falta para arrancar de verdad: su Stripe, su dominio y su email
+Recorre el menú: la web es SOLO el ciclo de asesoría — Hoy y Clientes, sin
+distracciones (nada de módulos que no vais a usar; todo lo demás está apagado
+de fábrica para vosotros). Mensaje: *herramienta de trabajo, no un ERP*. Y lo
+que falta para arrancar de verdad: su Stripe, su dominio y su email
 (`PENDIENTE.md`) — todo configuración, cero desarrollo.
 
 ---

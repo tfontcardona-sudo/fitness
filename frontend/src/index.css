@@ -13,20 +13,21 @@
   --brand-accent-2-hi: #4E626C; /* petróleo luz */
   --brand-accent-2-lo: #28343B; /* petróleo profundo */
 
-  /* Paleta de la app del coach — crema premium, serena y profesional */
-  --bg: #f4eee3;
-  --surface: #fffdf9;
-  --surface-raised: #f5efe4;
-  --line: rgba(38, 33, 26, 0.08);
-  --line-strong: rgba(38, 33, 26, 0.16);
-  --ink: #26211a;
-  --text-dim: #6e6455;
-  --text-faint: #988d7c;
+  /* Paleta de la app del coach — NEGRO cálido de la marca (la misma familia
+     que el dossier: página #0F0E0C, paneles #1C1913/#17150F, marfil #F5F3EE). */
+  --bg: #0f0e0c;
+  --surface: #17150f;
+  --surface-raised: #211e15;
+  --line: rgba(245, 243, 238, 0.08);
+  --line-strong: rgba(245, 243, 238, 0.16);
+  --ink: #f5f3ee;
+  --text-dim: #b3ab9c;
+  --text-faint: #8a8274;
 
   /* Sombras por capas (elevación coherente en toda la app) */
-  --shadow-1: 0 1px 2px rgba(38, 33, 26, 0.05), 0 6px 18px rgba(38, 33, 26, 0.05);
-  --shadow-2: 0 2px 6px rgba(38, 33, 26, 0.07), 0 14px 40px rgba(38, 33, 26, 0.10);
-  --hairline-top: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 18px rgba(0, 0, 0, 0.30);
+  --shadow-2: 0 2px 6px rgba(0, 0, 0, 0.40), 0 14px 40px rgba(0, 0, 0, 0.50);
+  --hairline-top: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 * {
@@ -42,8 +43,8 @@ body,
 body {
   margin: 0;
   background:
-    radial-gradient(100% 42% at 50% -6%, rgba(55, 71, 79, 0.07), transparent 62%),
-    radial-gradient(100% 40% at 50% 108%, rgba(233, 169, 15, 0.05), transparent 60%),
+    radial-gradient(100% 42% at 50% -6%, rgba(233, 169, 15, 0.06), transparent 62%),
+    radial-gradient(100% 40% at 50% 108%, rgba(233, 169, 15, 0.045), transparent 60%),
     var(--bg);
   background-attachment: fixed;
   color: var(--ink);
@@ -51,12 +52,12 @@ body {
   font-feature-settings: "cv02", "cv03", "ss01";
   -webkit-font-smoothing: antialiased;
 }
-/* Textura de papel sutilísima en toda la app del coach (da profundidad, no
-   se percibe conscientemente pero quita el aspecto plano). */
+/* Textura sutilísima sobre el negro (da profundidad, no se percibe
+   conscientemente pero quita el aspecto plano). */
 body::before {
   content: "";
-  position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: 0.6;
-  background-image: radial-gradient(rgba(38, 33, 26, 0.028) 1px, transparent 1px);
+  position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: 0.5;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
   background-size: 24px 24px;
 }
 #root { position: relative; z-index: 1; }
@@ -69,18 +70,18 @@ body::before {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(38, 33, 26, 0.14);
+  background: rgba(245, 243, 238, 0.16);
   border-radius: 8px;
   border: 2px solid var(--bg);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(38, 33, 26, 0.24);
+  background: rgba(245, 243, 238, 0.28);
 }
 
-/* Anillo de foco PETRÓLEO (secundario de marca): visible también sobre los
-   botones dorados, donde un anillo dorado desaparecería. */
+/* Anillo de foco MARFIL: visible sobre el negro y también sobre los botones
+   dorados, donde un anillo dorado desaparecería. */
 :focus-visible {
-  outline: 2px solid var(--brand-accent-2);
+  outline: 2px solid rgba(245, 243, 238, 0.9);
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -90,7 +91,7 @@ body::before {
     @apply rounded-2xl border;
     /* Superficie con un levísimo gradiente vertical + filo de luz arriba:
        da volumen sin ensuciar (nada de aspecto plano). */
-    background: linear-gradient(180deg, #fffefb 0%, var(--surface) 100%);
+    background: linear-gradient(180deg, #1c1913 0%, var(--surface) 100%);
     border-color: var(--line);
     box-shadow: var(--hairline-top), var(--shadow-1);
   }
@@ -159,8 +160,9 @@ body::before {
     color: var(--text-faint);
   }
   .input:focus {
-    border-color: var(--brand-accent-2);
-    box-shadow: 0 0 0 3px rgba(55, 71, 79, 0.12);
+    /* Dorado: el petróleo desaparece sobre el negro */
+    border-color: var(--brand-accent);
+    box-shadow: 0 0 0 3px rgba(233, 169, 15, 0.14);
     outline: none;
   }
 
@@ -170,15 +172,15 @@ body::before {
   }
 }
 
-/* Pestañas del perfil: hover en azul de marca (estructura/navegación) +
-   transición suave de color y un realce del subrayado activo. */
+/* Pestañas del perfil: hover en dorado claro (el petróleo se pierde sobre el
+   negro) + transición suave de color y un realce del subrayado activo. */
 .tab-btn {
   transition: color 0.18s ease, background 0.18s ease;
   border-radius: 10px 10px 0 0;
 }
 .tab-btn:hover {
-  color: var(--brand-accent-2) !important;
-  background: color-mix(in srgb, var(--brand-accent-2) 6%, transparent);
+  color: var(--brand-accent-hi) !important;
+  background: color-mix(in srgb, var(--brand-accent) 8%, transparent);
 }
 /* El subrayado activo (span absoluto) con degradado y halo naranja */
 .tab-btn > span[class*="h-0.5"], .tab-underline {
@@ -191,7 +193,7 @@ body::before {
 /* ---- MÓVIL del coach: app fluida, no una web encogida -------------------- */
 .coach-bottom-nav {
   padding-bottom: calc(0.375rem + env(safe-area-inset-bottom));
-  box-shadow: 0 -4px 18px rgba(38, 33, 26, 0.08);
+  box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.45);
 }
 @media (max-width: 640px) {
   /* Menos margen lateral: el contenido respira sin desperdiciar pantalla */
@@ -229,20 +231,22 @@ body::before {
   flex-shrink: 0;
 }
 
-/* ---- Skin crema de la app del coach ------------------------------------
-   Los componentes usan la escala zinc pensada para fondo oscuro; aquí se
-   remapea a tinta cálida sobre crema. (El portal no usa clases zinc.) */
-.text-zinc-100, .text-zinc-200 { color: #26211a; }
-.text-zinc-300 { color: #3d362b; }
-.text-zinc-400 { color: #5a5245; }
-.text-zinc-500 { color: #7a7060; }
-.text-zinc-600 { color: #988d7c; }
-.hover\:text-zinc-200:hover, .hover\:text-zinc-300:hover { color: #26211a; }
-.text-amber-300, .text-amber-400 { color: #9a6b15; }
-.text-emerald-400 { color: #1b7f4d; }
-.text-red-400 { color: #b4453a; }
-.border-white\/5, .border-white\/10 { border-color: rgba(38, 33, 26, 0.10); }
-.bg-black\/60 { background: rgba(30, 24, 16, 0.40); }
+/* ---- Skin negro de la app del coach ------------------------------------
+   La escala zinc se remapea a la familia marfil de la marca (blanco cálido
+   sobre negro), afinada al mismo tono que el dossier. (El portal no usa
+   clases zinc.) */
+.text-zinc-100, .text-zinc-200 { color: #f5f3ee; }
+.text-zinc-300 { color: #dad5c9; }
+.text-zinc-400 { color: #b3ab9c; }
+.text-zinc-500 { color: #948c7d; }
+.text-zinc-600 { color: #7a7365; }
+.hover\:text-zinc-200:hover, .hover\:text-zinc-300:hover { color: #f5f3ee; }
+.text-amber-300, .text-amber-400 { color: #e5b94e; }
+.text-emerald-400 { color: #4cc38a; }
+.text-red-400 { color: #f0716a; }
+.border-white\/5 { border-color: rgba(255, 255, 255, 0.06); }
+.border-white\/10 { border-color: rgba(255, 255, 255, 0.10); }
+.bg-black\/60 { background: rgba(0, 0, 0, 0.60); }
 
 @keyframes rise {
   from { opacity: 0; transform: translateY(6px); }
@@ -305,21 +309,22 @@ button, [role="button"], summary, a {
     var(--p-bg) !important;
   color: var(--p-ink) !important;
 }
-/* Tema oscuro premium (azul noche): BrandPage → portal_theme = dark */
+/* Tema oscuro premium (NEGRO cálido de la marca, la misma familia que el
+   dossier y el panel del coach): portal_theme = dark */
 .portal-root.portal-dark {
-  --p-ink: #eae7e0;
-  --p-ink-soft: #a3a89f;
-  --p-line: rgba(234, 231, 224, 0.10);
-  --p-bg: #0c1420;
-  --p-glow-top: rgba(55, 71, 79, 0.22);
-  --p-glow-bottom: rgba(233, 169, 15, 0.16);
+  --p-ink: #f5f3ee;
+  --p-ink-soft: #b3ab9c;
+  --p-line: rgba(245, 243, 238, 0.10);
+  --p-bg: #0f0e0c;
+  --p-glow-top: rgba(233, 169, 15, 0.10);
+  --p-glow-bottom: rgba(233, 169, 15, 0.14);
   --p-dots: rgba(255, 255, 255, 0.035);
-  --p-card-top: #16202f;
-  --p-card-bottom: #101823;
+  --p-card-top: #1c1913;
+  --p-card-bottom: #15130e;
   --p-card-inset: rgba(255, 255, 255, 0.05);
-  --p-card-shadow: rgba(0, 0, 0, 0.45);
-  --p-nav-idle: #8a93a3;
-  --p-nav-shadow: rgba(0, 0, 0, 0.5);
+  --p-card-shadow: rgba(0, 0, 0, 0.50);
+  --p-nav-idle: #8a8274;
+  --p-nav-shadow: rgba(0, 0, 0, 0.55);
 }
 /* textura sutil de papel (puntos claros en oscuro) */
 .portal-root::before {
@@ -348,12 +353,13 @@ button, [role="button"], summary, a {
   }
 }
 
-/* Botón 3D con relieve y halo naranja de marca */
+/* Botón 3D con relieve y halo dorado de marca (texto oscuro sobre el oro,
+   como en el dossier: el blanco sobre dorado no contrasta). */
 .portal-btn3d {
   position: relative;
   border-radius: 14px;
-  background: linear-gradient(180deg, var(--p-accent) 0%, #c76a22 100%);
-  color: #fff; font-weight: 700; border: none;
+  background: linear-gradient(180deg, var(--brand-accent-hi, #F7C33A) 0%, var(--p-accent) 45%, var(--brand-accent-lo, #BC8604) 100%);
+  color: #241c04; font-weight: 700; border: none;
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.35) inset,
     0 -2px 0 rgba(0, 0, 0, 0.28) inset,
@@ -401,7 +407,7 @@ button, [role="button"], summary, a {
   position: absolute; top: -2px; right: 50%; transform: translateX(16px);
   min-width: 16px; height: 16px; padding: 0 4px;
   display: flex; align-items: center; justify-content: center;
-  background: var(--p-accent); color: #fff;
+  background: var(--p-accent); color: #241c04;
   border-radius: 999px; font-size: 10px; font-weight: 800; line-height: 1;
   box-shadow: 0 0 10px rgba(233, 169, 15, 0.6);
 }

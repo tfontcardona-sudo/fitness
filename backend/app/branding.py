@@ -75,6 +75,14 @@ PUBLIC_TIERS = ("full",)
 # precio/cupón en Stripe, sin botón en el kit de ventas).
 OFFER_ENABLED = False
 
+# --- Funciones del motor apagadas en esta instancia --------------------------
+# El motor las conserva (código y tests intactos); la marca decide si se usan.
+# Professional quiere la web SOLO para el ciclo esencial: subir anamnesis →
+# generar plan → portal del cliente → revisiones. Todo lo demás, fuera.
+FEATURE_VIDEO_CALLS = False   # videollamadas de revisión (Google Meet)
+FEATURE_RESOURCES = False     # página Recursos del coach + pestaña Recursos del portal
+FEATURE_SALES_KIT = False     # kit de ventas del panel "Hoy"
+
 # --- Método del banco de comidas de la marca ---------------------------------
 # "options": TODAS las tomas del plan flexible llevan opciones CERRADAS (combos
 # completos con gramos) — el método de Professional: sencillo y directo.

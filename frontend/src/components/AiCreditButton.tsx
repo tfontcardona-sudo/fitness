@@ -256,7 +256,7 @@ export function AiCreditButton({ collapsed }: { collapsed: boolean }) {
         </div>
       )}
       {editing && inputError && (
-        <p className="mt-1 text-[11px]" style={{ color: "#C2453A" }}>{inputError}</p>
+        <p className="mt-1 text-[11px]" style={{ color: "#F0716A" }}>{inputError}</p>
       )}
     </div>
   );

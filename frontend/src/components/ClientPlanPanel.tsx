@@ -381,7 +381,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                 </p>
                 <ul className="mt-2 flex flex-wrap gap-1.5">
                   {missing.map((m) => (
-                    <li key={m} className="rounded-md px-2 py-0.5 text-xs" style={{ background: "rgba(154,107,21,0.14)", color: "#9A6B15" }}>
+                    <li key={m} className="rounded-md px-2 py-0.5 text-xs" style={{ background: "rgba(154,107,21,0.14)", color: "#E5B94E" }}>
                       {m}
                     </li>
                   ))}
@@ -488,7 +488,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                 style={
                   plan.status === "published"
                     ? { background: "color-mix(in srgb, var(--brand-accent) 15%, transparent)", color: "var(--brand-accent)" }
-                    : { background: "rgba(38,33,26,0.08)", color: "#7A7060" }
+                    : { background: "rgba(38,33,26,0.08)", color: "#948C7D" }
                 }
               >
                 {plan.status === "published" ? "Activa" : "Borrador antiguo"} · v{plan.version}
@@ -995,7 +995,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
           <Stat label="Grasas" value={`${Math.round(macros.fat_g ?? 0)} g`} sub={(nut.target_kcal ?? 0) > 0 ? `${mp.fat}%` : undefined} />
         </div>
         {mpTotalOff && (
-          <p className="mt-1.5 text-xs" style={{ color: "#9A6B15" }}>
+          <p className="mt-1.5 text-xs" style={{ color: "#E5B94E" }}>
             Los macros suman {mp.total}% de las calorías objetivo — al editar, usa "Cuadrar a 100%".
           </p>
         )}
@@ -1244,7 +1244,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                       {" · "}{p.rangeLabel ? `${p.rangeLabel} · ` : ""}{p.durationLabel} · v{p.version}
                     </span>
                   </span>
-                  <span className="rounded-full px-2 py-0.5 text-xs" style={{ background: "rgba(38,33,26,0.08)", color: "#7A7060" }}>
+                  <span className="rounded-full px-2 py-0.5 text-xs" style={{ background: "rgba(38,33,26,0.08)", color: "#948C7D" }}>
                     {p.status === "superseded" ? "sustituida" : p.status === "published" ? "publicada" : "borrador antiguo"}
                   </span>
                 </summary>
@@ -1661,7 +1661,7 @@ const AREA_CHIPS: { match: RegExp; label: string; bg: string; fg: string }[] = [
 
 function areaChip(area: string) {
   const hit = AREA_CHIPS.find((c) => c.match.test(area));
-  return hit ?? { label: area || "General", bg: "rgba(38,33,26,0.08)", fg: "#7A7060" };
+  return hit ?? { label: area || "General", bg: "rgba(38,33,26,0.08)", fg: "#948C7D" };
 }
 
 function AreaChip({ area }: { area: string }) {
@@ -1726,7 +1726,7 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
     <div
       className="rounded-xl p-3 text-center"
       style={{
-        background: "linear-gradient(180deg, #fffefb, var(--surface-raised))",
+        background: "linear-gradient(180deg, #211E15, var(--surface-raised))",
         boxShadow: "var(--hairline-top), 0 1px 3px rgba(38,33,26,0.05)",
         border: "1px solid var(--line)",
       }}

@@ -107,7 +107,7 @@ export function AlertsBell() {
         {count > 0 && (
           <span
             className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] font-bold text-white"
-            style={{ background: high ? "#C2453A" : "var(--brand-accent-2)" }}
+            style={{ background: high ? "#F0716A" : "var(--brand-accent-2)" }}
           >
             {count}
           </span>
@@ -186,7 +186,7 @@ export function AlertsBell() {
                   <span
                     aria-hidden
                     className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
-                    style={{ background: a.severity === "alta" ? "#C2453A" : "var(--brand-accent-2)" }}
+                    style={{ background: a.severity === "alta" ? "#F0716A" : "var(--brand-accent-2)" }}
                   />
                   <div className="min-w-0 flex-1">
                     {/* Nombre + mensaje clicables: llevan a la misma pestaña
@@ -223,9 +223,9 @@ const GROUPS: { id: string; label: string; color: string; kinds: string[] }[] = 
   { id: "adaptacion", label: "Planificación", color: "#E9A90F",
     kinds: ["adapt_plan", "regenerate_goal", "plan_allergen_conflict",
             "plan_dislike_conflict", "plan_stale_inputs"] },
-  { id: "seguimiento", label: "Seguimiento", color: "#C2453A",
+  { id: "seguimiento", label: "Seguimiento", color: "#F0716A",
     kinds: ["no_logs", "change_request", "client_inactive"] },
-  { id: "pago", label: "Pagos", color: "#9A6B15", kinds: ["payment_pending"] },
+  { id: "pago", label: "Pagos", color: "#E5B94E", kinds: ["payment_pending"] },
   { id: "objetivo", label: "Objetivo", color: "#37474F", kinds: ["goal_review"] },
   { id: "recursos", label: "Recursos / productos", color: "#28707C", kinds: ["missing_products"] },
   { id: "videollamada", label: "Videollamada", color: "#0EA5E9",

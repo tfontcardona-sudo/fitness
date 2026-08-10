@@ -41,7 +41,9 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
   // WhatsApp en Pro) y si hay contacto directo (videollamada de revisión en Pro).
   const info = pkg(client.package_tier);
   const byEmail = info.delivery === "email";
-  const directContact = info.directContact;
+  // Videollamadas: solo si el plan las incluye Y la instancia las tiene
+  // encendidas (branding.FEATURE_VIDEO_CALLS, plegado en pkg().hasVideoCall).
+  const videoCalls = info.hasVideoCall;
 
   /** Carga el resumen de métricas de un período (se muestra SIEMPRE, sin botón:
    *  al cargar la pestaña para el período actual y al desplegar los antiguos). */
@@ -67,15 +69,15 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
   const [googleConnected, setGoogleConnected] = useState(false);
 
   const loadCalls = useCallback(() => {
-    if (!directContact) return;
+    if (!videoCalls) return;
     api.listVideoCalls(client.id).then(setCalls).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client.id, directContact]);
+  }, [client.id, videoCalls]);
   useEffect(loadCalls, [loadCalls]);
   useEffect(() => {
-    if (!directContact) return;
+    if (!videoCalls) return;
     api.googleStatus().then((s) => setGoogleConnected(s.connected)).catch(() => {});
-  }, [directContact]);
+  }, [videoCalls]);
 
   function _whenLabel(call: VideoCallOut): string {
     return call.scheduled_at
@@ -245,7 +247,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
     .filter((p) => p.status === "closed" || p.status === "analyzed")
     .reduce((mx, p) => Math.max(mx, p.period_index), 0);
   const callForLastReview = calls.find((c) => c.period_index === lastReviewIdx) ?? null;
-  const showVideoCall = directContact && lastReviewIdx > 0 && callForLastReview?.status !== "done";
+  const showVideoCall = videoCalls && lastReviewIdx > 0 && callForLastReview?.status !== "done";
 
   return (
     <div className="space-y-4">
@@ -335,7 +337,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
             </summary>
 
             {p.status === "open" && (
-              <div className="mt-3 flex items-center gap-2 rounded-lg p-2.5 text-xs" style={{ background: "rgba(154,107,21,0.09)", color: "#9A6B15" }}>
+              <div className="mt-3 flex items-center gap-2 rounded-lg p-2.5 text-xs" style={{ background: "rgba(154,107,21,0.09)", color: "#E5B94E" }}>
                 <AlertTriangle size={14} /> El período aún está abierto: el cliente debe cerrarlo antes de generar el feedback.
               </div>
             )}
@@ -416,7 +418,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                             <span className="whitespace-nowrap text-zinc-400">
                               e1RM {Math.round(s.e1rm_kg)} kg
                               {s.delta_kg != null && (
-                                <span style={{ color: s.delta_kg >= 0 ? "var(--brand-accent)" : "#C2453A" }}>
+                                <span style={{ color: s.delta_kg >= 0 ? "var(--brand-accent)" : "#F0716A" }}>
                                   {" "}{s.delta_kg >= 0 ? "▲" : "▼"} {Math.abs(s.delta_kg)} kg
                                   {s.pct != null ? ` (${s.pct >= 0 ? "+" : ""}${s.pct}%)` : ""}
                                 </span>
@@ -428,7 +430,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                               <>
                                 Peso medio {s.avg_weight_kg} kg
                                 {s.avg_weight_delta_kg != null && (
-                                  <span style={{ color: s.avg_weight_delta_kg >= 0 ? "var(--brand-accent)" : "#C2453A" }}>
+                                  <span style={{ color: s.avg_weight_delta_kg >= 0 ? "var(--brand-accent)" : "#F0716A" }}>
                                     {" "}({s.avg_weight_delta_kg >= 0 ? "+" : ""}{s.avg_weight_delta_kg} kg)
                                   </span>
                                 )}
@@ -580,7 +582,7 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
   );
 
   const notConnectedNote = !googleConnected ? (
-    <p className="text-[11px]" style={{ color: "#9A6B15" }}>
+    <p className="text-[11px]" style={{ color: "#E5B94E" }}>
       Conecta Google en <b>Recursos → Página de enlaces</b> para agendar con Meet.
     </p>
   ) : null;
@@ -611,7 +613,7 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
         </button>
       </div>
       {gDatePast && (
-        <p className="text-[11px]" style={{ color: "#C2453A" }}>La fecha elegida ya pasó.</p>
+        <p className="text-[11px]" style={{ color: "#F0716A" }}>La fecha elegida ya pasó.</p>
       )}
       {notConnectedNote}
     </div>
@@ -737,8 +739,8 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
 const STATUS_LABEL: Record<string, string> = { open: "Abierto", closed: "Cerrado", analyzed: "Analizado" };
 function badge(status: string): React.CSSProperties {
   if (status === "analyzed") return { background: "color-mix(in srgb, var(--brand-accent) 15%, transparent)", color: "var(--brand-accent)" };
-  if (status === "closed") return { background: "rgba(154,107,21,0.14)", color: "#9A6B15" };
-  return { background: "rgba(38,33,26,0.08)", color: "#7A7060" };
+  if (status === "closed") return { background: "rgba(154,107,21,0.14)", color: "#E5B94E" };
+  return { background: "rgba(38,33,26,0.08)", color: "#948C7D" };
 }
 
 function fmtDelta(v: number | null | undefined, unit: string): string {
@@ -763,7 +765,7 @@ function BAStat({ label, before, after, lowerBetter }: {
         <span className="text-zinc-600">→</span>
         <span className="font-semibold">{a ?? "—"}</span>
         {delta != null && delta !== 0 && (
-          <span className="text-xs" style={{ color: good ? "var(--brand-accent)" : bad ? "#C2453A" : "#7A7060" }}>
+          <span className="text-xs" style={{ color: good ? "var(--brand-accent)" : bad ? "#F0716A" : "#948C7D" }}>
             {delta > 0 ? "+" : ""}{delta}
           </span>
         )}

@@ -268,8 +268,8 @@ export default function ClientProfilePage() {
                   <span
                     className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold"
                     style={{
-                      background: `color-mix(in srgb, ${client.payment_status === "paid" ? "#2E7D46" : "#C2453A"} 14%, transparent)`,
-                      color: client.payment_status === "paid" ? "#2E7D46" : "#C2453A",
+                      background: `color-mix(in srgb, ${client.payment_status === "paid" ? "#2E7D46" : "#F0716A"} 14%, transparent)`,
+                      color: client.payment_status === "paid" ? "#2E7D46" : "#F0716A",
                     }}
                   >
                     {client.payment_status === "paid" ? "Pagado" : "Pago pendiente"}
@@ -394,9 +394,9 @@ export default function ClientProfilePage() {
           <button
             onClick={() => setConfirmDelete(true)}
             className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border py-2.5 text-xs font-semibold text-white transition-colors"
-            style={{ background: "#C2453A", borderColor: "#C2453A" }}
+            style={{ background: "#F0716A", borderColor: "#F0716A" }}
             onMouseEnter={(e) => (e.currentTarget.style.background = "#A93A30")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "#C2453A")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "#F0716A")}
           >
             <Trash2 size={13} /> Borrar cliente
           </button>
@@ -412,7 +412,7 @@ export default function ClientProfilePage() {
                 key={t}
                 onClick={() => changeTab(t)}
                 className="tab-btn relative px-4 py-2.5 text-sm font-medium capitalize transition-colors"
-                style={{ color: tab === t ? "#26211A" : "var(--text-faint)" }}
+                style={{ color: tab === t ? "#F5F3EE" : "var(--text-faint)" }}
               >
                 {t === "resumen" ? "Resumen" : t === "anamnesis" ? "Anamnesis" : t === "planificacion" ? "Planificación" : t === "seguimiento" ? "Seguimiento" : t === "feedback" ? "Feedback" : "Historial"}
                 {tab === t && (

@@ -51,7 +51,9 @@ export default function AnamnesisPage() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f6f1e7", color: "#26211a" }}>
+    // Negro de marca de fondo; las tarjetas van en blanco (negro + dorado +
+    // blanco, como el resto del producto), con su texto oscuro explícito.
+    <div style={{ minHeight: "100vh", background: "#0F0E0C", color: "#F5F3EE" }}>
       <div className="mx-auto max-w-lg px-5 py-10">
         <header className="mb-8 flex flex-col items-center text-center">
           <img src="/brand-logo.png" alt="" className="h-14 w-auto rounded-xl shadow-sm" />
@@ -63,7 +65,7 @@ export default function AnamnesisPage() {
         </header>
 
         {tokenBad ? (
-          <div className="rounded-2xl border bg-white p-6 text-center shadow-sm" style={{ borderColor: "#e6ddca" }}>
+          <div className="rounded-2xl border bg-white p-6 text-center shadow-sm" style={{ borderColor: "rgba(255,255,255,0.18)", color: "#26211a" }}>
             <h2 className="text-lg font-bold">Este enlace no es válido</h2>
             <p className="mt-2 text-sm opacity-75">
               Puede que esté incompleto o haya caducado. Escribe a tu coach y te
@@ -71,8 +73,8 @@ export default function AnamnesisPage() {
             </p>
           </div>
         ) : state === "done" ? (
-          <div className="rounded-2xl border bg-white p-6 text-center shadow-sm" style={{ borderColor: "#cfe3cf" }}>
-            <CheckCircle2 size={40} className="mx-auto" style={{ color: "#2E7D46" }} />
+          <div className="rounded-2xl border bg-white p-6 text-center shadow-sm" style={{ borderColor: "rgba(255,255,255,0.18)", color: "#26211a" }}>
+            <CheckCircle2 size={40} className="mx-auto" style={{ color: "#B58910" }} />
             <h2 className="mt-3 text-lg font-bold">¡Anamnesis recibida!</h2>
             <p className="mt-2 text-sm opacity-75">
               Ya la tenemos. Revisa tu correo (también la carpeta de spam): te hemos
@@ -83,7 +85,7 @@ export default function AnamnesisPage() {
         ) : (
           <div className="space-y-4">
             {/* Paso 1: descargar el PDF editable */}
-            <div className="rounded-2xl border bg-white p-5 shadow-sm" style={{ borderColor: "#e6ddca" }}>
+            <div className="rounded-2xl border bg-white p-5 shadow-sm" style={{ borderColor: "rgba(255,255,255,0.18)", color: "#26211a" }}>
               <p className="text-sm font-bold">1 · Descarga tu anamnesis (PDF editable)</p>
               <p className="mt-1 text-sm opacity-70">
                 Ábrela con cualquier lector de PDF y rellena todos los campos con calma.
@@ -96,7 +98,7 @@ export default function AnamnesisPage() {
             </div>
 
             {/* Paso 2: subir el PDF rellenado */}
-            <div className="rounded-2xl border bg-white p-5 shadow-sm" style={{ borderColor: "#e6ddca" }}>
+            <div className="rounded-2xl border bg-white p-5 shadow-sm" style={{ borderColor: "rgba(255,255,255,0.18)", color: "#26211a" }}>
               <p className="text-sm font-bold">2 · Sube aquí el PDF rellenado</p>
               <p className="mt-1 text-sm opacity-70">
                 Cuando lo tengas completo, súbelo y listo: nosotros hacemos el resto.
@@ -105,7 +107,7 @@ export default function AnamnesisPage() {
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
               <button onClick={() => fileRef.current?.click()}
                 className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-4 text-sm font-medium transition-colors"
-                style={{ borderColor: file ? "#2E7D46" : "#cbbfa5", color: file ? "#2E7D46" : undefined }}>
+                style={{ borderColor: file ? "#B58910" : "#cbbfa5", color: file ? "#B58910" : undefined }}>
                 <FileUp size={17} />
                 {file ? file.name : "Elegir el PDF rellenado"}
               </button>
@@ -116,8 +118,8 @@ export default function AnamnesisPage() {
                 </p>
               )}
               <button onClick={upload} disabled={!file || state === "uploading"}
-                className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white transition-transform active:scale-[0.98] disabled:opacity-60"
-                style={{ background: "#E9A90F" }}>
+                className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition-transform active:scale-[0.98] disabled:opacity-60"
+                style={{ background: "#E9A90F", color: "#241C04" }}>
                 {state === "uploading"
                   ? <><Loader2 size={16} className="animate-spin" /> Subiendo…</>
                   : "Enviar mi anamnesis"}

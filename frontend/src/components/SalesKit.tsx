@@ -36,7 +36,7 @@ function priceLine(prices: PlanPricesOut, tier: PackageTier, period: PublicBilli
 const PLAN_SELL: Record<PackageTier, string> = {
   train: "Entrenamiento 100 % a tu medida (material, horario, lesiones y nivel), progresión clara semana a semana, app con tu rutina y yo contigo a diario por WhatsApp.",
   nutri: "Nutrición 100 % a tu medida (tus gustos, tus horarios, tus alergias), objetivos calculados sobre tu caso, app de seguimiento y yo contigo a diario por WhatsApp.",
-  full: "Entrenamiento y nutrición coordinados y 100 % a tu medida, videollamada de revisión, app de seguimiento y yo contigo a diario por WhatsApp.",
+  full: "Entrenamiento y nutrición coordinados y 100 % a tu medida, revisión quincenal con informe, app de seguimiento y yo contigo a diario por WhatsApp.",
 };
 
 function catalogText(prices: PlanPricesOut): string {
@@ -79,7 +79,7 @@ function offerText(): string {
     `Después, ${OFFER_MONTHLY_EUR} €/mes en suscripción (menos de lo que cuestan ` +
     "entreno y nutrición por separado) y sin permanencia: cancelas cuando quieras.\n" +
     "Incluye el plan completo: entrenamiento y nutrición 100 % a tu medida, " +
-    "WhatsApp conmigo a diario, app de seguimiento y videollamada de revisión.\n\n" +
+    "WhatsApp conmigo a diario, app de seguimiento y revisión quincenal con informe.\n\n" +
     `Empieza hoy por ${OFFER_FIRST_EUR} €: ${link}\n` +
     "Pago seguro con Stripe; la renovación es automática cada mes."
   );
@@ -202,7 +202,7 @@ export function SalesKit() {
 
           {error && (
             <div className="flex items-center justify-between gap-3 rounded-xl border p-3 text-sm"
-              style={{ borderColor: "#C2453A", color: "#8B1A2B" }}>
+              style={{ borderColor: "#F0716A", color: "#8B1A2B" }}>
               <span>{error}</span>
               <button onClick={() => void load()} className="tap font-semibold underline">
                 Reintentar

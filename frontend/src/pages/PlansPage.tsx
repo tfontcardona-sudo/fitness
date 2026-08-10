@@ -26,7 +26,7 @@ const GENESIS_BULLETS = [
   "Nutrición y entrenamiento 100 % a tu medida, a partir de tu cuestionario inicial",
   "Tu app personal: plan, diario, registro de entrenos y progreso",
   "Revisión cada 15 días con ajustes sobre tus datos reales",
-  "Videollamada de revisión con tu preparador",
+  "Informe de progreso de tu preparador en cada revisión",
   "Tu preparador en WhatsApp durante todo el proceso",
 ];
 
@@ -95,9 +95,9 @@ export default function PlansPage() {
             nuestros entrenadores.
           </p>
           <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs font-semibold">
-            <span style={{ color: "#6FE39A" }}>✓ Plan 100 % a tu medida</span>
-            <span style={{ color: "#6FE39A" }}>✓ Tu app de seguimiento</span>
-            <span style={{ color: "#6FE39A" }}>✓ Tu preparador por WhatsApp</span>
+            <span style={{ color: "#F7C33A" }}>✓ Plan 100 % a tu medida</span>
+            <span style={{ color: "#F7C33A" }}>✓ Tu app de seguimiento</span>
+            <span style={{ color: "#F7C33A" }}>✓ Tu preparador por WhatsApp</span>
           </div>
         </header>
 
@@ -124,7 +124,7 @@ export default function PlansPage() {
             <ul className="mt-4 flex-1 space-y-2">
               {GENESIS_BULLETS.map((b) => (
                 <li key={b} className="flex gap-2 text-[13px] leading-snug opacity-85">
-                  <span className="mt-[1px] shrink-0 font-bold" style={{ color: "#2E7D46" }}>✓</span>
+                  <span className="mt-[1px] shrink-0 font-bold" style={{ color: "#B58910" }}>✓</span>
                   <span>{b}</span>
                 </li>
               ))}
@@ -173,7 +173,7 @@ export default function PlansPage() {
             <ul className="mt-4 flex-1 space-y-2">
               {PT_BULLETS.map((b) => (
                 <li key={b} className="flex gap-2 text-[13px] leading-snug opacity-85">
-                  <span className="mt-[1px] shrink-0 font-bold" style={{ color: "#2E7D46" }}>✓</span>
+                  <span className="mt-[1px] shrink-0 font-bold" style={{ color: "#B58910" }}>✓</span>
                   <span>{b}</span>
                 </li>
               ))}
@@ -283,7 +283,7 @@ export default function PlansPage() {
 /** Página de gracias tras un pago correcto (success_url de Stripe). */
 export function PaymentOkPage() {
   return (
-    <div style={{ minHeight: "100vh", background: "#f6f1e7", color: "#26211a" }}
+    <div style={{ minHeight: "100vh", background: "#0F0E0C", color: "#F5F3EE" }}
       className="flex flex-col items-center justify-center px-8 text-center">
       <img src="/brand-logo.png" alt="" className="h-14 w-auto rounded-xl shadow-sm" />
       <h1 className="mt-5 text-2xl font-bold">¡Pago recibido!</h1>

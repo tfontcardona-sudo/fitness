@@ -43,9 +43,10 @@ Cambia los valores de ambos y el 95 % del rebrand está hecho.
 ## 3. Paleta CSS por defecto
 
 `frontend/src/index.css` define los tokens (`--brand-accent`, hi/lo,
-`--brand-accent-2`, hi/lo). En runtime la página **Marca** del panel los
-sobreescribe desde `brand_config` (BD) sin recompilar; los del CSS son solo el
-primer arranque. Los derivados hi/lo (luz/sombra de los gradientes) no vienen
+`--brand-accent-2`, hi/lo). En runtime la fila `brand_config` (BD) los
+sobreescribe sin recompilar (vía `useBrand`); los del CSS son solo el primer
+arranque. En esta instancia no hay UI para editarla (Recursos apagado): se
+ajusta por seed o API. Los derivados hi/lo (luz/sombra de los gradientes) no vienen
 de la BD: ajústalos en el CSS al tono nuevo. Hay fallbacks del mismo tono
 repartidos como literales en componentes — búscalos por hex antes de entregar
 (`grep -rniE "#e9a90f|#37474f|#0f0e0c" frontend/src` con los hex de la
@@ -70,25 +71,44 @@ repartidos como literales en componentes — búscalos por hex antes de entregar
   con el prefijo de la marca. Cambiar un importe = editar `CANONICAL_AMOUNTS`
   y ejecutar el script (reprecia Stripe de forma idempotente).
 
-## 5. Configuración por instancia (`.env`)
+## 5. Funciones del motor apagables por instancia (`FEATURE_*`)
+
+El motor trae módulos que no todas las marcas quieren. Se apagan con flags en
+**ambos** módulos de marca (`branding.py` + `branding.ts`) — el código y los
+tests del motor quedan intactos; solo desaparecen de la instancia:
+
+- **`FEATURE_VIDEO_CALLS`** — videollamadas de revisión (Google Meet). Apaga:
+  `packages.has_video_call` (y con él portal, push, emails y alertas), la
+  agenda del panel, el ciclo en la pestaña Feedback y el banner del portal.
+  Los tests del motor las re-encienden con `monkeypatch` (ver
+  `tests/test_video_calls.py`).
+- **`FEATURE_RESOURCES`** — página Recursos del coach (productos, vídeos,
+  página de enlaces) y pestaña Recursos del portal; también la alerta
+  `missing_products`.
+- **`FEATURE_SALES_KIT`** — kit de ventas del panel "Hoy".
+
+En Professional los tres están en `False`: la web queda SOLO con el ciclo
+esencial (subir anamnesis → generar plan → portal → revisiones).
+
+## 6. Configuración por instancia (`.env`)
 
 Credenciales y dominio propios: `DOMAIN`, `BASE_URL`, `ADMIN_*`, `JWT_SECRET`,
 `PORTAL_TOKEN_SECRET`, `ANTHROPIC_API_KEY`, `SMTP_*`, `STRIPE_*`, `GOOGLE_*`,
 claves VAPID nuevas (`scripts/generate_vapid_keys.py`). Ver `.env.example`.
 
-## 6. Datos sembrados
+## 7. Datos sembrados
 
 `backend/app/seeds/run.py` crea la fila `brand_config` con los defaults del
 modelo (que ya leen de `branding.py`) y rellena el teléfono de contacto
-(`branding.CONTACT_PHONE`) si está vacío. La página **Marca** del panel permite
-al dueño ajustar nombre, logo, colores, tagline y contacto en runtime.
+(`branding.CONTACT_PHONE`) si está vacío. Esa fila manda en runtime (colores,
+nombre, contacto); en esta instancia se ajusta por seed/API (sin UI, ver §5).
 
-## 7. Checklist de entrega de una instancia nueva
+## 8. Checklist de entrega de una instancia nueva
 
 1. Duplicar el repo (o crear rama larga) — nunca tocar la instancia de otro cliente.
 2. Editar `backend/app/branding.py` + `frontend/src/lib/branding.ts`.
 3. Sustituir los 6 assets (§2) y los tokens/fallbacks CSS (§3).
-4. Fijar tarifas (§4) y `.env` propio (§5).
+4. Fijar tarifas (§4), decidir los `FEATURE_*` (§5) y `.env` propio (§6).
 5. `docker compose up --build`, sembrar admins, conectar Stripe/Google.
 6. `pytest` completo + `npm run build` en verde.
 7. Revisar con el cliente la página Marca (colores finos en runtime).

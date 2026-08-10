@@ -21,6 +21,7 @@ import type { ClientOut, CoachAlert, VideoCallAgendaItem } from "../types";
 import { PageLoader, StatusBadge } from "../components/ui";
 import { goalReviewDue, initials, relativeDays } from "../lib/format";
 import { pkg } from "../lib/packages";
+import { FEATURE_RESOURCES, FEATURE_SALES_KIT, FEATURE_VIDEO_CALLS } from "../lib/branding";
 import { WhatsAppRound } from "../components/WhatsAppRound";
 import { SalesKit } from "../components/SalesKit";
 
@@ -54,14 +55,14 @@ function nextAction(c: ClientOut): Accion | null {
     };
   if (c.status === "at_risk")
     return {
-      client: c, prio: 1, tone: "#C2453A", icon: HeartPulse, category: "Riesgo",
+      client: c, prio: 1, tone: "#F0716A", icon: HeartPulse, category: "Riesgo",
       title: "Adherencia baja",
       detail: "Lleva días sin registrar o con adherencia baja: revisa su seguimiento y contáctalo.",
       cta: "Ver seguimiento", tab: "seguimiento",
     };
   if (c.pending_review)
     return {
-      client: c, prio: 2, tone: "#C96A1E", icon: Sparkles, category: "Adaptar",
+      client: c, prio: 2, tone: "#F0883E", icon: Sparkles, category: "Adaptar",
       title: `Feedback de la revisión #${c.pending_review_period ?? ""} listo`,
       detail: `Revisa los cambios propuestos (${pkg(c.package_tier).hasTraining ? "dieta y entreno" : "dieta"}) y adapta su planificación.`,
       cta: "Adaptar planificación", tab: "planificacion",
@@ -111,10 +112,13 @@ export default function DashboardPage() {
       api.listAlerts()
         .then((r) => setAlerts((prev) => keepIfSame(prev, r.alerts)))
         .catch(() => {});
-      // Agenda de videollamadas agendadas (con Meet).
-      api.videoCallsAgenda()
-        .then((r) => setAgenda((prev) => keepIfSame(prev, r.calls)))
-        .catch(() => {});
+      // Agenda de videollamadas agendadas (con Meet) — solo si la instancia
+      // tiene las videollamadas encendidas.
+      if (FEATURE_VIDEO_CALLS) {
+        api.videoCallsAgenda()
+          .then((r) => setAgenda((prev) => keepIfSame(prev, r.calls)))
+          .catch(() => {});
+      }
     };
     load();
     // Refresco cada 3 s (solo con la pestaña visible): el panel siempre al día
@@ -138,7 +142,7 @@ export default function DashboardPage() {
     for (const al of alerts) {
       const cli = c.find((x) => x.id === al.client_id);
       if (!cli) continue;
-      if (al.kind === "missing_products") {
+      if (al.kind === "missing_products" && FEATURE_RESOURCES) {
         // El botón dice "Abrir Recursos" → lleva DE VERDAD a Recursos (donde
         // se sube el producto), no a la planificación del cliente.
         acciones.push({
@@ -150,7 +154,7 @@ export default function DashboardPage() {
       } else if (al.kind === "change_request") {
         // El cliente escribió una petición/duda desde su portal: al coach.
         acciones.push({
-          client: cli, prio: 1, tone: "#C2453A", icon: HeartPulse, category: "Petición del cliente",
+          client: cli, prio: 1, tone: "#F0716A", icon: HeartPulse, category: "Petición del cliente",
           title: "Petición o duda desde el portal",
           detail: al.message,
           cta: al.action, tab: al.tab,
@@ -163,7 +167,7 @@ export default function DashboardPage() {
         });
       } else if (al.kind === "regenerate_goal") {
         acciones.push({
-          client: cli, prio: 1, tone: "#C96A1E", icon: Sparkles, category: "Objetivo",
+          client: cli, prio: 1, tone: "#F0883E", icon: Sparkles, category: "Objetivo",
           title: "Plan activo con el objetivo anterior",
           detail: al.message, cta: al.action, tab: al.tab,
         });
@@ -172,14 +176,14 @@ export default function DashboardPage() {
         // seguir sirviendo ese alimento en portal y PDF.
         acciones.push({
           client: cli, prio: al.kind === "plan_allergen_conflict" ? 1 : 3,
-          tone: "#C2453A", icon: Sparkles, category: "Planificación",
+          tone: "#F0716A", icon: Sparkles, category: "Planificación",
           title: al.kind === "plan_allergen_conflict"
             ? "⚠ Alérgeno en el plan activo" : "Alimento no tolerado en el plan",
           detail: al.message, cta: al.action, tab: al.tab,
         });
       } else if (al.kind === "plan_stale_inputs") {
         acciones.push({
-          client: cli, prio: 2, tone: "#C96A1E", icon: Sparkles, category: "Planificación",
+          client: cli, prio: 2, tone: "#F0883E", icon: Sparkles, category: "Planificación",
           title: "Ficha cambiada tras generar el plan",
           detail: al.message, cta: al.action, tab: al.tab,
         });
@@ -191,20 +195,20 @@ export default function DashboardPage() {
         });
       } else if (al.kind === "payment_pending") {
         acciones.push({
-          client: cli, prio: 3, tone: "#9A6B15", icon: CreditCard, category: "Pago",
+          client: cli, prio: 3, tone: "#E5B94E", icon: CreditCard, category: "Pago",
           title: "Pago pendiente",
           detail: al.message, cta: al.action, tab: al.tab,
         });
       } else if (al.kind === "period_overdue") {
         acciones.push({
-          client: cli, prio: al.severity === "alta" ? 1 : 2, tone: "#C2453A", icon: Hourglass,
+          client: cli, prio: al.severity === "alta" ? 1 : 2, tone: "#F0716A", icon: Hourglass,
           category: "Revisión",
           title: "Revisión vencida sin enviar",
           detail: al.message, cta: al.action, tab: al.tab,
         });
       } else if (al.kind === "no_logs") {
         acciones.push({
-          client: cli, prio: 3, tone: "#C2453A", icon: HeartPulse, category: "Seguimiento",
+          client: cli, prio: 3, tone: "#F0716A", icon: HeartPulse, category: "Seguimiento",
           title: "Sin registros varios días",
           detail: al.message, cta: al.action, tab: al.tab,
         });
@@ -253,10 +257,13 @@ export default function DashboardPage() {
       </div>
 
       {/* Kit de ventas: catálogo de precios y enlaces de pago por plan, listos
-          para responder a un interesado que escribe desde /planes. */}
-      <div className="mt-4">
-        <SalesKit />
-      </div>
+          para responder a un interesado que escribe desde /planes. Fuera en
+          esta instancia (la web es solo el ciclo de asesoría). */}
+      {FEATURE_SALES_KIT && (
+        <div className="mt-4">
+          <SalesKit />
+        </div>
+      )}
 
       {loadFailed && (
         <div className="card mt-4 p-3 text-sm text-zinc-300">

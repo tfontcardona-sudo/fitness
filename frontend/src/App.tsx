@@ -1,7 +1,7 @@
 import { Suspense, lazy } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { useAuth } from "./hooks/useAuth";
-import { PUBLIC_SLUG } from "./lib/branding";
+import { FEATURE_RESOURCES, PUBLIC_SLUG } from "./lib/branding";
 import { PageLoader } from "./components/ui";
 import LoginPage from "./pages/LoginPage";
 import AppShell from "./components/AppShell";
@@ -80,7 +80,9 @@ function CoachApp() {
         <Route index element={<DashboardPage />} />
         <Route path="clientes" element={<ClientsPage />} />
         <Route path="clientes/:id" element={<ClientProfilePage />} />
-        <Route path="recursos" element={<RecursosPage />} />
+        {/* Recursos: fuera en esta instancia (FEATURE_RESOURCES); sin la ruta,
+            /recursos cae en el comodín y redirige al panel. */}
+        {FEATURE_RESOURCES && <Route path="recursos" element={<RecursosPage />} />}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

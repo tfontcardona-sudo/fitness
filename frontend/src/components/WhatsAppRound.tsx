@@ -98,7 +98,7 @@ export function WhatsAppRound() {
 
           {error && (
             <div className="flex items-center justify-between gap-3 rounded-xl border p-3 text-sm"
-              style={{ borderColor: "#C2453A", color: "#8B1A2B" }}>
+              style={{ borderColor: "#F0716A", color: "#8B1A2B" }}>
               <span>{error}</span>
               <button onClick={() => void load()} className="tap font-semibold underline">
                 Reintentar
