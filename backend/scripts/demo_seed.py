@@ -35,7 +35,7 @@ from app.db import SessionLocal  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.models import (  # noqa: E402
     ChangeRequest, Client, DailyLog, EmailLog, Exercise, FeedbackDoc, Period,
-    Plan, ProgressPhoto, PushSubscription, VideoCall, WorkoutLog,
+    Plan, PlanEdit, ProgressPhoto, PushSubscription, VideoCall, WorkoutLog,
 )
 from app.security import new_portal_token  # noqa: E402
 
@@ -60,6 +60,11 @@ def wipe_demo_clients(db) -> int:
     db.execute(delete(PushSubscription).where(PushSubscription.client_id.in_(ids)))
     db.execute(delete(VideoCall).where(VideoCall.client_id.in_(ids)))
     db.execute(delete(Period).where(Period.client_id.in_(ids)))
+    # Si el coach EDITÓ un plan durante una demo, sus plan_edits (§13) bloquean
+    # el DELETE de plans por FK: fuera primero.
+    plan_ids = list(db.scalars(select(Plan.id).where(Plan.client_id.in_(ids))))
+    if plan_ids:
+        db.execute(delete(PlanEdit).where(PlanEdit.plan_id.in_(plan_ids)))
     db.execute(delete(Plan).where(Plan.client_id.in_(ids)))
     db.execute(delete(ChangeRequest).where(ChangeRequest.client_id.in_(ids)))
     db.execute(update(EmailLog).where(EmailLog.client_id.in_(ids)).values(client_id=None))
@@ -294,6 +299,127 @@ def jordi_training(db) -> dict:
     return t
 
 
+# ------------------------------------------- fotos + feedback de demostración --
+def _demo_photo_png(label: str) -> bytes:
+    """Foto de progreso FICTICIA (silueta neutra sobre negro de marca, rotulada
+    como demostración): enseña el circuito de fotos sin usar imágenes reales."""
+    from io import BytesIO
+
+    from PIL import Image, ImageDraw
+
+    W, H = 720, 960
+    img = Image.new("RGB", (W, H), "#141210")
+    d = ImageDraw.Draw(img)
+    d.rectangle([16, 16, W - 16, H - 16], outline="#3A342A", width=3)
+    # Silueta neutra: cabeza + torso + piernas
+    cx = W // 2
+    d.ellipse([cx - 52, 150, cx + 52, 254], fill="#2A261E")
+    d.rounded_rectangle([cx - 105, 270, cx + 105, 560], 48, fill="#2A261E")
+    d.rounded_rectangle([cx - 92, 560, cx - 18, 830], 34, fill="#2A261E")
+    d.rounded_rectangle([cx + 18, 560, cx + 92, 830], 34, fill="#2A261E")
+    d.text((cx, 70), "FOTO DE DEMOSTRACIÓN", fill="#E9A90F", anchor="mm")
+    d.text((cx, 900), label, fill="#F5F3EE", anchor="mm")
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _seed_carlos_photos(db, client: Client, period: Period) -> None:
+    from app.services.storage import save_photo
+
+    taken = datetime.now(timezone.utc) - timedelta(hours=18)
+    for kind, label in (("front", "Frontal"), ("side", "Lateral"), ("back", "Espalda")):
+        rel = save_photo(client.id, _demo_photo_png(label))
+        db.add(ProgressPhoto(client_id=client.id, period_id=period.id,
+                             kind=kind, file_path=rel, taken_at=taken))
+    db.flush()
+
+
+class _DemoFeedbackAI:
+    """IA "scripted" SOLO para la demo: devuelve un informe redactado a mano y
+    coherente con las métricas sembradas. El camino es el REAL
+    (build_period_feedback: métricas del backend + decisión determinista §8 +
+    documento Word); únicamente la redacción viene fijada en vez de llamar a la
+    API. Con clave real, "Generar feedback" lo regeneraría con IA de verdad."""
+
+    def __init__(self, payload: dict):
+        self._payload = payload
+
+    def generate_json(self, *, schema, **_kw):
+        return schema.model_validate(self._payload)
+
+
+def _carlos_feedback_payload(decision) -> dict:
+    if decision.action == "adjust_kcal":
+        pct = decision.kcal_delta_pct
+        dieta = {
+            "area": "Dieta",
+            "change": f"Ajustar las calorías un {pct:+.1f} % (proteína intacta)",
+            "reason": "Lo fija la regla quincenal del sistema: el ritmo real se salió del rango previsto.",
+        }
+        dieta_bullet = (f"Ajustamos la energía un {pct:+.1f} % siguiendo la regla quincenal: "
+                        "el ritmo de peso se salió del rango que buscamos en recomposición.")
+    else:
+        dieta = {
+            "area": "Dieta",
+            "change": "Mantener las calorías y el reparto actual de macros",
+            "reason": "Ritmo y sensaciones (energía 4/5, hambre 2/5) dentro del rango previsto.",
+        }
+        dieta_bullet = ("Mantenemos las calorías: el ritmo de bajada y tus sensaciones "
+                        "están justo donde queremos en esta fase.")
+    return {
+        "natural_analysis": (
+            "Quincena muy sólida: −1,2 kg con una adherencia del 89 % y el registro "
+            "completo de los 14 días. La energía subió a partir de la segunda semana "
+            "y las cargas progresaron en todas las sesiones registradas. Las dos "
+            "comidas libres no frenaron el progreso."
+        ),
+        "changes_bullets": [
+            dieta_bullet,
+            "Subimos 2,5 kg los básicos: cerraste todas las series con el RIR previsto.",
+            "Plan concreto para las cenas del fin de semana, que es donde más te costó.",
+        ],
+        "plan_adjustments": [
+            dieta,
+            {"area": "Entrenamiento",
+             "change": "Subir 2,5 kg en los básicos y mantener RIR 2",
+             "reason": "Cerró todas las series con progresión en las seis sesiones registradas."},
+            {"area": "Hábitos",
+             "change": "Cenas del fin de semana: elegir la opción C del banco y empezar por la proteína",
+             "reason": "Fue lo más difícil de la quincena y ahí se concentraron las comidas libres."},
+        ],
+        "answers": (
+            "Sí, puedes cambiar el arroz de la cena por patata: usa 200 g de patata "
+            "cocida por cada 60 g de arroz en seco, manteniendo la misma ración de "
+            "proteína y verdura."
+        ),
+        "next_objectives": [
+            "Bajar de 83 kg manteniendo las cargas de los básicos.",
+            "Máximo dos comidas libres, planificadas en el fin de semana.",
+            "Mantener los 9.000–10.000 pasos diarios.",
+        ],
+        "closing_message": (
+            "Gran trabajo, Carlos. Constancia en el registro, fuerza al alza y el peso "
+            "moviéndose donde queremos: el proceso está funcionando. Seguimos con el "
+            "plan ajustado; cualquier duda, por WhatsApp."
+        ),
+        "ai_photo_analysis": (
+            "Primera revisión con fotos: quedan como referencia de partida para "
+            "comparar la evolución en las próximas revisiones."
+        ),
+    }
+
+
+def _seed_carlos_feedback(db, period: Period, client: Client) -> None:
+    """Genera el feedback BORRADOR de Carlos por el camino REAL del sistema
+    (métricas + decisión determinista + Word), con la redacción scripted."""
+    from app.services.biweekly_period import decision_for_period
+    from app.services.feedback_service import build_period_feedback
+
+    decision = decision_for_period(db, period, client)
+    build_period_feedback(db, period.id, ai=_DemoFeedbackAI(_carlos_feedback_payload(decision)))
+
+
 # ------------------------------------------------------------------- clientes --
 def crear_marta(db) -> Client:
     hoy = date.today()
@@ -307,8 +433,13 @@ def crear_marta(db) -> Client:
         training_days=3, session_max_min=60, training_place="gym",
         daily_activity_level="light", meals_per_day=4,
         food_allergies=[], food_dislikes=["marisco"], food_likes=["pollo", "yogur", "salmón"],
-        lifestyle_notes="Trabajo de oficina; camina a diario; duerme ~7 h.",
+        lifestyle_notes="Trabajo de oficina; camina a diario; duerme ~7 h. "
+                        "Estrés moderado en cierres de trimestre.",
         sport_history="2 años de gimnasio con constancia irregular.",
+        injuries_notes="Molestia ocasional en la rodilla derecha al correr; sin dolor en sentadilla.",
+        medical_notes="Sin patologías conocidas; digestiones normales.",
+        medication_notes="Ninguna.",
+        current_supplements="Ninguno.",
         diet_mode="flexible_7", portal_token="pendiente",
         plan_notice_pending=False,
     )
@@ -355,6 +486,14 @@ def crear_marta(db) -> Client:
                     db.add(WorkoutLog(daily_log_id=d.id, exercise_id=ex["exercise_id"],
                                       set_number=set_n, reps=8,
                                       weight_kg=base + (2.5 if i >= 4 else 0.0), rpe=8.0))
+    # Petición ABIERTA desde su portal: enseña el circuito de dudas del cliente
+    # (alerta al coach en "Hoy" + leer y resolver desde Seguimiento).
+    db.add(ChangeRequest(
+        client_id=c.id, status="open",
+        message=("En la merienda me cuesta llegar al yogur con fruta entre reuniones: "
+                 "¿puedo cambiarlo por un bocadillo pequeño de pavo?"),
+        created_at=datetime.now(timezone.utc) - timedelta(hours=5),
+    ))
     db.commit()
     return c
 
@@ -371,6 +510,10 @@ def crear_jordi(db) -> Client:
         training_days=4, session_max_min=75, training_place="gym",
         daily_activity_level="active", portal_token="pendiente",
         sport_history="Pádel semanal; vuelve al gimnasio tras dos años.",
+        injuries_notes="Sobrecarga lumbar antigua (2023), sin molestias actuales.",
+        medical_notes="Sin patologías conocidas.",
+        medication_notes="Ninguna.",
+        current_supplements="Proteína de suero tras entrenar.",
         plan_notice_pending=False,
     )
     db.add(c)
@@ -419,8 +562,12 @@ def crear_carlos(db) -> Client:
         training_days=4, session_max_min=70, training_place="gym",
         daily_activity_level="light", meals_per_day=4,
         food_allergies=[], food_dislikes=[], food_likes=["arroz", "salmón"],
-        lifestyle_notes="Turnos de oficina; entrena al salir del trabajo.",
+        lifestyle_notes="Turnos de oficina; entrena al salir del trabajo. Duerme ~7,5 h.",
         sport_history="Años de gimnasio; base técnica sólida.",
+        injuries_notes="Sin lesiones actuales.",
+        medical_notes="Analítica reciente normal.",
+        medication_notes="Ninguna.",
+        current_supplements="Creatina 5 g/día.",
         diet_mode="flexible_7", portal_token="pendiente",
         plan_notice_pending=False,
     )
@@ -451,6 +598,7 @@ def crear_carlos(db) -> Client:
         closing_hardest="Las cenas del fin de semana.",
         closing_changes="Mucha más energía en los entrenos desde la semana 2.",
         closing_next_goal="Bajar de 83 kg manteniendo las cargas.",
+        closing_questions="¿Puedo cambiar el arroz de la cena por patata?",
         closing_submitted_at=datetime.now(timezone.utc) - timedelta(hours=18),
         photos_confirmed=True,
         coach_reviewed_at=None,  # la notificación del coach sigue VIVA
@@ -480,6 +628,10 @@ def crear_carlos(db) -> Client:
                     db.add(WorkoutLog(daily_log_id=d.id, exercise_id=ex["exercise_id"],
                                       set_number=set_n, reps=8, weight_kg=base + extra, rpe=8.0))
     db.commit()
+    # Fotos del cierre + informe de feedback en BORRADOR (camino real, sin API):
+    # el coach lo enseña completo — Resumen, informe redactado, Word y "Enviar".
+    _seed_carlos_photos(db, c, period)
+    _seed_carlos_feedback(db, period, c)
     return c
 
 
@@ -497,7 +649,8 @@ def main() -> None:
         print("[demo] escenario creado — tres fases del ciclo:")
         print(f"  1· Marta Serra  — Génesis.99, día 8 de 14 (portal vivo)")
         print(f"      portal: {web}/p/{marta.portal_token}")
-        print(f"  2· Carlos Bosch — Génesis.99, revisión CERRADA ayer (notificación + Resumen)")
+        print(f"  2· Carlos Bosch — Génesis.99, revisión CERRADA ayer: notificación, Resumen,")
+        print(f"      fotos e informe de feedback en BORRADOR (revisar → Word → Enviar)")
         print(f"      portal: {web}/p/{carlos.portal_token}")
         print(f"  3· Jordi Puig   — Entreno Personal, día 5 (sesiones presenciales)")
         print(f"      portal: {web}/p/{jordi.portal_token}")

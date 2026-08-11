@@ -46,8 +46,8 @@ Crea (y REINICIA si se re-ejecuta — idempotente, solo toca `@demo.local`)
 
 | Cliente | Fase del ciclo | Para enseñar |
 |---|---|---|
-| **Marta Serra** | Génesis.99 a MITAD de seguimiento (día **8 de 14**, peso 74,8→73,9, comidas elegidas, 4 entrenos con series) | El portal vivo + el dossier |
-| **Carlos Bosch** | Génesis.99 con la revisión quincenal **CERRADA ayer** (14/14 días, cierre completo con perímetros y sensaciones) | La notificación al coach + el **Resumen** de métricas (peso −1,2 kg, adherencia 89 %, fuerza e1RM) |
+| **Marta Serra** | Génesis.99 a MITAD de seguimiento (día **8 de 14**, peso 74,8→73,9, comidas elegidas, 4 entrenos con series) + una **petición abierta** desde su portal | El portal vivo + el dossier + el circuito de dudas del cliente |
+| **Carlos Bosch** | Génesis.99 con la revisión quincenal **CERRADA ayer**: 14/14 días, cierre completo, **fotos de progreso** y el **informe de feedback YA redactado en borrador** (camino real del motor, sin gastar API) | Notificación + **Resumen** de métricas (−1,2 kg, adherencia 89 %, e1RM) + el informe completo: revisar, **editar**, **Word** y **Enviar al cliente** |
 | **Jordi Puig** | **Entreno Personal** presencial (día 5, 2 sesiones registradas, pagado en el centro) | El segundo producto del catálogo |
 
 La CUARTA situación —el alta de un cliente nuevo— se enseña **en vivo** durante
@@ -72,9 +72,11 @@ cual vuestra web, con reserva por WhatsApp. Baja hasta el bloque del centro
 sistema*.
 
 **2) El panel del coach — "Hoy" (2')**
-Login. El dashboard prioriza el trabajo: fíjate en **Carlos Bosch** — cerró su
-revisión quincenal ayer y el sistema tiene al coach avisado y la revisión en
-cola. Mensaje: *nadie se pierde; el sistema persigue, vosotros decidís*.
+Login. El dashboard prioriza el trabajo en dos tarjetas: **Carlos Bosch**
+(revisión cerrada ayer, informe listo → "Enviar feedback") y **Marta Serra**
+(te ha escrito una duda desde su portal → "Ver petición", con el texto ya
+visible). Jordi queda abajo, "Al día". Mensaje: *nadie se pierde; el sistema
+persigue, vosotros decidís*.
 
 **3) Alta EN VIVO de un cliente (2')**
 Crea a "Laura Vidal" delante de ellos: alta manual → selector de plan
@@ -105,15 +107,24 @@ marca: **Hoy** (día 8 de 14, medidor, elegir comida de hoy), **Entreno**
 día 1). Instala la PWA (añadir a pantalla de inicio → icono dorado). Mensaje:
 *el cliente vive aquí; el papel es solo la entrega inicial*.
 
-**6) El ciclo quincenal — donde está el negocio (2')**
-Abre la ficha de **Carlos Bosch** → **Seguimiento/Feedback**: su revisión está
-CERRADA de ayer — cierre completo (peso final, perímetros, sensaciones 1-5,
-adherencia 9/8, qué le costó más) y el botón **"Resumen"** enseña las métricas
-calculadas al momento y SIN IA: peso 84,6 → 83,4 (−1,2 kg), adherencia de
-dieta 89 %, registro 14/14 días y la fuerza por ejercicio (e1RM). Desde aquí,
-"Generar feedback" redacta el informe (IA) que el coach revisa y ENVÍA — con
-clave de IA puedes enseñarlo en vivo. Mensaje: *la revisión quincenal, que es
-lo que os come horas, queda a un clic — siempre con vuestra supervisión*.
+**6) El ciclo quincenal — donde está el negocio (3')**
+Abre la ficha de **Carlos Bosch** → **Feedback**: su revisión está CERRADA de
+ayer, con el cierre completo (peso final, perímetros, sensaciones 1-5,
+adherencia 9/8, su duda escrita) y las **fotos de progreso** del período. El
+**Resumen** enseña las métricas calculadas al momento y SIN IA: 84,6 → 83,4
+(−1,2 kg), adherencia 89 %, 14/14 días y la fuerza por ejercicio (e1RM). Y
+debajo, **el informe de feedback ya redactado en BORRADOR**: análisis, cuadrícula
+de cambios (con el ajuste de calorías que fijó la regla quincenal del sistema,
+no la IA), respuesta a su duda y objetivos. Enséñalo entero: **"Editar texto"**
+(se corrige lo que sea), **descargar el Word** y **"Enviar al cliente"** — solo
+al enviarlo lo ve Carlos en su portal. Mensaje: *la revisión quincenal, que es
+lo que os come horas, queda en revisar y pulsar Enviar — siempre con vuestra
+supervisión*. (Con clave de IA, "Generar feedback" lo redacta en vivo.)
+
+**6b) La petición de Marta (1')**
+Desde "Hoy", pulsa **"Ver petición"** de Marta: su duda aparece en Seguimiento,
+se le responde por WhatsApp y se marca resuelta. Mensaje: *las dudas del
+cliente no viven en tu cabeza ni en un chat perdido: entran en la cola*.
 
 **7) Cierre (1')**
 Recorre el menú: la web es SOLO el ciclo de asesoría — Hoy y Clientes, sin
@@ -153,8 +164,9 @@ que falta para arrancar de verdad: su Stripe, su dominio y su email
 - **Reiniciar la demo**: re-ejecuta `./demo.sh` (o `demo.ps1`) — borra y
   recrea los `@demo.local` e imprime enlaces nuevos del portal. La Laura creada
   en vivo se borra desde el panel (o quedará para la siguiente demo).
-- **Sin clave de IA**: no toques "Generar plan"/"Leer con IA" en vivo; todo lo
-  demás funciona (el plan de Marta ya está generado).
+- **Sin clave de IA**: no toques "Generar plan"/"Leer con IA"/"Generar
+  feedback" en vivo; todo lo demás funciona (el plan de Marta y el informe de
+  Carlos ya están generados y se pueden editar, descargar y enviar).
 - **No enseñes** `/oferta` (redirige a planes: correcto, esta marca no la usa).
 - Los clientes de demo son `@demo.local`: bórralos antes de entregar la
   instancia real (re-ejecutar el script y luego eliminarlos desde el panel, o
