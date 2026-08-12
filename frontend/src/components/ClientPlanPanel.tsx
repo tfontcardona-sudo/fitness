@@ -306,8 +306,30 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
     }
   }
 
-  /** Solo para BORRADORES ANTIGUOS (de antes de la activación automática):
-   *  los planes nuevos quedan activos al generarse o adaptarse. */
+  /** Plan BASE sin IA (cliente avanzado): borrador determinista con los números
+   *  ya hechos, listo para que el coach lo remate en el editor. 0 créditos.
+   *  NO se activa al editar: solo con el botón Activar. */
+  async function scaffold() {
+    if (generating) return;
+    setGenerating(true);
+    setMissing(null);
+    try {
+      const p = await api.scaffoldPlan(client.id, plan?.month_index ?? 1);
+      setPlan(normalize(p));
+      setEditing(true); // directo al editor: la base ya está masticada
+      onClientChanged?.();
+      toast.push("Base preparada SIN gastar créditos — termínala en el editor y pulsa Activar");
+    } catch (e: any) {
+      const detail = e?.detail ?? e?.data?.detail;
+      if (detail?.missing) setMissing(detail.missing);
+      else toast.push(detail?.message ?? e?.message ?? "No se pudo preparar la base", "error");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  /** Para BORRADORES ANTIGUOS (de antes de la activación automática) y para la
+   *  BASE SIN IA del cliente avanzado: los demás quedan activos al generarse. */
   async function activateLegacy() {
     if (!plan || publishing) return;
     setPublishing(true);
@@ -389,13 +411,37 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
               </div>
             )}
 
-            <button onClick={() => generate()} disabled={generating} className="btn btn-primary mt-4">
-              <Sparkles size={16} />
-              {generating ? "Generando… (puede tardar 1-2 min)" : "Generar planificación"}
-            </button>
+            {client.level === "advanced" ? (
+              <>
+                {/* Cliente AVANZADO: su plan lo hace el COACH. El sistema deja la
+                    base masticada (números, comidas, banco y sesiones) sin gastar
+                    ni un crédito, y no se activa hasta que el coach lo diga. */}
+                <button onClick={() => void scaffold()} disabled={generating} className="btn btn-primary mt-4">
+                  <Sparkles size={16} />
+                  {generating ? "Preparando la base…" : "Preparar plan base (sin IA · 0 créditos)"}
+                </button>
+                <p className="mt-2 text-xs text-zinc-500">
+                  Cliente avanzado: la planificación la montas tú. El sistema te deja
+                  hechos los números (kcal, macros, comidas con su objetivo, banco de
+                  comidas y sesiones con su biblioteca filtrada) y tú la terminas en el
+                  editor. No se envía nada al cliente hasta que pulses <b>Activar</b>.
+                </p>
+                <button onClick={() => generate()} disabled={generating}
+                  className="btn btn-ghost mt-2 text-xs">
+                  Prefiero generarla con IA igualmente (gasta créditos)
+                </button>
+              </>
+            ) : (
+              <button onClick={() => generate()} disabled={generating} className="btn btn-primary mt-4">
+                <Sparkles size={16} />
+                {generating ? "Generando… (puede tardar 1-2 min)" : "Generar planificación"}
+              </button>
+            )}
             {generating && (
               <p className="mt-2 text-xs text-zinc-500">
-                La IA está creando el plan (núcleo, comidas y contenido educativo). No cierres la página.
+                {client.level === "advanced"
+                  ? "Preparando la base determinista (sin IA)…"
+                  : "La IA está creando el plan (núcleo, comidas y contenido educativo). No cierres la página."}
               </p>
             )}
           </div>
@@ -491,7 +537,11 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                     : { background: "rgba(38,33,26,0.08)", color: "#7A7060" }
                 }
               >
-                {plan.status === "published" ? "Activa" : "Borrador antiguo"} · v{plan.version}
+                {plan.status === "published"
+                  ? "Activa"
+                  : plan.guardrail_flags?.some((f) => f.startsWith("base sin IA"))
+                    ? "Base del coach — sin activar"
+                    : "Borrador antiguo"} · v{plan.version}
               </span>
               {plan.status === "published" && (
                 // Verde con brillo: ESTA versión es la que ve el cliente ahora

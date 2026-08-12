@@ -224,6 +224,8 @@ export interface ClientCreate {
   phone?: string | null;
   package_tier?: PackageTier;
   billing_period?: BillingPeriod;
+  /** Nivel elegido en el alta: decide el flujo de planificación (IA vs coach). */
+  level?: Level | null;
 }
 
 export interface AnamnesisSubmit {

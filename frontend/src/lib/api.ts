@@ -259,6 +259,15 @@ export const api = {
       nutrition: any; training: any; education: any;
     }>("POST", `/clients/${clientId}/generate-plan?month_index=${monthIndex}`,
       meals && meals.length ? { meals } : undefined),
+  // Plan BASE determinista para clientes AVANZADOS (0 llamadas a la IA):
+  // borrador con los números/comidas/banco/sesiones ya preparados, para que el
+  // coach lo termine en el editor y lo active él.
+  scaffoldPlan: (clientId: number, monthIndex = 1) =>
+    request<{
+      id: number; month_index: number; version: number; status: string;
+      guardrail_flags: string[];
+      nutrition: any; training: any; education: any;
+    }>("POST", `/clients/${clientId}/scaffold-plan?month_index=${monthIndex}`),
   adaptPlan: (clientId: number) =>
     request<{ id: number; month_index: number; version: number; status: string }>(
       "POST", `/clients/${clientId}/adapt-plan`),

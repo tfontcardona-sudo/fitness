@@ -354,6 +354,8 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
   const [phone, setPhone] = useState("");
   const [tier, setTier] = useState<PackageTier>("full");
   const [period, setPeriod] = useState<BillingPeriod>("1m");
+  // Nivel del cliente: decide QUIÉN hace su planificación (IA vs coach).
+  const [level, setLevel] = useState<"beginner" | "intermediate" | "advanced">("intermediate");
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState<ClientCreatedOut | null>(null);
   // Estado del correo de acceso enviado al crear (y actualizable con "Reenviar").
@@ -379,7 +381,7 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
     try {
       const res = await api.createClient({
         full_name: name, email, phone: phone || null,
-        package_tier: tier, billing_period: period,
+        package_tier: tier, billing_period: period, level,
       });
       setCreated(res);
       setAccessStatus(res.portal_access);
@@ -541,6 +543,44 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
                             <span className="text-xs text-zinc-500">· {p.tagline}</span>
                           </span>
                           <span className="mt-0.5 block text-xs text-zinc-500">{p.includes}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <label className="label">Nivel del cliente</label>
+                <p className="text-xs text-zinc-500">
+                  Decide quién hace su planificación: a principiante e intermedio
+                  se la genera la IA; al avanzado se la preparas tú sobre una base
+                  ya calculada (sin gastar créditos).
+                </p>
+                <div className="mt-1.5 grid grid-cols-3 gap-2">
+                  {([
+                    ["beginner", "Principiante", "la IA genera su plan"],
+                    ["intermediate", "Intermedio", "la IA genera su plan"],
+                    ["advanced", "Avanzado", "plan del coach, base sin IA"],
+                  ] as const).map(([value, label, hint]) => {
+                    const sel = level === value;
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setLevel(value)}
+                        aria-pressed={sel}
+                        className="rounded-xl border px-2 py-2 text-left transition-colors"
+                        style={{
+                          borderColor: sel ? "var(--brand-accent)" : "var(--line-strong)",
+                          background: sel ? "color-mix(in srgb, var(--brand-accent) 10%, transparent)" : "transparent",
+                        }}
+                      >
+                        <span className="block text-sm font-medium"
+                          style={{ color: sel ? "var(--brand-accent)" : "var(--text)" }}>
+                          {label}
+                        </span>
+                        <span className="mt-0.5 block text-[10px] leading-tight text-zinc-500">
+                          {hint}
                         </span>
                       </button>
                     );

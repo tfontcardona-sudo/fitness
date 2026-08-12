@@ -263,6 +263,9 @@ def create_client(body: ClientCreate, db: Session = Depends(get_db)) -> ClientCr
         phone=body.phone,
         package_tier=body.package_tier,
         billing_period=body.billing_period,
+        # Nivel elegido en el alta: decide el flujo de planificación (IA para
+        # principiante/intermedio; base determinista del coach para avanzado).
+        level=body.level,
         status="onboarding",
         auto_pilot=settings.auto_pilot_default,
         portal_token="pendiente",  # se firma con el id real tras el flush
@@ -1564,6 +1567,154 @@ def generate_client_plan(
         # ya al generar, sin esperar a recargar la lista.
         "created_at": plan.created_at.isoformat() if plan.created_at else None,
         "published_at": plan.published_at.isoformat() if plan.published_at else None,
+    }
+
+
+@router.post("/{client_id}/scaffold-plan")
+def scaffold_client_plan(
+    client_id: int,
+    month_index: int = Query(default=1, ge=1),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Plan BASE determinista para clientes AVANZADOS — 0 llamadas a la IA.
+
+    Al avanzado la planificación se la hace el COACH, pero no desde cero: aquí
+    se prepara un borrador completo con todo lo que el sistema sabe calcular
+    sin IA (objetivos y macros de metrics, comidas con target por toma, banco
+    de comidas determinista y sesiones montadas desde la biblioteca filtrada).
+    Queda SIEMPRE en borrador — editarlo NO lo activa (excepción al PATCH) —
+    hasta que el coach pulse Activar. No consume ni un céntimo de créditos."""
+    from datetime import date
+
+    from app.models import Exercise, Plan
+    from app.services import plan_scaffold
+    from app.services.guardrails import filter_exercises_for_client
+    from app.services.metrics import age_from_birth, energy_targets
+    from app.services.metrics import macro_targets as _macro_targets
+
+    client = _client_or_404_docs(db, client_id)
+
+    # 1) Anamnesis completa (misma vara de medir que la generación con IA).
+    missing = []
+    for field, label in _REQUIRED_FIELDS.items():
+        if getattr(client, field, None) in (None, "", []):
+            missing.append(label)
+    if missing:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "message": "Faltan datos en la anamnesis para preparar el plan base.",
+                "missing": missing,
+            },
+        )
+
+    # 2) Números del motor determinista (la única verdad, la misma del flujo IA).
+    age = age_from_birth(client.birth_date, date.today())
+    from app.services.periods import reference_weight_kg
+
+    weight_now = reference_weight_kg(db, client)
+    et = energy_targets(
+        sex=client.sex, weight_kg=weight_now, height_cm=client.height_cm,
+        age=age, goal_type=client.goal_type, training_days=client.training_days,
+        body_fat_pct=client.body_fat_pct, daily_activity=client.daily_activity_level,
+        level=client.level, session_min=client.session_max_min,
+    )
+    _mp = _macro_targets(
+        client.sex, weight_now, client.goal_type, et.target_kcal,
+        client.training_days, tdee=et.tdee,
+    )
+
+    from app.services import packages as pkgs
+    include_training = pkgs.has_training(client.package_tier)
+    include_nutrition = pkgs.has_nutrition(client.package_tier)
+
+    flags: list[str] = list(et.warnings) + list(_mp.notes)
+    nutrition = training = None
+
+    if include_nutrition:
+        nutrition = plan_scaffold.build_nutrition(client, et, _mp)
+        # Banco de comidas determinista (foods + plantillas seguras), igual que
+        # el fallback del flujo IA: alérgenos/aversiones/patrón respetados.
+        from app.services.meal_fallback import _slot_is_empty, ensure_bank_slots
+
+        ensure_bank_slots(
+            nutrition, allergies=client.food_allergies or [],
+            dislikes=client.food_dislikes or [], diet_pattern=client.diet_pattern,
+        )
+        bank_slots = {s.get("slot"): s for s in (nutrition.get("meal_bank") or {}).get("slots", [])}
+        vacias = [m.get("name") or f"toma {m.get('slot')}" for m in nutrition.get("meals", [])
+                  if _slot_is_empty(bank_slots.get(m.get("slot")))]
+        if vacias:
+            flags.append("sin opciones seguras de banco en: " + ", ".join(vacias)
+                         + " — complétalas en el editor")
+        # Mismos sidecars que la generación: snapshot de entradas (alertas de
+        # ficha cambiada) y TDEE del motor.
+        nutrition["gen_inputs"] = {
+            "weight_kg": weight_now, "height_cm": client.height_cm,
+            "level": client.level, "training_days": client.training_days,
+            "training_place": client.training_place, "diet_mode": client.diet_mode,
+            "diet_pattern": client.diet_pattern,
+        }
+        nutrition["tdee_kcal"] = round(et.tdee)
+
+    if include_training:
+        all_ex = db.scalars(select(Exercise)).all()
+        ex_dicts = [{
+            "id": e.id, "canonical_name": e.canonical_name, "name": e.canonical_name,
+            "movement_pattern": e.movement_pattern,
+            "muscle_primary": e.muscle_primary, "muscle_secondary": e.muscle_secondary or [],
+            "equipment": e.equipment or [], "level_min": e.level_min,
+            "contraindications": e.contraindications or [], "archived": e.archived,
+            "technique_notes": e.technique_notes, "biomechanics_notes": e.biomechanics_notes,
+        } for e in all_ex]
+        level_map = {"beginner": 1, "intermediate": 2, "advanced": 3}
+        equip = set() if client.training_place == "gym" else set(client.equipment or [])
+        from app.services.injuries import injury_contra_tags
+
+        contra_tags = injury_contra_tags(client.injuries_notes, client.medical_notes)
+        library = filter_exercises_for_client(
+            ex_dicts,
+            client_contraindications=contra_tags,
+            excluded_ids=set(client.excluded_exercise_ids or []),
+            equipment_available=equip,
+            level_max=level_map.get(client.level, 2),
+            training_place=client.training_place,
+        )
+        if not library:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "No hay ejercicios disponibles con las restricciones del cliente.")
+        training = plan_scaffold.build_training(client, library)
+
+    flags.append("base sin IA: prepárala en el editor y ACTÍVALA tú — "
+                 "el cliente no ha sido avisado")
+
+    # 3) Persistir como BORRADOR (nueva versión del mes). Nunca se auto-activa.
+    last = db.scalar(
+        select(Plan).where(Plan.client_id == client_id, Plan.month_index == month_index)
+        .order_by(Plan.version.desc()).limit(1)
+    )
+    version = (last.version + 1) if last else 1
+    plan = Plan(
+        client_id=client_id, month_index=month_index, version=version, status="draft",
+        nutrition_json=nutrition, training_json=training, education_json=None,
+        guardrail_flags=flags, generated_by="scaffold", review_json=None,
+        goal_type=client.goal_type,
+    )
+    db.add(plan)
+    db.flush()
+    log_event(db, "plan", plan.id, "plan_scaffolded", {
+        "client_id": client_id, "version": version, "flags": flags,
+    })
+    db.commit()
+    db.refresh(plan)
+    return {
+        "id": plan.id, "month_index": plan.month_index, "version": plan.version,
+        "status": plan.status, "guardrail_flags": flags or [],
+        "nutrition": nutrition, "training": training, "education": None,
+        "review": None,
+        "created_at": plan.created_at.isoformat() if plan.created_at else None,
+        "published_at": None,
     }
 
 

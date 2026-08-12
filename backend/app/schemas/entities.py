@@ -87,6 +87,11 @@ class ClientCreate(BaseModel):
     phone: str | None = None
     package_tier: PackageTier = "full"
     billing_period: BillingPeriod = "1m"
+    # Nivel del cliente, elegido en el alta: decide QUIÉN hace su plan —
+    # principiante/intermedio → lo genera la IA; avanzado → lo prepara el coach
+    # sobre una base determinista (sin gastar créditos). La anamnesis puede
+    # corregirlo después (la anamnesis manda).
+    level: Level | None = None
 
 
 class AnamnesisSubmit(BaseModel):

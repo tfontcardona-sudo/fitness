@@ -278,8 +278,11 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
         plan.nutrition_json = nj
 
     # Editar también ACTIVA: si el coach retoca un borrador (legado), el plan
-    # queda vigente al guardar — no existe el paso "Publicar".
-    if plan.status == "draft":
+    # queda vigente al guardar — no existe el paso "Publicar". EXCEPCIÓN: la
+    # BASE SIN IA del cliente avanzado (generated_by="scaffold") se edita en
+    # varias tandas antes de estar lista; activarla al primer guardado enviaría
+    # al cliente un plan a medio hacer. Esa se activa SOLO con el botón Activar.
+    if plan.status == "draft" and plan.generated_by != "scaffold":
         from app.services.plan_activation import activate_plan
 
         activate_plan(db, plan)
