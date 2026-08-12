@@ -265,9 +265,19 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
     }
   }
 
+  // ¿La operación en curso es la base sin IA? (para el texto de progreso)
+  const [scaffolding, setScaffolding] = useState(false);
+
   async function generate(meals?: string[]) {
     if (generating) return;
+    // Cliente avanzado: la IA es la vía EXCEPCIONAL y además auto-activa — se
+    // confirma siempre para que el gasto y el envío no pillen por sorpresa.
+    if (client.level === "advanced" &&
+        !window.confirm("Vas a generar con IA (gasta créditos) y el plan quedará ACTIVO y visible para el cliente al terminar. ¿Seguir?")) {
+      return;
+    }
     setGenerating(true);
+    setScaffolding(false);
     setMissing(null);
     try {
       const p = await api.generatePlan(client.id, plan?.month_index ?? 1, meals);
@@ -309,12 +319,13 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
   /** Plan BASE sin IA (cliente avanzado): borrador determinista con los números
    *  ya hechos, listo para que el coach lo remate en el editor. 0 créditos.
    *  NO se activa al editar: solo con el botón Activar. */
-  async function scaffold() {
+  async function scaffold(meals?: string[]) {
     if (generating) return;
     setGenerating(true);
+    setScaffolding(true);
     setMissing(null);
     try {
-      const p = await api.scaffoldPlan(client.id, plan?.month_index ?? 1);
+      const p = await api.scaffoldPlan(client.id, plan?.month_index ?? 1, meals);
       setPlan(normalize(p));
       setEditing(true); // directo al editor: la base ya está masticada
       onClientChanged?.();
@@ -325,6 +336,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
       else toast.push(detail?.message ?? e?.message ?? "No se pudo preparar la base", "error");
     } finally {
       setGenerating(false);
+      setScaffolding(false);
     }
   }
 
@@ -388,9 +400,9 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
           <div className="flex-1">
             <h3 className="text-base font-semibold text-zinc-100">Planificación mensual</h3>
             <p className="mt-1 text-sm text-zinc-400">
-              Genera el plan de {hasTraining ? "dieta y entrenamiento" : "dieta"} con IA a partir de los datos de la
-              anamnesis. Queda ACTIVO al momento: revísalo, edítalo si quieres y envíaselo
-              por {byEmail ? "email" : "WhatsApp"}.
+              {client.level === "advanced"
+                ? "Cliente avanzado: su planificación la montas tú sobre una base que el sistema deja preparada sin IA. Nada llega al cliente hasta que la actives."
+                : `Genera el plan de ${hasTraining ? "dieta y entrenamiento" : "dieta"} con IA a partir de los datos de la anamnesis. Queda ACTIVO al momento: revísalo, edítalo si quieres y envíaselo por ${byEmail ? "email" : "WhatsApp"}.`}
             </p>
 
             {missing && (
@@ -428,7 +440,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                 </p>
                 <button onClick={() => generate()} disabled={generating}
                   className="btn btn-ghost mt-2 text-xs">
-                  Prefiero generarla con IA igualmente (gasta créditos)
+                  Prefiero generarla con IA (gasta créditos y queda ACTIVA al momento)
                 </button>
               </>
             ) : (
@@ -439,7 +451,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
             )}
             {generating && (
               <p className="mt-2 text-xs text-zinc-500">
-                {client.level === "advanced"
+                {scaffolding
                   ? "Preparando la base determinista (sin IA)…"
                   : "La IA está creando el plan (núcleo, comidas y contenido educativo). No cierres la página."}
               </p>
@@ -595,7 +607,11 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                 persistían pero NINGUNA pantalla los mostraba (auditoría). */}
             {(plan.guardrail_flags?.length ?? 0) > 0 && (
               <ul className="mt-1.5 space-y-0.5 text-xs">
-                {plan.guardrail_flags.slice(0, 6).map((f, i) => (
+                {plan.guardrail_flags
+                  // El aviso "base sin IA" es del ciclo de PREPARACIÓN: con el
+                  // plan ya activado dejaría un estado falso en ámbar eterno.
+                  .filter((f) => plan.status !== "published" || !f.startsWith("base sin IA"))
+                  .slice(0, 6).map((f, i) => (
                   <li key={i}
                     className={f.startsWith("violation:") || f.startsWith("retenido")
                       ? "text-red-700" : "text-amber-700"}>
@@ -610,9 +626,12 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
               {(() => {
                 const adj = (nut as any)?.applied_adjustments;
                 const manual = ((nut as any)?.manual_changes?.items ?? []).length;
+                const esBase = plan.guardrail_flags?.some((f) => f.startsWith("base sin IA"));
                 const origen = adj?.period_index != null
                   ? `Adaptada a la revisión quincenal #${adj.period_index}`
-                  : "Generada con IA a partir de su anamnesis";
+                  : esBase
+                    ? "Preparada por el sistema (sin IA) y terminada por el coach"
+                    : "Generada con IA a partir de su anamnesis";
                 return (
                   <>
                     {origen}
@@ -776,7 +795,9 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
       <MealStructureCard
         currentNames={(Array.isArray(nut.meals) ? nut.meals : []).map((m: any) => m?.name ?? "")}
         generating={generating}
-        onRegenerate={(keys) => generate(keys)}
+        // Cliente AVANZADO: regenerar con otras comidas rehace la BASE sin IA
+        // (0 créditos, sigue en borrador); al resto se lo regenera la IA.
+        onRegenerate={(keys) => (client.level === "advanced" ? void scaffold(keys) : generate(keys))}
       />
 
       {/* CAMBIOS MANUALES detectados al editar (diff exacto): el sistema sabe
@@ -1601,9 +1622,17 @@ function GoalStageCard({ client, currentMonth, onClientChanged, onRegenerated }:
       await api.changeGoal(client.id, { goal_type: newGoal });
       toast.push(`Objetivo cambiado a ${GOAL_LABEL[newGoal as GoalType]}. Generando la planificación nueva…`);
       onClientChanged?.();
-      await api.generatePlan(client.id, currentMonth + 1);
-      await onRegenerated();
-      toast.push(`Planificación nueva generada y ACTIVA para el objetivo nuevo — envíasela por ${byEmail ? "email" : "WhatsApp"}.`);
+      if (client.level === "advanced") {
+        // Avanzado: el objetivo nuevo rehace la BASE sin IA (0 créditos) y
+        // queda en borrador — el coach la termina y la activa.
+        await api.scaffoldPlan(client.id, currentMonth + 1);
+        await onRegenerated();
+        toast.push("Base del mes nuevo preparada SIN IA para el objetivo nuevo — termínala en el editor y actívala.");
+      } else {
+        await api.generatePlan(client.id, currentMonth + 1);
+        await onRegenerated();
+        toast.push(`Planificación nueva generada y ACTIVA para el objetivo nuevo — envíasela por ${byEmail ? "email" : "WhatsApp"}.`);
+      }
       setConfirming(false);
       setNewGoal("");
       setAnalysis(null);

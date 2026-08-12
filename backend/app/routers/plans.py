@@ -186,6 +186,14 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
     old_for_diff = old_nutrition
     for field, value in changes.items():
         if value is not None:
+            # Plan SOLO-ENTRENO (nutrition_json NULL): el editor siempre echa un
+            # nutrition_json aunque no haya dieta — un eco vacío (sin comidas ni
+            # macros con contenido) NO debe convertir el NULL en dict, porque
+            # plan_delivery/plan_doc deciden el formato por bool(nutrition_json)
+            # y el PDF pasaría a "plan nutricional" vacío perdiendo el entreno.
+            if (field == "nutrition_json" and plan.nutrition_json is None
+                    and isinstance(value, dict) and not value.get("meals")):
+                continue
             # Red de seguridad: nutrition_json se reemplaza entero; si el editor
             # manda un objeto sin `applied_adjustments` pero el plan lo tenía,
             # se conserva (si no, el portal y el PDF perderían las "Novedades").
@@ -231,9 +239,11 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
                         and plan.nutrition_json.get("applied_adjustments")):
                     value = {**value, "applied_adjustments": plan.nutrition_json["applied_adjustments"]}
             setattr(plan, field, value)
-    # Cambios manuales DETECTADOS (diff exacto antes/después): se ACUMULAN en
-    # nutrition_json.manual_changes hasta que el coach los envía al cliente
-    # (WhatsApp/email) o los descarta — el panel muestra el aviso mientras tanto.
+    # Cambios manuales DETECTADOS (diff exacto antes/después). El diff se
+    # calcula SIEMPRE (alimenta la auditoría y el aprendizaje §13), pero solo
+    # los planes YA ENTREGADOS (published) acumulan manual_changes con su
+    # tarjeta "envíaselo actualizado": editar un borrador (la base sin IA del
+    # avanzado, o un draft legado) no es modificar lo que el cliente tiene.
     from app.services.plan_diff import manual_change_summary
 
     diff_items = manual_change_summary(
@@ -241,7 +251,7 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
         old_nutrition=old_for_diff, new_nutrition=plan.nutrition_json,
         old_training=old_training, new_training=plan.training_json,
     )
-    if diff_items:
+    if diff_items and plan.status == "published":
         nut = dict(plan.nutrition_json) if isinstance(plan.nutrition_json, dict) else {}
         # Los pendientes previos viven en el plan ANTES de la edición (el editor
         # no reenvía manual_changes): se acumulan hasta que el coach los envía.
@@ -365,6 +375,16 @@ def publish_plan(plan_id: int, db: Session = Depends(get_db)) -> PlanOut:
     plan = db.get(Plan, plan_id)
     if not plan:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan no encontrado")
+    # IDEMPOTENTE: re-pulsar Activar sobre un plan ya activo no reenvía email ni
+    # push al cliente. Y una versión SUSTITUIDA no puede resucitarse desde aquí
+    # (pisaría a la vigente sin querer): para eso está el historial/revert.
+    if plan.status == "published":
+        return PlanOut.model_validate(plan)
+    if plan.status == "superseded":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Esta versión fue sustituida por otra más nueva: usa el historial "
+            "si quieres restaurarla.")
     activate_plan(db, plan)
     db.commit()
     db.refresh(plan)

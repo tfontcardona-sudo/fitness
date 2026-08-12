@@ -42,7 +42,8 @@ def _energy() -> SimpleNamespace:
 
 
 def _macros() -> SimpleNamespace:
-    return SimpleNamespace(kcal=2860, protein_g=160, carbs_g=380, fat_g=80)
+    # Atwater-coherente: kcal ≡ 4·P + 4·C + 9·F (como emite macro_targets).
+    return SimpleNamespace(kcal=2880, protein_g=160, carbs_g=380, fat_g=80)
 
 
 # ---- nutrición determinista ----
@@ -51,14 +52,54 @@ def test_nutricion_base_reparte_exacto_por_tomas():
     """La suma de las tomas ES el total del día, gramo a gramo (criterio del
     Revisor 0): el residuo del redondeo cae en la última comida."""
     nut = plan_scaffold.build_nutrition(_cliente(), _energy(), _macros())
-    assert nut["target_kcal"] == 2860
+    assert nut["target_kcal"] == 2880
     assert [m["slot"] for m in nut["meals"]] == [1, 2, 3, 4]
     for eje in ("protein_g", "carbs_g", "fat_g"):
         assert sum(m["target"][eje] for m in nut["meals"]) == nut["macros"][eje]
+    # Σ kcal de las tomas == target del día (invariante del Revisor 0).
+    assert sum(m["target"]["kcal"] for m in nut["meals"]) == nut["target_kcal"]
     for m in nut["meals"]:
         t = m["target"]
         # kcal por toma = Atwater exacto de sus macros (como el banco fallback).
         assert t["kcal"] == 4 * t["protein_g"] + 4 * t["carbs_g"] + 9 * t["fat_g"]
+
+
+def test_reparto_5_y_6_tomas_alineado_con_los_nombres():
+    """REGRESIÓN (revisión adversarial): con 5-6 comidas los pesos estaban
+    corridos y la 'Comida' (principal) recibía el 10-15% mientras la media
+    mañana se llevaba el 25-30%. La comida de las 14:00 debe ser la MAYOR."""
+    for n in (5, 6):
+        nut = plan_scaffold.build_nutrition(_cliente(meals_per_day=n), _energy(), _macros())
+        kcal_por_nombre = {m["name"]: m["target"]["kcal"] for m in nut["meals"]}
+        assert kcal_por_nombre["Comida"] == max(kcal_por_nombre.values())
+        for tentempie in ("Media mañana", "Merienda"):
+            assert kcal_por_nombre[tentempie] < kcal_por_nombre["Comida"] / 2
+        assert sum(kcal_por_nombre.values()) == nut["target_kcal"]
+
+
+def test_horario_sucio_de_la_extraccion_se_sanea():
+    """REGRESIÓN: la lectura IA puede dejar slots duplicados/0/negativos en
+    meal_schedule — se renumeran 1..N sin perder tomas y sin reventar."""
+    sched = [{"slot": 1, "name": "Desayuno", "time": "08:00"},
+             {"slot": 1, "name": "Comida", "time": "14:00"},   # duplicado
+             {"slot": 0, "name": "Merienda", "time": "17:30"},  # cero
+             {"slot": -2, "name": "Cena", "time": "21:00"}]     # negativo
+    nut = plan_scaffold.build_nutrition(_cliente(meal_schedule=sched), _energy(), _macros())
+    assert [m["slot"] for m in nut["meals"]] == [1, 2, 3, 4]  # nadie se pierde
+    assert {m["name"] for m in nut["meals"]} == {"Desayuno", "Comida", "Merienda", "Cena"}
+
+
+def test_menu_estricto_determinista():
+    """diet_mode=strict: menú CERRADO de 7 días rotando opciones seguras, con
+    el mismo formato que el flujo IA (bank['mode']=='strict')."""
+    nut = plan_scaffold.build_nutrition(_cliente(), _energy(), _macros())
+    bank, avisos = plan_scaffold.build_strict_menu(nut)
+    assert bank is not None and bank["mode"] == "strict"
+    assert [d["day"] for d in bank["days"]] == list(plan_scaffold._DAY_NAMES)
+    slots = [m["slot"] for m in bank["days"][0]["meals"]]
+    assert all([m["slot"] for m in d["meals"]] == slots for d in bank["days"])
+    assert all(m["dish"]["ingredients"] for d in bank["days"] for m in d["meals"])
+    assert avisos  # siempre avisa de que es una base a personalizar
 
 
 def test_nutricion_base_usa_el_horario_declarado():

@@ -1574,6 +1574,7 @@ def generate_client_plan(
 def scaffold_client_plan(
     client_id: int,
     month_index: int = Query(default=1, ge=1),
+    body: GeneratePlanIn | None = None,
     db: Session = Depends(get_db),
 ) -> dict:
     """Plan BASE determinista para clientes AVANZADOS — 0 llamadas a la IA.
@@ -1593,6 +1594,17 @@ def scaffold_client_plan(
     from app.services.metrics import macro_targets as _macro_targets
 
     client = _client_or_404_docs(db, client_id)
+
+    # 0) Reparto de comidas elegido por el coach (mismo selector que el flujo
+    # IA): sustituye al de la anamnesis y se persiste.
+    if body is not None and body.meals:
+        from app.services.meal_structure import meal_schedule_from_keys
+
+        sched = meal_schedule_from_keys(body.meals)
+        if sched:
+            client.meal_schedule = sched
+            client.meals_per_day = len(sched)
+            db.commit()
 
     # 1) Anamnesis completa (misma vara de medir que la generación con IA).
     missing = []
@@ -1632,21 +1644,38 @@ def scaffold_client_plan(
     nutrition = training = None
 
     if include_nutrition:
-        nutrition = plan_scaffold.build_nutrition(client, et, _mp)
+        try:
+            nutrition = plan_scaffold.build_nutrition(client, et, _mp)
+        except Exception as exc:  # noqa: BLE001 — datos raros en la ficha → 422 accionable
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                f"No se pudo montar la base de nutrición con la ficha actual: {exc}. "
+                "Revisa el horario de comidas en la pestaña Anamnesis.")
         # Banco de comidas determinista (foods + plantillas seguras), igual que
         # el fallback del flujo IA: alérgenos/aversiones/patrón respetados.
-        from app.services.meal_fallback import _slot_is_empty, ensure_bank_slots
+        # Modo ESTRICTO: menú cerrado de 7 días rotando las opciones seguras
+        # (mismo formato que el flujo IA — el portal y el PDF deciden por
+        # bank["mode"]). Modo flexible: banco de opciones por toma.
+        if client.diet_mode == "strict":
+            bank, avisos = plan_scaffold.build_strict_menu(
+                nutrition, allergies=client.food_allergies or [],
+                dislikes=client.food_dislikes or [], diet_pattern=client.diet_pattern,
+            )
+            nutrition["meal_bank"] = bank
+            flags.extend(avisos)
+        else:
+            from app.services.meal_fallback import _slot_is_empty, ensure_bank_slots
 
-        ensure_bank_slots(
-            nutrition, allergies=client.food_allergies or [],
-            dislikes=client.food_dislikes or [], diet_pattern=client.diet_pattern,
-        )
-        bank_slots = {s.get("slot"): s for s in (nutrition.get("meal_bank") or {}).get("slots", [])}
-        vacias = [m.get("name") or f"toma {m.get('slot')}" for m in nutrition.get("meals", [])
-                  if _slot_is_empty(bank_slots.get(m.get("slot")))]
-        if vacias:
-            flags.append("sin opciones seguras de banco en: " + ", ".join(vacias)
-                         + " — complétalas en el editor")
+            ensure_bank_slots(
+                nutrition, allergies=client.food_allergies or [],
+                dislikes=client.food_dislikes or [], diet_pattern=client.diet_pattern,
+            )
+            bank_slots = {s.get("slot"): s for s in (nutrition.get("meal_bank") or {}).get("slots", [])}
+            vacias = [m.get("name") or f"toma {m.get('slot')}" for m in nutrition.get("meals", [])
+                      if _slot_is_empty(bank_slots.get(m.get("slot")))]
+            if vacias:
+                flags.append("sin opciones seguras de banco en: " + ", ".join(vacias)
+                             + " — complétalas en el editor")
         # Mismos sidecars que la generación: snapshot de entradas (alertas de
         # ficha cambiada) y TDEE del motor.
         nutrition["gen_inputs"] = {
@@ -1684,10 +1713,23 @@ def scaffold_client_plan(
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
                 "No hay ejercicios disponibles con las restricciones del cliente.")
-        training = plan_scaffold.build_training(client, library)
+        # Misma paridad de avisos que generate-plan: biblioteca fina → flag.
+        _groups = {e.get("muscle_primary") for e in library if e.get("muscle_primary")}
+        if len(library) < 15 or len(_groups) < 4:
+            flags.append(
+                f"biblioteca de ejercicios limitada tras el filtro ({len(library)} "
+                f"ejercicios, {len(_groups)} grupos): revisa restricciones/material")
+        try:
+            training = plan_scaffold.build_training(client, library)
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc))
+        if len(training["sessions"]) < min(6, max(2, int(client.training_days or 3))):
+            flags.append(
+                f"solo se pudieron montar {len(training['sessions'])} de "
+                f"{client.training_days} días con la biblioteca filtrada — "
+                "completa el resto en el editor")
 
-    flags.append("base sin IA: prepárala en el editor y ACTÍVALA tú — "
-                 "el cliente no ha sido avisado")
+    flags.append("base sin IA: preparada por el sistema — la termina y activa el coach")
 
     # 3) Persistir como BORRADOR (nueva versión del mes). Nunca se auto-activa.
     last = db.scalar(
@@ -1782,6 +1824,11 @@ def _do_read_anamnesis(client_id: int, db: Session) -> dict:
     ]:
         val = data.get(f)
         if val not in (None, [], ""):
+            # El NIVEL elegido por el coach en el alta decide QUIÉN hace el plan
+            # (IA vs base del coach): la autopercepción del PDF no lo pisa si ya
+            # está fijado — el coach puede corregirlo a mano cuando quiera.
+            if f == "level" and client.level:
+                continue
             setattr(client, f, val)
     if data.get("meal_schedule"):
         client.meal_schedule = data["meal_schedule"]

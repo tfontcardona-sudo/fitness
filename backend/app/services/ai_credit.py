@@ -120,10 +120,12 @@ def usage_summary(db: Session) -> dict:
         ) or 0.0), 4)
 
         # Planes generados con IA en la misma ventana → coste medio por plan.
+        # "coach" (manual) y "scaffold" (base sin IA del avanzado) NO cuentan:
+        # cuestan 0 y meterlos en el denominador falsearía el coste medio.
         plans = int(db.scalar(
             select(func.count(Plan.id))
             .where(Plan.created_at >= since, Plan.generated_by.isnot(None),
-                   Plan.generated_by != "coach")
+                   Plan.generated_by.notin_(("coach", "scaffold")))
         ) or 0)
         if plans > 0 and out["spent_window_usd"] > 0:
             out["avg_cost_per_plan_usd"] = round(out["spent_window_usd"] / plans, 4)

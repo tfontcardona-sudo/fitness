@@ -23,14 +23,17 @@ from app.services.metrics import _rhu
 
 # ------------------------------------------------------------- nutrición ----
 
-# Reparto estándar del día por número de comidas (suma 100). El coach lo
-# ajustará: es un punto de partida razonable, no un dogma.
+# Reparto estándar del día por número de comidas (suma 100), ALINEADO
+# posición a posición con _MEAL_NAMES: la comida principal (14:00) es siempre
+# la mayor y los tentempiés (media mañana/merienda/recena) los menores. El
+# coach lo ajustará: es un punto de partida razonable, no un dogma.
 _MEAL_WEIGHTS: dict[int, list[int]] = {
     2: [45, 55],
     3: [30, 40, 30],
     4: [25, 35, 15, 25],
-    5: [20, 30, 15, 20, 15],
-    6: [20, 25, 10, 20, 15, 10],
+    #   Desayuno, Media mañana, Comida, Merienda, Cena(, Recena)
+    5: [20, 10, 35, 10, 25],
+    6: [20, 10, 30, 10, 20, 10],
 }
 
 _MEAL_NAMES: dict[int, list[tuple[str, str]]] = {
@@ -47,15 +50,24 @@ _MEAL_NAMES: dict[int, list[tuple[str, str]]] = {
 
 def _meal_slots(client) -> list[tuple[int, str, str]]:
     """(slot, nombre, hora) de cada comida: el horario declarado del cliente si
-    existe; si no, un reparto estándar por su nº de comidas (por defecto 4)."""
+    existe; si no, un reparto estándar por su nº de comidas (por defecto 4).
+
+    SANEO: la lectura IA de un PDF manuscrito puede dejar meal_schedule con
+    slots duplicados, a 0 o negativos — se ordenan de forma estable por el slot
+    declarado y se RENUMERAN 1..N (ninguna toma se pierde y el contrato
+    NutritionCore, que exige slots únicos ascendentes, nunca revienta)."""
     schedule = client.meal_schedule or []
-    slots: list[tuple[int, str, str]] = []
-    for item in schedule:
-        if isinstance(item, dict) and item.get("slot"):
-            slots.append((int(item["slot"]), str(item.get("name") or f"Comida {item['slot']}"),
-                          str(item.get("time") or "12:00")))
-    if slots:
-        return sorted(slots, key=lambda s: s[0])
+    declared: list[tuple[float, str, str]] = []
+    for i, item in enumerate(schedule):
+        if not isinstance(item, dict):
+            continue
+        raw = item.get("slot")
+        orden = float(raw) if isinstance(raw, (int, float)) and not isinstance(raw, bool) else float(i + 1)
+        declared.append((orden, str(item.get("name") or f"Comida {i + 1}"),
+                         str(item.get("time") or "12:00")))
+    if declared:
+        declared.sort(key=lambda s: s[0])
+        return [(i + 1, name, time) for i, (_o, name, time) in enumerate(declared)]
     n = client.meals_per_day or 4
     n = min(6, max(2, int(n)))
     return [(i + 1, name, time) for i, (name, time) in enumerate(_MEAL_NAMES[n])]
@@ -63,8 +75,9 @@ def _meal_slots(client) -> list[tuple[int, str, str]]:
 
 def build_nutrition(client, energy, macros) -> dict:
     """NutritionCore determinista: targets del día repartidos por toma con SUMA
-    EXACTA (el residuo del redondeo va a la comida principal, criterio Σ comidas
-    = día del Revisor 0). `energy` es EnergyTargets; `macros`, MacroPlan."""
+    EXACTA — el residuo del redondeo cae en la comida de MAYOR peso (la
+    principal), que es la que mejor lo absorbe (criterio Σ comidas = día del
+    Revisor 0). `energy` es EnergyTargets; `macros`, MacroPlan."""
     slots = _meal_slots(client)
     weights = _MEAL_WEIGHTS.get(len(slots)) or [round(100 / len(slots))] * len(slots)
     # Si el nº de comidas declarado no casa con la tabla, normaliza pesos.
@@ -72,15 +85,14 @@ def build_nutrition(client, energy, macros) -> dict:
         weights = [round(100 / len(slots))] * len(slots)
 
     total_p, total_c, total_f = macros.protein_g, macros.carbs_g, macros.fat_g
-    grams: list[tuple[int, int, int]] = []
-    for w in weights[:-1]:
-        grams.append((_rhu(total_p * w / 100), _rhu(total_c * w / 100),
-                      _rhu(total_f * w / 100)))
-    # Última comida = resto exacto (nunca se pierde ni sobra un gramo).
-    p_rest = total_p - sum(g[0] for g in grams)
-    c_rest = total_c - sum(g[1] for g in grams)
-    f_rest = total_f - sum(g[2] for g in grams)
-    grams.append((max(0, p_rest), max(0, c_rest), max(0, f_rest)))
+    grams = [[_rhu(total_p * w / 100), _rhu(total_c * w / 100),
+              _rhu(total_f * w / 100)] for w in weights]
+    # Residuo del redondeo → la toma de mayor peso (absorbe también residuos
+    # negativos sin dejar ninguna toma a cero).
+    principal = max(range(len(weights)), key=lambda i: weights[i])
+    grams[principal][0] += total_p - sum(g[0] for g in grams)
+    grams[principal][1] += total_c - sum(g[1] for g in grams)
+    grams[principal][2] += total_f - sum(g[2] for g in grams)
 
     meals = []
     for (slot, name, time), (p, c, f) in zip(slots, grams):
@@ -107,6 +119,45 @@ def build_nutrition(client, energy, macros) -> dict:
         "refeed_or_break": None,
     }
     return NutritionCore.model_validate(nut).model_dump()
+
+
+_DAY_NAMES = ("lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo")
+
+
+def build_strict_menu(nut: dict, allergies: list[str] | None = None,
+                      dislikes: list[str] | None = None,
+                      diet_pattern: str | None = None) -> tuple[dict | None, list[str]]:
+    """Menú CERRADO de 7 días (modo strict) montado con las opciones seguras del
+    banco determinista, rotándolas por día. Devuelve (meal_bank, avisos); si
+    alguna toma no tiene NINGUNA opción segura, no se puede cerrar el menú
+    completo → (None, avisos) y el coach lo monta en el editor."""
+    from app.services.meal_fallback import build_fallback_options
+
+    por_toma: dict[int, list[dict]] = {}
+    sin_opciones: list[str] = []
+    for meal in nut.get("meals") or []:
+        opts = build_fallback_options(meal, allergies=allergies, dislikes=dislikes,
+                                      diet_pattern=diet_pattern)
+        if not opts:
+            sin_opciones.append(str(meal.get("name") or f"toma {meal.get('slot')}"))
+        por_toma[int(meal["slot"])] = opts
+    if sin_opciones:
+        return None, ["menú cerrado sin opciones seguras en: "
+                      + ", ".join(sin_opciones) + " — móntalo en el editor"]
+
+    days = []
+    for i, day in enumerate(_DAY_NAMES):
+        meals = []
+        for meal in nut.get("meals") or []:
+            slot = int(meal["slot"])
+            opts = por_toma[slot]
+            dish = dict(opts[i % len(opts)])
+            dish["key"] = None  # en menú cerrado no hay claves A-G
+            meals.append({"slot": slot, "dish": dish})
+        days.append({"day": day, "meals": meals})
+    return ({"mode": "strict", "days": days, "free_meal_guidelines": None},
+            ["menú cerrado generado con opciones deterministas rotadas: "
+             "personalízalo en el editor"])
 
 
 # ----------------------------------------------------------- entrenamiento ----
@@ -224,6 +275,13 @@ def build_training(client, filtered: list[dict]) -> dict:
                 "exercises": exercises,
                 "cooldown": "3-5 min de vuelta a la calma y estiramientos suaves.",
             })
+
+    if not sessions:
+        # Biblioteca sin candidatos para NINGÚN patrón de las plantillas: mejor
+        # un error accionable que un 500 de validación (TrainingCore exige ≥1).
+        raise ValueError(
+            "La biblioteca filtrada no cubre los patrones básicos: revisa las "
+            "restricciones del cliente (lesiones, material, exclusiones).")
 
     pasos = {"sedentary": 7000, "light": 8000, "active": 9000,
              "very_active": 10000}.get(client.daily_activity_level or "", 8000)

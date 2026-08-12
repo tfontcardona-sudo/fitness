@@ -262,12 +262,13 @@ export const api = {
   // Plan BASE determinista para clientes AVANZADOS (0 llamadas a la IA):
   // borrador con los números/comidas/banco/sesiones ya preparados, para que el
   // coach lo termine en el editor y lo active él.
-  scaffoldPlan: (clientId: number, monthIndex = 1) =>
+  scaffoldPlan: (clientId: number, monthIndex = 1, meals?: string[]) =>
     request<{
       id: number; month_index: number; version: number; status: string;
       guardrail_flags: string[];
       nutrition: any; training: any; education: any;
-    }>("POST", `/clients/${clientId}/scaffold-plan?month_index=${monthIndex}`),
+    }>("POST", `/clients/${clientId}/scaffold-plan?month_index=${monthIndex}`,
+      meals && meals.length ? { meals } : undefined),
   adaptPlan: (clientId: number) =>
     request<{ id: number; month_index: number; version: number; status: string }>(
       "POST", `/clients/${clientId}/adapt-plan`),

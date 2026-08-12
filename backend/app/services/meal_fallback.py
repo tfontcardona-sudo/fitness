@@ -145,6 +145,11 @@ def _meal_kind(name: str | None) -> list[tuple[str, list[_ING]]]:
     n = "".join(c for c in unicodedata.normalize("NFD", n) if not unicodedata.combining(c))
     if "desayun" in n:
         return _DESAYUNO
+    # "Recena" (toma pequeña antes de dormir) ANTES que "cena": contiene la
+    # subcadena y se clasificaba como principal — sus opciones salían 600-900
+    # kcal para una toma del 10 % del día (hallazgo de la revisión).
+    if "recena" in n:
+        return _SNACK
     if "comida" in n or "cena" in n or "almuerzo" in n:
         return _PRINCIPAL
     return _SNACK
