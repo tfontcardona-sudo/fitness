@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Download, FileUp, FolderOpen, Pencil, Plus, Send, Trash2, X,
+  Copy, Download, FileUp, FolderOpen, Pencil, Plus, Search, Send, Trash2, X,
 } from "lucide-react";
 import { api, getToken } from "../lib/api";
+import { rankTemplates } from "../lib/poolSearch";
 import { LEVEL_LABEL, PLACE_LABEL } from "../lib/format";
 import { PACKAGES } from "../lib/packages";
 import { ConfirmDialog, PageLoader, Spinner, useToast } from "../components/ui";
@@ -55,6 +56,9 @@ export default function RutinasPage() {
   const [toDelete, setToDelete] = useState<TemplateListItem | null>(null);
   const [uploading, setUploading] = useState(false);
   const [exercises, setExercises] = useState<ExerciseOut[]>([]);
+  // Buscador inteligente: busca en TODAS las carpetas a la vez.
+  const [q, setQ] = useState("");
+  const [allItems, setAllItems] = useState<TemplateListItem[] | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const loadCats = useCallback(() => {
@@ -68,6 +72,7 @@ export default function RutinasPage() {
   const loadItems = useCallback(() => {
     if (!cat) return;
     api.listTemplates(cat).then(setItems).catch(() => setItems([]));
+    setAllItems(null); // invalida el índice del buscador (datos cambiados)
   }, [cat]);
   useEffect(() => { setItems(null); loadItems(); }, [loadItems]);
 
@@ -75,6 +80,19 @@ export default function RutinasPage() {
   useEffect(() => {
     api.listExercises({}).then(setExercises).catch(() => {});
   }, []);
+
+  // Índice del buscador (todas las carpetas): se carga al primer tecleo y se
+  // refresca tras cualquier alta/edición/borrado (loadItems lo invalida).
+  const searching = q.trim().length >= 2;
+  useEffect(() => {
+    if (searching && allItems === null) {
+      api.listTemplates().then(setAllItems).catch(() => setAllItems([]));
+    }
+  }, [searching, allItems]);
+  const catLabels = useMemo(() => new Map(cats?.map((c) => [c.key, c.label]) ?? []), [cats]);
+  const results = useMemo(
+    () => (searching && allItems ? rankTemplates(allItems, catLabels, q) : null),
+    [searching, allItems, catLabels, q]);
   async function onUpload(f: File | null) {
     if (!f || !cat || uploading) return;
     setUploading(true);
@@ -125,22 +143,63 @@ export default function RutinasPage() {
         </div>
       </header>
 
-      {/* Carpetas */}
-      <div className="mb-5 flex flex-wrap gap-2">
+      {/* Buscador inteligente: escribe el caso como lo piensas ("adelgazar
+          barriga 3 días", "señora 55 espalda", "volumen brazos en casa") y
+          busca en TODAS las carpetas, con sinónimos y tolerancia a erratas. */}
+      <div className="relative mb-4">
+        <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" />
+        <input
+          className="input !py-3 !pl-10"
+          placeholder="Busca el caso: «adelgazar barriga 3 días», «señora 55 espalda», «volumen en casa»…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+        {q && (
+          <button onClick={() => setQ("")} aria-label="Limpiar búsqueda"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-200">
+            <X size={16} />
+          </button>
+        )}
+      </div>
+
+      {/* Carpetas (elegir una limpia la búsqueda) */}
+      <div className="mb-5 flex flex-wrap gap-2" style={searching ? { opacity: 0.55 } : undefined}>
         {cats.map((c) => (
-          <button key={c.key} onClick={() => setCat(c.key)} title={c.blurb}
+          <button key={c.key} onClick={() => { setQ(""); setCat(c.key); }} title={c.blurb}
             className="flex items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-medium transition-colors"
-            style={cat === c.key
+            style={cat === c.key && !searching
               ? { background: "var(--surface-raised)", borderColor: "var(--brand-accent)", color: "var(--ink)" }
               : { borderColor: "var(--line-strong)", color: "var(--text-dim)" }}>
-            <FolderOpen size={15} style={cat === c.key ? { color: "var(--brand-accent)" } : undefined} />
+            <FolderOpen size={15} style={cat === c.key && !searching ? { color: "var(--brand-accent)" } : undefined} />
             {c.label}
             <span className="text-xs text-zinc-500">{c.count}</span>
           </button>
         ))}
       </div>
 
-      {items === null ? (
+      {searching ? (
+        results === null ? (
+          <PageLoader />
+        ) : results.length === 0 ? (
+          <div className="card p-10 text-center text-sm text-zinc-500">
+            Nada parecido a «{q}». Prueba con otras palabras (objetivo, zona,
+            días, casa/gimnasio) o crea la rutina nueva.
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            <p className="text-xs text-zinc-500">
+              {results.length} {results.length === 1 ? "rutina afín" : "rutinas afines"} en todas las carpetas, la más parecida primero
+            </p>
+            {results.map((t) => (
+              <RoutineRow key={t.id} t={t} folderLabel={catLabels.get(t.category)}
+                onUse={() => setUsing(t)}
+                onDownload={() => downloadDoc(t.id, t.title, toast)}
+                onEdit={() => api.getTemplate(t.id).then(setEditing).catch(() => toast.push("No se pudo abrir", "error"))}
+                onDelete={() => setToDelete(t)} />
+            ))}
+          </div>
+        )
+      ) : items === null ? (
         <PageLoader />
       ) : items.length === 0 ? (
         <div className="card p-10 text-center text-sm text-zinc-500">
@@ -149,32 +208,11 @@ export default function RutinasPage() {
       ) : (
         <div className="space-y-2.5">
           {items.map((t) => (
-            <div key={t.id} className="card flex flex-wrap items-center gap-3 p-4">
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold text-zinc-100">{t.title}</span>
-                  {t.level && <Chip>{LEVEL_LABEL[t.level as keyof typeof LEVEL_LABEL] ?? t.level}</Chip>}
-                  {t.days_per_week != null && <Chip>{t.days_per_week} días</Chip>}
-                  {t.training_place && <Chip>{PLACE_LABEL[t.training_place as keyof typeof PLACE_LABEL] ?? t.training_place}</Chip>}
-                  {t.source === "upload" && <Chip tone="var(--brand-accent)">subida</Chip>}
-                  {t.source === "manual" && <Chip tone="var(--brand-accent-2-hi)">propia</Chip>}
-                </div>
-                {t.case_note && <p className="mt-1 text-sm text-zinc-500">{t.case_note}</p>}
-              </div>
-              <div className="flex shrink-0 items-center gap-1.5">
-                <button className="btn btn-primary !px-3 !py-2" onClick={() => setUsing(t)}
-                  title="Crear el perfil de un cliente (o elegir uno existente) con esta rutina">
-                  <Send size={14} /> Usar
-                </button>
-                <IconBtn title="Descargar con el diseño de la marca (PDF)"
-                  onClick={() => downloadDoc(t.id, t.title, toast)}><Download size={15} /></IconBtn>
-                <IconBtn title="Editar"
-                  onClick={() => api.getTemplate(t.id).then(setEditing).catch(() => toast.push("No se pudo abrir", "error"))}>
-                  <Pencil size={15} />
-                </IconBtn>
-                <IconBtn title="Eliminar" onClick={() => setToDelete(t)}><Trash2 size={15} /></IconBtn>
-              </div>
-            </div>
+            <RoutineRow key={t.id} t={t}
+              onUse={() => setUsing(t)}
+              onDownload={() => downloadDoc(t.id, t.title, toast)}
+              onEdit={() => api.getTemplate(t.id).then(setEditing).catch(() => toast.push("No se pudo abrir", "error"))}
+              onDelete={() => setToDelete(t)} />
           ))}
         </div>
       )}
@@ -199,6 +237,44 @@ export default function RutinasPage() {
         onConfirm={onDelete}
         onCancel={() => setToDelete(null)}
       />
+    </div>
+  );
+}
+
+/** Tarjeta de una rutina (lista de carpeta y resultados del buscador). */
+function RoutineRow({ t, folderLabel, onUse, onDownload, onEdit, onDelete }: {
+  t: TemplateListItem;
+  folderLabel?: string;
+  onUse: () => void;
+  onDownload: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="card flex flex-wrap items-center gap-3 p-4">
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-semibold text-zinc-100">{t.title}</span>
+          {folderLabel && <Chip tone="var(--brand-accent)">{folderLabel}</Chip>}
+          {t.level && <Chip>{LEVEL_LABEL[t.level as keyof typeof LEVEL_LABEL] ?? t.level}</Chip>}
+          {t.days_per_week != null && <Chip>{t.days_per_week} días</Chip>}
+          {t.training_place && <Chip>{PLACE_LABEL[t.training_place as keyof typeof PLACE_LABEL] ?? t.training_place}</Chip>}
+          {t.source === "upload" && <Chip tone="var(--brand-accent)">subida</Chip>}
+          {t.source === "manual" && <Chip tone="var(--brand-accent-2-hi)">propia</Chip>}
+        </div>
+        {t.case_note && <p className="mt-1 text-sm text-zinc-500">{t.case_note}</p>}
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5">
+        <button className="btn btn-primary !px-3 !py-2" onClick={onUse}
+          title="Crear el perfil de un cliente (o elegir uno existente) con esta rutina">
+          <Send size={14} /> Usar
+        </button>
+        <IconBtn title="Descargar con el diseño de la marca (PDF)" onClick={onDownload}>
+          <Download size={15} />
+        </IconBtn>
+        <IconBtn title="Editar" onClick={onEdit}><Pencil size={15} /></IconBtn>
+        <IconBtn title="Eliminar" onClick={onDelete}><Trash2 size={15} /></IconBtn>
+      </div>
     </div>
   );
 }
@@ -380,7 +456,7 @@ function TemplateEditor({ tpl, category, cats, exercises, onClose, onSaved }: {
       : { ...s, exercises: s.exercises.map((e, l) => (l === k ? { ...e, ...patch } : e)) }));
   }
 
-  async function save() {
+  async function save(asCopy = false) {
     if (busy) return;
     const clean = sessions.map((s) => ({
       ...s, exercises: s.exercises.filter((e) => e.exercise_id !== ""),
@@ -390,21 +466,24 @@ function TemplateEditor({ tpl, category, cats, exercises, onClose, onSaved }: {
       return;
     }
     setBusy(true);
+    // Como copia con el título sin cambiar → se distingue sola.
+    const finalTitle = asCopy && tpl && title.trim() === tpl.title
+      ? `${title.trim()} (copia)` : title.trim();
     const body = {
-      category: cat, title: title.trim(), case_note: caseNote, level,
+      category: cat, title: finalTitle, case_note: caseNote, level,
       training_place: place, days_per_week: clean.length,
       training_json: {
         // El resto del shape (progresión, cardio, descarga) lo conserva/normaliza
         // el backend: el editor solo toca lo esencial.
         ...(tpl?.training_json ?? {}),
-        split_name: tpl?.training_json?.split_name ?? title.trim(),
+        split_name: tpl?.training_json?.split_name ?? finalTitle,
         sessions: clean,
       },
     };
     try {
-      if (tpl) await api.updateTemplate(tpl.id, body);
+      if (tpl && !asCopy) await api.updateTemplate(tpl.id, body);
       else await api.createTemplate(body);
-      toast.push("Rutina guardada");
+      toast.push(asCopy ? `Guardada como «${finalTitle}» (la original queda intacta)` : "Rutina guardada");
       onSaved();
     } catch (e: any) {
       toast.push(e?.message ?? "No se pudo guardar", "error");
@@ -539,7 +618,13 @@ function TemplateEditor({ tpl, category, cats, exercises, onClose, onSaved }: {
         </button>
         <div className="flex gap-2">
           <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
-          <button className="btn btn-primary" disabled={busy} onClick={save}>
+          {tpl && (
+            <button className="btn btn-ghost" disabled={busy} onClick={() => save(true)}
+              title="Crea una rutina NUEVA con estos cambios y deja la original tal cual">
+              <Copy size={14} /> Guardar como copia
+            </button>
+          )}
+          <button className="btn btn-primary" disabled={busy} onClick={() => save(false)}>
             {busy ? <Spinner /> : "Guardar"}
           </button>
         </div>

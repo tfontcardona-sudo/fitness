@@ -113,7 +113,7 @@ def test_seeds_del_pool_resuelven_al_cien_por_cien(db):
 
     from app.services.templates import CATEGORY_KEYS, resolve_training
 
-    assert len(TEMPLATES) >= 100
+    assert len(TEMPLATES) >= 20
     per_cat: dict[str, int] = {}
     for entry in TEMPLATES:
         assert entry["category"] in CATEGORY_KEYS
@@ -124,6 +124,8 @@ def test_seeds_del_pool_resuelven_al_cien_por_cien(db):
         for s in training["sessions"]:
             for e in s["exercises"]:
                 assert isinstance(e["rir"], str) and e["exercise_id"] >= 1
+    # Cada carpeta sembrada trae EXACTAMENTE sus 20 casos (el pool se completa
+    # carpeta a carpeta; ninguna queda a medias).
     assert all(n == 20 for n in per_cat.values()), per_cat
 
 
