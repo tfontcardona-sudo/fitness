@@ -13,6 +13,7 @@ const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const ClientsPage = lazy(() => import("./pages/ClientsPage"));
 const ClientProfilePage = lazy(() => import("./pages/ClientProfilePage"));
 const RecursosPage = lazy(() => import("./pages/RecursosPage"));
+const RutinasPage = lazy(() => import("./pages/RutinasPage"));
 const PortalApp = lazy(() => import("./portal/PortalApp"));
 const PortalLogin = lazy(() => import("./portal/PortalLogin"));
 const PlansPage = lazy(() => import("./pages/PlansPage"));
@@ -80,6 +81,8 @@ function CoachApp() {
         <Route index element={<DashboardPage />} />
         <Route path="clientes" element={<ClientsPage />} />
         <Route path="clientes/:id" element={<ClientProfilePage />} />
+        {/* Pool de rutinas por carpetas: usar con un cliente / subir / editar. */}
+        <Route path="rutinas" element={<RutinasPage />} />
         {/* Recursos: fuera en esta instancia (FEATURE_RESOURCES); sin la ruta,
             /recursos cae en el comodín y redirige al panel. */}
         {FEATURE_RESOURCES && <Route path="recursos" element={<RecursosPage />} />}

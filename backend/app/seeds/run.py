@@ -137,11 +137,16 @@ def main() -> None:
         brand = seed_brand(db)
         contacto = seed_coach_contact(db)
         n_admins = seed_admins(db)
+        # Pool de rutinas (después de los ejercicios: resuelve nombres→ids)
+        from app.services.templates import seed_plan_templates
+
+        n_tpl = seed_plan_templates(db)
         print(
             f"[seed] ejercicios: {n_ex or 'ya existían'} · "
             f"maquinaria nueva: {n_maq} · "
             f"casa/bandas nuevos: {n_home} · "
             f"alimentos nuevos: {n_food} · "
+            f"rutinas del pool nuevas: {n_tpl} · "
             f"brand: {'creada' if brand else 'ya existía'} · "
             f"whatsapp del coach: {'rellenado' if contacto else 'ya estaba'} · "
             f"admins creados: {n_admins}"

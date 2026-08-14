@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
+  Dumbbell,
   LayoutDashboard,
   Library,
   LogOut,
@@ -15,10 +16,11 @@ import { AlertsBell } from "./AlertsBell";
 import { AiCreditButton } from "./AiCreditButton";
 
 // La web del coach se queda con el ciclo esencial (anamnesis → plan →
-// seguimiento): Recursos solo aparece si la instancia lo tiene encendido.
+// seguimiento) + el pool de Rutinas: Recursos solo si la instancia lo enciende.
 const NAV = [
   { to: "/", label: "Hoy", icon: LayoutDashboard, end: true },
   { to: "/clientes", label: "Clientes", icon: Users, end: false },
+  { to: "/rutinas", label: "Rutinas", icon: Dumbbell, end: false },
   { to: "/recursos", label: "Recursos", icon: Library, end: false },
 ].filter((item) => FEATURE_RESOURCES || item.to !== "/recursos");
 

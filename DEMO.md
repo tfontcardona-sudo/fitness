@@ -78,11 +78,16 @@ Login. El dashboard prioriza el trabajo en dos tarjetas: **Carlos Bosch**
 visible). Jordi queda abajo, "Al día". Mensaje: *nadie se pierde; el sistema
 persigue, vosotros decidís*.
 
-**3) Alta EN VIVO de un cliente (2')**
-Crea a "Laura Vidal" delante de ellos: alta manual → selector de plan
-(Génesis.99 / Entreno Personal) → queda en cola de anamnesis con
-recordatorios automáticos (D+3/D+7). Mensaje: *dar de alta cuesta 2 minutos
-y el sistema se encarga de perseguir la anamnesis*.
+**3) Alta EN VIVO de un cliente — desde el pool de RUTINAS (2')**
+Abre **Rutinas** (menú): 6 carpetas con 120 rutinas de fábrica por caso real
+(ganancia muscular, pérdida de grasa, fuerza, salud/molestias, primeros pasos,
+mantenimiento). Elige una que encaje con "Laura Vidal" → **"Usar" → Cliente
+nuevo** → el perfil se crea EN EL MOMENTO con la rutina como plan borrador y
+te deja en su Planificación. Enseña también **"Subir rutina"**: un PDF/Word
+externo se lee, se mapea a la biblioteca y queda re-maquetado con el diseño de
+la marca (y su PDF negro/dorado se descarga desde la lista). Mensaje: *todo el
+conocimiento del centro, ordenado y reutilizable en dos clics*. (El alta manual
+clásica desde Clientes sigue existiendo.)
 
 **3b) La ficha de Marta — anamnesis y plan (3')**
 Abre Marta → pestaña **Anamnesis**: todo estructurado (objetivo, medidas,
@@ -127,9 +132,10 @@ se le responde por WhatsApp y se marca resuelta. Mensaje: *las dudas del
 cliente no viven en tu cabeza ni en un chat perdido: entran en la cola*.
 
 **7) Cierre (1')**
-Recorre el menú: la web es SOLO el ciclo de asesoría — Hoy y Clientes, sin
-distracciones (nada de módulos que no vais a usar; todo lo demás está apagado
-de fábrica para vosotros). Mensaje: *herramienta de trabajo, no un ERP*. Y lo
+Recorre el menú: la web es SOLO el ciclo de asesoría — Hoy, Clientes y
+Rutinas, sin distracciones (nada de módulos que no vais a usar; todo lo demás
+está apagado de fábrica para vosotros). Mensaje: *herramienta de trabajo, no
+un ERP*. Y lo
 que falta para arrancar de verdad: su Stripe, su dominio y su email
 (`PENDIENTE.md`) — todo configuración, cero desarrollo.
 

@@ -782,3 +782,56 @@ export interface WhatsAppRoundOut {
   items: WhatsAppRoundItem[];
   pending: number;
 }
+
+// --- Pool de rutinas (página Rutinas del coach) ---
+export interface TemplateCategory {
+  key: string;
+  label: string;
+  blurb: string;
+  count: number;
+}
+
+export interface TemplateExercise {
+  exercise_id: number;
+  sets: number;
+  rep_range: string;
+  rir: string;
+  rest_sec: number;
+  technique_cue: string;
+}
+
+export interface TemplateSession {
+  day: string;
+  name: string;
+  warmup: string;
+  exercises: TemplateExercise[];
+  cooldown: string;
+}
+
+export interface TemplateListItem {
+  id: number;
+  category: string;
+  title: string;
+  case_note: string | null;
+  level: string | null;
+  days_per_week: number | null;
+  training_place: string | null;
+  source: "seed" | "upload" | "manual";
+  has_nutrition: boolean;
+}
+
+export interface TemplateOut extends TemplateListItem {
+  training_json: {
+    split_name?: string;
+    split_rationale?: string;
+    sessions?: TemplateSession[];
+    [k: string]: unknown;
+  } | null;
+  nutrition_json: Record<string, unknown> | null;
+}
+
+export interface UseTemplateOut {
+  client_id: number;
+  plan_id: number;
+  created_client: boolean;
+}

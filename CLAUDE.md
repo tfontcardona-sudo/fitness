@@ -138,6 +138,12 @@ routers/
   clients.py       CRUD de clientes + documentos + lectura IA + generación de plan.
   exercises.py     Biblioteca de ejercicios.
   plans.py         Planes: publicar, descargar Word, plantilla de anamnesis.
+  templates.py     POOL DE RUTINAS (/api/templates): carpetas fijas, CRUD, docu-
+                   mento con el dossier de marca, "usar con un cliente" (crea el
+                   perfil + plan BORRADOR) e importación de PDF/Word externos con
+                   IA (mapea ejercicios a la biblioteca; la dieta NO se importa).
+                   Lógica en services/templates.py; seeds en seeds/templates_data
+                   (120 rutinas, 20 × 6 carpetas; test test_templates_pool.py).
   brand.py         Configuración de marca (logo, colores, textos).
   portal_public.py Endpoints PÚBLICOS del portal del cliente (token, sin login).
 

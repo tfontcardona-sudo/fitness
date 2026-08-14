@@ -20,7 +20,7 @@ from app.db import engine
 from app.routers import (
     ai_credit, alerts, auth, brand, clients, coach_push, email, exercises,
     google_oauth, plans, portal_public, public_site, resources, stripe_router,
-    whatsapp,
+    templates, whatsapp,
 )
 
 APP_VERSION = "0.2.0"
@@ -140,6 +140,7 @@ app.include_router(exercises.router)
 app.include_router(brand.router)
 app.include_router(resources.router)
 app.include_router(plans.router)
+app.include_router(templates.router)
 app.include_router(alerts.router)
 app.include_router(ai_credit.router)
 app.include_router(email.router)

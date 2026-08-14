@@ -595,6 +595,36 @@ class ChangeRequest(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+# -------------------------------------------------------- plan_templates ----
+class PlanTemplate(Base):
+    """Pool de rutinas/planificaciones del coach, agrupadas por carpeta.
+
+    Una plantilla guarda el MISMO shape que `plans.training_json` (ejercicios ya
+    resueltos a exercise_id de la biblioteca) para que "usar con un cliente" sea
+    una copia directa y el dossier de marca la renderice tal cual. `case_note`
+    describe el CASO de cliente tipo al que va dirigida. `source` distingue las
+    sembradas de fábrica ("seed") de las subidas ("upload") o creadas a mano
+    ("manual") — las tres son editables y borrables desde la web."""
+
+    __tablename__ = "plan_templates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    category: Mapped[str] = mapped_column(String(40), index=True)
+    title: Mapped[str] = mapped_column(String(160))
+    case_note: Mapped[str | None] = mapped_column(Text)
+    goal_type: Mapped[str | None] = mapped_column(String(30))
+    level: Mapped[str | None] = mapped_column(String(20))
+    days_per_week: Mapped[int | None] = mapped_column(Integer)
+    training_place: Mapped[str | None] = mapped_column(String(20))  # gym|home
+    training_json: Mapped[dict | None] = mapped_column(JSONB)
+    nutrition_json: Mapped[dict | None] = mapped_column(JSONB)  # solo importadas
+    source: Mapped[str] = mapped_column(String(10), default="manual")  # seed|upload|manual
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 # ------------------------------------------------------- ai_credit_state ----
 class AiCreditState(Base):
     """Saldo de créditos de la API de Anthropic (fila única).

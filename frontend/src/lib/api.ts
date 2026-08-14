@@ -486,6 +486,28 @@ export const api = {
   },
   removeProductImage: (id: number) =>
     request<RecommendedProductOut>("DELETE", `/resources/products/${id}/image`),
+
+  // --- pool de rutinas (página Rutinas) ---
+  templateCategories: () =>
+    request<import("../types").TemplateCategory[]>("GET", "/templates/categories"),
+  listTemplates: (category?: string) =>
+    request<import("../types").TemplateListItem[]>(
+      "GET", `/templates${category ? `?category=${encodeURIComponent(category)}` : ""}`),
+  getTemplate: (id: number) =>
+    request<import("../types").TemplateOut>("GET", `/templates/${id}`),
+  createTemplate: (body: Record<string, unknown>) =>
+    request<import("../types").TemplateOut>("POST", "/templates", body),
+  updateTemplate: (id: number, body: Record<string, unknown>) =>
+    request<import("../types").TemplateOut>("PATCH", `/templates/${id}`, body),
+  deleteTemplate: (id: number) => request<void>("DELETE", `/templates/${id}`),
+  useTemplate: (id: number, body: { client_id?: number; new_client?: { full_name: string; email: string; phone?: string; package_tier?: string } }) =>
+    request<import("../types").UseTemplateOut>("POST", `/templates/${id}/use`, body),
+  importTemplate: (category: string, file: File) => {
+    const fd = new FormData();
+    fd.append("category", category);
+    fd.append("file", file);
+    return request<import("../types").TemplateOut>("POST", "/templates/import", fd);
+  },
 };
 
 export type { ChangeRequestOut };
