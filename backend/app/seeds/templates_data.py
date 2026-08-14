@@ -903,7 +903,7 @@ TEMPLATES = [
     {
      "type": "liss",
      "minutes": 45,
-     "times_per_week": 3,
+     "times_per_week": 4,
      "notes": "Rodajes suaves ya previstos en su plan de carrera; aquí solo se reflejan."
     }
    ]
@@ -1108,12 +1108,12 @@ TEMPLATES = [
       "technique_cue": "Sube con intención de velocidad, baja controlado."
      },
      {
-      "name": "Sentadilla búlgara",
+      "name": "Hip thrust con barra",
       "sets": 3,
-      "rep_range": "6-8",
+      "rep_range": "8-10",
       "rir": "2",
       "rest_sec": 120,
-      "technique_cue": "Trabaja cada pierna como pedalada independiente."
+      "technique_cue": "Bloqueo de cadera con el glúteo: los vatios salen de aquí, no de más cuádriceps."
      },
      {
       "name": "Remo con pecho apoyado en banco",
@@ -2414,12 +2414,12 @@ TEMPLATES = [
     "warmup": "Trote suave 5 min y movilidad de isquios progresiva.",
     "exercises": [
      {
-      "name": "Curl nórdico",
+      "name": "Curl femoral tumbado",
       "sets": 3,
-      "rep_range": "3-5",
+      "rep_range": "10-12",
       "rir": "2",
-      "rest_sec": 120,
-      "technique_cue": "Baja lo más lento que puedas y ayúdate con las manos al volver."
+      "rest_sec": 90,
+      "technique_cue": "Trabajo de isquios sin daño excéntrico máximo: el partido manda."
      },
      {
       "name": "Peso muerto rumano a una pierna",
@@ -3468,6 +3468,14 @@ TEMPLATES = [
       "rir": "2-3",
       "rest_sec": 60,
       "technique_cue": "Agárrate a un apoyo y sube a las puntas con control."
+     },
+     {
+      "name": "Hip thrust en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Empuja con el glúteo y aprieta un segundo arriba: es lo que te levanta de la silla y sube la cadera al cargar peso."
      }
     ],
     "cooldown": "Estiramientos suaves y respiración, 5 minutos."
@@ -4665,12 +4673,12 @@ TEMPLATES = [
     "warmup": "Movilidad general y series de aproximación",
     "exercises": [
      {
-      "name": "Sentadilla trasera con barra",
+      "name": "Sentadilla goblet",
       "sets": 4,
-      "rep_range": "6-8",
-      "rir": "2",
-      "rest_sec": 180,
-      "technique_cue": "Aprieta el core antes de bajar"
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 150,
+      "technique_cue": "Mancuerna vertical al pecho, torso alto; aprende el patrón antes de pasar a la barra."
      },
      {
       "name": "Press banca con barra",
@@ -4681,12 +4689,12 @@ TEMPLATES = [
       "technique_cue": "Escápulas retraídas y pies firmes"
      },
      {
-      "name": "Remo con barra",
+      "name": "Remo en máquina",
       "sets": 3,
       "rep_range": "8-10",
       "rir": "2",
       "rest_sec": 120,
-      "technique_cue": "Torso fijo, tira al abdomen"
+      "technique_cue": "Pecho apoyado y sin despegarlo: la espalda trabaja sin cargar la lumbar."
      },
      {
       "name": "Press de hombros con mancuernas sentado",
@@ -5321,6 +5329,14 @@ TEMPLATES = [
       "rir": "1",
       "rest_sec": 60,
       "technique_cue": "Separa la cuerda al extender"
+     },
+     {
+      "name": "Jalón al pecho",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Codos hacia los bolsillos; mantiene la espalda mientras priorizamos el brazo."
      }
     ],
     "cooldown": "Estiramiento de brazo 5 min"
@@ -6965,12 +6981,12 @@ TEMPLATES = [
     "warmup": "5 min de movilidad y aproximaciones rápidas",
     "exercises": [
      {
-      "name": "Sentadilla trasera con barra",
+      "name": "Sentadilla goblet",
       "sets": 3,
-      "rep_range": "6-8",
-      "rir": "2",
-      "rest_sec": 150,
-      "technique_cue": "Core firme antes de bajar"
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Mancuerna al pecho y torso alto; con poco tiempo, prioriza el patrón limpio."
      },
      {
       "name": "Press banca con barra",
@@ -7274,6 +7290,14 @@ TEMPLATES = [
       "rir": "2",
       "rest_sec": 60,
       "technique_cue": "Flexiona desde las costillas"
+     },
+     {
+      "name": "Peso muerto rumano con mancuernas",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Cadera atrás y espalda neutra; baja hasta notar el estiramiento detrás del muslo."
      }
     ],
     "cooldown": "Estiramientos suaves 5 min"
@@ -7542,8 +7566,8 @@ TEMPLATES = [
     "week": 3,
     "intent": "Carga: pico de estímulo de pierna",
     "load_pct": 105,
-    "rir_target": "0-1",
-    "volume_note": "Añade 1 serie a un ejercicio por sesión de pierna"
+    "rir_target": "1-2",
+    "volume_note": "Semana fuerte, pero el peso muerto se queda en RIR 2: nunca al fallo con la barra en la espalda."
    },
    {
     "week": 4,
@@ -7565,6 +7589,4506 @@ TEMPLATES = [
    ]
   },
   "deload_instructions": "Semana 4: mitad de series en pierna y 90 por ciento de carga; si la lumbar acumula fatiga del peso muerto, sustitúyelo esa semana por hip thrust ligero."
+ },
+ {
+  "category": "mantenimiento",
+  "title": "Sostener el físico logrado",
+  "case": "Hombre de 36 años, arquitecto técnico, que acaba de cerrar cinco meses de definición y por fin se ve como quería. Pide literalmente 'no quiero volver atrás, quiero quedarme aquí', y el condicionante es el hartazgo mental de tanto volumen acumulado: si le mando otra vez seis días y veinte series por grupo lo deja en un mes, así que hay que sostener el resultado con la dosis mínima que lo mantenga.",
+  "level": "advanced",
+  "days_per_week": 4,
+  "place": "gym",
+  "split_name": "Torso/Pierna x2 de mantenimiento",
+  "split_rationale": "Cuatro sesiones de una hora escasa cubren cada patrón dos veces por semana, que es lo que hace falta para conservar masa y fuerza. El volumen baja alrededor de un tercio respecto a su etapa de definición y se mantiene la intensidad: así retiene el estímulo sin la carga de fatiga que le acabó quemando.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Torso A - empuje horizontal y espalda densa",
+    "warmup": "5 minutos de remo suave, movilidad de hombro con banda y dos series de aproximación al primer ejercicio al 50 y al 70 por ciento.",
+    "exercises": [
+     {
+      "name": "Press banca con barra",
+      "sets": 4,
+      "rep_range": "6-8",
+      "rir": "2",
+      "rest_sec": 180,
+      "technique_cue": "Escápulas retraídas y pies clavados; baja controlado a la línea del pezón y no rebotes en el pecho."
+     },
+     {
+      "name": "Remo con barra",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 150,
+      "technique_cue": "Tronco a 45 grados y bloqueado; lleva la barra al ombligo sin dar tirones con la lumbar."
+     },
+     {
+      "name": "Press de hombros con mancuernas sentado",
+      "sets": 3,
+      "rep_range": "8-12",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Respaldo casi vertical, codos algo adelantados y sin arquear la zona lumbar al empujar."
+     },
+     {
+      "name": "Jalón al pecho",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Pecho arriba y codos hacia el bolsillo; frena la subida en lugar de dejar que el peso te estire."
+     },
+     {
+      "name": "Elevaciones laterales con mancuernas",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Sube hasta la altura del hombro con el codo ligeramente flexionado y sin impulso de cadera."
+     },
+     {
+      "name": "Face pull en polea",
+      "sets": 3,
+      "rep_range": "15-20",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cuerda a la altura de los ojos, separa las manos al final y aguanta medio segundo."
+     }
+    ],
+    "cooldown": "Cinco minutos de respiración nasal tumbado y estiramiento suave de pectoral en marco de puerta."
+   },
+   {
+    "day": "Martes",
+    "name": "Pierna A - cuádriceps y cadena posterior",
+    "warmup": "Bicicleta 6 minutos, movilidad de tobillo y cadera, y dos series de aproximación en sentadilla.",
+    "exercises": [
+     {
+      "name": "Sentadilla trasera con barra",
+      "sets": 4,
+      "rep_range": "6-8",
+      "rir": "2",
+      "rest_sec": 180,
+      "technique_cue": "Barra apoyada en el trapecio, rodillas siguiendo la punta del pie y profundidad hasta donde no se retroverse la pelvis."
+     },
+     {
+      "name": "Peso muerto rumano con barra",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 150,
+      "technique_cue": "Cadera atrás con la barra pegada al muslo; para cuando el isquio ya no dé más sin redondear."
+     },
+     {
+      "name": "Prensa de piernas 45°",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Pies a la anchura de las caderas y sin bloquear la rodilla de golpe arriba."
+     },
+     {
+      "name": "Curl femoral tumbado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "1-2",
+      "rest_sec": 75,
+      "technique_cue": "Cadera pegada al banco y bajada de tres segundos para aprovechar la fase excéntrica."
+     },
+     {
+      "name": "Elevación de talones de pie",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Recorrido completo, pausa arriba de un segundo y sin rebotar abajo."
+     },
+     {
+      "name": "Plancha con lastre",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Glúteo apretado y costillas abajo; el disco va en la zona media de la espalda."
+     }
+    ],
+    "cooldown": "Estiramiento de psoas y cuádriceps, dos minutos por lado, y respiración lenta."
+   },
+   {
+    "day": "Jueves",
+    "name": "Torso B - inclinado y espalda en anchura",
+    "warmup": "5 minutos de elíptica, band pull-apart y aproximaciones al press inclinado.",
+    "exercises": [
+     {
+      "name": "Press inclinado con mancuernas",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 150,
+      "technique_cue": "Banco a 30 grados; baja hasta sentir el pectoral estirado sin que el hombro se vaya adelante."
+     },
+     {
+      "name": "Dominadas neutras",
+      "sets": 4,
+      "rep_range": "6-10",
+      "rir": "2",
+      "rest_sec": 150,
+      "technique_cue": "Arranca deprimiendo la escápula antes de doblar el codo y controla la bajada completa."
+     },
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "1-2",
+      "rest_sec": 90,
+      "technique_cue": "Ajusta el asiento para que las manos queden a la altura del pecho, no del cuello."
+     },
+     {
+      "name": "Remo sentado en polea",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Tronco quieto, que trabaje el codo; nada de balancearte para sumar kilos."
+     },
+     {
+      "name": "Curl de bíceps con barra EZ",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Codos fijos al costado y sin usar la cadera para arrancar la subida."
+     },
+     {
+      "name": "Extensión de tríceps en polea con cuerda",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Codos pegados al tronco, abre la cuerda al final del recorrido."
+     }
+    ],
+    "cooldown": "Movilidad torácica en el rodillo, dos minutos, y estiramiento de dorsal colgado suave."
+   },
+   {
+    "day": "Viernes",
+    "name": "Pierna B - bisagra, glúteo y unilateral",
+    "warmup": "Bicicleta 6 minutos, puente de glúteo sin carga y aproximaciones a la hexagonal.",
+    "exercises": [
+     {
+      "name": "Peso muerto con barra hexagonal",
+      "sets": 4,
+      "rep_range": "6-8",
+      "rir": "2",
+      "rest_sec": 180,
+      "technique_cue": "Pecho alto en la salida y empuja el suelo con el pie entero; no tires con la espalda."
+     },
+     {
+      "name": "Sentadilla búlgara",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Pie delantero lo bastante adelante para que la rodilla no se coma el recorrido."
+     },
+     {
+      "name": "Hip thrust con barra",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "1-2",
+      "rest_sec": 120,
+      "technique_cue": "Barbilla al pecho, costillas abajo y pausa de un segundo arriba con el glúteo apretado."
+     },
+     {
+      "name": "Extensión de rodilla en máquina",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 75,
+      "technique_cue": "Extiende sin dar el latigazo final y baja frenando durante dos segundos."
+     },
+     {
+      "name": "Curl femoral sentado",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 75,
+      "technique_cue": "Espalda pegada al respaldo y sin levantar la cadera para ayudarte."
+     },
+     {
+      "name": "Press Pallof",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Extiende los brazos sin dejar que el tronco gire hacia la polea."
+     }
+    ],
+    "cooldown": "Estiramiento de isquios y glúteo, dos minutos por lado, y paseo suave de cinco minutos."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación: recolocar cargas tras la definición, sin buscar sensaciones de etapa de volumen",
+    "load_pct": 100,
+    "rir_target": "2-3",
+    "volume_note": "El volumen ya está recortado un tercio respecto a su definición; no añadas series aunque se vea con fuerza de sobra."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión: subir peso solo en los cuatro ejercicios principales",
+    "load_pct": 102.5,
+    "rir_target": "2",
+    "volume_note": "Mismas series que la semana 1; el avance viene del kilo añadido, no de más trabajo."
+   },
+   {
+    "week": 3,
+    "intent": "Carga: semana más exigente para confirmar que no ha perdido fuerza",
+    "load_pct": 105,
+    "rir_target": "1-2",
+    "volume_note": "Una serie extra únicamente en press banca y sentadilla; el resto se queda igual."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga: bajar la carga para llegar al mes siguiente con ganas de venir",
+    "load_pct": 90,
+    "rir_target": "3-4",
+    "volume_note": "Quita una serie de cada ejercicio accesorio y sal del centro con la sensación de que te has quedado corto."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 9000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 30,
+     "times_per_week": 3,
+     "notes": "Caminar rápido o bicicleta suave los días sin pesas; el objetivo es sostener el gasto sin sumar fatiga a las piernas."
+    }
+   ]
+  },
+  "deload_instructions": "La semana 4 se entrena al 90 por ciento de la carga, con una serie menos en cada accesorio y RIR 3-4 en todo. Se mantienen los cuatro días para no romper el hábito, que en su caso es lo que más pesa. Si acumula dos semanas durmiendo mal o llega tres sesiones seguidas sin ganas, adelanta la descarga sin esperar a que toque."
+ },
+ {
+  "category": "mantenimiento",
+  "title": "Tono general sin complicarse",
+  "case": "Mujer de 44 años, administrativa en una gestoría del Eixample, que se apuntó en enero tras diez años sin hacer absolutamente nada. Pide literalmente 'tres días y algo sencillo que pueda seguir sin pensar', y el condicionante es que se agobia con las hojas llenas de ejercicios y con las máquinas que no sabe regular: necesita el mismo circuito de aparatos, el mismo orden y el mismo sitio de la sala cada día.",
+  "level": "beginner",
+  "days_per_week": 3,
+  "place": "gym",
+  "split_name": "Full body sencillo de tres días",
+  "split_rationale": "Tres sesiones de cuerpo completo con la misma estructura (pierna, tirón, empuje, glúteo, hombro y core) para que solo cambien los aparatos y nunca el guion. Así aprende el orden en dos semanas y deja de necesitar el papel en la mano.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Día A - máquinas guiadas",
+    "warmup": "6 minutos de bicicleta estática a ritmo cómodo y diez sentadillas al aire sujetándose al marco.",
+    "exercises": [
+     {
+      "name": "Prensa de piernas 45°",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Pies a la anchura de las caderas y baja hasta que la rodilla forme un ángulo recto, ni más."
+     },
+     {
+      "name": "Jalón al pecho",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Siéntate erguida, lleva la barra a la clavícula y suelta despacio sin dejar que te levante."
+     },
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Asiento a la altura del pecho; empuja sin bloquear el codo de golpe."
+     },
+     {
+      "name": "Puente de glúteos",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2-3",
+      "rest_sec": 60,
+      "technique_cue": "Aprieta el glúteo arriba un segundo y evita arquear la lumbar para subir más."
+     },
+     {
+      "name": "Elevaciones laterales con mancuernas",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 60,
+      "technique_cue": "Mancuerna ligera; sube solo hasta el hombro y baja contando dos segundos."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "20-30s",
+      "rir": "3",
+      "rest_sec": 60,
+      "technique_cue": "Si te cuesta, apoya las rodillas; lo importante es que la cadera no se hunda."
+     }
+    ],
+    "cooldown": "Cinco minutos caminando en cinta a ritmo suave y estiramiento de cuádriceps y pectoral."
+   },
+   {
+    "day": "Miércoles",
+    "name": "Día B - peso libre básico",
+    "warmup": "6 minutos de elíptica y movilidad de hombro con banda ligera.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Mancuerna pegada al pecho, codos dentro y baja como si te sentaras en una silla alta."
+     },
+     {
+      "name": "Remo en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Pecho apoyado, tira con los codos hacia atrás y junta los omóplatos al final."
+     },
+     {
+      "name": "Press de hombros en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Espalda pegada al respaldo; si notas el cuello, baja el peso."
+     },
+     {
+      "name": "Curl femoral tumbado",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2-3",
+      "rest_sec": 60,
+      "technique_cue": "Cadera pegada al banco y baja el peso frenando, sin soltarlo."
+     },
+     {
+      "name": "Extensión de tríceps en polea con cuerda",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 60,
+      "technique_cue": "Codos pegados a las costillas; solo se mueve el antebrazo."
+     },
+     {
+      "name": "Dead bug",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "3",
+      "rest_sec": 60,
+      "technique_cue": "Lumbar pegada al suelo todo el rato; si se despega, acorta el recorrido de la pierna."
+     }
+    ],
+    "cooldown": "Cinco minutos de bicicleta suave y estiramiento de isquios sentada."
+   },
+   {
+    "day": "Viernes",
+    "name": "Día C - patrones de vida diaria",
+    "warmup": "6 minutos caminando en cinta con inclinación y diez puentes de glúteo sin carga.",
+    "exercises": [
+     {
+      "name": "Subida a cajón",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Cajón bajo al principio; sube empujando con el pie de arriba y baja despacio, sin saltar."
+     },
+     {
+      "name": "Hip thrust en máquina",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2-3",
+      "rest_sec": 75,
+      "technique_cue": "Mirada al frente-abajo y pausa arriba de un segundo apretando el glúteo."
+     },
+     {
+      "name": "Remo sentado en polea",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Rodillas algo dobladas y tronco quieto; no te vayas atrás con el peso."
+     },
+     {
+      "name": "Contractora de pecho",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 60,
+      "technique_cue": "Codos a la altura del pecho y cierre suave, sin chocar los brazos."
+     },
+     {
+      "name": "Curl alterno con mancuernas",
+      "sets": 2,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 60,
+      "technique_cue": "Un brazo cada vez, codo quieto y sin balancear el cuerpo."
+     },
+     {
+      "name": "Bird dog",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "3",
+      "rest_sec": 45,
+      "technique_cue": "Estira brazo y pierna contrarios sin que la cadera se abra hacia un lado."
+     }
+    ],
+    "cooldown": "Cinco minutos de paseo por la sala y estiramiento global de espalda y piernas."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación: aprender el orden de los aparatos y anotar los kilos de cada máquina",
+    "load_pct": 100,
+    "rir_target": "3-4",
+    "volume_note": "Cargas conservadoras a propósito; la primera semana el objetivo es acabar sin agujetas que la asusten."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión: repetir el mismo circuito subiendo una placa donde las últimas repeticiones salieron fáciles",
+    "load_pct": 102.5,
+    "rir_target": "3",
+    "volume_note": "Mismas series; solo cambia el peso y ya se moverá sin mirar la hoja."
+   },
+   {
+    "week": 3,
+    "intent": "Carga: la semana en la que debe notar que las últimas dos repeticiones cuestan",
+    "load_pct": 105,
+    "rir_target": "2-3",
+    "volume_note": "Añade una serie a prensa y jalón, que son los dos ejercicios que mejor domina."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga: aligerar para que el mes acabe con buena sensación y no con cansancio",
+    "load_pct": 90,
+    "rir_target": "4",
+    "volume_note": "Dos series por ejercicio y sin plancha con lastre; se sale del centro con energía."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 8000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 25,
+     "times_per_week": 2,
+     "notes": "Paseo a buen ritmo por la Devesa o al salir del trabajo; no hace falta cinta ni ropa de deporte."
+    }
+   ]
+  },
+  "deload_instructions": "La semana 4 baja al 90 por ciento de la carga y a dos series por ejercicio, manteniendo los tres días y el mismo orden de siempre. Es la semana en la que se revisa su hoja de kilos y se comprueba que ya no necesita preguntar la regulación de ninguna máquina. Si llega alguna semana con más de dos días perdidos por trabajo, se repite la semana anterior en lugar de saltar adelante."
+ },
+ {
+  "category": "mantenimiento",
+  "title": "Definida, sin ponerse grande",
+  "case": "Mujer de 31 años, delegada comercial de una farmacéutica, con un año de clases dirigidas a la espalda y ninguna experiencia con cargas. Pide literalmente 'quiero tonificar y marcarme un poco, pero sin ponerme grande', y el condicionante es doble: rechaza de entrada todo lo que cree que le va a 'engordar el muslo' y solo puede entrar al centro pasadas las 21:00, con 50 minutos de margen antes del cierre.",
+  "level": "beginner",
+  "days_per_week": 3,
+  "place": "gym",
+  "split_name": "Full body con énfasis en glúteo, espalda y hombro",
+  "split_rationale": "Cuerpo completo tres días con más trabajo de glúteo, dorsal y deltoides lateral: son los grupos que dibujan la silueta que ella describe cuando dice definida. La carga sube de forma muy gradual porque el objetivo real es firmeza y postura, no ganar sección muscular, y así se le puede enseñar con sus propios registros que el volumen no aparece por entrenar fuerte.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Día A - cadera y espalda",
+    "warmup": "5 minutos de bicicleta, activación de glúteo con banda y movilidad torácica.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Talones apoyados, pecho alto y baja hasta el punto donde la espalda siga recta."
+     },
+     {
+      "name": "Hip thrust con barra",
+      "sets": 4,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Pausa de un segundo arriba con el glúteo apretado y sin arquear la lumbar."
+     },
+     {
+      "name": "Remo sentado en polea",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Tira del codo hacia la cadera y junta los omóplatos sin encoger el hombro."
+     },
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 75,
+      "technique_cue": "Asiento a la altura del pecho y recorrido completo, sin bloquear el codo."
+     },
+     {
+      "name": "Elevación lateral en polea unilateral",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Cable por detrás del cuerpo, sube hasta el hombro y baja frenando."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Cadera a la altura de los hombros y glúteo activo; nada de aguantar con la lumbar hundida."
+     }
+    ],
+    "cooldown": "Estiramiento de glúteo y flexor de cadera, dos minutos por lado."
+   },
+   {
+    "day": "Miércoles",
+    "name": "Día B - tirón vertical y cadena posterior",
+    "warmup": "5 minutos de elíptica, band pull-apart y bisagra de cadera sin carga.",
+    "exercises": [
+     {
+      "name": "Prensa de piernas horizontal",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Pies algo altos en la plataforma para repartir el trabajo hacia glúteo e isquio."
+     },
+     {
+      "name": "Jalón agarre estrecho neutro",
+      "sets": 4,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Pecho arriba, codos abajo y atrás; el dorsal es el que dibuja la cintura."
+     },
+     {
+      "name": "Peso muerto rumano con mancuernas",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Cadera atrás con las mancuernas rozando el muslo; para donde el isquio ya no ceda."
+     },
+     {
+      "name": "Press de hombros con mancuernas sentado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 75,
+      "technique_cue": "Respaldo casi vertical y sin sacar las costillas al empujar."
+     },
+     {
+      "name": "Abducción de cadera en máquina",
+      "sets": 3,
+      "rep_range": "15-20",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Tronco ligeramente inclinado adelante y apertura controlada, sin golpes."
+     },
+     {
+      "name": "Press Pallof",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Extiende los brazos sin permitir que el tronco gire hacia la polea."
+     }
+    ],
+    "cooldown": "Respiración diafragmática tumbada tres minutos y estiramiento de isquios."
+   },
+   {
+    "day": "Viernes",
+    "name": "Día C - unilateral y detalle",
+    "warmup": "5 minutos de cinta con inclinación y activación de glúteo medio con banda.",
+    "exercises": [
+     {
+      "name": "Sentadilla búlgara",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Tronco algo inclinado adelante para cargar el glúteo y no la rodilla."
+     },
+     {
+      "name": "Remo con pecho apoyado en banco",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Pecho fijo en el banco; que no haya balanceo, solo trabajo del codo."
+     },
+     {
+      "name": "Patada de glúteo en polea",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Cadera cuadrada y extiende sin arquear la espalda para llegar más lejos."
+     },
+     {
+      "name": "Contractora de pecho",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2-3",
+      "rest_sec": 60,
+      "technique_cue": "Cierre suave delante del pecho y apertura hasta sentir estiramiento sin dolor."
+     },
+     {
+      "name": "Face pull en polea",
+      "sets": 3,
+      "rep_range": "15-20",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cuerda a la altura de los ojos; abre las manos al final y aguanta medio segundo."
+     },
+     {
+      "name": "Crunch en polea alta",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Redondea la espalda alta llevando las costillas a la pelvis; la cadera no se mueve."
+     }
+    ],
+    "cooldown": "Cinco minutos de paseo suave y estiramiento de dorsal y glúteo."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación: aprender los seis patrones y registrar los kilos de partida en su hoja",
+    "load_pct": 100,
+    "rir_target": "3",
+    "volume_note": "Cargas prudentes y sesiones de 50 minutos justos; el objetivo es que salga antes del cierre sin correr."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión: subir peso en hip thrust y jalón, que son sus dos ejercicios clave",
+    "load_pct": 102.5,
+    "rir_target": "2-3",
+    "volume_note": "Mismas series; se le enseña que en dos semanas el peso ha subido y las medidas siguen iguales."
+   },
+   {
+    "week": 3,
+    "intent": "Carga: semana firme para que note de verdad el estímulo en glúteo y espalda",
+    "load_pct": 105,
+    "rir_target": "2",
+    "volume_note": "Una serie más en hip thrust y en abducción; el resto sin cambios."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga: aligerar y revisar medidas con cinta métrica para desmontar el miedo al volumen",
+    "load_pct": 90,
+    "rir_target": "3-4",
+    "volume_note": "Dos series por ejercicio y sesión de 35 minutos; se dedica el rato final a comparar perímetros."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 9000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 30,
+     "times_per_week": 2,
+     "notes": "Caminata rápida el fin de semana; nada de cardio a última hora entre semana porque le altera el sueño."
+    }
+   ]
+  },
+  "deload_instructions": "La semana 4 se entrena al 90 por ciento con dos series por ejercicio y se aprovecha para tomar perímetros de muslo, cadera y cintura delante de ella. Ese registro es la parte más importante de la descarga en este caso: es la prueba objetiva de que ha subido cargas sin ganar volumen en la pierna. Si en algún momento pide reducir el trabajo de pierna por miedo, se mantiene el hip thrust y se negocia el resto, nunca al revés."
+ },
+ {
+  "category": "mantenimiento",
+  "title": "Recomendación médica: empezar a moverse",
+  "case": "Hombre de 57 años, taxista de Girona, que llega con un papel de su médico de cabecera: tensión en el límite alto, colesterol y once horas al día sentado al volante. Pide literalmente 'dime qué tengo que hacer, que yo de esto no sé nada', y el condicionante es que no ha entrenado nunca, se queda sin aire subiendo dos pisos y toma medicación para la tensión, así que hay que empezar con máquinas guiadas, sin apneas y con una progresión que no le asuste.",
+  "level": "beginner",
+  "days_per_week": 3,
+  "place": "gym",
+  "split_name": "Full body guiado en tres días",
+  "split_rationale": "Cuerpo completo tres veces por semana con máquinas de recorrido guiado: es la vía más segura para alguien sin técnica ni condición previa, y reparte el estímulo cardiovascular a lo largo de la semana en lugar de concentrarlo. Nada de esfuerzos con la respiración bloqueada ni cargas cercanas al fallo, porque su tensión manda sobre cualquier otro criterio.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Día A - tren inferior guiado y espalda",
+    "warmup": "8 minutos de bicicleta estática a ritmo de conversación y movilidad de hombro y cadera.",
+    "exercises": [
+     {
+      "name": "Prensa de piernas horizontal",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Suelta el aire al empujar; no aguantes nunca la respiración con el peso arriba."
+     },
+     {
+      "name": "Jalón al pecho",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Siéntate erguido y tira a la clavícula; sube el peso despacio sin dejar que te levante."
+     },
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Empuja soltando el aire y frena la vuelta contando dos segundos."
+     },
+     {
+      "name": "Curl femoral sentado",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Espalda apoyada, movimiento suave y sin tirones al final."
+     },
+     {
+      "name": "Elevaciones laterales en máquina",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 75,
+      "technique_cue": "Carga ligera; el hombro se calienta rápido y no hace falta forzar."
+     },
+     {
+      "name": "Dead bug",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "3",
+      "rest_sec": 60,
+      "technique_cue": "Respira todo el rato mientras mueves brazo y pierna contrarios; la lumbar no se despega del suelo."
+     }
+    ],
+    "cooldown": "6 minutos caminando en cinta a ritmo bajo hasta que las pulsaciones bajen y estiramiento de pecho."
+   },
+   {
+    "day": "Miércoles",
+    "name": "Día B - patrones de levantarse y empujar",
+    "warmup": "8 minutos de cinta caminando con inclinación suave y movilidad de tobillo.",
+    "exercises": [
+     {
+      "name": "Subida a cajón",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Empieza con el cajón bajo, sube sin impulso del pie de atrás y baja controlando."
+     },
+     {
+      "name": "Remo en máquina",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Pecho apoyado, codos hacia atrás y hombros lejos de las orejas."
+     },
+     {
+      "name": "Press de hombros en máquina",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Recorrido cómodo; si notas presión en la cabeza, baja el peso y avisa."
+     },
+     {
+      "name": "Hip thrust en máquina",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Sube apretando el glúteo y suelta el aire arriba, sin aguantar la respiración."
+     },
+     {
+      "name": "Extensión de tríceps en polea con cuerda",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 75,
+      "technique_cue": "Codos pegados al costado; movimiento pequeño y controlado."
+     },
+     {
+      "name": "Bird dog",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "3",
+      "rest_sec": 60,
+      "technique_cue": "Alterna lados despacio; si pierdes el equilibrio, acorta el recorrido."
+     }
+    ],
+    "cooldown": "6 minutos de bicicleta muy suave y estiramiento de isquios y glúteo."
+   },
+   {
+    "day": "Viernes",
+    "name": "Día C - repaso completo",
+    "warmup": "8 minutos de elíptica a ritmo cómodo y movilidad general de columna.",
+    "exercises": [
+     {
+      "name": "Prensa de piernas 45°",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "No bajes hasta que la cadera se despegue del respaldo; ese es tu tope."
+     },
+     {
+      "name": "Remo sentado en polea",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Tronco quieto y tirón corto; nada de echarte atrás para mover más peso."
+     },
+     {
+      "name": "Contractora de pecho",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Cierre suave delante del pecho, sin llegar a chocar los brazos."
+     },
+     {
+      "name": "Puente de glúteos",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 60,
+      "technique_cue": "Apoya los pies cerca del glúteo y sube apretando; respira arriba."
+     },
+     {
+      "name": "Elevación de talones sentado",
+      "sets": 3,
+      "rep_range": "15-20",
+      "rir": "3",
+      "rest_sec": 60,
+      "technique_cue": "Recorrido completo y pausa arriba; el gemelo agradece el trabajo tras tantas horas sentado."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "20-30s",
+      "rir": "3",
+      "rest_sec": 60,
+      "technique_cue": "Con rodillas apoyadas si hace falta; respira con normalidad todo el tiempo."
+     }
+    ],
+    "cooldown": "8 minutos caminando en cinta y estiramiento de cadera y espalda baja."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación: aprender a respirar en cada repetición y quitarle el miedo a la sala",
+    "load_pct": 100,
+    "rir_target": "4",
+    "volume_note": "Cargas muy conservadoras; la primera semana se mide el pulso al acabar cada bloque."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión: subir una placa donde haya acabado con las repeticiones sobradas",
+    "load_pct": 102.5,
+    "rir_target": "3-4",
+    "volume_note": "Mismas series y mismo orden; el cambio es mínimo a propósito."
+   },
+   {
+    "week": 3,
+    "intent": "Carga: primera semana en la que debe notar esfuerzo real sin llegar a ahogarse",
+    "load_pct": 105,
+    "rir_target": "3",
+    "volume_note": "Se añade una serie a prensa y jalón; nada más, porque la recuperación aún es baja."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga: semana ligera para consolidar el hábito y revisar tensión con su médico",
+    "load_pct": 90,
+    "rir_target": "4",
+    "volume_note": "Dos series por ejercicio y más minutos de caminata; se sale sin sensación de esfuerzo."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 7000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 30,
+     "times_per_week": 4,
+     "notes": "Caminar a ritmo en el que pueda hablar pero no cantar; puede repartirlo en dos paseos de 15 minutos entre carreras."
+    }
+   ]
+  },
+  "deload_instructions": "La semana 4 baja al 90 por ciento con dos series por ejercicio y se sustituye una sesión de fuerza por 40 minutos de caminata si llega muy cansado. En su caso la descarga es también el momento de la revisión: se le pide que enseñe al médico el registro de tensión antes y después de entrenar. Nunca se progresa de semana si ha aparecido mareo, dolor en el pecho o falta de aire desproporcionada; en ese caso se para y se deriva."
+ },
+ {
+  "category": "mantenimiento",
+  "title": "Verano en la costa: dos días",
+  "case": "Mujer de 34 años, profesora de instituto, que en julio y agosto se traslada al apartamento familiar de la Costa Brava y no pisará el centro hasta septiembre. Pide literalmente 'no quiero perder lo que me ha costado un año entero', y el condicionante es el material: allí solo tiene dos mancuernas de 8 kg, un par de bandas y unos deslizadores, además de que ya nada casi cada día y sale en bici con su pareja dos tardes.",
+  "level": "intermediate",
+  "days_per_week": 2,
+  "place": "home",
+  "split_name": "Dos full body de mantenimiento con material mínimo",
+  "split_rationale": "Con mancuernas ligeras no se puede replicar la carga del centro, así que se compensa con dos sesiones de cuerpo completo, repeticiones más altas, trabajo unilateral y tempo lento. Dos días bastan para conservar masa y fuerza durante ocho semanas, y encajan sin pelearse con la natación y la bici, que ya cubren de sobra el apartado cardiovascular.",
+  "sessions": [
+   {
+    "day": "Martes",
+    "name": "Full body A - bisagra y empuje",
+    "warmup": "5 minutos de saltos suaves de cuerda imaginaria o marcha en el sitio, más movilidad de cadera y hombro con banda.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 4,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Con 8 kg necesitas tempo: baja en tres segundos y sube sin pausa para compensar la falta de carga."
+     },
+     {
+      "name": "Peso muerto rumano con mancuernas",
+      "sets": 4,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Mancuernas rozando el muslo y cadera muy atrás; el rango largo es lo que suple los kilos."
+     },
+     {
+      "name": "Remo con banda sentado",
+      "sets": 4,
+      "rep_range": "15-20",
+      "rir": "1-2",
+      "rest_sec": 75,
+      "technique_cue": "Pisa la banda con las dos piernas para tensarla y aguanta un segundo con los omóplatos juntos."
+     },
+     {
+      "name": "Press de hombro unilateral con mancuerna de pie",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Aprieta el glúteo y el abdomen para que el tronco no se incline hacia el lado libre."
+     },
+     {
+      "name": "Zancada inversa",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Da el paso atrás largo y baja la rodilla hasta rozar el suelo, sin apoyarla."
+     },
+     {
+      "name": "Plancha lateral",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Cadera bien alta y alineada; si aguantas más de 45 segundos, sube la pierna de arriba."
+     }
+    ],
+    "cooldown": "Estiramiento de isquios y pectoral y tres minutos de respiración lenta en la terraza."
+   },
+   {
+    "day": "Viernes",
+    "name": "Full body B - unilateral y tirón vertical",
+    "warmup": "5 minutos de marcha y movilidad de tobillo, más dos series ligeras de puente de glúteo.",
+    "exercises": [
+     {
+      "name": "Sentadilla búlgara con peso corporal",
+      "sets": 4,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Pie de atrás en una silla; si te resulta fácil, baja en cuatro segundos y pausa un segundo abajo."
+     },
+     {
+      "name": "Jalón con banda de pie",
+      "sets": 4,
+      "rep_range": "15-20",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Ancla la banda alta y tira con los codos hacia el bolsillo, sin encoger los hombros."
+     },
+     {
+      "name": "Press de pecho con banda",
+      "sets": 4,
+      "rep_range": "15-20",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Banda por la espalda a la altura de la escápula; junta las manos al final del empuje."
+     },
+     {
+      "name": "Curl femoral con deslizadores",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Cadera alta todo el recorrido y estira las piernas muy despacio; ahí está el trabajo."
+     },
+     {
+      "name": "Paseo del granjero unilateral",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Una sola mancuerna, hombros nivelados y pasos cortos; alterna el lado en cada serie."
+     },
+     {
+      "name": "Dead bug",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Lumbar pegada al suelo; si se despega, acorta el recorrido de la pierna."
+     }
+    ],
+    "cooldown": "Estiramiento de cadera y dorsal y cinco minutos de paseo hasta el agua."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación: ajustar tempos y bandas para que 8 kg se acerquen al esfuerzo del centro",
+    "load_pct": 100,
+    "rir_target": "2-3",
+    "volume_note": "Se fija el tempo de cada ejercicio la primera semana; sin él, esta rutina se queda corta."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión: sumar repeticiones dentro del rango antes de tocar nada más",
+    "load_pct": 102.5,
+    "rir_target": "2",
+    "volume_note": "Mismas series; el avance es llegar al tope del rango en todos los ejercicios."
+   },
+   {
+    "week": 3,
+    "intent": "Carga: alargar la excéntrica a cuatro segundos en los tres primeros ejercicios",
+    "load_pct": 105,
+    "rir_target": "1-2",
+    "volume_note": "Una serie más en sentadilla goblet y en jalón con banda; no hace falta más."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga: semana de playa con lo justo para no perder el hábito",
+    "load_pct": 90,
+    "rir_target": "3",
+    "volume_note": "Tres series por ejercicio y tempo normal; ese verano el objetivo es mantener, no rendir."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 11000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 45,
+     "times_per_week": 2,
+     "notes": "Las salidas en bici con su pareja ya cuentan como sesión; no hay que añadir nada encima."
+    },
+    {
+     "type": "liss",
+     "minutes": 25,
+     "times_per_week": 3,
+     "notes": "Natación tranquila en el mar; sirve además como recuperación entre los dos días de fuerza."
+    }
+   ]
+  },
+  "deload_instructions": "La semana 4 se hace al 90 por ciento con tres series por ejercicio y tempo normal, coincidiendo con la semana de más playa. En verano la descarga es fácil de justificar: el objetivo del bloque es llegar a septiembre habiendo mantenido, no progresar. Si algún día se salta una sesión por un plan familiar, se mueve al día siguiente y no se recupera acumulando dos seguidas."
+ },
+ {
+  "category": "mantenimiento",
+  "title": "Jueves a sábado, semana comprimida",
+  "case": "Mujer de 40 años, auditora en una firma con cartera en Barcelona y Madrid, fuera de Girona de lunes a miércoles cada semana. Pide literalmente 'no me apuntes a nada que no pueda cumplir', y el condicionante es que sus tres únicos días son seguidos, jueves, viernes y sábado, y el jueves llega del AVE agotada, así que la sesión de reentrada debe ser la más suave de las tres.",
+  "level": "intermediate",
+  "days_per_week": 3,
+  "place": "gym",
+  "split_name": "Reentrada suave + Torso + Pierna",
+  "split_rationale": "Al concentrar los tres días seguidos no se puede repartir el trabajo como en una semana normal, así que se ordena por fatiga creciente: jueves ligero de cuerpo completo para recuperar del viaje, viernes torso con el grueso del trabajo de brazos y espalda, y sábado pierna, que es el día en el que tiene tiempo y no hay reunión detrás. El domingo y los tres días fuera actúan como descanso natural.",
+  "sessions": [
+   {
+    "day": "Jueves",
+    "name": "Reentrada - cuerpo completo suave",
+    "warmup": "8 minutos de bicicleta a ritmo cómodo y movilidad de cadera, tobillo y columna torácica.",
+    "exercises": [
+     {
+      "name": "Prensa de piernas horizontal",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Sin buscar récords: hoy el objetivo es mover sangre después de tres días de silla y avión."
+     },
+     {
+      "name": "Remo sentado en polea",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Tirón largo y junta los omóplatos; es el mejor antídoto contra el hombro adelantado del portátil."
+     },
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Recorrido completo y sin bloquear el codo; carga moderada."
+     },
+     {
+      "name": "Puente de glúteos",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2-3",
+      "rest_sec": 60,
+      "technique_cue": "Pausa arriba de un segundo apretando el glúteo, que lleva tres días apagado."
+     },
+     {
+      "name": "Face pull en polea",
+      "sets": 3,
+      "rep_range": "15-20",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cuerda a la altura de los ojos y abre las manos al final del recorrido."
+     },
+     {
+      "name": "Bird dog",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "3",
+      "rest_sec": 45,
+      "technique_cue": "Movimiento lento alternando lados; sirve de reconexión del core antes del viernes."
+     }
+    ],
+    "cooldown": "Cinco minutos de caminata suave y estiramiento de flexor de cadera, dos minutos por lado."
+   },
+   {
+    "day": "Viernes",
+    "name": "Torso completo",
+    "warmup": "5 minutos de remo, band pull-apart y dos aproximaciones al press inclinado.",
+    "exercises": [
+     {
+      "name": "Press inclinado con mancuernas",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Banco a 30 grados; baja hasta notar el pectoral estirado, sin que el hombro caiga adelante."
+     },
+     {
+      "name": "Jalón agarre estrecho neutro",
+      "sets": 4,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Pecho arriba y codos hacia el bolsillo; controla la subida en lugar de soltar."
+     },
+     {
+      "name": "Press de hombros con mancuernas sentado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Respaldo casi vertical y costillas abajo; nada de arquear para empujar más."
+     },
+     {
+      "name": "Remo con mancuerna a una mano",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Cadera cuadrada; tira del codo hacia atrás sin rotar el tronco."
+     },
+     {
+      "name": "Elevaciones laterales con mancuernas",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Sube hasta el hombro con el codo algo flexionado y sin impulso de cadera."
+     },
+     {
+      "name": "Extensión de tríceps en polea con cuerda",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Codos pegados al tronco y abre la cuerda al final."
+     },
+     {
+      "name": "Curl martillo",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Agarre neutro y codo quieto; sin balanceo de tronco."
+     }
+    ],
+    "cooldown": "Estiramiento de pectoral en marco de puerta y movilidad torácica en el rodillo."
+   },
+   {
+    "day": "Sábado",
+    "name": "Pierna y core",
+    "warmup": "8 minutos de bicicleta, movilidad de cadera y dos aproximaciones a la sentadilla goblet.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 4,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Mancuerna al pecho, codos dentro y profundidad hasta donde la espalda siga recta."
+     },
+     {
+      "name": "Peso muerto rumano con mancuernas",
+      "sets": 4,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Cadera atrás con las mancuernas rozando el muslo; para donde el isquio ya no ceda."
+     },
+     {
+      "name": "Sentadilla búlgara",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Tronco algo inclinado adelante para repartir el trabajo hacia el glúteo."
+     },
+     {
+      "name": "Curl femoral tumbado",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 75,
+      "technique_cue": "Cadera pegada al banco y bajada frenada de dos segundos."
+     },
+     {
+      "name": "Abducción de cadera en máquina",
+      "sets": 3,
+      "rep_range": "15-20",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Tronco algo adelante y apertura controlada, sin golpes."
+     },
+     {
+      "name": "Elevación de talones de pie",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Recorrido completo con pausa arriba de un segundo."
+     },
+     {
+      "name": "Press Pallof",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Extiende los brazos sin permitir que el tronco gire hacia la polea."
+     }
+    ],
+    "cooldown": "Diez minutos de paseo y estiramiento de glúteo, isquios y cuádriceps."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación: comprobar que tres días seguidos son asumibles con la sesión suave delante",
+    "load_pct": 100,
+    "rir_target": "2-3",
+    "volume_note": "Si el sábado llega con la pierna floja, se recorta ahí y no en el viernes."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión: subir carga en press inclinado, jalón y sentadilla goblet",
+    "load_pct": 102.5,
+    "rir_target": "2",
+    "volume_note": "Mismas series; el jueves se mantiene deliberadamente ligero toda la semana."
+   },
+   {
+    "week": 3,
+    "intent": "Carga: semana fuerte aprovechando que el sábado no tiene prisa",
+    "load_pct": 105,
+    "rir_target": "1-2",
+    "volume_note": "Una serie más en la sesión de pierna; el jueves no se toca nunca."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga: aligerar para encajar la semana de cierre de auditoría",
+    "load_pct": 90,
+    "rir_target": "3",
+    "volume_note": "Dos sesiones en lugar de tres si el trabajo se dispara: se conservan viernes y sábado."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 8000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 30,
+     "times_per_week": 2,
+     "notes": "Caminar en los días de viaje, aunque sea del hotel a la oficina y vuelta; es lo único que se le pide fuera de Girona."
+    }
+   ]
+  },
+  "deload_instructions": "La semana 4 se hace al 90 por ciento y, si coincide con cierre de auditoría, se reduce a viernes y sábado manteniendo los ejercicios principales de cada sesión. Su descarga real son los tres días fuera, así que aquí lo importante es no castigarla por una semana mala de trabajo. Si vuelve de un viaje con menos de cinco horas de sueño dos noches seguidas, el jueves se convierte en 30 minutos de caminata y movilidad."
+ },
+ {
+  "category": "mantenimiento",
+  "title": "Mediodía entre reuniones",
+  "case": "Hombre de 47 años, director financiero de una empresa de packaging, que entrena de 13:15 a 14:00 y vuelve duchado a la oficina para la reunión de las 14:30. Pide literalmente 'que en 45 minutos esté todo hecho', y el condicionante es el reloj: no puede esperar a que se libere un rack ni permitirse una sesión que se alargue, así que todo va en series pareadas y con material que siempre está libre a esa hora.",
+  "level": "intermediate",
+  "days_per_week": 3,
+  "place": "gym",
+  "split_name": "Full body en pares, tres días",
+  "split_rationale": "Cuerpo completo tres veces por semana con los ejercicios emparejados (un tren inferior con un tren superior) para que el descanso de uno sea el trabajo del otro. Así caben seis ejercicios y un core en 45 minutos reales, calentamiento incluido, y ninguna sesión depende de un aparato concreto que pueda estar ocupado a la hora punta del mediodía.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Día A - hexagonal y empuje",
+    "warmup": "4 minutos de remo y movilidad de cadera y hombro; se cronometra.",
+    "exercises": [
+     {
+      "name": "Peso muerto con barra hexagonal",
+      "sets": 4,
+      "rep_range": "6-8",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Pecho alto en la salida y empuja el suelo; la barra hexagonal no requiere rack y siempre está libre."
+     },
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Emparejado con el ejercicio anterior: mientras descansas de uno, haces el otro."
+     },
+     {
+      "name": "Remo en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Pecho apoyado y codos atrás; sin balanceo para ganar tiempo."
+     },
+     {
+      "name": "Zancada inversa",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Paso atrás largo y rodilla casi al suelo; alterna piernas sin descanso entre lados."
+     },
+     {
+      "name": "Elevación lateral en polea unilateral",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 45,
+      "technique_cue": "Dos series por lado, encadenadas; no hay tiempo para más."
+     },
+     {
+      "name": "Plancha con lastre",
+      "sets": 2,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Disco en la zona media de la espalda; glúteo apretado y costillas abajo."
+     }
+    ],
+    "cooldown": "Tres minutos de respiración y estiramiento de flexor de cadera mientras se enfría."
+   },
+   {
+    "day": "Miércoles",
+    "name": "Día B - prensa y vertical",
+    "warmup": "4 minutos de elíptica y band pull-apart.",
+    "exercises": [
+     {
+      "name": "Prensa de piernas 45°",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Sin bloquear la rodilla arriba; cambio de disco rápido y a la siguiente serie."
+     },
+     {
+      "name": "Press de hombros en máquina",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Emparejado con la prensa; espalda pegada al respaldo."
+     },
+     {
+      "name": "Jalón al pecho",
+      "sets": 4,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Codos hacia el bolsillo y control en la subida; nada de soltar el peso."
+     },
+     {
+      "name": "Curl femoral sentado",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Espalda apoyada y sin levantar la cadera para ayudarte."
+     },
+     {
+      "name": "Curl bayesian en polea",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 45,
+      "technique_cue": "Un paso por delante de la polea, codo detrás del cuerpo y sin moverlo."
+     },
+     {
+      "name": "Press Pallof",
+      "sets": 2,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Aprovecha que ya estás en la polea; extiende sin girar el tronco."
+     }
+    ],
+    "cooldown": "Tres minutos de movilidad torácica y estiramiento de dorsal."
+   },
+   {
+    "day": "Viernes",
+    "name": "Día C - goblet e inclinado",
+    "warmup": "4 minutos de bicicleta y movilidad de tobillo y hombro.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Mancuerna pesada al pecho; sustituye a la sentadilla con barra para no depender del rack."
+     },
+     {
+      "name": "Press inclinado con mancuernas",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Banco a 30 grados y bajada controlada; emparejado con la sentadilla."
+     },
+     {
+      "name": "Remo sentado en polea",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Tronco quieto, tirón del codo a la cadera."
+     },
+     {
+      "name": "Hip thrust en máquina",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Pausa arriba de un segundo apretando el glúteo; entra y sal rápido."
+     },
+     {
+      "name": "Extensión de tríceps en polea con cuerda",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 45,
+      "technique_cue": "Codos pegados al tronco; dos series encadenadas y fuera."
+     },
+     {
+      "name": "Paseo del granjero unilateral",
+      "sets": 2,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Una mancuerna pesada, hombros nivelados; es el core y el remate de la semana."
+     }
+    ],
+    "cooldown": "Tres minutos de paseo y estiramiento rápido de cadera antes de la ducha."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación: cronometrar de verdad las tres sesiones y ajustar lo que no quepa",
+    "load_pct": 100,
+    "rir_target": "2-3",
+    "volume_note": "Si alguna sesión pasa de 45 minutos, se quita una serie del último accesorio, nunca del primer ejercicio."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión: subir carga en hexagonal, prensa y goblet manteniendo el reloj",
+    "load_pct": 102.5,
+    "rir_target": "2",
+    "volume_note": "Mismas series; el tiempo es el límite, así que se progresa en peso y no en volumen."
+   },
+   {
+    "week": 3,
+    "intent": "Carga: semana más exigente en los tres ejercicios principales",
+    "load_pct": 105,
+    "rir_target": "1-2",
+    "volume_note": "Una serie extra solo en el primer ejercicio de cada día; el resto intacto."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga: semana ligera para llegar entero al cierre trimestral",
+    "load_pct": 90,
+    "rir_target": "3",
+    "volume_note": "Dos series por ejercicio; la sesión baja a 30 minutos y él lo agradece esa semana."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 8000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 25,
+     "times_per_week": 2,
+     "notes": "Caminar el fin de semana o bajar del coche unas calles antes; el mediodía entre semana ya está ocupado."
+    }
+   ]
+  },
+  "deload_instructions": "La semana 4 se hace al 90 por ciento con dos series por ejercicio, dejando las sesiones en unos 30 minutos. En su caso la descarga tiene una función extra: demostrarle que una semana suave no le hace perder nada, porque la tentación de saltársela cuando va justo de tiempo es alta. Si un mes tiene cierre contable y solo puede venir dos días, se conservan el día A y el día C."
+ },
+ {
+  "category": "mantenimiento",
+  "title": "Su rutina del centro, versión comedor",
+  "case": "Mujer de 37 años, enfermera de atención primaria y madre de dos niños de 4 y 7 años, socia del centro desde hace tres años. Pide literalmente 'quiero la misma rutina pero para casa, porque de noviembre a enero no puedo venir', y el condicionante es el escenario: entrena en el comedor a las 21:30 con dos mancuernas de 10 kg, bandas y deslizadores, sin hacer ruido ni saltar porque los niños duermen en la habitación de al lado.",
+  "level": "intermediate",
+  "days_per_week": 3,
+  "place": "home",
+  "split_name": "Full body silencioso en tres días",
+  "split_rationale": "Se replican los mismos patrones que hace en la sala (bisagra, sentadilla, tirón horizontal, tirón vertical, empuje y core) pero con material que cabe debajo del sofá y sin ningún ejercicio con fase de vuelo o impacto. Tres días de cuerpo completo compensan que la carga máxima disponible sean 10 kg: se gana con más series efectivas, unilateral y tempo.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Comedor A - bisagra y empuje vertical",
+    "warmup": "5 minutos de movilidad de cadera, tobillo y hombro en la alfombra, sin saltos.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 4,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Con 10 kg necesitas tempo: tres segundos de bajada y sin pausa arriba."
+     },
+     {
+      "name": "Peso muerto rumano con mancuernas",
+      "sets": 4,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Cadera muy atrás y mancuernas rozando el muslo; el rango largo sustituye a los kilos."
+     },
+     {
+      "name": "Remo con banda sentado",
+      "sets": 4,
+      "rep_range": "15-20",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Pisa la banda con las dos piernas y aguanta un segundo con los omóplatos juntos."
+     },
+     {
+      "name": "Press de hombro con banda",
+      "sets": 3,
+      "rep_range": "15-20",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Pisa la banda y empuja sin arquear la lumbar; el ruido cero es parte del ejercicio."
+     },
+     {
+      "name": "Frog pump",
+      "sets": 3,
+      "rep_range": "15-20",
+      "rir": "1-2",
+      "rest_sec": 45,
+      "technique_cue": "Plantas de los pies juntas y rodillas abiertas; aprieta el glúteo un segundo arriba."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Glúteo apretado y costillas abajo; si aguantas más de 45 segundos, apoya una mancuerna en la espalda."
+     }
+    ],
+    "cooldown": "Estiramiento de isquios y pectoral y tres minutos de respiración lenta antes de acostarse."
+   },
+   {
+    "day": "Miércoles",
+    "name": "Comedor B - unilateral y tirón vertical",
+    "warmup": "5 minutos de marcha en el sitio suave y activación de glúteo con banda.",
+    "exercises": [
+     {
+      "name": "Zancada inversa",
+      "sets": 4,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Paso atrás largo y apoyo silencioso; con mancuernas si la banda del suelo lo permite."
+     },
+     {
+      "name": "Jalón con banda de pie",
+      "sets": 4,
+      "rep_range": "15-20",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Ancla la banda en la parte alta de una puerta y tira con los codos hacia el bolsillo."
+     },
+     {
+      "name": "Press de pecho con banda",
+      "sets": 4,
+      "rep_range": "15-20",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Banda por detrás a la altura de la escápula y junta las manos al final."
+     },
+     {
+      "name": "Curl femoral con deslizadores",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cadera alta todo el recorrido y estira las piernas muy despacio."
+     },
+     {
+      "name": "Abducción de cadera con banda",
+      "sets": 3,
+      "rep_range": "15-20",
+      "rir": "1-2",
+      "rest_sec": 45,
+      "technique_cue": "Banda por encima de la rodilla y apertura sin que la cadera se vaya atrás."
+     },
+     {
+      "name": "Dead bug",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Lumbar pegada al suelo; si se despega, acorta el recorrido de la pierna."
+     }
+    ],
+    "cooldown": "Estiramiento de cuádriceps y glúteo y dos minutos de respiración diafragmática."
+   },
+   {
+    "day": "Sábado",
+    "name": "Comedor C - unilateral pesado y core",
+    "warmup": "5 minutos de movilidad general aprovechando que a esa hora los niños están despiertos y no hay problema de ruido.",
+    "exercises": [
+     {
+      "name": "Sentadilla búlgara con peso corporal",
+      "sets": 4,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Pie de atrás en el sofá; si sale fácil, baja en cuatro segundos con pausa abajo."
+     },
+     {
+      "name": "Remo invertido bajo una mesa",
+      "sets": 4,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Mesa firme, cuerpo recto como una tabla; cuanto más horizontal, más difícil."
+     },
+     {
+      "name": "Press de hombro unilateral con mancuerna de pie",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Aprieta glúteo y abdomen para que el tronco no se incline al lado libre."
+     },
+     {
+      "name": "Peso muerto rumano a una pierna",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cadera cuadrada y bajada lenta; si pierdes el equilibrio, roza el suelo con la punta del pie."
+     },
+     {
+      "name": "Paseo del granjero unilateral",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Una mancuerna, hombros nivelados y pasos por el pasillo; alterna lado cada serie."
+     },
+     {
+      "name": "Bird dog",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Alterna brazo y pierna contrarios sin que la cadera se abra."
+     }
+    ],
+    "cooldown": "Estiramiento global de espalda, cadera y hombro, cinco minutos."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación: montar el rincón de entreno y fijar los tempos que compensan los 10 kg",
+    "load_pct": 100,
+    "rir_target": "2-3",
+    "volume_note": "Se anota qué banda se usa en cada ejercicio para poder progresar de verdad después."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión: llegar al tope del rango de repeticiones en todos los ejercicios",
+    "load_pct": 102.5,
+    "rir_target": "2",
+    "volume_note": "Mismas series; el avance es en repeticiones porque las mancuernas no dan más."
+   },
+   {
+    "week": 3,
+    "intent": "Carga: pasar a la banda más dura en remo, jalón y press de pecho",
+    "load_pct": 105,
+    "rir_target": "1-2",
+    "volume_note": "Una serie más en los dos primeros ejercicios de cada día."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga: semana ligera que coincide con las guardias de Navidad",
+    "load_pct": 90,
+    "rir_target": "3",
+    "volume_note": "Tres series por ejercicio y tempo normal; si un día no puede, se mueve al sábado."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 10000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 30,
+     "times_per_week": 2,
+     "notes": "Paseo con los niños el fin de semana; entre semana el turno del centro de salud ya le deja muchos pasos."
+    }
+   ]
+  },
+  "deload_instructions": "La semana 4 se hace al 90 por ciento con tres series por ejercicio y tempo normal. Este bloque es de mantenimiento puro: el objetivo es que en febrero vuelva a la sala moviendo los mismos kilos que dejó en octubre, no que progrese en casa. Si algún día no consigue el rato de las 21:30, se hace la sesión el sábado y se acepta la semana de dos días sin darle más vueltas."
+ },
+ {
+  "category": "mantenimiento",
+  "title": "Músculo y hueso para los próximos diez años",
+  "case": "Hombre de 49 años, ingeniero en una empresa de gestión de aguas, delgado de toda la vida y con un padre que se rompió la cadera a los 70 y nunca volvió a caminar igual. Pide literalmente 'quiero llegar a los sesenta con músculo y con los huesos enteros', y el condicionante es el hombro derecho tocado desde sus años de balonmano: el press por encima de la cabeza con barra le pincha y hay que sustituirlo sin renunciar a la carga axial que necesita el hueso.",
+  "level": "intermediate",
+  "days_per_week": 4,
+  "place": "gym",
+  "split_name": "Pierna/Torso alternado en cuatro días",
+  "split_rationale": "Cuatro sesiones alternando tren inferior y superior permiten dar dos estímulos semanales a la cadera y la columna con carga axial, que es lo que estimula al hueso, sin acumular fatiga en el hombro. Toda la vertical se hace en máquina o con landmine, que respetan su rango sin dolor, y se conserva la sentadilla con barra porque es el mejor ejercicio disponible para su objetivo óseo.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Pierna A - carga axial",
+    "warmup": "8 minutos de bicicleta, movilidad de tobillo y cadera y tres series de aproximación en sentadilla.",
+    "exercises": [
+     {
+      "name": "Sentadilla trasera con barra",
+      "sets": 4,
+      "rep_range": "6-8",
+      "rir": "2",
+      "rest_sec": 180,
+      "technique_cue": "Barra en el trapecio y profundidad hasta donde la pelvis no se retroverse; esta es la carga que necesita tu cadera."
+     },
+     {
+      "name": "Peso muerto rumano con barra",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 150,
+      "technique_cue": "Cadera atrás con la barra pegada al muslo; espalda neutra de principio a fin."
+     },
+     {
+      "name": "Prensa de piernas 45°",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Recorrido completo sin que la cadera se despegue del respaldo."
+     },
+     {
+      "name": "Curl femoral tumbado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "1-2",
+      "rest_sec": 75,
+      "technique_cue": "Bajada frenada de tres segundos; el isquio protege la rodilla."
+     },
+     {
+      "name": "Elevación de talones de pie",
+      "sets": 4,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "De pie y con carga, que es como el hueso del tobillo recibe el estímulo."
+     },
+     {
+      "name": "Plancha con lastre",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Disco en la zona media de la espalda; glúteo apretado y costillas abajo."
+     }
+    ],
+    "cooldown": "Cinco minutos de paseo y estiramiento de cuádriceps y psoas."
+   },
+   {
+    "day": "Martes",
+    "name": "Torso A - hombro amable",
+    "warmup": "5 minutos de remo, rotación externa con banda y band pull-apart.",
+    "exercises": [
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Recorrido guiado y sin que el hombro caiga adelante; aquí no hay dolor."
+     },
+     {
+      "name": "Remo con barra",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 150,
+      "technique_cue": "Tronco a 45 grados y bloqueado; la barra al ombligo sin tirones lumbares."
+     },
+     {
+      "name": "Press landmine de pie",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Trayectoria en diagonal: es la vertical que tu hombro tolera, en lugar del press militar."
+     },
+     {
+      "name": "Jalón agarre estrecho neutro",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Agarre neutro para descargar el hombro; codos hacia el bolsillo."
+     },
+     {
+      "name": "Face pull en polea",
+      "sets": 3,
+      "rep_range": "15-20",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cuerda a la altura de los ojos; este es tu ejercicio de mantenimiento del hombro, no lo saltes."
+     },
+     {
+      "name": "Extensión de tríceps en polea con cuerda",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Codos pegados al tronco y abre la cuerda al final."
+     }
+    ],
+    "cooldown": "Movilidad torácica en el rodillo y estiramiento suave de pectoral."
+   },
+   {
+    "day": "Jueves",
+    "name": "Pierna B - cadera y unilateral",
+    "warmup": "8 minutos de bicicleta, puente de glúteo sin carga y aproximaciones a la hexagonal.",
+    "exercises": [
+     {
+      "name": "Peso muerto con barra hexagonal",
+      "sets": 4,
+      "rep_range": "6-8",
+      "rir": "2",
+      "rest_sec": 180,
+      "technique_cue": "Pecho alto y empuja el suelo con el pie entero; carga axial sin castigar el hombro."
+     },
+     {
+      "name": "Hip thrust con barra",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Pausa arriba de un segundo con el glúteo apretado y costillas abajo."
+     },
+     {
+      "name": "Subida a cajón",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Cajón a la altura de la rodilla y sube sin impulso; es el gesto que protege del tropiezo."
+     },
+     {
+      "name": "Extensión de rodilla en máquina",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 75,
+      "technique_cue": "Extiende sin latigazo final y baja frenando dos segundos."
+     },
+     {
+      "name": "Curl femoral sentado",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 75,
+      "technique_cue": "Espalda pegada al respaldo y sin levantar la cadera."
+     },
+     {
+      "name": "Press Pallof",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Extiende los brazos sin dejar que el tronco gire; el core de pie es el que te sostiene si tropiezas."
+     }
+    ],
+    "cooldown": "Estiramiento de isquios y glúteo y cinco minutos de paseo."
+   },
+   {
+    "day": "Viernes",
+    "name": "Torso B - volumen sin barra por encima de la cabeza",
+    "warmup": "5 minutos de elíptica, rotación externa con banda y band pull-apart.",
+    "exercises": [
+     {
+      "name": "Cruce de poleas",
+      "sets": 4,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 75,
+      "technique_cue": "Recorrido amplio pero sin llevar el hombro más atrás de la línea del cuerpo."
+     },
+     {
+      "name": "Dominadas neutras",
+      "sets": 4,
+      "rep_range": "6-10",
+      "rir": "2",
+      "rest_sec": 150,
+      "technique_cue": "Agarre neutro, deprime la escápula antes de doblar el codo y controla la bajada."
+     },
+     {
+      "name": "Press de hombros en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Ajusta el asiento para que el recorrido acabe donde no te molesta; ese es tu tope."
+     },
+     {
+      "name": "Remo en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Pecho apoyado y hombros lejos de las orejas."
+     },
+     {
+      "name": "Contractora invertida",
+      "sets": 3,
+      "rep_range": "15-20",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Apertura sin encoger el trapecio; el deltoides posterior es el que reequilibra tu hombro."
+     },
+     {
+      "name": "Curl de bíceps con barra EZ",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Codos fijos al costado y sin usar la cadera para arrancar."
+     }
+    ],
+    "cooldown": "Estiramiento de dorsal y pectoral y tres minutos de respiración lenta."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación: confirmar que la sentadilla y la hexagonal no despiertan el hombro",
+    "load_pct": 100,
+    "rir_target": "2-3",
+    "volume_note": "Si el hombro protesta en alguna serie, se cambia el ejercicio esa misma sesión y se anota."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión: subir kilos en sentadilla, hexagonal y remo con barra",
+    "load_pct": 102.5,
+    "rir_target": "2",
+    "volume_note": "Mismas series; el estímulo óseo depende de la carga, así que aquí sí importa el peso."
+   },
+   {
+    "week": 3,
+    "intent": "Carga: la semana clave del mes para la cadera y la columna",
+    "load_pct": 105,
+    "rir_target": "1-2",
+    "volume_note": "Una serie más en sentadilla y en hexagonal; nada en el trabajo de hombro."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga: bajar carga axial y dejar que la articulación se recupere",
+    "load_pct": 90,
+    "rir_target": "3-4",
+    "volume_note": "Se quita una serie de cada ejercicio y se mantiene íntegro el face pull, que es trabajo de mantenimiento."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 9000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 40,
+     "times_per_week": 2,
+     "notes": "Caminata por terreno irregular, mejor en cuesta o por camino: el impacto suave y el desequilibrio también son estímulo para el hueso."
+    }
+   ]
+  },
+  "deload_instructions": "La semana 4 se entrena al 90 por ciento con una serie menos por ejercicio, manteniendo íntegro el trabajo de face pull y rotación externa, que es prevención y no carga. Es también el momento de revisar si el hombro ha aguantado el mes: si ha ido bien, en el siguiente bloque se puede probar el press de hombro unilateral con mancuerna. Si ha aparecido dolor nocturno o al dormir del lado derecho, se retira toda la vertical y se deriva a valoración."
+ },
+ {
+  "category": "mantenimiento",
+  "title": "Menopausia: fuerza e impacto medido",
+  "case": "Mujer de 52 años, peluquera con salón propio en el Mercadal, un año en menopausia, durmiendo mal y con cuatro kilos más de los que tenía. Su ginecóloga le ha recomendado carga y algo de impacto, y ella pide literalmente 'no quiero pastillas, quiero hacer algo yo'; el condicionante es que pasa nueve horas de pie y llega al centro con los gemelos y la espalda cargados, así que el impacto tiene que ser poco, medido y siempre al principio de la sesión.",
+  "level": "beginner",
+  "days_per_week": 3,
+  "place": "gym",
+  "split_name": "Full body con dosis de impacto controlada",
+  "split_rationale": "Cuerpo completo tres días para dar frecuencia a los grandes grupos, con un bloque corto de impacto colocado al inicio de la primera sesión, cuando está fresca y el tejido responde mejor. La carga es el estímulo principal para el hueso y el músculo; el salto es solo una dosis pequeña y progresiva, porque nueve horas de pie ya le dan sobrecarga suficiente en el tren inferior.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Día A - impacto y carga",
+    "warmup": "8 minutos de bicicleta, movilidad de tobillo y cadera y activación de glúteo con banda.",
+    "exercises": [
+     {
+      "name": "Sentadilla con salto",
+      "sets": 3,
+      "rep_range": "6-8",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Salto bajo y aterrizaje silencioso con rodilla y cadera flexionadas; calidad, no altura."
+     },
+     {
+      "name": "Sentadilla goblet",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Mancuerna al pecho, talones apoyados y profundidad cómoda."
+     },
+     {
+      "name": "Hip thrust con barra",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Pausa de un segundo arriba apretando el glúteo; nada de arquear la lumbar."
+     },
+     {
+      "name": "Remo sentado en polea",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Tira del codo a la cadera y junta los omóplatos sin encoger el hombro."
+     },
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 75,
+      "technique_cue": "Asiento a la altura del pecho y recorrido completo."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "20-30s",
+      "rir": "3",
+      "rest_sec": 60,
+      "technique_cue": "Cadera a la altura de los hombros; si se hunde, apoya las rodillas."
+     }
+    ],
+    "cooldown": "Cinco minutos de paseo y estiramiento de gemelo y planta del pie, que es donde acumula la jornada."
+   },
+   {
+    "day": "Miércoles",
+    "name": "Día B - carga sin impacto",
+    "warmup": "8 minutos de elíptica y movilidad de columna y hombro.",
+    "exercises": [
+     {
+      "name": "Prensa de piernas 45°",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Pies a la anchura de las caderas; sin bloquear la rodilla arriba."
+     },
+     {
+      "name": "Jalón al pecho",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Pecho arriba y barra a la clavícula; controla la subida."
+     },
+     {
+      "name": "Press de hombros con mancuernas sentado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 75,
+      "technique_cue": "Respaldo casi vertical y sin sacar las costillas."
+     },
+     {
+      "name": "Peso muerto rumano con mancuernas",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Cadera atrás y espalda neutra; para donde el isquio ya no ceda."
+     },
+     {
+      "name": "Elevación de talones de pie",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Recorrido completo con pausa arriba; fortalecer el gemelo hace que aguante mejor las nueve horas."
+     },
+     {
+      "name": "Dead bug",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "3",
+      "rest_sec": 45,
+      "technique_cue": "Lumbar pegada al suelo todo el rato y respiración continua."
+     }
+    ],
+    "cooldown": "Estiramiento de isquios y cadena posterior y tres minutos de respiración lenta."
+   },
+   {
+    "day": "Viernes",
+    "name": "Día C - unilateral y postura",
+    "warmup": "8 minutos de cinta caminando con inclinación y activación de glúteo medio.",
+    "exercises": [
+     {
+      "name": "Subida a cajón",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Cajón a la altura de la rodilla y sube empujando con el pie de arriba, sin impulso."
+     },
+     {
+      "name": "Remo con mancuerna a una mano",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Cadera cuadrada y tirón del codo hacia atrás, sin rotar el tronco."
+     },
+     {
+      "name": "Contractora de pecho",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2-3",
+      "rest_sec": 60,
+      "technique_cue": "Cierre suave delante del pecho y apertura hasta notar estiramiento, sin dolor."
+     },
+     {
+      "name": "Abducción de cadera en máquina",
+      "sets": 3,
+      "rep_range": "15-20",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Tronco algo inclinado adelante y apertura controlada."
+     },
+     {
+      "name": "Elevaciones laterales con mancuernas",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Peso ligero, sube al hombro y baja contando dos segundos."
+     },
+     {
+      "name": "Bird dog",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "3",
+      "rest_sec": 45,
+      "technique_cue": "Alterna brazo y pierna contrarios sin abrir la cadera hacia un lado."
+     }
+    ],
+    "cooldown": "Estiramiento de cadera y gemelo y cinco minutos de paseo suave."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación: comprobar cómo tolera el bloque de saltos con la jornada de pie encima",
+    "load_pct": 100,
+    "rir_target": "3",
+    "volume_note": "Solo 18 saltos en toda la semana; si aparece molestia en tibia o rodilla, se retiran y se sustituyen por subida a cajón."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión: subir carga en hip thrust y prensa manteniendo el mismo número de saltos",
+    "load_pct": 102.5,
+    "rir_target": "2-3",
+    "volume_note": "El impacto no se progresa aún; solo la carga."
+   },
+   {
+    "week": 3,
+    "intent": "Carga: semana firme y primera subida del bloque de saltos a cuatro series",
+    "load_pct": 105,
+    "rir_target": "2",
+    "volume_note": "Se añade una serie de saltos y una de hip thrust; el resto sin cambios."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga: quitar el impacto y aligerar para dormir mejor esa semana",
+    "load_pct": 90,
+    "rir_target": "3-4",
+    "volume_note": "Sin saltos y dos series por ejercicio; se aprovecha para valorar cómo va el sueño."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 10000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 35,
+     "times_per_week": 2,
+     "notes": "Caminata a buen ritmo el fin de semana, mejor por la mañana; el cardio de tarde le empeora el descanso."
+    }
+   ]
+  },
+  "deload_instructions": "La semana 4 se hace al 90 por ciento, con dos series por ejercicio y sin ningún salto. En su caso la descarga tiene una función clara: separar el efecto del entrenamiento del efecto de la menopausia sobre el sueño y la energía, así que se le pregunta expresamente cómo ha dormido esa semana. Si aparece dolor persistente en el talón o la tibia, el bloque de impacto se retira del todo y se compensa con más carga en hip thrust y elevación de talones."
+ },
+ {
+  "category": "mantenimiento",
+  "title": "Dos días de pesas para el corredor",
+  "case": "Hombre de 29 años, informático y corredor popular de 10K, que sale a rodar cinco días por semana y no piensa quitarse ni uno. Pide literalmente 'dos días de pesas, ni uno más, y que no me deje las piernas rotas para el rodaje del día siguiente', y el condicionante es que compite en octubre y arrastra la idea de que la fuerza le va a engordar y a restarle ritmo, así que cada ejercicio tiene que estar justificado.",
+  "level": "intermediate",
+  "days_per_week": 2,
+  "place": "gym",
+  "split_name": "Dos full body con carga alta y volumen bajo",
+  "split_rationale": "Dos sesiones de cuerpo completo con pocas series y repeticiones medias-bajas: es la fórmula que mejora la economía de carrera y la rigidez del tendón sin generar el daño muscular que le arruinaría el rodaje siguiente. Se colocan martes y viernes para dejar limpio el domingo del rodaje largo, y se descarta cualquier trabajo de alto volumen o cerca del fallo en la pierna.",
+  "sessions": [
+   {
+    "day": "Martes",
+    "name": "Full body A - cadena posterior y empuje",
+    "warmup": "6 minutos de bicicleta, movilidad de tobillo y cadera y dos aproximaciones a la hexagonal.",
+    "exercises": [
+     {
+      "name": "Peso muerto con barra hexagonal",
+      "sets": 4,
+      "rep_range": "4-6",
+      "rir": "3",
+      "rest_sec": 180,
+      "technique_cue": "Pocas repeticiones y lejos del fallo: buscamos fuerza, no daño muscular que te cargue el rodaje."
+     },
+     {
+      "name": "Press banca con mancuernas",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Escápulas retraídas; el torso también cuenta en el braceo de los últimos kilómetros."
+     },
+     {
+      "name": "Remo con barra",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Tronco a 45 grados y bloqueado; la barra al ombligo sin tirones."
+     },
+     {
+      "name": "Sentadilla búlgara",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Unilateral y controlada: corrige el desequilibrio entre piernas que aparece a base de kilómetros."
+     },
+     {
+      "name": "Elevación de talones de pie",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Carga alta y pausa arriba; el sóleo y el aquiles son los que devuelven energía en cada zancada."
+     },
+     {
+      "name": "Plancha lateral",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Cadera alta y alineada; el core lateral evita que la pelvis caiga en apoyo monopodal."
+     }
+    ],
+    "cooldown": "Cinco minutos de trote muy suave y estiramiento de flexor de cadera y gemelo."
+   },
+   {
+    "day": "Viernes",
+    "name": "Full body B - guiado y vertical",
+    "warmup": "6 minutos de elíptica, band pull-apart y movilidad de cadera.",
+    "exercises": [
+     {
+      "name": "Prensa de piernas 45°",
+      "sets": 4,
+      "rep_range": "6-8",
+      "rir": "3",
+      "rest_sec": 150,
+      "technique_cue": "Guiada y lejos del fallo; el sábado tienes rodaje suave y el domingo el largo."
+     },
+     {
+      "name": "Jalón al pecho",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Pecho arriba, codos hacia el bolsillo y control en la subida."
+     },
+     {
+      "name": "Press de hombros con mancuernas sentado",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Respaldo casi vertical y costillas abajo al empujar."
+     },
+     {
+      "name": "Peso muerto rumano con mancuernas",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Rango controlado; el isquio fuerte es lo que te protege del tirón en el cambio de ritmo."
+     },
+     {
+      "name": "Curl femoral tumbado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Bajada frenada de dos segundos, sin llegar nunca al fallo."
+     },
+     {
+      "name": "Press Pallof",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Extiende los brazos sin que el tronco gire; así se mantiene la pelvis estable corriendo."
+     }
+    ],
+    "cooldown": "Cinco minutos de bicicleta suave y estiramiento de isquios y gemelo."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación: comprobar que el rodaje del día siguiente no se resiente",
+    "load_pct": 100,
+    "rir_target": "3",
+    "volume_note": "Empezamos con menos carga de la que podría mover; si el miércoles corre bien, subimos."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión: subir kilos en hexagonal y prensa manteniendo el RIR alto",
+    "load_pct": 102.5,
+    "rir_target": "2-3",
+    "volume_note": "Mismas series; el volumen se queda bajo a propósito porque la carga de carrera ya es alta."
+   },
+   {
+    "week": 3,
+    "intent": "Carga: semana más fuerte, colocada lejos de la tirada larga del mes",
+    "load_pct": 105,
+    "rir_target": "2",
+    "volume_note": "Una serie extra solo en elevación de talones; el resto igual."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga: aligerar coincidiendo con la semana de más volumen de carrera",
+    "load_pct": 90,
+    "rir_target": "3-4",
+    "volume_note": "Dos series por ejercicio; cuando se acerque octubre, esta semana se repetirá antes de competir."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 12000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 60,
+     "times_per_week": 4,
+     "notes": "Sus rodajes habituales; no se toca su plan de carrera, la fuerza se adapta a él y no al revés."
+    },
+    {
+     "type": "hiit",
+     "minutes": 30,
+     "times_per_week": 1,
+     "notes": "La sesión de series que ya hace; se coloca en día distinto al de pesas siempre que sea posible."
+    }
+   ]
+  },
+  "deload_instructions": "La semana 4 se hace al 90 por ciento con dos series por ejercicio, y se sincroniza con la semana de mayor volumen de su plan de carrera. Diez días antes de la competición de octubre se repite este esquema y se elimina la sentadilla búlgara, que es lo que más agujetas le deja. Regla firme: si un día tiene que elegir entre el rodaje de calidad y las pesas, gana el rodaje, y la sesión de fuerza se mueve, no se recupera acumulando."
+ },
+ {
+  "category": "mantenimiento",
+  "title": "Bloques variados contra el abandono",
+  "case": "Hombre de 26 años, camarero de un local del Barri Vell, que en tres años se ha apuntado a cuatro gimnasios y ha abandonado los cuatro alrededor de la sexta semana. Pide literalmente 'necesito que no sea siempre lo mismo o me vuelvo a ir', y el condicionante no es físico sino de adherencia: trabaja de noche, entrena a media tarde y necesita que cada sesión tenga un bloque distinto y un reto medible al final para tener algo que contar.",
+  "level": "intermediate",
+  "days_per_week": 4,
+  "place": "gym",
+  "split_name": "Cuatro bloques temáticos por semana",
+  "split_rationale": "Cada día tiene una identidad propia (empuje, tracción, pierna y una sesión cronometrada de cuerpo completo) y termina con un reto medible que se anota: eso convierte la rutina en una competición contra su propia hoja y le da el elemento de novedad que necesita. La estructura de patrones no cambia, así que el progreso es real aunque a él le parezca que cada día hace algo distinto.",
+  "sessions": [
+   {
+    "day": "Martes",
+    "name": "Bloque empuje - reto de core al final",
+    "warmup": "6 minutos de remo, movilidad de hombro con banda y dos aproximaciones al press banca.",
+    "exercises": [
+     {
+      "name": "Press banca con barra",
+      "sets": 4,
+      "rep_range": "6-8",
+      "rir": "2",
+      "rest_sec": 150,
+      "technique_cue": "Escápulas retraídas y pies clavados; anota el mejor peso de cada semana."
+     },
+     {
+      "name": "Press de hombros con mancuernas sentado",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Respaldo casi vertical y sin arquear la lumbar al empujar."
+     },
+     {
+      "name": "Fondos en paralelas (énfasis tríceps)",
+      "sets": 3,
+      "rep_range": "8-12",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Tronco casi vertical y codos pegados; baja hasta 90 grados, no más."
+     },
+     {
+      "name": "Cruce de poleas",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Recorrido amplio y cierre delante del pecho, sin bloquear el codo."
+     },
+     {
+      "name": "Elevaciones laterales con mancuernas",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Sin impulso de cadera; sube al hombro y baja frenando."
+     },
+     {
+      "name": "Rueda abdominal",
+      "sets": 3,
+      "rep_range": "8-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "El reto del día: cada semana se marca en el suelo hasta dónde has llegado sin arquear la lumbar."
+     }
+    ],
+    "cooldown": "Estiramiento de pectoral y hombro y tres minutos de respiración lenta."
+   },
+   {
+    "day": "Miércoles",
+    "name": "Bloque tracción - reto de agarre al final",
+    "warmup": "6 minutos de bicicleta, band pull-apart y colgarse 20 segundos de la barra.",
+    "exercises": [
+     {
+      "name": "Dominadas pronas",
+      "sets": 4,
+      "rep_range": "6-10",
+      "rir": "2",
+      "rest_sec": 150,
+      "technique_cue": "Anota el total de repeticiones de las cuatro series; ese número es tu marca de la semana."
+     },
+     {
+      "name": "Remo con barra T",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Pecho apoyado y codos atrás; sin tirones de la cadera."
+     },
+     {
+      "name": "Remo en polea a una mano",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Deja que la escápula se abra al estirar y ciérrala al tirar."
+     },
+     {
+      "name": "Face pull en polea",
+      "sets": 3,
+      "rep_range": "15-20",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cuerda a la altura de los ojos; equilibra todo el empuje del martes."
+     },
+     {
+      "name": "Curl martillo",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Agarre neutro, codo quieto y sin balanceo."
+     },
+     {
+      "name": "Paseo del granjero unilateral",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "El reto del día: sube la mancuerna cada semana que aguantes los 45 segundos con la técnica intacta."
+     }
+    ],
+    "cooldown": "Estiramiento de dorsal y antebrazo y movilidad torácica."
+   },
+   {
+    "day": "Viernes",
+    "name": "Bloque pierna - reto de potencia al final",
+    "warmup": "8 minutos de bicicleta, movilidad de cadera y tobillo y tres aproximaciones a la sentadilla.",
+    "exercises": [
+     {
+      "name": "Sentadilla trasera con barra",
+      "sets": 4,
+      "rep_range": "6-8",
+      "rir": "2",
+      "rest_sec": 180,
+      "technique_cue": "Barra en el trapecio y profundidad constante; el peso solo cuenta si repites la misma profundidad."
+     },
+     {
+      "name": "Peso muerto rumano con barra",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 150,
+      "technique_cue": "Cadera atrás, barra pegada al muslo y espalda neutra."
+     },
+     {
+      "name": "Zancadas caminando con mancuernas",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Pasos largos por el pasillo de la sala; rodilla casi al suelo en cada apoyo."
+     },
+     {
+      "name": "Prensa de piernas 45°",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "1-2",
+      "rest_sec": 120,
+      "technique_cue": "Recorrido completo sin despegar la cadera del respaldo."
+     },
+     {
+      "name": "Sentadilla con salto",
+      "sets": 3,
+      "rep_range": "6-8",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "El reto del día: se mide la altura del mejor salto con la cinta de la pared cada viernes."
+     },
+     {
+      "name": "Elevación de talones de pie",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Recorrido completo con pausa arriba de un segundo."
+     }
+    ],
+    "cooldown": "Diez minutos de paseo y estiramiento de cuádriceps, isquios y gemelo."
+   },
+   {
+    "day": "Sábado",
+    "name": "Bloque cronometrado - cuerpo completo",
+    "warmup": "8 minutos de movilidad general y dos vueltas ligeras al circuito para reconocerlo.",
+    "exercises": [
+     {
+      "name": "Swing con kettlebell",
+      "sets": 4,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Bisagra de cadera, no sentadilla; la kettlebell sube por el impulso, no por los brazos."
+     },
+     {
+      "name": "Sentadilla goblet",
+      "sets": 4,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Mancuerna al pecho y ritmo constante; se cronometra la sesión entera."
+     },
+     {
+      "name": "Remo invertido",
+      "sets": 4,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cuerpo recto como una tabla; baja la barra si te cuesta mantener la línea."
+     },
+     {
+      "name": "Flexiones",
+      "sets": 4,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos a 45 grados y cuerpo en bloque; no dejes caer la cadera."
+     },
+     {
+      "name": "Escaladores",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Cadera baja y ritmo sostenido; no aceleres los primeros diez segundos."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "El reto del día: se anota el tiempo total de la sesión y se intenta bajar un minuto cada semana."
+     }
+    ],
+    "cooldown": "Cinco minutos de paseo y estiramiento global."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación: establecer las cuatro marcas de referencia, una por sesión",
+    "load_pct": 100,
+    "rir_target": "2-3",
+    "volume_note": "Lo importante de esta semana no son los kilos, sino que las cuatro marcas queden anotadas en su hoja."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión: batir al menos dos de las cuatro marcas de la semana anterior",
+    "load_pct": 102.5,
+    "rir_target": "2",
+    "volume_note": "Mismas series; si bate tres de cuatro, se le enseña la hoja y se le dice."
+   },
+   {
+    "week": 3,
+    "intent": "Carga: la semana de récords, justo cuando en los otros gimnasios lo dejaba",
+    "load_pct": 105,
+    "rir_target": "1-2",
+    "volume_note": "Una serie más en los ejercicios principales; es la semana en la que se juega la permanencia."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga: semana ligera con los retos mantenidos pero sin carga alta",
+    "load_pct": 90,
+    "rir_target": "3",
+    "volume_note": "Dos series por ejercicio; los cuatro retos se conservan porque son lo que le hace venir."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 9000,
+   "sessions": [
+    {
+     "type": "hiit",
+     "minutes": 12,
+     "times_per_week": 1,
+     "notes": "Bloque corto de bicicleta o remo al final del sábado, solo si le apetece; se plantea como reto, no como obligación."
+    }
+   ]
+  },
+  "deload_instructions": "La semana 4 baja al 90 por ciento con dos series por ejercicio, pero los cuatro retos finales se mantienen intactos: son el motivo por el que aparece por la puerta. En su caso la descarga es también la revisión de adherencia; se repasa con él la hoja del mes y se le enseña cuánto ha subido cada marca. Si en algún momento falla dos semanas seguidas, se reduce a tres días antes de que abandone del todo, porque conservar el hábito vale más que el cuarto día."
+ },
+ {
+  "category": "mantenimiento",
+  "title": "El mínimo que de verdad funciona",
+  "case": "Mujer de 43 años, veterinaria de clínica con guardias de fin de semana alternas, que ya ha probado cuatro planes de cuatro días y ha dejado los cuatro. Pide literalmente 'dime cuál es el mínimo que funciona de verdad, porque más de dos días no voy a venir', y el condicionante es su historial de abandono: hay que darle dos sesiones completas y defendibles, no un recorte de un plan mayor, o volverá a pensar que no le sirve de nada.",
+  "level": "beginner",
+  "days_per_week": 2,
+  "place": "gym",
+  "split_name": "Dos full body completos",
+  "split_rationale": "Con dos días, cada sesión tiene que cubrir el cuerpo entero: empuje, tirón, rodilla dominante, cadera dominante y core. Se usan siete ejercicios por sesión y series suficientes para que dos días den estímulo real de mantenimiento y algo de progreso, en lugar de la versión aguada de un plan de cuatro. La distancia de tres días entre sesiones facilita además que llegue recuperada aunque haya tenido guardia.",
+  "sessions": [
+   {
+    "day": "Martes",
+    "name": "Full body A",
+    "warmup": "8 minutos de bicicleta y movilidad de cadera, tobillo y hombro.",
+    "exercises": [
+     {
+      "name": "Prensa de piernas 45°",
+      "sets": 4,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 120,
+      "technique_cue": "Pies a la anchura de las caderas y recorrido completo; sin bloquear la rodilla arriba."
+     },
+     {
+      "name": "Jalón al pecho",
+      "sets": 4,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 120,
+      "technique_cue": "Pecho arriba, barra a la clavícula y control en la subida."
+     },
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 4,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Asiento a la altura del pecho; empuja sin bloquear el codo de golpe."
+     },
+     {
+      "name": "Peso muerto rumano con mancuernas",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Cadera atrás con las mancuernas rozando el muslo y espalda neutra."
+     },
+     {
+      "name": "Curl femoral sentado",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Espalda apoyada y sin levantar la cadera para ayudarte."
+     },
+     {
+      "name": "Elevaciones laterales con mancuernas",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Sube al hombro con el codo algo flexionado y sin impulso."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2-3",
+      "rest_sec": 60,
+      "technique_cue": "Glúteo apretado y cadera a la altura de los hombros."
+     }
+    ],
+    "cooldown": "Cinco minutos de paseo y estiramiento de cuádriceps, isquios y pectoral."
+   },
+   {
+    "day": "Viernes",
+    "name": "Full body B",
+    "warmup": "8 minutos de elíptica, activación de glúteo con banda y movilidad torácica.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 4,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 120,
+      "technique_cue": "Mancuerna al pecho, codos dentro y profundidad hasta donde la espalda siga recta."
+     },
+     {
+      "name": "Remo sentado en polea",
+      "sets": 4,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 120,
+      "technique_cue": "Tronco quieto y tirón del codo hacia la cadera."
+     },
+     {
+      "name": "Press de hombros en máquina",
+      "sets": 4,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Espalda pegada al respaldo y recorrido cómodo, sin forzar el final."
+     },
+     {
+      "name": "Hip thrust con barra",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Pausa de un segundo arriba apretando el glúteo, con las costillas abajo."
+     },
+     {
+      "name": "Extensión de rodilla en máquina",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Extiende sin latigazo final y baja frenando dos segundos."
+     },
+     {
+      "name": "Face pull en polea",
+      "sets": 3,
+      "rep_range": "15-20",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cuerda a la altura de los ojos y abre las manos al final del recorrido."
+     },
+     {
+      "name": "Dead bug",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2-3",
+      "rest_sec": 45,
+      "technique_cue": "Lumbar pegada al suelo; si se despega, acorta el recorrido de la pierna."
+     }
+    ],
+    "cooldown": "Cinco minutos de bicicleta suave y estiramiento de espalda y cadera."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación: dejar claro que estas dos sesiones son un plan completo, no un plan recortado",
+    "load_pct": 100,
+    "rir_target": "3",
+    "volume_note": "Siete ejercicios por sesión y cuatro series en los principales; esa es la dosis que hace que dos días valgan."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión: subir una placa en prensa, jalón y press de pecho",
+    "load_pct": 102.5,
+    "rir_target": "2-3",
+    "volume_note": "Mismas series; con dos días el volumen no puede crecer, así que crece el peso."
+   },
+   {
+    "week": 3,
+    "intent": "Carga: la semana en la que debe salir con la sensación de haber entrenado en serio",
+    "load_pct": 105,
+    "rir_target": "2",
+    "volume_note": "Una serie extra en sentadilla goblet y hip thrust."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga: aligerar y revisar la hoja de kilos del mes con ella delante",
+    "load_pct": 90,
+    "rir_target": "3-4",
+    "volume_note": "Tres series en los principales y dos en el resto; se sale sin agujetas."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 9000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 30,
+     "times_per_week": 3,
+     "notes": "Caminar con el perro a buen ritmo; en su caso el cardio no se programa en el centro porque no vendría un tercer día."
+    }
+   ]
+  },
+  "deload_instructions": "La semana 4 se hace al 90 por ciento con una serie menos en cada ejercicio y sirve para enseñarle en su hoja lo que ha subido en cuatro semanas con solo dos días. Ese repaso es la parte más importante del bloque, porque su patrón de abandono nace de creer que si no viene cuatro días no sirve de nada. Si una semana tiene guardia y solo puede venir un día, se hace la sesión A y se retoma la semana siguiente donde quedó, sin recuperar nada."
+ },
+ {
+  "category": "mantenimiento",
+  "title": "Veintiocho kilos menos y el miedo",
+  "case": "Hombre de 38 años, funcionario de la Generalitat, que ha pasado de 112 a 84 kilos en año y medio y se pesa tres veces al día. Pide literalmente 'lo que me da pánico es volver a engordar', y el condicionante es tanto psicológico como físico: necesita venir casi a diario porque la rutina es lo que le sostiene, pero si las sesiones son largas y duras acabará quemado y recuperará el patrón de todo o nada que ya le costó los primeros 112 kilos.",
+  "level": "intermediate",
+  "days_per_week": 5,
+  "place": "gym",
+  "split_name": "Cinco sesiones cortas de lunes a viernes",
+  "split_rationale": "Cinco días cortos, de cinco ejercicios cada uno, dan la frecuencia diaria que él necesita para sostener el hábito sin que ninguna sesión sea una paliza. Repartir el volumen en cinco días permite además mantener la masa muscular ganada durante la pérdida, que es la verdadera garantía de no recuperar el peso, y deja el fin de semana libre para vida social sin que eso se viva como un fallo.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Empuje corto",
+    "warmup": "5 minutos de remo y movilidad de hombro con banda.",
+    "exercises": [
+     {
+      "name": "Press banca con mancuernas",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Escápulas retraídas y bajada controlada hasta notar el pectoral estirado."
+     },
+     {
+      "name": "Press de hombros en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Espalda pegada al respaldo y recorrido completo sin forzar el final."
+     },
+     {
+      "name": "Cruce de poleas",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Cierre delante del pecho con el codo ligeramente flexionado."
+     },
+     {
+      "name": "Extensión de tríceps en polea con cuerda",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Codos pegados al tronco; abre la cuerda al final."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Glúteo apretado y costillas abajo; 35 minutos de sesión y a casa."
+     }
+    ],
+    "cooldown": "Tres minutos de respiración lenta y estiramiento de pectoral."
+   },
+   {
+    "day": "Martes",
+    "name": "Pierna corta",
+    "warmup": "6 minutos de bicicleta y movilidad de cadera y tobillo.",
+    "exercises": [
+     {
+      "name": "Prensa de piernas 45°",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Recorrido completo sin despegar la cadera del respaldo."
+     },
+     {
+      "name": "Peso muerto rumano con mancuernas",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Cadera atrás y mancuernas rozando el muslo; espalda neutra."
+     },
+     {
+      "name": "Zancada inversa",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Paso atrás largo y rodilla casi al suelo; alterna piernas."
+     },
+     {
+      "name": "Curl femoral tumbado",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Cadera pegada al banco y bajada de dos segundos."
+     },
+     {
+      "name": "Elevación de talones sentado",
+      "sets": 3,
+      "rep_range": "15-20",
+      "rir": "1-2",
+      "rest_sec": 45,
+      "technique_cue": "Recorrido completo con pausa arriba; termina y vete, hoy no hace falta más."
+     }
+    ],
+    "cooldown": "Cinco minutos de paseo y estiramiento de isquios y cuádriceps."
+   },
+   {
+    "day": "Miércoles",
+    "name": "Tracción corta",
+    "warmup": "5 minutos de elíptica y band pull-apart.",
+    "exercises": [
+     {
+      "name": "Jalón al pecho",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Pecho arriba y codos hacia el bolsillo; controla la subida."
+     },
+     {
+      "name": "Remo sentado en polea",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Tronco quieto y tirón del codo a la cadera."
+     },
+     {
+      "name": "Remo con mancuerna a una mano",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Cadera cuadrada y sin rotar el tronco para llegar más arriba."
+     },
+     {
+      "name": "Face pull en polea",
+      "sets": 3,
+      "rep_range": "15-20",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cuerda a la altura de los ojos y apertura al final."
+     },
+     {
+      "name": "Curl alterno con mancuernas",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Codo quieto y sin balanceo de tronco."
+     }
+    ],
+    "cooldown": "Estiramiento de dorsal y movilidad torácica, cuatro minutos."
+   },
+   {
+    "day": "Jueves",
+    "name": "Cadera y core",
+    "warmup": "6 minutos de cinta con inclinación y activación de glúteo con banda.",
+    "exercises": [
+     {
+      "name": "Hip thrust con barra",
+      "sets": 4,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Pausa de un segundo arriba con el glúteo apretado y las costillas abajo."
+     },
+     {
+      "name": "Sentadilla goblet",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Mancuerna al pecho y profundidad cómoda; tras 28 kilos menos, la técnica ya no te limita."
+     },
+     {
+      "name": "Abducción de cadera en máquina",
+      "sets": 3,
+      "rep_range": "15-20",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Tronco algo adelante y apertura controlada."
+     },
+     {
+      "name": "Curl femoral sentado",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Espalda apoyada y sin levantar la cadera."
+     },
+     {
+      "name": "Press Pallof",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Extiende sin que el tronco gire hacia la polea."
+     }
+    ],
+    "cooldown": "Estiramiento de glúteo y cadera y tres minutos de respiración."
+   },
+   {
+    "day": "Viernes",
+    "name": "Cuerpo completo ligero",
+    "warmup": "6 minutos de bicicleta y movilidad general.",
+    "exercises": [
+     {
+      "name": "Peso muerto con barra hexagonal",
+      "sets": 4,
+      "rep_range": "6-8",
+      "rir": "2-3",
+      "rest_sec": 150,
+      "technique_cue": "Pecho alto y empuja el suelo; es el ejercicio que más masa te ayuda a conservar."
+     },
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Recorrido completo y sin bloquear el codo."
+     },
+     {
+      "name": "Jalón agarre estrecho neutro",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Agarre neutro y codos hacia el bolsillo."
+     },
+     {
+      "name": "Subida a cajón",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Cajón a la altura de la rodilla; sube sin impulso del pie de atrás."
+     },
+     {
+      "name": "Paseo del granjero unilateral",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Una mancuerna y hombros nivelados; buen cierre de semana."
+     }
+    ],
+    "cooldown": "Cinco minutos de paseo y estiramiento global."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación: comprobar que cinco días cortos son sostenibles y no una carga más",
+    "load_pct": 100,
+    "rir_target": "2-3",
+    "volume_note": "Ninguna sesión debe pasar de 40 minutos; si se alarga, se recorta el último ejercicio."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión: subir carga en los primeros ejercicios de cada día",
+    "load_pct": 102.5,
+    "rir_target": "2",
+    "volume_note": "Mismas series; el objetivo del bloque es conservar músculo, y eso se consigue subiendo peso, no minutos."
+   },
+   {
+    "week": 3,
+    "intent": "Carga: semana firme para confirmar que mantiene fuerza con el peso ya estable",
+    "load_pct": 105,
+    "rir_target": "1-2",
+    "volume_note": "Una serie más en hexagonal, prensa y hip thrust; el resto igual."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga: bajar carga y reducir a cuatro días para probar que saltarse uno no rompe nada",
+    "load_pct": 90,
+    "rir_target": "3",
+    "volume_note": "Se elimina la sesión del viernes esa semana; el ejercicio mental de comprobar que no pasa nada vale tanto como el físico."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 12000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 35,
+     "times_per_week": 3,
+     "notes": "Caminata a buen ritmo; se prioriza el paso diario sobre las sesiones formales porque es lo que sostiene el peso a largo plazo."
+    }
+   ]
+  },
+  "deload_instructions": "La semana 4 baja al 90 por ciento y se reduce a cuatro días, quitando el viernes. Esa reducción es deliberada y se le explica: necesita comprobar con datos que una semana con un día menos no le hace recuperar peso, porque su riesgo real no es el sedentarismo sino la mentalidad de todo o nada. Se acuerda además pesarse una sola vez por semana, siempre el mismo día, y anotarlo en la hoja del centro en lugar de tres veces al día en casa."
+ },
+ {
+  "category": "mantenimiento",
+  "title": "Llegar entero al partido del sábado",
+  "case": "Hombre de 45 años, jefe de obra en una constructora, que juega a fútbol sala los sábados con los mismos amigos desde hace veinte años y se ha roto el gemelo dos veces en tres temporadas. Pide literalmente 'quiero llegar al sábado entero', y el condicionante es la agenda y la fatiga: solo puede entrenar martes y jueves por la tarde y el partido es innegociable, así que nada de sesiones que le dejen con agujetas el viernes.",
+  "level": "intermediate",
+  "days_per_week": 2,
+  "place": "gym",
+  "split_name": "Dos sesiones de prevención y fuerza",
+  "split_rationale": "Dos días de cuerpo completo orientados a lo que le rompe: gemelo, isquios y aductor en aceleraciones y frenadas. El martes lleva el trabajo de fuerza más pesado, lejos del partido, y el jueves se centra en cadena posterior y control excéntrico con volumen moderado, que es preventivo sin dejar agujetas a 48 horas del sábado.",
+  "sessions": [
+   {
+    "day": "Martes",
+    "name": "Fuerza general lejos del partido",
+    "warmup": "8 minutos de bicicleta, movilidad de tobillo y cadera y dos aproximaciones a la hexagonal.",
+    "exercises": [
+     {
+      "name": "Peso muerto con barra hexagonal",
+      "sets": 4,
+      "rep_range": "6-8",
+      "rir": "2",
+      "rest_sec": 180,
+      "technique_cue": "Pecho alto y empuje del suelo; la fuerza de cadera es lo que evita que el gemelo tenga que salvar la jugada."
+     },
+     {
+      "name": "Press banca con mancuernas",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Escápulas retraídas y bajada controlada."
+     },
+     {
+      "name": "Remo con pecho apoyado en banco",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Pecho fijo en el banco y codos hacia atrás, sin balanceo."
+     },
+     {
+      "name": "Sentadilla búlgara",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Trabajo a una pierna: el fútbol sala es unilateral y tu entrenamiento también debe serlo."
+     },
+     {
+      "name": "Elevación de talones de pie",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Carga alta con pausa arriba y bajada de tres segundos; el gemelo se rompe por débil, no por falta de estiramiento."
+     },
+     {
+      "name": "Press Pallof",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Extiende sin girar el tronco; controla el giro que en pista haces sin pensar."
+     }
+    ],
+    "cooldown": "Cinco minutos de bicicleta suave y estiramiento de cadera y gemelo."
+   },
+   {
+    "day": "Jueves",
+    "name": "Cadena posterior y control",
+    "warmup": "8 minutos de cinta caminando con inclinación, movilidad de cadera y activación de glúteo.",
+    "exercises": [
+     {
+      "name": "Peso muerto rumano con mancuernas",
+      "sets": 4,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 120,
+      "technique_cue": "Bajada de tres segundos: el isquio se protege trabajando en estiramiento y controlado."
+     },
+     {
+      "name": "Curl femoral tumbado",
+      "sets": 4,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Bajada frenada de tres segundos en cada repetición; esta es la parte que no se salta nunca."
+     },
+     {
+      "name": "Prensa de piernas horizontal",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Carga moderada; a 48 horas del partido no buscamos récords."
+     },
+     {
+      "name": "Jalón al pecho",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Pecho arriba y codos hacia el bolsillo."
+     },
+     {
+      "name": "Elevación de gemelo a una pierna en escalón",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Recorrido completo desde abajo y a una pierna; así se detecta si un lado va por detrás."
+     },
+     {
+      "name": "Plancha lateral",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Cadera alta y alineada; el core lateral sostiene la pelvis en los cambios de dirección."
+     }
+    ],
+    "cooldown": "Diez minutos de paseo, estiramiento suave de gemelo, isquio y aductor."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación: medir cómo llega al sábado y si el jueves le deja alguna carga",
+    "load_pct": 100,
+    "rir_target": "2-3",
+    "volume_note": "Se anota cada sábado cómo se ha encontrado en el partido; ese es el indicador que manda aquí."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión: subir carga en hexagonal y elevación de talones, que son la clave preventiva",
+    "load_pct": 102.5,
+    "rir_target": "2",
+    "volume_note": "Mismas series; se mantiene el volumen del jueves bajo a propósito."
+   },
+   {
+    "week": 3,
+    "intent": "Carga: semana más fuerte el martes, sin tocar nada del jueves",
+    "load_pct": 105,
+    "rir_target": "1-2",
+    "volume_note": "Una serie extra en hexagonal y sentadilla búlgara, solo en la sesión de martes."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga: aligerar y llegar al partido con las piernas frescas del todo",
+    "load_pct": 90,
+    "rir_target": "3",
+    "volume_note": "Dos series por ejercicio; se conserva íntegro el trabajo excéntrico de isquio y gemelo."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 10000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 30,
+     "times_per_week": 2,
+     "notes": "Caminata o bicicleta suave el domingo y el lunes para descargar tras el partido; nada de correr entre semana."
+    }
+   ]
+  },
+  "deload_instructions": "La semana 4 se hace al 90 por ciento con dos series por ejercicio, manteniendo completo el trabajo excéntrico de isquio y gemelo, que es lo que le protege y no se recorta nunca. Si algún jueves llega con la pierna cargada del partido anterior, se sustituye la prensa por diez minutos de bicicleta y se conservan curl femoral y elevación de talones. En cuanto note el gemelo tirante durante un partido, la semana siguiente se entrena solo cadena posterior y se avisa al fisioterapeuta antes de volver a jugar."
+ },
+ {
+  "category": "mantenimiento",
+  "title": "Ya se mueve todo el día",
+  "case": "Mujer de 28 años, repartidora en bicicleta de una empresa de mensajería del Barri Vell, con jornadas de veinte mil pasos y las piernas siempre trabajadas. Pide literalmente 'yo ya me muevo todo el día, solo quiero no quedarme floja de arriba', y el condicionante es que llega a casa reventada y solo garantiza dos ratos de media hora en el pasillo, donde tiene unas mancuernas de 12 kg y un juego de bandas.",
+  "level": "beginner",
+  "days_per_week": 2,
+  "place": "home",
+  "split_name": "Dos sesiones con prioridad de tren superior",
+  "split_rationale": "Su trabajo ya le da un volumen enorme de tren inferior y de gasto diario, así que añadir pierna sería sumar fatiga sin ganancia. Las dos sesiones priorizan empuje, tirón y core, con un solo ejercicio de cadera por sesión para no desatender el patrón de bisagra, que la bicicleta no entrena. Media hora por sesión y descansos cortos para que quepa de verdad.",
+  "sessions": [
+   {
+    "day": "Miércoles",
+    "name": "Pasillo A - empuje y tirón horizontal",
+    "warmup": "4 minutos de movilidad de hombro y columna torácica; las piernas ya vienen calientes del turno.",
+    "exercises": [
+     {
+      "name": "Press de pecho con banda",
+      "sets": 4,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Banda por detrás a la altura de la escápula; junta las manos al final del empuje."
+     },
+     {
+      "name": "Remo con banda sentado",
+      "sets": 4,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Pisa la banda y aguanta un segundo con los omóplatos juntos; es el antídoto de ocho horas encorvada sobre el manillar."
+     },
+     {
+      "name": "Press de hombro unilateral con mancuerna de pie",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Aprieta glúteo y abdomen para que el tronco no se incline al lado libre."
+     },
+     {
+      "name": "Curl martillo",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Codo quieto y sin balanceo; también refuerza el agarre para la jornada."
+     },
+     {
+      "name": "Peso muerto rumano con mancuernas",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Único ejercicio de cadera del día: la bici no entrena la bisagra y el isquio te lo agradecerá."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Glúteo apretado y costillas abajo; media hora y a la ducha."
+     }
+    ],
+    "cooldown": "Estiramiento de pectoral en el marco de la puerta y de flexor de cadera, dos minutos por lado."
+   },
+   {
+    "day": "Domingo",
+    "name": "Pasillo B - tirón vertical y hombro",
+    "warmup": "5 minutos de movilidad general; el domingo no viene del turno y conviene calentar algo más.",
+    "exercises": [
+     {
+      "name": "Jalón con banda de pie",
+      "sets": 4,
+      "rep_range": "15-20",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Ancla la banda alta en la puerta y tira con los codos hacia el bolsillo."
+     },
+     {
+      "name": "Flexiones",
+      "sets": 4,
+      "rep_range": "8-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos a 45 grados y cuerpo en bloque; si no salen ocho, apoya las manos en el sofá."
+     },
+     {
+      "name": "Elevaciones laterales con mancuernas",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Sube al hombro con el codo algo flexionado y baja frenando."
+     },
+     {
+      "name": "Extensión de tríceps sobre la cabeza con mancuerna",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Codos apuntando al techo y quietos; solo se mueve el antebrazo."
+     },
+     {
+      "name": "Sentadilla goblet",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 60,
+      "technique_cue": "Única sentadilla de la semana y sin buscar fatiga: mañana vuelves a pedalear."
+     },
+     {
+      "name": "Bird dog",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Alterna brazo y pierna contrarios sin que la cadera se abra."
+     }
+    ],
+    "cooldown": "Estiramiento de dorsal, cuádriceps y gemelo, cinco minutos en total."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación: encontrar la banda adecuada para cada ejercicio de tirón y empuje",
+    "load_pct": 100,
+    "rir_target": "2-3",
+    "volume_note": "Nada de pierna añadida: su turno ya cubre de sobra ese apartado y sumar más sería contraproducente."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión: llegar al tope del rango de repeticiones en los cuatro ejercicios de torso",
+    "load_pct": 102.5,
+    "rir_target": "2",
+    "volume_note": "Mismas series; si acaba las cuatro con facilidad, se cambia a la banda más dura."
+   },
+   {
+    "week": 3,
+    "intent": "Carga: subir a la banda superior en remo, jalón y press de pecho",
+    "load_pct": 105,
+    "rir_target": "1-2",
+    "volume_note": "Una serie más en flexiones; el trabajo de pierna se mantiene en tres series y no crece."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga: semana suave que coincide con los picos de reparto de fin de mes",
+    "load_pct": 90,
+    "rir_target": "3",
+    "volume_note": "Tres series por ejercicio; si un día llega destrozada del turno, se hace solo el domingo."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 15000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 25,
+     "times_per_week": 1,
+     "notes": "Un paseo tranquilo en su día libre, sin bicicleta y sin mochila; es recuperación activa, no entrenamiento."
+    }
+   ]
+  },
+  "deload_instructions": "La semana 4 se hace al 90 por ciento con tres series por ejercicio. En su caso la descarga se decide por el trabajo, no por el calendario: en las semanas de más volumen de reparto se pasa directamente a la sesión del domingo y se acepta un solo día. Lo importante es que el trabajo de tren superior no desaparezca, porque es lo único que su jornada no cubre y lo único que le pidió."
+ },
+ {
+  "category": "mantenimiento",
+  "title": "Brazos y abdomen a los diecisiete",
+  "case": "Chico de 17 años, estudiante de segundo de bachillerato, que viene con su padre y lo primero que dice es 'quiero brazos y abdominales para el verano'. El condicionante es la edad y la ausencia total de técnica: entrena a las 18:00 al salir del instituto, nunca ha cogido una barra y hay que darle exactamente lo que ha pedido sin dejarle el cuerpo a medias ni cargarle la columna antes de que sepa colocarse.",
+  "level": "beginner",
+  "days_per_week": 3,
+  "place": "gym",
+  "split_name": "Full body con remate de brazo y core",
+  "split_rationale": "Cuerpo completo tres días para construir la base que necesita a esa edad, con los dos últimos ejercicios de cada sesión dedicados a brazo y core, que es lo que él ha venido a buscar. Darle lo que pide al final de la sesión es lo que hace que se quede; ponerle solo curl y abdominales sería fallarle. Todo con máquinas y mancuernas mientras aprende a colocar la espalda.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Día A - base y bíceps",
+    "warmup": "6 minutos de bicicleta, movilidad de hombro con banda y dos series ligeras del primer ejercicio.",
+    "exercises": [
+     {
+      "name": "Press banca con mancuernas",
+      "sets": 3,
+      "rep_range": "8-12",
+      "rir": "2-3",
+      "rest_sec": 120,
+      "technique_cue": "Escápulas retraídas y pies en el suelo; baja hasta notar el pectoral, sin rebotar."
+     },
+     {
+      "name": "Remo con mancuerna a una mano",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Cadera cuadrada y tirón del codo hacia atrás; nada de rotar el tronco."
+     },
+     {
+      "name": "Prensa de piernas 45°",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 120,
+      "technique_cue": "La pierna también entra en el plan aunque no la hayas pedido; sin ella el resto se queda a medias."
+     },
+     {
+      "name": "Curl de bíceps con barra EZ",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos fijos al costado y sin usar la cadera; con menos peso se nota el doble."
+     },
+     {
+      "name": "Extensión de tríceps en polea con cuerda",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "El tríceps es dos tercios del brazo: aquí está la mitad de lo que has venido a buscar."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Glúteo apretado y cadera a la altura de los hombros."
+     }
+    ],
+    "cooldown": "Cinco minutos de paseo y estiramiento de pectoral y cuádriceps."
+   },
+   {
+    "day": "Miércoles",
+    "name": "Día B - espalda, hombro y colgado",
+    "warmup": "6 minutos de elíptica, band pull-apart y colgarse 20 segundos de la barra.",
+    "exercises": [
+     {
+      "name": "Jalón al pecho",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 120,
+      "technique_cue": "Pecho arriba y barra a la clavícula; la espalda ancha es lo que hace parecer el brazo más grande."
+     },
+     {
+      "name": "Press de hombros con mancuernas sentado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Respaldo casi vertical y sin arquear la lumbar al empujar."
+     },
+     {
+      "name": "Sentadilla goblet",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 120,
+      "technique_cue": "Mancuerna al pecho y talones apoyados; aprende aquí antes de tocar una barra."
+     },
+     {
+      "name": "Curl martillo",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Agarre neutro; este es el que engrosa el antebrazo y el lateral del brazo."
+     },
+     {
+      "name": "Fondos entre bancos",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos hacia atrás y baja solo hasta 90 grados; si molesta el hombro, para."
+     },
+     {
+      "name": "Elevaciones de rodillas colgado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Sube las rodillas sin balancearte; el balanceo es lo que hace que no notes nada."
+     }
+    ],
+    "cooldown": "Estiramiento de dorsal colgado suave y de hombro, cuatro minutos."
+   },
+   {
+    "day": "Viernes",
+    "name": "Día C - repaso y bombeo",
+    "warmup": "6 minutos de bicicleta y movilidad general de hombro y cadera.",
+    "exercises": [
+     {
+      "name": "Remo sentado en polea",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Tronco quieto y codos a la cadera; sin echarte atrás para mover más."
+     },
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Asiento a la altura del pecho y recorrido completo."
+     },
+     {
+      "name": "Peso muerto rumano con mancuernas",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Cadera atrás y espalda recta; se entrena ligero porque estás aprendiendo el patrón."
+     },
+     {
+      "name": "Curl bayesian en polea",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Un paso por delante de la polea, codo detrás del cuerpo y quieto todo el recorrido."
+     },
+     {
+      "name": "Patada de tríceps con mancuerna",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 45,
+      "technique_cue": "Brazo pegado al costado y extensión completa; peso ligero y mucha calidad."
+     },
+     {
+      "name": "Crunch en polea alta",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Redondea la espalda alta llevando las costillas a la pelvis; la cadera no se mueve."
+     }
+    ],
+    "cooldown": "Cinco minutos de paseo y estiramiento global."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación: aprender la técnica de los seis patrones y anotar todo en su hoja",
+    "load_pct": 100,
+    "rir_target": "3",
+    "volume_note": "Cargas ligeras a propósito; a su edad la técnica vale más que cualquier kilo de esta semana."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión: subir peso en press, jalón y prensa manteniendo la ejecución",
+    "load_pct": 102.5,
+    "rir_target": "2-3",
+    "volume_note": "Mismas series; si la técnica se rompe al subir, se vuelve al peso anterior sin discusión."
+   },
+   {
+    "week": 3,
+    "intent": "Carga: primera semana en la que puede acercarse al esfuerzo real en brazo",
+    "load_pct": 105,
+    "rir_target": "2",
+    "volume_note": "Una serie más en curl y en tríceps; el resto se mantiene."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga: aligerar coincidiendo con la semana de exámenes",
+    "load_pct": 90,
+    "rir_target": "3",
+    "volume_note": "Dos series por ejercicio y sesiones de 35 minutos; los estudios mandan esa semana."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 10000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 30,
+     "times_per_week": 2,
+     "notes": "Bicicleta al instituto o partido con los amigos; no hace falta programarle cardio formal a su edad."
+    }
+   ]
+  },
+  "deload_instructions": "La semana 4 se hace al 90 por ciento con dos series por ejercicio y coincide siempre que se pueda con exámenes. Con él la descarga es también educativa: se le explica por qué una semana suave no le hace perder brazo, porque a los diecisiete la tentación es entrenar más cuanto más impaciente se está. Se revisa la hoja del mes con su padre delante y se le enseña cuánto han subido los pesos, que es la mejor forma de que siga tres años más."
+ },
+ {
+  "category": "mantenimiento",
+  "title": "Tono de glúteo y pierna sin sentadilla",
+  "case": "Mujer de 35 años, dependienta en una tienda de ropa del centro, con dos años de entreno a sus espaldas y contenta con su tren superior. Pide literalmente 'de cintura para abajo quiero mantener la forma que tengo, ni más volumen ni menos', y el condicionante es la rodilla derecha: desde una caída esquiando la sentadilla profunda con barra le da pinchazos y no quiere volver a ella, así que hay que sostener glúteo y pierna por otra vía.",
+  "level": "intermediate",
+  "days_per_week": 4,
+  "place": "gym",
+  "split_name": "Tres días de tren inferior sin sentadilla profunda y uno de torso",
+  "split_rationale": "Tres sesiones de tren inferior repartidas en la semana permiten sostener la forma del glúteo y la pierna con volumen moderado por día, que es lo que su rodilla tolera, y una cuarta sesión de torso cubre el resto del cuerpo sin restarle protagonismo. Todo el trabajo se apoya en extensión de cadera, bisagra y máquinas de recorrido controlado; se elimina cualquier ejercicio que la obligue a flexionar la rodilla bajo carga en rango profundo.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Glúteo dominante",
+    "warmup": "8 minutos de bicicleta con sillín alto, activación de glúteo medio con banda y movilidad de cadera.",
+    "exercises": [
+     {
+      "name": "Hip thrust con barra",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Barbilla al pecho, costillas abajo y pausa de un segundo arriba; la rodilla no sufre en este patrón."
+     },
+     {
+      "name": "Peso muerto rumano con barra",
+      "sets": 4,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Cadera muy atrás con la barra pegada al muslo; la rodilla apenas se dobla."
+     },
+     {
+      "name": "Curl femoral tumbado",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 75,
+      "technique_cue": "Cadera pegada al banco y bajada frenada de dos segundos."
+     },
+     {
+      "name": "Patada de glúteo en polea",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Cadera cuadrada; extiende sin arquear la espalda para llegar más lejos."
+     },
+     {
+      "name": "Abducción de cadera en máquina",
+      "sets": 3,
+      "rep_range": "15-20",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Tronco algo inclinado adelante y apertura controlada, sin golpes."
+     },
+     {
+      "name": "Elevación de talones de pie",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Recorrido completo con pausa arriba de un segundo."
+     }
+    ],
+    "cooldown": "Estiramiento de glúteo e isquios y cinco minutos de paseo."
+   },
+   {
+    "day": "Martes",
+    "name": "Torso completo",
+    "warmup": "5 minutos de remo, band pull-apart y movilidad torácica.",
+    "exercises": [
+     {
+      "name": "Jalón al pecho",
+      "sets": 4,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Pecho arriba y codos hacia el bolsillo; controla la subida."
+     },
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Asiento a la altura del pecho y recorrido completo."
+     },
+     {
+      "name": "Remo sentado en polea",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Tronco quieto y tirón del codo hacia la cadera."
+     },
+     {
+      "name": "Press de hombros con mancuernas sentado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Respaldo casi vertical y costillas abajo al empujar."
+     },
+     {
+      "name": "Elevación lateral en polea unilateral",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Cable por detrás del cuerpo, sube al hombro y baja frenando."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Glúteo apretado y cadera a la altura de los hombros."
+     }
+    ],
+    "cooldown": "Estiramiento de pectoral y dorsal, cuatro minutos."
+   },
+   {
+    "day": "Jueves",
+    "name": "Pierna general en rango seguro",
+    "warmup": "8 minutos de bicicleta, movilidad de tobillo y cadera y dos series ligeras de goblet.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 4,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Baja solo hasta donde la rodilla esté cómoda; con la mancuerna delante controlas la profundidad mucho mejor que con barra."
+     },
+     {
+      "name": "Prensa de piernas horizontal",
+      "sets": 4,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Ajusta el tope para no pasar de los 90 grados de rodilla; ese es tu límite."
+     },
+     {
+      "name": "Subida a cajón",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Cajón a la altura de la rodilla, sube sin impulso y baja controlando."
+     },
+     {
+      "name": "Curl femoral sentado",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 75,
+      "technique_cue": "Espalda apoyada y sin levantar la cadera para ayudarte."
+     },
+     {
+      "name": "Aducción de cadera en máquina",
+      "sets": 3,
+      "rep_range": "15-20",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Cierre controlado y sin llegar al tope duro de la máquina."
+     },
+     {
+      "name": "Elevación de talones sentado",
+      "sets": 3,
+      "rep_range": "15-20",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Recorrido completo y pausa arriba; el sóleo aguanta tus ocho horas de pie."
+     }
+    ],
+    "cooldown": "Estiramiento de cuádriceps y gemelo y cinco minutos de bicicleta suave."
+   },
+   {
+    "day": "Sábado",
+    "name": "Cadera y core",
+    "warmup": "8 minutos de cinta caminando con inclinación y activación de glúteo con banda.",
+    "exercises": [
+     {
+      "name": "Hip thrust en máquina",
+      "sets": 4,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 90,
+      "technique_cue": "Segunda dosis de glúteo de la semana, más ligera y con más repeticiones que el lunes."
+     },
+     {
+      "name": "Peso muerto rumano a una pierna",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Cadera cuadrada y bajada lenta; si pierdes el equilibrio, roza el suelo con la punta del pie."
+     },
+     {
+      "name": "Zancada inversa",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Paso atrás largo: la rodilla de delante apenas se adelanta, por eso este sí lo toleras."
+     },
+     {
+      "name": "Pull through en polea",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Bisagra pura de cadera; termina apretando el glúteo sin arquear la lumbar."
+     },
+     {
+      "name": "Abducción de cadera con banda",
+      "sets": 3,
+      "rep_range": "15-20",
+      "rir": "1-2",
+      "rest_sec": 45,
+      "technique_cue": "Banda por encima de la rodilla y apertura sin que la cadera se vaya atrás."
+     },
+     {
+      "name": "Press Pallof",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Extiende los brazos sin que el tronco gire hacia la polea."
+     }
+    ],
+    "cooldown": "Estiramiento de glúteo, aductor e isquios, cinco minutos."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación: confirmar que ningún ejercicio del plan despierta la rodilla derecha",
+    "load_pct": 100,
+    "rir_target": "2-3",
+    "volume_note": "Se anota tras cada sesión si ha habido pinchazo; si aparece, se retira ese ejercicio y no se negocia."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión: subir carga en hip thrust y peso muerto rumano, sus dos ejercicios clave",
+    "load_pct": 102.5,
+    "rir_target": "2",
+    "volume_note": "Mismas series; el volumen de pierna ya está repartido en tres días y no debe crecer más."
+   },
+   {
+    "week": 3,
+    "intent": "Carga: semana firme para sostener la forma del glúteo sin ganar sección",
+    "load_pct": 105,
+    "rir_target": "1-2",
+    "volume_note": "Una serie más en hip thrust del lunes; el jueves y el sábado no se tocan."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga: aligerar y revisar cómo ha respondido la rodilla al mes completo",
+    "load_pct": 90,
+    "rir_target": "3",
+    "volume_note": "Tres series por ejercicio y se retira la subida a cajón, que es lo que más flexión de rodilla le pide."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 11000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 35,
+     "times_per_week": 2,
+     "notes": "Bicicleta con sillín alto o caminata llana; se evita la cuesta abajo prolongada, que es lo que más le carga la rodilla."
+    }
+   ]
+  },
+  "deload_instructions": "La semana 4 se entrena al 90 por ciento con tres series por ejercicio y sin subida a cajón. Es también la semana de revisión de la rodilla: se le pregunta expresamente si ha notado pinchazos, chasquidos o inflamación tras alguna sesión, y con esa información se decide si en el siguiente bloque se puede probar la prensa con algo más de recorrido. Si aparece dolor que dure más de 48 horas, se retira todo el trabajo de rodilla dominante y se deriva a valoración."
+ },
+ {
+  "category": "mantenimiento",
+  "title": "Fuerza para siempre, sin máximos",
+  "case": "Hombre de 43 años, profesor de secundaria y expracticante de powerlifting amateur, que llegó a mover 170 en sentadilla y 120 en banca. Pide literalmente 'no quiero volver a intentar un récord, quiero seguir siendo fuerte a los cincuenta y cinco', y el condicionante es su historial: cada vez que se acerca a un máximo termina con la espalda cargada y dos semanas parado, así que hay que trabajar lejos del límite y con ejercicios que no le castiguen la lumbar.",
+  "level": "advanced",
+  "days_per_week": 3,
+  "place": "gym",
+  "split_name": "Tres full body de fuerza submáxima",
+  "split_rationale": "Cuerpo completo tres días con los patrones de fuerza que domina, pero siempre a RIR 3 y sin series por debajo de cinco repeticiones: mantiene la capacidad de fuerza sin acercarse nunca al rango que le ha lesionado. Se sustituyen sentadilla libre, peso muerto convencional y remo con barra por variantes que cargan igual sin comprimir la columna, porque a su edad y con su historial la lumbar es el factor limitante del plan.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Full body A - cajón y banca",
+    "warmup": "8 minutos de bicicleta, movilidad de cadera y tres aproximaciones progresivas a la sentadilla a cajón.",
+    "exercises": [
+     {
+      "name": "Sentadilla a cajón",
+      "sets": 4,
+      "rep_range": "5-6",
+      "rir": "3",
+      "rest_sec": 180,
+      "technique_cue": "El cajón fija la profundidad y evita que busques el rango extremo donde se te carga la espalda."
+     },
+     {
+      "name": "Press banca con barra",
+      "sets": 4,
+      "rep_range": "5-6",
+      "rir": "3",
+      "rest_sec": 180,
+      "technique_cue": "Escápulas retraídas y pies clavados; se acaba la serie cuando la barra pierde velocidad, no cuando falla."
+     },
+     {
+      "name": "Remo con pecho apoyado en banco",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Pecho fijo en el banco: mismo trabajo de espalda que el remo libre y cero carga lumbar."
+     },
+     {
+      "name": "Curl femoral tumbado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Bajada frenada de dos segundos; el isquio fuerte descarga la espalda en todo lo demás."
+     },
+     {
+      "name": "Face pull en polea",
+      "sets": 3,
+      "rep_range": "15-20",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cuerda a la altura de los ojos; a los cuarenta y tres esto es tan importante como la banca."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Sin lastre: buscamos rigidez del tronco, no carga añadida sobre la columna."
+     }
+    ],
+    "cooldown": "Cinco minutos de paseo y estiramiento de cadera y pectoral."
+   },
+   {
+    "day": "Miércoles",
+    "name": "Full body B - hexagonal y vertical",
+    "warmup": "8 minutos de remo, movilidad de hombro y cadera y tres aproximaciones a la hexagonal.",
+    "exercises": [
+     {
+      "name": "Peso muerto con barra hexagonal",
+      "sets": 4,
+      "rep_range": "5-6",
+      "rir": "3",
+      "rest_sec": 180,
+      "technique_cue": "La hexagonal te deja el peso en línea con el cuerpo: misma fuerza, mucho menos brazo de palanca lumbar."
+     },
+     {
+      "name": "Press militar sentado con barra",
+      "sets": 3,
+      "rep_range": "6-8",
+      "rir": "3",
+      "rest_sec": 150,
+      "technique_cue": "Sentado con respaldo para que la lumbar no compense el recorrido final."
+     },
+     {
+      "name": "Dominadas neutras",
+      "sets": 4,
+      "rep_range": "6-10",
+      "rir": "2",
+      "rest_sec": 150,
+      "technique_cue": "Deprime la escápula antes de doblar el codo; añade lastre solo cuando saques diez limpias."
+     },
+     {
+      "name": "Prensa de piernas horizontal",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Recorrido completo sin que la cadera se despegue del respaldo."
+     },
+     {
+      "name": "Extensión de tríceps en polea con cuerda",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Codos pegados al tronco y abre la cuerda al final."
+     },
+     {
+      "name": "Press Pallof",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Antirrotación de pie: la clase de core que de verdad protege tu espalda."
+     }
+    ],
+    "cooldown": "Movilidad torácica en el rodillo y estiramiento de dorsal, cinco minutos."
+   },
+   {
+    "day": "Viernes",
+    "name": "Full body C - volumen moderado",
+    "warmup": "8 minutos de bicicleta y movilidad general de cadera y hombro.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Día de rango completo con poco peso; la columna descansa y la pierna sigue trabajando."
+     },
+     {
+      "name": "Press inclinado con mancuernas",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 120,
+      "technique_cue": "Banco a 30 grados y bajada controlada hasta notar el pectoral."
+     },
+     {
+      "name": "Remo sentado en polea",
+      "sets": 4,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Tronco quieto; el tirón sale del codo y no de la espalda baja."
+     },
+     {
+      "name": "Hiperextensiones 45°",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Sin peso y sin hiperextender arriba: es trabajo de resistencia lumbar, no de carga."
+     },
+     {
+      "name": "Curl de bíceps con barra EZ",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "1-2",
+      "rest_sec": 60,
+      "technique_cue": "Codos fijos al costado y sin balanceo de tronco."
+     },
+     {
+      "name": "Plancha lateral",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cadera alta y alineada; el cuadrado lumbar trabajado así aguanta mejor todo lo demás."
+     }
+    ],
+    "cooldown": "Diez minutos de paseo y estiramiento de cadena posterior."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación: fijar los pesos de trabajo a RIR 3 y aceptar que se queda lejos de sus marcas",
+    "load_pct": 100,
+    "rir_target": "3",
+    "volume_note": "Nada por debajo de cinco repeticiones en ningún ejercicio del bloque; esa es la regla que le mantiene entrenando."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión: subir kilos manteniendo el mismo RIR, sin bajar de repeticiones",
+    "load_pct": 102.5,
+    "rir_target": "3",
+    "volume_note": "Mismas series; el progreso sale del peso a repeticiones iguales, nunca de bajar el rango."
+   },
+   {
+    "week": 3,
+    "intent": "Carga: semana algo más exigente sin acercarse al fallo en ningún momento",
+    "load_pct": 105,
+    "rir_target": "2-3",
+    "volume_note": "Una serie más en sentadilla a cajón y hexagonal; el RIR nunca baja de 2."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga: semana ligera para que la espalda llegue fresca al mes siguiente",
+    "load_pct": 90,
+    "rir_target": "4",
+    "volume_note": "Tres series en los principales y se elimina la hiperextensión; sale del centro sin notar la sesión."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 9000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 40,
+     "times_per_week": 2,
+     "notes": "Caminata o bicicleta el fin de semana; le sienta bien a la espalda y no interfiere con la fuerza."
+    }
+   ]
+  },
+  "deload_instructions": "La semana 4 se hace al 90 por ciento con tres series en los ejercicios principales y RIR 4. Con él la descarga es innegociable y hay que decírselo claro: su historial de dos semanas parado nace precisamente de saltarse las semanas suaves cuando se ve fuerte. Regla de este plan: ninguna serie por debajo de cinco repeticiones y ningún intento de máximo, ni siquiera para probar; si algún día llega con la espalda cargada, se sustituye la sentadilla a cajón por prensa horizontal y se sigue."
+ },
+ {
+  "category": "mantenimiento",
+  "title": "Levantar a los nietos sin apoyarse",
+  "case": "Hombre de 68 años, jubilado de la construcción, que cuida de dos nietos de 3 y 6 años dos tardes por semana y quiere seguir haciéndolo. Pide literalmente 'quiero poder cogerlos en brazos y levantarme del suelo sin apoyarme en el sofá', y el condicionante es que se cansa al agacharse, tiene poco equilibrio a una pierna y le operaron de una hernia inguinal hace dos años, así que nada de apneas ni de cargas máximas.",
+  "level": "beginner",
+  "days_per_week": 3,
+  "place": "gym",
+  "split_name": "Full body funcional en tres días",
+  "split_rationale": "Cuerpo completo tres veces por semana centrado en los tres gestos que le importan: levantarse de una superficie, cargar peso caminando y subir un escalón con control. Se usan máquinas de recorrido guiado para la fuerza base y se añade en cada sesión un ejercicio de estabilidad, que es lo que le falta. Todo con respiración continua y cargas moderadas por la hernia operada.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Día A - empujar, tirar y cargar",
+    "warmup": "8 minutos de bicicleta a ritmo cómodo, movilidad de tobillo, cadera y hombro.",
+    "exercises": [
+     {
+      "name": "Prensa de piernas horizontal",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Suelta el aire al empujar; no aguantes nunca la respiración por la operación de la hernia."
+     },
+     {
+      "name": "Jalón al pecho",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Siéntate erguido y tira a la clavícula; suelta despacio sin que el peso te levante."
+     },
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Este es el gesto de levantar al pequeño por encima de la cabeza; recorrido completo y suave."
+     },
+     {
+      "name": "Puente de glúteos",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 75,
+      "technique_cue": "Sube apretando el glúteo y respira arriba; nada de aguantar el aire."
+     },
+     {
+      "name": "Paseo del granjero unilateral",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "3",
+      "rest_sec": 75,
+      "technique_cue": "Esto es literalmente llevar al niño en brazos: hombros nivelados y pasos cortos y seguros."
+     },
+     {
+      "name": "Bird dog",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "3",
+      "rest_sec": 60,
+      "technique_cue": "Alterna brazo y pierna contrarios muy despacio; si te tambaleas, acorta el recorrido."
+     }
+    ],
+    "cooldown": "Ocho minutos caminando en cinta a ritmo bajo y estiramiento de cadera y pectoral."
+   },
+   {
+    "day": "Miércoles",
+    "name": "Día B - subir y estabilizar",
+    "warmup": "8 minutos de cinta caminando con inclinación suave y movilidad de tobillo y cadera.",
+    "exercises": [
+     {
+      "name": "Subida a cajón",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Empieza con el cajón muy bajo y sujeto a la barandilla; sube sin impulso y baja controlando."
+     },
+     {
+      "name": "Remo sentado en polea",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Tronco quieto y codos hacia atrás; junta los omóplatos al final."
+     },
+     {
+      "name": "Press de hombros en máquina",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Recorrido cómodo y respiración continua; si notas presión en la cabeza, baja el peso."
+     },
+     {
+      "name": "Curl femoral sentado",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Movimiento suave, sin tirones al final del recorrido."
+     },
+     {
+      "name": "Elevación de talones sentado",
+      "sets": 3,
+      "rep_range": "15-20",
+      "rir": "3",
+      "rest_sec": 60,
+      "technique_cue": "Recorrido completo con pausa arriba; el gemelo fuerte te da estabilidad al caminar."
+     },
+     {
+      "name": "Dead bug",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "3",
+      "rest_sec": 60,
+      "technique_cue": "Muy lento y respirando todo el rato; es el trabajo abdominal que la hernia operada tolera bien."
+     }
+    ],
+    "cooldown": "Ocho minutos de bicicleta muy suave y estiramiento de isquios y gemelo."
+   },
+   {
+    "day": "Viernes",
+    "name": "Día C - levantarse del suelo",
+    "warmup": "8 minutos de elíptica a ritmo cómodo y movilidad general de columna y cadera.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Kettlebell ligera al pecho; este es el gesto de levantarte del suelo con el niño encima."
+     },
+     {
+      "name": "Remo en máquina",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Pecho apoyado, codos atrás y hombros lejos de las orejas."
+     },
+     {
+      "name": "Contractora de pecho",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Cierre suave delante del pecho, sin llegar a chocar los brazos."
+     },
+     {
+      "name": "Hip thrust en máquina",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Sube apretando el glúteo y suelta el aire arriba; el glúteo es lo que te levanta de la silla."
+     },
+     {
+      "name": "Elevación de talones de pie",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 60,
+      "technique_cue": "Sujétate a la barra para no perder el equilibrio; recorrido completo."
+     },
+     {
+      "name": "Press Pallof",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "3",
+      "rest_sec": 60,
+      "technique_cue": "De pie y sin girar el tronco; esto es lo que te sostiene si un nieto te empuja sin querer."
+     }
+    ],
+    "cooldown": "Diez minutos caminando y estiramiento de cadera, gemelo y hombro."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación: aprender a respirar en cada repetición y encontrar la altura de cajón segura",
+    "load_pct": 100,
+    "rir_target": "4",
+    "volume_note": "Cargas muy conservadoras; la primera semana se comprueba el equilibrio en cada ejercicio de pie."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión: subir una placa donde acabe con repeticiones sobradas y subir un dedo el cajón",
+    "load_pct": 102.5,
+    "rir_target": "3-4",
+    "volume_note": "Mismas series; el cambio es mínimo porque a esta edad la constancia pesa más que la carga."
+   },
+   {
+    "week": 3,
+    "intent": "Carga: semana en la que debe notar esfuerzo real en prensa y paseo del granjero",
+    "load_pct": 105,
+    "rir_target": "3",
+    "volume_note": "Se añade una serie a prensa y a paseo del granjero, que son los dos ejercicios más ligados a lo que pidió."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga: semana suave y prueba de los gestos reales que quería recuperar",
+    "load_pct": 90,
+    "rir_target": "4",
+    "volume_note": "Dos series por ejercicio y al final se cronometra cuánto tarda en levantarse del suelo sin apoyarse."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 8000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 30,
+     "times_per_week": 4,
+     "notes": "Caminar cada día que pueda, mejor acompañando a los nietos al parque; es el mejor cardio para su objetivo."
+    }
+   ]
+  },
+  "deload_instructions": "La semana 4 se hace al 90 por ciento con dos series por ejercicio y se reserva el final de la última sesión para comprobar los gestos que le trajeron aquí: levantarse del suelo sin apoyo y subir cinco escalones seguidos sin agarrarse. Ese registro es su verdadero indicador de progreso, más que cualquier kilo de la máquina. Si aparece bulto, molestia o sensación de peso en la zona de la hernia operada, se para de inmediato y se le manda a revisión antes de continuar."
  },
  {
   "category": "perdida_grasa",
@@ -8000,6 +12524,14 @@ TEMPLATES = [
       "rir": "2",
       "rest_sec": 60,
       "technique_cue": "Extiende los brazos sin dejar que el tronco gire"
+     },
+     {
+      "name": "Hip thrust en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Termina apretando el glúteo un segundo, con las costillas bajas."
      }
     ],
     "cooldown": "Estiramientos de piernas y espalda 5 min"
@@ -8040,6 +12572,14 @@ TEMPLATES = [
       "rir": "2",
       "rest_sec": 75,
       "technique_cue": "Camina erguido sin inclinarte hacia la carga"
+     },
+     {
+      "name": "Curl femoral sentado",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Flexión completa y controlada; sin rebote al final."
      }
     ],
     "cooldown": "5 min de estiramientos y respiración"
@@ -9131,7 +13671,7 @@ TEMPLATES = [
      },
      {
       "name": "Press de pecho en máquina",
-      "sets": 2,
+      "sets": 3,
       "rep_range": "10-12",
       "rir": "3",
       "rest_sec": 90,
@@ -9179,7 +13719,7 @@ TEMPLATES = [
      },
      {
       "name": "Press de hombros en máquina",
-      "sets": 2,
+      "sets": 3,
       "rep_range": "10-12",
       "rir": "3",
       "rest_sec": 90,
@@ -9788,12 +14328,12 @@ TEMPLATES = [
     "warmup": "5 min de marcha y círculos de brazos",
     "exercises": [
      {
-      "name": "Zancada inversa",
+      "name": "Peso muerto rumano a una pierna sin carga",
       "sets": 3,
-      "rep_range": "12-15",
+      "rep_range": "10-12",
       "rir": "2",
       "rest_sec": 75,
-      "technique_cue": "Baja la rodilla trasera cerca del suelo"
+      "technique_cue": "Cadera atrás con la espalda recta; la pierna libre acompaña alineada con el tronco."
      },
      {
       "name": "Press de pecho con banda",
@@ -11054,14 +15594,8 @@ TEMPLATES = [
    }
   ],
   "cardio": {
-   "daily_steps": 9000,
+   "daily_steps": 10000,
    "sessions": [
-    {
-     "type": "hiit",
-     "minutes": 15,
-     "times_per_week": 2,
-     "notes": "Bici o elíptica al acabar la sesión, si queda hueco"
-    },
     {
      "type": "liss",
      "minutes": 25,
@@ -11473,6 +16007,4516 @@ TEMPLATES = [
    ]
   },
   "deload_instructions": "Semana 4 al 90 por ciento con una serie menos, también en el core; la cintura la define el déficit sostenido, no castigar el abdomen a diario."
+ },
+ {
+  "category": "principiantes",
+  "title": "Sin pisar la zona de peso libre",
+  "case": "Hombre de 26 años, administrativo en una gestoría, socio desde hace dos meses que solo usa la cinta y las máquinas del pasillo de entrada. Dice literalmente que le da vergüenza cruzar a la zona de mancuernas porque siente que todo el mundo mira lo que levanta, así que pide tres días con material guiado y una progresión que lo acerque al peso libre sin exponerse antes de tiempo.",
+  "level": "beginner",
+  "days_per_week": 3,
+  "place": "gym",
+  "split_name": "Full body guiado A-B-C",
+  "split_rationale": "Tres sesiones de cuerpo completo con máquinas y poleas, que ocupan siempre la misma esquina de la sala y no obligan a pedir ni compartir material. La sesión C introduce de forma progresiva el primer trabajo con mancuerna y multipower para que el paso a la zona de peso libre llegue cuando ya domine el patrón, no por obligación.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Full body A — máquinas seleccionadas",
+    "warmup": "5 minutos de bicicleta suave, 10 círculos de hombro por lado y 10 sentadillas sin carga hasta la altura que resulte cómoda.",
+    "exercises": [
+     {
+      "name": "Prensa de piernas horizontal",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Pies a la anchura de las caderas y talones bien apoyados; baja hasta que la rodilla llegue a noventa grados sin que la cadera se despegue del respaldo."
+     },
+     {
+      "name": "Jalón al pecho",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Pecho alto y codos hacia los bolsillos; lleva la barra a la clavícula sin echar el tronco atrás más de unos pocos grados."
+     },
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Ajusta el asiento para que las asas queden a la altura del esternón y deja los omóplatos apoyados en el respaldo durante todo el recorrido."
+     },
+     {
+      "name": "Curl femoral tumbado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Cadera pegada al banco; sube sin despegar la pelvis y baja contando dos segundos."
+     },
+     {
+      "name": "Face pull en polea",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cuerda a la altura de los ojos, codos altos y separa las manos al final del recorrido sin encoger los hombros."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "20-30s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos bajo los hombros, glúteo apretado y costillas hacia abajo; si la lumbar se hunde, corta la serie."
+     }
+    ],
+    "cooldown": "5 minutos de caminata en cinta a ritmo cómodo y estiramiento suave de pectoral en el marco de una puerta, 30 segundos por lado."
+   },
+   {
+    "day": "Miércoles",
+    "name": "Full body B — poleas y estabilidad",
+    "warmup": "5 minutos de elíptica, 10 rotaciones de cadera por lado y una serie ligera de la prensa a modo de aproximación.",
+    "exercises": [
+     {
+      "name": "Prensa de piernas 45°",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Controla la bajada tres segundos y no bloquees la rodilla de golpe al empujar."
+     },
+     {
+      "name": "Remo sentado en polea",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Tronco firme y quieto; lleva el agarre al ombligo juntando los omóplatos sin balancearte hacia atrás."
+     },
+     {
+      "name": "Press de hombros en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Asiento alto para que el recorrido empiece a la altura de la barbilla; sube sin arquear la zona lumbar."
+     },
+     {
+      "name": "Hip thrust en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Termina el empuje con las costillas bajas y el glúteo apretado un segundo, sin buscar más recorrido con la lumbar."
+     },
+     {
+      "name": "Extensión de tríceps en polea con cuerda",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos pegados al costado y quietos; solo se mueve el antebrazo."
+     },
+     {
+      "name": "Dead bug",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Lumbar pegada al suelo todo el rato; baja brazo y pierna contrarios solo hasta donde puedas mantenerla."
+     }
+    ],
+    "cooldown": "Cinco minutos de bicicleta muy suave y respiración nasal lenta tumbado con las piernas apoyadas en un banco."
+   },
+   {
+    "day": "Viernes",
+    "name": "Full body C — primer contacto con el peso libre",
+    "warmup": "5 minutos de caminata inclinada, 10 band pull-apart y una serie de sentadilla sin carga sujetando una mancuerna ligera.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Mancuerna vertical pegada al pecho y codos dentro; baja entre las rodillas manteniendo el pecho alto. Hazla en la zona de estiramientos si la sala está llena."
+     },
+     {
+      "name": "Jalón agarre estrecho neutro",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Agarre neutro, tira con los codos hacia las costillas y aguanta medio segundo abajo."
+     },
+     {
+      "name": "Press banca en multipower",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Los topes de seguridad puestos un dedo por debajo del pecho: puedes fallar sin depender de nadie que te ayude."
+     },
+     {
+      "name": "Remo en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Pecho apoyado y sin despegarlo; el tirón termina cuando los codos pasan la línea del tronco."
+     },
+     {
+      "name": "Curl bayesian en polea",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Un paso por delante de la polea, codo ligeramente detrás del cuerpo y sin mover el hombro."
+     },
+     {
+      "name": "Press Pallof",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Estira los brazos sin dejar que el tronco rote hacia la polea; es un ejercicio de aguantar, no de empujar fuerte."
+     }
+    ],
+    "cooldown": "Cinco minutos de caminata y movilidad de cadera en el suelo. Antes de irte, date una vuelta por la zona de mancuernas: solo mirar dónde está cada peso."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación",
+    "load_pct": 100,
+    "rir_target": "3",
+    "volume_note": "Aprender el recorrido de cada máquina y anotar el número de asiento y el peso usado. Sesiones de 45 minutos como mucho."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión",
+    "load_pct": 102.5,
+    "rir_target": "2-3",
+    "volume_note": "Mismo esquema con una serie más en prensa y jalón. Esta semana la sentadilla goblet se hace fuera del pasillo de máquinas."
+   },
+   {
+    "week": 3,
+    "intent": "Carga",
+    "load_pct": 105,
+    "rir_target": "2",
+    "volume_note": "Semana de más peso en los tres empujes y tirones principales; el resto se mantiene igual para no alargar la sesión."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga",
+    "load_pct": 90,
+    "rir_target": "3-4",
+    "volume_note": "Se retira una serie de cada ejercicio accesorio. Buena semana para probar el press con mancuernas sin presión de rendimiento."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 8000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 20,
+     "times_per_week": 3,
+     "notes": "Cinta o elíptica al terminar cada sesión, a un ritmo que permita hablar."
+    }
+   ]
+  },
+  "deload_instructions": "En la semana 4 baja la carga al 90% y quita una serie de los accesorios manteniendo los tres ejercicios principales. Si alguna semana entrenas menos de dos días, repite la semana en lugar de saltar a la siguiente."
+ },
+ {
+  "category": "principiantes",
+  "title": "Primer plan por indicación médica",
+  "case": "Mujer de 30 años, peluquera, ocho horas al día de pie y ninguna experiencia con pesas, que llega con el informe de su médica de cabecera recomendándole ejercicio de fuerza por una analítica mejorable y mucho estrés. Pide literalmente que alguien le diga exactamente qué hacer cada día, y avisa de que no puede permitirse agujetas que le impidan trabajar con los brazos en alto.",
+  "level": "beginner",
+  "days_per_week": 3,
+  "place": "gym",
+  "split_name": "Full body de introducción A-B-C",
+  "split_rationale": "Tres sesiones de cuerpo completo con el mismo esqueleto de patrones (empujar, tirar, pierna, cadera y core) para que en tres semanas se los sepa de memoria. El volumen por grupo se reparte entre los tres días para evitar el pico de agujetas que arruinaría su jornada laboral.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Sesión A — patrones básicos",
+    "warmup": "5 minutos de bicicleta, 10 elevaciones de brazos por encima de la cabeza y 10 puentes de glúteo sin carga.",
+    "exercises": [
+     {
+      "name": "Prensa de piernas horizontal",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Baja solo hasta donde la espalda siga apoyada; empuja con todo el pie, no con la punta."
+     },
+     {
+      "name": "Jalón al pecho",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Muslos bien sujetos bajo el rodillo y codos hacia abajo; imagina que guardas los omóplatos en los bolsillos traseros."
+     },
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Muñeca alineada con el antebrazo y empuje sin bloquear el codo de golpe."
+     },
+     {
+      "name": "Puente de glúteos",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Sube empujando con los talones y aprieta el glúteo arriba un segundo; sin arquear la lumbar."
+     },
+     {
+      "name": "Bird dog",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Extiende brazo y pierna contrarios sin que la cadera se ladee; movimiento lento."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "20-30s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Apoya en codos, aprieta glúteo y abdomen a la vez; mejor 20 segundos bien que 45 con la espalda hundida."
+     }
+    ],
+    "cooldown": "Estiramiento de gemelo y de la parte anterior del hombro, 30 segundos por lado, más cinco minutos de caminata."
+   },
+   {
+    "day": "Miércoles",
+    "name": "Sesión B — pierna y espalda",
+    "warmup": "5 minutos de elíptica, 10 rotaciones de cadera por lado y una serie ligera de sentadilla goblet.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Pies un poco abiertos, baja el culo entre los talones y mantén la mancuerna pegada al esternón."
+     },
+     {
+      "name": "Remo sentado en polea",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Rodillas algo flexionadas; el tirón sale de la espalda, no de tirar con la lumbar hacia atrás."
+     },
+     {
+      "name": "Press de hombros en máquina",
+      "sets": 2,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Solo dos series: es el gesto que más se parece a tu jornada con los brazos altos y no queremos sobrecargarlo."
+     },
+     {
+      "name": "Curl femoral sentado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Ajusta el rodillo por encima del talón y vuelve al inicio sin dejar que el peso caiga solo."
+     },
+     {
+      "name": "Abducción de cadera en máquina",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Tronco erguido, abre sin echar el cuerpo hacia atrás y aguanta un segundo en la apertura."
+     },
+     {
+      "name": "Dead bug",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Suelta el aire mientras bajas la pierna; si notas la lumbar despegarse, acorta el recorrido."
+     }
+    ],
+    "cooldown": "Cinco minutos de bicicleta suave y estiramiento de isquios tumbada con una banda."
+   },
+   {
+    "day": "Viernes",
+    "name": "Sesión C — cuerpo completo",
+    "warmup": "5 minutos de caminata inclinada, 10 band pull-apart y 10 subidas al escalón sin carga.",
+    "exercises": [
+     {
+      "name": "Subida a cajón",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Cajón a la altura de la rodilla; sube empujando con el pie de arriba y baja controlando, sin impulso del pie de abajo."
+     },
+     {
+      "name": "Remo en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Pecho apoyado y hombros lejos de las orejas durante todo el recorrido."
+     },
+     {
+      "name": "Contractora de pecho",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Codos a la altura del hombro, junta sin llegar a chocar las manos y abre despacio."
+     },
+     {
+      "name": "Peso muerto rumano con mancuernas",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Lleva la cadera atrás como si cerraras un cajón con el culo; las mancuernas rozan el muslo y bajas hasta media espinilla con la espalda recta."
+     },
+     {
+      "name": "Face pull en polea",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos por encima de las muñecas; este es el ejercicio que compensa las horas con los brazos por delante."
+     },
+     {
+      "name": "Paseo del granjero unilateral",
+      "sets": 3,
+      "rep_range": "30-40s",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Una sola mancuerna en una mano, hombros nivelados y pasos cortos; cambia de mano en cada serie."
+     }
+    ],
+    "cooldown": "Movilidad de columna dorsal en el suelo y estiramiento de cuádriceps de pie, 30 segundos por lado."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación",
+    "load_pct": 100,
+    "rir_target": "3-4",
+    "volume_note": "Cargas deliberadamente cortas: el objetivo es acabar cada sesión con la sensación de que podías más. Anota qué peso usas en cada máquina."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión",
+    "load_pct": 102.5,
+    "rir_target": "3",
+    "volume_note": "Sube un escalón de peso donde hayas hecho las repeticiones altas sin esfuerzo. Todo lo demás igual."
+   },
+   {
+    "week": 3,
+    "intent": "Carga",
+    "load_pct": 105,
+    "rir_target": "2-3",
+    "volume_note": "Semana de mayor exigencia en prensa, jalón y peso muerto rumano; el trabajo de hombro se mantiene en dos series."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga",
+    "load_pct": 90,
+    "rir_target": "4",
+    "volume_note": "Se quita una serie de cada ejercicio. Semana ideal para revisar la técnica del rumano con el coach delante."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 9000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 25,
+     "times_per_week": 2,
+     "notes": "Caminata al aire libre los días que no entrenes, sin sumarla a la sesión de fuerza."
+    }
+   ]
+  },
+  "deload_instructions": "Semana 4 al 90% de la carga y una serie menos por ejercicio. Si una semana llegas con las piernas muy cansadas del trabajo, cambia la prensa por dos series de puente de glúteos y sigue el resto igual."
+ },
+ {
+  "category": "principiantes",
+  "title": "Tensión al alza, empezar con calma",
+  "case": "Hombre de 45 años, jefe de un taller mecánico, sedentario fuera del trabajo, al que en la revisión de empresa le salieron 148/92 y el médico le ha dado seis meses para moverse antes de plantear medicación. Nunca ha entrenado, pide algo que no le deje reventado, y tiene prohibido bloquear la respiración y llegar al fallo, así que trabajamos con máquinas, repeticiones medias y descansos largos.",
+  "level": "beginner",
+  "days_per_week": 3,
+  "place": "gym",
+  "split_name": "Full body en máquinas con descansos amplios",
+  "split_rationale": "Cuerpo completo tres veces por semana en material guiado, con rangos de 10 a 15 repeticiones y descansos de 90 a 120 segundos: así la carga por serie es moderada, no hace falta apretar la respiración y la tensión no dispara. Se evitan isométricos largos y cualquier serie llevada al límite.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Sesión A — máquinas sentado",
+    "warmup": "8 minutos de bicicleta a ritmo suave subiendo poco a poco, más 10 círculos de hombro por lado. No entres en frío a la primera serie.",
+    "exercises": [
+     {
+      "name": "Prensa de piernas horizontal",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Suelta el aire al empujar y coge aire al bajar; en ningún momento aguantes la respiración."
+     },
+     {
+      "name": "Remo sentado en polea",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Tira con el tronco quieto y exhala en el esfuerzo; si aprietas la mandíbula, el peso es excesivo."
+     },
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Empuje continuo, sin pausas apretando arriba y sin bloquear los codos con fuerza."
+     },
+     {
+      "name": "Curl femoral sentado",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Ritmo constante, dos segundos de bajada; nada de tirones."
+     },
+     {
+      "name": "Face pull en polea",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2-3",
+      "rest_sec": 75,
+      "technique_cue": "Trabajo ligero de postura para compensar las horas inclinado sobre el motor."
+     },
+     {
+      "name": "Dead bug",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 60,
+      "technique_cue": "Respiración marcada: suelta el aire cada vez que estiras la pierna. Nunca aguantes el aire en el core."
+     }
+    ],
+    "cooldown": "5 minutos de bicicleta muy suave hasta que las pulsaciones bajen y respiración nasal sentado, 2 minutos."
+   },
+   {
+    "day": "Miércoles",
+    "name": "Sesión B — cadera y torso",
+    "warmup": "8 minutos de elíptica progresiva y 10 sentadillas sin carga apoyándose en un banco.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Peso ligero y bajada hasta banco alto; exhala mientras subes, sin apretar los dientes."
+     },
+     {
+      "name": "Jalón al pecho",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Codos hacia abajo y tronco casi vertical; que el esfuerzo se note en la espalda, no en el cuello."
+     },
+     {
+      "name": "Press de hombros en máquina",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Solo dos series y peso moderado: el gesto por encima de la cabeza es el que más sube la tensión."
+     },
+     {
+      "name": "Hip thrust en máquina",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 105,
+      "technique_cue": "Empuja con los talones y suelta el aire arriba; no aguantes el bloqueo más de un segundo."
+     },
+     {
+      "name": "Extensión de tríceps en polea con cuerda",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2-3",
+      "rest_sec": 75,
+      "technique_cue": "Codos fijos al costado; ejercicio de cierre, sin buscar carga máxima."
+     },
+     {
+      "name": "Bird dog",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 60,
+      "technique_cue": "Cinco segundos por repetición respirando con normalidad."
+     }
+    ],
+    "cooldown": "Caminata suave 6 minutos y estiramiento de pectoral y flexor de cadera, 30 segundos por lado."
+   },
+   {
+    "day": "Viernes",
+    "name": "Sesión C — cuerpo completo ligero",
+    "warmup": "8 minutos de caminata inclinada suave y 10 band pull-apart.",
+    "exercises": [
+     {
+      "name": "Subida a cajón",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 105,
+      "technique_cue": "Escalón bajo, sin mancuernas al principio; sube y baja con ritmo constante y respirando."
+     },
+     {
+      "name": "Remo en máquina",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 105,
+      "technique_cue": "Pecho apoyado para que no tengas que hacer fuerza con la espalda baja."
+     },
+     {
+      "name": "Contractora de pecho",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Cierra sin llegar a tocar las manos y abre despacio; exhala al cerrar."
+     },
+     {
+      "name": "Peso muerto rumano con mancuernas",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Mancuernas ligeras. Cadera atrás, espalda recta y aire fuera al subir; este es el gesto que te va a evitar sustos levantando piezas en el taller."
+     },
+     {
+      "name": "Elevación de talones sentado",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2-3",
+      "rest_sec": 60,
+      "technique_cue": "Recorrido completo y pausa arriba de un segundo."
+     },
+     {
+      "name": "Press Pallof",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 75,
+      "technique_cue": "Trabajo de core sin flexionar la columna ni apretar el abdomen conteniendo el aire."
+     }
+    ],
+    "cooldown": "8 minutos de caminata a ritmo cómodo y dos minutos sentado respirando lento antes de irte."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación",
+    "load_pct": 100,
+    "rir_target": "3-4",
+    "volume_note": "Cargas bajas y foco absoluto en respirar durante la serie. Toma la tensión en casa dos mañanas y anótala."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión",
+    "load_pct": 102.5,
+    "rir_target": "3",
+    "volume_note": "Sube un punto la carga solo en prensa, remo y press de pecho. El trabajo por encima de la cabeza se queda igual."
+   },
+   {
+    "week": 3,
+    "intent": "Carga",
+    "load_pct": 105,
+    "rir_target": "3",
+    "volume_note": "Semana más exigente pero manteniendo tres repeticiones en reserva: en este caso nunca se llega al fallo, en ninguna serie ni ejercicio."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga",
+    "load_pct": 90,
+    "rir_target": "4",
+    "volume_note": "Una serie menos por ejercicio y más minutos de caminata. Revisa la tensión otra vez y llévale el registro al médico."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 9000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 35,
+     "times_per_week": 5,
+     "notes": "Caminata a paso vivo, mejor por la tarde. Es la parte del plan con más impacto sobre la tensión, así que tiene la misma prioridad que las pesas."
+    }
+   ]
+  },
+  "deload_instructions": "Semana 4 al 90% con una serie menos por ejercicio, manteniendo las caminatas intactas. Si algún día notas mareo, dolor de cabeza o pulsaciones desbocadas, para la sesión, avisa y consúltalo con tu médico antes de volver."
+ },
+ {
+  "category": "principiantes",
+  "title": "Diez años fuera, vuelta ordenada",
+  "case": "Mujer de 38 años, comercial de una empresa de alimentación con muchas horas de coche, que entrenó con soltura hasta los 28 y desde su primer embarazo no ha vuelto a pisar una sala. Llega convencida de que esto lo tiene aprendido y pide retomar donde lo dejó; el trabajo del entrenador es frenarla las primeras semanas para que los tendones alcancen a su memoria técnica.",
+  "level": "beginner",
+  "days_per_week": 3,
+  "place": "gym",
+  "split_name": "Full body de reacondicionamiento A-B-C",
+  "split_rationale": "Aunque la técnica la recuerda, el tejido lleva diez años sin cargar: tres sesiones de cuerpo completo permiten repetir cada patrón tres veces por semana con poco volumen por sesión, que es exactamente lo que acelera la readaptación sin dejarla dolorida cuatro días.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Sesión A — reencuentro con las mancuernas",
+    "warmup": "5 minutos de remo ergómetro suave, 10 band pull-apart y una serie de aproximación muy ligera del primer ejercicio.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Empieza con una mancuerna que te parezca ridícula: hoy la sentadilla es para recordar el patrón, no para demostrar nada."
+     },
+     {
+      "name": "Press banca con mancuernas",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Omóplatos juntos contra el banco y codos a 45 grados; baja hasta que la mancuerna quede a la altura del pecho."
+     },
+     {
+      "name": "Remo con mancuerna a una mano",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Apoya rodilla y mano en el banco, espalda plana y tira el codo hacia la cadera sin rotar el tronco."
+     },
+     {
+      "name": "Curl femoral tumbado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Bajada de tres segundos: los isquios son lo que más nota el parón largo."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "20-30s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Costillas abajo y glúteo apretado; nada de aguantar minutos, calidad por encima de tiempo."
+     },
+     {
+      "name": "Face pull en polea",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Compensación directa de las horas al volante: codos altos y sin encoger los hombros."
+     }
+    ],
+    "cooldown": "5 minutos de caminata y estiramiento de flexor de cadera en zancada, 40 segundos por lado."
+   },
+   {
+    "day": "Miércoles",
+    "name": "Sesión B — bisagra y tirón vertical",
+    "warmup": "5 minutos de bicicleta, 10 puentes de glúteo y 10 rotaciones de cadera por lado.",
+    "exercises": [
+     {
+      "name": "Peso muerto rumano con mancuernas",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Cadera atrás, mancuernas rozando el muslo y parada donde notes el estiramiento del isquio, no más abajo."
+     },
+     {
+      "name": "Jalón al pecho",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Tira con los codos y aguanta medio segundo abajo antes de dejar subir la barra."
+     },
+     {
+      "name": "Press de hombros con mancuernas sentado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Respaldo casi vertical; sube sin arquear la lumbar ni chocar las mancuernas arriba."
+     },
+     {
+      "name": "Prensa de piernas horizontal",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 105,
+      "technique_cue": "Recorrido cómodo y talones apoyados; aquí sí puedes acercarte algo más al esfuerzo real."
+     },
+     {
+      "name": "Curl martillo",
+      "sets": 2,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos quietos al costado, sin balancear el cuerpo."
+     },
+     {
+      "name": "Dead bug",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Lumbar pegada al suelo y respiración fluida."
+     }
+    ],
+    "cooldown": "Movilidad dorsal sobre rodillo y estiramiento de isquios, 30 segundos por lado."
+   },
+   {
+    "day": "Viernes",
+    "name": "Sesión C — unilateral y glúteo",
+    "warmup": "5 minutos de elíptica, 10 zancadas inversas sin carga y 10 band pull-apart.",
+    "exercises": [
+     {
+      "name": "Zancada inversa",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 105,
+      "technique_cue": "Paso atrás largo, rodilla de atrás al suelo con suavidad y tronco vertical; empieza sin peso."
+     },
+     {
+      "name": "Remo sentado en polea",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Lleva el agarre al ombligo sin dejar que los hombros se adelanten al final."
+     },
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Máquina en el tercer día para acumular volumen de empuje sin castigar más el hombro con mancuerna."
+     },
+     {
+      "name": "Hip thrust en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Barbilla ligeramente metida y glúteo apretado arriba un segundo."
+     },
+     {
+      "name": "Extensión de tríceps en polea con cuerda",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos pegados; solo se mueve el antebrazo."
+     },
+     {
+      "name": "Plancha lateral",
+      "sets": 3,
+      "rep_range": "20-30s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cadera alta y alineada; si molesta el hombro, apoya la rodilla de abajo."
+     }
+    ],
+    "cooldown": "5 minutos de caminata y estiramiento de glúteo sentada, 40 segundos por lado."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación",
+    "load_pct": 100,
+    "rir_target": "3-4",
+    "volume_note": "Semana de freno consciente: aunque puedas mover más, te quedas donde marca la hoja. Nada de series extra ni de probar tus pesos de los 28."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión",
+    "load_pct": 102.5,
+    "rir_target": "3",
+    "volume_note": "Primera subida de carga en sentadilla, press y remo. Si las agujetas de la semana 1 duraron más de dos días, repite cargas."
+   },
+   {
+    "week": 3,
+    "intent": "Carga",
+    "load_pct": 105,
+    "rir_target": "2-3",
+    "volume_note": "Ya se puede apretar algo más. Añade una serie al peso muerto rumano, que es el patrón que más ha perdido."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga",
+    "load_pct": 90,
+    "rir_target": "4",
+    "volume_note": "Una serie menos por ejercicio. A partir del mes que viene sí se puede plantear barra en sentadilla y peso muerto."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 9000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 30,
+     "times_per_week": 2,
+     "notes": "Caminata o bicicleta los días sin pesas; aprovecha las esperas entre visitas comerciales para caminar en vez de esperar en el coche."
+    }
+   ]
+  },
+  "deload_instructions": "Semana 4 al 90% con una serie menos por ejercicio. Regla firme para este caso: si un día te sientes fuerte y con ganas de más, esa energía se guarda para la semana siguiente en forma de kilos, no de series improvisadas."
+ },
+ {
+  "category": "principiantes",
+  "title": "Alta de muñeca, volver a cargar",
+  "case": "Hombre de 29 años, repartidor de paquetería, con fractura de radio distal hace cinco meses y alta médica desde hace tres semanas. Pide volver al gimnasio ya y recuperar el brazo derecho, pero no tolera apoyar la mano en extensión ni los agarres que le fuercen la muñeca, así que todo el plan se construye sobre agarre neutro, máquinas y apoyos en antebrazo.",
+  "level": "beginner",
+  "days_per_week": 3,
+  "place": "gym",
+  "split_name": "Full body con agarre neutro",
+  "split_rationale": "Cuerpo completo tres veces por semana seleccionando exclusivamente ejercicios que no exigen extensión de muñeca ni apoyo con la palma en el suelo. Las máquinas y las poleas permiten cargar pierna y espalda a tope mientras la muñeca sigue readaptándose, y los agarres neutros van devolviendo confianza al brazo derecho.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Sesión A — carga sin muñeca",
+    "warmup": "5 minutos de bicicleta, movilidad de muñeca sin dolor (giros suaves, 20 por lado) y 10 band pull-apart.",
+    "exercises": [
+     {
+      "name": "Prensa de piernas horizontal",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Aquí no interviene la mano: agárrate de las asas laterales sin apretar y empuja fuerte con las piernas."
+     },
+     {
+      "name": "Jalón agarre estrecho neutro",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Agarre neutro con palmas enfrentadas: es la posición que menos tensa la muñeca. Si notas pinchazo, usa correas."
+     },
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Muñeca perfectamente alineada con el antebrazo; si se dobla hacia atrás, baja el peso ya."
+     },
+     {
+      "name": "Curl femoral tumbado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Cadera pegada al banco y bajada controlada de dos segundos."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "20-30s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Apoyo en antebrazos, nunca con la mano abierta en el suelo. El puño relajado."
+     },
+     {
+      "name": "Face pull en polea",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cuerda con agarre neutro; tira con el codo, no con la mano."
+     }
+    ],
+    "cooldown": "5 minutos de caminata y descarga suave del antebrazo con masaje manual, 1 minuto por cara."
+   },
+   {
+    "day": "Miércoles",
+    "name": "Sesión B — neutro y unilateral",
+    "warmup": "5 minutos de elíptica, movilidad de muñeca y una serie ligera de sentadilla goblet.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Sujeta la mancuerna por el disco superior con las dos manos y las palmas enfrentadas; el peso se apoya en el pecho, no en las muñecas."
+     },
+     {
+      "name": "Remo con mancuerna a una mano",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Agarre neutro y muñeca firme y recta durante todo el tirón; empieza más suave con el lado derecho."
+     },
+     {
+      "name": "Press de hombros en máquina",
+      "sets": 2,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Elige la máquina de agarre neutro si la sala la tiene; si no, ajusta para que la muñeca no quede volcada."
+     },
+     {
+      "name": "Hip thrust en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Trabajo de cadera potente sin implicación del brazo; aquí puedes cargar sin miedo."
+     },
+     {
+      "name": "Curl martillo",
+      "sets": 2,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Martillo, nunca supino: la muñeca queda neutra y el codo trabaja igual."
+     },
+     {
+      "name": "Dead bug",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Brazos extendidos sin carga; el trabajo es del abdomen, la mano solo acompaña."
+     }
+    ],
+    "cooldown": "Bicicleta suave 5 minutos y estiramiento de dorsal colgado ligero de una polea baja, sin peso."
+   },
+   {
+    "day": "Viernes",
+    "name": "Sesión C — volumen de espalda y cadera",
+    "warmup": "5 minutos de caminata inclinada, movilidad de muñeca y 10 puentes de glúteo.",
+    "exercises": [
+     {
+      "name": "Peso muerto rumano con mancuernas",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Mancuernas a los lados con agarre neutro; si en las últimas repeticiones te falla el agarre derecho, usa correas antes que forzar."
+     },
+     {
+      "name": "Remo sentado en polea",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Triángulo neutro y muñeca recta; el tirón termina en las costillas."
+     },
+     {
+      "name": "Contractora de pecho",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Empuja con el antebrazo apoyado en el acolchado, sin agarrar con fuerza."
+     },
+     {
+      "name": "Subida a cajón",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Empieza sin peso; cuando lo lleves, mancuernas colgando con agarre neutro y sin apretar en exceso."
+     },
+     {
+      "name": "Extensión de tríceps en polea con cuerda",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cuerda y no barra recta: la barra obliga a la muñeca a una posición que hoy no toca."
+     },
+     {
+      "name": "Press Pallof",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Sujeta el asa con las dos manos, muñecas rectas y resiste la rotación con el tronco."
+     }
+    ],
+    "cooldown": "Caminata 5 minutos y trabajo de agarre suave con una pelota blanda, 20 aperturas y cierres por mano."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación",
+    "load_pct": 100,
+    "rir_target": "3-4",
+    "volume_note": "Sesiones de prueba: cualquier ejercicio que dé molestia en la muñeca se retira sin discusión y se anota. Pierna y cadera pueden ir a su ritmo normal."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión",
+    "load_pct": 102.5,
+    "rir_target": "3",
+    "volume_note": "Sube carga en tren inferior y en máquinas; el trabajo de brazo derecho se mantiene igual una semana más."
+   },
+   {
+    "week": 3,
+    "intent": "Carga",
+    "load_pct": 105,
+    "rir_target": "2-3",
+    "volume_note": "Primera subida real en remo y curl martillo si la muñeca lleva dos semanas sin protestar. Sigue sin apoyos con la palma."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga",
+    "load_pct": 90,
+    "rir_target": "3-4",
+    "volume_note": "Una serie menos por ejercicio. Antes del siguiente mes valoramos con tu traumatólogo si ya se pueden introducir apoyos y agarre pronado."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 11000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 20,
+     "times_per_week": 2,
+     "notes": "Bicicleta estática con manos apoyadas sin cargar peso, o caminata. Nada de remo ergómetro por ahora."
+    }
+   ]
+  },
+  "deload_instructions": "Semana 4 al 90% con una serie menos por ejercicio. Norma innegociable: si la muñeca duele durante la serie o al día siguiente, ese ejercicio se retira y se sustituye por su versión en máquina, y si el dolor persiste más de tres días se vuelve a consultar con el médico."
+ },
+ {
+  "category": "principiantes",
+  "title": "Dieciséis años, técnica antes que carga",
+  "case": "Chico de 16 años, jugador de fútbol sala del instituto, que viene acompañado de su madre y con el consentimiento firmado porque quiere ponerse fuerte para el equipo y le ha dicho un amigo que empiece con press de banca pesado. No ha tocado una pesa en su vida y sigue creciendo, así que el plan prioriza dominar el peso corporal y cargas ligeras con técnica impecable antes de subir kilos.",
+  "level": "beginner",
+  "days_per_week": 3,
+  "place": "gym",
+  "split_name": "Full body educativo A-B-C",
+  "split_rationale": "A esta edad el objetivo es el aprendizaje motor, no la carga: tres sesiones de cuerpo completo que repiten los patrones básicos con peso corporal, mancuernas ligeras y máquinas. Se prioriza el rango completo, la posición de la columna y el control de la bajada, que es la base sobre la que dentro de dos años podrá cargar de verdad.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Sesión A — dominar el propio cuerpo",
+    "warmup": "5 minutos de bicicleta, 10 sentadillas sin carga, 10 band pull-apart y 5 planchas de 10 segundos.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 105,
+      "technique_cue": "Baja hasta que los muslos pasen la paralela si tu cadera te lo permite sin redondear la espalda. La profundidad manda sobre el peso."
+     },
+     {
+      "name": "Remo invertido",
+      "sets": 3,
+      "rep_range": "8-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Barra a la altura de la cadera, cuerpo recto como una tabla y pecho a la barra en cada repetición."
+     },
+     {
+      "name": "Flexiones",
+      "sets": 3,
+      "rep_range": "6-10",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Si no salen limpias desde el suelo, apoya las manos en un banco; nunca hagas repeticiones con la cadera colgando."
+     },
+     {
+      "name": "Puente de glúteos",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Empuja con los talones y aprieta el glúteo arriba; la lumbar no debe arquearse."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "20-30s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cuerpo en línea recta desde la oreja al tobillo; en cuanto se rompa la posición, se acaba la serie."
+     },
+     {
+      "name": "Band pull-apart",
+      "sets": 2,
+      "rep_range": "15-20",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Brazos rectos y apertura hasta el pecho sin encoger los hombros."
+     }
+    ],
+    "cooldown": "5 minutos de caminata y estiramiento de cuádriceps e isquios, 30 segundos por lado."
+   },
+   {
+    "day": "Miércoles",
+    "name": "Sesión B — patrones con mancuerna",
+    "warmup": "5 minutos de elíptica, 10 zancadas inversas sin carga y 10 rotaciones de hombro.",
+    "exercises": [
+     {
+      "name": "Zancada inversa",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Paso atrás, rodilla al suelo con suavidad y tronco vertical. Sin peso hasta que salgan diez limpias por pierna."
+     },
+     {
+      "name": "Jalón al pecho",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Es la preparación para tus primeras dominadas: tira con los codos y controla la subida."
+     },
+     {
+      "name": "Press de hombros con mancuernas sentado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Mancuernas ligeras, costillas abajo y sin arquear la espalda para poder subirlas."
+     },
+     {
+      "name": "Peso muerto rumano con mancuernas",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 105,
+      "technique_cue": "El movimiento es de cadera hacia atrás, no de agacharse. Si la espalda se redondea, para la serie."
+     },
+     {
+      "name": "Dead bug",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Lento y con la lumbar pegada al suelo; este ejercicio te protege el tronco en los cambios de dirección de la pista."
+     },
+     {
+      "name": "Curl martillo",
+      "sets": 2,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos quietos y sin balanceo. Dos series bastan a tu edad."
+     }
+    ],
+    "cooldown": "5 minutos de bicicleta suave y movilidad de tobillo, 20 repeticiones por lado."
+   },
+   {
+    "day": "Viernes",
+    "name": "Sesión C — control y unilateral",
+    "warmup": "5 minutos de caminata inclinada, 10 subidas a escalón bajo y 10 band pull-apart.",
+    "exercises": [
+     {
+      "name": "Subida a cajón",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Sube sin impulso del pie de abajo y baja frenando: ese freno es lo que te va a dar el cambio de ritmo en la pista."
+     },
+     {
+      "name": "Remo con mancuerna a una mano",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Espalda plana como una mesa; tira el codo hacia la cadera sin girar el tronco."
+     },
+     {
+      "name": "Press banca con mancuernas",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 105,
+      "technique_cue": "Tu primer press es con mancuernas, no con barra: te obliga a controlar cada brazo y respeta el hombro."
+     },
+     {
+      "name": "Curl femoral con deslizadores",
+      "sets": 2,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Cadera arriba todo el recorrido; si no puedes mantenerla, acorta el deslizamiento."
+     },
+     {
+      "name": "Bird dog",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Sin que la cadera se ladee. Cinco segundos por repetición."
+     },
+     {
+      "name": "Elevación de talones de pie",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Recorrido completo hasta abajo y pausa arriba; el gemelo fuerte protege el tobillo en pista."
+     }
+    ],
+    "cooldown": "5 minutos de caminata y estiramiento de aductor y gemelo, 30 segundos por lado."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación",
+    "load_pct": 100,
+    "rir_target": "3-4",
+    "volume_note": "Semana de aprendizaje: se graba en vídeo la sentadilla y el peso muerto rumano para revisarlos juntos. Ninguna serie cerca del fallo."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión",
+    "load_pct": 102.5,
+    "rir_target": "3",
+    "volume_note": "Solo sube peso quien haya hecho todas las repeticiones con técnica limpia la semana anterior. Si no, se repite carga."
+   },
+   {
+    "week": 3,
+    "intent": "Carga",
+    "load_pct": 105,
+    "rir_target": "2-3",
+    "volume_note": "Semana algo más exigente en sentadilla, remo y press. Sigue sin trabajar al fallo: a tu edad no aporta nada y aumenta el riesgo."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga",
+    "load_pct": 90,
+    "rir_target": "3-4",
+    "volume_note": "Una serie menos por ejercicio, coincidiendo con la parte alta de la competición escolar. Buena semana para repasar técnica con el coach."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 11000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 15,
+     "times_per_week": 1,
+     "notes": "Poco cardio añadido: los entrenamientos y partidos de fútbol sala ya cubren de sobra la parte aeróbica."
+    }
+   ]
+  },
+  "deload_instructions": "Semana 4 al 90% con una serie menos por ejercicio; si esa semana hay torneo o dos partidos, se entrena una sola vez y se prioriza el descanso. Norma para este caso: nada de series máximas ni de comparar kilos con los compañeros, la carga sube solo cuando la técnica está limpia."
+ },
+ {
+  "category": "principiantes",
+  "title": "Época de exámenes, dos sesiones cortas",
+  "case": "Mujer de 22 años, estudiante de tercero de Enfermería en plena convocatoria de febrero, que duerme cinco o seis horas y sale de la biblioteca a las diez de la noche con la cabeza saturada. Pide dos sesiones de cuarenta minutos que pueda mover de día según los exámenes y que le sirvan sobre todo para despejarse, sin comerle horas de estudio ni dejarla agotada al día siguiente.",
+  "level": "beginner",
+  "days_per_week": 2,
+  "place": "gym",
+  "split_name": "Full body de dos días intercambiables",
+  "split_rationale": "Con dos días la única opción sensata es cuerpo completo en ambas sesiones, así ningún patrón se queda sin entrenar si una semana solo puede ir una vez. Las dos sesiones son intercambiables entre sí y entre días de la semana: lo único fijo es que haya al menos 48 horas entre ellas.",
+  "sessions": [
+   {
+    "day": "Martes",
+    "name": "Sesión A — cuerpo completo",
+    "warmup": "5 minutos de bicicleta subiendo el ritmo poco a poco y 10 band pull-apart. Nada más: el calentamiento no puede comerse la sesión.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Mancuerna al pecho, bajada controlada y subida decidida; es el ejercicio que más despeja de toda la sesión."
+     },
+     {
+      "name": "Jalón al pecho",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Codos hacia abajo y pecho alto; contrarresta las horas encorvada sobre los apuntes."
+     },
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Asiento a la altura del esternón; empuje continuo sin bloquear el codo con fuerza."
+     },
+     {
+      "name": "Peso muerto rumano con mancuernas",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Cadera atrás con la espalda recta; para donde notes el estiramiento del isquio."
+     },
+     {
+      "name": "Face pull en polea",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos altos y sin encoger los hombros; dos series rápidas."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "20-30s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Glúteo y abdomen apretados a la vez; corta la serie cuando la cadera se caiga."
+     }
+    ],
+    "cooldown": "Cinco minutos de caminata suave y respiración nasal lenta sentada, 2 minutos. Sirve para bajar revoluciones antes de volver a estudiar."
+   },
+   {
+    "day": "Viernes",
+    "name": "Sesión B — cuerpo completo",
+    "warmup": "5 minutos de elíptica y 10 rotaciones de cadera por lado.",
+    "exercises": [
+     {
+      "name": "Prensa de piernas horizontal",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Talones bien apoyados, bajada hasta noventa grados; es la opción rápida cuando llegas justa de tiempo."
+     },
+     {
+      "name": "Remo sentado en polea",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Tira al ombligo con el tronco quieto; junta los omóplatos al final."
+     },
+     {
+      "name": "Press de hombros en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Costillas abajo y sin arquear la lumbar para completar la repetición."
+     },
+     {
+      "name": "Hip thrust en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Empuje con los talones y un segundo de pausa arriba."
+     },
+     {
+      "name": "Curl martillo",
+      "sets": 2,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos quietos, sin balanceo del tronco."
+     },
+     {
+      "name": "Dead bug",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Suelta el aire al estirar la pierna y mantén la lumbar pegada al suelo."
+     }
+    ],
+    "cooldown": "Estiramiento de cuello y dorsal, 30 segundos por lado, y cinco minutos de caminata."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación",
+    "load_pct": 100,
+    "rir_target": "3-4",
+    "volume_note": "Dos sesiones cortas, sin buscar sensaciones fuertes. Anota el peso de cada máquina en el móvil para no perder tiempo la próxima vez."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión",
+    "load_pct": 102.5,
+    "rir_target": "3",
+    "volume_note": "Sube un escalón donde te hayan sobrado repeticiones. Si esa semana tienes dos exámenes, quédate en las mismas cargas: no pasa nada."
+   },
+   {
+    "week": 3,
+    "intent": "Carga",
+    "load_pct": 105,
+    "rir_target": "2-3",
+    "volume_note": "Semana algo más exigente en sentadilla, jalón y prensa. El resto se mantiene para no alargar la sesión de los cuarenta minutos."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga",
+    "load_pct": 90,
+    "rir_target": "4",
+    "volume_note": "Una serie menos por ejercicio, ideal si coincide con la semana de exámenes finales. Prioriza dormir por encima de entrenar."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 8000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 25,
+     "times_per_week": 2,
+     "notes": "Volver caminando de la biblioteca en lugar de coger el bus cuenta como sesión. Sirve para desconectar, no para quemar."
+    }
+   ]
+  },
+  "deload_instructions": "Semana 4 al 90% con una serie menos. Si una semana solo puedes entrenar un día, haz la sesión A completa y no intentes recuperar la otra; el plan está pensado para sobrevivir a los exámenes, no para batir marcas."
+ },
+ {
+  "category": "principiantes",
+  "title": "Padre primerizo con dos huecos fijos",
+  "case": "Hombre de 34 años, informático y padre de un bebé de cinco meses que aún se despierta dos veces cada noche. Solo puede garantizar dos huecos reales, el martes a las 21:30 cuando el niño se duerme y el sábado a las 9:00, y pide una rutina que funcione aunque haya dormido cuatro horas y que no le deje destrozado para el fin de semana con la familia.",
+  "level": "beginner",
+  "days_per_week": 2,
+  "place": "gym",
+  "split_name": "Full body de dos días con carga controlada",
+  "split_rationale": "Dos sesiones de cuerpo completo cubren todos los patrones aunque una semana se caiga una. Con sueño fragmentado la recuperación es la variable limitante, así que el volumen por sesión es contenido y ningún ejercicio llega al fallo: buscamos que el lunes siguiente pueda cargar al niño sin agujetas.",
+  "sessions": [
+   {
+    "day": "Martes",
+    "name": "Sesión A — noche, carga moderada",
+    "warmup": "6 minutos de bicicleta suave y 10 band pull-apart. A las 21:30 el cuerpo va frío del sofá: no te saltes esto.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Mancuerna vertical al pecho, bajada de dos segundos; controlar es más importante que el kilaje a estas horas."
+     },
+     {
+      "name": "Press banca con mancuernas",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Omóplatos apretados contra el banco y codos a 45 grados; con sueño acumulado, deja siempre tres repeticiones en la recámara."
+     },
+     {
+      "name": "Remo con mancuerna a una mano",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Rodilla y mano apoyadas en el banco; tira el codo a la cadera con la espalda plana."
+     },
+     {
+      "name": "Curl femoral tumbado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Bajada de dos segundos sin despegar la cadera del banco."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "20-30s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Costillas abajo; es el trabajo que te va a proteger la espalda cada vez que cojas al niño del suelo."
+     },
+     {
+      "name": "Face pull en polea",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Compensación de las horas de teclado y de brazos por delante llevando al bebé."
+     }
+    ],
+    "cooldown": "Cinco minutos de caminata y respiración nasal lenta dos minutos; entrenar tarde y salir acelerado te costará dormir."
+   },
+   {
+    "day": "Sábado",
+    "name": "Sesión B — mañana, sesión principal",
+    "warmup": "6 minutos de bicicleta o remo suave, 10 puentes de glúteo y una serie de aproximación del peso muerto con barra hexagonal.",
+    "exercises": [
+     {
+      "name": "Peso muerto con barra hexagonal",
+      "sets": 3,
+      "rep_range": "6-8",
+      "rir": "3",
+      "rest_sec": 150,
+      "technique_cue": "La barra hexagonal te deja la espalda más vertical que la recta: pecho alto, empuja el suelo con los pies y bloquea sin echar la cadera adelante."
+     },
+     {
+      "name": "Jalón al pecho",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Tira con los codos hacia los bolsillos y controla la subida."
+     },
+     {
+      "name": "Press de hombros con mancuernas sentado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Respaldo alto, sin arquear la lumbar; sube hasta casi extender sin chocar las mancuernas."
+     },
+     {
+      "name": "Prensa de piernas horizontal",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 105,
+      "technique_cue": "Trabajo de pierna adicional sin exigir técnica fina: perfecto para el día que has dormido poco."
+     },
+     {
+      "name": "Curl martillo",
+      "sets": 2,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos al costado y sin balanceo."
+     },
+     {
+      "name": "Dead bug",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Lumbar pegada al suelo y respiración fluida."
+     }
+    ],
+    "cooldown": "Cinco minutos de caminata y estiramiento de flexor de cadera y pectoral, 40 segundos por lado."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación",
+    "load_pct": 100,
+    "rir_target": "3-4",
+    "volume_note": "Cargas conservadoras y sesiones de 50 minutos. Anota cuántas horas has dormido junto a los pesos: te explicará muchas sesiones malas."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión",
+    "load_pct": 102.5,
+    "rir_target": "3",
+    "volume_note": "Sube carga solo en la sesión del sábado, que es la que haces descansado. El martes se mantiene igual."
+   },
+   {
+    "week": 3,
+    "intent": "Carga",
+    "load_pct": 105,
+    "rir_target": "2-3",
+    "volume_note": "Semana más exigente en peso muerto hexagonal, sentadilla y press. Si esa semana el niño ha dormido mal, salta directamente a la descarga."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga",
+    "load_pct": 90,
+    "rir_target": "4",
+    "volume_note": "Una serie menos por ejercicio. El objetivo del mes no es la marca, es haber cumplido los ocho entrenamientos."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 8000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 30,
+     "times_per_week": 3,
+     "notes": "Los paseos con el carrito cuentan como sesión de cardio; hazlos a ritmo algo más vivo de lo normal."
+    }
+   ]
+  },
+  "deload_instructions": "Semana 4 al 90% con una serie menos por ejercicio. Si una semana solo consigues entrenar un día, haz la sesión B, que es la más completa. Si has dormido menos de cinco horas, baja un 10% las cargas ese día y mantén las series: entrenar algo siempre gana a no venir."
+ },
+ {
+  "category": "principiantes",
+  "title": "Septiembre: recuperar el ritmo perdido",
+  "case": "Hombre de 33 años, arquitecto técnico, que entrenaba cinco días desde febrero y ha estado diez semanas sin pisar el gimnasio entre la obra de agosto y las vacaciones. Vuelve con la intención de retomar el primer día los kilos de julio, y lo que necesita es recuperar su frecuencia habitual con cargas rebajadas para no acabar con agujetas de tres días y abandonar en la segunda semana.",
+  "level": "intermediate",
+  "days_per_week": 5,
+  "place": "gym",
+  "split_name": "Empuje, tracción, pierna y dos sesiones de refuerzo",
+  "split_rationale": "Se le devuelve la frecuencia de cinco días a la que estaba acostumbrado porque para él la rutina es el hábito, pero con menos series por sesión y cargas rebajadas. Empuje, tracción y pierna al principio de semana, y dos sesiones complementarias de torso y pierna el viernes y el sábado para repartir el volumen sin acumular fatiga.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Empuje",
+    "warmup": "6 minutos de bicicleta, 15 band pull-apart, 10 rotaciones externas con banda y dos series de aproximación en el primer ejercicio.",
+    "exercises": [
+     {
+      "name": "Press banca con mancuernas",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 150,
+      "technique_cue": "Empieza con el 70% de lo que movías en julio; las diez semanas parado se notan primero en el tendón, no en la fuerza."
+     },
+     {
+      "name": "Press de hombros en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 105,
+      "technique_cue": "Máquina en lugar de barra estas primeras semanas: menos exigencia de estabilidad, más control."
+     },
+     {
+      "name": "Contractora de pecho",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Recorrido completo y apertura controlada; sin rebotes en la posición de estiramiento."
+     },
+     {
+      "name": "Elevaciones laterales con mancuernas",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Sube hasta la altura del hombro con el codo ligeramente flexionado, sin encogerte."
+     },
+     {
+      "name": "Extensión de tríceps en polea con cuerda",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos fijos al costado y apertura de la cuerda al final."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Glúteo apretado y costillas abajo durante todo el tiempo."
+     }
+    ],
+    "cooldown": "Cinco minutos de caminata y estiramiento de pectoral en el marco de una puerta, 40 segundos por lado."
+   },
+   {
+    "day": "Martes",
+    "name": "Tracción",
+    "warmup": "6 minutos de remo suave, 15 band pull-apart y una serie ligera de jalón.",
+    "exercises": [
+     {
+      "name": "Jalón al pecho",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Antes de volver a las dominadas, tres semanas de jalón: el dorsal responde rápido, el codo no tanto."
+     },
+     {
+      "name": "Remo sentado en polea",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 105,
+      "technique_cue": "Tronco quieto; el recorrido lo hace el brazo y el omóplato."
+     },
+     {
+      "name": "Remo con pecho apoyado en banco",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Pecho pegado al banco todo el rato para que la lumbar no participe."
+     },
+     {
+      "name": "Face pull en polea",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos altos; tres series porque llegas de un verano de mesa y coche."
+     },
+     {
+      "name": "Curl alterno con mancuernas",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Sin balanceo; supina al subir y controla la bajada."
+     },
+     {
+      "name": "Curl martillo",
+      "sets": 2,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Agarre neutro, codos quietos."
+     },
+     {
+      "name": "Elevaciones de rodillas colgado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Sube las rodillas sin balancearte; si te columpias, baja el número de repeticiones."
+     }
+    ],
+    "cooldown": "Cinco minutos de bicicleta suave y estiramiento de dorsal colgado de una polea, 30 segundos por lado."
+   },
+   {
+    "day": "Miércoles",
+    "name": "Pierna completa",
+    "warmup": "6 minutos de bicicleta, 10 sentadillas sin carga, 10 puentes de glúteo y dos series de aproximación en prensa.",
+    "exercises": [
+     {
+      "name": "Prensa de piernas 45°",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 150,
+      "technique_cue": "Empieza por prensa y no por sentadilla libre: la pierna ha perdido más coordinación que fuerza tras el parón."
+     },
+     {
+      "name": "Peso muerto rumano con mancuernas",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Cadera atrás con la espalda recta; para donde el isquio te frene, no más abajo."
+     },
+     {
+      "name": "Zancada inversa",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Tronco vertical y rodilla de atrás al suelo con suavidad."
+     },
+     {
+      "name": "Curl femoral tumbado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Bajada de dos segundos y cadera pegada al banco."
+     },
+     {
+      "name": "Extensión de rodilla en máquina",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Pausa de un segundo arriba; sin lanzar el peso."
+     },
+     {
+      "name": "Elevación de talones sentado",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Recorrido completo con pausa arriba y estiramiento abajo."
+     }
+    ],
+    "cooldown": "Cinco minutos de caminata y estiramiento de cuádriceps y glúteo, 40 segundos por lado."
+   },
+   {
+    "day": "Viernes",
+    "name": "Torso completo",
+    "warmup": "6 minutos de elíptica, 15 band pull-apart y una serie ligera de press inclinado.",
+    "exercises": [
+     {
+      "name": "Press inclinado con mancuernas",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Banco a 30 grados; codos a 45 y bajada hasta la altura de la clavícula."
+     },
+     {
+      "name": "Remo en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Pecho apoyado, tirón hasta pasar el tronco con los codos."
+     },
+     {
+      "name": "Jalón agarre estrecho neutro",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Agarre neutro para variar el ángulo respecto al martes."
+     },
+     {
+      "name": "Elevación lateral en polea unilateral",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Polea por detrás del cuerpo; sube hasta la horizontal sin encoger el hombro."
+     },
+     {
+      "name": "Patada de tríceps con mancuerna",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Brazo pegado al costado y extensión completa; peso ligero."
+     },
+     {
+      "name": "Curl bayesian en polea",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codo detrás del cuerpo y sin mover el hombro."
+     }
+    ],
+    "cooldown": "Cinco minutos de caminata y movilidad dorsal sobre rodillo, 2 minutos."
+   },
+   {
+    "day": "Sábado",
+    "name": "Pierna y core",
+    "warmup": "6 minutos de bicicleta, 10 puentes de glúteo y 10 zancadas sin carga.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Segunda dosis de sentadilla de la semana en versión amable; profundidad completa y torso alto."
+     },
+     {
+      "name": "Hip thrust con barra",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2-3",
+      "rest_sec": 120,
+      "technique_cue": "Barbilla metida y costillas abajo; el bloqueo lo hace el glúteo, no la lumbar."
+     },
+     {
+      "name": "Curl femoral sentado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Sin dejar caer el peso en la vuelta."
+     },
+     {
+      "name": "Subida a cajón",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Sube sin impulso y baja frenando; cajón a la altura de la rodilla."
+     },
+     {
+      "name": "Press Pallof",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Resiste la rotación sin mover la cadera."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cuerpo en línea; corta cuando la posición se rompa."
+     }
+    ],
+    "cooldown": "Ocho minutos de caminata a ritmo cómodo y estiramiento general de tren inferior."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación",
+    "load_pct": 100,
+    "rir_target": "3-4",
+    "volume_note": "Punto de partida al 70% de los kilos de julio. Sí, se te va a quedar corto: ese es el plan. El objetivo de la semana es acabar sin agujetas."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión",
+    "load_pct": 102.5,
+    "rir_target": "3",
+    "volume_note": "Subida general de carga en los básicos de cada día. Si la semana 1 te dejó dolorido más de 48 horas, repítela tal cual."
+   },
+   {
+    "week": 3,
+    "intent": "Carga",
+    "load_pct": 105,
+    "rir_target": "2-3",
+    "volume_note": "Semana de mayor exigencia con una serie extra en los primeros ejercicios de empuje, tracción y pierna. Ya deberías rondar el 85% de tus marcas."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga",
+    "load_pct": 90,
+    "rir_target": "3-4",
+    "volume_note": "Una serie menos por ejercicio y se recorta la sesión del sábado. A partir del mes siguiente se recuperan barra libre y dominadas."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 10000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 25,
+     "times_per_week": 2,
+     "notes": "Caminata o bicicleta en los días de descanso, sin sumarla al final de las sesiones de pierna."
+    },
+    {
+     "type": "hiit",
+     "minutes": 12,
+     "times_per_week": 1,
+     "notes": "Solo a partir de la semana 3, en bicicleta estática: 8 series de 20 segundos fuertes por 60 suaves."
+    }
+   ]
+  },
+  "deload_instructions": "Semana 4 al 90% con una serie menos por ejercicio y sin el hiit. Si en cualquier semana llegas a dos sesiones seguidas con sensación de piernas pesadas y menos repeticiones, adelanta la descarga: volver de un parón largo se estropea casi siempre por acelerar, no por ir lento."
+ },
+ {
+  "category": "principiantes",
+  "title": "De la máquina a la mancuerna",
+  "case": "Mujer de 28 años, auxiliar de farmacia, que lleva catorce meses entrenando sola en el circuito de máquinas y ha dejado de notar cambios. Pide que le enseñen a usar mancuernas y barra porque, dice, ve a gente haciendo sentadillas y no sabe ni cómo se coge la barra; el reto es enseñarle los patrones libres sin quitarle de golpe la seguridad de las máquinas que ya domina.",
+  "level": "intermediate",
+  "days_per_week": 4,
+  "place": "gym",
+  "split_name": "Torso-pierna con transición a peso libre",
+  "split_rationale": "Cuatro días en torso-pierna permiten empezar cada sesión con un ejercicio de peso libre, cuando está fresca y con la cabeza clara para aprender, y cerrarla con las máquinas que ya conoce para acumular volumen sin riesgo técnico. Cada semana el peso libre gana un puesto en el orden de la sesión.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Torso A — empuje libre",
+    "warmup": "6 minutos de bicicleta, 15 band pull-apart y dos series de aproximación con mancuernas muy ligeras.",
+    "exercises": [
+     {
+      "name": "Press banca con mancuernas",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Siéntate con las mancuernas sobre los muslos y túmbate impulsándolas con las piernas; omóplatos juntos y codos a 45 grados."
+     },
+     {
+      "name": "Remo con mancuerna a una mano",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Espalda plana como una mesa, tirón del codo a la cadera; nada de girar el tronco para subir más peso."
+     },
+     {
+      "name": "Jalón al pecho",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Tu ejercicio de siempre, ahora como accesorio: aprovecha para apretar de verdad."
+     },
+     {
+      "name": "Press de hombros con mancuernas sentado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Respaldo alto y costillas abajo; las mancuernas suben en línea con las orejas."
+     },
+     {
+      "name": "Face pull en polea",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos altos y hombros lejos de las orejas."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cuerpo en línea recta; es la base para estabilizar la barra más adelante."
+     }
+    ],
+    "cooldown": "Cinco minutos de caminata y estiramiento de pectoral y dorsal, 30 segundos por lado."
+   },
+   {
+    "day": "Martes",
+    "name": "Pierna A — aprender la sentadilla",
+    "warmup": "6 minutos de bicicleta, 10 sentadillas sin carga, 10 rotaciones de cadera y una serie con la barra vacía.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 105,
+      "technique_cue": "Primero el patrón con mancuerna al pecho: te obliga a mantener el torso alto y a bajar entre los talones."
+     },
+     {
+      "name": "Sentadilla a cajón",
+      "sets": 3,
+      "rep_range": "6-8",
+      "rir": "3",
+      "rest_sec": 150,
+      "technique_cue": "Barra vacía las dos primeras sesiones. Siéntate en el cajón sin dejarte caer y levántate empujando el suelo con todo el pie."
+     },
+     {
+      "name": "Prensa de piernas 45°",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 105,
+      "technique_cue": "Tu máquina de confianza: aquí es donde acumulas el volumen fuerte de cuádriceps."
+     },
+     {
+      "name": "Curl femoral tumbado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Cadera pegada al banco, bajada de dos segundos."
+     },
+     {
+      "name": "Abducción de cadera en máquina",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Pausa de un segundo en la apertura."
+     },
+     {
+      "name": "Elevación de talones de pie",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Recorrido completo, sin rebotar abajo."
+     }
+    ],
+    "cooldown": "Movilidad de tobillo y estiramiento de cuádriceps, 30 segundos por lado."
+   },
+   {
+    "day": "Jueves",
+    "name": "Torso B — tracción y estabilidad",
+    "warmup": "6 minutos de remo suave, 15 band pull-apart y una serie ligera de press inclinado.",
+    "exercises": [
+     {
+      "name": "Press inclinado con mancuernas",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Banco a 30 grados; el mismo control que el lunes, cambiando el ángulo."
+     },
+     {
+      "name": "Remo con pecho apoyado en banco",
+      "sets": 4,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Pecho pegado al banco; te enseña a tirar con la espalda sin ayuda de la lumbar."
+     },
+     {
+      "name": "Jalón agarre estrecho neutro",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Codos a las costillas y medio segundo de pausa abajo."
+     },
+     {
+      "name": "Elevaciones laterales con mancuernas",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Sube a la altura del hombro; si tienes que impulsar con la cadera, pesa demasiado."
+     },
+     {
+      "name": "Curl martillo",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos quietos al costado."
+     },
+     {
+      "name": "Press Pallof",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Aguanta la rotación con el tronco: es el trabajo que sostiene el peso libre."
+     }
+    ],
+    "cooldown": "Cinco minutos de caminata y movilidad de columna dorsal, 2 minutos."
+   },
+   {
+    "day": "Viernes",
+    "name": "Pierna B — aprender la bisagra",
+    "warmup": "6 minutos de bicicleta, 10 puentes de glúteo, 10 bisagras con un palo en la espalda y una serie con la barra vacía.",
+    "exercises": [
+     {
+      "name": "Peso muerto rumano con barra",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 150,
+      "technique_cue": "Barra rozando el muslo, cadera atrás y espalda recta. Con el palo apoyado en cabeza, dorsal y sacro no debe perderse el contacto."
+     },
+     {
+      "name": "Hip thrust con barra",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2-3",
+      "rest_sec": 120,
+      "technique_cue": "Almohadilla en la cadera, barbilla metida y bloqueo con el glúteo, no con la lumbar."
+     },
+     {
+      "name": "Zancadas caminando con mancuernas",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Pasos largos y tronco vertical; empieza con mancuernas ligeras hasta que el equilibrio sea sólido."
+     },
+     {
+      "name": "Curl femoral sentado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Recorrido completo sin dejar caer el peso."
+     },
+     {
+      "name": "Extensión de rodilla en máquina",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Pausa arriba de un segundo."
+     },
+     {
+      "name": "Paseo del granjero unilateral",
+      "sets": 3,
+      "rep_range": "30-40s",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Una mancuerna en una mano, hombros nivelados; te construye el agarre que vas a necesitar con la barra."
+     }
+    ],
+    "cooldown": "Cinco minutos de caminata y estiramiento de isquios y glúteo, 40 segundos por lado."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación",
+    "load_pct": 100,
+    "rir_target": "3",
+    "volume_note": "Barra vacía en sentadilla a cajón y peso muerto rumano toda la semana. La carga sube en las máquinas, no en los ejercicios nuevos."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión",
+    "load_pct": 102.5,
+    "rir_target": "2-3",
+    "volume_note": "Primeros discos en la barra si la técnica es limpia y grabada en vídeo. Las mancuernas de press suben un escalón."
+   },
+   {
+    "week": 3,
+    "intent": "Carga",
+    "load_pct": 105,
+    "rir_target": "2",
+    "volume_note": "Semana de mayor exigencia; el peso libre pasa a ser el ejercicio principal en las cuatro sesiones y las máquinas cierran."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga",
+    "load_pct": 90,
+    "rir_target": "3",
+    "volume_note": "Una serie menos por ejercicio, manteniendo los movimientos nuevos para no perder el aprendizaje motor recién adquirido."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 10000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 25,
+     "times_per_week": 2,
+     "notes": "Caminata en los días sin gimnasio; nada de cardio antes de las sesiones de pierna."
+    }
+   ]
+  },
+  "deload_instructions": "Semana 4 al 90% de la carga con una serie menos por ejercicio, sin eliminar ningún ejercicio de peso libre. Regla del caso: si un día un movimiento con barra no sale limpio, se vuelve ese día a la versión con mancuerna o máquina, sin dramatizar; el objetivo del mes es aprender, no cargar."
+ },
+ {
+  "category": "principiantes",
+  "title": "Encontrarse mejor sin mirar la báscula",
+  "case": "Mujer de 41 años, maestra de primaria, que llega diciendo que no quiere oír hablar de kilos ni de fotos de progreso porque viene de dos dietas fallidas y del efecto rebote. Lo que pide textualmente es levantarse sin dolor de espalda y llegar al viernes con energía; acepta tres días fijos y quiere medir su avance por cómo se encuentra y por los pesos que mueve, nunca por la báscula.",
+  "level": "beginner",
+  "days_per_week": 3,
+  "place": "gym",
+  "split_name": "Full body de bienestar A-B-C",
+  "split_rationale": "Cuerpo completo tres veces por semana con progresión medida en kilos levantados y repeticiones, no en peso corporal. Cada sesión combina un patrón de pierna, uno de empuje, uno de tirón y trabajo de cadera y core, que es la combinación que más rápido cambia las sensaciones del día a día: espalda, escaleras y energía por la tarde.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Sesión A — fuerza y postura",
+    "warmup": "5 minutos de bicicleta, 10 band pull-apart y 10 puentes de glúteo.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Mancuerna al pecho y bajada controlada; anota el peso de hoy, porque ese número es tu progreso, no el de la báscula."
+     },
+     {
+      "name": "Remo sentado en polea",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Tira al ombligo juntando los omóplatos; esto es lo que compensa el día entero inclinada sobre las mesas de los niños."
+     },
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Asiento a la altura del esternón y empuje continuo."
+     },
+     {
+      "name": "Hip thrust en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "El glúteo fuerte es lo que le quita trabajo a tu espalda baja al final del día."
+     },
+     {
+      "name": "Bird dog",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Movimiento lento sin que la cadera se ladee."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "20-30s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Apoyo en codos, glúteo apretado; calidad antes que segundos."
+     }
+    ],
+    "cooldown": "Cinco minutos de caminata y estiramiento de flexor de cadera en zancada, 40 segundos por lado."
+   },
+   {
+    "day": "Miércoles",
+    "name": "Sesión B — piernas y espalda",
+    "warmup": "5 minutos de elíptica, 10 rotaciones de cadera y 10 band pull-apart.",
+    "exercises": [
+     {
+      "name": "Prensa de piernas horizontal",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Talones apoyados y bajada hasta noventa grados; empuja fuerte, aquí sí puedes exigirte."
+     },
+     {
+      "name": "Jalón al pecho",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Codos hacia abajo, pecho alto y sin echar el tronco atrás."
+     },
+     {
+      "name": "Press de hombros con mancuernas sentado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Costillas abajo; subir la mochila al altillo del aula empieza aquí."
+     },
+     {
+      "name": "Peso muerto rumano con mancuernas",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 105,
+      "technique_cue": "Cadera atrás con la espalda recta: este es el gesto que estás haciendo mal cada vez que recoges algo del suelo en clase."
+     },
+     {
+      "name": "Face pull en polea",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos altos y hombros lejos de las orejas."
+     },
+     {
+      "name": "Dead bug",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Lumbar pegada al suelo, respiración fluida."
+     }
+    ],
+    "cooldown": "Movilidad dorsal sobre rodillo, 2 minutos, y estiramiento de isquios."
+   },
+   {
+    "day": "Viernes",
+    "name": "Sesión C — energía para el fin de semana",
+    "warmup": "5 minutos de caminata inclinada, 10 subidas a escalón y 10 band pull-apart.",
+    "exercises": [
+     {
+      "name": "Subida a cajón",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Cajón a la altura de la rodilla; sube sin impulso y baja frenando. Es la escalera del colegio en versión entrenada."
+     },
+     {
+      "name": "Remo con pecho apoyado en banco",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Pecho pegado al banco durante todo el tirón."
+     },
+     {
+      "name": "Contractora de pecho",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Cierra sin chocar las manos y abre despacio."
+     },
+     {
+      "name": "Curl femoral tumbado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Bajada de dos segundos sin despegar la cadera."
+     },
+     {
+      "name": "Paseo del granjero unilateral",
+      "sets": 3,
+      "rep_range": "30-40s",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Camina erguida con una sola mancuerna; el día que la bolsa de la compra pese menos, ese es el resultado que buscamos."
+     },
+     {
+      "name": "Plancha lateral",
+      "sets": 3,
+      "rep_range": "20-30s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cadera alta y alineada; apoya la rodilla si hace falta."
+     }
+    ],
+    "cooldown": "Cinco minutos de caminata y respiración nasal lenta tumbada, 2 minutos."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación",
+    "load_pct": 100,
+    "rir_target": "3-4",
+    "volume_note": "Semana de referencia. Al acabar cada sesión anota dos cosas: el peso que has movido y cómo has dormido esa noche. Esos son tus indicadores."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión",
+    "load_pct": 102.5,
+    "rir_target": "3",
+    "volume_note": "Sube un escalón donde las repeticiones hayan salido fáciles. Empieza a notarse en la espalda al final de la jornada."
+   },
+   {
+    "week": 3,
+    "intent": "Carga",
+    "load_pct": 105,
+    "rir_target": "2-3",
+    "volume_note": "Semana de más exigencia en sentadilla, prensa y remo. Compara los pesos con los de la semana 1: ahí está la prueba objetiva de que avanzas."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga",
+    "load_pct": 90,
+    "rir_target": "4",
+    "volume_note": "Una serie menos por ejercicio. Revisión de sensaciones: sueño, energía por la tarde y molestias de espalda; ninguna báscula."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 9000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 30,
+     "times_per_week": 3,
+     "notes": "Caminata tranquila, mejor acompañada. Aquí no se persigue gasto, se persigue llegar mejor al viernes."
+    }
+   ]
+  },
+  "deload_instructions": "Semana 4 al 90% con una serie menos por ejercicio. En este caso la descarga no es negociable: el patrón de las dietas fallidas fue siempre acelerar hasta reventar. Si una semana llegas agotada del colegio, cambia una sesión por una caminata larga y sigue el plan la semana siguiente."
+ },
+ {
+  "category": "principiantes",
+  "title": "Dos pisos sin quedarse sin aire",
+  "case": "Hombre de 47 años, taxista de turno de noche, 104 kg y exfumador desde hace un mes, que llega diciendo que se ahoga subiendo los dos pisos hasta su casa y que ya no puede jugar con su hijo en el parque. Su limitante no es la fuerza sino el aliento, así que necesita sesiones cortas, ejercicios sentados o con apoyo y descansos amplios para poder completar todas las series.",
+  "level": "beginner",
+  "days_per_week": 3,
+  "place": "gym",
+  "split_name": "Full body sentado con descansos largos",
+  "split_rationale": "Cuerpo completo tres días por semana con la mayoría de ejercicios sentados o con apoyo, para que la limitación respiratoria no le obligue a abandonar la serie antes de que el músculo trabaje. Los descansos son deliberadamente largos, de 90 a 150 segundos, porque su recuperación entre series es lo que hay que entrenar primero.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Sesión A — máquinas y respiración",
+    "warmup": "6 minutos de bicicleta sentado a ritmo muy suave; el objetivo es acabar el calentamiento pudiendo hablar sin cortarte.",
+    "exercises": [
+     {
+      "name": "Prensa de piernas horizontal",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 150,
+      "technique_cue": "Suelta el aire al empujar. Descansa lo que marca la hoja aunque te veas listo antes: el descanso es parte del entrenamiento."
+     },
+     {
+      "name": "Remo sentado en polea",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Tronco quieto y tirón al ombligo; si te falta el aire, baja el peso antes que acortar la serie."
+     },
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Empuje continuo sin aguantar la respiración en ningún momento."
+     },
+     {
+      "name": "Curl femoral sentado",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Ritmo constante y bajada de dos segundos."
+     },
+     {
+      "name": "Face pull en polea",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2-3",
+      "rest_sec": 75,
+      "technique_cue": "Codos altos; trabajo de postura para las horas al volante."
+     },
+     {
+      "name": "Dead bug",
+      "sets": 2,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 60,
+      "technique_cue": "Tumbado y respirando: suelta el aire cada vez que estiras la pierna."
+     }
+    ],
+    "cooldown": "6 minutos de bicicleta muy suave hasta recuperar el aliento del todo y dos minutos sentado respirando por la nariz."
+   },
+   {
+    "day": "Miércoles",
+    "name": "Sesión B — tirón y cadera",
+    "warmup": "6 minutos de elíptica muy suave y 10 rotaciones de hombro.",
+    "exercises": [
+     {
+      "name": "Jalón al pecho",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Codos hacia abajo con el pecho alto; sentado, sin tener que sostener el peso del cuerpo."
+     },
+     {
+      "name": "Press de hombros en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Sube sin arquear la espalda y respirando; peso moderado."
+     },
+     {
+      "name": "Hip thrust en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 105,
+      "technique_cue": "Empuja con los talones; el glúteo fuerte es la mitad de subir escaleras."
+     },
+     {
+      "name": "Abducción de cadera en máquina",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Tronco erguido y pausa de un segundo en la apertura."
+     },
+     {
+      "name": "Elevación de talones sentado",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Recorrido completo; el gemelo es la otra mitad de las escaleras."
+     },
+     {
+      "name": "Press Pallof",
+      "sets": 2,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 75,
+      "technique_cue": "Aguanta la rotación sin bloquear la respiración."
+     }
+    ],
+    "cooldown": "6 minutos de bicicleta suave y respiración diafragmática tumbado, 3 minutos."
+   },
+   {
+    "day": "Viernes",
+    "name": "Sesión C — de pie con apoyo",
+    "warmup": "6 minutos de caminata en cinta a ritmo cómodo con inclinación cero.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 150,
+      "technique_cue": "Con una mancuerna ligera y bajando hasta un banco alto; siéntate y levántate, ese es el ejercicio."
+     },
+     {
+      "name": "Remo en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Pecho apoyado; así el tirón no te obliga a sostener el tronco y respiras mejor."
+     },
+     {
+      "name": "Contractora de pecho",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Cierra sin chocar las manos y exhala al cerrar."
+     },
+     {
+      "name": "Subida a cajón",
+      "sets": 2,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Escalón bajo y sin peso, sujetándote a una barra. Este es literalmente el ejercicio de las escaleras de tu casa."
+     },
+     {
+      "name": "Extensión de tríceps en polea con cuerda",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos al costado; ejercicio de cierre, ligero."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 2,
+      "rep_range": "20-30s",
+      "rir": "3",
+      "rest_sec": 60,
+      "technique_cue": "Veinte segundos bien hechos bastan; respira con normalidad todo el tiempo."
+     }
+    ],
+    "cooldown": "8 minutos de caminata suave. Ese día, al llegar a casa, sube los dos pisos y anota cómo has llegado arriba."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación",
+    "load_pct": 100,
+    "rir_target": "3-4",
+    "volume_note": "Sesiones de 40 minutos con descansos generosos. La medida de éxito de la semana es completar las series, no el peso."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión",
+    "load_pct": 102.5,
+    "rir_target": "3",
+    "volume_note": "Mismo esquema con 15 segundos menos de descanso en los ejercicios de máquina. Cargas casi iguales."
+   },
+   {
+    "week": 3,
+    "intent": "Carga",
+    "load_pct": 105,
+    "rir_target": "2-3",
+    "volume_note": "Primera subida real de peso en prensa, remo y press. La caminata diaria sube a 25 minutos."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga",
+    "load_pct": 90,
+    "rir_target": "4",
+    "volume_note": "Una serie menos por ejercicio. Prueba de referencia: subir los dos pisos y comparar con la semana 1."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 6000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 15,
+     "times_per_week": 4,
+     "notes": "Bicicleta estática o caminata llana a un ritmo en el que puedas hablar. Empieza por 15 minutos y suma 2 minutos cada semana; esta es la parte del plan que resuelve tu queja principal."
+    }
+   ]
+  },
+  "deload_instructions": "Semana 4 al 90% con una serie menos por ejercicio, manteniendo las caminatas. Si en cualquier sesión te falta el aire de forma desproporcionada, aparecen mareos o presión en el pecho, se para el entrenamiento y se consulta con el médico antes de volver."
+ },
+ {
+  "category": "principiantes",
+  "title": "Cabeza de atleta, cuerpo desentrenado",
+  "case": "Mujer de 41 años, fisioterapeuta y exjugadora federada de balonmano hasta los 22, que no ha vuelto a entrenar desde entonces y ahora quiere hacerlo en serio. El problema no es la motivación sino el freno: el primer día quiso repetir las series de sus veinte años y salió con el hombro derecho sobrecargado, así que el plan evita los gestos que se lo irritan y le impone subir despacio.",
+  "level": "intermediate",
+  "days_per_week": 4,
+  "place": "gym",
+  "split_name": "Torso-pierna con hombro protegido",
+  "split_rationale": "Cuatro días en torso-pierna para repartir el volumen y poder incluir dos dosis semanales de trabajo específico de manguito rotador y escápula. En el torso se sustituye todo el empuje libre por encima de la cabeza y el banco con mancuernas por versiones en máquina, landmine y press de suelo, que respetan el hombro de lanzadora sin renunciar a la carga.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Torso A — empuje guiado",
+    "warmup": "6 minutos de bicicleta, 15 band pull-apart, 15 rotaciones externas con banda y 10 deslizamientos de escápula en pared.",
+    "exercises": [
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Ajusta el asiento para que las asas queden a la altura del esternón y no bajes el codo por detrás de la línea del tronco."
+     },
+     {
+      "name": "Remo sentado en polea",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "2-3",
+      "rest_sec": 105,
+      "technique_cue": "Tirón al ombligo con el tronco quieto; el volumen de tirón dobla al de empuje en este plan y es intencionado."
+     },
+     {
+      "name": "Jalón agarre estrecho neutro",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Agarre neutro, que es el que menos comprime el hombro."
+     },
+     {
+      "name": "Press landmine de pie",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 105,
+      "technique_cue": "El ángulo del landmine te deja empujar en diagonal sin llegar a la vertical pura: ese es el motivo de que esté aquí."
+     },
+     {
+      "name": "Rotación externa de hombro en polea",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codo pegado al costado con una toalla enrollada; movimiento lento y sin compensar con el tronco."
+     },
+     {
+      "name": "Face pull en polea",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos por encima de las muñecas; ejercicio innegociable en tu caso."
+     }
+    ],
+    "cooldown": "Cinco minutos de caminata y movilidad de dorsal sobre rodillo, 2 minutos."
+   },
+   {
+    "day": "Martes",
+    "name": "Pierna A — base de fuerza",
+    "warmup": "6 minutos de bicicleta, 10 sentadillas sin carga, 10 puentes de glúteo y una serie de aproximación en prensa.",
+    "exercises": [
+     {
+      "name": "Prensa de piernas 45°",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 150,
+      "technique_cue": "Tu pierna aguanta más de lo que crees, pero el tendón lleva veinte años sin cargar: sube de kilos con paciencia."
+     },
+     {
+      "name": "Peso muerto rumano con mancuernas",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Cadera atrás con la espalda recta; para donde te frene el isquio."
+     },
+     {
+      "name": "Zancada inversa",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Tronco vertical y bajada controlada; nada de zancadas con salto por ahora."
+     },
+     {
+      "name": "Curl femoral tumbado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Bajada de dos segundos, cadera pegada al banco."
+     },
+     {
+      "name": "Abducción de cadera en máquina",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Pausa de un segundo en la apertura."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cuerpo en línea; cierra la sesión sin buscar récords de tiempo."
+     }
+    ],
+    "cooldown": "Cinco minutos de caminata y estiramiento de cuádriceps y glúteo, 40 segundos por lado."
+   },
+   {
+    "day": "Jueves",
+    "name": "Torso B — empuje horizontal y volumen",
+    "warmup": "6 minutos de remo suave, 15 band pull-apart y 15 rotaciones externas con banda.",
+    "exercises": [
+     {
+      "name": "Press de suelo con barra",
+      "sets": 4,
+      "rep_range": "6-8",
+      "rir": "3",
+      "rest_sec": 150,
+      "technique_cue": "El suelo frena el codo antes de que el hombro entre en el rango que te molesta; ese tope es la razón del ejercicio."
+     },
+     {
+      "name": "Remo con pecho apoyado en banco",
+      "sets": 4,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Pecho pegado al banco todo el recorrido."
+     },
+     {
+      "name": "Jalón al pecho",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Codos hacia las costillas y control en la subida."
+     },
+     {
+      "name": "Elevaciones laterales en máquina",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "En máquina y no con mancuerna: el recorrido guiado evita que el hombro se te vaya hacia delante al fatigarte."
+     },
+     {
+      "name": "Curl martillo",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos quietos al costado."
+     },
+     {
+      "name": "Extensión de tríceps en polea con cuerda",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos fijos; nada de versiones sobre la cabeza en tu caso."
+     }
+    ],
+    "cooldown": "Cinco minutos de caminata y estiramiento suave de pectoral sin forzar la apertura del hombro."
+   },
+   {
+    "day": "Viernes",
+    "name": "Pierna B — cadera y unilateral",
+    "warmup": "6 minutos de bicicleta, 10 puentes de glúteo y 10 subidas a escalón.",
+    "exercises": [
+     {
+      "name": "Hip thrust con barra",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "2-3",
+      "rest_sec": 120,
+      "technique_cue": "Barbilla metida, costillas abajo y bloqueo con glúteo; el ejercicio donde más rápido vas a recuperar tus números."
+     },
+     {
+      "name": "Sentadilla goblet",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 105,
+      "technique_cue": "Torso alto y profundidad completa; la mancuerna al pecho no carga el hombro."
+     },
+     {
+      "name": "Curl femoral sentado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Recorrido completo, sin dejar caer el peso."
+     },
+     {
+      "name": "Subida a cajón",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Sube sin impulso y baja frenando; empieza con cajón a la altura de la rodilla."
+     },
+     {
+      "name": "Elevación de talones sentado",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Pausa arriba y estiramiento completo abajo."
+     },
+     {
+      "name": "Press Pallof",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Resiste la rotación sin mover la cadera; te va a servir cuando vuelvas a lanzar por diversión."
+     }
+    ],
+    "cooldown": "Cinco minutos de caminata y estiramiento de isquios y aductor, 40 segundos por lado."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación",
+    "load_pct": 100,
+    "rir_target": "3-4",
+    "volume_note": "Semana de contención deliberada: cargas moderadas y ninguna serie cerca del fallo. Registro diario de cómo amanece el hombro."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión",
+    "load_pct": 102.5,
+    "rir_target": "3",
+    "volume_note": "Sube carga en pierna con normalidad; en torso, solo si el hombro ha estado tranquilo los siete días."
+   },
+   {
+    "week": 3,
+    "intent": "Carga",
+    "load_pct": 105,
+    "rir_target": "2-3",
+    "volume_note": "Semana más exigente en prensa, hip thrust y press de suelo. El trabajo de manguito se mantiene, nunca se recorta."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga",
+    "load_pct": 90,
+    "rir_target": "3-4",
+    "volume_note": "Una serie menos por ejercicio salvo en rotación externa y face pull. Revisión del hombro antes de plantear el mes siguiente."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 10000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 30,
+     "times_per_week": 2,
+     "notes": "Caminata o bicicleta. Nada de volver a pistas ni partidos de veteranas hasta que el hombro lleve un mes sin protestar."
+    }
+   ]
+  },
+  "deload_instructions": "Semana 4 al 90% con una serie menos por ejercicio, manteniendo intacto el trabajo de manguito rotador. La norma central de este caso: cualquier serie extra improvisada, cualquier vuelta a un gesto de lanzamiento o cualquier dolor de hombro que dure más de 48 horas obliga a parar el torso una semana y avisar al coach."
+ },
+ {
+  "category": "principiantes",
+  "title": "A las siete, fuera en cuarenta minutos",
+  "case": "Hombre de 39 años, dueño de una tienda de electrodomésticos que abre a las nueve y media, y que entrena a las siete de la mañana porque a las siete de la tarde la sala está llena y le agobia esperar máquinas. Pide cuatro sesiones de cuarenta minutos clavados, con pocos aparatos, que pueda hacer siempre en la misma esquina y sin depender de material que a esa hora esté ocupado.",
+  "level": "intermediate",
+  "days_per_week": 4,
+  "place": "gym",
+  "split_name": "Torso-pierna exprés de cinco ejercicios",
+  "split_rationale": "Cuatro sesiones cortas de cinco ejercicios cada una, montadas casi por completo sobre banco y mancuernas: material del que siempre hay repuesto y que se puede llevar a un rincón sin cruzar la sala. Al repartir en cuatro días, cada sesión cabe en cuarenta minutos sin recortar el volumen semanal.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Torso A — empuje horizontal",
+    "warmup": "4 minutos de bicicleta y 15 band pull-apart mientras montas las mancuernas. Sin pausas largas: el reloj cuenta desde que entras.",
+    "exercises": [
+     {
+      "name": "Press banca con mancuernas",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Ten las dos parejas de mancuernas preparadas antes de empezar: la primera y la de aproximación."
+     },
+     {
+      "name": "Remo con mancuerna a una mano",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Encadénalo con el press: mientras descansas de uno haces el otro y ahorras siete minutos de sesión."
+     },
+     {
+      "name": "Jalón al pecho",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Codos hacia abajo, pecho alto. A las siete de la mañana la polea siempre está libre."
+     },
+     {
+      "name": "Elevaciones laterales con mancuernas",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Peso ligero y subida hasta la horizontal, sin impulso."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Cierra la sesión con esto y sal; descansos de 45 segundos, mirando el reloj."
+     }
+    ],
+    "cooldown": "Tres minutos de caminata y estiramiento de pectoral, 30 segundos por lado."
+   },
+   {
+    "day": "Martes",
+    "name": "Pierna A — sentadilla y bisagra",
+    "warmup": "4 minutos de bicicleta, 10 sentadillas sin carga y una serie de aproximación con la mancuerna.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 4,
+      "rep_range": "8-10",
+      "rir": "2-3",
+      "rest_sec": 120,
+      "technique_cue": "Cuatro series al principio, cuando estás fresco; una sola mancuerna pesada resuelve el ejercicio."
+     },
+     {
+      "name": "Peso muerto rumano con mancuernas",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Cadera atrás, espalda recta y mancuernas rozando el muslo."
+     },
+     {
+      "name": "Zancada inversa",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Con las mismas mancuernas del ejercicio anterior; no vuelvas al rack a media sesión."
+     },
+     {
+      "name": "Curl femoral tumbado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cadera pegada al banco y bajada de dos segundos."
+     },
+     {
+      "name": "Elevación de talones de pie",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Último ejercicio, rápido y con recorrido completo."
+     }
+    ],
+    "cooldown": "Tres minutos de caminata y estiramiento de isquios, 30 segundos por lado."
+   },
+   {
+    "day": "Jueves",
+    "name": "Torso B — hombro y volumen",
+    "warmup": "4 minutos de bicicleta y 15 band pull-apart.",
+    "exercises": [
+     {
+      "name": "Press de hombros con mancuernas sentado",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Respaldo alto y costillas abajo; con el banco ya montado del ejercicio siguiente."
+     },
+     {
+      "name": "Remo con pecho apoyado en banco",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Mismo banco inclinado que el press: cero desplazamientos por la sala."
+     },
+     {
+      "name": "Press inclinado con mancuernas",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Banco a 30 grados; encadénalo con el remo para ganar minutos."
+     },
+     {
+      "name": "Curl martillo",
+      "sets": 2,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos quietos, sin balanceo."
+     },
+     {
+      "name": "Patada de tríceps con mancuerna",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 45,
+      "technique_cue": "Brazo pegado al costado y extensión completa; cierre rápido de sesión."
+     }
+    ],
+    "cooldown": "Tres minutos de caminata y movilidad de hombro con banda, 1 minuto."
+   },
+   {
+    "day": "Viernes",
+    "name": "Pierna B — fuerza y unilateral",
+    "warmup": "4 minutos de bicicleta, 10 puentes de glúteo y una serie de aproximación con la barra hexagonal.",
+    "exercises": [
+     {
+      "name": "Peso muerto con barra hexagonal",
+      "sets": 4,
+      "rep_range": "6-8",
+      "rir": "2-3",
+      "rest_sec": 150,
+      "technique_cue": "A las siete de la mañana la hexagonal está libre; es el ejercicio con mejor relación fuerza-tiempo de tu semana."
+     },
+     {
+      "name": "Sentadilla búlgara",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Pie de atrás en el banco, tronco ligeramente inclinado y bajada controlada."
+     },
+     {
+      "name": "Hip thrust con barra",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Aprovecha que ya tienes barra y discos de la hexagonal montados."
+     },
+     {
+      "name": "Curl femoral sentado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Recorrido completo sin dejar caer el peso."
+     },
+     {
+      "name": "Paseo del granjero unilateral",
+      "sets": 3,
+      "rep_range": "30-40s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Camina por el pasillo lateral, que a esa hora está vacío; hombros nivelados."
+     }
+    ],
+    "cooldown": "Tres minutos de caminata y estiramiento de glúteo y cuádriceps, 30 segundos por lado."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación",
+    "load_pct": 100,
+    "rir_target": "3",
+    "volume_note": "Semana de cronometrar: apunta cuánto tardas en cada sesión y ajusta el material que dejas preparado antes de empezar."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión",
+    "load_pct": 102.5,
+    "rir_target": "2-3",
+    "volume_note": "Sube carga en los dos primeros ejercicios de cada día, que son los que sostienen el plan si un día vas con prisa."
+   },
+   {
+    "week": 3,
+    "intent": "Carga",
+    "load_pct": 105,
+    "rir_target": "2",
+    "volume_note": "Semana fuerte en peso muerto hexagonal, sentadilla goblet y press con mancuernas. Sigue sin pasar de los cuarenta minutos."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga",
+    "load_pct": 90,
+    "rir_target": "3",
+    "volume_note": "Una serie menos por ejercicio; sesiones de treinta minutos que te dejan abrir la tienda con margen."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 9000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 25,
+     "times_per_week": 2,
+     "notes": "Caminata al cerrar la tienda, no por la mañana: el hueco de las siete es solo para las pesas."
+    }
+   ]
+  },
+  "deload_instructions": "Semana 4 al 90% con una serie menos por ejercicio. Si un día llegas con veinte minutos en lugar de cuarenta, haz solo los dos primeros ejercicios de la sesión al peso previsto y vete: media sesión completa vale mucho más que saltártela entera."
+ },
+ {
+  "category": "principiantes",
+  "title": "Después de la obra, sin machacarse",
+  "case": "Hombre de 36 años, encofrador, que descarga sacos y sube andamios desde las siete de la mañana y llega al centro a las 18:45 con la espalda cargada y las manos machacadas. No quiere más volumen de trabajo físico: pide dos días para dejar de tener molestias lumbares al final de la jornada y para no llegar al viernes arrastrándose.",
+  "level": "beginner",
+  "days_per_week": 2,
+  "place": "gym",
+  "split_name": "Full body de dos días con lumbar descargada",
+  "split_rationale": "Dos sesiones semanales de cuerpo completo que evitan por completo la carga axial y las bisagras con peso libre, porque su columna ya acumula ocho horas diarias de eso. Todo va con pecho o espalda apoyados y con el core trabajado en anti-extensión y anti-rotación, que es lo que le va a quitar molestias al final del turno.",
+  "sessions": [
+   {
+    "day": "Martes",
+    "name": "Sesión A — empuje, tirón y pierna apoyada",
+    "warmup": "8 minutos de bicicleta suave para descargar piernas y espalda, más 10 rotaciones de cadera por lado. Entrenar con la espalda cargada del trabajo exige calentar más, no menos.",
+    "exercises": [
+     {
+      "name": "Prensa de piernas horizontal",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Espalda completamente apoyada en el respaldo; ningún kilo pasa por tu columna en este ejercicio, que es justo lo que buscamos."
+     },
+     {
+      "name": "Remo en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Pecho apoyado; usa correas si el agarre te falla antes que la espalda, tus manos ya han trabajado hoy."
+     },
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Sentado con respaldo; empuje continuo y muñeca alineada."
+     },
+     {
+      "name": "Curl femoral tumbado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Bajada de dos segundos; el isquio fuerte es media protección de la lumbar."
+     },
+     {
+      "name": "Dead bug",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Lumbar pegada al suelo: aprende a mantenerla ahí y llevarás esa posición al andamio."
+     },
+     {
+      "name": "Face pull en polea",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos altos, trabajo ligero de hombro y espalda alta."
+     }
+    ],
+    "cooldown": "Cinco minutos de bicicleta muy suave y estiramiento de psoas y glúteo, 40 segundos por lado."
+   },
+   {
+    "day": "Jueves",
+    "name": "Sesión B — cadera, espalda y core",
+    "warmup": "8 minutos de bicicleta o elíptica suave y 10 puentes de glúteo sin carga.",
+    "exercises": [
+     {
+      "name": "Hip thrust en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 105,
+      "technique_cue": "El glúteo es el músculo que debería estar haciendo el trabajo que ahora hace tu lumbar cuando levantas sacos."
+     },
+     {
+      "name": "Jalón agarre estrecho neutro",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Agarre neutro, más amable con tus manos; tira con el codo."
+     },
+     {
+      "name": "Press de hombros en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Sentado con respaldo y sin arquear la espalda para completar la repetición."
+     },
+     {
+      "name": "Sentadilla goblet",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 105,
+      "technique_cue": "El único ejercicio de pie del plan: peso moderado y torso alto. Si un día llegas fundido, cámbialo por prensa."
+     },
+     {
+      "name": "Bird dog",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Lento, sin que la cadera se ladee."
+     },
+     {
+      "name": "Press Pallof",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Aguanta la rotación con el tronco firme; esto es lo que estabiliza la columna cuando cargas peso en un solo lado."
+     }
+    ],
+    "cooldown": "Cinco minutos de caminata y descarga de la espalda tumbado con las piernas en alto sobre un banco, 3 minutos."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación",
+    "load_pct": 100,
+    "rir_target": "3-4",
+    "volume_note": "Cargas cortas: sales del gimnasio con la sensación de haber descansado, no de haber trabajado más. Anota cómo tienes la espalda al llegar el viernes."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión",
+    "load_pct": 102.5,
+    "rir_target": "3",
+    "volume_note": "Pequeña subida en prensa, remo y hip thrust. El core se mantiene igual, pero más lento."
+   },
+   {
+    "week": 3,
+    "intent": "Carga",
+    "load_pct": 105,
+    "rir_target": "2-3",
+    "volume_note": "Semana más exigente. Si esa semana hay descarga de camiones o jornadas de diez horas, quédate en las cargas de la semana 2."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga",
+    "load_pct": 90,
+    "rir_target": "4",
+    "volume_note": "Una serie menos por ejercicio. Compara las molestias lumbares de esta semana con las del inicio del mes."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 12000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 20,
+     "times_per_week": 2,
+     "notes": "Paseo tranquilo después de cenar los días sin gimnasio. No es para gastar, es para descargar la espalda antes de dormir."
+    }
+   ]
+  },
+  "deload_instructions": "Semana 4 al 90% con una serie menos por ejercicio. Norma para este caso: nunca se añaden días ni ejercicios de espalda baja porque tu trabajo ya los pone. Si un día llegas con la lumbar cargada de verdad, haz solo el hip thrust, el core y bicicleta suave, y vete a casa."
+ },
+ {
+  "category": "principiantes",
+  "title": "Dos días simples para crear hábito",
+  "case": "Mujer de 34 años, administrativa en una asesoría, que se ha apuntado tres veces al gimnasio en cinco años y nunca ha pasado del primer mes. Dice literalmente que no quiere un plan bonito, quiere uno que pueda cumplir: dos días, la misma sesión repetida y cuatro ejercicios, para que la excusa de hoy no me da tiempo o no me acuerdo de qué toca deje de existir.",
+  "level": "beginner",
+  "days_per_week": 2,
+  "place": "gym",
+  "split_name": "Sesión única repetida dos veces por semana",
+  "split_rationale": "La misma sesión de cuatro ejercicios los dos días. Repetirla es deliberado: elimina la carga mental de decidir, permite mejorar la técnica el doble de rápido y hace que la progresión sea visible de una semana a otra. Cubre pierna, empuje, tirón y core, que es lo mínimo para no dejar huecos.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Sesión única — primera del mes",
+    "warmup": "5 minutos de bicicleta y 10 sentadillas sin carga. Cinco minutos, ni uno más.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Mancuerna vertical al pecho, bajada de dos segundos y subida decidida. Anota el peso en el móvil: es la única tarea del día."
+     },
+     {
+      "name": "Jalón al pecho",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Muslos sujetos bajo el rodillo, codos hacia abajo y pecho alto."
+     },
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Asiento a la altura del esternón; empuje sin bloquear el codo con fuerza."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "20-30s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos bajo los hombros y glúteo apretado. Con esto se acaba: en treinta minutos estás fuera."
+     },
+     {
+      "name": "Hip thrust en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Empuja con el glúteo y aprieta arriba un segundo; es el gesto de levantarte de la silla."
+     }
+    ],
+    "cooldown": "Cinco minutos de caminata en cinta. Antes de salir, deja fijado en el calendario el día de la próxima sesión."
+   },
+   {
+    "day": "Jueves",
+    "name": "Sesión única — segunda del mes",
+    "warmup": "5 minutos de bicicleta y 10 sentadillas sin carga.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Misma mancuerna que el lunes; si las diez repeticiones salieron cómodas, hoy sube un escalón."
+     },
+     {
+      "name": "Jalón al pecho",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Idéntico al lunes: repetir es lo que hace que en tres semanas te salga sin pensar."
+     },
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Mismo número de asiento apuntado el lunes; así no pierdes tiempo ajustando."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "20-30s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Intenta cinco segundos más que el lunes, sin romper la posición."
+     }
+    ],
+    "cooldown": "Cinco minutos de caminata y marca la sesión como hecha en el calendario."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación",
+    "load_pct": 100,
+    "rir_target": "3-4",
+    "volume_note": "El objetivo de esta semana no es entrenar bien, es venir dos veces. Pesos cómodos y sesiones de treinta minutos."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión",
+    "load_pct": 102.5,
+    "rir_target": "3",
+    "volume_note": "Segunda semana con las mismas cuatro cosas. Sube un escalón donde te sobren repeticiones; nada de añadir ejercicios."
+   },
+   {
+    "week": 3,
+    "intent": "Carga",
+    "load_pct": 105,
+    "rir_target": "2-3",
+    "volume_note": "Aquí es donde otras veces lo dejaste. Se sube algo de peso y no se toca nada más: sin ejercicios nuevos, sin días extra."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga",
+    "load_pct": 90,
+    "rir_target": "4",
+    "volume_note": "Semana ligera. Si has cumplido las ocho sesiones del mes, el mes que viene añadimos un tercer día y dos ejercicios."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 7000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 20,
+     "times_per_week": 2,
+     "notes": "Caminar hasta el trabajo o bajarse una parada antes. No cuenta como sesión de gimnasio ni la sustituye."
+    }
+   ]
+  },
+  "deload_instructions": "Semana 4 al 90% con una serie menos por ejercicio. La regla que sostiene este plan: si un día solo tienes veinte minutos, haz la sentadilla y el jalón y vete. Venir y hacer la mitad siempre cuenta como sesión cumplida; no venir es lo único que rompe la racha."
+ },
+ {
+  "category": "principiantes",
+  "title": "Cuatro días con el propio peso",
+  "case": "Hombre de 43 años, panadero en un pueblo a veinticinco kilómetros del gimnasio más cercano, con turno que empieza a las cuatro de la madrugada y termina a mediodía. No tiene ni una mancuerna ni sitio donde guardarla: pide cuatro sesiones cortas que pueda hacer en dos metros cuadrados del salón, con una silla y la mesa del comedor como todo material.",
+  "level": "beginner",
+  "days_per_week": 4,
+  "place": "home",
+  "split_name": "Alternancia inferior-superior con peso corporal",
+  "split_rationale": "Sin material externo, el estímulo se consigue con frecuencia y control del tempo, no con carga: cuatro sesiones cortas alternando tren inferior y tren superior permiten repetir cada patrón dos veces por semana en sesiones de media hora. La progresión se hace alargando la fase de bajada, añadiendo repeticiones y pasando a versiones a una pierna.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Tren inferior y core",
+    "warmup": "3 minutos de marcha en el sitio, 10 círculos de cadera por lado y 10 sentadillas parciales.",
+    "exercises": [
+     {
+      "name": "Sentadilla en pared (isométrica)",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Espalda pegada a la pared y rodillas a noventa grados; respira con normalidad todo el tiempo."
+     },
+     {
+      "name": "Zancada inversa",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2-3",
+      "rest_sec": 75,
+      "technique_cue": "Paso atrás largo, tronco vertical y rodilla al suelo con suavidad; apóyate en la silla los primeros días."
+     },
+     {
+      "name": "Puente de glúteo",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Empuja con los talones y aprieta el glúteo dos segundos arriba."
+     },
+     {
+      "name": "Peso muerto rumano a una pierna sin carga",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Roza la silla con la mano para no perder el equilibrio; la espalda recta y la cadera atrás."
+     },
+     {
+      "name": "Dead bug",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Lumbar pegada al suelo, movimiento lento."
+     },
+     {
+      "name": "Elevación de gemelo a una pierna en escalón",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "En el escalón de casa, bajando el talón todo lo que puedas antes de subir."
+     }
+    ],
+    "cooldown": "Estiramiento de cuádriceps y gemelo, 30 segundos por lado, y dos minutos de respiración tumbado."
+   },
+   {
+    "day": "Martes",
+    "name": "Tren superior",
+    "warmup": "3 minutos de marcha en el sitio, 10 círculos de hombro y 5 flexiones apoyadas en la mesa.",
+    "exercises": [
+     {
+      "name": "Flexiones",
+      "sets": 3,
+      "rep_range": "6-10",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Si no salen limpias desde el suelo, apoya las manos en el borde de la mesa; cuerpo recto como una tabla."
+     },
+     {
+      "name": "Remo invertido bajo una mesa",
+      "sets": 3,
+      "rep_range": "8-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Túmbate bajo una mesa sólida y agárrate al canto; pecho a la mesa en cada repetición. Comprueba antes que la mesa aguanta."
+     },
+     {
+      "name": "Flexiones pike",
+      "sets": 2,
+      "rep_range": "6-8",
+      "rir": "3",
+      "rest_sec": 75,
+      "technique_cue": "Cadera alta formando una uve invertida; baja la coronilla hacia las manos con control."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "20-30s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos bajo los hombros, glúteo apretado."
+     },
+     {
+      "name": "Plancha lateral",
+      "sets": 3,
+      "rep_range": "20-30s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cadera alta y alineada; apoya la rodilla de abajo si hace falta."
+     },
+     {
+      "name": "Bird dog",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Sin que la cadera se ladee; cinco segundos por repetición."
+     }
+    ],
+    "cooldown": "Estiramiento de pectoral en el marco de la puerta y de dorsal apoyado en la mesa, 30 segundos por lado."
+   },
+   {
+    "day": "Jueves",
+    "name": "Piernas unilaterales",
+    "warmup": "3 minutos de marcha en el sitio, 10 zancadas sin carga y 10 puentes de glúteo.",
+    "exercises": [
+     {
+      "name": "Sentadilla búlgara con peso corporal",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Pie de atrás sobre la silla; baja recto y con control. Es tu ejercicio más exigente de pierna sin material."
+     },
+     {
+      "name": "Zancadas caminando sin carga",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Si no tienes espacio para caminar, hazlas en el sitio alternando pierna."
+     },
+     {
+      "name": "Puente de glúteo a una pierna",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Cadera nivelada; no dejes que el lado libre caiga."
+     },
+     {
+      "name": "Curl femoral con toalla deslizante",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Sobre suelo liso, con una toalla bajo los talones; mantén la cadera arriba todo el recorrido."
+     },
+     {
+      "name": "Marcha del oso",
+      "sets": 3,
+      "rep_range": "20-30s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Rodillas a un palmo del suelo y cadera baja; pasos cortos, sin que el culo suba."
+     },
+     {
+      "name": "Plancha lateral",
+      "sets": 3,
+      "rep_range": "20-30s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cadera alta; alterna lados en cada serie."
+     }
+    ],
+    "cooldown": "Estiramiento de isquios y glúteo sentado, 40 segundos por lado."
+   },
+   {
+    "day": "Viernes",
+    "name": "Cuerpo completo corto",
+    "warmup": "3 minutos de marcha en el sitio y 10 círculos de hombro y cadera.",
+    "exercises": [
+     {
+      "name": "Remo invertido bajo una mesa",
+      "sets": 3,
+      "rep_range": "8-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Cuanto más horizontal te pongas, más pesa; usa esa inclinación como si fueran discos."
+     },
+     {
+      "name": "Flexiones",
+      "sets": 3,
+      "rep_range": "6-10",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Bajada de tres segundos: es la forma de hacerlas más duras sin añadir peso."
+     },
+     {
+      "name": "Zancada estática",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Pies fijos, sube y baja en el sitio con el tronco vertical."
+     },
+     {
+      "name": "Puente de glúteo",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Dos segundos de pausa arriba en cada repetición."
+     },
+     {
+      "name": "Escaladores",
+      "sets": 3,
+      "rep_range": "20-30s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Ritmo controlado, sin que la cadera suba y baje; el vecino de abajo no se va a enterar."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "20-30s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cierra la semana con la posición limpia, sin buscar tiempos récord."
+     }
+    ],
+    "cooldown": "Cinco minutos de estiramiento general y respiración tumbado. Con el turno de las cuatro, esta parte es la que te ayuda a dormir la siesta."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación",
+    "load_pct": 100,
+    "rir_target": "3",
+    "volume_note": "Aprender las posiciones y comprobar qué mueble aguanta. Sesiones de 25 minutos, cuatro días. Anota repeticiones de cada ejercicio."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión",
+    "load_pct": 102.5,
+    "rir_target": "2-3",
+    "volume_note": "Misma estructura sumando una o dos repeticiones por serie donde puedas. Sin material, el progreso son repeticiones, no kilos."
+   },
+   {
+    "week": 3,
+    "intent": "Carga",
+    "load_pct": 105,
+    "rir_target": "2",
+    "volume_note": "Semana de bajadas de tres segundos en flexiones, sentadilla búlgara y remo invertido, y remo más horizontal. Ahí está el aumento de carga."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga",
+    "load_pct": 90,
+    "rir_target": "3-4",
+    "volume_note": "Una serie menos por ejercicio y tempo normal. Si las flexiones desde el suelo ya salen a diez, el mes que viene toca versión a un brazo asistida."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 11000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 30,
+     "times_per_week": 3,
+     "notes": "Caminata por el pueblo al terminar el turno, mejor a mediodía; sirve también para no acostarte demasiado pronto."
+    }
+   ]
+  },
+  "deload_instructions": "Semana 4 al 90% de exigencia (una serie menos y tempo normal). Si un día sales del obrador destrozado, haz solo los tres primeros ejercicios de la sesión: con turno de madrugada, la constancia vale más que cualquier serie extra."
+ },
+ {
+  "category": "principiantes",
+  "title": "Tres días con bandas en casa",
+  "case": "Mujer de 53 años, contable que teletrabaja cuatro días por semana y cuida de su madre por las tardes, con un juego de bandas elásticas que le regalaron por Navidad y que sigue en el armario sin estrenar. Nunca ha entrenado fuerza y no piensa apuntarse a un gimnasio: pide tres sesiones de media hora en casa, con las bandas y sin saltos, porque vive en un tercero y le preocupan los vecinos.",
+  "level": "beginner",
+  "days_per_week": 3,
+  "place": "home",
+  "split_name": "Full body con bandas, sin impacto",
+  "split_rationale": "Tres sesiones de cuerpo completo construidas solo con bandas y peso corporal, sin ningún ejercicio de salto ni apoyo ruidoso. La banda permite graduar la resistencia acortando el agarre, así que la progresión existe aunque no haya discos, y el trabajo de espalda alta se repite en los tres días por las horas de ordenador.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Sesión A — empuje, tirón y pierna",
+    "warmup": "3 minutos de marcha en el sitio, 10 círculos de hombro y 10 sentadillas parciales sujetándote a una silla.",
+    "exercises": [
+     {
+      "name": "Zancada inversa",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Paso atrás y rodilla al suelo con suavidad; apóyate en el respaldo de una silla hasta que el equilibrio sea sólido."
+     },
+     {
+      "name": "Remo con banda sentado",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2-3",
+      "rest_sec": 75,
+      "technique_cue": "Sentada en el suelo con la banda en los pies; tira llevando los codos atrás y junta los omóplatos."
+     },
+     {
+      "name": "Press de pecho con banda",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 75,
+      "technique_cue": "Banda por detrás de la espalda a la altura de las axilas; empuja hasta casi extender sin bloquear."
+     },
+     {
+      "name": "Puente de glúteo",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Empuja con los talones y aprieta el glúteo dos segundos arriba."
+     },
+     {
+      "name": "Band pull-apart",
+      "sets": 2,
+      "rep_range": "15-20",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Brazos rectos, abre hasta el pecho sin encoger los hombros. Este es el antídoto de tus horas de ordenador."
+     },
+     {
+      "name": "Dead bug",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Lumbar pegada al suelo y respiración fluida."
+     }
+    ],
+    "cooldown": "Estiramiento de pectoral en el marco de la puerta y de cuello, 30 segundos por lado."
+   },
+   {
+    "day": "Miércoles",
+    "name": "Sesión B — vertical y glúteo",
+    "warmup": "3 minutos de marcha en el sitio, 10 band pull-apart suaves y 10 puentes de glúteo.",
+    "exercises": [
+     {
+      "name": "Sentadilla en pared (isométrica)",
+      "sets": 3,
+      "rep_range": "30-45s",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Espalda pegada a la pared, rodillas a noventa grados y respirando con normalidad. Cero ruido para los vecinos."
+     },
+     {
+      "name": "Jalón con banda de pie",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2-3",
+      "rest_sec": 75,
+      "technique_cue": "Banda anclada arriba en una puerta cerrada; tira con los codos hacia las costillas."
+     },
+     {
+      "name": "Press de hombro con banda",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 75,
+      "technique_cue": "Pisa la banda y empuja por encima de la cabeza sin arquear la espalda."
+     },
+     {
+      "name": "Abducción de cadera con banda",
+      "sets": 3,
+      "rep_range": "15-20",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Banda por encima de las rodillas, tumbada de lado; abre sin girar la pelvis atrás."
+     },
+     {
+      "name": "Face pull con banda",
+      "sets": 2,
+      "rep_range": "15-20",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Banda a la altura de los ojos, codos altos, hombros lejos de las orejas."
+     },
+     {
+      "name": "Bird dog",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Movimiento lento, sin ladear la cadera."
+     }
+    ],
+    "cooldown": "Movilidad de columna a cuatro apoyos, 2 minutos, y estiramiento de glúteo sentada."
+   },
+   {
+    "day": "Viernes",
+    "name": "Sesión C — cuerpo completo",
+    "warmup": "3 minutos de marcha en el sitio y 10 círculos de cadera y hombro.",
+    "exercises": [
+     {
+      "name": "Zancada estática",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Pies fijos, sube y baja en el sitio con el tronco vertical; sujétate a la silla si lo necesitas."
+     },
+     {
+      "name": "Press de pecho con banda",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2-3",
+      "rest_sec": 75,
+      "technique_cue": "Acorta el agarre de la banda para que pese más que el lunes."
+     },
+     {
+      "name": "Remo con banda sentado",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Tronco erguido; el tirón lo hace la espalda, no la lumbar echándose atrás."
+     },
+     {
+      "name": "Puente de glúteo a una pierna",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Cadera nivelada; no dejes caer el lado libre."
+     },
+     {
+      "name": "Elevaciones laterales con banda",
+      "sets": 2,
+      "rep_range": "15-20",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Sube hasta la altura del hombro sin encogerte; peso ligero y control."
+     },
+     {
+      "name": "Plancha lateral",
+      "sets": 3,
+      "rep_range": "20-30s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cadera alta y alineada; empieza apoyando la rodilla de abajo."
+     }
+    ],
+    "cooldown": "Estiramiento general de cinco minutos y dos minutos de respiración tumbada antes de seguir con la tarde."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación",
+    "load_pct": 100,
+    "rir_target": "3-4",
+    "volume_note": "Semana de sacar las bandas del armario y aprender a anclarlas. Usa la banda más ligera y sesiones de 25 minutos."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión",
+    "load_pct": 102.5,
+    "rir_target": "3",
+    "volume_note": "Acorta un palmo el agarre de la banda en remo y press: ese es tu escalón de peso. Mismo número de series."
+   },
+   {
+    "week": 3,
+    "intent": "Carga",
+    "load_pct": 105,
+    "rir_target": "2-3",
+    "volume_note": "Cambia a la banda del siguiente color en los ejercicios donde llegues a 15 repeticiones cómodas. La sentadilla en pared sube a 45 segundos."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga",
+    "load_pct": 90,
+    "rir_target": "4",
+    "volume_note": "Vuelve a la banda anterior y quita una serie por ejercicio. Semana ligera pensada para no fallar ninguna de las tres sesiones."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 8000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 30,
+     "times_per_week": 3,
+     "notes": "Caminata al ir a casa de tu madre, o dos vueltas a la manzana después de comer. Sin impacto y sin material."
+    }
+   ]
+  },
+  "deload_instructions": "Semana 4 con la banda más suave y una serie menos por ejercicio. Si una tarde se complica con el cuidado de tu madre, haz solo los cuatro primeros ejercicios: media sesión hecha en casa sigue siendo una sesión, y es exactamente lo que hace que este plan no acabe otra vez en el armario."
+ },
+ {
+  "category": "principiantes",
+  "title": "La misma rutina para los dos",
+  "case": "Pareja que se apunta junta en septiembre: ella tiene 36 años y es enfermera de planta, él 38 y trabaja de comercial; ninguno ha entrenado antes. Quieren coincidir siempre, martes y jueves por la tarde y sábado por la mañana, y piden literalmente la misma hoja para los dos aunque él mueva más peso, porque saben que si van por libre uno de los dos acabará dejándolo.",
+  "level": "beginner",
+  "days_per_week": 3,
+  "place": "gym",
+  "split_name": "Full body compartido A-B-C",
+  "split_rationale": "Una única hoja para los dos con sesiones de cuerpo completo, pensadas para hacerse alternando series en el mismo aparato: mientras uno trabaja, el otro descansa, y así el descanso real coincide con el tiempo de la serie del compañero. Cada uno lleva su propia columna de pesos; el ejercicio, las series y las repeticiones son idénticos.",
+  "sessions": [
+   {
+    "day": "Martes",
+    "name": "Sesión A — alternando en el mismo aparato",
+    "warmup": "5 minutos de bicicleta cada uno y 10 band pull-apart juntos. Empezad y acabad a la vez.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Alternad serie a serie con la misma mancuerna solo si os cuadra el peso; si no, dos mancuernas al lado y cambio rápido."
+     },
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Anotad cada uno el número de asiento: cambiarlo entre series es cuestión de dos segundos."
+     },
+     {
+      "name": "Remo sentado en polea",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Tirón al ombligo con el tronco quieto; corregíos el uno al otro desde fuera."
+     },
+     {
+      "name": "Curl femoral tumbado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Cadera pegada al banco y bajada de dos segundos."
+     },
+     {
+      "name": "Face pull en polea",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos altos; dos series rápidas alternando."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 3,
+      "rep_range": "20-30s",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Esta la hacéis a la vez, uno al lado del otro; el que rompa la posición para."
+     }
+    ],
+    "cooldown": "Cinco minutos de caminata juntos y estiramiento de pectoral y cuádriceps, 30 segundos por lado."
+   },
+   {
+    "day": "Jueves",
+    "name": "Sesión B — máquinas y cadera",
+    "warmup": "5 minutos de elíptica y 10 rotaciones de cadera por lado.",
+    "exercises": [
+     {
+      "name": "Prensa de piernas horizontal",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "El cambio de discos entre series es el descanso del otro; tenedlos preparados a los dos lados."
+     },
+     {
+      "name": "Jalón al pecho",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Codos hacia abajo, pecho alto y sin echar el tronco atrás."
+     },
+     {
+      "name": "Press de hombros en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Costillas abajo, sin arquear la lumbar para completar la repetición."
+     },
+     {
+      "name": "Hip thrust en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Empuje con los talones y pausa de un segundo arriba."
+     },
+     {
+      "name": "Curl martillo",
+      "sets": 2,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos quietos al costado, sin balanceo."
+     },
+     {
+      "name": "Dead bug",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "A la vez en dos esterillas; lumbar pegada al suelo."
+     }
+    ],
+    "cooldown": "Cinco minutos de caminata y movilidad dorsal, 2 minutos."
+   },
+   {
+    "day": "Sábado",
+    "name": "Sesión C — peso libre en pareja",
+    "warmup": "5 minutos de bicicleta, 10 puentes de glúteo y una serie de aproximación con mancuernas ligeras.",
+    "exercises": [
+     {
+      "name": "Peso muerto rumano con mancuernas",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Miraos de perfil el uno al otro: la espalda tiene que quedarse recta toda la bajada. Corregid antes de subir kilos."
+     },
+     {
+      "name": "Remo con pecho apoyado en banco",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Pecho pegado al banco todo el tirón; dos bancos contiguos si están libres."
+     },
+     {
+      "name": "Press banca con mancuernas",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "El que no entrena vigila la serie del otro desde detrás del banco."
+     },
+     {
+      "name": "Subida a cajón",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Mismo cajón, alturas distintas si hace falta; subid sin impulso y bajad frenando."
+     },
+     {
+      "name": "Extensión de tríceps en polea con cuerda",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Codos fijos al costado."
+     },
+     {
+      "name": "Press Pallof",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Cierre de la semana; aguantad la rotación sin mover la cadera."
+     }
+    ],
+    "cooldown": "Diez minutos de caminata juntos comentando cómo ha ido la semana. Esa conversación es parte del plan."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación",
+    "load_pct": 100,
+    "rir_target": "3-4",
+    "volume_note": "Semana de aprender la mecánica de alternar en el aparato. Cada uno anota sus pesos en su columna; nada de comparar cifras entre vosotros."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión",
+    "load_pct": 102.5,
+    "rir_target": "3",
+    "volume_note": "Cada uno sube donde le hayan sobrado repeticiones, con independencia del otro. Las subidas no tienen por qué coincidir."
+   },
+   {
+    "week": 3,
+    "intent": "Carga",
+    "load_pct": 105,
+    "rir_target": "2-3",
+    "volume_note": "Semana más exigente en sentadilla, prensa y peso muerto rumano. Sigue siendo la misma hoja, con dos columnas de kilos."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga",
+    "load_pct": 90,
+    "rir_target": "4",
+    "volume_note": "Una serie menos por ejercicio. Revisad juntos cuántas de las doce sesiones del mes habéis cumplido: ese es el número que importa."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 9000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 30,
+     "times_per_week": 2,
+     "notes": "Caminata en pareja los domingos y algún día entre semana; es la parte más fácil de sostener cuando se hace acompañado."
+    }
+   ]
+  },
+  "deload_instructions": "Semana 4 al 90% con una serie menos por ejercicio. Regla del caso: si uno de los dos no puede ir un día, el otro entrena igual. La rutina es compartida, la asistencia es individual, y ese es el punto donde suelen fracasar las parejas que empiezan juntas."
+ },
+ {
+  "category": "principiantes",
+  "title": "Sesenta años y primera vez en sala",
+  "case": "Hombre de 60 años, funcionario de ayuntamiento a dieciocho meses de jubilarse, que no ha entrenado nunca y acaba de ser abuelo. Lo que pide es concreto: poder levantar a su nieta del suelo y bajar del coche sin apoyarse en la puerta; llega con rigidez de cadera, cero experiencia y bastante miedo a hacerse daño, así que empezamos con máquinas, recorridos cómodos y ninguna serie al fallo.",
+  "level": "beginner",
+  "days_per_week": 3,
+  "place": "gym",
+  "split_name": "Full body funcional A-B-C",
+  "split_rationale": "Cuerpo completo tres veces por semana en máquinas y con mancuerna ligera, eligiendo ejercicios que reproducen sus gestos del día a día: levantarse de una silla, subir un escalón, recoger algo del suelo y cargar peso caminando. La progresión es de repeticiones antes que de kilos y se evita cualquier movimiento que fuerce el rango de cadera que hoy tiene limitado.",
+  "sessions": [
+   {
+    "day": "Lunes",
+    "name": "Sesión A — base con máquinas",
+    "warmup": "8 minutos de bicicleta a resistencia baja para soltar la cadera, más 10 círculos de hombro y 10 puentes de glúteo.",
+    "exercises": [
+     {
+      "name": "Prensa de piernas horizontal",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Baja solo hasta donde la cadera te deje sin molestar; el recorrido cómodo de hoy será más amplio dentro de un mes."
+     },
+     {
+      "name": "Remo sentado en polea",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 105,
+      "technique_cue": "Pecho alto y tirón al ombligo; sin echar el tronco atrás."
+     },
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 105,
+      "technique_cue": "Asiento a la altura del esternón; empuja sin bloquear el codo de golpe."
+     },
+     {
+      "name": "Curl femoral sentado",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "3",
+      "rest_sec": 90,
+      "technique_cue": "Ritmo lento en la vuelta; sin tirones."
+     },
+     {
+      "name": "Puente de glúteos",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "En colchoneta y sin peso al principio; empuja con los talones y aprieta arriba dos segundos."
+     },
+     {
+      "name": "Dead bug",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 60,
+      "technique_cue": "Lumbar pegada al suelo y respiración tranquila; movimiento pequeño y bien hecho."
+     }
+    ],
+    "cooldown": "Cinco minutos de bicicleta suave y estiramiento de flexor de cadera apoyado en un banco, 40 segundos por lado."
+   },
+   {
+    "day": "Miércoles",
+    "name": "Sesión B — levantarse y empujar",
+    "warmup": "8 minutos de bicicleta, 10 sentadillas parciales apoyándose en un banco y 10 band pull-apart.",
+    "exercises": [
+     {
+      "name": "Sentadilla goblet",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Con un banco detrás: siéntate rozándolo y levántate. Es exactamente el gesto de bajar del coche, entrenado."
+     },
+     {
+      "name": "Jalón agarre estrecho neutro",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 105,
+      "technique_cue": "Agarre neutro, más cómodo para el hombro; tira con los codos."
+     },
+     {
+      "name": "Press de hombros en máquina",
+      "sets": 2,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 105,
+      "technique_cue": "Peso ligero; poder levantar a la nieta por encima de la cabeza empieza aquí, pero sin prisa."
+     },
+     {
+      "name": "Hip thrust en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2-3",
+      "rest_sec": 105,
+      "technique_cue": "Empuje con los talones; el glúteo fuerte es lo que suelta la cadera rígida."
+     },
+     {
+      "name": "Elevación de talones sentado",
+      "sets": 2,
+      "rep_range": "12-15",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Recorrido completo con pausa arriba; el tobillo también participa en el equilibrio."
+     },
+     {
+      "name": "Bird dog",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 60,
+      "technique_cue": "Lento, sin ladear la cadera; cinco segundos por repetición."
+     }
+    ],
+    "cooldown": "Cinco minutos de caminata y movilidad de cadera sentado, 3 minutos."
+   },
+   {
+    "day": "Viernes",
+    "name": "Sesión C — gestos del día a día",
+    "warmup": "8 minutos de caminata en cinta, 10 subidas a escalón bajo y 10 band pull-apart.",
+    "exercises": [
+     {
+      "name": "Subida a cajón",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 105,
+      "technique_cue": "Escalón bajo y sujeto a la barra; sube sin impulso y baja frenando. Son las escaleras de tu casa entrenadas."
+     },
+     {
+      "name": "Remo en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "3",
+      "rest_sec": 105,
+      "technique_cue": "Pecho apoyado y hombros lejos de las orejas."
+     },
+     {
+      "name": "Contractora de pecho",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2-3",
+      "rest_sec": 90,
+      "technique_cue": "Cierra sin chocar las manos y abre despacio."
+     },
+     {
+      "name": "Peso muerto rumano con mancuernas",
+      "sets": 3,
+      "rep_range": "8-10",
+      "rir": "3",
+      "rest_sec": 120,
+      "technique_cue": "Mancuernas muy ligeras. Cadera atrás y espalda recta: este es el gesto de recoger a tu nieta del suelo, y es el ejercicio más importante de tu plan."
+     },
+     {
+      "name": "Paseo del granjero unilateral",
+      "sets": 3,
+      "rep_range": "30-40s",
+      "rir": "2",
+      "rest_sec": 75,
+      "technique_cue": "Una mancuerna en una mano, camina erguido y sin inclinarte; la compra de los sábados en versión entrenada."
+     },
+     {
+      "name": "Plancha abdominal",
+      "sets": 2,
+      "rep_range": "20-30s",
+      "rir": "3",
+      "rest_sec": 60,
+      "technique_cue": "Apoyo en codos y rodillas si hace falta; veinte segundos bien hechos son suficientes."
+     }
+    ],
+    "cooldown": "Ocho minutos de caminata a ritmo cómodo y estiramiento de isquios y glúteo, 40 segundos por lado."
+   }
+  ],
+  "weekly_progression": [
+   {
+    "week": 1,
+    "intent": "Adaptación",
+    "load_pct": 100,
+    "rir_target": "3-4",
+    "volume_note": "Semana de conocer las máquinas y anotar asientos y pesos. Cargas muy conservadoras: salir con ganas de más es exactamente el objetivo."
+   },
+   {
+    "week": 2,
+    "intent": "Progresión",
+    "load_pct": 102.5,
+    "rir_target": "3",
+    "volume_note": "Se progresa primero en repeticiones y en recorrido, no en kilos. Si la cadera va soltándose, baja un poco más en prensa y sentadilla."
+   },
+   {
+    "week": 3,
+    "intent": "Carga",
+    "load_pct": 105,
+    "rir_target": "3",
+    "volume_note": "Primera subida real de peso en prensa, remo y hip thrust. En este caso nunca se entrena al fallo, en ninguna serie."
+   },
+   {
+    "week": 4,
+    "intent": "Descarga",
+    "load_pct": 90,
+    "rir_target": "4",
+    "volume_note": "Una serie menos por ejercicio. Prueba práctica de la semana: levantar a la nieta del suelo y bajar del coche sin manos, y comparar con el primer día."
+   }
+  ],
+  "cardio": {
+   "daily_steps": 8000,
+   "sessions": [
+    {
+     "type": "liss",
+     "minutes": 30,
+     "times_per_week": 4,
+     "notes": "Caminata diaria a paso cómodo, mejor por la mañana. Es la base de tu autonomía y no se salta ni las semanas de descarga."
+    }
+   ]
+  },
+  "deload_instructions": "Semana 4 al 90% con una serie menos por ejercicio, manteniendo las caminatas. Si algún día notas la cadera especialmente rígida, dedica diez minutos más de bicicleta suave antes de empezar y reduce el recorrido de las sentadillas ese día; nunca fuerces un rango que duela."
  },
  {
   "category": "salud_espalda",
@@ -11966,12 +21010,12 @@ TEMPLATES = [
       "technique_cue": "Abre la banda apretando las escápulas sin subir hombros."
      },
      {
-      "name": "Curl femoral con deslizadores",
+      "name": "Curl femoral con toalla deslizante",
       "sets": 3,
-      "rep_range": "8-12",
+      "rep_range": "8-10",
       "rir": "2-3",
-      "rest_sec": 60,
-      "technique_cue": "Cadera extendida mientras deslizas los talones."
+      "rest_sec": 75,
+      "technique_cue": "Con una toalla en suelo liso; si notas tirón, acorta el recorrido."
      },
      {
       "name": "Bird dog",
@@ -12194,6 +21238,14 @@ TEMPLATES = [
       "rir": "2",
       "rest_sec": 60,
       "technique_cue": "Pausa de 1 segundo arriba y abajo."
+     },
+     {
+      "name": "Hip thrust en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Empuje de cadera sin implicar el hombro; termina apretando el glúteo."
      }
     ],
     "cooldown": "5 min de estiramiento de cuádriceps e isquios y respiración."
@@ -12250,6 +21302,14 @@ TEMPLATES = [
       "rir": "2",
       "rest_sec": 60,
       "technique_cue": "Bloqueo completo sin mover los hombros."
+     },
+     {
+      "name": "Dead bug",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 60,
+      "technique_cue": "Lumbar pegada al suelo; el core trabaja sin cargar el hombro."
      }
     ],
     "cooldown": "5 min de movilidad suave de hombro dentro de rango indoloro."
@@ -13010,6 +22070,14 @@ TEMPLATES = [
       "rir": "3-4",
       "rest_sec": 45,
       "technique_cue": "En cuadrupedia, movimiento lento y estable."
+     },
+     {
+      "name": "Curl femoral sentado",
+      "sets": 3,
+      "rep_range": "12-15",
+      "rir": "2-3",
+      "rest_sec": 75,
+      "technique_cue": "Isquios sin tumbarte boca abajo: ayuda con las molestias lumbopélvicas."
      }
     ],
     "cooldown": "5 min de respiración lenta sentada y movilidad suave."
@@ -13033,9 +22101,9 @@ TEMPLATES = [
    {
     "week": 3,
     "intent": "Mantener estímulo estable escuchando al cuerpo",
-    "load_pct": 105,
+    "load_pct": 100,
     "rir_target": "3",
-    "volume_note": "Si hay fatiga inusual, repetir cargas de la semana 1."
+    "volume_note": "Se mantienen las cargas de la semana 2; si hay fatiga inusual, se repiten las de la semana 1."
    },
    {
     "week": 4,
@@ -13176,6 +22244,14 @@ TEMPLATES = [
       "rir": "3",
       "rest_sec": 60,
       "technique_cue": "Erguida, sin inclinarte hacia el peso."
+     },
+     {
+      "name": "Curl femoral sentado",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Cadena posterior: protege la columna y ayuda a no perder el equilibrio."
      }
     ],
     "cooldown": "5 min de respiración y movilidad suave de cadera."
@@ -14130,12 +23206,12 @@ TEMPLATES = [
       "technique_cue": "Codos altos, escápulas activas."
      },
      {
-      "name": "Leñador en polea",
+      "name": "Press Pallof",
       "sets": 3,
       "rep_range": "10-12",
-      "rir": "2",
+      "rir": "1-2",
       "rest_sec": 60,
-      "technique_cue": "Gira desde el tronco con brazos casi rectos."
+      "technique_cue": "Antirrotación pura: aguanta sin girar el tronco, que es justo lo que buscamos aquí."
      },
      {
       "name": "Dead bug",
@@ -14406,6 +23482,14 @@ TEMPLATES = [
       "rir": "2",
       "rest_sec": 60,
       "technique_cue": "Rango completo con pausa arriba."
+     },
+     {
+      "name": "Press de pecho en máquina",
+      "sets": 3,
+      "rep_range": "10-12",
+      "rir": "2",
+      "rest_sec": 90,
+      "technique_cue": "Recorrido completo con los omóplatos apoyados: empujar también educa la postura."
      }
     ],
     "cooldown": "5 min de estiramientos de pierna y respiración."
@@ -15270,7 +24354,7 @@ TEMPLATES = [
    {
     "week": 2,
     "intent": "Progresión mínima solo si la semana 1 no dio brote",
-    "load_pct": 102.5,
+    "load_pct": 100,
     "rir_target": "4",
     "volume_note": "Sube 1-2 repeticiones por serie, no la carga."
    },
