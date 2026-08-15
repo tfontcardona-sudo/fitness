@@ -673,8 +673,39 @@ cd backend && python -m pytest tests/ -q
        `video_calls` (FK NOT NULL sin ON DELETE que reventaba el commit).
      · Regresiones nuevas en `tests/test_auditoria_integral.py` (historial/
        revert, confound, déficit real, strict align).
+   - **Auditoría de CALIDAD (agosto 2026)** — 7 dominios auditados por pares
+     (buscador + verificador adversarial): PDF/documento del cliente, portal,
+     revisión quincenal, panel del coach, alta y pagos, anamnesis y emails.
+     72 hallazgos, 70 confirmados. Corregido en dos tandas:
+     · **Producto del cliente:** el cliente **Full** recibía el PDF **sin
+       entrenamiento** (`plan_delivery` solo lo incluía si NO había nutrición);
+       en modo `strict` el menú semanal (gramos, medidas caseras y preparación)
+       **no se imprimía**; el filtro de alérgenos del documento no compartía
+       criterio con `guardrails` (ni patrón dietético → se colaban huevo/pavo a
+       un vegano); tarjetas de plantilla y suplementación por defecto impresas
+       aunque el plan no las pautara; los ejercicios no decían **cómo
+       progresar**. En el **portal**: el cliente no podía **ver ni descargar su
+       plan en PDF** ni sus **revisiones** (ahora `/api/p/{token}/plan.pdf` y
+       `/api/p/{token}/feedback/{id}.pdf`). En el **feedback**, la IA inventaba
+       un "análisis de fotos" que nunca vio (campo forzado a null).
+     · **Facilidad de uso del coach:** cierre de la quincena **por el coach**
+       (`POST /periods/{id}/close-by-coach`) — sin él, un cliente que no enviaba
+       su revisión **bloqueaba el ciclo entero**; botón para **reenviar el
+       cuestionario** por WhatsApp desde la ficha; alerta **`renewal_due`** (los
+       planes de 1/3/6 meses se cobran una vez y nadie recordaba renovarlos); el
+       **mes de asesoría avanza** con el ciclo (`periods.current_month_index`,
+       dos revisiones = un mes) en generar/base/adaptar — antes el PDF decía
+       "Mes 1" de por vida; "Generar feedback" aterrizaba en la pestaña
+       equivocada; **Cancelar** en el editor ya pide confirmación; y
+       `/api/alerts` deja de barrer todos los clientes cada 3 s desde dos sitios
+       (refresco propio `ALERTS_REFRESH_MS` = 20 s).
    - **Pendiente menor restante** (sin urgencia): editar el banco de comidas
      opción a opción desde el editor y el `swap` de ejercicios desde la web.
+     **Decisión pendiente del dueño:** la anamnesis oficial es un PDF de 10
+     páginas **no rellenable** (sin `/AcroForm`): el cliente debe imprimirlo o
+     usar una app externa. Existe un formulario digital en el backend sin usar.
+     Cambiarlo tocaría el "Camí A" (§4), que decidió el dueño: no se toca sin su
+     visto bueno.
 
 ---
 
