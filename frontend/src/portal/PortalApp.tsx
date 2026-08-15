@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Bell, BellOff, CalendarCheck, Camera, Check, ChevronDown, Dumbbell, LineChart, Library, LogOut, NotebookPen, Share, Smartphone, Video, X } from "lucide-react";
+import { Bell, BellOff, CalendarCheck, Camera, Check, ChevronDown, Dumbbell, FileText, LineChart, Library, LogOut, NotebookPen, Share, Smartphone, Video, X } from "lucide-react";
 import { portalApi, portalSession, PortalError } from "./portalApi";
 import type { VideoCallStatus } from "./portalApi";
 import { pkg } from "../lib/packages";
@@ -205,6 +205,26 @@ export default function PortalApp({ token }: { token: string }) {
               </span>
             </a>
           )}
+          {/* SU PLAN, siempre a mano: la dieta y las pautas viven en el PDF y
+              el cliente tenía que rebuscarlo en el WhatsApp de hace semanas
+              ("¿qué como hoy?" es su consulta más frecuente). El PDF se sirve
+              con su mismo token. */}
+          {state.has_plan && (
+            <a href={`/api/p/${token}/plan.pdf`} target="_blank" rel="noreferrer"
+              className="mb-3 flex items-center gap-3 rounded-2xl border p-4 text-sm shadow-sm transition-transform active:scale-[0.99]"
+              style={{ borderColor: state.brand.color_secondary, background: `${state.brand.color_secondary}12` }}>
+              <FileText size={20} style={{ color: state.brand.color_secondary }} className="shrink-0" />
+              <span className="min-w-0">
+                <span className="block font-bold" style={{ color: state.brand.color_secondary }}>
+                  Ver mi plan (PDF)
+                </span>
+                <span className="mt-0.5 block text-[13px] opacity-70">
+                  {isStart ? "Tu dieta y tus pautas, siempre a mano."
+                    : "Tu dieta, tu rutina y tus pautas, siempre a mano."}
+                </span>
+              </span>
+            </a>
+          )}
           {caps.hasVideoCall && (
             <VideoCallBanner api={apiClient} accent={state.brand.color_secondary} />
           )}
@@ -218,7 +238,7 @@ export default function PortalApp({ token }: { token: string }) {
             {effTab === "entreno" && <PortalWorkout api={apiClient} brand={state.brand} periodStatus={state.period?.status ?? null} businessToday={state.today ?? null} />}
             {effTab === "recursos" && <PortalResources api={apiClient} brand={state.brand} hasTraining={!isStart} />}
             {effTab === "diario" && <PortalDiary api={apiClient} brand={state.brand} periodStatus={state.period?.status ?? null} businessToday={state.today ?? null} />}
-            {effTab === "progreso" && <PortalProgress api={apiClient} brand={state.brand} hasTraining={!isStart} />}
+            {effTab === "progreso" && <PortalProgress api={apiClient} brand={state.brand} hasTraining={!isStart} token={token} />}
             {effTab === "cierre" && (
               <PortalClose
                 api={apiClient}

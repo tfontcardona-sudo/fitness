@@ -79,11 +79,16 @@ def build_plan_pdf(db: Session, plan: Plan, client: Client,
         exercise_names=exercise_names,
         food_allergies=client.food_allergies,
         food_dislikes=client.food_dislikes,
-        # Plan `train` (sin dieta): documento SOLO de entrenamiento. Con dieta se
-        # mantiene el comportamiento de siempre (solo dieta; el entreno va en el
-        # tracker del portal).
+        # Patrón ético/religioso (vegano, halal…): las listas de alimentos y las
+        # tarjetas de plantilla del documento también lo respetan.
+        diet_pattern=client.diet_pattern,
+        # El documento lleva TODO lo que el cliente ha contratado: si tiene
+        # dieta, la dieta; si tiene entreno, también el entreno (con su cardio,
+        # pasos y deload). Antes el plan con dieta omitía el entrenamiento
+        # entero "porque va en el portal" y el cardio/NEAT/deload prescritos no
+        # llegaban a NINGÚN sitio (auditoría de calidad).
         include_nutrition=bool(plan.nutrition_json),
-        include_training=not plan.nutrition_json and bool(training),
+        include_training=bool(training),
     )
 
     ascii_name = unicodedata.normalize("NFKD", client.full_name).encode("ascii", "ignore").decode()

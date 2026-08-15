@@ -20,7 +20,6 @@ import { api, keepIfSame, REFRESH_MS } from "../lib/api";
 import type { ClientOut, CoachAlert, VideoCallAgendaItem } from "../types";
 import { PageLoader, StatusBadge } from "../components/ui";
 import { goalReviewDue, initials, relativeDays } from "../lib/format";
-import { pkg } from "../lib/packages";
 import { WhatsAppRound } from "../components/WhatsAppRound";
 import { SalesKit } from "../components/SalesKit";
 import { AiCreditButton } from "../components/AiCreditButton";
@@ -60,13 +59,10 @@ function nextAction(c: ClientOut): Accion | null {
       detail: "Lleva días sin registrar o con adherencia baja: revisa su seguimiento y contáctalo.",
       cta: "Ver seguimiento", tab: "seguimiento",
     };
-  if (c.pending_review)
-    return {
-      client: c, prio: 2, tone: "#C96A1E", icon: Sparkles, category: "Adaptar",
-      title: `Feedback de la revisión #${c.pending_review_period ?? ""} listo`,
-      detail: `Revisa los cambios propuestos (${pkg(c.package_tier).hasTraining ? "dieta y entreno" : "dieta"}) y adapta su planificación.`,
-      cta: "Adaptar planificación", tab: "planificacion",
-    };
+  // (La tarjeta "Adaptar planificación" YA NO se deriva de pending_review: ese
+  // flag se apaga en cuanto el coach ABRE la pestaña Seguimiento, así que la
+  // tarea desaparecía de "Hoy" sin haberse hecho. Ahora viene de la alerta
+  // adapt_plan del backend, anclada al período analizado — auditoría.)
   if (c.status === "onboarding" && !c.goal_type)
     // Aún SIN anamnesis: el botón lleva a completarla/leerla (lo que falta).
     // Cada tipo de acción con SU color e icono (mismos que las carpetas).
@@ -176,6 +172,16 @@ export default function DashboardPage() {
           tone: "#C2453A", icon: Sparkles, category: "Planificación",
           title: al.kind === "plan_allergen_conflict"
             ? "⚠ Alérgeno en el plan activo" : "Alimento no tolerado en el plan",
+          detail: al.message, cta: al.action, tab: al.tab,
+        });
+      } else if (al.kind === "adapt_plan" || al.kind === "publish_plan") {
+        // Adaptar el plan a la última revisión: viene del backend (anclado al
+        // período ANALIZADO), así que no se apaga por abrir una pestaña.
+        acciones.push({
+          client: cli, prio: 2, tone: "#C96A1E", icon: Sparkles, category: "Adaptar",
+          title: al.kind === "adapt_plan"
+            ? "Planificación sin adaptar a su revisión"
+            : "Planificación en borrador sin activar",
           detail: al.message, cta: al.action, tab: al.tab,
         });
       } else if (al.kind === "plan_stale_inputs") {

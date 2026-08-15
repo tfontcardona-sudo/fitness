@@ -198,21 +198,43 @@ def _norm(s: str) -> str:
                    if unicodedata.category(c) != "Mn")
 
 
-def _food_blocked(food: str, blocked: set[str]) -> bool:
-    """¿Este alimento concreto choca con una alergia/aversión? Compara por
-    palabra normalizada (sin tildes/may.), no por substring frágil."""
-    nf = _norm(food).rstrip("*")
-    return any(b and (b == nf or b in nf.split() or nf in b) for b in blocked)
+def _food_blocked(food: str, blocked: list[str], diet_pattern: str | None = None) -> bool:
+    """¿Este alimento choca con una alergia/aversión o con el patrón dietético?
+
+    Delega en el MISMO motor que veta el plan (guardrails.food_allergen, con sus
+    sinónimos: "gluten"→pan/pasta/trigo…, "lactosa"→leche/yogur/queso…) en vez de
+    comparar palabra a palabra: la anamnesis recoge las alergias por CATEGORÍA
+    ("gluten", "frutos secos") y el filtro literal no casaba con "cebada" ni con
+    "almendras", así que el celíaco veía pan en su documento (auditoría)."""
+    from app.services import guardrails as gr
+
+    if blocked and gr.food_allergen(food, blocked) is not None:
+        return True
+    if diet_pattern:
+        forbidden = gr._DIET_PATTERN_FORBIDDEN.get(
+            gr._norm_food(diet_pattern).replace(" ", "_"))
+        if forbidden and gr._match_term(forbidden, [_norm(food)]) is not None:
+            return True
+    return False
 
 
-def _food_group_lines(column: str, blocked: set[str]) -> list[tuple[str, str]]:
+def _blocked_line(item, blocked: list[str], diet_pattern: str | None) -> bool:
+    """¿Una línea de una tarjeta contiene algo bloqueado? Acepta tanto texto
+    suelto ("Pan integral con…") como las tuplas (etiqueta, cuerpo) que usan
+    las tarjetas de yogures/quesos/recomendaciones."""
+    texto = " ".join(str(x) for x in item) if isinstance(item, (tuple, list)) else str(item)
+    return _food_blocked(texto, blocked, diet_pattern)
+
+
+def _food_group_lines(column: str, blocked: list[str],
+                      diet_pattern: str | None = None) -> list[tuple[str, str]]:
     """Líneas de una columna de 'Alimentos por grupos': [(etiqueta, alimentos)],
     cada subgrupo en SU línea con la etiqueta en negrita (como la referencia),
     quitando SOLO los alimentos bloqueados y conservando etiquetas y alimentos
     contiguos (arregla el bug del filtro)."""
     lines: list[tuple[str, str]] = []
     for label, foods in FOOD_GROUPS[column]:
-        kept = [f for f in foods if not _food_blocked(f, blocked)]
+        kept = [f for f in foods if not _food_blocked(f, blocked, diet_pattern)]
         if not kept:
             continue
         body = ", ".join(kept)
@@ -265,11 +287,29 @@ def _concise_notas(nutrition: dict, goal: str | None, meals: list[dict]) -> list
 
 
 def _ingredients_str(opt: dict) -> str:
+    """Ingredientes con gramos y MEDIDA CASERA cuando la hay ("Avena 60 g
+    (6 cucharadas)"): la medida casera es lo que permite al cliente servirse sin
+    báscula y la IA la genera siempre; antes se descartaba (auditoría)."""
     out = []
     for ing in opt.get("ingredients", []):
         g = ing.get("grams")
-        out.append(f"{ing.get('food','')} {round(g)} g" if g else ing.get("food", ""))
+        food = ing.get("food", "")
+        casera = (ing.get("household") or "").strip()
+        txt = f"{food} {round(g)} g" if g else food
+        if casera:
+            txt += f" ({casera})"
+        out.append(txt)
     return ", ".join(out)
+
+
+def _prep_str(opt: dict) -> str:
+    """Preparación de la opción ("Mezcla la avena con el yogur…", 10 min): sin
+    esto el cliente tiene la lista de la compra pero no la receta."""
+    prep = (opt.get("prep") or "").strip()
+    if not prep:
+        return ""
+    minutos = opt.get("prep_minutes")
+    return f"{prep} ({minutos} min)" if minutos else prep
 
 
 def generate_plan_doc(
@@ -278,12 +318,15 @@ def generate_plan_doc(
     exercise_names: dict | None = None,
     food_allergies: list[str] | None = None, food_dislikes: list[str] | None = None,
     include_training: bool = False, include_nutrition: bool = True,
+    diet_pattern: str | None = None,
 ) -> bytes:
-    # Por defecto el PLAN es SOLO DIETA (el entrenamiento vive en el tracker del
-    # portal). include_nutrition=False es el plan `train`: documento SOLO de
-    # entrenamiento (sin un "PLAN NUTRICIONAL" lleno de ceros).
+    # El documento lleva lo que el cliente tenga contratado: dieta, entreno o las
+    # dos cosas. include_nutrition=False es el plan `train` (documento SOLO de
+    # entrenamiento, sin un "PLAN NUTRICIONAL" lleno de ceros).
     exercise_names = exercise_names or {}
-    blocked = {_norm(x) for x in (food_allergies or []) + (food_dislikes or []) if x}
+    # Términos CRUDOS (como los escribió el coach/la anamnesis): el motor de
+    # guardrails ya normaliza y expande sinónimos.
+    blocked = [x for x in (food_allergies or []) + (food_dislikes or []) if x]
 
     # Ninguna toma sin contenido en el PDF: los planes antiguos (guardados antes
     # del relleno automático) reciben aquí sus 3 opciones por defecto escaladas
@@ -295,8 +338,10 @@ def generate_plan_doc(
 
     nutrition = _copy.deepcopy(nutrition)
     if include_nutrition:
+        # El patrón dietético también aquí: sin él, las opciones de relleno del
+        # PDF colaban huevo y pavo en el plan de un vegano (auditoría).
         ensure_bank_slots(nutrition, allergies=food_allergies or [],
-                          dislikes=food_dislikes or [])
+                          dislikes=food_dislikes or [], diet_pattern=diet_pattern)
 
     doc = init_document(brand)
     # El ejemplo usa Calibri (en el contenedor se sustituye por Carlito, idéntico).
@@ -310,10 +355,12 @@ def generate_plan_doc(
     # directamente con el contenido, como la copia del coach.
     from datetime import date as _date
 
+    _cabecera = ("PLAN DE DIETA Y ENTRENAMIENTO" if (include_nutrition and include_training)
+                 else "PLAN NUTRICIONAL" if include_nutrition
+                 else "PLAN DE ENTRENAMIENTO")
     setup_reference_pages(
         doc, logo_path=str(ASSETS / "dq_logo.png"),
-        right_title=(f"PLAN NUTRICIONAL | {client_name}" if include_nutrition
-                     else f"PLAN DE ENTRENAMIENTO | {client_name}"),
+        right_title=f"{_cabecera} | {client_name}",
         right_sub=str(_date.today().year),
         footer_text="David Quiceno · Dietista & Entrenador Personal",
     )
@@ -374,7 +421,7 @@ def generate_plan_doc(
         section_bar(doc, "Alimentos por grupos", WINE)
         names = list(FOOD_GROUPS.keys())
         clean_table(
-            doc, names, [[_food_group_lines(n, blocked) for n in names]],
+            doc, names, [[_food_group_lines(n, blocked, diet_pattern) for n in names]],
             brand, header_colors=FOOD_GROUP_COLORS, header_text_color="FFFFFF",
             cant_split_rows=False, keep_together=False,
         )
@@ -396,7 +443,39 @@ def generate_plan_doc(
         # cliente es solo fallback: si el coach cambia diet_mode sin regenerar, el
         # PDF sigue mostrando el menú que existe (no una sección vacía/equivocada).
         diet_mode = bank.get("mode") or diet_mode
-        if diet_mode != "strict" and meals:
+        if diet_mode == "strict" and bank.get("days"):
+            # MENÚ CERRADO: el cliente necesita el detalle de CADA día — antes
+            # solo se imprimía la rejilla de títulos ("Pollo con arroz") y no
+            # había forma de saber cuánto pesar ni cómo cocinarlo (auditoría).
+            nombres = {m.get("slot"): (m.get("name"), m.get("time")) for m in meals}
+            for d in bank["days"]:
+                dia = str(d.get("day", "")).capitalize()
+                section_bar(doc, dia, WINE, size=10)
+                cell = open_box(doc, CREAM, cant_split=True)
+                first = True
+                for entry in d.get("meals", []):
+                    dish = entry.get("dish") or {}
+                    nombre, hora = nombres.get(entry.get("slot"), (None, None))
+                    etiqueta = nombre or f"Toma {entry.get('slot','')}"
+                    if hora:
+                        etiqueta += f" · {hora}"
+                    p = cell.paragraphs[0] if first else cell.add_paragraph()
+                    first = False
+                    p.paragraph_format.space_after = Pt(4)
+                    _keep_lines(p)
+                    rl = p.add_run(f"{etiqueta}. ")
+                    rl.font.bold = True
+                    rl.font.color.rgb = _hex(WINE)
+                    p.add_run(f"{dish.get('title','')} — {_ingredients_str(dish)}.")
+                    prep = _prep_str(dish)
+                    if prep:
+                        pp = cell.add_paragraph()
+                        pp.paragraph_format.space_after = Pt(4)
+                        _keep_lines(pp)
+                        rp = pp.add_run(prep)
+                        rp.font.italic = True
+                        rp.font.size = Pt(9)
+        elif diet_mode != "strict" and meals:
             blocks = {s.get("slot"): s for s in bank.get("slots", [])}
             for m in meals:
                 section_bar(doc, f"{m.get('name','Comida')} · {m.get('time','')}", WINE, size=10)
@@ -423,6 +502,14 @@ def generate_plan_doc(
                         rl.font.bold = True
                         rl.font.color.rgb = _hex(WINE)
                         p.add_run(f"{opt.get('title','')} — {_ingredients_str(opt)}.")
+                        prep = _prep_str(opt)
+                        if prep:
+                            pp = cell.add_paragraph()
+                            pp.paragraph_format.space_after = Pt(4)
+                            _keep_lines(pp)
+                            rp = pp.add_run(prep)
+                            rp.font.italic = True
+                            rp.font.size = Pt(9)
                     if first:
                         # Toma añadida a mano (sin recetario aún): guía digna en vez
                         # de una caja vacía — sus macros están en Estructura diaria.
@@ -444,34 +531,33 @@ def generate_plan_doc(
         # cabe. Regla del diseño de referencia: un título abre una tarjeta nueva y
         # una tarjeta jamás aparece partida con líneas sueltas en otra página.
 
-        # Ideas rápidas
-        section_bar(doc, "Ideas rápidas de desayunos, snacks y meriendas", WINE)
-        info_box(doc, [f"• {x}" for x in IDEAS_RAPIDAS], fill=CREAM, cant_split=True)
+        # Las secciones de plantilla también se FILTRAN por alergias/aversiones y
+        # patrón dietético: un celíaco no puede recibir "ideas rápidas" con pan ni
+        # un vegano una tarjeta de quesos (antes salían intactas — auditoría).
+        # Si una tarjeta se queda sin contenido, no se pinta ni su barra de título.
+        def _tarjeta(titulo: str, color, lineas: list, *, vineta: bool = False) -> None:
+            utiles = [x for x in lineas if not _blocked_line(x, blocked, diet_pattern)]
+            if not utiles:
+                return
+            section_bar(doc, titulo, color)
+            info_box(doc, [f"• {x}" for x in utiles] if vineta else utiles,
+                     fill=CREAM, cant_split=True)
 
-        # Salsas recomendables
-        section_bar(doc, "Salsas recomendables", BLUE)
-        info_box(doc, SALSAS_TEXT, fill=CREAM, cant_split=True)
+        _tarjeta("Ideas rápidas de desayunos, snacks y meriendas", WINE,
+                 list(IDEAS_RAPIDAS), vineta=True)
+        _tarjeta("Salsas recomendables", BLUE, list(SALSAS_TEXT))
+        _tarjeta("Yogures recomendables", BLUE, list(YOGURES_TEXT))
+        _tarjeta("Quesos recomendables", BLUE, list(QUESOS_TEXT))
+        _tarjeta("Recomendaciones generales", WINE, list(RECOMENDACIONES))
 
-        # Yogures recomendables
-        section_bar(doc, "Yogures recomendables", BLUE)
-        info_box(doc, YOGURES_TEXT, fill=CREAM, cant_split=True)
-
-        # Quesos recomendables
-        section_bar(doc, "Quesos recomendables", BLUE)
-        info_box(doc, QUESOS_TEXT, fill=CREAM, cant_split=True)
-
-        # Recomendaciones generales
-        section_bar(doc, "Recomendaciones generales", WINE)
-        info_box(doc, RECOMENDACIONES, fill=CREAM, cant_split=True)
-
-        # Suplementación
-        section_bar(doc, "Suplementación recomendada", BLUE)
+        # Suplementación: SOLO lo que el plan prescribe. Sin suplementos pautados
+        # no se inventa un protocolo por defecto (antes se colaban 5 productos que
+        # el coach no había aprobado — auditoría).
         supps = nutrition.get("supplements", [])
         if supps:
-            items = [f"{s.get('name','')} — {s.get('dose','')} ({s.get('timing','')})" for s in supps]
-        else:
-            items = SUPLEMENTACION_DEFAULT
-        info_box(doc, items, fill=CREAM, cant_split=True)
+            section_bar(doc, "Suplementación recomendada", BLUE)
+            info_box(doc, [f"{s.get('name','')} — {s.get('dose','')} ({s.get('timing','')})"
+                           for s in supps], fill=CREAM, cant_split=True)
 
 
     if not include_training or not training:
@@ -512,6 +598,12 @@ def generate_plan_doc(
             notes = (ex.get("coach_notes") or "").strip()
             if notes:
                 cue = f"{cue}\nIndicación para ti: {notes}" if cue else f"Indicación para ti: {notes}"
+            # CÓMO PROGRESAR: se prescribe por ejercicio y no se imprimía en
+            # ningún sitio — sin ella el cliente no sabe cuándo subir el peso
+            # y repite las mismas cargas un mes entero (auditoría).
+            regla = (ex.get("progression_rule") or "").strip()
+            if regla:
+                cue = f"{cue}\nCómo progresar: {regla}" if cue else f"Cómo progresar: {regla}"
             rows.append([
                 name, f"{ex.get('sets','')}×{ex.get('rep_range','')}", f"RIR {ex.get('rir','')}",
                 f"{ex.get('rest_sec','')}s", cue,

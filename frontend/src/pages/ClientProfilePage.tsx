@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Check, BellRing, ChevronRight, Pencil, Smartphone, ClipboardCheck, Trash2, CreditCard } from "lucide-react";
+import { ArrowLeft, Check, BellRing, ChevronRight, MessageCircle, Pencil, Smartphone, ClipboardCheck, Trash2, CreditCard } from "lucide-react";
 import { api, keepIfSame, REFRESH_MS } from "../lib/api";
+import { openWhatsApp, waPhone } from "../lib/whatsapp";
 import type { ClientOut } from "../types";
 import {
   ConfirmDialog,
@@ -311,6 +312,29 @@ export default function ClientProfilePage() {
             <span className="min-w-0">
               <span className="block text-sm font-semibold">Diario del cliente</span>
               <span className="block text-xs opacity-75">abrir y copiar el enlace de su app</span>
+            </span>
+          </button>
+
+          {/* ESCRIBIRLE POR WHATSAPP: media app le dice al coach "escríbele por
+              WhatsApp" (alertas de anamnesis, cambios, videollamada, riesgo…) y
+              no había ningún botón para hacerlo — tocaba buscar el número y
+              abrir el chat a mano (auditoría de facilidad). */}
+          <button
+            onClick={() => {
+              const digits = waPhone(client.phone);
+              if (!digits) {
+                toast.push("Este cliente no tiene teléfono guardado — añádelo arriba", "error");
+                return;
+              }
+              openWhatsApp(digits, `Hola ${(client.full_name || "").split(" ")[0]}, `);
+            }}
+            className="flex w-full items-center gap-3 rounded-xl border-2 px-4 py-3 text-left transition-transform active:scale-[0.98]"
+            style={{ borderColor: "#25D366", color: "#128C4B", background: "color-mix(in srgb, #25D366 8%, transparent)" }}
+          >
+            <MessageCircle size={22} className="shrink-0" />
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold">Escribirle por WhatsApp</span>
+              <span className="block text-xs opacity-80">abre su chat con el saludo puesto</span>
             </span>
           </button>
 

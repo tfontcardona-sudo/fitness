@@ -9,8 +9,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { CameraOff, Dumbbell, LineChart, Ruler, Sparkles } from "lucide-react";
-import type { PortalBrand, PortalProgress as Progress } from "../types";
+import { CameraOff, Dumbbell, FileText, LineChart, Ruler, Sparkles } from "lucide-react";
+import type { FeedbackDocOut, PortalBrand, PortalProgress as Progress } from "../types";
 import { portalApi, PortalError } from "./portalApi";
 
 type Api = ReturnType<typeof portalApi>;
@@ -21,7 +21,7 @@ type Api = ReturnType<typeof portalApi>;
  * registra: peso, medidas, adherencia, fuerza y sus fotos antes/ahora. Solo
  * lectura y solo lo suyo (autenticado por su token).
  */
-export function PortalProgress({ api, brand, hasTraining = true }: { api: Api; brand: PortalBrand; hasTraining?: boolean }) {
+export function PortalProgress({ api, brand, hasTraining = true, token }: { api: Api; brand: PortalBrand; hasTraining?: boolean; token: string }) {
   const [data, setData] = useState<Progress | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -212,6 +212,9 @@ export function PortalProgress({ api, brand, hasTraining = true }: { api: Api; b
           )}
         </section>
       )}
+
+      {/* Lo que le dice su coach en cada revisión (con su informe completo) */}
+      <Revisiones api={api} accent={accent} token={token} />
     </div>
   );
 }
@@ -223,6 +226,55 @@ function Stat({ label, value, sub, accent }: { label: string; value: string; sub
       <p className="text-[11px] uppercase tracking-wide opacity-55">{label}</p>
       <p className="mt-0.5 text-xl font-bold tabular-nums" style={{ color: accent }}>{value}</p>
       {sub && <p className="mt-0.5 text-xs opacity-60">{sub}</p>}
+    </div>
+  );
+}
+
+/** Revisiones que el coach ya ha enviado: su análisis, los cambios del ciclo
+ *  siguiente y el informe completo en PDF. Se generaba y no llegaba a ninguna
+ *  parte del portal (auditoría de calidad). */
+function Revisiones({ api, accent, token }: { api: Api; accent: string; token: string }) {
+  const [docs, setDocs] = useState<FeedbackDocOut[] | null>(null);
+
+  useEffect(() => {
+    api.feedback().then(setDocs).catch(() => setDocs([]));
+  }, [api]);
+
+  if (!docs || docs.length === 0) return null;
+  return (
+    <div className="portal-card p-4">
+      <Header icon={FileText} title="Revisiones de tu coach" />
+      <div className="space-y-3">
+        {docs.map((d, i) => {
+          const c = (d.content_json ?? {}) as Record<string, any>;
+          const analisis: string = c.natural_analysis ?? "";
+          const cambios: string[] = Array.isArray(c.changes_bullets) ? c.changes_bullets : [];
+          return (
+            <div key={d.id} className={i > 0 ? "border-t pt-3" : ""} style={{ borderColor: "var(--p-line)" }}>
+              <p className="text-xs opacity-60">
+                {d.sent_at ? new Date(d.sent_at).toLocaleDateString("es-ES",
+                  { day: "numeric", month: "long" }) : ""}
+              </p>
+              {analisis && <p className="mt-1 text-sm leading-relaxed">{analisis}</p>}
+              {cambios.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {cambios.map((b, j) => (
+                    <li key={j} className="flex gap-1.5 text-sm opacity-85">
+                      <span style={{ color: accent }}>•</span>
+                      <span>{b}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <a href={`/api/p/${token}/feedback/${d.id}.pdf`} target="_blank" rel="noreferrer"
+                className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold"
+                style={{ color: accent }}>
+                <FileText size={14} /> Ver el informe completo
+              </a>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

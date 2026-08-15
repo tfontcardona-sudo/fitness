@@ -105,12 +105,14 @@ def build_nutrition(client, energy, macros) -> dict:
     nut = {
         "tdee_kcal": round(energy.tdee, 1),
         "target_kcal": float(macros.kcal),
+        # OJO: `rationale` lo LEE EL CLIENTE (sale en el PDF como nota del
+        # ajuste). Nada de instrucciones para el coach aquí — las notas de
+        # trabajo van en guardrail_flags, que solo ve el panel.
         "rationale": (
-            "Base preparada por el sistema SIN IA para edición del coach: "
-            "objetivo calórico y macros calculados por el motor determinista "
-            f"(método {energy.method}, ajuste {energy.adjustment_pct:+.1%} sobre "
-            "el TDEE) y reparto por comidas estándar. Ajusta lo que necesites "
-            "en el editor antes de activar."
+            f"Tus calorías salen de tu gasto estimado ({round(energy.tdee)} kcal) "
+            f"con un ajuste del {energy.adjustment_pct:+.0%} para tu objetivo, y "
+            "el reparto de proteína, grasa e hidratos está calculado sobre tu "
+            "peso y tus días de entrenamiento."
         ),
         "macros": {"protein_g": total_p, "carbs_g": total_c, "fat_g": total_f},
         "meals": meals,
@@ -288,10 +290,12 @@ def build_training(client, filtered: list[dict]) -> dict:
 
     training = {
         "split_name": split_name,
+        # También lo lee el CLIENTE en su PDF: se le explica su rutina, no el
+        # proceso interno de preparación.
         "split_rationale": (
-            "Base preparada por el sistema SIN IA según los días y el tiempo "
-            "declarados en la anamnesis, con la biblioteca ya filtrada por "
-            "lesiones/material. Cambia, quita o añade lo que tu criterio pida."
+            f"Rutina de {days} días repartida para que cada grupo muscular "
+            "trabaje con la frecuencia adecuada y descanse lo suficiente, "
+            "ajustada al tiempo que tienes por sesión y a tu material."
         ),
         "weekly_progression": [
             {"week": 1, "intent": "Base", "load_pct": 100.0, "rir_target": "2",

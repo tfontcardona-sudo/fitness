@@ -120,13 +120,19 @@ def portal_access(brand: Brand, first_name: str, login_url: str,
 
 
 def onboarding_pay_anamnesis(brand: Brand, first_name: str, plan_label: str,
-                             pay_url: str, anamnesis_url: str) -> tuple[str, str]:
+                             pay_url: str, anamnesis_url: str,
+                             include_pay: bool = True) -> tuple[str, str]:
     """Mensaje de arranque (email): pagar el plan + descargar/rellenar/subir la
     anamnesis (PDF editable, página pública /anamnesis/{token}), con la
-    instrucción EN MAYÚSCULAS de enviarla completa."""
+    instrucción EN MAYÚSCULAS de enviarla completa.
+
+    `include_pay=False` para quien YA ha pagado (checkout de Stripe): el correo
+    se queda solo con la anamnesis — pedirle el pago a quien acaba de pagar
+    generaba desconfianza justo en el arranque (auditoría de calidad)."""
     first_name = _esc(first_name)
     plan_label = _esc(plan_label)
-    subject = f"Tus primeros pasos con {brand.name}"
+    subject = (f"Tus primeros pasos con {brand.name}" if include_pay
+               else f"Pago recibido · solo falta tu cuestionario · {brand.name}")
     pay_btn = (
         f'<table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0">'
         f'<tr><td style="border-radius:10px;background:{brand.color_primary}">'
@@ -141,20 +147,31 @@ def onboarding_pay_anamnesis(brand: Brand, first_name: str, plan_label: str,
         f'color:#FFFFFF;text-decoration:none;border-radius:10px">Rellenar mi anamnesis</a>'
         f'</td></tr></table>'
     )
-    body = (
-        f"<p>Hola {first_name}, ¡bienvenido/a! Para empezar tu asesoría con "
-        f"{brand.name} necesito dos cosas:</p>"
-        f"<p><strong>1) Realiza el pago de tu plan {plan_label}:</strong></p>"
-        f"{pay_btn}"
-        f"<p><strong>2) Descarga tu cuestionario inicial (anamnesis), rellénalo "
-        f"y súbelo desde este enlace:</strong></p>"
-        f"{anamnesis_btn}"
+    if include_pay:
+        body = (
+            f"<p>Hola {first_name}, ¡bienvenido/a! Para empezar tu asesoría con "
+            f"{brand.name} necesito dos cosas:</p>"
+            f"<p><strong>1) Realiza el pago de tu plan {plan_label}:</strong></p>"
+            f"{pay_btn}"
+            f"<p><strong>2) Descarga tu cuestionario inicial (anamnesis), rellénalo "
+            f"y súbelo desde este enlace:</strong></p>"
+            f"{anamnesis_btn}"
+        )
+    else:
+        body = (
+            f"<p>Hola {first_name}, ¡tu pago del plan {plan_label} está confirmado! "
+            f"Solo queda una cosa para poder preparar tu planificación:</p>"
+            f"<p><strong>Descarga tu cuestionario inicial (anamnesis), rellénalo "
+            f"y súbelo desde este enlace:</strong></p>"
+            f"{anamnesis_btn}"
+        )
+    body += (
         f"<p>En esa página puedes descargar el PDF editable, rellenarlo con calma "
         f"desde el móvil o el ordenador y subirlo cuando lo tengas.</p>"
         f'<p style="background:#fff7e6;border-radius:10px;padding:12px 14px;font-weight:700">'
         f"IMPORTANTE: RELLENA Y ENVÍAME TU ANAMNESIS COMPLETA PARA QUE PUEDA PREPARARTE EL PLAN.</p>"
     )
-    return subject, _shell(brand, "Empecemos", body)
+    return subject, _shell(brand, "Empecemos" if include_pay else "Pago recibido", body)
 
 
 def plan_published(brand: Brand, first_name: str, portal_url: str, is_new_month: bool,
@@ -218,7 +235,7 @@ def closing_due(brand: Brand, first_name: str, portal_url: str, period_index: in
         "final, medidas opcionales, alguna foto y cómo te ha ido.</p>"
         "<p>Con esa información ajustaremos tu plan para que sigas progresando.</p>"
     )
-    return subject, _shell(brand, "Cierra tu período", body, f"{portal_url}/cierre", "Completar cierre")
+    return subject, _shell(brand, "Cierra tu período", body, f"{portal_url}?tab=cierre", "Completar cierre")
 
 
 def video_call_scheduled(brand: Brand, first_name: str, when_label: str,
@@ -265,7 +282,7 @@ def feedback_ready(brand: Brand, first_name: str, portal_url: str,
         f"<p>Hola {first_name}, ya tienes tu informe de seguimiento con {graficas} "
         "que hemos hecho en tu plan (y por qué).</p>"
     )
-    return subject, _shell(brand, "Tu progreso, en detalle", body, f"{portal_url}/feedback", "Ver mi informe")
+    return subject, _shell(brand, "Tu progreso, en detalle", body, f"{portal_url}?tab=progreso", "Ver mi informe")
 
 
 def plan_republished(brand: Brand, first_name: str, portal_url: str, change_summary: str) -> tuple[str, str]:

@@ -1116,6 +1116,46 @@ def portal_feedback(
     return [FeedbackDocOut.model_validate(d) for d in docs]
 
 
+@router.get("/{token}/feedback/{doc_id}.pdf")
+@limiter.limit("30/minute")
+def portal_feedback_document(
+    request: Request,
+    doc_id: int,
+    client: Client = Depends(get_client_by_token),
+    db: Session = Depends(get_db),
+):
+    """Informe de la revisión (PDF) del propio cliente, por su token.
+
+    El documento con sus gráficas, medidas y la explicación del coach se
+    generaba, se guardaba… y no llegaba a ninguna parte (auditoría): el cliente
+    solo recibía un texto. Solo informes YA ENVIADOS y solo suyos."""
+    from fastapi import Response
+
+    from app.services.docs.pdf_convert import docx_bytes_to_pdf
+
+    fb = db.get(FeedbackDoc, doc_id)
+    if not fb or fb.sent_at is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Informe no encontrado")
+    period = db.get(Period, fb.period_id)
+    if not period or period.client_id != client.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Informe no encontrado")
+    if not fb.docx_path:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Informe no disponible")
+    path = abs_path(fb.docx_path)
+    if not path.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Informe no disponible")
+    data = path.read_bytes()
+    nombre = f"revision_{period.period_index}"
+    try:
+        return Response(content=docx_bytes_to_pdf(data), media_type="application/pdf",
+                        headers={"Content-Disposition": f'inline; filename="{nombre}.pdf"'})
+    except Exception:  # noqa: BLE001 — sin convertidor, se entrega el Word
+        return Response(
+            content=data,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f'attachment; filename="{nombre}.docx"'})
+
+
 @router.post("/{token}/change-request", response_model=ChangeRequestOut)
 @limiter.limit("10/minute")
 def portal_change_request(

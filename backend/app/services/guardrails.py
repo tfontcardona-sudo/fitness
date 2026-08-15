@@ -169,7 +169,10 @@ _ALLERGEN_SYNONYMS: dict[str, tuple[str, ...]] = {
     # string normal "\b" es el carácter backspace y el término queda inerte —
     # este bug real dejó pasar "pan" (gluten), "maní" y "soja" sin detectar.
     "gluten": ("gluten", "trigo", "cebada", "centeno", "espelta", r"\bpan\b", "pasta",
-               "harina", "cuscus", "seitan", "galleta", "bizcocho"),
+               "harina", "cuscus", "seitan", "galleta", "bizcocho",
+               # Variedades de trigo que un celíaco NO puede tomar y que se
+               # colaban en las listas del documento (auditoría de calidad).
+               "kamut", "bulgur", "farro", "triticale"),
     "frutos secos": ("fruto seco", "frutos secos", "nuez", "nueces", "almendra", "avellana",
                      "anacardo", "pistacho", "cacahuete", r"\bmani\b", "pinon", "piñon", "pesto"),
     "cacahuete": ("cacahuete", r"\bmani\b", "crema de cacahuete"),

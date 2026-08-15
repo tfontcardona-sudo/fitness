@@ -25,7 +25,12 @@ def send_onboarding_email(db: Session, client: Client) -> str:
     first = ((client.full_name or "").split() or [(client.email or "cliente").split("@")[0]])[0]
     label = TIER_LABEL.get(client.package_tier, "tu plan")
     brand = brand_from_config(db)
-    subject, html = tpl.onboarding_pay_anamnesis(brand, first, label, pay_url, anamnesis_url)
+    # Quien YA ha pagado (checkout de Stripe) no puede recibir un correo cuyo
+    # paso 1 sea "realiza el pago": genera desconfianza justo tras cobrar
+    # (auditoría). Se le manda el mismo mensaje SIN el bloque de pago.
+    subject, html = tpl.onboarding_pay_anamnesis(
+        brand, first, label, pay_url, anamnesis_url,
+        include_pay=client.payment_status != "paid")
     status = EmailService(db).send(
         to=client.email, subject=subject, html=html, kind="onboarding", client=client)
     log_event(db, "client", client.id, "onboarding_sent", {"status": status})

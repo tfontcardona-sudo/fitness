@@ -85,10 +85,11 @@ class FeedbackAIOutput(BaseModel):
         default="",
         description="Mensaje de cierre breve y motivador.",
     )
-    ai_photo_analysis: str | None = Field(
-        default=None,
-        description="Análisis de la evolución visible en las fotos (solo si hay fotos).",
-    )
+    # ⚠️ La IA NO VE las fotos del cliente (solo se le dice si existen): pedirle
+    # que describa "la evolución visible" era inventarle un cuerpo al cliente en
+    # su propio informe (auditoría de calidad). El campo se conserva por
+    # compatibilidad con los informes ya guardados, pero se fuerza a None.
+    ai_photo_analysis: str | None = Field(default=None, exclude=True)
 
 
 _SYSTEM = """Eres el dietista-entrenador (marca DQ) redactando el FEEDBACK quincenal \
@@ -122,8 +123,8 @@ adherencia de la revisión quincenal). Cubre dieta Y entrenamiento cuando proced
 - answers: responde a las dudas del cliente si las dejó; si no, déjalo en null.
 - next_objectives: 2-4 objetivos claros y medibles para las próximas 2 semanas.
 - closing_message: 1-2 frases de cierre motivadoras.
-- ai_photo_analysis: SOLO si te indican que hay fotos; describe la evolución visible \
-de forma prudente. Si no hay fotos, déjalo en null.
+- ai_photo_analysis: DÉJALO SIEMPRE EN NULL. No ves las fotos del cliente: no \
+describas jamás su aspecto físico ni "lo que se aprecia" en ellas.
 
 Devuelve SOLO un objeto JSON válido conforme al esquema. Sin texto adicional."""
 
@@ -163,7 +164,7 @@ def generate_feedback_analysis(payload: dict, ai, nutrition_only: bool = False) 
     out.natural_analysis = _clean_text(out.natural_analysis) or ""
     out.closing_message = _clean_text(out.closing_message) or ""
     out.answers = _clean_text(out.answers)
-    out.ai_photo_analysis = _clean_text(out.ai_photo_analysis)
+    out.ai_photo_analysis = None  # nunca: la IA no ve las fotos
     out.changes_bullets = [c for c in (_clean_text(b) for b in out.changes_bullets) if c]
     out.next_objectives = [o for o in (_clean_text(o) for o in out.next_objectives) if o]
     for adj in out.plan_adjustments:
