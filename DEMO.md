@@ -79,7 +79,9 @@ visible). Jordi queda abajo, "Al día". Mensaje: *nadie se pierde; el sistema
 persigue, vosotros decidís*.
 
 **3) Alta EN VIVO de un cliente — desde el pool de RUTINAS (2')**
-Abre **Rutinas** (menú): 6 carpetas con 120 rutinas de fábrica por caso real
+Abre **Rutinas** (menú): 6 carpetas con 120 rutinas de fábrica cuyo título ya
+dice para quién es («Ganar músculo · desde cero», «Perder grasa · solo 2 días»,
+«Dolor lumbar de estar sentado»), con buscador por caso
 (ganancia muscular, pérdida de grasa, fuerza, salud/molestias, primeros pasos,
 mantenimiento). Elige una que encaje con "Laura Vidal" → **"Usar" → Cliente
 nuevo** → el perfil se crea EN EL MOMENTO con la rutina como plan borrador y

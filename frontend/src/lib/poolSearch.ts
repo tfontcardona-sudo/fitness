@@ -88,7 +88,9 @@ const STOPWORDS = new Set([
   "de", "la", "el", "los", "las", "un", "una", "que", "con", "para", "por",
   "en", "y", "o", "a", "al", "del", "se", "su", "mi", "quiero", "quiere",
   "busco", "busca", "cliente", "clienta", "rutina", "rutinas", "plan",
-  "entrenamiento", "entreno", "dias", "dia", "semana", "anos",
+  "entrenamiento", "entreno", "entrenar", "dias", "dia", "semana", "anos",
+  "ano", "solo", "sola", "tiene", "hacer", "algo", "mas", "muy", "poco",
+  "sin", "necesita", "pide",
 ]);
 
 /** Distancia de edición acotada a 1 (suficiente para erratas de teclado). */
@@ -112,12 +114,21 @@ function tokenMatchesWord(token: string, word: string): boolean {
   return token === word;
 }
 
-/** Objetivo (categoría del pool) que implica cada grupo, cuando lo hay: el
- *  buscador refuerza las rutinas de esa carpeta para que el OBJETIVO mande. */
-const GROUP_GOAL: Record<number, string> = {
-  0: "perdida_grasa", 1: "ganancia_muscular", 2: "fuerza", 3: "mantenimiento",
-  4: "salud_espalda", 5: "salud_espalda", 6: "salud_espalda", 7: "salud_espalda",
-  8: "ganancia_muscular", 24: "principiantes", 25: "principiantes",
+/** Objetivo (carpeta) que implica cada grupo y cuánto lo refuerza. Nombrar una
+ *  DOLENCIA es un filtro casi duro (si dice "lumbago" quiere rutinas de espalda,
+ *  no una de grasa que mencione "oficina"), así que pesa más que un objetivo
+ *  general. Los índices siguen el orden de GROUPS. */
+const GROUP_GOAL: Record<number, [string, number]> = {
+  0: ["perdida_grasa", 1.6], 1: ["ganancia_muscular", 1.6], 2: ["fuerza", 1.6],
+  3: ["mantenimiento", 1.6],
+  // dolencias y condiciones clínicas
+  4: ["salud_espalda", 2.2], 5: ["salud_espalda", 2.2], 6: ["salud_espalda", 2.2],
+  7: ["salud_espalda", 2.2], 8: ["salud_espalda", 2.2], 13: ["salud_espalda", 2.2],
+  14: ["salud_espalda", 2.2], 15: ["salud_espalda", 2.2], 16: ["salud_espalda", 2.2],
+  17: ["salud_espalda", 2.2], 18: ["salud_espalda", 2.2], 20: ["salud_espalda", 1.8],
+  19: ["mantenimiento", 1.8],
+  // situación de partida
+  24: ["principiantes", 1.8], 25: ["principiantes", 1.8],
 };
 
 interface Term { t: string; w: number }
@@ -125,15 +136,21 @@ interface Term { t: string; w: number }
 /** Expande un token a su grupo de sinónimos. El término tecleado pesa 1; los
  *  sinónimos 0,5: así «lumbago» no se lo lleva una rutina de hipertrofia solo
  *  porque lleve «espalda» en el título. Devuelve también el objetivo implícito. */
-function expand(token: string): { terms: Term[]; goals: string[] } {
+function expand(token: string): { terms: Term[]; goals: [string, number][] } {
   const map = new Map<string, number>([[token, 1]]);
-  const goals: string[] = [];
+  const goals: [string, number][] = [];
   GROUPS.forEach((group, i) => {
     if (!group.some((w) => tokenMatchesWord(token, w))) return;
     const goal = GROUP_GOAL[i];
     if (goal) goals.push(goal);
-    for (const w of group) if (!map.has(w)) map.set(w, 0.5);
+    for (const w of group) {
+      // «defincion» no es un sinónimo de «definición»: es la MISMA palabra mal
+      // escrita, así que pesa casi como el literal (0,9) y no como sinónimo.
+      const peso = w.length >= 5 && token.length >= 5 && lev1(token, w) ? 0.9 : 0.5;
+      if ((map.get(w) ?? 0) < peso) map.set(w, peso);
+    }
   });
+  map.set(token, 1);
   return { terms: [...map].map(([t, w]) => ({ t, w })), goals };
 }
 
@@ -152,8 +169,13 @@ export function rankTemplates(
   if (tokens.length === 0) return [];
 
   const expanded = tokens.map(expand);
-  // Objetivos implícitos en la consulta ("adelgazar" → pérdida de grasa).
-  const goals = new Set(expanded.flatMap((e) => e.goals));
+  // Objetivos implícitos en la consulta ("adelgazar" → pérdida de grasa;
+  // "lumbago" → salud). Si dos grupos apuntan a la misma carpeta, manda el
+  // refuerzo más alto.
+  const goals = new Map<string, number>();
+  for (const [cat, boost] of expanded.flatMap((e) => e.goals)) {
+    goals.set(cat, Math.max(goals.get(cat) ?? 0, boost));
+  }
   const out: RankedTemplate[] = [];
   for (const t of items) {
     const ftitle = normalize(t.title);
@@ -194,7 +216,8 @@ export function rankTemplates(
     // El OBJETIVO manda: las rutinas de la carpeta que pide la consulta suben
     // en bloque, pero MULTIPLICANDO — así, dentro de la carpeta correcta, sigue
     // ganando la que mejor encaja con las palabras (no se aplana el ranking).
-    if (goals.has(t.category)) score *= 1.6;
+    const boost = goals.get(t.category);
+    if (boost) score *= boost;
     // Cobertura: encontrar TODOS los conceptos pedidos vale más que repetir uno.
     score *= matched / tokens.length;
     out.push({ ...t, _score: score });

@@ -300,11 +300,29 @@ def import_template_from_file(
 
 def seed_plan_templates(db: Session) -> int:
     """Siembra el pool de fábrica (insert-por-título dentro de cada carpeta, como
-    la biblioteca de ejercicios: re-ejecutar no duplica ni pisa ediciones)."""
+    la biblioteca de ejercicios: re-ejecutar no duplica ni pisa ediciones).
+
+    Si el catálogo de fábrica cambia (una rutina se retira o se renombra), las
+    filas `seed` que ya no están en él se RETIRAN — salvo que el coach las haya
+    editado, en cuyo caso pasan a ser suyas (`manual`) y se conservan. Sin esto,
+    actualizar el catálogo dejaría el pool con las viejas y las nuevas."""
     try:
         from app.seeds.templates_data import TEMPLATES
     except Exception:
         return 0
+    catalogo = {(e["category"], e["title"]) for e in TEMPLATES}
+    for t in list(db.scalars(select(PlanTemplate).where(PlanTemplate.source == "seed"))):
+        if (t.category, t.title) in catalogo:
+            continue
+        # ¿La tocó el coach? updated_at solo cambia con un PATCH real.
+        editada = t.updated_at is not None and t.created_at is not None and (
+            t.updated_at - t.created_at).total_seconds() > 1
+        if editada:
+            t.source = "manual"   # es suya: se queda como rutina propia
+        else:
+            db.delete(t)          # de fábrica y retirada del catálogo
+    db.flush()
+
     existing = {(t.category, t.title) for t in db.scalars(
         select(PlanTemplate).where(PlanTemplate.source == "seed"))}
     added = 0
