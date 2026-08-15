@@ -525,6 +525,75 @@ def list_periods(client_id: int, db: Session = Depends(get_db)) -> list[PeriodOu
     return out
 
 
+class CoachCloseIn(BaseModel):
+    """Cierre de la revisión hecho POR EL COACH (el cliente no la envió)."""
+    closing_weight_kg: float | None = None
+    note: str | None = None
+
+
+@router.post("/api/periods/{period_id}/close-by-coach")
+def close_period_by_coach(period_id: int, body: CoachCloseIn | None = None,
+                          db: Session = Depends(get_db)) -> dict:
+    """Cierra el período SIN esperar al cliente.
+
+    El ciclo se bloqueaba entero cuando el cliente no pulsaba "enviar revisión":
+    sin cierre no hay feedback, sin feedback no hay adaptación ni período nuevo,
+    y el coach solo podía insistirle (auditoría de calidad). Con esto el coach
+    lo desbloquea: el peso final se toma del último pesaje del diario si no se
+    indica otro, y el resto de datos del cierre quedan vacíos (el feedback los
+    trata como ausentes, igual que un cierre incompleto del cliente).
+    """
+    from app.services.portal import today_local
+
+    period = db.get(Period, period_id)
+    if period is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Período no encontrado")
+    if period.status != "open":
+        raise HTTPException(status.HTTP_409_CONFLICT, "El período ya está cerrado")
+    today = today_local()
+    if today < period.ends_on:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"El período termina el {period.ends_on.strftime('%d/%m')}: espera a esa fecha "
+            "para cerrarlo tú.",
+        )
+
+    client = db.get(Client, period.client_id)
+    peso = body.closing_weight_kg if body else None
+    if peso is None:
+        from app.models import DailyLog
+
+        peso = db.scalar(
+            select(DailyLog.weight_kg)
+            .where(DailyLog.period_id == period.id, DailyLog.weight_kg.is_not(None))
+            .order_by(DailyLog.log_date.desc()).limit(1)
+        )
+    if peso is None and client is not None:
+        peso = client.current_weight_kg or client.start_weight_kg
+    if peso is None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "No hay ningún peso registrado en esta quincena: indica tú el peso final "
+            "para poder cerrarla.",
+        )
+
+    period.closing_weight_kg = float(peso)
+    period.status = "closed"
+    period.closing_submitted_at = datetime.now(timezone.utc)
+    # Cerrado por el coach: no arrancamos el recordatorio de fotos al cliente
+    # (no ha enviado nada) — el feedback se genera con lo que haya.
+    period.photos_confirmed = True
+    if body is not None and (body.note or "").strip():
+        period.closing_hardest = body.note.strip()
+    if client is not None and client.status in ("active", "at_risk", "inactive"):
+        client.status = "review_pending"
+    log_event(db, "period", period.id, "period_closed_by_coach",
+              {"period_index": period.period_index, "closing_weight_kg": float(peso)})
+    db.commit()
+    return {"closed": True, "period_index": period.period_index,
+            "closing_weight_kg": float(peso)}
+
+
 @router.get("/api/periods/{period_id}/metrics")
 def period_metrics(period_id: int, db: Session = Depends(get_db)) -> dict:
     """Resumen de métricas del período (sin IA): peso, adherencia, fuerza, objetivo."""

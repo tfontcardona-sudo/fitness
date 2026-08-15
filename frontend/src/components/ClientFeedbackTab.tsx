@@ -34,6 +34,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
   const [periods, setPeriods] = useState<Period[] | null>(null);
   const [contents, setContents] = useState<Record<number, any>>({});
   const [generating, setGenerating] = useState<number | null>(null);
+  const [closing, setClosing] = useState<number | null>(null);
   const [editingFb, setEditingFb] = useState<number | null>(null);
   const [metrics, setMetrics] = useState<Record<number, any>>({});
   const [loadingMetrics, setLoadingMetrics] = useState<number | null>(null);
@@ -151,6 +152,28 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
       toast.push([detail?.message ?? e?.message ?? "No se pudo generar el feedback", detail?.error].filter(Boolean).join(" — "), "error");
     } finally {
       setGenerating(null);
+    }
+  }
+
+  /** Cierra la quincena EL COACH cuando el cliente no la envía: el ciclo se
+   *  quedaba bloqueado (sin cierre no hay feedback ni período nuevo) y la única
+   *  salida era insistirle. Pide confirmación porque cierra datos reales. */
+  async function closeByCoach(periodId: number, index: number) {
+    if (closing != null) return;
+    if (!window.confirm(
+      `¿Cerrar tú la revisión #${index}?\n\nSe usará como peso final el último ` +
+      "pesaje que tenga registrado. Podrás generar su feedback al momento.",
+    )) return;
+    setClosing(periodId);
+    try {
+      const r = await api.closePeriodByCoach(periodId);
+      toast.push(`Revisión #${r.period_index} cerrada (peso final ${r.closing_weight_kg} kg). Ya puedes generar su feedback.`);
+      load();
+      onClientChanged?.();
+    } catch (e: any) {
+      toast.push(e?.message ?? "No se pudo cerrar la revisión", "error");
+    } finally {
+      setClosing(null);
     }
   }
 
@@ -335,8 +358,21 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
             </summary>
 
             {p.status === "open" && (
-              <div className="mt-3 flex items-center gap-2 rounded-lg p-2.5 text-xs" style={{ background: "rgba(154,107,21,0.09)", color: "#9A6B15" }}>
-                <AlertTriangle size={14} /> El período aún está abierto: el cliente debe cerrarlo antes de generar el feedback.
+              <div className="mt-3 rounded-lg p-2.5 text-xs" style={{ background: "rgba(154,107,21,0.09)", color: "#9A6B15" }}>
+                <div className="flex items-center gap-2">
+                  <AlertTriangle size={14} /> El período aún está abierto: el cliente debe cerrarlo antes de generar el feedback.
+                </div>
+                {/* Vencido y sin enviar: el ciclo se bloqueaba esperándole para
+                    siempre. El coach puede cerrarlo él y seguir (auditoría). */}
+                {daysElapsed > 14 && (
+                  <button
+                    onClick={() => closeByCoach(p.id, p.period_index)}
+                    disabled={closing === p.id}
+                    className="btn btn-ghost mt-2 text-xs"
+                  >
+                    {closing === p.id ? "Cerrando…" : "Ya venció · cerrarla yo y seguir"}
+                  </button>
+                )}
               </div>
             )}
 

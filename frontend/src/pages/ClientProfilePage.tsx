@@ -38,6 +38,7 @@ export default function ClientProfilePage() {
   const [deleting, setDeleting] = useState(false);
   const [portalUrl, setPortalUrl] = useState<string | null>(null);
   const [payUrl, setPayUrl] = useState<string | null>(null);
+  const [anamnesisUrl, setAnamnesisUrl] = useState<string | null>(null);
   // Aviso "revisión cerrada": solo mientras el feedback de la última revisión
   // NO exista todavía. En cuanto el coach lo genera, el aviso desaparece.
   const [feedbackPending, setFeedbackPending] = useState(false);
@@ -140,8 +141,9 @@ export default function ClientProfilePage() {
       .then((l) => {
         setPortalUrl(`${window.location.origin}/p/${l.portal_token}`);
         setPayUrl(api.payLinkUrl(l.portal_token));
+        setAnamnesisUrl(`${window.location.origin}/anamnesis/${l.portal_token}`);
       })
-      .catch(() => { setPortalUrl(null); setPayUrl(null); });
+      .catch(() => { setPortalUrl(null); setPayUrl(null); setAnamnesisUrl(null); });
   }, [clientId]);
 
   // "Dieta" de la info básica = la dieta GENERADA con IA (kcal y macros del
@@ -404,7 +406,7 @@ export default function ClientProfilePage() {
             móvil; columna izquierda-abajo en escritorio) */}
         <aside className="order-last min-w-0 space-y-3 lg:order-none lg:col-start-1 lg:row-start-2">
           {/* Anamnesis: enviar enlace + subir PDF rellenado */}
-          <ClientDocuments client={client} onUploaded={reload} portalUrl={portalUrl} />
+          <ClientDocuments client={client} onUploaded={reload} portalUrl={portalUrl} anamnesisUrl={anamnesisUrl} />
           <button
             onClick={() => setConfirmRegen(true)}
             className="w-full text-center text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"

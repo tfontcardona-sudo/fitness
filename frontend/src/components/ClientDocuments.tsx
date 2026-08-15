@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Download, FileText, MessageCircle, Send, Upload } from "lucide-react";
 import { api, getToken } from "../lib/api";
 import { useToast } from "./ui";
-import { openWhatsApp, portalAccessMessage, waPhone } from "../lib/whatsapp";
+import { anamnesisReminderMessage, openWhatsApp, portalAccessMessage, waPhone } from "../lib/whatsapp";
 import type { ClientOut } from "../types";
 
 interface DocItem {
@@ -16,7 +16,12 @@ interface DocItem {
  * cuando este la devuelve rellenada, la sube aquí para conservarla asociada a su
  * ficha. Luego pasa los datos clave a la pestaña "Anamnesis" editable.
  */
-export function ClientDocuments({ client, onUploaded, portalUrl }: { client: ClientOut; onUploaded?: () => void; portalUrl?: string | null }) {
+export function ClientDocuments({ client, onUploaded, portalUrl, anamnesisUrl }: {
+  client: ClientOut;
+  onUploaded?: () => void;
+  portalUrl?: string | null;
+  anamnesisUrl?: string | null;
+}) {
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [docs, setDocs] = useState<DocItem[] | null>(null);
@@ -146,6 +151,25 @@ export function ClientDocuments({ client, onUploaded, portalUrl }: { client: Cli
     toast.push("WhatsApp abierto con el acceso al portal — dale a enviar");
   }
 
+  // REENVIAR el cuestionario: es la petición más repetida del panel ("recuérdale
+  // que suba la anamnesis") y no existía en ninguna pantalla — había que
+  // reconstruir la URL a mano (auditoría de calidad).
+  function resendAnamnesis() {
+    const url = anamnesisUrl ?? (portalUrl ? portalUrl.replace("/p/", "/anamnesis/") : null);
+    if (!url) {
+      toast.push("El enlace del cuestionario aún se está cargando; inténtalo en un segundo", "error");
+      return;
+    }
+    const digits = waPhone(client.phone);
+    if (digits) {
+      openWhatsApp(digits, anamnesisReminderMessage(client.full_name, url));
+      toast.push("WhatsApp abierto con su cuestionario — dale a enviar");
+      return;
+    }
+    navigator.clipboard.writeText(url).catch(() => {});
+    toast.push("Enlace del cuestionario copiado (el cliente no tiene teléfono en su ficha)");
+  }
+
   function openDoc(name: string) {
     // El endpoint exige JWT; abrimos con fetch→blob para adjuntar el header.
     fetch(api.clientDocumentUrl(client.id, name), {
@@ -179,8 +203,15 @@ export function ClientDocuments({ client, onUploaded, portalUrl }: { client: Cli
         Descarga la anamnesis, envíala por correo y sube aquí la versión rellenada.
       </p>
 
-      <button onClick={downloadTemplate} className="btn btn-ghost mb-3 w-full justify-start">
+      <button onClick={downloadTemplate} className="btn btn-ghost mb-2 w-full justify-start">
         <Download size={15} className="text-zinc-500" /> Descargar anamnesis (PDF)
+      </button>
+
+      {/* REENVIAR el cuestionario: es la petición más repetida del panel
+          ("reenvíale el enlace si hace falta") y no existía en ninguna
+          pantalla — tocaba reconstruir la URL a mano (auditoría). */}
+      <button onClick={resendAnamnesis} className="btn btn-ghost mb-3 w-full justify-start">
+        <MessageCircle size={15} style={{ color: "#25D366" }} /> Reenviarle su cuestionario
       </button>
 
       {/* Zona de subida (arrastrar o clic) */}

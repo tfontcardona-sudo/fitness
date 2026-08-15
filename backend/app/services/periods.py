@@ -84,6 +84,23 @@ def ensure_open_period(db: Session, client_id: int, *, commit: bool = False) -> 
     return period
 
 
+def current_month_index(db: Session, client_id: int) -> int:
+    """MES de asesoría en curso (1, 2, 3…): dos revisiones quincenales = un mes.
+
+    El mes se quedaba clavado en 1 para siempre —el frontend reenviaba el del
+    plan anterior—, así que un cliente de medio año seguía recibiendo un PDF
+    que decía "Mes 1 de asesoría" (auditoría de calidad). Se deriva del ciclo
+    real: revisiones ya analizadas // 2 + 1.
+    """
+    from sqlalchemy import func
+
+    analyzed = db.scalar(
+        select(func.count()).select_from(Period)
+        .where(Period.client_id == client_id, Period.status == "analyzed")
+    ) or 0
+    return 1 + int(analyzed) // 2
+
+
 def reference_weight_kg(db: Session, client: Client) -> float | None:
     """UNA SOLA VERDAD del peso de referencia (auditoría de ediciones): antes el
     editor usaba cierre>inicio, el PATCH current>inicio y la generación

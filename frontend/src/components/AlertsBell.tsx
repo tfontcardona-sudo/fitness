@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Bell, Check, Smartphone } from "lucide-react";
-import { api, keepIfSame, REFRESH_MS } from "../lib/api";
+import { ALERTS_REFRESH_MS, api, keepIfSame } from "../lib/api";
 import {
   coachPushActive,
   coachPushSubscribed,
@@ -65,12 +65,14 @@ export function AlertsBell() {
   }, []);
 
   // Al montar, al navegar (una acción resuelta debe apagar su alerta al
-  // instante) y de fondo cada 30 s — la web siempre al día.
+  // instante), al abrir la campana y de fondo cada 20 s — siempre al día sin
+  // martillear el servidor.
   useEffect(load, [load, location.pathname, location.search]);
+  useEffect(() => { if (open) load(); }, [open, load]);
   useEffect(() => {
     const t = window.setInterval(() => {
       if (!document.hidden) load();
-    }, REFRESH_MS);
+    }, ALERTS_REFRESH_MS);
     return () => window.clearInterval(t);
   }, [load]);
 
@@ -225,7 +227,7 @@ const GROUPS: { id: string; label: string; color: string; kinds: string[] }[] = 
             "plan_dislike_conflict", "plan_stale_inputs"] },
   { id: "seguimiento", label: "Seguimiento", color: "#C2453A",
     kinds: ["no_logs", "change_request", "client_inactive"] },
-  { id: "pago", label: "Pagos", color: "#9A6B15", kinds: ["payment_pending"] },
+  { id: "pago", label: "Pagos", color: "#9A6B15", kinds: ["payment_pending", "renewal_due"] },
   { id: "objetivo", label: "Objetivo", color: "#2E5E8C", kinds: ["goal_review"] },
   { id: "recursos", label: "Recursos / productos", color: "#28707C", kinds: ["missing_products"] },
   { id: "videollamada", label: "Videollamada", color: "#0EA5E9",

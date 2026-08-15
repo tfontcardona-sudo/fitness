@@ -123,8 +123,22 @@ export function ClientPlanEditor({
     }
   }
 
+  // ¿Se ha tocado ALGO en esta sesión de edición? TODAS las ediciones pasan por
+  // `mutate`, así que basta con marcarlo aquí. Sirve para no perder el trabajo
+  // al pulsar "Cancelar" por error (auditoría de calidad).
+  const dirty = useRef(false);
+
   function mutate(fn: (d: typeof draft) => void) {
+    dirty.current = true;
     setDraft((d) => { const n = structuredClone(d); fn(n); return n; });
+  }
+
+  /** Salir del editor: si hay cambios sin guardar, pide confirmación. */
+  function cancel() {
+    if (dirty.current && !window.confirm(
+      "Tienes cambios SIN GUARDAR en la planificación.\n\n¿Salir y perderlos?",
+    )) return;
+    onCancel();
   }
 
   /** Reordena un ejercicio dentro de su sesión (↑/↓): el portal y el documento
@@ -469,7 +483,7 @@ export function ClientPlanEditor({
               {kcalInvalid ? "Pon las calorías objetivo para guardar" : "Los números no cuadran: mira el aviso de Nutrición"}
             </span>
           )}
-          <button onClick={onCancel} className="btn btn-ghost"><X size={15} /> Cancelar</button>
+          <button onClick={cancel} className="btn btn-ghost"><X size={15} /> Cancelar</button>
           <button onClick={save} disabled={saving || nutritionBlocked} className="btn btn-primary"
             title={nutritionBlocked
               ? (kcalInvalid ? "Introduce las calorías objetivo"

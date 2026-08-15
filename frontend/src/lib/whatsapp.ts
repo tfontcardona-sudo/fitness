@@ -176,6 +176,18 @@ export function onboardingMessage(
   ].join("\n\n");
 }
 
+/** RECORDATORIO del cuestionario inicial (anamnesis): el coach lo reenvía desde
+ *  la ficha cuando el cliente aún no lo ha devuelto. Un solo enlace, directo. */
+export function anamnesisReminderMessage(fullName: string, anamnesisUrl: string): string {
+  return [
+    `Hola ${waFirstName(fullName)},`,
+    "Te reenvío tu cuestionario inicial (anamnesis). Lo necesito completo para poder prepararte la planificación:",
+    anamnesisUrl,
+    "Descárgalo, rellénalo con calma y súbelo desde ese mismo enlace. En cuanto lo tenga me pongo con tu plan.",
+    "Un saludo.",
+  ].join("\n\n");
+}
+
 /** Mensaje de AJUSTE MANUAL de la planificación: explica exactamente qué se
  *  cambió (lista del diff detectado al editar) + enlace al PDF actualizado. */
 export function manualUpdateMessage(

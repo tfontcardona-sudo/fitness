@@ -45,6 +45,37 @@ def _alert(client: Client, kind: str, severity: str, message: str, tab: str,
     }
 
 
+# Duración contratada (días) de cada periodicidad de pago único. "oferta" es
+# una suscripción de Stripe: se renueva sola, no genera aviso.
+_BILLING_DAYS = {"1m": 30, "3m": 90, "6m": 180}
+RENEWAL_WARN_DAYS = 7
+
+
+def _renewal_alert(client: Client, today: date) -> dict | None:
+    """Aviso de RENOVACIÓN de un plan de pago único a punto de agotarse."""
+    if getattr(client, "payment_status", None) != "paid":
+        return None
+    if getattr(client, "stripe_subscription_id", None):
+        return None  # suscripción: se cobra sola
+    paid_at = getattr(client, "paid_at", None)
+    days = _BILLING_DAYS.get(getattr(client, "billing_period", "") or "")
+    if paid_at is None or days is None:
+        return None
+    ends_on = paid_at.date() + timedelta(days=days)
+    left = (ends_on - today).days
+    if left > RENEWAL_WARN_DAYS:
+        return None
+    if left >= 0:
+        msg = (f"Su plan contratado termina {'hoy' if left == 0 else f'en {left} días'} "
+               f"({ends_on.strftime('%d/%m')}): ofrécele la renovación.")
+        sev = "media"
+    else:
+        msg = (f"Su plan venció hace {-left} días ({ends_on.strftime('%d/%m')}) y sigue "
+               "activo: cóbrale la renovación o cierra la asesoría.")
+        sev = "alta"
+    return _alert(client, "renewal_due", sev, msg, "resumen", "Renovar plan")
+
+
 def client_alerts(db: Session, client: Client, today: date | None = None) -> list[dict]:
     """Alertas de UN cliente (reutilizado por el listado y el backtest)."""
     from app.services.portal import today_local
@@ -71,6 +102,15 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
                           "Pago pendiente: cobra su plan (o márcalo como pagado "
                           "si te pagó por otra vía).",
                           "resumen", "Revisar pago"))
+
+    # --- Renovación a la vista (pago único, sin suscripción) -----------------
+    # Los planes de 1/3/6 meses se cobran de una vez: al acabar la duración no
+    # hay nada que lo recuerde y la asesoría seguía corriendo gratis (o el
+    # cliente se perdía sin que nadie le ofreciera renovar). La suscripción de
+    # la oferta se cobra sola: ahí no hace falta aviso.
+    renewal = _renewal_alert(client, today)
+    if renewal is not None:
+        out.append(renewal)
 
     plans = list(db.scalars(
         select(Plan).where(Plan.client_id == client.id)
@@ -118,9 +158,12 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
 
     # --- Revisión quincenal recibida sin feedback ---------------------------
     if last_period is not None and last_period.status == "closed":
+        # Pestaña FEEDBACK: es donde está el botón "Generar feedback" (con el
+        # resumen de métricas y las fotos del cierre). Antes llevaba a
+        # Seguimiento, donde esa acción no existe (auditoría de calidad).
         out.append(_alert(client, "generate_feedback", "alta",
                           f"Revisión #{last_period.period_index} recibida: revisa los datos y genera el feedback.",
-                          "seguimiento", "Generar feedback"))
+                          "feedback", "Generar feedback"))
 
     # --- Feedback generado pero sin enviar / plan sin adaptar ---------------
     # ANCLADO al último período ANALIZADO, no al último absoluto: enviar el

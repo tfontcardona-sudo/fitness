@@ -447,12 +447,11 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
     if (!created || sendingOnb) return;
     const info = pkg(created.client.package_tier);
     const payUrl = api.payLinkUrl(created.links.portal_token);
-    if (info.delivery === "whatsapp") {
-      const digits = waPhone(created.client.phone ?? phone);
-      if (!digits) {
-        toast.push("Añade el teléfono del cliente para enviarlo por WhatsApp", "error");
-        return;
-      }
+    const digits = waPhone(created.client.phone ?? phone);
+    // Sin teléfono NO se queda sin arranque: se manda por email (el endpoint
+    // existe y funciona). Antes el alta sin teléfono dejaba al cliente sin
+    // enlace de pago ni cuestionario, y el coach creía haberlo enviado.
+    if (info.delivery === "whatsapp" && digits) {
       openWhatsApp(digits, onboardingMessage(
         created.client.full_name, info.label, payUrl,
         `${window.location.origin}/anamnesis/${created.links.portal_token}`));

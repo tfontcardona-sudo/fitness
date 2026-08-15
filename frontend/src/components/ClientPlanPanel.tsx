@@ -280,7 +280,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
     setScaffolding(false);
     setMissing(null);
     try {
-      const p = await api.generatePlan(client.id, plan?.month_index ?? 1, meals);
+      const p = await api.generatePlan(client.id, null, meals);
       setPlan(normalize(p));
       setPeriods(await api.listPeriods(client.id).catch(() => periods));
       setNeedsDownload(false); // versión nueva: el aviso de re-descarga ya no aplica
@@ -325,7 +325,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
     setScaffolding(true);
     setMissing(null);
     try {
-      const p = await api.scaffoldPlan(client.id, plan?.month_index ?? 1, meals);
+      const p = await api.scaffoldPlan(client.id, null, meals);
       setPlan(normalize(p));
       setEditing(true); // directo al editor: la base ya está masticada
       onClientChanged?.();

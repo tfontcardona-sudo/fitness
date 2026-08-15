@@ -1205,11 +1205,15 @@ def _food_catalog_for(db: Session, client: Client) -> list[dict]:
 @router.post("/{client_id}/generate-plan")
 def generate_client_plan(
     client_id: int,
-    month_index: int = Query(default=1, ge=1),
+    month_index: int | None = Query(default=None, ge=1),
     body: GeneratePlanIn | None = None,
     db: Session = Depends(get_db),
 ) -> dict:
-    """Genera (con IA real) el plan mensual del cliente y lo guarda como borrador."""
+    """Genera (con IA real) el plan mensual del cliente y lo guarda como borrador.
+
+    Sin `month_index` el mes se deriva del ciclo real (dos revisiones = un mes):
+    antes se reenviaba siempre el del plan anterior y el cliente recibía "Mes 1"
+    de por vida."""
     from datetime import date
 
     from app.models import Exercise, Plan
@@ -1531,7 +1535,11 @@ def generate_client_plan(
             "retenido: guardado como BORRADOR — revisa y activa tú (el cliente no ha sido avisado)"
         ]
 
-    # 5) Persistir como borrador (nueva versión del mes)
+    # 5) Persistir como borrador (nueva versión del mes). El mes lo decide el
+    # ciclo (dos revisiones = un mes) salvo que el llamante lo fije a mano.
+    if month_index is None:
+        from app.services.periods import current_month_index
+        month_index = current_month_index(db, client_id)
     last = db.scalar(
         select(Plan).where(Plan.client_id == client_id, Plan.month_index == month_index)
         .order_by(Plan.version.desc()).limit(1)
@@ -1573,7 +1581,7 @@ def generate_client_plan(
 @router.post("/{client_id}/scaffold-plan")
 def scaffold_client_plan(
     client_id: int,
-    month_index: int = Query(default=1, ge=1),
+    month_index: int | None = Query(default=None, ge=1),
     body: GeneratePlanIn | None = None,
     db: Session = Depends(get_db),
 ) -> dict:
@@ -1732,6 +1740,9 @@ def scaffold_client_plan(
     flags.append("base sin IA: preparada por el sistema — la termina y activa el coach")
 
     # 3) Persistir como BORRADOR (nueva versión del mes). Nunca se auto-activa.
+    if month_index is None:
+        from app.services.periods import current_month_index
+        month_index = current_month_index(db, client_id)
     last = db.scalar(
         select(Plan).where(Plan.client_id == client_id, Plan.month_index == month_index)
         .order_by(Plan.version.desc()).limit(1)

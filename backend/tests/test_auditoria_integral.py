@@ -500,3 +500,126 @@ def test_align_bank_slots_cubre_modo_strict():
     # Reescalado hacia el objetivo de SU toma (1000 kcal), no dejado a 600.
     assert dish["macros"]["kcal"] > 900, dish["macros"]
     assert dish["ingredients"][0]["grams"] > 60
+
+
+# ------------------------------ auditoría de calidad (facilidad de uso) ---
+
+@pytestmark_db
+def test_coach_puede_cerrar_la_quincena_vencida(http):
+    """Si el cliente no envía su revisión, el ciclo se quedaba bloqueado para
+    siempre (sin cierre no hay feedback ni período nuevo). El coach la cierra."""
+    from app.db import SessionLocal
+    from app.models import Client, DailyLog, Period, Plan
+    from app.security import new_portal_token
+
+    db = SessionLocal()
+    uid = uuid.uuid4().hex[:8]
+    c = Client(full_name=f"Cierre {uid}", email=f"cierre-{uid}@test.local",
+               portal_token="p", status="active", goal_type="fat_loss")
+    db.add(c); db.flush(); c.portal_token = new_portal_token(c.id)
+    plan = Plan(client_id=c.id, month_index=1, version=1, status="published",
+                nutrition_json={"target_kcal": 2000}, training_json={}, education_json={})
+    db.add(plan); db.flush()
+    today = date.today()
+    per = Period(client_id=c.id, plan_id=plan.id, period_index=1,
+                 starts_on=today - timedelta(days=20), ends_on=today - timedelta(days=6),
+                 status="open")
+    db.add(per); db.flush()
+    db.add(DailyLog(period_id=per.id, log_date=today - timedelta(days=8),
+                    weight_kg=81.4))
+    db.commit()
+    pid, cid = per.id, c.id
+    db.close()
+
+    r = http.post(f"/api/periods/{pid}/close-by-coach", json={}, headers=_auth())
+    assert r.status_code == 200, r.text
+    assert r.json()["closing_weight_kg"] == 81.4  # último pesaje del diario
+
+    db = SessionLocal()
+    per = db.get(Period, pid)
+    assert per.status == "closed"
+    assert db.get(Client, cid).status == "review_pending"
+    # Idempotencia: cerrar dos veces no rompe nada, avisa.
+    db.close()
+    assert http.post(f"/api/periods/{pid}/close-by-coach", json={}, headers=_auth()).status_code == 409
+
+
+@pytestmark_db
+def test_no_se_cierra_una_quincena_aun_en_curso(http):
+    from app.db import SessionLocal
+    from app.models import Client, Period, Plan
+    from app.security import new_portal_token
+
+    db = SessionLocal()
+    uid = uuid.uuid4().hex[:8]
+    c = Client(full_name=f"Curso {uid}", email=f"curso-{uid}@test.local",
+               portal_token="p", status="active")
+    db.add(c); db.flush(); c.portal_token = new_portal_token(c.id)
+    plan = Plan(client_id=c.id, month_index=1, version=1, status="published",
+                nutrition_json={}, training_json={}, education_json={})
+    db.add(plan); db.flush()
+    today = date.today()
+    per = Period(client_id=c.id, plan_id=plan.id, period_index=1,
+                 starts_on=today - timedelta(days=3), ends_on=today + timedelta(days=10),
+                 status="open")
+    db.add(per); db.commit()
+    pid = per.id
+    db.close()
+    assert http.post(f"/api/periods/{pid}/close-by-coach", json={}, headers=_auth()).status_code == 409
+
+
+def test_alerta_de_renovacion_de_pago_unico():
+    """Un plan de 1/3/6 meses se cobra UNA vez: sin aviso, la asesoría seguía
+    corriendo (o el cliente se perdía) cuando la duración se agotaba."""
+    from datetime import datetime, timezone
+
+    from app.models import Client
+    from app.routers.alerts import _renewal_alert
+
+    hoy = date(2026, 8, 15)
+    c = Client(full_name="Reno", email="r@test.local", portal_token="p",
+               payment_status="paid", billing_period="3m",
+               paid_at=datetime(2026, 5, 20, tzinfo=timezone.utc))  # +90d = 18/08
+    a = _renewal_alert(c, hoy)
+    assert a is not None and a["kind"] == "renewal_due" and a["severity"] == "media"
+
+    c.paid_at = datetime(2026, 5, 1, tzinfo=timezone.utc)  # venció el 30/07
+    assert _renewal_alert(c, hoy)["severity"] == "alta"
+
+    # Recién pagado: nada que avisar. Suscripción (oferta): se cobra sola.
+    c.paid_at = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    assert _renewal_alert(c, hoy) is None
+    c.paid_at = datetime(2026, 5, 1, tzinfo=timezone.utc)
+    c.stripe_subscription_id = "sub_123"
+    assert _renewal_alert(c, hoy) is None
+
+
+@pytestmark_db
+def test_el_mes_de_asesoria_avanza_con_el_ciclo():
+    """El mes se quedaba clavado en 1 (el front reenviaba el del plan anterior)
+    y el cliente recibía "Mes 1 de asesoría" medio año después."""
+    from app.db import SessionLocal
+    from app.models import Client, Period, Plan
+    from app.security import new_portal_token
+    from app.services.periods import current_month_index
+
+    db = SessionLocal()
+    uid = uuid.uuid4().hex[:8]
+    c = Client(full_name=f"Mes {uid}", email=f"mes-{uid}@test.local",
+               portal_token="p", status="active")
+    db.add(c); db.flush(); c.portal_token = new_portal_token(c.id)
+    plan = Plan(client_id=c.id, month_index=1, version=1, status="published",
+                nutrition_json={}, training_json={}, education_json={})
+    db.add(plan); db.flush()
+    today = date.today()
+    assert current_month_index(db, c.id) == 1
+    for i in (1, 2, 3, 4):
+        db.add(Period(client_id=c.id, plan_id=plan.id, period_index=i,
+                      starts_on=today - timedelta(days=15 * (5 - i)),
+                      ends_on=today - timedelta(days=15 * (5 - i) - 14),
+                      status="analyzed"))
+        db.flush()
+        esperado = 1 + i // 2
+        assert current_month_index(db, c.id) == esperado, i
+    db.rollback()
+    db.close()

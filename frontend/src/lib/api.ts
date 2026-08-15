@@ -12,6 +12,13 @@
  *  campana a la vez. */
 export const REFRESH_MS = 3000;
 
+/** Refresco de las ALERTAS (campana + panel). Van aparte porque /api/alerts
+ *  recorre TODOS los clientes con sus planes, períodos y banco de comidas: a 3 s
+ *  y desde dos sitios a la vez eran ~40 barridos por minuto que solo servían
+ *  para calentar el servidor (auditoría de calidad). Las alertas no cambian
+ *  segundo a segundo y, además, se recargan al navegar y al hacer cada acción. */
+export const ALERTS_REFRESH_MS = 20000;
+
 /** Igualdad "por valor" de dos respuestas de la API (objetos JSON planos).
  *  Se usa en el polling de 3 s: si los datos nuevos son idénticos a los que ya
  *  hay en pantalla, NO se actualiza el estado. Así se evita el parpadeo y las
@@ -252,22 +259,24 @@ export const api = {
   anamnesisTemplateUrl: () => `/api/anamnesis-template`,
   // meals (opcional): claves canónicas del reparto de comidas elegido por el
   // coach en el selector; si viene, sustituye al de la anamnesis y se regenera.
-  generatePlan: (clientId: number, monthIndex = 1, meals?: string[]) =>
+  // monthIndex: normalmente NO se pasa — el backend deriva el mes de asesoría
+  // del ciclo real (dos revisiones quincenales = un mes).
+  generatePlan: (clientId: number, monthIndex?: number | null, meals?: string[]) =>
     request<{
       id: number; month_index: number; version: number; status: string;
       guardrail_flags: string[];
       nutrition: any; training: any; education: any;
-    }>("POST", `/clients/${clientId}/generate-plan?month_index=${monthIndex}`,
+    }>("POST", `/clients/${clientId}/generate-plan${monthIndex ? `?month_index=${monthIndex}` : ""}`,
       meals && meals.length ? { meals } : undefined),
   // Plan BASE determinista para clientes AVANZADOS (0 llamadas a la IA):
   // borrador con los números/comidas/banco/sesiones ya preparados, para que el
   // coach lo termine en el editor y lo active él.
-  scaffoldPlan: (clientId: number, monthIndex = 1, meals?: string[]) =>
+  scaffoldPlan: (clientId: number, monthIndex?: number | null, meals?: string[]) =>
     request<{
       id: number; month_index: number; version: number; status: string;
       guardrail_flags: string[];
       nutrition: any; training: any; education: any;
-    }>("POST", `/clients/${clientId}/scaffold-plan?month_index=${monthIndex}`,
+    }>("POST", `/clients/${clientId}/scaffold-plan${monthIndex ? `?month_index=${monthIndex}` : ""}`,
       meals && meals.length ? { meals } : undefined),
   adaptPlan: (clientId: number) =>
     request<{ id: number; month_index: number; version: number; status: string }>(
@@ -313,6 +322,12 @@ export const api = {
       closing_arm_cm: number | null; closing_thigh_cm: number | null;
       feedback_id: number | null;
     }[]>("GET", `/clients/${clientId}/periods`),
+  // Cierre de la quincena POR EL COACH cuando el cliente no la envía: sin esto
+  // el ciclo se quedaba bloqueado esperándole indefinidamente.
+  closePeriodByCoach: (periodId: number, closingWeightKg?: number | null) =>
+    request<{ closed: boolean; period_index: number; closing_weight_kg: number }>(
+      "POST", `/periods/${periodId}/close-by-coach`,
+      { closing_weight_kg: closingWeightKg ?? null }),
   generateFeedback: (periodId: number) =>
     request<{ feedback_id: number; period_id: number; kind: string; content: any }>(
       "POST", `/periods/${periodId}/feedback`),

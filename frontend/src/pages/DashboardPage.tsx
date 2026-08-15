@@ -16,7 +16,7 @@ import {
   UserPlus,
   Video,
 } from "lucide-react";
-import { api, keepIfSame, REFRESH_MS } from "../lib/api";
+import { ALERTS_REFRESH_MS, api, keepIfSame, REFRESH_MS } from "../lib/api";
 import type { ClientOut, CoachAlert, VideoCallAgendaItem } from "../types";
 import { PageLoader, StatusBadge } from "../components/ui";
 import { goalReviewDue, initials, relativeDays } from "../lib/format";
@@ -67,7 +67,8 @@ function nextAction(c: ClientOut): Accion | null {
     // Aún SIN anamnesis: el botón lleva a completarla/leerla (lo que falta).
     // Cada tipo de acción con SU color e icono (mismos que las carpetas).
     return {
-      client: c, prio: 3, tone: "#6366F1", icon: ClipboardList, category: "Falta anamnesis",
+      // prio 4 = "En espera del cliente": el coach solo puede recordárselo.
+      client: c, prio: 4, tone: "#6366F1", icon: ClipboardList, category: "Falta anamnesis",
       title: "Cliente nuevo · falta su anamnesis",
       detail: "Reenvíale el enlace si hace falta y, cuando llegue el PDF, léelo con la IA.",
       cta: "Abrir anamnesis", tab: "anamnesis",
@@ -104,21 +105,27 @@ export default function DashboardPage() {
       api.listClients()
         .then((cs) => { setLoadFailed(false); setClients((prev) => keepIfSame(prev, cs)); })
         .catch(() => { setLoadFailed(true); setClients((c) => c ?? []); });
-      // Alertas de recursos (suplemento pautado sin producto) → acción propia.
+    };
+    // Alertas + agenda: barrido pesado (todos los clientes con sus planes y
+    // períodos), aparte y más espaciado que el refresco de la lista.
+    const loadSlow = () => {
       api.listAlerts()
         .then((r) => setAlerts((prev) => keepIfSame(prev, r.alerts)))
         .catch(() => {});
-      // Agenda de videollamadas agendadas (con Meet).
       api.videoCallsAgenda()
         .then((r) => setAgenda((prev) => keepIfSame(prev, r.calls)))
         .catch(() => {});
     };
     load();
+    loadSlow();
     // Refresco cada 3 s (solo con la pestaña visible): el panel siempre al día
     const t = window.setInterval(() => {
       if (!document.hidden) load();
     }, REFRESH_MS);
-    return () => window.clearInterval(t);
+    const tSlow = window.setInterval(() => {
+      if (!document.hidden) loadSlow();
+    }, ALERTS_REFRESH_MS);
+    return () => { window.clearInterval(t); window.clearInterval(tSlow); };
   }, []);
 
   const { acciones, alDia } = useMemo(() => {
@@ -126,10 +133,14 @@ export default function DashboardPage() {
     // Feedback YA generado y sin enviar: su tarjeta correcta es "Enviar" (de la
     // alerta send_feedback), no la genérica "Generar feedback" del estado.
     const sendFbIds = new Set(alerts.filter((a) => a.kind === "send_feedback").map((a) => a.client_id));
+    // Con un borrador pendiente de activar, la tarea NO es "crear planificación"
+    // (eso generaría otra y gastaría créditos): es revisarlo y activarlo.
+    const draftIds = new Set(alerts.filter((a) => a.kind === "publish_plan").map((a) => a.client_id));
     const acciones = c
       .map(nextAction)
       .filter((a): a is Accion => a !== null)
-      .filter((a) => !(a.category === "Revisión" && sendFbIds.has(a.client.id)));
+      .filter((a) => !(a.category === "Revisión" && sendFbIds.has(a.client.id)))
+      .filter((a) => !(a.category === "Falta planificación" && draftIds.has(a.client.id)));
     // Falta recurso/producto y videollamadas: vienen del centro de alertas
     // (mismo dato), cada tipo con su grupo, color e icono propios.
     for (const al of alerts) {
@@ -202,16 +213,24 @@ export default function DashboardPage() {
           title: "Pago pendiente",
           detail: al.message, cta: al.action, tab: al.tab,
         });
+      } else if (al.kind === "renewal_due") {
+        // Renovación: el plan contratado se agota y nadie lo recordaba.
+        acciones.push({
+          client: cli, prio: al.severity === "alta" ? 2 : 3, tone: "#9A6B15",
+          icon: CreditCard, category: "Pago",
+          title: al.severity === "alta" ? "Plan vencido · sigue activo" : "Le toca renovar",
+          detail: al.message, cta: al.action, tab: al.tab,
+        });
       } else if (al.kind === "period_overdue") {
         acciones.push({
-          client: cli, prio: al.severity === "alta" ? 1 : 2, tone: "#C2453A", icon: Hourglass,
+          client: cli, prio: 4, tone: "#C2453A", icon: Hourglass,
           category: "Revisión",
-          title: "Revisión vencida sin enviar",
+          title: "Revisión vencida · el cliente no la ha cerrado",
           detail: al.message, cta: al.action, tab: al.tab,
         });
       } else if (al.kind === "no_logs") {
         acciones.push({
-          client: cli, prio: 3, tone: "#C2453A", icon: HeartPulse, category: "Seguimiento",
+          client: cli, prio: 4, tone: "#C2453A", icon: HeartPulse, category: "Seguimiento",
           title: "Sin registros varios días",
           detail: al.message, cta: al.action, tab: al.tab,
         });
@@ -369,7 +388,7 @@ export default function DashboardPage() {
         <section className="mt-8">
           <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-zinc-200">
             <span aria-hidden className="h-3.5 w-1 rounded-full" style={{ background: "var(--brand-accent-2)" }} />
-            En espera del cliente
+            En espera del cliente · recuérdaselo
           </h2>
           <div className="space-y-2">
             {enEspera.map((a) => (

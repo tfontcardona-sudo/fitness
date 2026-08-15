@@ -398,13 +398,19 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
         existing_draft.education_json = edu
         plan = existing_draft
     else:
+        # Mes de asesoría: dos revisiones = un mes. La adaptación de la 2ª, 4ª…
+        # revisión ABRE mes nuevo (antes se quedaba en el del plan base y el
+        # cliente veía "Mes 1" indefinidamente). Nunca retrocede.
+        from app.services.periods import current_month_index
+
+        month_index = max(base.month_index, current_month_index(db, client_id))
         last = db.scalar(
-            select(Plan).where(Plan.client_id == client_id, Plan.month_index == base.month_index)
+            select(Plan).where(Plan.client_id == client_id, Plan.month_index == month_index)
             .order_by(Plan.version.desc()).limit(1)
         )
         client = db.get(Client, client_id)
         plan = Plan(
-            client_id=client_id, month_index=base.month_index,
+            client_id=client_id, month_index=month_index,
             version=(last.version if last else 0) + 1, status="draft",
             nutrition_json=nut, training_json=tr, education_json=edu,
             guardrail_flags=[], generated_by="adaptación quincenal",
