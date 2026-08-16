@@ -28,11 +28,12 @@ _log = logging.getLogger("app.stripe")
 
 _TIERS = {"nutri", "train", "full"}
 # Duraciones contratables de cada plan: mensual, trimestral, semestral.
-_PERIODS = {"1m", "3m", "6m"}
+_PERIODS = {"unico", "1m", "3m", "6m"}
 
 # Orden estable para recorrer/crear (los sets de arriba validan pertenencia).
 TIER_ORDER = ("train", "nutri", "full")
-PERIOD_ORDER = ("1m", "3m", "6m")
+# Professional vende PAGO ÚNICO: el catálogo de Stripe solo crea ese precio.
+PERIOD_ORDER = ("unico",)
 
 # ------------------------------------------ precios canónicos (la verdad) ----
 
@@ -46,13 +47,15 @@ PERIOD_ORDER = ("1m", "3m", "6m")
 # De esta tabla beben el script scripts/setup_stripe_prices.py, el AUTO-ALTA
 # (si a Stripe le faltan precios, la api los crea sola; si cambia el importe,
 # precio nuevo con el lookup_key transferido) y la reserva visual del catálogo.
+# Catálogo REAL de Professional: PAGO ÚNICO por servicio (no hay suscripción).
+#   Dieta 70 € · Entrenamiento 70 € · Pack 130 € (dieta + entreno + cuota del gym)
 CANONICAL_AMOUNTS: dict[str, dict[str, int]] = {
-    "train": {"1m": 6900, "3m": 17700, "6m": 32400},
-    "nutri": {"1m": 7900, "3m": 20100, "6m": 37200},
-    "full": {"1m": 9900, "3m": 29700, "6m": 59400},
+    "train": {"unico": 7000},
+    "nutri": {"unico": 7000},
+    "full": {"unico": 13000},
 }
 PRODUCT_NAMES = branding.TIER_LABELS
-PERIOD_LABEL = {"1m": "1 mes", "3m": "3 meses", "6m": "6 meses"}
+PERIOD_LABEL = {"unico": "pago único", "1m": "1 mes", "3m": "3 meses", "6m": "6 meses"}
 CURRENCY = "eur"
 
 # --- OFERTA de captación (solo plan Full): 1 € el primer mes → 120 €/mes ---
@@ -123,7 +126,7 @@ def ensure_canonical_prices(stripe, log=None) -> list[str]:
         if not product_id:
             prod = stripe.Product.create(
                 name=PRODUCT_NAMES[tier], metadata={branding.STRIPE_TIER_METADATA_KEY: tier},
-                description=f"Asesoría {PRODUCT_NAMES[tier]} — pago por período",
+                description=f"{PRODUCT_NAMES[tier]} — pago único",
             )
             product_id = prod["id"]
             products[tier] = product_id  # la oferta (más abajo) reusa el de Full
@@ -348,7 +351,7 @@ def _resolve_price_id(tier: str, period: str) -> str:
     return settings.stripe_price_legacy(tier, period)
 
 
-def create_checkout_url(db: Session, tier: str, period: str = "1m", *,
+def create_checkout_url(db: Session, tier: str, period: str = "unico", *,
                         client: Client | None = None) -> str:
     """Crea una Checkout Session de Stripe para `tier` × `period` (duración
     mensual/trimestral/semestral) y devuelve su URL de pago.
@@ -448,7 +451,8 @@ def open_invoice_url(client: Client) -> str | None:
 
 # ---------------------------------------------------------------- precios ----
 
-_PERIOD_MONTHS = {"1m": 1, "3m": 3, "6m": 6}
+# En pago único no hay "equivalente al mes": months=1 y per_month = total.
+_PERIOD_MONTHS = {"unico": 1}
 _prices_cache: dict = {"at": 0.0, "data": None}
 _PRICES_TTL_S = 600  # los precios cambian poco; 10 min de caché evita latencia
 
@@ -582,7 +586,7 @@ def _create_selfserve_client(db: Session, *, name: str, email: str,
         # pkgs.normalize traduce la metadata ANTIGUA ("start"→nutri, "pro"→full)
         # de Checkout Sessions creadas antes del renombrado y aún en vuelo.
         package_tier=pkgs.normalize(tier),
-        billing_period=period if (period in _PERIODS or period == OFFER_PERIOD) else "1m",
+        billing_period=period if (period in _PERIODS or period == OFFER_PERIOD) else "unico",
         status="onboarding",
         auto_pilot=settings.auto_pilot_default,
         portal_token="pendiente",

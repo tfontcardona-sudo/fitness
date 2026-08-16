@@ -15,16 +15,11 @@ blanco + dorado sobre negro, con el laurel como emblema. Los colores exactos
 pueden afinarse en runtime desde la página Marca (sin desplegar); el logo
 definitivo del cliente se sube desde esa misma página.
 
-Catálogo REAL de la marca (de su web):
-  - Génesis.99 (99 €/mes): preparación personal COMPLETA (nutrición +
-    entrenamiento) → tier interno `full`. Es el producto online del sistema.
-  - Entreno Personal (50/60 €/h; pack 10 sesiones 350/450 € socios/no socios):
-    sesiones PRESENCIALES en el centro → tier interno `train`. Se reservan por
-    WhatsApp y se cobran en el centro (el coach marca pagado a mano); el
-    cliente usa el portal de entreno (rutina, series, progreso).
-  - No venden asesoría de solo nutrición → el tier `nutri` queda INTERNO
-    (el coach puede usarlo a mano, pero no aparece en la página pública ni
-    tiene pago online).
+Catálogo REAL de la marca (los tres de PAGO ÚNICO, sin suscripción ni permanencia):
+  - Dieta (70 €) → tier `nutri`: plan de nutrición a medida.
+  - Entrenamiento (70 €) → tier `train`: plan de entrenamiento a medida.
+  - Pack completo (130 €) → tier `full`: dieta + entrenamiento + la cuota del
+    gimnasio incluida. Es la opción que más venden.
 """
 
 # --- Identidad ---------------------------------------------------------------
@@ -59,16 +54,14 @@ SMTP_FROM_DEFAULT = f"{BRAND_NAME} <{CONTACT_EMAIL}>"
 # La maquinaria interna (nutri/train/full) es del producto; la marca solo pone
 # la etiqueta comercial. Espejo: frontend/src/lib/packages.ts.
 TIER_LABELS = {
-    "nutri": "Plan Nutrición",        # interno: la marca no lo vende suelto
-    "train": "Entreno Personal",      # sesiones presenciales en el centro
-    "full": "Génesis.99",             # preparación personal completa (online)
+    "nutri": "Dieta",            # plan de nutrición — 70 € pago único
+    "train": "Entrenamiento",    # plan de entrenamiento — 70 € pago único
+    "full": "Pack completo",     # dieta + entrenamiento + cuota del gimnasio — 130 €
 }
 
 # Tiers con VENTA ONLINE self-serve (checkout de Stripe desde la web pública).
-# Los demás existen para el coach (alta manual + cobro en el centro), y el
-# backend RECHAZA crear un checkout suyo — así un enlace mal construido no
-# puede cobrar online un plan que se paga presencialmente.
-PUBLIC_TIERS = ("full",)
+# Professional vende los tres, todos de pago único.
+PUBLIC_TIERS = ("nutri", "train", "full")
 
 # Oferta de captación (1 € el primer mes → suscripción). La maquinaria existe
 # en el motor, pero esta marca NO la usa: apagada de raíz (sin checkout, sin
@@ -77,11 +70,21 @@ OFFER_ENABLED = False
 
 # --- Funciones del motor apagadas en esta instancia --------------------------
 # El motor las conserva (código y tests intactos); la marca decide si se usan.
-# Professional quiere la web SOLO para el ciclo esencial: subir anamnesis →
-# generar plan → portal del cliente → revisiones. Todo lo demás, fuera.
+# El flujo de Professional es corto y directo: anamnesis → se le asigna dieta,
+# entrenamiento o ambos → portal donde registra su evolución → feedback que el
+# coach envía cuando lo ve listo. Sin ciclo quincenal ni videollamadas.
 FEATURE_VIDEO_CALLS = False   # videollamadas de revisión (Google Meet)
-FEATURE_RESOURCES = False     # página Recursos del coach + pestaña Recursos del portal
 FEATURE_SALES_KIT = False     # kit de ventas del panel "Hoy"
+
+# TIENDA: productos propios del centro, visibles en el portal del cliente y en
+# la página pública de enlaces. Professional sí la usa (es venta cruzada).
+FEATURE_RESOURCES = True
+
+# Ciclo QUINCENAL del motor (períodos de 14 días, cierre del cliente y revisión
+# con fecha). Professional no lo usa: el cliente registra su evolución cuando
+# quiere y el feedback se mantiene al día solo. Apagarlo simplifica el portal,
+# el panel y las alertas.
+FEATURE_BIWEEKLY = False
 
 # --- Método del banco de comidas de la marca ---------------------------------
 # "options": TODAS las tomas del plan flexible llevan opciones CERRADAS (combos
@@ -97,9 +100,9 @@ MEAL_BANK_OPTIONS = 3  # opciones por toma (el schema admite 1-4)
 # cliente (assets en backend/app/assets/plan/). El dossier es la ENTREGA
 # premium del día 1; el día a día vive en el portal.
 DOC_PRODUCTS = {
-    "full": ("Génesis.99", "Preparación personal", "cover_full.png"),
-    "train": ("Entreno Personal", "Plan de entrenamiento", "cover_train.png"),
-    "nutri": ("Plan Nutrición", "Plan de nutrición", "cover_nutri.png"),
+    "full": ("Pack completo", "Dieta y entrenamiento", "cover_full.png"),
+    "train": ("Entrenamiento", "Plan de entrenamiento", "cover_train.png"),
+    "nutri": ("Dieta", "Plan de nutrición", "cover_nutri.png"),
 }
 
 # --- Stripe ------------------------------------------------------------------

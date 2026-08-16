@@ -21,9 +21,8 @@ import type { ClientOut, CoachAlert, VideoCallAgendaItem } from "../types";
 import { PageLoader, StatusBadge } from "../components/ui";
 import { goalReviewDue, initials, relativeDays } from "../lib/format";
 import { pkg } from "../lib/packages";
-import { FEATURE_RESOURCES, FEATURE_SALES_KIT, FEATURE_VIDEO_CALLS } from "../lib/branding";
+import { FEATURE_RESOURCES, FEATURE_VIDEO_CALLS } from "../lib/branding";
 import { WhatsAppRound } from "../components/WhatsAppRound";
-import { SalesKit } from "../components/SalesKit";
 
 /**
  * Dashboard = "qué toca hacer AHORA con cada cliente". Cada cliente se traduce
@@ -256,14 +255,6 @@ export default function DashboardPage() {
         <WhatsAppRound />
       </div>
 
-      {/* Kit de ventas: catálogo de precios y enlaces de pago por plan, listos
-          para responder a un interesado que escribe desde /planes. Fuera en
-          esta instancia (la web es solo el ciclo de asesoría). */}
-      {FEATURE_SALES_KIT && (
-        <div className="mt-4">
-          <SalesKit />
-        </div>
-      )}
 
       {loadFailed && (
         <div className="card mt-4 p-3 text-sm text-zinc-300">

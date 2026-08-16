@@ -22,7 +22,6 @@ const PaymentOkPage = lazy(() =>
 );
 const LinksPage = lazy(() => import("./pages/LinksPage"));
 const AnamnesisPage = lazy(() => import("./pages/AnamnesisPage"));
-const OfertaPage = lazy(() => import("./pages/OfertaPage"));
 
 /**
  * Raíz. El portal del cliente (login en /portal y acceso por token en /p/:token)
@@ -44,8 +43,6 @@ export default function App() {
           <Route path="/p/:token" element={<PortalRoute />} />
           {/* Registro personal del cliente: página pública de planes (Stripe). */}
           <Route path="/planes" element={<PlansPage />} />
-          {/* Campaña story/post: primer mes del plan Full por 1 € (suscripción). */}
-          <Route path="/oferta" element={<OfertaPage />} />
           <Route path="/pago-ok" element={<PaymentOkPage />} />
           {/* Link del perfil de Instagram (landing pública de enlaces). */}
           <Route path={`/${PUBLIC_SLUG}`} element={<LinksPage />} />

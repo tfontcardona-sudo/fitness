@@ -133,8 +133,11 @@ def _needs_anamnesis(client: Client) -> bool:
 
 def _state(db: Session, client: Client) -> AnamnesisStateOut:
     brand = db.scalar(select(BrandConfig).limit(1)) or BrandConfig()
+    from app.services import packages as _pkgs
+
     return AnamnesisStateOut(
         first_name=_first_name(client),
+        package_tier=_pkgs.normalize(client.package_tier),
         anamnesis_done=client.consent_signed_at is not None,
         photos_count=_photos_count(db, client.id),
         brand_name=brand.name,
@@ -181,7 +184,12 @@ def submit_anamnesis(
         )
     data["current_weight_kg"] = data["start_weight_kg"]
 
+    # El cuestionario CORTO deja campos sin responder (un cliente de solo dieta
+    # no contesta a los de entreno): un vacío nunca pisa un dato que el coach ya
+    # tuviera en la ficha.
     for field, value in data.items():
+        if value in (None, []) and getattr(client, field, None) not in (None, []):
+            continue
         setattr(client, field, value)
     client.consent_signed_at = datetime.now(timezone.utc)
 

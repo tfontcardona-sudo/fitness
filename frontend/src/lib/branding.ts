@@ -41,8 +41,8 @@ export const PORTAL_THEME: "dark" | "light" = "dark";
  *  backend). El motor las conserva; la marca quiere la web solo para el ciclo
  *  esencial: subir anamnesis → generar plan → portal → revisiones. */
 export const FEATURE_VIDEO_CALLS: boolean = false; // videollamadas de revisión
-export const FEATURE_RESOURCES: boolean = false;   // Recursos (coach y portal)
-export const FEATURE_SALES_KIT: boolean = false;   // kit de ventas del panel Hoy
+export const FEATURE_RESOURCES: boolean = true;    // TIENDA (portal + enlaces)
+export const FEATURE_BIWEEKLY: boolean = false;    // ciclo quincenal del motor
 
 // --- El centro (de professionalgirona.com) ----------------------------------
 export const CENTER_ADDRESS = "Carretera Pierre Vilar, 2 · 17002 Girona";
@@ -53,11 +53,3 @@ export const CENTER_SCHEDULE: ReadonlyArray<readonly [string, string]> = [
   ["Sábado y domingo", "08:00 – 18:00"],
 ];
 
-/** Tarifas PRESENCIALES de Entreno Personal (catálogo real del sitio).
- *  Informativas: se reservan por WhatsApp y se cobran en el centro. */
-export const PT_RATES: ReadonlyArray<{ label: string; price: string }> = [
-  { label: "Entreno personal socios", price: "50 €/h" },
-  { label: "Entreno personal no socios", price: "60 €/h" },
-  { label: "Pack 10 sesiones socios", price: "350 €" },
-  { label: "Pack 10 sesiones no socios", price: "450 €" },
-];

@@ -267,9 +267,10 @@ def _reset_stripe_caches(monkeypatch, ss):
     monkeypatch.setattr(ss, "_prices_cache", {"at": 0.0, "data": None})
 
 
-def test_auto_alta_crea_los_9_precios_que_faltan(monkeypatch):
+def test_auto_alta_crea_los_precios_que_faltan(monkeypatch):
     # Sin script ejecutado (Stripe vacío), resolver un precio los CREA todos:
     # la primera visita a /planes o el primer checkout dejan Stripe configurado.
+    # Catálogo de Professional: UN precio de pago único por servicio.
     # La oferta está apagada en esta marca: se enciende SOLO aquí para cubrir
     # la maquinaria completa del motor (otra instancia puede activarla).
     from app.services import stripe_service as ss
@@ -279,14 +280,14 @@ def test_auto_alta_crea_los_9_precios_que_faltan(monkeypatch):
     monkeypatch.setattr(ss, "_stripe", lambda: fake)
     _reset_stripe_caches(monkeypatch, ss)
 
-    pid = ss._price_by_lookup("train", "1m")
+    pid = ss._price_by_lookup("train", "unico")
     assert pid
-    # 9 pagos únicos + 1 recurrente de la oferta; cupón del primer mes creado.
-    assert len(fake.products) == 3 and len(fake.prices) == 10
-    creado = next(p for p in fake.prices if p["lookup_key"] == ss._lookup_key("train", "1m"))
-    assert creado["unit_amount"] == 6900 and creado["currency"] == "eur"
-    genesis = next(p for p in fake.prices if p["lookup_key"] == ss._lookup_key("full", "1m"))
-    assert genesis["unit_amount"] == 9900  # Génesis.99: 99 €/mes reales
+    # 3 pagos únicos + 1 recurrente de la oferta; cupón del primer mes creado.
+    assert len(fake.products) == 3 and len(fake.prices) == 4
+    creado = next(p for p in fake.prices if p["lookup_key"] == ss._lookup_key("train", "unico"))
+    assert creado["unit_amount"] == 7000 and creado["currency"] == "eur"
+    pack = next(p for p in fake.prices if p["lookup_key"] == ss._lookup_key("full", "unico"))
+    assert pack["unit_amount"] == 13000  # pack completo: 130 € de pago único
     assert pid == creado["id"]
     oferta = next(p for p in fake.prices if p["lookup_key"] == ss.OFFER_LOOKUP)
     assert oferta["unit_amount"] == 12000
@@ -296,12 +297,12 @@ def test_auto_alta_crea_los_9_precios_que_faltan(monkeypatch):
 
     # Idempotente: resolver otra combinación después no crea nada más.
     _reset_stripe_caches(monkeypatch, ss)
-    assert ss._price_by_lookup("nutri", "3m")
-    assert len(fake.prices) == 10 and len(fake.coupons) == 1
+    assert ss._price_by_lookup("nutri", "unico")
+    assert len(fake.prices) == 4 and len(fake.coupons) == 1
 
 
 def test_auto_reprecio_detecta_importes_desviados(monkeypatch):
-    """REGRESIÓN (revisión adversarial): con los 9 lookup_keys YA en Stripe pero
+    """REGRESIÓN (revisión adversarial): con los lookup_keys YA en Stripe pero
     con importes VIEJOS (p. ej. tras un reprecio en el código, desplegado por el
     cron de auto-deploy que NO ejecuta el script), la resolución debe detectar
     la deriva y alinear los precios sola — antes solo actuaba si FALTABAN keys
@@ -309,27 +310,27 @@ def test_auto_reprecio_detecta_importes_desviados(monkeypatch):
     from app.services import stripe_service as ss
 
     fake = FakeStripe()
-    viejos = {"train": {"1m": 6900, "3m": 19500, "6m": 37200},
-              "nutri": {"1m": 7900, "3m": 22500, "6m": 43200},
-              "full": {"1m": 12900, "3m": 36900, "6m": 70800}}
+    viejos = {"train": {"unico": 6500},
+              "nutri": {"unico": 6500},
+              "full": {"unico": 11900}}
     for i, t in enumerate(("train", "nutri", "full")):
         fake.products.append({"id": f"prod_{t}", "metadata": {branding.STRIPE_TIER_METADATA_KEY: t}})
-        for p in ("1m", "3m", "6m"):
+        for p in ("unico",):
             fake.prices.append({"id": f"price_old_{t}_{p}", "active": True,
                                 "product": f"prod_{t}", "lookup_key": ss._lookup_key(t, p),
                                 "unit_amount": viejos[t][p], "currency": "eur"})
     monkeypatch.setattr(ss, "_stripe", lambda: fake)
     _reset_stripe_caches(monkeypatch, ss)
 
-    pid = ss._price_by_lookup("full", "3m")
+    pid = ss._price_by_lookup("full", "unico")
     nuevo = next(p for p in fake.prices
-                 if p.get("lookup_key") == ss._lookup_key("full", "3m") and p["active"])
-    assert pid == nuevo["id"] and nuevo["unit_amount"] == 29700  # Génesis: 99 €/mes
-    viejo = next(p for p in fake.prices if p["id"] == "price_old_full_3m")
+                 if p.get("lookup_key") == ss._lookup_key("full", "unico") and p["active"])
+    assert pid == nuevo["id"] and nuevo["unit_amount"] == 13000  # pack: 130 € únicos
+    viejo = next(p for p in fake.prices if p["id"] == "price_old_full_unico")
     assert viejo["active"] is False  # el precio antiguo queda archivado
     # Todas las combinaciones quedaron alineadas con la tabla canónica.
     for t in ("train", "nutri", "full"):
-        for p in ("1m", "3m", "6m"):
+        for p in ("unico",):
             activo = next(x for x in fake.prices
                           if x.get("lookup_key") == ss._lookup_key(t, p) and x["active"])
             assert activo["unit_amount"] == ss.CANONICAL_AMOUNTS[t][p]
@@ -394,15 +395,15 @@ def test_auto_alta_transfiere_lookup_si_cambia_el_importe(monkeypatch):
     fake = FakeStripe()
     fake.products.append({"id": "prod_x", "metadata": {branding.STRIPE_TIER_METADATA_KEY: "train"}})
     fake.prices.append({"id": "price_old", "active": True, "product": "prod_x",
-                        "lookup_key": ss._lookup_key("train", "1m"), "unit_amount": 4900,
+                        "lookup_key": ss._lookup_key("train", "unico"), "unit_amount": 4900,
                         "currency": "eur"})
     ss.ensure_canonical_prices(fake, log=lambda m: None)
 
     old = next(p for p in fake.prices if p["id"] == "price_old")
     assert old["active"] is False
     nuevo = next(p for p in fake.prices
-                 if p.get("lookup_key") == ss._lookup_key("train", "1m") and p["active"])
-    assert nuevo["unit_amount"] == 6900
+                 if p.get("lookup_key") == ss._lookup_key("train", "unico") and p["active"])
+    assert nuevo["unit_amount"] == 7000
     assert nuevo.get("transfer_lookup_key") is True
 
 
@@ -419,10 +420,10 @@ def test_planes_muestra_precios_de_reserva_sin_stripe(monkeypatch):
 
     data = ss.get_plan_prices()
     t = data["tiers"]
-    assert t["full"]["1m"]["total"] == 99.0
-    assert t["full"]["3m"] == {"total": 297.0, "months": 3, "per_month": 99.0}
-    assert t["full"]["6m"] == {"total": 594.0, "months": 6, "per_month": 99.0}
-    assert "train" not in t and "nutri" not in t  # internos: no se publican
+    # Los TRES servicios son públicos y de pago único (70 / 70 / 130 €).
+    assert t["full"]["unico"] == {"total": 130.0, "months": 1, "per_month": 130.0}
+    assert t["nutri"]["unico"]["total"] == 70.0
+    assert t["train"]["unico"]["total"] == 70.0
 
 
 def test_planes_reserva_con_stripe_caido_no_se_cachea(monkeypatch):
@@ -436,7 +437,7 @@ def test_planes_reserva_con_stripe_caido_no_se_cachea(monkeypatch):
     _reset_stripe_caches(monkeypatch, ss)
 
     data = ss.get_plan_prices()
-    assert data["tiers"]["full"]["1m"]["total"] == 99.0
+    assert data["tiers"]["full"]["unico"]["total"] == 130.0
     assert ss._prices_cache["data"] is None  # sin cachear → reintenta
 
 
@@ -644,7 +645,7 @@ def test_cupon_borrado_se_detecta_y_recrea(monkeypatch):
     fake = FakeStripe()
     for t in ("train", "nutri", "full"):
         fake.products.append({"id": f"prod_{t}", "metadata": {branding.STRIPE_TIER_METADATA_KEY: t}})
-        for p in ("1m", "3m", "6m"):
+        for p in ("unico",):
             fake.prices.append({"id": f"price_{t}_{p}", "active": True,
                                 "product": f"prod_{t}", "lookup_key": ss._lookup_key(t, p),
                                 "unit_amount": ss.CANONICAL_AMOUNTS[t][p],
@@ -892,25 +893,19 @@ def test_alta_manual_con_oferta_valida_el_plan(monkeypatch):
 
 
 def test_importes_del_script_cumplen_lo_pedido():
-    # Catálogo de la marca: Génesis.99 (full) a 99 €/mes EXACTOS en todas las
-    # duraciones (su web no anuncia descuento por compromiso); los internos
-    # conservan Nutri > Train y Full < Train+Nutri por duración.
+    # Catálogo REAL de la marca: pago ÚNICO — Dieta 70 €, Entrenamiento 70 € y
+    # Pack completo 130 € (con la cuota del gimnasio incluida). El pack cuesta
+    # menos que los dos sueltos: es lo que lo hace atractivo.
     import importlib.util, pathlib
     spec = importlib.util.spec_from_file_location(
         "setup_prices", pathlib.Path(__file__).parents[1] / "scripts" / "setup_stripe_prices.py")
     mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
     A = mod.AMOUNTS
-    for p in ("1m", "3m", "6m"):
-        assert A["nutri"][p] > A["train"][p]
-        assert A["full"][p] < A["train"][p] + A["nutri"][p]
-    assert A["full"]["1m"] == 9900 and A["full"]["3m"] == 29700 and A["full"]["6m"] == 59400
-    assert A["train"]["1m"] == 6900 and A["nutri"]["1m"] == 7900
-    # Génesis: precio por mes CONSTANTE (99 €) — sin descuento anunciado.
-    assert A["full"]["3m"] / 3 == A["full"]["1m"] and A["full"]["6m"] / 6 == A["full"]["1m"]
-    # Los internos mantienen el descuento por compromiso (precio/mes decreciente).
-    for t in ("train", "nutri"):
-        assert A[t]["3m"] / 3 < A[t]["1m"]
-        assert A[t]["6m"] / 6 < A[t]["3m"] / 3
+    assert set(A) == {"nutri", "train", "full"}
+    assert all(set(v) == {"unico"} for v in A.values()), "solo hay pago único"
+    assert A["nutri"]["unico"] == 7000 and A["train"]["unico"] == 7000
+    assert A["full"]["unico"] == 13000
+    assert A["full"]["unico"] < A["train"]["unico"] + A["nutri"]["unico"]
 
 
 def test_webhook_metadata_antigua_crea_el_plan_correcto(monkeypatch):
@@ -945,19 +940,20 @@ def test_webhook_metadata_antigua_crea_el_plan_correcto(monkeypatch):
 # ---- catálogo white-label: guardas de venta online (Professional Girona) ----
 
 def test_checkout_de_plan_sin_venta_online_se_rechaza(monkeypatch):
-    # Entreno Personal (train) y nutri se cobran EN EL CENTRO: crear su
-    # checkout debe fallar aunque Stripe esté configurado — ningún enlace,
-    # ni bien ni mal construido, puede cobrarlos online.
+    # Professional vende los TRES online, pero el veto del motor sigue vivo:
+    # un tier fuera de PUBLIC_TIERS no puede cobrarse online ni con un enlace
+    # escrito a mano (otra instancia puede cobrar algo en el local).
     from app.config import settings
     from app.db import SessionLocal
     from app.services import stripe_service as ss
 
     monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_x")
+    monkeypatch.setattr(branding, "PUBLIC_TIERS", ("full",))
     db = SessionLocal()
     try:
         for tier in ("train", "nutri"):
             with pytest.raises(ss.StripeError, match="en el centro"):
-                ss.create_checkout_url(db, tier, "1m")
+                ss.create_checkout_url(db, tier, "unico")
     finally:
         db.close()
 
@@ -989,10 +985,10 @@ def test_auto_alta_sin_oferta_no_crea_precio_ni_cupon(monkeypatch):
     monkeypatch.setattr(ss, "_stripe", lambda: fake)
     _reset_stripe_caches(monkeypatch, ss)
 
-    assert ss._price_by_lookup("full", "1m")
-    assert len(fake.prices) == 9 and not fake.coupons
+    assert ss._price_by_lookup("full", "unico")
+    assert len(fake.prices) == 3 and not fake.coupons
 
     # Segunda resolución: nada nuevo que crear (sin bucle de reparación).
     _reset_stripe_caches(monkeypatch, ss)
-    assert ss._price_by_lookup("train", "3m")
-    assert len(fake.prices) == 9 and not fake.coupons
+    assert ss._price_by_lookup("train", "unico")
+    assert len(fake.prices) == 3 and not fake.coupons

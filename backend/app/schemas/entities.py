@@ -52,7 +52,10 @@ PackageTier = Literal["nutri", "train", "full"]
 # tiene un precio de Stripe por duración, 9 combinaciones) + "oferta": la
 # promoción de captación del plan Full — 1 € el primer mes y después
 # 120 €/mes en SUSCRIPCIÓN de Stripe (renovación automática).
-BillingPeriod = Literal["1m", "3m", "6m", "oferta"]
+# "unico" = PAGO ÚNICO (el modelo de Professional). Las duraciones
+# mensuales y la oferta son del motor y se conservan para instancias que
+# vendan por suscripción; esta marca solo usa "unico".
+BillingPeriod = Literal["unico", "1m", "3m", "6m", "oferta"]
 PaymentStatus = Literal["pending", "paid"]
 ClientStatus = Literal[
     "onboarding", "active", "awaiting_feedback", "at_risk", "review_pending", "inactive"
@@ -87,11 +90,17 @@ class ClientCreate(BaseModel):
     email: EmailStr
     phone: str | None = None
     package_tier: PackageTier = "full"
-    billing_period: BillingPeriod = "1m"
+    billing_period: BillingPeriod = "unico"
 
 
 class AnamnesisSubmit(BaseModel):
-    """Wizard público del cliente (vía portal_token). Recoge TODO (G.3)."""
+    """Cuestionario inicial público del cliente (vía portal_token).
+
+    El motor admite el cuestionario LARGO (todos los campos) y el CORTO de
+    Professional: lo que un servicio concreto no pregunta llega vacío y el
+    backend usa el valor prudente de siempre. Solo son obligatorios los datos
+    sin los que NO se puede calcular nada (sexo, edad, altura, peso, objetivo)
+    y el consentimiento."""
 
     # Personales
     sex: Sex
@@ -104,17 +113,17 @@ class AnamnesisSubmit(BaseModel):
     medical_notes: str | None = None
     medication_notes: str | None = None
     sport_history: str | None = None
-    level: Level
+    level: Level = "beginner"
     # Objetivos
     goal_type: GoalType
     goal_weight_kg: float | None = Field(default=None, gt=30, lt=300)
     goal_deadline: date | None = None
     priority_zones: str | None = None  # se guarda en lifestyle_notes etiquetado
-    # Entrenamiento
-    training_days: int = Field(ge=2, le=6)
+    # Entrenamiento — opcionales: un cliente de SOLO DIETA no los responde.
+    training_days: int | None = Field(default=None, ge=2, le=6)
     daily_activity_level: str | None = None  # sedentary|light|active|very_active
-    session_max_min: int = Field(ge=30, le=180)
-    training_place: TrainingPlace
+    session_max_min: int | None = Field(default=None, ge=30, le=180)
+    training_place: TrainingPlace | None = None
     equipment: list[str] = Field(default_factory=list)
     # Nutrición — número/horario de comidas OPCIONALES: si el cliente lo
     # delega ("lo decidís vosotros"), la IA elige el reparto óptimo.
@@ -125,7 +134,7 @@ class AnamnesisSubmit(BaseModel):
     food_likes: list[str] = Field(default_factory=list)
     lifestyle_notes: str | None = None
     current_supplements: str | None = None
-    diet_mode: DietMode
+    diet_mode: DietMode = "flexible_7"
     diet_pattern: DietPattern | None = None
     strict_free_meal_enabled: bool = False
     # RGPD
@@ -185,7 +194,7 @@ class ClientOut(BaseModel):
     email: str
     phone: str | None
     package_tier: PackageTier = "full"
-    billing_period: BillingPeriod = "1m"
+    billing_period: BillingPeriod = "unico"
     payment_status: PaymentStatus = "paid"
     paid_at: datetime | None = None
     sex: Sex | None
@@ -332,7 +341,7 @@ class PublicRegisterIn(BaseModel):
     email: EmailStr
     phone: str = Field(min_length=6, max_length=40)
     tier: PackageTier
-    period: BillingPeriod = "1m"
+    period: BillingPeriod = "unico"
 
     @field_validator("tier", mode="before")
     @classmethod
@@ -556,9 +565,13 @@ class ExerciseUpdate(BaseModel):
 
 
 class AnamnesisStateOut(BaseModel):
-    """Estado público del wizard (GET /api/p/{token}) — datos mínimos."""
+    """Estado público del cuestionario (GET /api/p/{token}) — datos mínimos.
+
+    `package_tier` permite al formulario preguntar SOLO lo que aplica: a un
+    cliente de dieta no se le piden días de entreno ni material."""
 
     first_name: str
+    package_tier: PackageTier = "full"
     anamnesis_done: bool
     photos_count: int
     brand_name: str

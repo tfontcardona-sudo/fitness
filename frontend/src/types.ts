@@ -13,7 +13,9 @@ export type TrainingPlace = "gym" | "home" | "outdoor";
 export type DietMode = "flexible_7" | "strict";
 export type PackageTier = "nutri" | "train" | "full";
 // Duraciones PÚBLICAS con precio propio en el catálogo (conmutador de /planes).
-export type PublicBillingPeriod = "1m" | "3m" | "6m";
+// "unico" = pago único (el modelo de Professional). Las mensuales son legado
+// del motor y se conservan para no romper fichas antiguas.
+export type PublicBillingPeriod = "unico" | "1m" | "3m" | "6m";
 // Duración contratada del plan (decide el precio de Stripe que se cobra):
 // mensual, trimestral, semestral, u "oferta" (1 € el primer mes → 120 €/mes
 // en suscripción, solo plan Full).
