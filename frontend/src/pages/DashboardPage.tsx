@@ -17,6 +17,7 @@ import {
   Video,
 } from "lucide-react";
 import { api, keepIfSame, REFRESH_MS } from "../lib/api";
+import { FEATURE_BIWEEKLY } from "../lib/branding";
 import type { ClientOut, CoachAlert, VideoCallAgendaItem } from "../types";
 import { PageLoader, StatusBadge } from "../components/ui";
 import { goalReviewDue, initials, relativeDays } from "../lib/format";
@@ -44,10 +45,13 @@ interface Accion {
   to?: string;               // destino explícito (si no es el perfil del cliente)
 }
 
+// Sin ciclo quincenal no hay "revisión": lo que el coach envía es el INFORME.
+const CAT_INFORME = FEATURE_BIWEEKLY ? "Revisión" : "Informe";
+
 function nextAction(c: ClientOut): Accion | null {
   if (c.status === "review_pending")
     return {
-      client: c, prio: 1, tone: "#7B4FC9", icon: ClipboardCheck, category: "Revisión",
+      client: c, prio: 1, tone: "#7B4FC9", icon: ClipboardCheck, category: CAT_INFORME,
       title: `Revisión quincenal #${c.review_period_index ?? c.pending_review_period ?? ""} subida`,
       detail: "El cliente ha cerrado sus 2 semanas: revisa los datos y genera su feedback.",
       cta: "Generar feedback", tab: "feedback",
@@ -135,20 +139,20 @@ export default function DashboardPage() {
     const acciones = c
       .map(nextAction)
       .filter((a): a is Accion => a !== null)
-      .filter((a) => !(a.category === "Revisión" && sendFbIds.has(a.client.id)));
-    // Falta recurso/producto y videollamadas: vienen del centro de alertas
+      .filter((a) => !(a.category === CAT_INFORME && sendFbIds.has(a.client.id)));
+    // Falta producto en la tienda y videollamadas: vienen del centro de alertas
     // (mismo dato), cada tipo con su grupo, color e icono propios.
     for (const al of alerts) {
       const cli = c.find((x) => x.id === al.client_id);
       if (!cli) continue;
       if (al.kind === "missing_products" && FEATURE_RESOURCES) {
-        // El botón dice "Abrir Recursos" → lleva DE VERDAD a Recursos (donde
+        // El botón dice "Abrir Tienda" → lleva DE VERDAD a la Tienda (donde
         // se sube el producto), no a la planificación del cliente.
         acciones.push({
-          client: cli, prio: 3, tone: "#28707C", icon: Package, category: "Falta recurso/producto",
-          title: "Suplemento del plan sin producto en Recursos",
+          client: cli, prio: 3, tone: "#28707C", icon: Package, category: "Falta en la tienda",
+          title: "Suplemento del plan que no está en la tienda",
           detail: al.message,
-          cta: "Abrir Recursos", tab: "planificacion", to: "/recursos",
+          cta: "Abrir Tienda", tab: "planificacion", to: "/recursos",
         });
       } else if (al.kind === "change_request") {
         // El cliente escribió una petición/duda desde su portal: al coach.
@@ -160,9 +164,21 @@ export default function DashboardPage() {
         });
       } else if (al.kind === "send_feedback") {
         acciones.push({
-          client: cli, prio: 1, tone: "#7B4FC9", icon: Send, category: "Revisión",
-          title: "Feedback generado · falta enviarlo",
-          detail: al.message, cta: "Enviar feedback", tab: "feedback",
+          client: cli, prio: 1, tone: "#7B4FC9", icon: Send, category: CAT_INFORME,
+          title: FEATURE_BIWEEKLY ? "Feedback generado · falta enviarlo"
+            : "Informe listo · falta enviarlo",
+          detail: al.message, cta: FEATURE_BIWEEKLY ? "Enviar feedback" : "Enviar informe",
+          tab: "feedback",
+        });
+      } else if (al.kind === "generate_feedback") {
+        // Seguimiento continuo: hay datos suficientes (o días nuevos) para que
+        // el informe diga algo. Es el corazón del ciclo de esta instancia.
+        acciones.push({
+          client: cli, prio: al.severity === "alta" ? 1 : 2, tone: "#7B4FC9",
+          icon: ClipboardCheck, category: CAT_INFORME,
+          title: FEATURE_BIWEEKLY ? "Revisión recibida · genera el feedback"
+            : "Informe pendiente de generar",
+          detail: al.message, cta: al.action, tab: al.tab,
         });
       } else if (al.kind === "regenerate_goal") {
         acciones.push({
@@ -201,7 +217,7 @@ export default function DashboardPage() {
       } else if (al.kind === "period_overdue") {
         acciones.push({
           client: cli, prio: al.severity === "alta" ? 1 : 2, tone: "#F0716A", icon: Hourglass,
-          category: "Revisión",
+          category: CAT_INFORME,
           title: "Revisión vencida sin enviar",
           detail: al.message, cta: al.action, tab: al.tab,
         });
@@ -229,7 +245,7 @@ export default function DashboardPage() {
     }
     acciones.sort((a, b) => a.prio - b.prio);
     const conAccion = new Set(
-      acciones.filter((a) => a.category !== "Falta recurso/producto").map((a) => a.client.id));
+      acciones.filter((a) => a.category !== "Falta en la tienda").map((a) => a.client.id));
     return { acciones, alDia: c.filter((x) => !conAccion.has(x.id) && x.status !== "inactive") };
   }, [clients, alerts]);
 

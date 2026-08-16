@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Demo de Professional en TU máquina, en un comando: ./demo.sh
-# Levanta todo con Docker, siembra los 3 clientes de demo y te da los enlaces.
+# Levanta todo con Docker, siembra los 4 clientes de demo y te da los enlaces.
 set -e
 cd "$(dirname "$0")"
 
@@ -42,7 +42,7 @@ for i in $(seq 1 60); do
   sleep 2
 done
 
-echo "→ Sembrando los 3 clientes de demo…"
+echo "→ Sembrando los 4 clientes de demo…"
 docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T api python scripts/demo_seed.py
 
 cat <<FIN

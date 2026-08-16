@@ -586,8 +586,19 @@ def crear_nuria(db) -> Client:
     db.flush()
     c.portal_token = new_portal_token(c.id)
 
-    nutrition = nuria_nutrition()
-    check_cuadre(nutrition)
+    # Su dieta sale del POOL por el camino REAL (plantilla vegetariana →
+    # `materialize_for_client`): así respeta su patrón y su intolerancia, que es
+    # justo lo que hace el sistema en producción.
+    from app.models import PlanTemplate
+    from app.services.templates import materialize_for_client
+
+    tpl = db.scalar(select(PlanTemplate)
+                    .where(PlanTemplate.title == "Perder grasa · dieta vegetariana"))
+    if tpl is not None:
+        _training, nutrition = materialize_for_client(db, tpl, c)
+    else:                      # pool sin sembrar: menú de respaldo
+        nutrition = nuria_nutrition()
+        check_cuadre(nutrition)
     plan = Plan(client_id=c.id, month_index=1, version=1, status="published",
                 nutrition_json=nutrition, training_json=None,
                 education_json=None, guardrail_flags=[], generated_by="demo",

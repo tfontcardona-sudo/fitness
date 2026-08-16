@@ -229,7 +229,7 @@ const GROUPS: { id: string; label: string; color: string; kinds: string[] }[] = 
     kinds: ["no_logs", "change_request", "client_inactive"] },
   { id: "pago", label: "Pagos", color: "#E5B94E", kinds: ["payment_pending"] },
   { id: "objetivo", label: "Objetivo", color: "#37474F", kinds: ["goal_review"] },
-  { id: "recursos", label: "Recursos / productos", color: "#28707C", kinds: ["missing_products"] },
+  { id: "recursos", label: "Tienda / productos", color: "#28707C", kinds: ["missing_products"] },
   { id: "videollamada", label: "Videollamada", color: "#0EA5E9",
     kinds: ["video_call_wait", "video_call_proposed", "video_call_manual",
             "video_call_tomorrow", "video_call_confirm"] },

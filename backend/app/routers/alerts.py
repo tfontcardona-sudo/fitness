@@ -265,8 +265,8 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
             listado = ", ".join(missing[:4]) + ("…" if len(missing) > 4 else "")
             out.append(_alert(
                 client, "missing_products", "media",
-                f"Suplementos de su plan sin producto en Recursos: {listado}. "
-                "Súbelos en Recursos → Productos para que le salgan en su portal "
+                f"Suplementos de su plan que no están en la tienda: {listado}. "
+                "Añádelos en Tienda → Productos para que le salgan en su portal "
                 "con tu código.",
                 "planificacion", "Ver planificación"))
 
