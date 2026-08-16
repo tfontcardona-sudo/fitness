@@ -8,8 +8,8 @@ import type { LandingOut } from "../types";
 /**
  * Página PÚBLICA de enlaces (/professional) — el link del perfil de Instagram del coach.
  * Foto del coach de fondo (configurable en Recursos → Página de enlaces) y dos
- * accesos: "Trabaja conmigo" (planes con pago) y la tienda del partner
- * con el código de descuento del coach.
+ * accesos: "Trabaja conmigo" (planes con pago) y la TIENDA del centro (sus
+ * productos, con el código de descuento).
  */
 export default function LinksPage() {
   const [data, setData] = useState<LandingOut | null>(null);
@@ -87,12 +87,12 @@ export default function LinksPage() {
             <Dumbbell size={20} /> Trabaja conmigo
           </Link>
 
-          {/* Tienda del partner (ESN) + código de descuento */}
+          {/* Tienda del centro (sus productos) + código de descuento */}
           {data?.partner_store_url && (
             <a href={data.partner_store_url} target="_blank" rel="noopener noreferrer"
               className="flex w-full items-center justify-center gap-2.5 rounded-2xl px-5 py-4 text-base font-bold text-white shadow-xl transition-transform active:scale-[0.97]"
               style={{ background: secondary }}>
-              <ShoppingBag size={20} /> Suplementos ESN
+              <ShoppingBag size={20} /> Tienda {data?.name ?? BRAND_NAME}
             </a>
           )}
           {data?.partner_discount_code && (
@@ -109,7 +109,7 @@ export default function LinksPage() {
         {data && data.products.length > 0 && (
           <div className="mt-10 w-full">
             <p className="mb-3 text-sm font-bold uppercase tracking-wider text-white/70">
-              Productos que recomiendo
+              Nuestros productos
             </p>
             {/* Buscador: solo cuando hay catálogo suficiente para que ayude */}
             {data.products.length > 4 && (

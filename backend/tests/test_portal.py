@@ -203,7 +203,7 @@ def test_full_portal_cycle(client, auth):
     assert client.post(f"/api/p/{token}/close", json=close_body).status_code == 403
 
 
-def test_close_period_when_due(client, auth):
+def test_close_period_when_due(client, auth, ciclo_quincenal):
     """Período que empezó hace 14 días: el cierre debe estar disponible."""
     body = client.post("/api/clients", headers=auth,
                        json={"full_name": "Cierre Listo", "email": f"cierre-{uuid.uuid4().hex[:8]}@example.com"}).json()

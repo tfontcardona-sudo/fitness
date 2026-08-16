@@ -3,10 +3,10 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   Dumbbell,
   LayoutDashboard,
-  Library,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
+  ShoppingBag,
   Users,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
@@ -16,12 +16,12 @@ import { AlertsBell } from "./AlertsBell";
 import { AiCreditButton } from "./AiCreditButton";
 
 // La web del coach se queda con el ciclo esencial (anamnesis → plan →
-// seguimiento) + el pool de Rutinas: Recursos solo si la instancia lo enciende.
+// seguimiento) + el pool de Rutinas: la Tienda solo si la instancia la enciende.
 const NAV = [
   { to: "/", label: "Hoy", icon: LayoutDashboard, end: true },
   { to: "/clientes", label: "Clientes", icon: Users, end: false },
   { to: "/rutinas", label: "Rutinas", icon: Dumbbell, end: false },
-  { to: "/recursos", label: "Recursos", icon: Library, end: false },
+  { to: "/recursos", label: "Tienda", icon: ShoppingBag, end: false },
 ].filter((item) => FEATURE_RESOURCES || item.to !== "/recursos");
 
 /** ¿Pantalla de móvil? (reactiva al girar el dispositivo) */

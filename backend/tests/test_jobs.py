@@ -116,7 +116,7 @@ def _count_status_changes(db, client_id):
     )
 
 
-def test_job_transitions_to_at_risk_and_alerts_coach(db, _no_real_email):
+def test_job_transitions_to_at_risk_and_alerts_coach(db, _no_real_email, ciclo_quincenal):
     from app.services.jobs import run_daily_maintenance
 
     today = date(2026, 6, 20)
@@ -133,7 +133,7 @@ def test_job_transitions_to_at_risk_and_alerts_coach(db, _no_real_email):
     assert _count_emails(db, client.id, "coach_at_risk") == 1
 
 
-def test_job_is_idempotent(db, _no_real_email):
+def test_job_is_idempotent(db, _no_real_email, ciclo_quincenal):
     from app.services.jobs import run_daily_maintenance
 
     today = date(2026, 6, 20)
@@ -151,7 +151,7 @@ def test_job_is_idempotent(db, _no_real_email):
     assert _count_emails(db, client.id, "coach_at_risk") == 1
 
 
-def test_job_sends_reminder_day_12(db, _no_real_email):
+def test_job_sends_reminder_day_12(db, _no_real_email, ciclo_quincenal):
     from app.services.jobs import run_daily_maintenance
 
     start = date(2026, 6, 1)
@@ -187,7 +187,7 @@ def test_job_marks_inactive_after_30_days(db, _no_real_email):
     assert client.status == "inactive"
 
 
-def test_job_respects_client_email_toggle(db, _no_real_email):
+def test_job_respects_client_email_toggle(db, _no_real_email, ciclo_quincenal):
     from app.services.jobs import run_daily_maintenance
 
     today = date(2026, 6, 20)

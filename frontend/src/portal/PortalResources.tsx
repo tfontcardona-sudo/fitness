@@ -59,25 +59,73 @@ export function PortalResources({ api, brand, hasTraining = true }: { api: Api; 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold">Recursos</h2>
+        <h2 className="text-lg font-semibold">Tienda</h2>
         <p className="mt-0.5 text-xs opacity-60">
           {hasTraining
-            ? "Vídeos de tus ejercicios y productos recomendados por tu coach."
-            : "Productos recomendados por tu coach."}
+            ? `Los productos de ${brand.name} y los vídeos de tus ejercicios.`
+            : `Los productos de ${brand.name}, seleccionados para tu plan.`}
         </p>
       </div>
 
       {isEmpty && (
         <Empty
-          icon={hasTraining ? PlayCircle : ShoppingBag}
-          title="Aún no hay recursos"
+          icon={ShoppingBag}
+          title="La tienda está en camino"
           hint={
             hasTraining
-              ? "Cuando tu coach añada vídeos de tus ejercicios o productos recomendados, aparecerán aquí."
-              : "Cuando tu coach añada productos recomendados, aparecerán aquí."
+              ? "Cuando el centro añada sus productos o los vídeos de tus ejercicios, aparecerán aquí."
+              : "Cuando el centro añada sus productos, aparecerán aquí."
           }
         />
       )}
+
+      {products.length > 0 && (() => {
+        // Los productos que salen EN su planificación (suplementos pautados)
+        // van primero y destacados; el resto, como recomendaciones generales.
+        const inPlan = products.filter((p) => p.in_plan);
+        const rest = products.filter((p) => !p.in_plan);
+        return (
+          <>
+            {inPlan.length > 0 && (
+              <section className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Pill size={16} style={{ color: "#16A34A" }} />
+                  <h3 className="text-sm font-semibold">De tu planificación</h3>
+                  <span className="rounded-full px-2 py-0.5 text-[10px] font-bold"
+                    style={{
+                      background: "rgba(57, 255, 20, 0.14)", color: "#16A34A",
+                      boxShadow: "0 0 8px rgba(57, 255, 20, 0.4)",
+                    }}>
+                    pautado
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {inPlan.map((p) => (
+                    <ProductCard key={p.id} product={p} accent={brand.color_primary} />
+                  ))}
+                </div>
+              </section>
+            )}
+            {rest.length > 0 && (
+              <section className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <ShoppingBag size={16} style={{ color: brand.color_secondary }} />
+                  <h3 className="text-sm font-semibold">La tienda de {brand.name}</h3>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {rest.map((p) => (
+                    <ProductCard key={p.id} product={p} accent={brand.color_primary} />
+                  ))}
+                </div>
+              </section>
+            )}
+            <p className="text-[11px] opacity-40">
+              Productos del centro y recomendaciones de tu entrenador. Al abrir
+              uno, tu código de descuento se copia solo para pegarlo al pagar.
+            </p>
+          </>
+        );
+      })()}
 
       {videos.length > 0 && (
         <section className="space-y-3">
@@ -149,54 +197,6 @@ export function PortalResources({ api, brand, hasTraining = true }: { api: Api; 
           </div>
         </section>
       )}
-
-      {products.length > 0 && (() => {
-        // Los productos que salen EN su planificación (suplementos pautados)
-        // van primero y destacados; el resto, como recomendaciones generales.
-        const inPlan = products.filter((p) => p.in_plan);
-        const rest = products.filter((p) => !p.in_plan);
-        return (
-          <>
-            {inPlan.length > 0 && (
-              <section className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <Pill size={16} style={{ color: "#16A34A" }} />
-                  <h3 className="text-sm font-semibold">De tu planificación</h3>
-                  <span className="rounded-full px-2 py-0.5 text-[10px] font-bold"
-                    style={{
-                      background: "rgba(57, 255, 20, 0.14)", color: "#16A34A",
-                      boxShadow: "0 0 8px rgba(57, 255, 20, 0.4)",
-                    }}>
-                    pautado
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  {inPlan.map((p) => (
-                    <ProductCard key={p.id} product={p} accent={brand.color_primary} />
-                  ))}
-                </div>
-              </section>
-            )}
-            {rest.length > 0 && (
-              <section className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <ShoppingBag size={16} style={{ color: brand.color_secondary }} />
-                  <h3 className="text-sm font-semibold">Productos seleccionados por {brand.name}</h3>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  {rest.map((p) => (
-                    <ProductCard key={p.id} product={p} accent={brand.color_primary} />
-                  ))}
-                </div>
-              </section>
-            )}
-            <p className="text-[11px] opacity-40">
-              Recomendaciones de tu coach. Al abrir un producto tu código de
-              descuento se copia solo, para pegarlo al pagar.
-            </p>
-          </>
-        );
-      })()}
     </div>
   );
 }

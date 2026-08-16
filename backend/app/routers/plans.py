@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.db import get_db
 from app.deps import get_current_user
-from app.models import ChangeRequest, Client, FeedbackDoc, Period, Plan
+from app.models import ChangeRequest, Client, DailyLog, FeedbackDoc, Period, Plan
 from app.schemas.entities import ChangeRequestOut, PeriodCreateIn
 from app.services import email_templates as tpl
 from app.services.audit import log_event
@@ -474,6 +474,11 @@ class PeriodOut(BaseModel):
     closing_arm_cm: float | None = None
     closing_thigh_cm: float | None = None
     feedback_id: int | None = None
+    feedback_sent: bool = False
+    # Seguimiento CONTINUO: días que el cliente lleva registrados y cuántos
+    # había cuando se generó el informe → el panel avisa si se ha quedado viejo.
+    days_logged: int = 0
+    logs_at_feedback: int | None = None
     # Ajustes propuestos por el feedback IA de esta revisión (área/cambio/motivo):
     # la pestaña Planificación los muestra ANTES de pulsar "Adaptar".
     plan_adjustments: list[dict] | None = None
@@ -497,9 +502,47 @@ def list_periods(client_id: int, db: Session = Depends(get_db)) -> list[PeriodOu
             .order_by(FeedbackDoc.id.desc()).limit(1)
         )
         po.feedback_id = fb.id if fb else None
+        po.feedback_sent = bool(fb and fb.sent_at)
+        po.logs_at_feedback = (fb.content_json or {}).get("logs_at_generation") if fb else None
+        po.days_logged = db.scalar(
+            select(func.count()).select_from(DailyLog).where(DailyLog.period_id == p.id)
+        ) or 0
         po.plan_adjustments = (p.ai_analysis_json or {}).get("plan_adjustments") or None
         out.append(po)
     return out
+
+
+@router.post("/api/clients/{client_id}/feedback/refresh")
+def refresh_client_feedback(client_id: int, db: Session = Depends(get_db)) -> dict:
+    """Pone al día el INFORME del cliente con todo lo que lleva registrado.
+
+    Es el camino del seguimiento continuo: no hay que esperar a ningún cierre —
+    el coach lo actualiza cuando quiere y lo envía cuando lo ve listo. Si el
+    informe anterior ya se envió, este sale como borrador NUEVO (lo que el
+    cliente recibió no se toca)."""
+    from app.services.feedback_service import FeedbackError, build_period_feedback
+    from app.services.periods import ensure_open_period
+
+    client = _client_or_404(db, client_id)
+    period = db.scalar(
+        select(Period).where(Period.client_id == client_id,
+                             Period.status.in_(("open", "closed")))
+        .order_by(Period.period_index.desc()).limit(1)
+    ) or ensure_open_period(db, client_id)
+    if period is None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"message": "Este cliente aún no tiene seguimiento en marcha: "
+                               "publícale una planificación primero."})
+    try:
+        fb = build_period_feedback(db, period.id)
+    except FeedbackError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail={"message": str(exc)}) from exc
+    log_event(db, "client", client.id, "feedback_refreshed", {"feedback_id": fb.id})
+    db.commit()
+    return {"feedback_id": fb.id, "period_id": period.id, "kind": fb.kind,
+            "content": fb.content_json}
 
 
 @router.get("/api/periods/{period_id}/metrics")

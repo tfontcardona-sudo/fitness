@@ -9,6 +9,7 @@ import {
   enableCoachPush,
   resyncCoachPushIfGranted,
 } from "../lib/coachPush";
+import { FEATURE_BIWEEKLY } from "../lib/branding";
 import { useDismiss } from "../lib/useDismiss";
 import { useToast } from "./ui";
 import type { CoachAlert } from "../types";
@@ -219,7 +220,8 @@ export function AlertsBell() {
  *  color. Un kind no listado cae en "Otras". */
 const GROUPS: { id: string; label: string; color: string; kinds: string[] }[] = [
   { id: "arranque", label: "Arranque / alta", color: "#6366F1", kinds: ["create_plan", "publish_plan"] },
-  { id: "revision", label: "Revisión quincenal", color: "#8B5CF6", kinds: ["generate_feedback", "send_feedback", "period_overdue"] },
+  { id: "revision", label: FEATURE_BIWEEKLY ? "Revisión quincenal" : "Informes",
+    color: "#8B5CF6", kinds: ["generate_feedback", "send_feedback", "period_overdue"] },
   { id: "adaptacion", label: "Planificación", color: "#E9A90F",
     kinds: ["adapt_plan", "regenerate_goal", "plan_allergen_conflict",
             "plan_dislike_conflict", "plan_stale_inputs"] },

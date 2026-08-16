@@ -69,3 +69,20 @@ def _cleanup_test_clients():
         db.rollback()
     finally:
         db.close()
+
+
+@pytest.fixture()
+def ciclo_quincenal(monkeypatch):
+    """Enciende el CICLO QUINCENAL para este test.
+
+    El motor soporta los dos modos y la marca decide (branding.FEATURE_BIWEEKLY):
+    Professional trabaja con seguimiento CONTINUO, pero las piezas del ciclo de
+    14 días (cierre del cliente, recordatorios, alertas ancladas a la revisión)
+    siguen en el motor y se prueban aquí con el interruptor puesto."""
+    from app import branding
+    from app.services import periods
+
+    monkeypatch.setattr(branding, "FEATURE_BIWEEKLY", True)
+    monkeypatch.setattr(branding, "FOLLOWUP_DAYS", 14)
+    monkeypatch.setattr(periods, "PERIOD_DAYS", 14)
+    return True

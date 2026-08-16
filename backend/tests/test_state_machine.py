@@ -177,9 +177,16 @@ def test_template_plan_published_new_month():
     assert "nuevo plan" in subject.lower()
 
 
-def test_template_reminder_includes_days_left():
+def test_template_reminder_includes_days_left(ciclo_quincenal):
+    # Con ciclo quincenal el recordatorio lleva la cuenta atrás del cierre;
+    # sin él (seguimiento continuo) NO hay fecha límite que anunciar.
     subject, html = reminder_no_logs(BRAND, "Carlos", "https://x/p/tok", days_left=3)
     assert "3 días" in html
+
+
+def test_template_reminder_sin_ciclo_no_habla_de_cierre():
+    subject, html = reminder_no_logs(BRAND, "Carlos", "https://x/p/tok", days_left=3)
+    assert "3 días" not in html and "cerrar este período" not in html
 
 
 def test_template_coach_alerts():

@@ -29,6 +29,10 @@ router = APIRouter(prefix="/api", tags=["alerts"], dependencies=[Depends(get_cur
 
 GOAL_REVIEW_DAYS = 45
 NO_LOGS_DAYS = 4
+# Seguimiento continuo: días registrados para que el informe merezca la pena y
+# días NUEVOS a partir de los cuales conviene ponerlo al día.
+INFORME_MIN_DIAS = 7
+INFORME_DIAS_NUEVOS = 7
 
 _GOAL_LABEL = {
     "fat_loss": "pérdida de grasa", "muscle_gain": "ganancia muscular",
@@ -123,12 +127,45 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
                           f"Revisión #{last_period.period_index} recibida: revisa los datos y genera el feedback.",
                           "seguimiento", "Generar feedback"))
 
+    # --- SEGUIMIENTO CONTINUO (sin ciclo quincenal) -------------------------
+    # El informe se pone al día con lo que el cliente registra y el coach lo
+    # envía cuando lo ve listo. Dos avisos, que son TODO el ciclo aquí:
+    #   · hay datos nuevos suficientes → ponerlo al día,
+    #   · hay un informe en borrador → enviárselo.
+    if not branding.FEATURE_BIWEEKLY and last_period is not None and last_period.status == "open":
+        registrados = db.scalar(
+            select(func.count()).select_from(DailyLog)
+            .where(DailyLog.period_id == last_period.id)
+        ) or 0
+        fb_ultimo = db.scalar(
+            select(FeedbackDoc).where(FeedbackDoc.period_id == last_period.id)
+            .order_by(FeedbackDoc.id.desc()).limit(1)
+        )
+        if fb_ultimo is None:
+            if registrados >= INFORME_MIN_DIAS:
+                out.append(_alert(
+                    client, "generate_feedback", "alta",
+                    f"Ya lleva {registrados} días registrados y no tiene informe: "
+                    "genéralo y envíaselo.",
+                    "feedback", "Generar informe"))
+        elif fb_ultimo.sent_at is None:
+            out.append(_alert(client, "send_feedback", "alta",
+                              "Informe en borrador sin enviar al cliente.",
+                              "feedback", "Revisar y enviar"))
+        else:
+            nuevos = registrados - ((fb_ultimo.content_json or {}).get("logs_at_generation") or 0)
+            if nuevos >= INFORME_DIAS_NUEVOS:
+                out.append(_alert(
+                    client, "generate_feedback", "media",
+                    f"{nuevos} días registrados desde el último informe: ponlo al día.",
+                    "feedback", "Actualizar informe"))
+
     # --- Feedback generado pero sin enviar / plan sin adaptar ---------------
     # ANCLADO al último período ANALIZADO, no al último absoluto: enviar el
     # feedback abre el período siguiente en el acto, y con el ancla vieja la
     # alerta "sin adaptar" moría justo entonces — el ciclo nuevo corría 14 días
     # con las kcal antiguas sin que nadie lo persiguiera (auditoría del ciclo).
-    last_analyzed = last_period if (
+    last_analyzed = None if not branding.FEATURE_BIWEEKLY else last_period if (
         last_period is not None and last_period.status == "analyzed"
     ) else db.scalar(
         select(Period).where(Period.client_id == client.id,
@@ -178,7 +215,9 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
                               "seguimiento", "Ver seguimiento"))
 
         # --- Período vencido sin cerrar: el cliente registra pero no envía ---
-        overdue = (today - last_period.ends_on).days
+        # Solo tiene sentido con ciclo quincenal: sin él, el seguimiento es
+        # continuo y no hay nada que "cerrar" ni que reclamar.
+        overdue = (today - last_period.ends_on).days if branding.FEATURE_BIWEEKLY else 0
         if overdue >= 2:
             out.append(_alert(
                 client, "period_overdue", "alta" if overdue >= 5 else "media",

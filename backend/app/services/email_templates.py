@@ -14,6 +14,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from html import escape
 
+from app import branding
+
 
 def _esc(value: str | None) -> str:
     """Escapa texto para insertarlo con seguridad en el HTML del email.
@@ -197,10 +199,13 @@ def reminder_no_logs(brand: Brand, first_name: str, portal_url: str, days_left: 
     first_name = _esc(first_name)
     subject = f"Un recordatorio rápido de tu seguimiento · {brand.name}"
     que = "tu peso, entrenos y adherencia" if has_training else "tu peso y adherencia"
+    # Sin ciclo quincenal (marca) no hay cuenta atrás que meter en el texto: el
+    # seguimiento es continuo y el informe se mantiene al día con lo que registra.
+    cierre = (f" Quedan <strong>{days_left} días</strong> para cerrar este período."
+              if branding.FEATURE_BIWEEKLY else "")
     body = (
         f"<p>Hola {first_name}, hemos visto que llevas unos días sin registrar tu "
-        f"seguimiento. Quedan <strong>{days_left} días</strong> para cerrar este "
-        f"período.</p><p>Registrar {que} nos permite ajustar "
+        f"seguimiento.{cierre}</p><p>Registrar {que} nos permite ajustar "
         "tu plan con precisión. ¡Solo te lleva un minuto al día!</p>"
     )
     return subject, _shell(brand, "¿Cómo va tu seguimiento?", body, portal_url, "Registrar ahora")

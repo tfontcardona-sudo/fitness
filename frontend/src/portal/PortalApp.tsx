@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Bell, BellOff, CalendarCheck, Camera, Check, ChevronDown, Dumbbell, LineChart, Library, LogOut, NotebookPen, Share, Smartphone, Video, X } from "lucide-react";
+import { Bell, BellOff, CalendarCheck, Camera, Check, ChevronDown, Dumbbell, LineChart, LogOut, NotebookPen, Share, ShoppingBag, Smartphone, Video, X } from "lucide-react";
 import { portalApi, portalSession, PortalError } from "./portalApi";
 import type { VideoCallStatus } from "./portalApi";
 import { pkg } from "../lib/packages";
-import { FEATURE_RESOURCES, PORTAL_THEME } from "../lib/branding";
+import { FEATURE_BIWEEKLY, FEATURE_RESOURCES, PORTAL_THEME } from "../lib/branding";
 import type { PortalState } from "../types";
 import { PortalWorkout } from "./PortalWorkout";
 import { PortalDiary } from "./PortalDiary";
@@ -26,8 +26,9 @@ import {
   turnPushOn,
 } from "./push";
 
-// El portal del cliente es SOLO seguimiento: 3 pestañas abajo (Entreno, Diario,
-// Quincenal). Nada más (ni Hoy, ni Plan, ni Feedback): la dieta va en el PDF.
+// El portal del cliente es SOLO seguimiento: Entreno, Tienda, Diario y Progreso
+// (la pestaña Quincenal solo existe si la marca usa el ciclo de 14 días). Quien
+// contrata solo la dieta ve únicamente la evolución de su cuerpo y la tienda.
 type Tab = "entreno" | "recursos" | "diario" | "progreso" | "cierre";
 
 /**
@@ -50,7 +51,8 @@ export default function PortalApp({ token }: { token: string }) {
   const [params, setParams] = useSearchParams();
   const rawTab = params.get("tab");
   const tab: Tab =
-    rawTab === "diario" || rawTab === "cierre" || rawTab === "progreso"
+    rawTab === "diario" || rawTab === "progreso"
+      || (rawTab === "cierre" && FEATURE_BIWEEKLY)
       || (rawTab === "recursos" && FEATURE_RESOURCES)
       ? (rawTab as Tab)
       : "entreno";
@@ -147,12 +149,13 @@ export default function PortalApp({ token }: { token: string }) {
 
   const ALL_TABS: { id: Tab; label: string; icon: typeof Dumbbell }[] = [
     { id: "entreno", label: "Entreno", icon: Dumbbell },
-    { id: "recursos", label: "Recursos", icon: Library },
+    { id: "recursos", label: "Tienda", icon: ShoppingBag },
     { id: "diario", label: "Diario", icon: NotebookPen },
     { id: "progreso", label: "Progreso", icon: LineChart },
     { id: "cierre", label: "Quincenal", icon: CalendarCheck },
   ];
-  const TABS = ALL_TABS.filter((t) => FEATURE_RESOURCES || t.id !== "recursos");
+  const TABS = ALL_TABS.filter((t) => (FEATURE_RESOURCES || t.id !== "recursos")
+    && (FEATURE_BIWEEKLY || t.id !== "cierre"));
   const visibleTabs = isStart ? TABS.filter((t) => t.id !== "entreno") : TABS;
 
   return (
@@ -168,7 +171,7 @@ export default function PortalApp({ token }: { token: string }) {
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-3">
-            {state.period && (
+            {FEATURE_BIWEEKLY && state.period && (
               <div className="text-right">
                 {/* Azul (secundario): es un dato del ciclo, no una acción.
                     Nunca negativo (período vencido pendiente de cerrar → 0). */}

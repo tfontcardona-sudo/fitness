@@ -16,11 +16,12 @@ invocarse manualmente para pruebas o backfill.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app import branding
 from app.config import settings
 from app.models import Client, DailyLog, EmailLog, Period
 from app.services import email_templates as tpl
@@ -32,6 +33,9 @@ from app.services.state_machine import (
     can_transition,
     evaluate_transition,
 )
+
+# Ventana móvil de constancia cuando el ciclo quincenal está apagado.
+VENTANA_DIAS = 14
 
 
 def _first_name(client: Client) -> str:
@@ -79,18 +83,32 @@ def _facts_for(db: Session, client: Client) -> ClientFacts:
     logs = list(db.scalars(
         select(DailyLog).where(DailyLog.period_id == period.id)
     ))
-    days_logged = sum(1 for lg in logs if diary_is_filled(lg))
 
     last_log_date = db.scalar(
         select(func.max(DailyLog.log_date)).where(DailyLog.period_id == period.id)
     )
     last_activity = last_log_date or period.starts_on
 
+    if branding.FEATURE_BIWEEKLY:
+        days_logged = sum(1 for lg in logs if diary_is_filled(lg))
+        inicio, fin = period.starts_on, period.ends_on
+    else:
+        # Sin ciclo quincenal el período no vence: la constancia se mide en una
+        # VENTANA MÓVIL de 14 días (si no, un seguimiento de meses diluiría el
+        # ratio y nadie entraría nunca "en riesgo").
+        from app.services.portal import today_local
+
+        hoy = today_local()
+        inicio = max(period.starts_on, hoy - timedelta(days=VENTANA_DIAS - 1))
+        fin = None                       # nunca vence → nunca "sin cerrar"
+        days_logged = sum(1 for lg in logs
+                          if diary_is_filled(lg) and lg.log_date >= inicio)
+
     return ClientFacts(
         status=client.status,
         has_active_period=True,
-        period_start=period.starts_on,
-        period_end=period.ends_on,
+        period_start=inicio,
+        period_end=fin,
         period_closed=period.status in ("closed", "analyzed"),
         days_logged_in_period=int(days_logged),
         last_activity_date=last_activity,
@@ -166,7 +184,7 @@ def _maintain_client(db: Session, client: Client, today: date,
 
     # 1b) Día 14+: recordatorio de CERRAR la revisión quincenal (uno al
     # día mientras el período siga abierto y vencido).
-    closing_period = _active_period(db, client.id)
+    closing_period = _active_period(db, client.id) if branding.FEATURE_BIWEEKLY else None
     if (closing_period is not None and closing_period.status == "open"
             and today >= closing_period.ends_on
             and not _already_sent_today(db, client.id, "closing_due", today)):

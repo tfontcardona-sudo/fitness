@@ -507,6 +507,9 @@ export const api = {
   deleteTemplate: (id: number) => request<void>("DELETE", `/templates/${id}`),
   useTemplate: (id: number, body: { client_id?: number; new_client?: { full_name: string; email: string; phone?: string; package_tier?: string } }) =>
     request<import("../types").UseTemplateOut>("POST", `/templates/${id}/use`, body),
+  refreshClientFeedback: (clientId: number) =>
+    request<{ feedback_id: number; period_id: number; kind: string; content: any }>(
+      "POST", `/clients/${clientId}/feedback/refresh`),
   recommendTemplates: (clientId: number, limit = 5) =>
     request<import("../types").TemplateRecommendation[]>(
       "GET", `/templates/recommend/${clientId}?limit=${limit}`),

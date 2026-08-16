@@ -177,7 +177,7 @@ def client_with_plan(db):
 
 
 @needs_db
-def test_pending_for_client(db, client_with_plan) -> None:
+def test_pending_for_client(db, client_with_plan, ciclo_quincenal) -> None:
     from app.models import DailyLog, WorkoutLog
 
     client, plan, period = client_with_plan

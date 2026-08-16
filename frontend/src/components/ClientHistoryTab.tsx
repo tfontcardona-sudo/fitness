@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { TrendingDown, History, Ruler, LineChart } from "lucide-react";
 import { api } from "../lib/api";
+import { FEATURE_BIWEEKLY } from "../lib/branding";
 import { Spinner } from "./ui";
 import type { ClientOut } from "../types";
 
@@ -55,8 +56,9 @@ export function ClientHistoryTab({ client }: { client: ClientOut }) {
         </div>
       </div>
 
-      {/* Comparativa entre revisiones quincenales: gráfico + números + % */}
-      <ReviewComparison h={h} lowerBetter={client.goal_type !== "muscle_gain"} />
+      {/* Comparativa entre revisiones: solo con ciclo quincenal (sin él no hay
+          revisiones que comparar; la evolución vive en el informe continuo). */}
+      {FEATURE_BIWEEKLY && <ReviewComparison h={h} lowerBetter={client.goal_type !== "muscle_gain"} />}
 
       {/* Medidas corporales antes → después */}
       {hasMeasures && (

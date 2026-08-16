@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, keepIfSame, REFRESH_MS } from "../lib/api";
+import { FEATURE_BIWEEKLY } from "../lib/branding";
 import { pkg } from "../lib/packages";
 import type { ClientOut } from "../types";
 
@@ -180,7 +181,9 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
         )}
       </div>
 
-      <div className="space-y-2">
+      {/* Las revisiones quincenales solo existen con el ciclo de 14 días; en
+          seguimiento continuo el informe vive en la pestaña Feedback. */}
+      <div className="space-y-2" hidden={!FEATURE_BIWEEKLY && quincenals.length === 0}>
         <div className="flex items-center justify-between">
           <span className="text-sm font-semibold text-zinc-100">Revisiones quincenales</span>
           <span className="text-xs text-zinc-500">{quincenals.length} recibida{quincenals.length === 1 ? "" : "s"}</span>

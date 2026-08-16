@@ -16,10 +16,12 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app import branding
 from app.models import Client, Period, Plan
 from app.services.audit import log_event
 
-PERIOD_DAYS = 14
+# La marca decide: 14 días con ciclo quincenal, seguimiento CONTINUO sin él.
+PERIOD_DAYS = branding.FOLLOWUP_DAYS
 
 
 def ensure_open_period(db: Session, client_id: int, *, commit: bool = False) -> Period | None:

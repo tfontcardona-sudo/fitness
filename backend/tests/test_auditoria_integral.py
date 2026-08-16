@@ -334,7 +334,7 @@ def test_patch_estado_valida_la_maquina(http):
 
 
 @pytestmark_db
-def test_alerta_adaptar_sobrevive_al_envio_del_feedback(http):
+def test_alerta_adaptar_sobrevive_al_envio_del_feedback(http, ciclo_quincenal):
     """La alerta 'sin adaptar' moría al abrirse el período siguiente: el ciclo 2
     corría con las kcal viejas sin que nadie lo persiguiera."""
     from app.db import SessionLocal

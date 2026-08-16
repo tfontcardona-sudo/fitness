@@ -3,6 +3,7 @@ import { Sparkles, AlertTriangle, MessageSquare, MessageCircle, Mail, Video, Tar
 import { api, getToken } from "../lib/api";
 import { feedbackBody, feedbackMessage, openWhatsApp, videoCallModifyMessage, videoCallScheduledMessage, waPhone } from "../lib/whatsapp";
 import { pkg } from "../lib/packages";
+import { FEATURE_BIWEEKLY } from "../lib/branding";
 import { ExpandableArea, Spinner, useToast } from "./ui";
 import type { ClientOut, VideoCallOut } from "../types";
 
@@ -21,13 +22,26 @@ interface Period {
   closing_arm_cm: number | null;
   closing_thigh_cm: number | null;
   feedback_id: number | null;
+  feedback_sent?: boolean;
+  /** Seguimiento continuo: días registrados y los que había al generar el informe */
+  days_logged?: number;
+  logs_at_feedback?: number | null;
+}
+
+/** Días registrados NUEVOS desde que se generó el informe (seguimiento continuo). */
+function nuevosDesdeInforme(p: Period): number {
+  if (p.logs_at_feedback == null) return 0;
+  return Math.max(0, (p.days_logged ?? 0) - p.logs_at_feedback);
 }
 
 /**
- * Feedback: cierra el ciclo de la asesoría. Cuando el cliente cierra un período
- * (peso final, perímetros, valoración, dudas), el coach genera aquí el informe
- * de feedback con IA (análisis + recomendaciones) sobre las métricas calculadas
- * por el backend, lo revisa, y lo descarga en Word para enviarlo.
+ * Feedback — el informe del cliente.
+ *
+ * · Con ciclo quincenal: el cliente cierra su revisión y aquí se genera.
+ * · Sin él (seguimiento CONTINUO, que es como trabaja Professional): el informe
+ *   se pone al día con lo que el cliente lleva registrado, en cualquier momento,
+ *   y el coach lo envía cuando lo ve listo. El análisis lo redacta la IA sobre
+ *   las métricas que calcula el backend (la IA nunca calcula).
  */
 export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { client: ClientOut; onClientChanged?: () => void; onGoPlan?: () => void }) {
   const toast = useToast();
@@ -156,6 +170,23 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
     }
   }
 
+  /** Seguimiento continuo sin período aún: lo abre y genera el informe. */
+  async function refreshInforme() {
+    if (generating != null) return;
+    setGenerating(-1);
+    try {
+      await api.refreshClientFeedback(client.id);
+      toast.push("Informe generado. Revísalo y envíaselo cuando lo veas listo.");
+      load();
+      onClientChanged?.();
+    } catch (e: any) {
+      const detail = e?.detail ?? e?.data?.detail;
+      toast.push(detail?.message ?? e?.message ?? "No se pudo generar el informe", "error");
+    } finally {
+      setGenerating(null);
+    }
+  }
+
   function copyAll(content: any) {
     navigator.clipboard.writeText(feedbackBody(content))
       .then(() => toast.push("Feedback copiado al portapapeles"))
@@ -224,10 +255,17 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
       <div className="card p-6">
         <h3 className="text-base font-semibold text-zinc-100">Feedback</h3>
         <p className="mt-1 text-sm text-zinc-400">
-          Aún no hay períodos. El ciclo es automático: al generar la planificación se abre
-          el período de 14 días; el cliente registra su diario, lo cierra, y aquí generas
-          su feedback.
+          {FEATURE_BIWEEKLY
+            ? "Aún no hay períodos. El ciclo es automático: al generar la planificación se abre el período de 14 días; el cliente registra su diario, lo cierra, y aquí generas su feedback."
+            : "Aún no hay seguimiento. Al publicar su planificación se abre solo: el cliente registra su día a día en el portal y aquí tendrás su informe, que pones al día cuando quieras y le envías cuando lo veas listo."}
         </p>
+        {!FEATURE_BIWEEKLY && (
+          <button className="btn btn-ghost mt-3" disabled={generating != null}
+            onClick={refreshInforme}
+            title="Abre el seguimiento y analiza lo que el cliente lleve registrado">
+            <Sparkles size={15} /> {generating != null ? "Generando…" : "Generar informe ahora"}
+          </button>
+        )}
       </div>
     );
   }
@@ -289,7 +327,11 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
         const fb = p.feedback_id ? contents[p.feedback_id] : null;
         const content = fb?.content;
         const sent: string | null = fb?.sent_at ?? null;
-        const canGenerate = p.status !== "open"; // cerrado o analizado
+        // Con ciclo quincenal hace falta que el cliente cierre; sin él, basta
+        // con que lleve datos suficientes (el backend exige un mínimo).
+        const registrados = p.days_logged ?? 0;
+        const canGenerate = FEATURE_BIWEEKLY ? p.status !== "open" : registrados >= 5;
+        const nuevos = nuevosDesdeInforme(p);
         const daysElapsed = Math.floor((Date.now() - new Date(p.starts_on + "T00:00:00").getTime()) / 86400000) + 1;
         const ready = p.status !== "open" || daysElapsed >= 14; // resumen disponible a las 2 semanas
         const m = metrics[p.id];
@@ -309,7 +351,9 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
             <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <h3 className="text-base font-semibold text-zinc-100">Período {p.period_index}</h3>
+                  <h3 className="text-base font-semibold text-zinc-100">
+                    {FEATURE_BIWEEKLY ? `Período ${p.period_index}` : "Seguimiento"}
+                  </h3>
                   <span className="rounded-full px-2 py-0.5 text-xs font-medium" style={badge(p.status)}>
                     {STATUS_LABEL[p.status] ?? p.status}
                   </span>
@@ -319,7 +363,9 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                     </span>
                   )}
                 </div>
-                <p className="mt-0.5 text-xs text-zinc-500">{p.starts_on} → {p.ends_on}</p>
+                <p className="mt-0.5 text-xs text-zinc-500">
+                  {FEATURE_BIWEEKLY ? `${p.starts_on} → ${p.ends_on}` : `desde el ${p.starts_on}`}
+                </p>
               </div>
               <div className="flex gap-2" onClick={(e) => e.preventDefault()}>
                 {p.feedback_id && content && !sent && (
@@ -330,15 +376,38 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                 {canGenerate && !p.feedback_id && (
                   <button onClick={() => generate(p.id)} disabled={generating === p.id} className="btn btn-primary">
                     <Sparkles size={15} />
-                    {generating === p.id ? "Generando…" : "Generar feedback"}
+                    {generating === p.id ? "Generando…" : FEATURE_BIWEEKLY ? "Generar feedback" : "Generar informe"}
+                  </button>
+                )}
+                {/* Seguimiento continuo: el informe se pone al día con lo que el
+                    cliente haya registrado desde la última vez. Si el anterior ya
+                    se envió, sale un borrador NUEVO (no se toca el que recibió). */}
+                {!FEATURE_BIWEEKLY && canGenerate && p.feedback_id && (
+                  <button onClick={() => generate(p.id)} disabled={generating === p.id}
+                    className={nuevos >= 5 ? "btn btn-primary" : "btn btn-ghost"}
+                    title="Vuelve a analizar todo lo que el cliente lleva registrado">
+                    <Sparkles size={15} />
+                    {generating === p.id ? "Actualizando…"
+                      : nuevos > 0 ? `Poner al día (${nuevos} días nuevos)` : "Poner al día"}
                   </button>
                 )}
               </div>
             </summary>
 
-            {p.status === "open" && (
+            {p.status === "open" && FEATURE_BIWEEKLY && (
               <div className="mt-3 flex items-center gap-2 rounded-lg p-2.5 text-xs" style={{ background: "rgba(154,107,21,0.09)", color: "#E5B94E" }}>
                 <AlertTriangle size={14} /> El período aún está abierto: el cliente debe cerrarlo antes de generar el feedback.
+              </div>
+            )}
+            {p.status === "open" && !FEATURE_BIWEEKLY && (
+              <div className="mt-3 flex items-center gap-2 rounded-lg p-2.5 text-xs"
+                style={{ background: "color-mix(in srgb, var(--brand-accent) 10%, transparent)", color: "var(--text-dim)" }}>
+                <TrendingUp size={14} />
+                {registrados === 0
+                  ? "El cliente aún no ha registrado nada en su portal."
+                  : canGenerate
+                    ? `${registrados} días registrados. El informe se pone al día cuando quieras y se envía cuando lo veas listo.`
+                    : `${registrados} días registrados: con 5 ya se puede generar un informe fiable.`}
               </div>
             )}
 

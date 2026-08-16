@@ -166,7 +166,7 @@ def _backdate_open_period(client_id: int, days_ago: int) -> None:
 
 # ============================================================ A.3 ====
 
-def test_a3_full_cycle_alta_to_close(client, auth):
+def test_a3_full_cycle_alta_to_close(client, auth, ciclo_quincenal):
     """Alta → plan → 14 registros → cierre, sin intervención manual del flujo."""
     cid, token, plan_id = _create_active_client(client, auth, start_days_ago=14)
 

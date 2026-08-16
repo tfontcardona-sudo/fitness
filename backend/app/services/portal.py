@@ -175,8 +175,11 @@ def period_info(period: Period | None, today: date) -> dict | None:
     days_total = (period.ends_on - period.starts_on).days + 1
     days_elapsed = max(0, min(days_total, (today - period.starts_on).days + 1))
     days_left = max(0, (period.ends_on - today).days)
-    # Cierre disponible desde el día 14 del período (G.4)
-    can_close = days_elapsed >= 14 and period.status == "open"
+    # Cierre disponible desde el día 14 del período (G.4). Sin ciclo quincenal
+    # (marca) NO hay cierre: el seguimiento es continuo y el feedback se
+    # mantiene al día solo — el cliente nunca ve una fecha límite.
+    can_close = (branding.FEATURE_BIWEEKLY and days_elapsed >= 14
+                 and period.status == "open")
     return {
         "period_id": period.id,
         "period_index": period.period_index,

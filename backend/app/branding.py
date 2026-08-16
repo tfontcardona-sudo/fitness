@@ -86,6 +86,12 @@ FEATURE_RESOURCES = True
 # el panel y las alertas.
 FEATURE_BIWEEKLY = False
 
+# Duración del período de seguimiento. Con el ciclo quincenal APAGADO no hay
+# "cierre": el período es un seguimiento CONTINUO que el cliente alimenta
+# cuando quiere (el motor sigue necesitando un período al que colgar los
+# registros diarios, pero deja de vencer y de pedir cierre).
+FOLLOWUP_DAYS = 14 if FEATURE_BIWEEKLY else 365
+
 # --- Método del banco de comidas de la marca ---------------------------------
 # "options": TODAS las tomas del plan flexible llevan opciones CERRADAS (combos
 # completos con gramos) — el método de Professional: sencillo y directo.
