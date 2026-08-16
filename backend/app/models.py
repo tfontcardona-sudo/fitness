@@ -663,6 +663,69 @@ class WhatsAppSend(Base):
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+# ------------------------------------------------------------- payments ----
+class Payment(Base):
+    """Un MOVIMIENTO de dinero de Stripe: cobro, cobro fallido o devolución.
+
+    Es el libro de caja de la asesoría: quién pagó, cuánto y cuándo, con el dato
+    tal cual lo dio Stripe (importe y fecha REALES del cobro, no deducidos del
+    estado de la ficha — `clients.paid_at` solo guarda el último y sin importe).
+    Alimenta la pestaña "Pagos" del panel, un feed tipo app de banco donde lo no
+    leído (`seen_at IS NULL`) se marca y se cuenta en el badge.
+
+    Se escribe desde el webhook (checkout.session.completed, invoice.paid,
+    invoice.payment_failed, charge.refunded) y desde la sincronización con la API
+    de Stripe, que rellena el histórico anterior a esta tabla y repesca lo que un
+    webhook perdido no trajo.
+
+    `client_id` es NULLABLE a propósito: un pago HUÉRFANO (ficha borrada entre el
+    alta y el cobro, checkout sin email) también se registra — el dinero entró y
+    alguien tiene que verlo. Los datos del pagador se copian aquí para que el
+    libro siga diciendo quién pagó aunque la ficha ya no exista.
+    """
+
+    __tablename__ = "payments"
+    __table_args__ = (
+        # Idempotencia REAL, no por evento: el mismo objeto de Stripe en el mismo
+        # estado no se duplica, venga por reintento de webhook o por
+        # sincronización. (objeto, estado) y no solo objeto porque una factura
+        # puede fallar y cobrarse después: son dos movimientos de la MISMA
+        # factura y los dos deben verse.
+        UniqueConstraint("stripe_object_id", "status", name="uq_payment_object_status"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # Objeto de Stripe que representa el movimiento: cs_… (checkout), in_…
+    # (factura de la suscripción) o ch_… (cobro/devolución).
+    stripe_object_id: Mapped[str] = mapped_column(String(80), index=True)
+    # Evento que lo trajo (evt_…); vacío si la fila la creó la sincronización.
+    stripe_event_id: Mapped[str | None] = mapped_column(String(80))
+    kind: Mapped[str] = mapped_column(String(20))    # checkout|invoice|refund
+    status: Mapped[str] = mapped_column(String(12))  # paid|failed|refunded
+    amount_cents: Mapped[int] = mapped_column(Integer, default=0)
+    currency: Mapped[str] = mapped_column(String(8), default="eur")
+    # Pago en modo PRUEBA de Stripe (clave sk_test_): no es dinero real y no
+    # puede sumar en los totales del coach sin avisar.
+    livemode: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=text("true"), nullable=False
+    )
+    # SET NULL: borrar una ficha (RGPD) no puede tumbar el commit ni borrar el
+    # movimiento; el borrado además anonimiza nombre y email de esta fila.
+    client_id: Mapped[int | None] = mapped_column(
+        ForeignKey("clients.id", ondelete="SET NULL"), index=True
+    )
+    customer_name: Mapped[str | None] = mapped_column(String(160))
+    customer_email: Mapped[str | None] = mapped_column(String(160))
+    tier: Mapped[str | None] = mapped_column(String(10))            # nutri|train|full
+    billing_period: Mapped[str | None] = mapped_column(String(12))  # 1m|3m|6m|oferta
+    description: Mapped[str | None] = mapped_column(String(200))
+    # Fecha REAL del movimiento según Stripe (no la de recepción del webhook).
+    paid_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    # NULL = no leído (punto azul en el feed y badge de la barra).
+    seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 # ------------------------------------------------------------ audit_log ----
 class AuditLog(Base):
     __tablename__ = "audit_log"

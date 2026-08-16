@@ -213,8 +213,12 @@ def ensure_canonical_prices(stripe, log=None) -> list[str]:
     # seguimiento de renovaciones sería código muerto. Se añaden por API al
     # endpoint del dashboard (best-effort: sin permisos, aviso y a mano).
     try:
+        # `charge.refunded` entró con el LIBRO DE CAJA (tabla payments): sin él
+        # una devolución no restaría de los ingresos y el feed de pagos del
+        # panel enseñaría un saldo falso.
         necesarios = {"checkout.session.completed", "invoice.paid",
-                      "invoice.payment_failed", "customer.subscription.deleted"}
+                      "invoice.payment_failed", "customer.subscription.deleted",
+                      "charge.refunded"}
         for ep in stripe.WebhookEndpoint.list(limit=100)["data"]:
             if "/api/stripe/webhook" not in (ep.get("url") or ""):
                 continue
@@ -225,10 +229,11 @@ def ensure_canonical_prices(stripe, log=None) -> list[str]:
                 stripe.WebhookEndpoint.modify(
                     ep["id"], enabled_events=sorted(actuales | necesarios))
                 note("  ~ webhook: añadidos invoice.paid / invoice.payment_failed / "
-                     "customer.subscription.deleted")
+                     "customer.subscription.deleted / charge.refunded")
     except Exception as exc:  # noqa: BLE001 — clave restringida, sin red…
         note(f"  ! webhook sin comprobar ({exc}): añade a mano invoice.paid, "
-             "invoice.payment_failed y customer.subscription.deleted en el dashboard")
+             "invoice.payment_failed, customer.subscription.deleted y "
+             "charge.refunded en el dashboard")
     return out
 
 
@@ -485,22 +490,37 @@ def get_plan_prices() -> dict:
 
 # --------------------------------------------------------------- webhook ----
 
-def _notify_coach_payment(db: Session, client: Client, *, new_client: bool) -> None:
+def _euros(cents: int | None) -> str:
+    """Céntimos de Stripe → "129,00 €" (formato español, para el push)."""
+    return f"{(cents or 0) / 100:.2f}".replace(".", ",") + " €"
+
+
+def _notify_coach_payment(db: Session, client: Client, *, new_client: bool,
+                          amount_cents: int | None = None) -> None:
     """Push inmediato al COACH: entró un pago (o un alta nueva con pago). Un
-    ingreso no puede esperar al resumen de cada 3 h. Nunca rompe el webhook."""
+    ingreso no puede esperar al resumen de cada 3 h. Nunca rompe el webhook.
+
+    Lleva el IMPORTE en el título, como el aviso de un banco, y abre el feed de
+    pagos (/pagos). La `tag` es única por pago: con una tag compartida, dos
+    cobros seguidos se veían como UNA sola notificación en el móvil (el segundo
+    sustituía al primero)."""
     try:
         from app.services import push as push_svc
+        from app.services.payments import unseen_count
 
         first = ((client.full_name or "").split() or ["Un cliente"])[0]
         base = settings.public_base_url.rstrip("/")
+        importe = f"+{_euros(amount_cents)} · " if amount_cents else ""
         push_svc.send_to_coach(db, {
-            "title": "Nuevo cliente pagado 🎉" if new_client else "Pago recibido",
+            "title": f"{importe}{'Nuevo cliente pagado 🎉' if new_client else 'Pago recibido'}",
             "body": (f"{first} se ha registrado y pagado el plan {client.package_tier}."
                      if new_client else
                      f"{first} ha completado el pago de su plan {client.package_tier}."),
-            "count": 1,
-            "url": f"{base}/clientes/{client.id}",
-            "tag": "dq-pago",
+            # El badge del icono cuenta los pagos SIN LEER: al abrir el feed se
+            # queda a cero, como en la app del banco.
+            "count": max(1, unseen_count(db)),
+            "url": f"{base}/pagos",
+            "tag": f"dq-pago-{client.id}-{int(datetime.now(timezone.utc).timestamp())}",
         })
     except Exception:  # noqa: BLE001
         pass
@@ -529,20 +549,74 @@ def _notify_orphan_payment(db: Session, session: dict) -> None:
         pass
 
 
-def _mark_paid(db: Session, client: Client, period: str | None = None) -> None:
+def _mark_paid(db: Session, client: Client, period: str | None = None, *,
+               movimiento_nuevo: bool = False, amount_cents: int | None = None,
+               pagado_en: datetime | None = None) -> None:
+    """Marca el cobro en la ficha del cliente.
+
+    `movimiento_nuevo` lo decide el LIBRO DE CAJA (services/payments): es True
+    cuando este cobro concreto de Stripe no estaba anotado. Sin él, un cliente
+    que YA estaba pagado y RENUEVA (segundo pago único) no dejaba ningún rastro
+    —ni traza, ni aviso, ni `paid_at` fresco— y la alerta de renovación seguía
+    contando desde el primer pago para siempre (auditoría del libro de caja).
+    Con él, una reentrega del MISMO pago sigue sin duplicar avisos."""
     # La duración que el cliente pagó de verdad manda sobre la de la ficha.
     if (period in _PERIODS or period == OFFER_PERIOD) and client.billing_period != period:
         client.billing_period = period
-    if client.payment_status != "paid":
-        client.payment_status = "paid"
-        client.paid_at = datetime.now(timezone.utc)
+    transicion = client.payment_status != "paid"
+    client.payment_status = "paid"
+    # Fecha del último cobro: la renovación reinicia el contador de la alerta.
+    # Se compara con la que ya tiene la ficha en vez de fiarse de "¿he anotado
+    # yo esta fila?": si la sincronización con Stripe anotó antes el movimiento,
+    # la reentrega del webhook llegaba con `movimiento_nuevo=False` y `paid_at`
+    # se quedaba en el pago ANTERIOR (alerta de renovación eterna).
+    cobrado_en = pagado_en or datetime.now(timezone.utc)
+    if client.paid_at is None or cobrado_en > client.paid_at:
+        client.paid_at = cobrado_en
+    if transicion or movimiento_nuevo:
         log_event(db, "client", client.id, "payment_received",
-                  {"tier": client.package_tier, "billing_period": client.billing_period})
-        _notify_coach_payment(db, client, new_client=False)
+                  {"tier": client.package_tier, "billing_period": client.billing_period,
+                   "renovacion": not transicion})
+        _notify_coach_payment(db, client, new_client=False, amount_cents=amount_cents)
+
+
+def _anotar_checkout(db: Session, session: dict, client: Client | None, *,
+                     event_id: str | None = None) -> bool:
+    """Anota en el LIBRO DE CAJA (tabla payments) el cobro de una Checkout
+    Session, con el importe, la moneda y la fecha REALES de Stripe.
+
+    Devuelve True si el movimiento es NUEVO: esa es la señal que distingue un
+    pago de verdad de una reentrega del mismo webhook, y la que permite avisar
+    de una RENOVACIÓN de un cliente que ya constaba como pagado.
+
+    Las sesiones en modo SUSCRIPCIÓN (la oferta) NO se anotan aquí: ese dinero
+    entra como factura (`invoice.paid`) y anotar las dos cosas duplicaría el
+    ingreso del primer mes en los totales."""
+    if session.get("mode") == "subscription":
+        return False
+    from app.services import payments as pay_svc
+
+    meta = session.get("metadata") or {}
+    detalles = session.get("customer_details") or {}
+    tier = (pkgs.normalize(meta.get("tier")) if meta.get("tier")
+            else (client.package_tier if client else None))
+    period = meta.get("billing_period") or (client.billing_period if client else None)
+    pago = pay_svc.record_payment(
+        db, object_id=session.get("id") or "", kind="checkout", status="paid",
+        amount_cents=session.get("amount_total") or 0,
+        currency=session.get("currency") or "eur",
+        livemode=bool(session.get("livemode", True)),
+        client=client, customer_name=detalles.get("name"),
+        customer_email=detalles.get("email"), tier=tier, billing_period=period,
+        description=pay_svc.describe(tier, period),
+        paid_at=pay_svc.ts_to_dt(session.get("created")), event_id=event_id,
+    )
+    return pago is not None
 
 
 def _create_selfserve_client(db: Session, *, name: str, email: str,
-                             phone: str | None, tier: str, period: str | None) -> Client:
+                             phone: str | None, tier: str, period: str | None,
+                             amount_cents: int | None = None) -> Client:
     """Crea el perfil de un cliente que se ha registrado y pagado por su cuenta."""
     client = Client(
         full_name=(name or email.split("@")[0]).strip(),
@@ -561,12 +635,22 @@ def _create_selfserve_client(db: Session, *, name: str, email: str,
     db.add(client)
     db.flush()
     client.portal_token = new_portal_token(client.id)
+    # La primera factura de la oferta se paga ANTES de completarse el checkout,
+    # así que su movimiento pudo anotarse sin ficha (aún no existía): ahora que
+    # el cliente existe, se le adopta. Si no, quedaba un "pago sin ficha
+    # asociada" eterno y el borrado RGPD no llegaba a esa fila.
+    try:
+        from app.services.payments import adopt_orphans
+
+        adopt_orphans(db, client)
+    except Exception:  # noqa: BLE001 — la contabilidad nunca rompe el alta
+        pass
     log_event(db, "client", client.id, "client_created",
               {"by": "stripe", "tier": client.package_tier,
                "billing_period": client.billing_period})
     log_event(db, "client", client.id, "payment_received",
               {"tier": client.package_tier, "billing_period": client.billing_period})
-    _notify_coach_payment(db, client, new_client=True)
+    _notify_coach_payment(db, client, new_client=True, amount_cents=amount_cents)
     db.commit()
     db.refresh(client)
 
@@ -705,6 +789,111 @@ def _client_from_invoice(db: Session, invoice: dict) -> Client | None:
     return None
 
 
+def _anotar_factura(db: Session, invoice: dict, client: Client | None, *,
+                    pagada: bool, event_id: str | None = None) -> bool:
+    """Anota en el libro de caja el movimiento de una FACTURA de la suscripción
+    (renovación mensual de la oferta): cobrada o fallida. Devuelve True si es
+    nuevo. La factura fallida y la cobrada son dos movimientos distintos de la
+    misma factura, así que las dos caben (el UNIQUE es objeto+estado)."""
+    from app.services import payments as pay_svc
+
+    cuando = ((invoice.get("status_transitions") or {}).get("paid_at")
+              if pagada else None) or invoice.get("created")
+    razon = invoice.get("billing_reason")
+    pago = pay_svc.record_payment(
+        db, object_id=invoice.get("id") or "", kind="invoice",
+        status="paid" if pagada else "failed",
+        amount_cents=(invoice.get("amount_paid") if pagada else invoice.get("amount_due")) or 0,
+        currency=invoice.get("currency") or "eur",
+        livemode=bool(invoice.get("livemode", True)), client=client,
+        customer_name=invoice.get("customer_name"),
+        customer_email=invoice.get("customer_email"),
+        tier=(client.package_tier if client else OFFER_TIER),
+        billing_period=OFFER_PERIOD,
+        description=pay_svc.describe(client.package_tier if client else OFFER_TIER,
+                                     OFFER_PERIOD, kind="invoice", billing_reason=razon),
+        paid_at=pay_svc.ts_to_dt(cuando), event_id=event_id,
+    )
+    return pago is not None
+
+
+def _pay_svc_ts(valor) -> datetime | None:
+    """Marca de tiempo de Stripe → datetime (atajo del servicio de pagos)."""
+    from app.services.payments import ts_to_dt
+
+    return ts_to_dt(valor)
+
+
+def _cargo_es_nuestro(db: Session, charge: dict, client: Client | None) -> bool:
+    """¿Este cobro de Stripe pertenece a la asesoría? La cuenta puede tener
+    otros productos (facturas manuales, talleres) y sus movimientos no deben
+    entrar en el libro de caja — igual que `_invoice_es_de_la_oferta` filtra las
+    facturas ajenas en el ingreso.
+
+    Es nuestro si el pagador tiene ficha, o si su factura ya está anotada."""
+    if client is not None:
+        return True
+    from app.models import Payment
+
+    inv = charge.get("invoice")
+    inv_id = inv.get("id") if isinstance(inv, dict) else inv
+    if inv_id:
+        return db.scalar(
+            select(Payment.id).where(Payment.stripe_object_id == inv_id).limit(1)
+        ) is not None
+    return False
+
+
+def _handle_charge_refunded(db: Session, event: dict) -> dict:
+    """Devolución: Stripe ha reembolsado (total o parcialmente) un cobro.
+
+    Sin esto, un cliente reembolsado se quedaba 'pagado' para siempre y los
+    ingresos del mes mentían — un saldo falso en un feed que imita al banco. Se
+    anota el movimiento en negativo (resta en los totales) y se avisa al coach.
+    El estado de la ficha NO se toca automáticamente: una devolución parcial no
+    es una baja, y quien decide qué pasa con la asesoría es el coach."""
+    from app.services import payments as pay_svc
+
+    charge = event["data"]["object"]
+    devuelto = charge.get("amount_refunded") or 0
+    if devuelto <= 0:
+        return {"ignored": "charge_sin_devolucion"}
+    facturado = charge.get("billing_details") or {}
+    email = (facturado.get("email") or charge.get("receipt_email") or "").strip().lower()
+    client = db.scalar(select(Client).where(func.lower(Client.email) == email)) if email else None
+    if not _cargo_es_nuestro(db, charge, client):
+        # SIMETRÍA con el ingreso: un cobro ajeno de la misma cuenta de Stripe
+        # (una factura manual de un taller, otro producto) no se anota como
+        # ingreso — `_invoice_es_de_la_oferta` lo descarta —, así que su
+        # devolución tampoco puede RESTAR. Si no, el libro enseñaría un −300 €
+        # de algo que nunca sumó.
+        return {"ignored": "cargo_ajeno"}
+    # Una fila por REEMBOLSO: `amount_refunded` es el acumulado y Stripe avisa en
+    # cada devolución (ver record_refunds_of_charge).
+    nuevo = pay_svc.record_refunds_of_charge(
+        db, charge, client=client, event_id=event.get("id")) > 0
+    if client is not None:
+        log_event(db, "client", client.id, "payment_refunded",
+                  {"charge_id": charge.get("id"), "amount_eur": devuelto / 100.0})
+    db.commit()
+    if nuevo:
+        try:
+            from app.services import push as push_svc
+
+            quien = (client.full_name if client else None) or facturado.get("name") or email or "un cobro"
+            base = settings.public_base_url.rstrip("/")
+            push_svc.send_to_coach(db, {
+                "title": f"Devolución de {_euros(devuelto)}",
+                "body": f"Stripe ha reembolsado {_euros(devuelto)} a {quien}. Revisa si sigue de alta.",
+                "count": 1,
+                "url": f"{base}/pagos",
+                "tag": f"dq-devolucion-{charge.get('id')}",
+            })
+        except Exception:  # noqa: BLE001 — el push nunca rompe el webhook
+            pass
+    return {"refunded": devuelto, "client_id": client.id if client else None}
+
+
 def _handle_invoice_event(db: Session, event: dict) -> dict:
     """Renovaciones de la suscripción de la oferta: cada mes Stripe cobra solo y
     avisa aquí. invoice.paid refresca el pago del cliente; invoice.payment_failed
@@ -721,7 +910,10 @@ def _handle_invoice_event(db: Session, event: dict) -> dict:
     client = _client_from_invoice(db, invoice)
     if client is None:
         # Es de la oferta pero no se pudo mapear: alguien tiene que enterarse
-        # (también de los IMPAGOS — el caso más peligroso de perder).
+        # (también de los IMPAGOS — el caso más peligroso de perder). El
+        # movimiento se anota igual, sin cliente: el feed de pagos lo enseña.
+        _anotar_factura(db, invoice, None, pagada=pagada, event_id=event.get("id"))
+        db.commit()
         if not primera:
             _notify_orphan_payment(db, {
                 "customer_details": {"email": invoice.get("customer_email"),
@@ -746,6 +938,7 @@ def _handle_invoice_event(db: Session, event: dict) -> dict:
         if ya:
             return {"ignored": "invoice_repetida", "client_id": client.id}
 
+    _anotar_factura(db, invoice, client, pagada=pagada, event_id=event.get("id"))
     if pagada:
         transicion = client.payment_status != "paid"
         client.payment_status = "paid"
@@ -758,13 +951,19 @@ def _handle_invoice_event(db: Session, event: dict) -> dict:
         # antes que el checkout, el push del alta no se pierde; si llega
         # después, no se duplica (el checkout ya avisó y esto no transiciona).
         if transicion or not primera:
-            _notify_coach_payment(db, client, new_client=False)
+            _notify_coach_payment(db, client, new_client=False,
+                                  amount_cents=invoice.get("amount_paid"))
     else:
         # Un payment_failed REZAGADO (reintento de webhook posterior al cobro
         # que lo resolvió) no debe tapar un pago más nuevo.
         creado = invoice.get("created") or event.get("created")
         if (client.paid_at is not None and creado
                 and client.paid_at.timestamp() > float(creado)):
+            # El movimiento SÍ se guarda (es un hecho contable: hubo un intento
+            # fallido), aunque el estado de la ficha no cambie. Sin este commit,
+            # la fila anotada arriba se perdía al cerrar la sesión: el endpoint
+            # devuelve el dict directamente y `get_db` solo hace close().
+            db.commit()
             return {"ignored": "invoice_fallida_antigua", "client_id": client.id}
         client.payment_status = "pending"
         log_event(db, "client", client.id, "payment_failed",
@@ -857,6 +1056,8 @@ def handle_webhook(db: Session, payload: bytes, sig_header: str | None) -> dict:
         return _handle_invoice_event(db, event)
     if event["type"] == "customer.subscription.deleted":
         return _handle_subscription_deleted(db, event)
+    if event["type"] == "charge.refunded":
+        return _handle_charge_refunded(db, event)
     if event["type"] != "checkout.session.completed":
         return {"ignored": event["type"]}
 
@@ -865,19 +1066,27 @@ def handle_webhook(db: Session, payload: bytes, sig_header: str | None) -> dict:
     if session.get("payment_status") == "unpaid":
         return {"ignored": "unpaid"}
 
+    evt_id = event.get("id")
     meta = session.get("metadata") or {}
     tier = pkgs.normalize(meta.get("tier"))
     period = meta.get("billing_period")
     client_id = meta.get("client_id") or session.get("client_reference_id")
+    importe = session.get("amount_total")
 
     # Alta manual: marcar ese cliente como pagado.
     if client_id:
         client = db.get(Client, int(client_id))
         if not client:
             _log.warning("Webhook Stripe: cliente %s no encontrado", client_id)
+            # El dinero entró aunque no haya ficha: se anota igual (sin cliente)
+            # para que el pago huérfano SE VEA en el feed, no solo en un push.
+            _anotar_checkout(db, session, None, event_id=evt_id)
+            db.commit()
             _notify_orphan_payment(db, session)
             return {"error": "client_not_found", "client_id": client_id}
-        _mark_paid(db, client, period)
+        nuevo = _anotar_checkout(db, session, client, event_id=evt_id)
+        _mark_paid(db, client, period, movimiento_nuevo=nuevo, amount_cents=importe,
+                   pagado_en=_pay_svc_ts(session.get("created")))
         db.commit()
         _tag_subscription(db, session, client)
         return {"marked_paid": client.id}
@@ -887,6 +1096,8 @@ def handle_webhook(db: Session, payload: bytes, sig_header: str | None) -> dict:
     email = (details.get("email") or "").strip().lower()
     if not email:
         _log.warning("Webhook Stripe: checkout sin email; no se puede crear cliente")
+        _anotar_checkout(db, session, None, event_id=evt_id)
+        db.commit()
         _notify_orphan_payment(db, session)
         return {"error": "no_email"}
     existing = db.scalar(select(Client).where(func.lower(Client.email) == email))
@@ -896,7 +1107,15 @@ def handle_webhook(db: Session, payload: bytes, sig_header: str | None) -> dict:
         # (el dinero entró y la suscripción existe) pero con push DISTINTIVO
         # para que el coach lo revise y decida (idempotente: solo si cambia).
         era_oferta = existing.billing_period == OFFER_PERIOD
-        _mark_paid(db, existing, period)
+        nuevo = _anotar_checkout(db, session, existing, event_id=evt_id)
+        _mark_paid(db, existing, period, movimiento_nuevo=nuevo, amount_cents=importe,
+                   pagado_en=_pay_svc_ts(session.get("created")))
+        try:  # la factura de la oferta pudo llegar antes y quedar sin ficha
+            from app.services.payments import adopt_orphans
+
+            adopt_orphans(db, existing)
+        except Exception:  # noqa: BLE001
+            pass
         db.commit()
         _tag_subscription(db, session, existing)
         if period == OFFER_PERIOD and not era_oferta:
@@ -905,6 +1124,8 @@ def handle_webhook(db: Session, payload: bytes, sig_header: str | None) -> dict:
 
     client = _create_selfserve_client(
         db, name=details.get("name") or "", email=email,
-        phone=details.get("phone"), tier=tier, period=period)
+        phone=details.get("phone"), tier=tier, period=period, amount_cents=importe)
+    _anotar_checkout(db, session, client, event_id=evt_id)
+    db.commit()
     _tag_subscription(db, session, client)
     return {"created": client.id}

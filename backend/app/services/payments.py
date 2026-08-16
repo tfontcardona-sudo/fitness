@@ -1,0 +1,502 @@
+"""Libro de caja de Stripe: anotar, consultar y sincronizar los movimientos.
+
+El coach necesita ver EN LA WEB quién pagó, cuánto y cuándo, y enterarse de cada
+cobro como en la app del banco. Este módulo es la única puerta a la tabla
+`payments`:
+
+- `record_payment` anota un movimiento (cobro, cobro fallido o devolución) de
+  forma IDEMPOTENTE y sin poder romper nunca al que la llama: el dinero ya entró
+  en Stripe, así que un fallo contable jamás puede tumbar el webhook.
+- `summary` / `list_payments` alimentan el feed y su cabecera.
+- `mark_seen` sella lo leído (`seen_at`) — el "no leído" del feed.
+- `sync_from_stripe` rellena el histórico ANTERIOR a esta tabla y repesca lo que
+  un webhook perdido no trajo: la red de seguridad de todo el sistema.
+
+Reglas del dinero (aprendidas de la auditoría):
+- Los importes se guardan en CÉNTIMOS enteros, como los da Stripe, con su moneda.
+  Nunca se deducen de la tabla de precios del código: un cupón, un prorrateo o un
+  reprecio histórico harían mentir a la cifra.
+- La fecha es la de STRIPE (`created`/`status_transitions.paid_at`), no la de
+  recepción del webhook: una reentrega tardía no puede falsear el día del cobro.
+- Los pagos en modo PRUEBA (`livemode=False`) se anotan pero NO suman en los
+  totales: no son dinero real.
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
+from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
+
+from app.config import settings
+from app.models import Client, Payment
+
+_log = logging.getLogger("app.payments")
+
+# Tipos de movimiento y estados (String + Literal en Pydantic, como el resto).
+KINDS = ("checkout", "invoice", "refund")
+STATUSES = ("paid", "failed", "refunded")
+
+# Tope del histórico que trae la sincronización manual con Stripe.
+SYNC_DEFAULT_DAYS = 365
+SYNC_MAX_OBJECTS = 2000  # freno duro: ninguna cuenta de un coach tiene más
+
+# Lo que la sincronización trae del PASADO se da por visto (rellenar el
+# histórico no puede encender 200 notificaciones). Pero un cobro RECIENTE que
+# aparece por sincronización es justo lo contrario: significa que su webhook se
+# perdió, y el coach todavía no se ha enterado — ese llega SIN LEER.
+SYNC_SEEN_OLDER_THAN_H = 24
+
+
+def _tz() -> ZoneInfo:
+    try:
+        return ZoneInfo(settings.tz)
+    except Exception:  # noqa: BLE001 — zona mal escrita en el .env
+        return ZoneInfo("UTC")
+
+
+def ts_to_dt(value) -> datetime | None:
+    """Marca de tiempo UNIX de Stripe → datetime con zona (UTC)."""
+    try:
+        return datetime.fromtimestamp(float(value), tz=timezone.utc)
+    except (TypeError, ValueError, OSError):
+        return None
+
+
+def describe(tier: str | None, billing_period: str | None, *,
+             kind: str = "checkout", billing_reason: str | None = None) -> str:
+    """Texto corto del movimiento para el feed: "DQR Full · 3 meses"."""
+    from app.services import packages as pkgs
+    from app.services.stripe_service import PERIOD_LABEL
+
+    plan = pkgs.label(tier) if tier else "Asesoría"
+    if billing_period == "oferta":
+        # La oferta es una suscripción: distingue el alta (1 €) de la renovación.
+        if billing_reason == "subscription_create":
+            return f"{plan} · oferta (primer mes)"
+        return f"{plan} · oferta (mes)" if kind == "invoice" else f"{plan} · oferta"
+    periodo = PERIOD_LABEL.get(billing_period or "", "")
+    return f"{plan} · {periodo}" if periodo else plan
+
+
+def record_payment(
+    db: Session,
+    *,
+    object_id: str,
+    kind: str,
+    status: str,
+    amount_cents: int,
+    currency: str = "eur",
+    livemode: bool = True,
+    client: Client | None = None,
+    customer_name: str | None = None,
+    customer_email: str | None = None,
+    tier: str | None = None,
+    billing_period: str | None = None,
+    description: str | None = None,
+    paid_at: datetime | None = None,
+    event_id: str | None = None,
+    seen: bool = False,
+) -> Payment | None:
+    """Anota un movimiento en el libro. Devuelve la fila creada, o None si ya
+    estaba anotada (idempotente por objeto+estado) o si algo falló.
+
+    NUNCA lanza: el cobro ya ocurrió en Stripe y la contabilidad no puede
+    impedir que el webhook siga marcando al cliente como pagado.
+    """
+    if not object_id or status not in STATUSES:
+        return None
+    try:
+        ya = db.scalar(
+            select(Payment).where(
+                Payment.stripe_object_id == object_id, Payment.status == status
+            ).limit(1)
+        )
+        if ya is not None:
+            return None
+        pago = Payment(
+            stripe_object_id=object_id,
+            stripe_event_id=event_id,
+            kind=kind if kind in KINDS else "checkout",
+            status=status,
+            amount_cents=int(amount_cents or 0),
+            currency=(currency or "eur").lower(),
+            livemode=bool(livemode),
+            client_id=client.id if client is not None else None,
+            # Copia del pagador: el libro debe seguir diciendo QUIÉN pagó aunque
+            # la ficha se borre (RGPD) o el pago sea huérfano.
+            customer_name=(customer_name or (client.full_name if client else None)),
+            customer_email=(customer_email or (client.email if client else None)),
+            tier=tier or (client.package_tier if client else None),
+            billing_period=billing_period or (client.billing_period if client else None),
+            description=description,
+            paid_at=paid_at or datetime.now(timezone.utc),
+            seen_at=datetime.now(timezone.utc) if seen else None,
+        )
+        # Savepoint: si otra entrega simultánea del mismo evento se adelanta, el
+        # UNIQUE salta aquí y NO invalida la transacción del webhook.
+        with db.begin_nested():
+            db.add(pago)
+            db.flush()
+        return pago
+    except SQLAlchemyError as exc:
+        _log.warning("Movimiento %s/%s no anotado: %s", object_id, status, exc)
+        return None
+    except Exception as exc:  # noqa: BLE001 — la contabilidad nunca rompe el cobro
+        _log.warning("Movimiento %s/%s no anotado (inesperado): %s", object_id, status, exc)
+        return None
+
+
+def record_refunds_of_charge(db: Session, charge: dict, *,
+                             client: Client | None = None,
+                             event_id: str | None = None,
+                             seen: bool = False) -> int:
+    """Anota las DEVOLUCIONES de un cobro. Devuelve cuántas se anotaron nuevas.
+
+    Va por REEMBOLSO (re_…), no por cargo: `charge.amount_refunded` es el
+    ACUMULADO y Stripe dispara `charge.refunded` en CADA devolución, así que
+    con el id del cargo como clave la segunda devolución parcial se descartaba
+    entera por idempotencia y el libro se quedaba corto (30 € devueltos de 80 €
+    reales). Con el id de cada reembolso, cada una es su propio movimiento.
+
+    Reserva: si el evento no trae la lista de reembolsos (según la versión de
+    API anclada al endpoint del webhook), se anota una única fila con el id del
+    cargo y el acumulado, y si esa fila ya existía con MENOS importe se
+    actualiza — así el total devuelto nunca se queda por debajo del real.
+    """
+    facturado = charge.get("billing_details") or {}
+    email = (facturado.get("email") or charge.get("receipt_email") or "").strip().lower() or None
+    comun = dict(
+        kind="refund", status="refunded", currency=charge.get("currency") or "eur",
+        livemode=bool(charge.get("livemode", True)), client=client,
+        customer_name=facturado.get("name"), customer_email=email,
+        description="Devolución", event_id=event_id, seen=seen,
+    )
+    reembolsos = [r for r in ((charge.get("refunds") or {}).get("data") or [])
+                  if r.get("id") and (r.get("amount") or 0) > 0]
+    if reembolsos:
+        nuevas = 0
+        for r in reembolsos:
+            if record_payment(db, object_id=r["id"], amount_cents=r.get("amount") or 0,
+                              paid_at=ts_to_dt(r.get("created") or charge.get("created")),
+                              **comun) is not None:
+                nuevas += 1
+        return nuevas
+
+    total = charge.get("amount_refunded") or 0
+    if total <= 0:
+        return 0
+    cargo_id = charge.get("id") or ""
+    pago = record_payment(db, object_id=cargo_id, amount_cents=total,
+                          paid_at=ts_to_dt(charge.get("created")), **comun)
+    if pago is not None:
+        return 1
+    # Ya existía: si han devuelto MÁS desde entonces, se pone al día el importe.
+    previo = db.scalar(
+        select(Payment).where(Payment.stripe_object_id == cargo_id,
+                              Payment.status == "refunded").limit(1)
+    )
+    if previo is not None and total > previo.amount_cents:
+        previo.amount_cents = total
+        return 1
+    return 0
+
+
+# ------------------------------------------------------------ consultas ----
+
+def unseen_count(db: Session) -> int:
+    """Movimientos sin leer (el badge de la barra)."""
+    return int(db.scalar(
+        select(func.count(Payment.id)).where(Payment.seen_at.is_(None))
+    ) or 0)
+
+
+def _month_bounds(now_local: datetime) -> tuple[datetime, datetime]:
+    """(inicio de ESTE mes, inicio del SIGUIENTE) en UTC, con el mes natural de
+    la zona horaria del coach — no la del servidor."""
+    start = now_local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    nxt = (start + timedelta(days=32)).replace(day=1)
+    return start.astimezone(timezone.utc), nxt.astimezone(timezone.utc)
+
+
+def _neto_cents(db: Session, desde: datetime, hasta: datetime) -> tuple[int, int]:
+    """(cobrado − devuelto, nº de cobros) entre dos fechas. Solo dinero REAL:
+    los movimientos en modo prueba de Stripe no suman."""
+    filas = db.execute(
+        select(Payment.status, func.coalesce(func.sum(Payment.amount_cents), 0),
+               func.count(Payment.id))
+        .where(Payment.paid_at >= desde, Payment.paid_at < hasta,
+               Payment.livemode.is_(True), Payment.status.in_(("paid", "refunded")))
+        .group_by(Payment.status)
+    ).all()
+    total = 0
+    cobros = 0
+    for status, suma, n in filas:
+        if status == "paid":
+            total += int(suma or 0)
+            cobros += int(n or 0)
+        else:
+            total -= int(suma or 0)
+    return total, cobros
+
+
+def summary(db: Session) -> dict:
+    """Cabecera del feed: ingresos del mes, del anterior, sin leer y avisos."""
+    ahora_local = datetime.now(timezone.utc).astimezone(_tz())
+    mes_ini, mes_fin = _month_bounds(ahora_local)
+    prev_ini, _ = _month_bounds((mes_ini.astimezone(_tz()) - timedelta(days=1)))
+
+    mes_total, mes_cobros = _neto_cents(db, mes_ini, mes_fin)
+    prev_total, _prev_cobros = _neto_cents(db, prev_ini, mes_ini)
+
+    ultimo = db.scalar(
+        select(Payment).where(Payment.status == "paid")
+        .order_by(Payment.paid_at.desc()).limit(1)
+    )
+    # Movimientos de PRUEBA (clave sk_test_): se ven en el feed pero no suman.
+    pruebas = int(db.scalar(
+        select(func.count(Payment.id)).where(Payment.livemode.is_(False))
+    ) or 0)
+    # Cobros que Stripe no pudo pasar: lo que el coach tiene que perseguir.
+    fallidos = int(db.scalar(
+        select(func.count(Payment.id)).where(
+            Payment.status == "failed", Payment.paid_at >= mes_ini)
+    ) or 0)
+    huerfanos = int(db.scalar(
+        select(func.count(Payment.id)).where(
+            Payment.client_id.is_(None), Payment.status == "paid")
+    ) or 0)
+    return {
+        "unseen": unseen_count(db),
+        "month_total_cents": mes_total,
+        "month_count": mes_cobros,
+        "prev_month_total_cents": prev_total,
+        "failed_month": fallidos,
+        "orphan_count": huerfanos,
+        "test_count": pruebas,
+        "currency": "eur",
+        "last_payment_at": ultimo.paid_at.isoformat() if ultimo else None,
+        "total_count": int(db.scalar(select(func.count(Payment.id))) or 0),
+        "stripe_enabled": bool(settings.stripe_enabled),
+    }
+
+
+def list_payments(db: Session, *, limit: int = 50, offset: int = 0,
+                  status: str | None = None,
+                  client_id: int | None = None) -> tuple[list[Payment], int]:
+    """Página del feed (más reciente primero) + total que cumple el filtro."""
+    filtros = []
+    if status in STATUSES:
+        filtros.append(Payment.status == status)
+    if client_id:
+        filtros.append(Payment.client_id == client_id)
+    total = int(db.scalar(select(func.count(Payment.id)).where(*filtros)) or 0)
+    filas = list(db.scalars(
+        select(Payment).where(*filtros)
+        # id como desempate: dos cobros con la misma fecha (backfill) no pueden
+        # bailar entre páginas y duplicarse/perderse al pulsar "Ver más".
+        .order_by(Payment.paid_at.desc(), Payment.id.desc())
+        .limit(max(1, min(limit, 100))).offset(max(0, offset))
+    ))
+    return filas, total
+
+
+def mark_seen(db: Session, ids: list[int] | None = None) -> int:
+    """Sella como leídos los movimientos indicados (o TODOS). Devuelve cuántos."""
+    q = select(Payment).where(Payment.seen_at.is_(None))
+    if ids:
+        q = q.where(Payment.id.in_(ids))
+    filas = list(db.scalars(q))
+    ahora = datetime.now(timezone.utc)
+    for f in filas:
+        f.seen_at = ahora
+    if filas:
+        db.commit()
+    return len(filas)
+
+
+def adopt_orphans(db: Session, client: Client, *, days: int = 30) -> int:
+    """Reasocia a `client` los movimientos HUÉRFANOS que llevan su email.
+
+    Hay una carrera real en el alta self-serve de la oferta: Stripe cobra y paga
+    la primera factura ANTES de completar la sesión de checkout, así que
+    `invoice.paid` llega cuando el cliente todavía no existe y su movimiento se
+    anota sin ficha. Nadie lo reasociaba después: el aviso "pago sin ficha
+    asociada" se quedaba encendido para siempre en un alta impecable, el cobro
+    no salía en la ficha del cliente y —lo más grave— el borrado RGPD no lo
+    alcanzaba (se quedaban ahí su nombre y su email).
+
+    Best-effort: nunca lanza (la contabilidad no puede romper el alta)."""
+    email = (client.email or "").strip().lower()
+    if not email:
+        return 0
+    try:
+        desde = datetime.now(timezone.utc) - timedelta(days=max(1, days))
+        filas = list(db.scalars(
+            select(Payment).where(
+                Payment.client_id.is_(None),
+                func.lower(Payment.customer_email) == email,
+                Payment.paid_at >= desde,
+            )
+        ))
+        for f in filas:
+            f.client_id = client.id
+            if not f.customer_name:
+                f.customer_name = client.full_name
+        return len(filas)
+    except SQLAlchemyError as exc:
+        _log.warning("Adopción de movimientos huérfanos fallida (%s): %s", email, exc)
+        return 0
+
+
+def anonymize_client(db: Session, client_id: int) -> int:
+    """Borrado RGPD: el movimiento se CONSERVA (el libro de caja no puede perder
+    dinero) pero deja de apuntar a la persona — sin ficha, sin nombre y sin
+    email. Devuelve cuántas filas se anonimizaron."""
+    filas = list(db.scalars(select(Payment).where(Payment.client_id == client_id)))
+    for f in filas:
+        f.client_id = None
+        f.customer_name = None
+        f.customer_email = None
+    return len(filas)
+
+
+# -------------------------------------------------- sincronización Stripe ----
+
+def _visto_por_antiguedad(cuando: datetime | None) -> bool:
+    """True si el movimiento es lo bastante viejo como para darlo por visto."""
+    if cuando is None:
+        return True
+    return cuando < datetime.now(timezone.utc) - timedelta(hours=SYNC_SEEN_OLDER_THAN_H)
+
+
+def _client_by_email(db: Session, email: str | None) -> Client | None:
+    if not email:
+        return None
+    return db.scalar(select(Client).where(func.lower(Client.email) == email.strip().lower()))
+
+
+def sync_from_stripe(db: Session, *, days: int = SYNC_DEFAULT_DAYS) -> dict:
+    """Trae de Stripe los movimientos de los últimos `days` días y anota los que
+    falten. Sirve para DOS cosas: rellenar el histórico anterior a esta tabla y
+    repescar cobros cuyo webhook se perdió (Stripe caído, deploy en marcha…).
+
+    Recorre las tres fuentes que cubren el negocio:
+      · Checkout Sessions pagadas (planes de pago único),
+      · Facturas pagadas (renovaciones de la suscripción de la oferta),
+      · Cobros con devolución (reembolsos).
+
+    Idempotente: lo ya anotado se ignora. Nunca lanza al caller salvo que Stripe
+    no esté configurado.
+    """
+    from app.services.stripe_service import (
+        StripeError,
+        _client_from_invoice,
+        _invoice_es_de_la_oferta,
+        _stripe,
+    )
+
+    if not settings.stripe_enabled:
+        raise StripeError("Stripe no está configurado (falta STRIPE_SECRET_KEY en el .env).")
+
+    stripe = _stripe()
+    desde = int((datetime.now(timezone.utc) - timedelta(days=max(1, days))).timestamp())
+    creados = 0
+    revisados = 0
+    errores: list[str] = []
+
+    def _limitado(iterador):
+        """Corta el barrido: ni la cuenta más movida de un coach pasa de aquí."""
+        nonlocal revisados
+        for obj in iterador:
+            if revisados >= SYNC_MAX_OBJECTS:
+                break
+            revisados += 1
+            yield obj
+
+    # 1) Checkout Sessions de PAGO ÚNICO. Las de modo suscripción se saltan: su
+    #    dinero llega como factura (anotarlas también duplicaría el ingreso).
+    try:
+        for s in _limitado(stripe.checkout.Session.list(
+                created={"gte": desde}, limit=100).auto_paging_iter()):
+            if s.get("payment_status") != "paid" or s.get("mode") == "subscription":
+                continue
+            meta = s.get("metadata") or {}
+            detalles = s.get("customer_details") or {}
+            cliente = None
+            cid = meta.get("client_id") or s.get("client_reference_id")
+            if cid:
+                try:
+                    cliente = db.get(Client, int(cid))
+                except (TypeError, ValueError):
+                    cliente = None
+            cliente = cliente or _client_by_email(db, detalles.get("email"))
+            tier = meta.get("tier")
+            period = meta.get("billing_period")
+            if record_payment(
+                db, object_id=s["id"], kind="checkout", status="paid",
+                amount_cents=s.get("amount_total") or 0,
+                currency=s.get("currency") or "eur", livemode=bool(s.get("livemode", True)),
+                client=cliente, customer_name=detalles.get("name"),
+                customer_email=detalles.get("email"), tier=tier, billing_period=period,
+                description=describe(tier or (cliente.package_tier if cliente else None),
+                                     period or (cliente.billing_period if cliente else None)),
+                paid_at=ts_to_dt(s.get("created")),
+                seen=_visto_por_antiguedad(ts_to_dt(s.get("created"))),
+            ) is not None:
+                creados += 1
+    except Exception as exc:  # noqa: BLE001 — una fuente caída no anula las demás
+        errores.append(f"checkout: {exc}")
+
+    # 2) Facturas pagadas (renovaciones de la oferta).
+    try:
+        for inv in _limitado(stripe.Invoice.list(
+                created={"gte": desde}, status="paid", limit=100).auto_paging_iter()):
+            if not _invoice_es_de_la_oferta(inv):
+                continue  # factura de otro producto de la misma cuenta de Stripe
+            cliente = _client_from_invoice(db, inv)
+            pagada_en = ((inv.get("status_transitions") or {}).get("paid_at")
+                         or inv.get("created"))
+            if record_payment(
+                db, object_id=inv["id"], kind="invoice", status="paid",
+                amount_cents=inv.get("amount_paid") or 0,
+                currency=inv.get("currency") or "eur",
+                livemode=bool(inv.get("livemode", True)),
+                client=cliente, customer_name=inv.get("customer_name"),
+                customer_email=inv.get("customer_email"),
+                tier=(cliente.package_tier if cliente else "full"),
+                billing_period="oferta",
+                description=describe("full", "oferta", kind="invoice",
+                                     billing_reason=inv.get("billing_reason")),
+                paid_at=ts_to_dt(pagada_en),
+                seen=_visto_por_antiguedad(ts_to_dt(pagada_en)),
+            ) is not None:
+                creados += 1
+    except Exception as exc:  # noqa: BLE001
+        errores.append(f"facturas: {exc}")
+
+    # 3) Devoluciones (un reembolso resta de los ingresos del mes).
+    try:
+        for ch in _limitado(stripe.Charge.list(
+                created={"gte": desde}, limit=100).auto_paging_iter()):
+            if (ch.get("amount_refunded") or 0) <= 0:
+                continue
+            facturado = ch.get("billing_details") or {}
+            cliente = _client_by_email(db, facturado.get("email") or ch.get("receipt_email"))
+            creados += record_refunds_of_charge(
+                db, ch, client=cliente,
+                seen=_visto_por_antiguedad(ts_to_dt(ch.get("created"))))
+    except Exception as exc:  # noqa: BLE001
+        errores.append(f"devoluciones: {exc}")
+
+    if creados:
+        db.commit()
+    else:
+        db.rollback()
+    if errores:
+        _log.warning("Sincronización de pagos con incidencias: %s", "; ".join(errores))
+    return {"created": creados, "scanned": revisados, "errors": errores}

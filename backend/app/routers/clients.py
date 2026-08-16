@@ -581,6 +581,11 @@ def delete_client(
     # esta línea, borrar a un cliente Pro con videollamadas revienta el commit.
     from app.models import VideoCall
     db.execute(delete(VideoCall).where(VideoCall.client_id == client_id))
+    # Libro de caja: el movimiento NO se borra (los ingresos del mes no pueden
+    # cambiar porque se dé de baja a alguien) pero se ANONIMIZA — se queda sin
+    # ficha, sin nombre y sin email, como el registro anónimo de la baja.
+    from app.services.payments import anonymize_client
+    anonymize_client(db, client_id)
     db.execute(delete(Period).where(Period.client_id == client_id))
     # plan_edits.plan_id tampoco tiene ON DELETE (§13, continuous_learning): CUALQUIER
     # cliente con un plan editado alguna vez desde el panel (lo normal) dejaba

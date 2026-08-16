@@ -53,6 +53,8 @@ import type {
   ExerciseOut,
   LandingOut,
   MeOut,
+  PaymentsListOut,
+  PaymentsSummaryOut,
   PlanPricesOut,
   PortalLinkOut,
   RecommendedProductIn,
@@ -416,6 +418,25 @@ export const api = {
     request<{ ok: boolean }>("POST", "/whatsapp/round/sent", { round_id, client_id, text }),
 
   // --- créditos IA (Anthropic) ---
+  // --- pagos (libro de caja de Stripe) ---
+  listPayments: (params: { limit?: number; offset?: number; status?: string; client_id?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (params.limit) q.set("limit", String(params.limit));
+    if (params.offset) q.set("offset", String(params.offset));
+    if (params.status) q.set("status", params.status);
+    if (params.client_id) q.set("client_id", String(params.client_id));
+    const qs = q.toString();
+    return request<PaymentsListOut>("GET", `/payments${qs ? `?${qs}` : ""}`);
+  },
+  paymentsSummary: () => request<PaymentsSummaryOut>("GET", "/payments/summary"),
+  /** Sella lo leído (sin ids = todos): apaga el punto azul y el badge. */
+  markPaymentsSeen: (ids?: number[]) =>
+    request<{ marked: number; unseen: number }>("POST", "/payments/seen", ids ? { ids } : {}),
+  /** Repesca de Stripe lo que falte (histórico + webhooks perdidos). */
+  syncPayments: (days?: number) =>
+    request<{ created: number; scanned: number; errors: string[] }>(
+      "POST", `/payments/sync${days ? `?days=${days}` : ""}`),
+
   getAiCredit: () => request<AiCreditOut>("GET", "/ai-credit"),
   setAiCredit: (balance_usd: number) =>
     request<AiCreditOut>("PUT", "/ai-credit", { balance_usd }),

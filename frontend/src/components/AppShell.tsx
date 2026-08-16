@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Library,
@@ -7,17 +7,55 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Users,
+  Wallet,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useBrand } from "../hooks/useBrand";
+import { ALERTS_REFRESH_MS, api } from "../lib/api";
 import { AlertsBell } from "./AlertsBell";
 import { AiCreditButton } from "./AiCreditButton";
 
 const NAV = [
   { to: "/", label: "Hoy", icon: LayoutDashboard, end: true },
   { to: "/clientes", label: "Clientes", icon: Users, end: false },
+  { to: "/pagos", label: "Pagos", icon: Wallet, end: false },
   { to: "/recursos", label: "Recursos", icon: Library, end: false },
 ];
+
+/** Cobros SIN LEER: el numerito rojo de "Pagos", como el del banco. Se apaga
+ *  solo al abrir la pantalla (que los sella). Se recalcula al navegar y de
+ *  fondo cada 20 s — el dato es ligero (un COUNT), pero un cobro no es algo
+ *  que cambie segundo a segundo. */
+function usePagosSinLeer(): number {
+  const [sinLeer, setSinLeer] = useState(0);
+  const location = useLocation();
+  useEffect(() => {
+    let vivo = true;
+    const leer = () => {
+      if (document.hidden) return;
+      api.paymentsSummary()
+        .then((s) => { if (vivo) setSinLeer(s.unseen); })
+        .catch(() => {});
+    };
+    leer();
+    const t = window.setInterval(leer, ALERTS_REFRESH_MS);
+    return () => { vivo = false; window.clearInterval(t); };
+  }, [location.pathname]);
+  return sinLeer;
+}
+
+/** Numerito del menú (99+ como tope para no romper el ancho). */
+function NavBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span
+      className="ml-auto rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none text-white"
+      style={{ background: "#C2453A" }}
+    >
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
 
 /** ¿Pantalla de móvil? (reactiva al girar el dispositivo) */
 function useIsMobile(): boolean {
@@ -38,6 +76,7 @@ export default function AppShell() {
   const { brand } = useBrand();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const pagosSinLeer = usePagosSinLeer();
   // Barra lateral inteligente: en móvil arranca contraída (pantalla estrecha).
   const [collapsed, setCollapsed] = useState(
     () => typeof window !== "undefined" && window.innerWidth < 768,
@@ -60,10 +99,22 @@ export default function AppShell() {
               key={to}
               to={to}
               end={end}
-              className="tap flex flex-1 flex-col items-center gap-0.5 rounded-xl py-1.5 text-[11px] font-medium"
+              className="tap relative flex flex-1 flex-col items-center gap-0.5 rounded-xl py-1.5 text-[11px] font-medium"
               style={({ isActive }) => ({ color: isActive ? "var(--brand-accent)" : "var(--text-faint)" })}
             >
-              <Icon size={20} />
+              <span className="relative">
+                <Icon size={20} />
+                {/* Cobros sin leer sobre el icono (en móvil no cabe el numerito
+                    al lado de la etiqueta). */}
+                {to === "/pagos" && pagosSinLeer > 0 && (
+                  <span
+                    className="absolute -right-2 -top-1 rounded-full px-1 text-[9px] font-bold leading-tight text-white"
+                    style={{ background: "#C2453A" }}
+                  >
+                    {pagosSinLeer > 9 ? "9+" : pagosSinLeer}
+                  </span>
+                )}
+              </span>
               {label}
             </NavLink>
           ))}
@@ -118,8 +169,17 @@ export default function AppShell() {
                   : undefined
               }
             >
-              <Icon size={18} className="shrink-0" />
+              <span className="relative shrink-0">
+                <Icon size={18} />
+                {/* Con el menú contraído no hay sitio para el número: un punto
+                    basta para saber que hay cobros sin ver. */}
+                {to === "/pagos" && collapsed && pagosSinLeer > 0 && (
+                  <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full"
+                        style={{ background: "#C2453A" }} />
+                )}
+              </span>
               {!collapsed && <span>{label}</span>}
+              {!collapsed && to === "/pagos" && <NavBadge count={pagosSinLeer} />}
             </NavLink>
           ))}
           {/* Créditos de la API de Anthropic: saldo restante + recarga */}
