@@ -818,6 +818,10 @@ export interface TemplateListItem {
   level: string | null;
   days_per_week: number | null;
   training_place: string | null;
+  /** Eje DIETA del caso: qué la distingue cuando el cliente solo contrata dieta */
+  meals_per_day: number | null;
+  diet_pattern: string | null;
+  diet_focus: string | null;
   source: "seed" | "upload" | "manual";
   has_nutrition: boolean;
 }
@@ -836,4 +840,13 @@ export interface UseTemplateOut {
   client_id: number;
   plan_id: number;
   created_client: boolean;
+}
+
+/** Sugerencia del pool para un cliente concreto (con el porqué). */
+export interface TemplateRecommendation extends TemplateListItem {
+  score: number;
+  /** Frase del porqué (determinista: reglas sobre su ficha y su portal) */
+  why: string;
+  /** Resumen de una línea de la plantilla (objetivo · días · lugar · comidas) */
+  summary: string;
 }

@@ -617,7 +617,12 @@ class PlanTemplate(Base):
     days_per_week: Mapped[int | None] = mapped_column(Integer)
     training_place: Mapped[str | None] = mapped_column(String(20))  # gym|home
     training_json: Mapped[dict | None] = mapped_column(JSONB)
-    nutrition_json: Mapped[dict | None] = mapped_column(JSONB)  # solo importadas
+    nutrition_json: Mapped[dict | None] = mapped_column(JSONB)
+    # Eje DIETA del caso: es lo que diferencia una planificación de otra cuando
+    # el cliente solo contrata la dieta (nº de tomas, patrón y foco del caso).
+    meals_per_day: Mapped[int | None] = mapped_column(Integer)
+    diet_pattern: Mapped[str | None] = mapped_column(String(20))
+    diet_focus: Mapped[str | None] = mapped_column(String(200))
     source: Mapped[str] = mapped_column(String(10), default="manual")  # seed|upload|manual
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime | None] = mapped_column(

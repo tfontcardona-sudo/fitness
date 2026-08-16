@@ -490,9 +490,14 @@ export const api = {
   // --- pool de rutinas (página Rutinas) ---
   templateCategories: () =>
     request<import("../types").TemplateCategory[]>("GET", "/templates/categories"),
-  listTemplates: (category?: string) =>
-    request<import("../types").TemplateListItem[]>(
-      "GET", `/templates${category ? `?category=${encodeURIComponent(category)}` : ""}`),
+  listTemplates: (category?: string, service?: string) => {
+    const qs = new URLSearchParams();
+    if (category) qs.set("category", category);
+    if (service) qs.set("service", service);
+    const q = qs.toString();
+    return request<import("../types").TemplateListItem[]>(
+      "GET", `/templates${q ? `?${q}` : ""}`);
+  },
   getTemplate: (id: number) =>
     request<import("../types").TemplateOut>("GET", `/templates/${id}`),
   createTemplate: (body: Record<string, unknown>) =>
@@ -502,6 +507,9 @@ export const api = {
   deleteTemplate: (id: number) => request<void>("DELETE", `/templates/${id}`),
   useTemplate: (id: number, body: { client_id?: number; new_client?: { full_name: string; email: string; phone?: string; package_tier?: string } }) =>
     request<import("../types").UseTemplateOut>("POST", `/templates/${id}/use`, body),
+  recommendTemplates: (clientId: number, limit = 5) =>
+    request<import("../types").TemplateRecommendation[]>(
+      "GET", `/templates/recommend/${clientId}?limit=${limit}`),
   importTemplate: (category: string, file: File) => {
     const fd = new FormData();
     fd.append("category", category);

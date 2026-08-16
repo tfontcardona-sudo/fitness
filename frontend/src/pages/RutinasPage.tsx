@@ -6,7 +6,7 @@ import {
 import { api, getToken } from "../lib/api";
 import { rankTemplates } from "../lib/poolSearch";
 import { LEVEL_LABEL, PLACE_LABEL } from "../lib/format";
-import { PACKAGES } from "../lib/packages";
+import { PACKAGES, PACKAGE_ORDER } from "../lib/packages";
 import { ConfirmDialog, PageLoader, Spinner, useToast } from "../components/ui";
 import type {
   ClientOut, ExerciseOut, TemplateCategory, TemplateListItem, TemplateOut,
@@ -27,10 +27,20 @@ import type {
 
 const DAYS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 
+/** Los tres servicios del centro: el pool se mira con las gafas de lo que el
+ *  cliente ha contratado (dieta, entrenamiento o el pack). */
+const SERVICES = [
+  { key: "", label: "Todo" },
+  { key: "nutri", label: "Dieta" },
+  { key: "train", label: "Entrenamiento" },
+  { key: "full", label: "Pack completo" },
+] as const;
+
 /** Descarga autenticada (fetch → blob), mismo patrón que el dossier del plan. */
-async function downloadDoc(templateId: number, title: string, toast: ReturnType<typeof useToast>) {
+async function downloadDoc(templateId: number, title: string, toast: ReturnType<typeof useToast>,
+                           service = "full") {
   try {
-    const res = await fetch(`/api/templates/${templateId}/document?format=pdf`, {
+    const res = await fetch(`/api/templates/${templateId}/document?format=pdf&service=${service}`, {
       headers: { Authorization: `Bearer ${getToken()}` },
     });
     if (!res.ok) throw new Error(`Error ${res.status}`);
@@ -38,7 +48,8 @@ async function downloadDoc(templateId: number, title: string, toast: ReturnType<
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     const safe = title.toLowerCase().replace(/[^a-z0-9]+/gi, "_");
-    a.download = `rutina_${safe}.${blob.type.includes("pdf") ? "pdf" : "docx"}`;
+    const pref = service === "nutri" ? "dieta" : service === "train" ? "entreno" : "plan";
+    a.download = `${pref}_${safe}.${blob.type.includes("pdf") ? "pdf" : "docx"}`;
     a.click();
     URL.revokeObjectURL(a.href);
   } catch {
@@ -50,6 +61,7 @@ export default function RutinasPage() {
   const toast = useToast();
   const [cats, setCats] = useState<TemplateCategory[] | null>(null);
   const [cat, setCat] = useState<string>("");
+  const [service, setService] = useState<string>("");   // "" = todo
   const [items, setItems] = useState<TemplateListItem[] | null>(null);
   const [editing, setEditing] = useState<TemplateOut | "new" | null>(null);
   const [using, setUsing] = useState<TemplateListItem | null>(null);
@@ -71,9 +83,9 @@ export default function RutinasPage() {
 
   const loadItems = useCallback(() => {
     if (!cat) return;
-    api.listTemplates(cat).then(setItems).catch(() => setItems([]));
+    api.listTemplates(cat, service || undefined).then(setItems).catch(() => setItems([]));
     setAllItems(null); // invalida el índice del buscador (datos cambiados)
-  }, [cat]);
+  }, [cat, service]);
   useEffect(() => { setItems(null); loadItems(); }, [loadItems]);
 
   // Biblioteca de ejercicios: para el editor (nombres) y las filas nuevas.
@@ -86,9 +98,10 @@ export default function RutinasPage() {
   const searching = q.trim().length >= 2;
   useEffect(() => {
     if (searching && allItems === null) {
-      api.listTemplates().then(setAllItems).catch(() => setAllItems([]));
+      api.listTemplates(undefined, service || undefined)
+        .then(setAllItems).catch(() => setAllItems([]));
     }
-  }, [searching, allItems]);
+  }, [searching, allItems, service]);
   const catLabels = useMemo(() => new Map(cats?.map((c) => [c.key, c.label]) ?? []), [cats]);
   const results = useMemo(
     () => (searching && allItems ? rankTemplates(allItems, catLabels, q) : null),
@@ -162,6 +175,20 @@ export default function RutinasPage() {
         )}
       </div>
 
+      {/* Qué se va a entregar: el pool se filtra por el servicio contratado */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span className="text-xs uppercase tracking-widest text-zinc-500">Servicio</span>
+        {SERVICES.map((sv) => (
+          <button key={sv.key} onClick={() => setService(sv.key)}
+            className="rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors"
+            style={service === sv.key
+              ? { background: "var(--surface-raised)", borderColor: "var(--brand-accent)", color: "var(--brand-accent)" }
+              : { borderColor: "var(--line-strong)", color: "var(--text-faint)" }}>
+            {sv.label}
+          </button>
+        ))}
+      </div>
+
       {/* Carpetas (elegir una limpia la búsqueda) */}
       <div className="mb-5 flex flex-wrap gap-2" style={searching ? { opacity: 0.55 } : undefined}>
         {cats.map((c) => (
@@ -191,9 +218,9 @@ export default function RutinasPage() {
               {results.length} {results.length === 1 ? "rutina afín" : "rutinas afines"} en todas las carpetas, la más parecida primero
             </p>
             {results.map((t) => (
-              <RoutineRow key={t.id} t={t} folderLabel={catLabels.get(t.category)}
+              <RoutineRow key={t.id} t={t} folderLabel={catLabels.get(t.category)} service={service}
                 onUse={() => setUsing(t)}
-                onDownload={() => downloadDoc(t.id, t.title, toast)}
+                onDownload={() => downloadDoc(t.id, t.title, toast, service || "full")}
                 onEdit={() => api.getTemplate(t.id).then(setEditing).catch(() => toast.push("No se pudo abrir", "error"))}
                 onDelete={() => setToDelete(t)} />
             ))}
@@ -208,9 +235,9 @@ export default function RutinasPage() {
       ) : (
         <div className="space-y-2.5">
           {items.map((t) => (
-            <RoutineRow key={t.id} t={t}
+            <RoutineRow key={t.id} t={t} service={service}
               onUse={() => setUsing(t)}
-              onDownload={() => downloadDoc(t.id, t.title, toast)}
+              onDownload={() => downloadDoc(t.id, t.title, toast, service || "full")}
               onEdit={() => api.getTemplate(t.id).then(setEditing).catch(() => toast.push("No se pudo abrir", "error"))}
               onDelete={() => setToDelete(t)} />
           ))}
@@ -242,9 +269,10 @@ export default function RutinasPage() {
 }
 
 /** Tarjeta de una rutina (lista de carpeta y resultados del buscador). */
-function RoutineRow({ t, folderLabel, onUse, onDownload, onEdit, onDelete }: {
+function RoutineRow({ t, folderLabel, service, onUse, onDownload, onEdit, onDelete }: {
   t: TemplateListItem;
   folderLabel?: string;
+  service?: string;
   onUse: () => void;
   onDownload: () => void;
   onEdit: () => void;
@@ -256,20 +284,27 @@ function RoutineRow({ t, folderLabel, onUse, onDownload, onEdit, onDelete }: {
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-semibold text-zinc-100">{t.title}</span>
           {folderLabel && <Chip tone="var(--brand-accent)">{folderLabel}</Chip>}
-          {t.level && <Chip>{LEVEL_LABEL[t.level as keyof typeof LEVEL_LABEL] ?? t.level}</Chip>}
-          {t.days_per_week != null && <Chip>{t.days_per_week} días</Chip>}
-          {t.training_place && <Chip>{PLACE_LABEL[t.training_place as keyof typeof PLACE_LABEL] ?? t.training_place}</Chip>}
+          {service !== "nutri" && t.level && <Chip>{LEVEL_LABEL[t.level as keyof typeof LEVEL_LABEL] ?? t.level}</Chip>}
+          {service !== "nutri" && t.days_per_week != null && <Chip>{t.days_per_week} días</Chip>}
+          {service !== "nutri" && t.training_place && <Chip>{PLACE_LABEL[t.training_place as keyof typeof PLACE_LABEL] ?? t.training_place}</Chip>}
+          {service !== "train" && t.meals_per_day != null && <Chip>{t.meals_per_day} comidas</Chip>}
+          {service !== "train" && t.diet_pattern && <Chip tone="var(--brand-accent)">{t.diet_pattern}</Chip>}
           {t.source === "upload" && <Chip tone="var(--brand-accent)">subida</Chip>}
           {t.source === "manual" && <Chip tone="var(--brand-accent-2-hi)">propia</Chip>}
         </div>
-        {t.case_note && <p className="mt-1 text-sm text-zinc-500">{t.case_note}</p>}
+        {service !== "nutri" && t.case_note && <p className="mt-1 text-sm text-zinc-500">{t.case_note}</p>}
+        {service !== "train" && t.diet_focus && (
+          <p className="mt-1 text-sm" style={{ color: "var(--text-dim)" }}>Dieta: {t.diet_focus}</p>
+        )}
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
         <button className="btn btn-primary !px-3 !py-2" onClick={onUse}
           title="Crear el perfil de un cliente (o elegir uno existente) con esta rutina">
           <Send size={14} /> Usar
         </button>
-        <IconBtn title="Descargar con el diseño de la marca (PDF)" onClick={onDownload}>
+        <IconBtn title={service === "nutri" ? "Descargar solo la dieta (PDF de la marca)"
+          : service === "train" ? "Descargar solo el entrenamiento (PDF de la marca)"
+          : "Descargar el plan completo (PDF de la marca)"} onClick={onDownload}>
           <Download size={15} />
         </IconBtn>
         <IconBtn title="Editar" onClick={onEdit}><Pencil size={15} /></IconBtn>
@@ -377,9 +412,15 @@ function UseDialog({ tpl, onClose }: { tpl: TemplateListItem; onClose: () => voi
           <div>
             <label className="label">Plan</label>
             <select className="input" value={tier} onChange={(e) => setTier(e.target.value)}>
-              <option value="train">{PACKAGES.train.label} (presencial)</option>
-              <option value="full">{PACKAGES.full.label}</option>
+              {PACKAGE_ORDER.map((k) => (
+                <option key={k} value={k}>
+                  {PACKAGES[k].label} — {PACKAGES[k].priceMonthEur} €
+                </option>
+              ))}
             </select>
+            <p className="mt-1 text-xs text-zinc-500">
+              Decide qué recibe: solo la dieta, solo el entrenamiento o ambos.
+            </p>
           </div>
         </div>
       ) : (
@@ -425,6 +466,9 @@ function TemplateEditor({ tpl, category, cats, exercises, onClose, onSaved }: {
   const [cat, setCat] = useState(tpl?.category ?? category);
   const [level, setLevel] = useState(tpl?.level ?? "beginner");
   const [place, setPlace] = useState(tpl?.training_place ?? "gym");
+  const [meals, setMeals] = useState<number>(tpl?.meals_per_day ?? 4);
+  const [pattern, setPattern] = useState(tpl?.diet_pattern ?? "");
+  const [dietFocus, setDietFocus] = useState(tpl?.diet_focus ?? "");
   const [sessions, setSessions] = useState<EditSession[]>(() => {
     const src = (tpl?.training_json?.sessions ?? []) as TemplateSession[];
     if (src.length === 0) {
@@ -472,6 +516,7 @@ function TemplateEditor({ tpl, category, cats, exercises, onClose, onSaved }: {
     const body = {
       category: cat, title: finalTitle, case_note: caseNote, level,
       training_place: place, days_per_week: clean.length,
+      meals_per_day: meals, diet_pattern: pattern, diet_focus: dietFocus,
       training_json: {
         // El resto del shape (progresión, cardio, descarga) lo conserva/normaliza
         // el backend: el editor solo toca lo esencial.
@@ -529,6 +574,41 @@ function TemplateEditor({ tpl, category, cats, exercises, onClose, onSaved }: {
               <option value="gym">Gimnasio</option>
               <option value="home">Casa</option>
             </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Eje DIETA del caso: es lo que distingue una planificación de otra
+          cuando el cliente solo contrata la dieta. Cambiar comidas o patrón
+          RECONSTRUYE la dieta de referencia (el backend la recalcula). */}
+      <div className="mt-4 rounded-xl border p-3.5" style={{ borderColor: "var(--line-strong)" }}>
+        <p className="mb-2.5 text-xs uppercase tracking-widest text-zinc-500">Dieta del caso</p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div>
+            <label className="label">Comidas al día</label>
+            <select className="input" value={meals} onChange={(e) => setMeals(Number(e.target.value))}>
+              <option value={3}>3 comidas</option>
+              <option value={4}>4 comidas</option>
+              <option value={5}>5 comidas</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">Patrón</label>
+            <select className="input" value={pattern ?? ""} onChange={(e) => setPattern(e.target.value)}>
+              <option value="">Sin restricción</option>
+              <option value="vegetariano">Vegetariano</option>
+              <option value="vegano">Vegano</option>
+              <option value="pescetariano">Pescetariano</option>
+              <option value="sin_cerdo">Sin cerdo</option>
+              <option value="halal">Halal</option>
+              <option value="kosher">Kosher</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">En qué se centra</label>
+            <input className="input" value={dietFocus ?? ""} maxLength={200}
+              onChange={(e) => setDietFocus(e.target.value)}
+              placeholder="P. ej.: 3 comidas y nada entre horas" />
           </div>
         </div>
       </div>

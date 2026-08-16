@@ -113,7 +113,7 @@ def test_seeds_del_pool_resuelven_al_cien_por_cien(db):
 
     from app.services.templates import CATEGORY_KEYS, resolve_training
 
-    assert len(TEMPLATES) >= 20
+    assert len(TEMPLATES) >= 150
     per_cat: dict[str, int] = {}
     for entry in TEMPLATES:
         assert entry["category"] in CATEGORY_KEYS
@@ -124,9 +124,11 @@ def test_seeds_del_pool_resuelven_al_cien_por_cien(db):
         for s in training["sessions"]:
             for e in s["exercises"]:
                 assert isinstance(e["rir"], str) and e["exercise_id"] >= 1
-    # Cada carpeta sembrada trae EXACTAMENTE sus 20 casos (el pool se completa
-    # carpeta a carpeta; ninguna queda a medias).
-    assert all(n == 20 for n in per_cat.values()), per_cat
+        # Eje DIETA del caso: sin él la plantilla no serviría al servicio de dieta
+        assert 3 <= (entry.get("meals_per_day") or 0) <= 5
+    # Los TRES grupos del negocio, con al menos 50 casos cada uno.
+    assert set(per_cat) == CATEGORY_KEYS, per_cat
+    assert all(n >= 50 for n in per_cat.values()), per_cat
 
 
 def test_seed_plan_templates_idempotente(db):
@@ -144,8 +146,7 @@ def test_seed_plan_templates_idempotente(db):
 # ------------------------------------------------------------------- API ----
 def test_categorias_y_crud(client, auth, db):
     cats = client.get("/api/templates/categories", headers=auth).json()
-    assert {c["key"] for c in cats} >= {"ganancia_muscular", "perdida_grasa", "fuerza",
-                                       "salud_espalda", "principiantes", "mantenimiento"}
+    assert {c["key"] for c in cats} == {"masa", "definicion", "mantenimiento"}
 
     body = _routine_body(db)
     r = client.post("/api/templates", headers=auth, json=body)
@@ -187,7 +188,7 @@ def test_usar_con_cliente_nuevo_crea_perfil_y_borrador(client, auth, db):
 
     from app.models import Client, Plan
 
-    body = _routine_body(db, category="principiantes")
+    body = _routine_body(db, category="mantenimiento")
     tpl = client.post("/api/templates", headers=auth, json=body).json()
 
     email = f"pool-{uuid.uuid4().hex[:8]}@example.com"
@@ -221,3 +222,80 @@ def test_usar_con_cliente_nuevo_crea_perfil_y_borrador(client, auth, db):
     assert plan2.month_index == plan.month_index + 1
 
     client.delete(f"/api/templates/{tpl['id']}", headers=auth)
+
+
+# ------------------------------------------- eje dieta / servicios / sugerencias --
+def test_filtro_por_servicio_y_documento_de_solo_dieta(client, auth, db):
+    """El pool sirve a los TRES servicios: la misma plantilla entrega solo la
+    dieta, solo el entreno o el pack, y el filtro `service` respeta eso."""
+    from app.services.templates import seed_plan_templates
+
+    seed_plan_templates(db)
+
+    solo_dieta = client.get("/api/templates?service=nutri", headers=auth).json()
+    assert solo_dieta, "las plantillas sembradas traen su dieta de referencia"
+    tpl = next(t for t in solo_dieta if t["diet_focus"])
+    assert 3 <= tpl["meals_per_day"] <= 5
+
+    # Solo entreno: la rutina creada a mano no tiene dieta, así que NO sale
+    body = _routine_body(db)
+    manual = client.post("/api/templates", headers=auth, json=body).json()
+    ids_nutri = {t["id"] for t in client.get("/api/templates?service=nutri", headers=auth).json()}
+    ids_train = {t["id"] for t in client.get("/api/templates?service=train", headers=auth).json()}
+    assert manual["id"] in ids_train and manual["id"] not in ids_nutri
+
+    r = client.get(f"/api/templates/{tpl['id']}/document?format=docx&service=nutri", headers=auth)
+    assert r.status_code == 200 and len(r.content) > 10_000
+    client.delete(f"/api/templates/{manual['id']}", headers=auth)
+
+
+def test_editar_las_comidas_rehace_la_dieta(client, auth, db):
+    """Cambiar tomas o patrón desde el editor RECONSTRUYE la dieta de la
+    plantilla (no deja el reparto viejo con la etiqueta nueva)."""
+    from app.services.templates import seed_plan_templates
+
+    seed_plan_templates(db)
+    pool = client.get("/api/templates?service=nutri", headers=auth).json()
+    tid = next(t["id"] for t in pool if (t["meals_per_day"] or 0) == 4)
+
+    r = client.patch(f"/api/templates/{tid}", headers=auth,
+                     json={"meals_per_day": 5, "diet_pattern": "vegetariano"})
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["meals_per_day"] == 5 and out["diet_pattern"] == "vegetariano"
+    assert len(out["nutrition_json"]["meals"]) == 5
+    # Y vuelve a dejarla como estaba (la suite no ensucia el pool sembrado)
+    client.patch(f"/api/templates/{tid}", headers=auth,
+                 json={"meals_per_day": 4, "diet_pattern": ""})
+
+
+def test_recomendaciones_para_un_cliente(client, auth, db):
+    """5 sugerencias del pool con su porqué: el camino rápido del coach."""
+    from app.models import Client
+    from app.security import new_portal_token
+    from app.services.templates import seed_plan_templates
+
+    seed_plan_templates(db)
+    c = Client(full_name="Sugerencias Test", email=f"sug-{uuid.uuid4().hex[:8]}@example.com",
+               package_tier="full", billing_period="unico", status="onboarding",
+               portal_token="pendiente", goal_type="fat_loss", level="beginner",
+               training_days=3, training_place="gym", sex="female", height_cm=165,
+               start_weight_kg=78, meals_per_day=4, diet_pattern="vegetariano")
+    db.add(c)
+    db.flush()
+    c.portal_token = new_portal_token(c.id)
+    db.commit()
+
+    r = client.get(f"/api/templates/recommend/{c.id}", headers=auth)
+    assert r.status_code == 200, r.text
+    sug = r.json()
+    assert 1 <= len(sug) <= 5
+    # Todas del grupo del objetivo, con motivo y resumen legibles
+    assert sug[0]["category"] == "definicion"
+    assert sug[0]["why"].startswith("Encaja por")
+    assert "·" in sug[0]["summary"]
+    # El patrón dietético del cliente pesa: alguna vegetariana entre las 5
+    assert any(s["diet_pattern"] == "vegetariano" for s in sug)
+
+    db.delete(c)
+    db.commit()

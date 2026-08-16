@@ -19,14 +19,17 @@ from app.models import Client, Plan, PlanTemplate
 from app.security import new_portal_token
 from app.services.audit import log_event
 from app.services.templates import (
-    CATEGORIES, CATEGORY_GOAL, CATEGORY_KEYS, TemplateError,
-    import_template_from_file, resolve_training, template_document,
+    CATEGORIES, CATEGORY_GOAL, CATEGORY_KEYS, TemplateError, build_diet,
+    import_template_from_file, materialize_for_client, resolve_training,
+    template_document,
 )
 
 router = APIRouter(prefix="/api/templates", tags=["templates"],
                    dependencies=[Depends(get_current_user)])
 
 MAX_UPLOAD_MB = 15
+# Mismos patrones que la ficha del cliente (clients.diet_pattern)
+DIET_PATTERNS = {"vegano", "vegetariano", "pescetariano", "sin_cerdo", "halal", "kosher"}
 
 
 # ------------------------------------------------------------- schemas ----
@@ -38,6 +41,9 @@ class TemplateListItem(BaseModel):
     level: str | None = None
     days_per_week: int | None = None
     training_place: str | None = None
+    meals_per_day: int | None = None
+    diet_pattern: str | None = None
+    diet_focus: str | None = None
     source: str
     has_nutrition: bool = False
 
@@ -61,6 +67,10 @@ class TemplateIn(BaseModel):
     days_per_week: int | None = Field(default=None, ge=1, le=7)
     training_place: str | None = None
     training_json: dict | None = None
+    # Eje dieta del caso (el coach lo ajusta desde el editor simple)
+    meals_per_day: int | None = Field(default=None, ge=3, le=5)
+    diet_pattern: str | None = None
+    diet_focus: str | None = Field(default=None, max_length=200)
 
 
 class NewClientIn(BaseModel):
@@ -92,13 +102,35 @@ def list_categories(db: Session = Depends(get_db)) -> list[dict]:
     return [{**c, "count": counts.get(c["key"], 0)} for c in CATEGORIES]
 
 
+@router.get("/recommend/{client_id}")
+def recommend_for_client(client_id: int, limit: int = Query(5, ge=1, le=10),
+                         db: Session = Depends(get_db)) -> list[dict]:
+    """Las plantillas del pool que MEJOR encajan con este cliente, cada una con
+    el motivo. Determinista (reglas sobre su ficha): el coach ve de dónde sale
+    cada sugerencia y siempre puede buscar o crear la suya."""
+    from app.services.templates import recommend_templates
+
+    client = db.get(Client, client_id)
+    if not client:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Cliente no encontrado")
+    return recommend_templates(db, client, limit=limit)
+
+
 @router.get("", response_model=list[TemplateListItem])
 def list_templates(
-    category: str | None = Query(default=None), db: Session = Depends(get_db),
+    category: str | None = Query(default=None),
+    service: str | None = Query(default=None, pattern="^(nutri|train|full)$"),
+    db: Session = Depends(get_db),
 ) -> list[TemplateListItem]:
+    """El pool. `service` filtra por lo que se va a entregar: las de dieta
+    necesitan nutrición, las de entrenamiento necesitan rutina y el pack, ambas."""
     q = select(PlanTemplate).order_by(PlanTemplate.title)
     if category:
         q = q.where(PlanTemplate.category == category)
+    if service in ("nutri", "full"):
+        q = q.where(PlanTemplate.nutrition_json.isnot(None))
+    if service in ("train", "full"):
+        q = q.where(PlanTemplate.training_json.isnot(None))
     out = []
     for t in db.scalars(q):
         item = TemplateListItem.model_validate(t)
@@ -146,6 +178,24 @@ def _apply(t: PlanTemplate, body: TemplateIn, db: Session) -> None:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
         if body.days_per_week is None:
             t.days_per_week = len(t.training_json.get("sessions", [])) or t.days_per_week
+    if body.diet_focus is not None:
+        t.diet_focus = body.diet_focus.strip() or None
+    # Tocar las tomas o el patrón REHACE la dieta de referencia (el número de
+    # comidas manda sobre el reparto; el patrón, sobre el banco de opciones).
+    rehacer = False
+    if body.meals_per_day is not None and body.meals_per_day != t.meals_per_day:
+        t.meals_per_day = body.meals_per_day
+        rehacer = True
+    if body.diet_pattern is not None:
+        nuevo = body.diet_pattern.strip().lower() or None
+        if nuevo not in DIET_PATTERNS:
+            nuevo = None
+        if nuevo != t.diet_pattern:
+            t.diet_pattern = nuevo
+            rehacer = True
+    if rehacer or (body.diet_focus is not None and t.nutrition_json):
+        t.nutrition_json = build_diet(t.category, t.meals_per_day or 4,
+                                      diet_pattern=t.diet_pattern, focus=t.diet_focus)
 
 
 @router.post("", response_model=TemplateOut, status_code=status.HTTP_201_CREATED)
@@ -197,12 +247,14 @@ def delete_template(template_id: int, db: Session = Depends(get_db)) -> Response
 def template_doc(
     template_id: int,
     format: str = Query("pdf", pattern="^(pdf|docx)$"),
+    service: str = Query("full", pattern="^(nutri|train|full)$"),
     db: Session = Depends(get_db),
 ):
     """La plantilla renderizada con el dossier de la MARCA (mismo motor que los
-    planes de clientes): así cualquier plan externo subido sale re-maquetado."""
+    planes de clientes): así cualquier plan externo subido sale re-maquetado.
+    `service` entrega solo la dieta, solo el entreno o el pack completo."""
     t = _get_or_404(db, template_id)
-    content, media, filename = template_document(db, t, fmt=format)
+    content, media, filename = template_document(db, t, fmt=format, service=service)
     return Response(content=content, media_type=media,
                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
@@ -214,8 +266,8 @@ def use_template(template_id: int, body: UseTemplateIn, db: Session = Depends(ge
     `new_client` crea el perfil en el momento (alta mínima, ficha pre-rellenada
     con lo que la rutina ya sabe: objetivo, nivel, días, lugar)."""
     t = _get_or_404(db, template_id)
-    if not t.training_json:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "La rutina está vacía")
+    if not t.training_json and not t.nutrition_json:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "La plantilla está vacía")
 
     created = False
     if body.client_id is not None:
@@ -231,7 +283,7 @@ def use_template(template_id: int, body: UseTemplateIn, db: Session = Depends(ge
             email=email,
             phone=body.new_client.phone,
             package_tier=body.new_client.package_tier,
-            billing_period="1m",
+            billing_period="unico",   # el catálogo del centro es de pago único
             status="onboarding",
             portal_token="pendiente",
             # Pre-relleno con lo que la rutina ya sabe del caso; la anamnesis
@@ -255,10 +307,15 @@ def use_template(template_id: int, body: UseTemplateIn, db: Session = Depends(ge
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             "Indica un cliente existente o los datos del nuevo")
 
+    # La plantilla se ADAPTA a esta persona: el entreno solo si su servicio lo
+    # incluye, y la dieta reescalada a SUS kcal/macros reales con su banco de
+    # comidas (alergias, aversiones y patrón). La plantilla nunca impone las
+    # calorías de otro cliente.
+    training_json, nutrition_json = materialize_for_client(db, t, client)
     month = (db.scalar(select(func.max(Plan.month_index)).where(Plan.client_id == client.id)) or 0) + 1
     plan = Plan(
         client_id=client.id, month_index=month, version=1, status="draft",
-        training_json=t.training_json, nutrition_json=t.nutrition_json,
+        training_json=training_json, nutrition_json=nutrition_json,
         education_json=None, guardrail_flags=[], generated_by="template",
         goal_type=t.goal_type or client.goal_type,
     )

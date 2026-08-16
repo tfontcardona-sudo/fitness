@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Mail, Pencil, PlayCircle, Save, X, Flag, Copy, Archive, FileText } from "lucide-react";
 import { api, getToken } from "../lib/api";
 import { manualUpdateMessage, openWhatsApp, planAndFeedbackMessage, planMessage, waPhone, waUrl } from "../lib/whatsapp";
@@ -73,6 +74,8 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
   const hasNutrition = info.hasNutrition;
   const byEmail = info.delivery === "email";
   const [plan, setPlan] = useState<PlanData | null>(null);
+  // Recarga manual del panel (tras asignar una plantilla del pool).
+  const [reloadTick, setReloadTick] = useState(0);
   const [exMap, setExMap] = useState<Record<number, string>>({});
   // Vídeo de cada ejercicio (biblioteca): botón directo en la rutina.
   const [exVideo, setExVideo] = useState<Record<number, string>>({});
@@ -158,7 +161,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
     return () => {
       alive = false;
     };
-  }, [client.id]);
+  }, [client.id, reloadTick]);
 
   /** Enlace público al PDF del plan (endpoint por token — sin login). */
   async function planPdfUrl(): Promise<string> {
@@ -389,9 +392,14 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
               </div>
             )}
 
+            {/* Sugerencias del POOL para este cliente: el camino rápido. El
+                coach elige una, o la busca él en Rutinas, o la genera con IA. */}
+            <Recomendadas clientId={client.id}
+              onUsed={() => { setReloadTick((t) => t + 1); onClientChanged?.(); }} />
+
             <button onClick={() => generate()} disabled={generating} className="btn btn-primary mt-4">
               <Sparkles size={16} />
-              {generating ? "Generando… (puede tardar 1-2 min)" : "Generar planificación"}
+              {generating ? "Generando… (puede tardar 1-2 min)" : "Generar planificación con IA"}
             </button>
             {generating && (
               <p className="mt-2 text-xs text-zinc-500">
@@ -1788,6 +1796,77 @@ function FlexRule({ text }: { text: string }) {
   return (
     <div className="rounded-lg border-l-2 px-3 py-2 text-xs text-zinc-400" style={{ background: "var(--surface-raised)", borderLeftColor: "color-mix(in srgb, var(--brand-accent) 55%, transparent)" }}>
       {m ? (<><b className="text-zinc-200">{m[1]}:</b> {m[2]}</>) : text}
+    </div>
+  );
+}
+
+
+/* ===================== SUGERENCIAS DEL POOL PARA ESTE CLIENTE =====================
+   Cinco plantillas ordenadas por afinidad con su ficha (objetivo, días, lugar,
+   nivel, edad y molestias declaradas), cada una con el motivo en una frase.
+   Es determinista: el coach ve de dónde sale la sugerencia y decide. */
+function Recomendadas({ clientId, onUsed }: { clientId: number; onUsed: () => void }) {
+  const toast = useToast();
+  const nav = useNavigate();
+  const [recs, setRecs] = useState<import("../types").TemplateRecommendation[] | null>(null);
+  const [usando, setUsando] = useState<number | null>(null);
+
+  useEffect(() => {
+    api.recommendTemplates(clientId).then(setRecs).catch(() => setRecs([]));
+  }, [clientId]);
+
+  async function usar(id: number) {
+    if (usando != null) return;
+    setUsando(id);
+    try {
+      await api.useTemplate(id, { client_id: clientId });
+      toast.push("Planificación asignada como borrador: revísala y publícala");
+      onUsed();
+    } catch (e: any) {
+      toast.push(e?.message ?? "No se pudo asignar", "error");
+      setUsando(null);
+    }
+  }
+
+  if (recs === null || recs.length === 0) return null;
+
+  return (
+    <div className="mt-5">
+      <div className="mb-2 flex items-center justify-between">
+        <div>
+          <p className="text-sm font-semibold text-zinc-200">
+            Recomendadas para este cliente
+          </p>
+          <p className="text-xs text-zinc-500">
+            Salen de su anamnesis y de lo que registra en el portal. Si no te
+            convencen, búscala tú en el pool o genérala con IA.
+          </p>
+        </div>
+        <button className="text-xs font-medium text-zinc-500 hover:text-zinc-200"
+          onClick={() => nav("/rutinas")}>
+          Ver todo el pool →
+        </button>
+      </div>
+      <div className="space-y-2">
+        {recs.map((r) => (
+          <div key={r.id} className="flex flex-wrap items-center gap-3 rounded-xl border p-3"
+            style={{ borderColor: "var(--line-strong)" }}>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-zinc-100">{r.title}</p>
+              {r.summary && (
+                <p className="mt-0.5 text-xs" style={{ color: "var(--brand-accent)" }}>{r.summary}</p>
+              )}
+              <p className="mt-0.5 text-xs text-zinc-500">{r.why}</p>
+              {r.case_note && <p className="mt-0.5 text-xs text-zinc-600">{r.case_note}</p>}
+              {r.diet_focus && <p className="mt-0.5 text-xs text-zinc-600">Dieta: {r.diet_focus}</p>}
+            </div>
+            <button className="btn btn-ghost !px-3 !py-1.5 text-xs" disabled={usando != null}
+              onClick={() => usar(r.id)}>
+              {usando === r.id ? <Spinner /> : "Usar esta"}
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
