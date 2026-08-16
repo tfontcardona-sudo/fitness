@@ -218,3 +218,44 @@ def test_alertas_del_flujo_continuo(db):
         assert "send_feedback" not in kinds, "ya está enviado: nada que hacer"
     finally:
         _borrar(db, c)
+
+
+def test_el_cliente_actualiza_su_evolucion_sin_cerrar_nada(db):
+    """La pantalla Evolución del portal: peso y perímetros cuando el cliente se
+    mide. Sin cierres, sin fechas límite y sin pisar lo que no manda."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.models import DailyLog, Period
+    from sqlalchemy import select
+
+    c, _plan, period = _cliente_con_seguimiento(db, 8)
+    http = TestClient(app)
+    try:
+        r = http.post(f"/api/p/{c.portal_token}/measurements",
+                      json={"weight_kg": 68.4, "waist_cm": 78.5,
+                            "feelings_json": {"energia": 4, "hambre": 2}})
+        assert r.status_code == 200, r.text
+        assert set(r.json()["fields"]) == {"weight_kg", "waist_cm", "feelings_json"}
+
+        db.expire_all()
+        p = db.get(Period, period.id)
+        assert p.status == "open", "guardar medidas NO cierra el seguimiento"
+        assert p.closing_weight_kg == 68.4 and p.closing_waist_cm == 78.5
+
+        # El peso entra también en el diario de hoy: es la serie de la evolución
+        hoy_log = db.scalar(select(DailyLog).where(DailyLog.period_id == p.id,
+                                                   DailyLog.log_date == date.today()))
+        assert hoy_log is not None and hoy_log.weight_kg == 68.4
+
+        # Mandar solo la cadera no borra lo anterior
+        r = http.post(f"/api/p/{c.portal_token}/measurements", json={"hip_cm": 96.0})
+        assert r.status_code == 200
+        db.expire_all()
+        p = db.get(Period, period.id)
+        assert p.closing_hip_cm == 96.0 and p.closing_waist_cm == 78.5
+
+        # Sin nada que guardar → 422 con mensaje claro
+        assert http.post(f"/api/p/{c.portal_token}/measurements", json={}).status_code == 422
+    finally:
+        _borrar(db, c)

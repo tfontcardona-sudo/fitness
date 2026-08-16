@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Bell, BellOff, CalendarCheck, Camera, Check, ChevronDown, Dumbbell, LineChart, LogOut, NotebookPen, Share, ShoppingBag, Smartphone, Video, X } from "lucide-react";
+import { Bell, BellOff, CalendarCheck, Camera, Check, ChevronDown, Dumbbell, LineChart, LogOut, NotebookPen, Ruler, Share, ShoppingBag, Smartphone, Video, X } from "lucide-react";
 import { portalApi, portalSession, PortalError } from "./portalApi";
 import type { VideoCallStatus } from "./portalApi";
 import { pkg } from "../lib/packages";
@@ -9,6 +9,7 @@ import type { PortalState } from "../types";
 import { PortalWorkout } from "./PortalWorkout";
 import { PortalDiary } from "./PortalDiary";
 import { PortalClose } from "./PortalClose";
+import { PortalEvolution } from "./PortalEvolution";
 import { PortalProgress } from "./PortalProgress";
 import { PortalResources } from "./PortalResources";
 import { PortalToastProvider, usePortalToast } from "./PortalToast";
@@ -51,8 +52,7 @@ export default function PortalApp({ token }: { token: string }) {
   const [params, setParams] = useSearchParams();
   const rawTab = params.get("tab");
   const tab: Tab =
-    rawTab === "diario" || rawTab === "progreso"
-      || (rawTab === "cierre" && FEATURE_BIWEEKLY)
+    rawTab === "diario" || rawTab === "progreso" || rawTab === "cierre"
       || (rawTab === "recursos" && FEATURE_RESOURCES)
       ? (rawTab as Tab)
       : "entreno";
@@ -152,10 +152,12 @@ export default function PortalApp({ token }: { token: string }) {
     { id: "recursos", label: "Tienda", icon: ShoppingBag },
     { id: "diario", label: "Diario", icon: NotebookPen },
     { id: "progreso", label: "Progreso", icon: LineChart },
-    { id: "cierre", label: "Quincenal", icon: CalendarCheck },
+    { id: "cierre", label: FEATURE_BIWEEKLY ? "Quincenal" : "Evolución",
+      icon: FEATURE_BIWEEKLY ? CalendarCheck : Ruler },
   ];
-  const TABS = ALL_TABS.filter((t) => (FEATURE_RESOURCES || t.id !== "recursos")
-    && (FEATURE_BIWEEKLY || t.id !== "cierre"));
+  // Sin ciclo quincenal la pestaña de cierre se convierte en EVOLUCIÓN: el
+  // cliente actualiza peso y medidas cuando se mide, sin cerrar nada.
+  const TABS = ALL_TABS.filter((t) => FEATURE_RESOURCES || t.id !== "recursos");
   const visibleTabs = isStart ? TABS.filter((t) => t.id !== "entreno") : TABS;
 
   return (
@@ -225,7 +227,11 @@ export default function PortalApp({ token }: { token: string }) {
             {effTab === "recursos" && <PortalResources api={apiClient} brand={state.brand} hasTraining={!isStart} />}
             {effTab === "diario" && <PortalDiary api={apiClient} brand={state.brand} periodStatus={state.period?.status ?? null} businessToday={state.today ?? null} />}
             {effTab === "progreso" && <PortalProgress api={apiClient} brand={state.brand} hasTraining={!isStart} />}
-            {effTab === "cierre" && (
+            {effTab === "cierre" && !FEATURE_BIWEEKLY && (
+              <PortalEvolution api={apiClient} brand={state.brand} onSaved={reload}
+                hasTraining={!isStart} />
+            )}
+            {effTab === "cierre" && FEATURE_BIWEEKLY && (
               <PortalClose
                 api={apiClient}
                 token={token}

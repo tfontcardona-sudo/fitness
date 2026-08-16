@@ -3,15 +3,16 @@
 Monta un escenario VIVO e idempotente (re-ejecutar lo reinicia) sin gastar IA.
 TRES clientes = TRES fases del ciclo, para enseñar todas las funcionalidades:
 
-  · Marta Serra  — Génesis.99 A MITAD de seguimiento (día 8 de 14): plan
+  · Marta Serra  — PACK COMPLETO (130 €), 8 días de seguimiento: plan
     publicado con 3 opciones por comida + entrenamiento, diario con el peso
     bajando, comidas elegidas y entrenos con series. El portal vivo.
-  · Carlos Bosch — Génesis.99 con la REVISIÓN QUINCENAL CERRADA ayer:
-    14 días de diario, cierre completo (peso final, perímetros, sensaciones,
-    adherencia) y el cliente en review_pending → notificación al coach y
-    "Resumen" de métricas listo para enseñar (sin IA).
-  · Jordi Puig   — ENTRENO PERSONAL (sesiones presenciales): plan de solo
-    entrenamiento, día 5, dos sesiones registradas, pagado en el centro.
+  · Carlos Bosch — PACK COMPLETO con 14 días registrados y el INFORME ya
+    generado en BORRADOR: métricas, fotos, medidas actualizadas desde el
+    portal y el informe listo para revisar y enviar (sin gastar IA).
+  · Jordi Puig   — ENTRENAMIENTO (70 €): solo entreno, día 5, dos sesiones
+    registradas, pagado en el centro.
+  · Núria Camps  — DIETA (70 €): solo dieta, su portal se reduce a la
+    evolución del cuerpo (diario, evolución y tienda), 9 días registrados.
 
 (El alta de un cliente NUEVO —la cola de anamnesis— se enseña EN VIVO en la
 demo creando a "Laura Vidal" desde el panel: es parte del guión, ver DEMO.md.)
@@ -38,6 +39,7 @@ from app.models import (  # noqa: E402
     Plan, PlanEdit, ProgressPhoto, PushSubscription, VideoCall, WorkoutLog,
 )
 from app.security import new_portal_token  # noqa: E402
+from app.services.periods import PERIOD_DAYS  # noqa: E402
 
 DEMO_DOMAIN = "@demo.local"
 
@@ -181,6 +183,13 @@ def marta_nutrition() -> dict:
     return build_nutrition([(30, 45, 12), (45, 60, 20), (20, 30, 8), (35, 40, 20)],
                            tdee=2200, bmr=1450,
                            rationale="Déficit moderado priorizando proteína y adherencia.")
+
+
+def nuria_nutrition() -> dict:
+    # P115 C160 G55 → 1595 kcal (déficit suave sobre TDEE 1950), 4 comidas
+    return build_nutrition([(28, 40, 12), (40, 55, 18), (17, 25, 7), (30, 40, 18)],
+                           tdee=1950, bmr=1360,
+                           rationale="Solo dieta: déficit suave y comidas fáciles de repetir.")
 
 
 def carlos_nutrition() -> dict:
@@ -425,7 +434,7 @@ def crear_marta(db) -> Client:
     hoy = date.today()
     c = Client(
         full_name="Marta Serra", email=f"marta{DEMO_DOMAIN}", phone="+34 600 111 222",
-        package_tier="full", billing_period="1m", status="active",
+        package_tier="full", billing_period="unico", status="active",
         payment_status="paid", paid_at=datetime.now(timezone.utc) - timedelta(days=9),
         sex="female", birth_date=date(1992, 4, 12), height_cm=166,
         start_weight_kg=74.8, current_weight_kg=73.9, body_fat_pct=27.0,
@@ -459,9 +468,10 @@ def crear_marta(db) -> Client:
     db.add(plan)
     db.flush()
 
-    starts = hoy - timedelta(days=7)  # día 8 de 14
+    starts = hoy - timedelta(days=7)  # 8 días de seguimiento continuo
     period = Period(client_id=c.id, plan_id=plan.id, period_index=1,
-                    starts_on=starts, ends_on=starts + timedelta(days=13), status="open")
+                    starts_on=starts, ends_on=starts + timedelta(days=PERIOD_DAYS - 1),
+                    status="open")
     db.add(period)
     db.flush()
 
@@ -502,7 +512,7 @@ def crear_jordi(db) -> Client:
     hoy = date.today()
     c = Client(
         full_name="Jordi Puig", email=f"jordi{DEMO_DOMAIN}", phone="+34 600 333 444",
-        package_tier="train", billing_period="1m", status="active",
+        package_tier="train", billing_period="unico", status="active",
         payment_status="paid", paid_at=datetime.now(timezone.utc) - timedelta(days=6),
         sex="male", birth_date=date(1988, 9, 3), height_cm=179,
         start_weight_kg=86.0, current_weight_kg=86.4, body_fat_pct=19.0,
@@ -530,7 +540,8 @@ def crear_jordi(db) -> Client:
 
     starts = hoy - timedelta(days=4)  # día 5 de 14
     period = Period(client_id=c.id, plan_id=plan.id, period_index=1,
-                    starts_on=starts, ends_on=starts + timedelta(days=13), status="open")
+                    starts_on=starts, ends_on=starts + timedelta(days=PERIOD_DAYS - 1),
+                    status="open")
     db.add(period)
     db.flush()
     for i in (0, 2):
@@ -548,13 +559,75 @@ def crear_jordi(db) -> Client:
     return c
 
 
+def crear_nuria(db) -> Client:
+    """SOLO DIETA (70 €): su portal se reduce a la evolución de su cuerpo —
+    diario, evolución (peso y medidas) y tienda. Ni entreno ni sesiones."""
+    hoy = date.today()
+    c = Client(
+        full_name="Núria Camps", email=f"nuria{DEMO_DOMAIN}", phone="+34 600 777 888",
+        package_tier="nutri", billing_period="unico", status="active",
+        payment_status="paid", paid_at=datetime.now(timezone.utc) - timedelta(days=10),
+        sex="female", birth_date=date(1979, 11, 8), height_cm=162,
+        start_weight_kg=71.2, current_weight_kg=70.1, body_fat_pct=31.0,
+        goal_type="fat_loss", goal_weight_kg=64.0, level="beginner",
+        daily_activity_level="light", meals_per_day=4, diet_mode="flexible_7",
+        diet_pattern="vegetariano",
+        food_allergies=["lactosa"], food_dislikes=["setas"],
+        food_likes=["legumbres", "huevo", "fruta"],
+        lifestyle_notes="Come fuera de casa entre semana; camina al trabajo.",
+        sport_history="Va al gimnasio del centro por su cuenta, sin plan.",
+        injuries_notes="Sin lesiones.",
+        medical_notes="Intolerancia a la lactosa.",
+        medication_notes="Ninguna.",
+        current_supplements="Ninguno.",
+        portal_token="pendiente", plan_notice_pending=False,
+    )
+    db.add(c)
+    db.flush()
+    c.portal_token = new_portal_token(c.id)
+
+    nutrition = nuria_nutrition()
+    check_cuadre(nutrition)
+    plan = Plan(client_id=c.id, month_index=1, version=1, status="published",
+                nutrition_json=nutrition, training_json=None,
+                education_json=None, guardrail_flags=[], generated_by="demo",
+                goal_type="fat_loss",
+                published_at=datetime.now(timezone.utc) - timedelta(days=10))
+    db.add(plan)
+    db.flush()
+
+    starts = hoy - timedelta(days=8)   # 9 días registrados
+    period = Period(client_id=c.id, plan_id=plan.id, period_index=1,
+                    starts_on=starts, ends_on=starts + timedelta(days=PERIOD_DAYS - 1),
+                    status="open",
+                    # Medidas que ella misma actualizó desde "Evolución"
+                    closing_weight_kg=70.1, closing_waist_cm=84.0, closing_hip_cm=101.5,
+                    closing_feelings_json={"energia": 4, "hambre": 3, "sueno": 3,
+                                           "animo": 4, "digestiones": 4})
+    db.add(period)
+    db.flush()
+    pesos = [71.2, 71.0, 70.9, 70.9, 70.6, 70.5, 70.4, 70.2, 70.1]
+    for i in range(9):
+        db.add(DailyLog(
+            period_id=period.id, log_date=starts + timedelta(days=i),
+            weight_kg=pesos[i], sleep_hours=7.0, water_liters=2.0,
+            steps=str(7500 + i * 200),
+            diet_adherence=("yes" if i % 4 else "partial"),
+            energy_1_5=4, mood_1_5=4, fatigue_1_5=2,
+            chosen_options_json={"1": "A", "2": ["A", "B", "C"][i % 3],
+                                 "3": "B", "4": ["A", "C"][i % 2]},
+        ))
+    db.commit()
+    return c
+
+
 def crear_carlos(db) -> Client:
-    """Génesis.99 con la revisión quincenal CERRADA ayer: el coach tiene la
-    notificación viva y el "Resumen" de métricas listo (sin IA)."""
+    """Pack completo con 14 días registrados y el INFORME en borrador: el coach
+    lo enseña entero (Resumen, informe redactado, Word y "Enviar al cliente")."""
     hoy = date.today()
     c = Client(
         full_name="Carlos Bosch", email=f"carlos{DEMO_DOMAIN}", phone="+34 600 555 666",
-        package_tier="full", billing_period="1m", status="review_pending",
+        package_tier="full", billing_period="unico", status="active",
         payment_status="paid", paid_at=datetime.now(timezone.utc) - timedelta(days=16),
         sex="male", birth_date=date(1985, 1, 22), height_cm=181,
         start_weight_kg=84.6, current_weight_kg=83.4, body_fat_pct=21.0,
@@ -585,11 +658,11 @@ def crear_carlos(db) -> Client:
     db.add(plan)
     db.flush()
 
-    starts = hoy - timedelta(days=15)          # período COMPLETO: cerró ayer
-    ends = starts + timedelta(days=13)
+    starts = hoy - timedelta(days=15)          # 14 días registrados
+    ends = starts + timedelta(days=PERIOD_DAYS - 1)
     period = Period(
         client_id=c.id, plan_id=plan.id, period_index=1,
-        starts_on=starts, ends_on=ends, status="closed",
+        starts_on=starts, ends_on=ends, status="open",
         closing_weight_kg=83.4, closing_waist_cm=90.5, closing_hip_cm=99.0,
         closing_arm_cm=36.5, closing_thigh_cm=58.0,
         closing_feelings_json={"energia": 4, "hambre": 2, "sueno": 4,
@@ -599,9 +672,11 @@ def crear_carlos(db) -> Client:
         closing_changes="Mucha más energía en los entrenos desde la semana 2.",
         closing_next_goal="Bajar de 83 kg manteniendo las cargas.",
         closing_questions="¿Puedo cambiar el arroz de la cena por patata?",
+        # Medidas que el propio cliente actualizó desde "Evolución" (el portal
+        # continuo las guarda aquí: son SUS últimas medidas, no un cierre).
         closing_submitted_at=datetime.now(timezone.utc) - timedelta(hours=18),
         photos_confirmed=True,
-        coach_reviewed_at=None,  # la notificación del coach sigue VIVA
+        coach_reviewed_at=None,
     )
     db.add(period)
     db.flush()
@@ -628,7 +703,7 @@ def crear_carlos(db) -> Client:
                     db.add(WorkoutLog(daily_log_id=d.id, exercise_id=ex["exercise_id"],
                                       set_number=set_n, reps=8, weight_kg=base + extra, rpe=8.0))
     db.commit()
-    # Fotos del cierre + informe de feedback en BORRADOR (camino real, sin API):
+    # Fotos + informe en BORRADOR por el camino REAL (sin gastar API):
     # el coach lo enseña completo — Resumen, informe redactado, Word y "Enviar".
     _seed_carlos_photos(db, c, period)
     _seed_carlos_feedback(db, period, c)
@@ -642,18 +717,21 @@ def main() -> None:
         marta = crear_marta(db)
         carlos = crear_carlos(db)
         jordi = crear_jordi(db)
+        nuria = crear_nuria(db)
         base = settings.public_base_url.rstrip("/")
         # En desarrollo (docker compose dev) el frontend sirve en el puerto 5173.
         web = f"{base}:5173" if base == "http://localhost" else base
         print(f"[demo] clientes de demo previos borrados: {borrados}")
-        print("[demo] escenario creado — tres fases del ciclo:")
-        print(f"  1· Marta Serra  — Génesis.99, día 8 de 14 (portal vivo)")
+        print("[demo] escenario creado — los tres servicios y el ciclo entero:")
+        print(f"  1· Marta Serra  — Pack completo (130 €), 8 días de seguimiento (portal vivo)")
         print(f"      portal: {web}/p/{marta.portal_token}")
-        print(f"  2· Carlos Bosch — Génesis.99, revisión CERRADA ayer: notificación, Resumen,")
-        print(f"      fotos e informe de feedback en BORRADOR (revisar → Word → Enviar)")
+        print(f"  2· Carlos Bosch — Pack completo, 14 días registrados: Resumen, fotos e")
+        print(f"      INFORME en BORRADOR (revisar → Word → Enviar al cliente)")
         print(f"      portal: {web}/p/{carlos.portal_token}")
-        print(f"  3· Jordi Puig   — Entreno Personal, día 5 (sesiones presenciales)")
+        print(f"  3· Jordi Puig   — Entrenamiento (70 €), día 5 (solo entreno)")
         print(f"      portal: {web}/p/{jordi.portal_token}")
+        print(f"  4· Núria Camps  — Dieta (70 €), 9 días: portal reducido a su evolución")
+        print(f"      portal: {web}/p/{nuria.portal_token}")
         print(f"[demo] panel del coach: {web}/  · página de planes: {web}/planes")
         print("[demo] el alta EN VIVO (Laura) se hace desde el panel durante la demo (DEMO.md).")
         print("[demo] re-ejecutar este script REINICIA la demo (idempotente).")

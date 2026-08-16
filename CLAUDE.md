@@ -138,12 +138,17 @@ routers/
   clients.py       CRUD de clientes + documentos + lectura IA + generación de plan.
   exercises.py     Biblioteca de ejercicios.
   plans.py         Planes: publicar, descargar Word, plantilla de anamnesis.
-  templates.py     POOL DE RUTINAS (/api/templates): carpetas fijas, CRUD, docu-
-                   mento con el dossier de marca, "usar con un cliente" (crea el
-                   perfil + plan BORRADOR) e importación de PDF/Word externos con
-                   IA (mapea ejercicios a la biblioteca; la dieta NO se importa).
-                   Lógica en services/templates.py; seeds en seeds/templates_data
-                   (120 rutinas, 20 × 6 carpetas; test test_templates_pool.py).
+  templates.py     POOL DE PLANIFICACIONES (/api/templates): 3 grupos del negocio
+                   (masa / definicion / mantenimiento) con ≥50 casos cada uno,
+                   CRUD, documento con el dossier de marca (`?service=nutri|
+                   train|full`), "usar con un cliente" (crea el perfil + plan
+                   BORRADOR adaptado a SUS kcal), importación de PDF/Word con IA
+                   y RECOMENDADOR (`/recommend/{client_id}`: 5 sugerencias con
+                   resumen y porqué, deterministas). Cada plantilla trae también
+                   su EJE DE DIETA (meals_per_day, diet_pattern, diet_focus →
+                   mig. 0038) para servir a los tres servicios sin duplicar el
+                   catálogo. Lógica en services/templates.py; seeds en
+                   seeds/templates_data (160 casos; test test_templates_pool.py).
   brand.py         Configuración de marca (logo, colores, textos).
   portal_public.py Endpoints PÚBLICOS del portal del cliente (token, sin login).
 
@@ -178,7 +183,45 @@ services/
 ```
 
 **Tablas (models.py):** `User`, `Client`, `Plan`, `Period`, `DailyLog`,
-`WorkoutLog`, `Exercise`, `ProgressPhoto`, `FeedbackDoc`, `BrandConfig`.
+`WorkoutLog`, `Exercise`, `ProgressPhoto`, `FeedbackDoc`, `BrandConfig`,
+`PlanTemplate` (pool), `RecommendedProduct` (tienda).
+
+### ⚠️ El flujo de PROFESSIONAL (esta instancia) — léelo antes de tocar el ciclo
+
+El motor conserva TODO (ciclo quincenal incluido), pero esta marca trabaja así
+(`branding.FEATURE_BIWEEKLY = False`):
+
+```
+anamnesis (formulario web corto, /anamnesis/{token})
+  → el coach elige plan: 5 RECOMENDADAS del pool · buscarla él · generarla con IA
+  → portal del cliente (los de solo DIETA ven únicamente su evolución)
+  → el cliente registra su día a día y sus medidas ("Evolución")
+  → el INFORME se pone al día con esos datos y el coach lo ENVÍA cuando quiere
+```
+
+- **No hay quincena**: `FOLLOWUP_DAYS` (365) hace que el período no venza,
+  `period_info.can_close` es siempre False y el portal cambia la pestaña
+  "Quincenal" por **Evolución** (`POST /api/p/{token}/measurements`, guarda peso
+  y perímetros en el período abierto sin cerrarlo).
+- **Informe continuo**: `build_period_feedback` acepta el período ABIERTO
+  (mínimo 5 días registrados), NO lo cierra y guarda `logs_at_generation` para
+  saber si se ha quedado viejo. Regenerar cuando el anterior ya se envió crea un
+  FeedbackDoc NUEVO (`kind="continuous"`): lo que el cliente recibió no se
+  reescribe. Endpoints: `POST /api/periods/{id}/feedback` y
+  `POST /api/clients/{id}/feedback/refresh`.
+- **Alertas del flujo**: generar informe (≥7 días registrados) → ponerlo al día
+  (≥7 días nuevos) → enviarlo. Las de la revisión quincenal (`period_overdue`,
+  `adapt_plan` anclada al período analizado) quedan fuera con el flag apagado.
+- **Constancia**: sin quincena, `jobs._facts_for` mide la adherencia en una
+  VENTANA MÓVIL de 14 días (si no, un seguimiento de meses diluye el ratio).
+- **Tienda** (`FEATURE_RESOURCES=True`): productos propios del centro en el
+  portal (pestaña Tienda) y en la página de enlaces; catálogo de arranque en
+  `seeds/products_data.py`, editable desde la web.
+- **Catálogo**: tres servicios de PAGO ÚNICO — Dieta 70 €, Entrenamiento 70 €,
+  Pack completo 130 € (`branding.TIER_LABELS`, `stripe_service.CANONICAL_AMOUNTS`).
+- Los tests que prueban el ciclo de 14 días lo re-encienden con la fixture
+  `ciclo_quincenal`; el flujo continuo tiene los suyos en
+  `tests/test_seguimiento_continuo.py`.
 
 ### Frontend (`frontend/src/`)
 

@@ -47,6 +47,7 @@ from app.schemas.entities import (
     DailyLogUpsert,
     FeedbackDocOut,
     PeriodCloseIn,
+    PortalMeasurementsIn,
     PhotoOut,
     PortalBrand,
     PortalPlanOut,
@@ -1060,6 +1061,56 @@ def portal_confirm_photos(
               {"period_index": period.period_index})
     db.commit()
     return {"confirmed": True}
+
+
+@router.post("/{token}/measurements", response_model=dict)
+@limiter.limit("20/minute")
+def portal_measurements(
+    request: Request,
+    body: PortalMeasurementsIn,
+    client: Client = Depends(get_client_by_token),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Evolución corporal en SEGUIMIENTO CONTINUO: el cliente actualiza peso,
+    perímetros y sensaciones cuando quiere, sin cerrar nada.
+
+    Se guardan en el período abierto (son SUS últimas medidas: es lo que leen el
+    informe y la evolución del coach). Solo se toca lo que venga en la petición
+    — el mismo criterio que el diario, para no borrar lo de antes."""
+    if branding.FEATURE_BIWEEKLY:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No disponible")
+    period = portal_svc.active_period(db, client.id)
+    if period is None or period.status != "open":
+        raise HTTPException(status.HTTP_409_CONFLICT, "No tienes un seguimiento abierto")
+
+    datos = body.model_dump(exclude_unset=True, exclude_none=True)
+    campos = {
+        "weight_kg": "closing_weight_kg", "waist_cm": "closing_waist_cm",
+        "hip_cm": "closing_hip_cm", "arm_cm": "closing_arm_cm",
+        "thigh_cm": "closing_thigh_cm", "feelings_json": "closing_feelings_json",
+        "notes": "closing_changes",
+    }
+    tocados = []
+    for origen, destino in campos.items():
+        if origen in datos:
+            setattr(period, destino, datos[origen])
+            tocados.append(origen)
+    if not tocados:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "No has rellenado ninguna medida")
+    # El peso también entra en el diario de hoy: es la serie que lee la
+    # evolución (y así una medición no queda fuera de la gráfica).
+    if "weight_kg" in datos:
+        hoy = portal_svc.today_local()
+        log = db.scalar(select(DailyLog).where(DailyLog.period_id == period.id,
+                                               DailyLog.log_date == hoy))
+        if log is None:
+            log = DailyLog(period_id=period.id, log_date=hoy)
+            db.add(log)
+        log.weight_kg = datos["weight_kg"]
+    log_event(db, "client", client.id, "measurements_updated", {"campos": tocados})
+    db.commit()
+    return {"saved": True, "fields": tocados}
 
 
 @router.post("/{token}/close/photos")

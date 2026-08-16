@@ -157,6 +157,10 @@ export function portalApi(token: string) {
     saveDiary: (body: Partial<DailyLogUpsert> & { log_date: string }) =>
       req<{ saved: boolean }>("PUT", `${base}/diary`, body),
     close: (body: PeriodCloseIn) => req<{ closed: boolean }>("POST", `${base}/close`, body),
+    // Seguimiento continuo: el cliente actualiza su evolución cuando se mide
+    // (sin cerrar nada). Solo viaja lo que ha rellenado.
+    saveMeasurements: (body: Record<string, unknown>) =>
+      req<{ saved: boolean; fields: string[] }>("POST", `${base}/measurements`, body),
     closePhotos: (files: File[], kind: string) => {
       const fd = new FormData();
       files.forEach((f) => fd.append("files", f));

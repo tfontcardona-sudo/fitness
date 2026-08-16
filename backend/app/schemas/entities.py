@@ -512,6 +512,23 @@ class PeriodCloseIn(BaseModel):
     closing_next_goal: str | None = None          # Objetivo próximas 2 semanas (sec 6)
 
 
+class PortalMeasurementsIn(BaseModel):
+    """Medidas del cliente en SEGUIMIENTO CONTINUO (sin cierre quincenal).
+
+    El cliente actualiza su evolución corporal cuando quiere: peso, perímetros
+    y cómo se encuentra. Todos los campos son opcionales — manda solo lo que
+    haya medido ese día (mismo criterio que el diario: lo que no se toca, no
+    viaja y no se pisa)."""
+
+    weight_kg: float | None = Field(default=None, gt=30, lt=300)
+    waist_cm: float | None = Field(default=None, gt=30, lt=250)
+    hip_cm: float | None = Field(default=None, gt=30, lt=250)
+    arm_cm: float | None = Field(default=None, gt=10, lt=80)
+    thigh_cm: float | None = Field(default=None, gt=20, lt=120)
+    feelings_json: dict[str, Annotated[int, Field(ge=1, le=5)]] | None = None
+    notes: str | None = Field(default=None, max_length=2000)
+
+
 # ----------------------------------------------------- change requests ----
 class ChangeRequestIn(BaseModel):
     message: str = Field(min_length=5, max_length=2000)
