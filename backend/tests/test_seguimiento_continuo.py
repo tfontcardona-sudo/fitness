@@ -259,3 +259,62 @@ def test_el_cliente_actualiza_su_evolucion_sin_cerrar_nada(db):
         assert http.post(f"/api/p/{c.portal_token}/measurements", json={}).status_code == 422
     finally:
         _borrar(db, c)
+
+
+def test_listado_de_periodos_trae_el_estado_del_informe(db):
+    """La pestaña Feedback lee de aquí: días registrados, si hay informe y
+    cuántos días tenía cuando se generó (para avisar de que se quedó viejo)."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.models import User
+    from app.security import create_access_token, hash_password
+
+    c, _plan, period = _cliente_con_seguimiento(db, 9)
+    if not db.query(User).filter_by(username="coach1").first():
+        db.add(User(username="coach1", password_hash=hash_password("test-only")))
+        db.commit()
+    auth = {"Authorization": f"Bearer {create_access_token('coach1')}"}
+    http = TestClient(app)
+    try:
+        r = http.get(f"/api/clients/{c.id}/periods", headers=auth)
+        assert r.status_code == 200, r.text
+        fila = r.json()[0]
+        assert fila["days_logged"] == 9 and fila["feedback_id"] is None
+        assert fila["logs_at_feedback"] is None and fila["feedback_sent"] is False
+
+        from app.services.feedback_service import build_period_feedback
+
+        build_period_feedback(db, period.id, ai=_IAGuionizada())
+        db.commit()
+        fila = http.get(f"/api/clients/{c.id}/periods", headers=auth).json()[0]
+        assert fila["feedback_id"] and fila["logs_at_feedback"] == 9
+    finally:
+        _borrar(db, c)
+
+
+def test_recomendaciones_leen_el_portal_del_cliente(db):
+    """Las señales del portal (peso plano, poca constancia) entran en las
+    sugerencias — y con SOLO DIETA no se habla de entrenar."""
+    from app.services.templates import portal_signals, recommend_templates, seed_plan_templates
+
+    seed_plan_templates(db)
+    c, _plan, _period = _cliente_con_seguimiento(db, 12)
+    try:
+        señales = portal_signals(db, c)
+        assert señales["dias_registrados"] == 12
+        assert "kg_semana" in señales, "con 12 pesajes hay tendencia"
+        assert señales.get("bajando") or señales.get("estancado") or señales.get("subiendo")
+
+        sug = recommend_templates(db, c, limit=5)
+        assert 1 <= len(sug) <= 5
+        assert all(s["summary"] and s["why"] for s in sug)
+
+        # Cliente de SOLO DIETA: ninguna sugerencia se apoya en el entreno
+        c.package_tier = "nutri"
+        db.flush()
+        sug = recommend_templates(db, c, limit=5)
+        assert sug and all("entrenando menos" not in s["why"] for s in sug)
+        assert all("días" not in s["summary"] for s in sug)
+    finally:
+        _borrar(db, c)

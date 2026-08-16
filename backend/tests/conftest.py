@@ -71,6 +71,43 @@ def _cleanup_test_clients():
         db.close()
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _cleanup_test_products():
+    """Los tests de la TIENDA crean productos; sin esto se quedaban en el
+    catálogo del coach (y salían en el portal de sus clientes, duplicados en
+    cada ejecución). Se borra EXACTAMENTE lo creado durante la suite: todo lo
+    que tenga un id mayor que el máximo de antes de empezar."""
+    try:
+        from sqlalchemy import delete, func, select
+
+        from app.db import SessionLocal
+        from app.models import RecommendedProduct
+    except Exception:
+        yield
+        return
+    db = SessionLocal()
+    try:
+        tope = db.scalar(select(func.max(RecommendedProduct.id))) or 0
+    except Exception:
+        db.rollback()
+        tope = None
+    finally:
+        db.close()
+
+    yield
+
+    if tope is None:
+        return
+    db = SessionLocal()
+    try:
+        db.execute(delete(RecommendedProduct).where(RecommendedProduct.id > tope))
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
+
+
 @pytest.fixture()
 def ciclo_quincenal(monkeypatch):
     """Enciende el CICLO QUINCENAL para este test.

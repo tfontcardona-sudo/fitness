@@ -333,7 +333,9 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
         const canGenerate = FEATURE_BIWEEKLY ? p.status !== "open" : registrados >= 5;
         const nuevos = nuevosDesdeInforme(p);
         const daysElapsed = Math.floor((Date.now() - new Date(p.starts_on + "T00:00:00").getTime()) / 86400000) + 1;
-        const ready = p.status !== "open" || daysElapsed >= 14; // resumen disponible a las 2 semanas
+        // Con quincena, el resumen sale a los 14 días; en seguimiento continuo,
+        // en cuanto hay datos que resumir.
+        const ready = p.status !== "open" || (FEATURE_BIWEEKLY ? daysElapsed >= 14 : registrados >= 1);
         const m = metrics[p.id];
         const isCurrent = p.period_index === maxIdx;
         return (
@@ -436,17 +438,19 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                 Se muestra SIEMPRE, ya cargado — sin botones que pulsar. */}
             {!m && loadingMetrics === p.id && (
               <p className="mt-4 flex items-center gap-2 border-t pt-4 text-xs text-zinc-500" style={{ borderColor: "var(--line)" }}>
-                <Spinner /> Calculando el resumen de las 2 semanas…
+                <Spinner /> Calculando el resumen…
               </p>
             )}
             {m && (
               <div className="mt-4 space-y-3 border-t pt-4" style={{ borderColor: "var(--line)" }}>
                 <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                  <BarChart3 size={13} /> Resumen de las 2 semanas
+                  <BarChart3 size={13} /> {FEATURE_BIWEEKLY ? "Resumen de las 2 semanas" : "Resumen del seguimiento"}
                 </div>
                 {/* Antes → después de los datos en 15 días (peso día 1 → día 15) */}
                 <div className="mt-3">
-                  <SubTitle icon={TrendingUp} text="Antes → después (15 días)" />
+                  <SubTitle icon={TrendingUp}
+                    text={FEATURE_BIWEEKLY ? "Antes → después (15 días)"
+                      : `Antes → ahora (${registrados} días registrados)`} />
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                     {/* Bajar peso solo es "bueno" si el objetivo lo pide */}
                     <BAStat label="Peso (kg)" before={m.weight?.start_kg} after={m.weight?.end_kg} lowerBetter={client.goal_type !== "muscle_gain"} />
@@ -468,7 +472,10 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                 </div>
                 {info.hasTraining && Array.isArray(m.strength) && m.strength.length > 0 && (
                   <div>
-                    <SubTitle icon={TrendingUp} text="Fuerza por grupo muscular (vs revisiones anteriores)" />
+                    <SubTitle icon={TrendingUp}
+                      text={FEATURE_BIWEEKLY
+                        ? "Fuerza por grupo muscular (vs revisiones anteriores)"
+                        : "Fuerza por grupo muscular"} />
                     <ul className="space-y-1 text-sm">
                       {m.strength.map((s: any, i: number) => (
                         <li key={i} className="rounded-lg px-3 py-2" style={{ background: "var(--surface-raised)" }}>
@@ -506,7 +513,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                               </>
                             )}
                             {s.avg_reps != null && <> · {s.avg_reps} reps de media</>}
-                            {s.delta_kg == null && <> · primera revisión con datos de este ejercicio</>}
+                            {s.delta_kg == null && <> · primeros datos de este ejercicio</>}
                           </div>
                         </li>
                       ))}
@@ -570,7 +577,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                 )}
                 {Array.isArray(content.next_objectives) && content.next_objectives.length > 0 && (
                   <div>
-                    <SubTitle icon={Target} text="Objetivos próximas 2 semanas" />
+                    <SubTitle icon={Target} text={FEATURE_BIWEEKLY ? "Objetivos próximas 2 semanas" : "Próximos objetivos"} />
                     <ul className="list-disc space-y-0.5 pl-5 text-sm text-zinc-400">
                       {content.next_objectives.map((o: string, i: number) => <li key={i}>{o}</li>)}
                     </ul>
@@ -910,7 +917,7 @@ function FeedbackEditor({ docId, content, sentAt, onCancel, onSaved }: {
       <FbArea label="Análisis" value={d.natural_analysis} onChange={(v) => set("natural_analysis", v)} rows={4} />
       <FbArea label="Cambios en el plan (uno por línea)" value={d.changes_bullets} onChange={(v) => set("changes_bullets", v)} />
       <FbArea label="Respuesta a sus dudas" value={d.answers} onChange={(v) => set("answers", v)} />
-      <FbArea label="Objetivos próximas 2 semanas (uno por línea)" value={d.next_objectives} onChange={(v) => set("next_objectives", v)} />
+      <FbArea label={FEATURE_BIWEEKLY ? "Objetivos próximas 2 semanas (uno por línea)" : "Próximos objetivos (uno por línea)"} value={d.next_objectives} onChange={(v) => set("next_objectives", v)} />
       <FbArea label="Mensaje de cierre" value={d.closing_message} onChange={(v) => set("closing_message", v)} rows={2} />
       <FbArea
         label="Ajustes propuestos a la planificación (uno por línea — se aplican al pulsar «Adaptar»)"

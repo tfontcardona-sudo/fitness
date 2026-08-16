@@ -292,7 +292,7 @@ function RoutineRow({ t, folderLabel, service, onUse, onDownload, onEdit, onDele
           {t.source === "upload" && <Chip tone="var(--brand-accent)">subida</Chip>}
           {t.source === "manual" && <Chip tone="var(--brand-accent-2-hi)">propia</Chip>}
         </div>
-        {service !== "nutri" && t.case_note && <p className="mt-1 text-sm text-zinc-500">{t.case_note}</p>}
+        {t.case_note && <p className="mt-1 text-sm text-zinc-500">{t.case_note}</p>}
         {service !== "train" && t.diet_focus && (
           <p className="mt-1 text-sm" style={{ color: "var(--text-dim)" }}>Dieta: {t.diet_focus}</p>
         )}

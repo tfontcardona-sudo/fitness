@@ -457,8 +457,30 @@ def seed_plan_templates(db: Session) -> int:
             db.delete(t)          # de fábrica y retirada del catálogo
     db.flush()
 
-    existing = {(t.category, t.title) for t in db.scalars(
+    # Plantillas ya sembradas: se COMPLETA lo que falte del eje de dieta (una
+    # instancia que venía de antes del eje tenía las tomas a NULL y su listado
+    # de "solo dieta" salía mudo). Nunca se pisa un valor existente.
+    por_titulo = {(t.category, t.title): t for t in db.scalars(
         select(PlanTemplate).where(PlanTemplate.source == "seed"))}
+    catalogo_por_titulo = {(normalize_category(e["category"]), e["title"]): e
+                           for e in TEMPLATES}
+    rellenadas = 0
+    for clave, fila in por_titulo.items():
+        entrada = catalogo_por_titulo.get(clave)
+        if entrada is None or fila.meals_per_day is not None:
+            continue
+        fila.meals_per_day = entrada.get("meals_per_day") or 4
+        fila.diet_pattern = fila.diet_pattern or entrada.get("diet_pattern")
+        fila.diet_focus = fila.diet_focus or entrada.get("diet_focus")
+        if not fila.nutrition_json:
+            fila.nutrition_json = build_diet(
+                fila.category, fila.meals_per_day, diet_pattern=fila.diet_pattern,
+                allergies=entrada.get("diet_allergies"), focus=fila.diet_focus)
+        rellenadas += 1
+    if rellenadas:
+        db.commit()
+
+    existing = set(por_titulo)
     added = 0
     for entry in TEMPLATES:
         key = (normalize_category(entry["category"]), entry["title"])
@@ -573,16 +595,24 @@ def portal_signals(db: Session, client) -> dict:
         if bien / len(dieta) < 0.6:
             señales["adherencia_baja"] = True
 
-    dias_totales = sum((p.end_date - p.start_date).days + 1 for p in periodos
-                       if p.start_date and p.end_date)
+    # Días transcurridos del seguimiento (no la duración nominal del período,
+    # que sin ciclo quincenal es de un año): lo que se mide es la constancia.
+    hoy = logs[-1].log_date
+    dias_totales = sum(
+        (min(p.ends_on, hoy) - p.starts_on).days + 1
+        for p in periodos if p.starts_on and p.ends_on and p.starts_on <= hoy
+    )
     if dias_totales >= 10 and len(logs) / dias_totales < 0.5:
         señales["registra_poco"] = True
 
-    entrenos = db.scalar(select(func.count(func.distinct(WorkoutLog.daily_log_id)))
-                         .where(WorkoutLog.daily_log_id.in_([x.id for x in logs])))
-    previstos = (client.training_days or 3) * max(1, len(logs) // 7)
-    if previstos and (entrenos or 0) < previstos * 0.5:
-        señales["entrena_menos"] = True
+    from app.services import packages as pkgs
+
+    if pkgs.has_training(getattr(client, "package_tier", None)):
+        entrenos = db.scalar(select(func.count(func.distinct(WorkoutLog.daily_log_id)))
+                             .where(WorkoutLog.daily_log_id.in_([x.id for x in logs])))
+        previstos = (client.training_days or 3) * max(1, len(logs) // 7)
+        if previstos and (entrenos or 0) < previstos * 0.5:
+            señales["entrena_menos"] = True
     return señales
 
 
@@ -688,10 +718,15 @@ def recommend_templates(db: Session, client, limit: int = 5) -> list[dict]:
         for clave, palabras, peso, motivo in _REGLAS_PORTAL:
             if not señales.get(clave):
                 continue
+            # Las señales de entrenamiento no dicen nada de quien solo tiene
+            # dieta: su portal ni siquiera registra sesiones.
+            if clave == "entrena_menos" and not pkgs.has_training(tier):
+                continue
             if any(p in caso for p in palabras):
                 score += peso
                 motivos.append(motivo)
-        if señales.get("entrena_menos") and t.days_per_week and dias:
+        if (señales.get("entrena_menos") and pkgs.has_training(tier)
+                and t.days_per_week and dias):
             if t.days_per_week < int(dias):        # menos días = más probable que los cumpla
                 score += 1.5
                 motivos.append("menos días, que es lo que está cumpliendo")

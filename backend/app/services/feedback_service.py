@@ -30,6 +30,16 @@ def _hoy_negocio():
     return today_local()
 
 
+def _dias_de_seguimiento(period) -> int:
+    """Días que LLEVA el seguimiento (no la duración nominal del período).
+
+    Con ciclo quincenal son los 14 del período. En seguimiento continuo el
+    período no vence (dura un año), así que contar su longitud daría "14 de 365
+    días" en la adherencia: lo que vale es lo transcurrido hasta hoy."""
+    fin = min(period.ends_on, _hoy_negocio())
+    return max(1, (fin - period.starts_on).days + 1)
+
+
 class FeedbackError(RuntimeError):
     """No se pudo generar el feedback (datos insuficientes o fallo de IA)."""
 
@@ -122,11 +132,11 @@ def compute_period_summary(db: Session, period_id: int) -> dict:
     logs = list(db.scalars(
         select(DailyLog).where(DailyLog.period_id == period_id).order_by(DailyLog.log_date)
     ))
-    period_days = (period.ends_on - period.starts_on).days + 1
+    period_days = _dias_de_seguimiento(period)
 
     raw_points = [(dl.log_date, dl.weight_kg) for dl in logs if dl.weight_kg is not None]
     if period.closing_weight_kg is not None:
-        raw_points.append((period.ends_on, period.closing_weight_kg))
+        raw_points.append((min(period.ends_on, _hoy_negocio()), period.closing_weight_kg))
     wt = M.weight_trend(raw_points)
 
     adh = M.adherence_summary([{
@@ -249,11 +259,11 @@ def _gather_doc_inputs(db: Session, period: Period, client: Client) -> dict:
     logs = list(db.scalars(
         select(DailyLog).where(DailyLog.period_id == period.id).order_by(DailyLog.log_date)
     ))
-    period_days = (period.ends_on - period.starts_on).days + 1
+    period_days = _dias_de_seguimiento(period)
 
     raw_points = [(dl.log_date, dl.weight_kg) for dl in logs if dl.weight_kg is not None]
     if period.closing_weight_kg is not None:
-        raw_points.append((period.ends_on, period.closing_weight_kg))
+        raw_points.append((min(period.ends_on, _hoy_negocio()), period.closing_weight_kg))
     weight_points = [(f"{d.day}/{d.month}", w) for d, w in sorted(raw_points)]
     wt = M.weight_trend(raw_points)
 
