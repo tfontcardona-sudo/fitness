@@ -784,3 +784,47 @@ export interface WhatsAppRoundOut {
   items: WhatsAppRoundItem[];
   pending: number;
 }
+
+/** --- Pagos (libro de caja de Stripe) — espejo de schemas/entities.py --- */
+export type PaymentKind = "checkout" | "invoice" | "refund";
+export type PaymentMovementStatus = "paid" | "failed" | "refunded";
+
+export interface PaymentOut {
+  id: number;
+  kind: PaymentKind;
+  status: PaymentMovementStatus;
+  /** Importe en CÉNTIMOS, tal cual lo da Stripe (divide entre 100 al pintar). */
+  amount_cents: number;
+  currency: string;
+  /** false = pago en modo prueba de Stripe: se ve, pero no suma en los totales. */
+  livemode: boolean;
+  client_id: number | null;
+  display_name: string;
+  customer_email: string | null;
+  tier: string | null;
+  billing_period: string | null;
+  description: string | null;
+  paid_at: string;
+  seen_at: string | null;
+  stripe_object_id: string;
+}
+
+export interface PaymentsListOut {
+  items: PaymentOut[];
+  count: number;
+  unseen: number;
+}
+
+export interface PaymentsSummaryOut {
+  unseen: number;
+  month_total_cents: number;
+  month_count: number;
+  prev_month_total_cents: number;
+  failed_month: number;
+  orphan_count: number;
+  test_count: number;
+  currency: string;
+  last_payment_at: string | null;
+  total_count: number;
+  stripe_enabled: boolean;
+}

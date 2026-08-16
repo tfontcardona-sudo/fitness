@@ -1,0 +1,643 @@
+"""Tests del LIBRO DE CAJA de Stripe (tabla `payments`) y su feed en el panel.
+
+Cubren lo que el coach ve en /pagos: quién pagó, cuánto y cuándo, con lo no
+leído marcado. Stripe está simulado (nunca se llama a la API real): se sustituye
+`stripe_service._stripe` por un módulo falso, igual que en test_stripe.py.
+
+Requiere PostgreSQL.
+"""
+from __future__ import annotations
+
+import os
+import uuid
+import warnings
+from datetime import datetime, timedelta, timezone
+
+import pytest
+
+warnings.filterwarnings("ignore")
+
+
+def _db_available() -> bool:
+    try:
+        from sqlalchemy import create_engine, text
+
+        from app.config import settings
+
+        create_engine(settings.database_url).connect().execute(text("SELECT 1"))
+        return True
+    except Exception:
+        return False
+
+
+pytestmark = pytest.mark.skipif(not _db_available(), reason="Requiere PostgreSQL")
+
+
+# ------------------------------------------------------------- utilidades ----
+
+def _fake_stripe(event: dict):
+    class _Webhook:
+        @staticmethod
+        def construct_event(payload, sig, secret):
+            return event
+
+    class _Stripe:
+        Webhook = _Webhook
+
+    return lambda: _Stripe
+
+
+def _prep(monkeypatch):
+    from app.config import settings
+    from app.services import stripe_service
+
+    monkeypatch.setattr(settings, "stripe_webhook_secret", "whsec_test")
+    monkeypatch.setattr(settings, "emails_enabled", False)
+    return stripe_service
+
+
+def _nuevo_cliente(db, *, pagado: bool = False, email: str | None = None):
+    from app.models import Client
+    from app.security import new_portal_token
+
+    uid = uuid.uuid4().hex[:8]
+    c = Client(
+        full_name=f"Pago {uid}", email=email or f"pago-{uid}@x.com",
+        package_tier="full", billing_period="1m", status="onboarding",
+        portal_token="p", payment_status="paid" if pagado else "pending",
+        paid_at=datetime.now(timezone.utc) - timedelta(days=40) if pagado else None,
+    )
+    db.add(c)
+    db.flush()
+    c.portal_token = new_portal_token(c.id)
+    db.commit()
+    return c
+
+
+def _sesion(**extra) -> dict:
+    """Checkout Session de Stripe con lo que trae de verdad un pago único."""
+    base = {
+        "id": f"cs_test_{uuid.uuid4().hex[:12]}",
+        "mode": "payment",
+        "payment_status": "paid",
+        "amount_total": 12900,
+        "currency": "eur",
+        "livemode": True,
+        "created": int((datetime.now(timezone.utc) - timedelta(hours=2)).timestamp()),
+        "customer_details": {"email": "quien@x.com", "name": "Quien Paga"},
+        "metadata": {"tier": "full", "billing_period": "1m"},
+    }
+    base.update(extra)
+    return base
+
+
+def _evento(tipo: str, obj: dict) -> dict:
+    return {"id": f"evt_{uuid.uuid4().hex[:12]}", "type": tipo, "data": {"object": obj}}
+
+
+def _pagos_de(db, object_id: str) -> list:
+    from sqlalchemy import select
+
+    from app.models import Payment
+
+    return list(db.scalars(select(Payment).where(Payment.stripe_object_id == object_id)))
+
+
+# --------------------------------------------------- anotación del webhook ----
+
+def test_checkout_anota_el_movimiento_con_importe_y_fecha_de_stripe(monkeypatch):
+    """El bug de origen: un cobro solo dejaba payment_status='paid' y una traza
+    SIN importe. Ahora el libro guarda cuánto y cuándo, con el dato de Stripe."""
+    stripe_service = _prep(monkeypatch)
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        c = _nuevo_cliente(db)
+        ses = _sesion(metadata={"client_id": str(c.id), "tier": "full",
+                                "billing_period": "3m"}, amount_total=33000)
+        monkeypatch.setattr(stripe_service, "_stripe", _fake_stripe(
+            _evento("checkout.session.completed", ses)))
+        res = stripe_service.handle_webhook(db, b"{}", "sig")
+        assert res == {"marked_paid": c.id}
+
+        db.expire_all()
+        pagos = _pagos_de(db, ses["id"])
+        assert len(pagos) == 1
+        p = pagos[0]
+        assert p.amount_cents == 33000 and p.currency == "eur"
+        assert p.status == "paid" and p.kind == "checkout"
+        assert p.client_id == c.id
+        assert p.billing_period == "3m"
+        # Fecha REAL del cobro (la de Stripe), no la de recepción del webhook.
+        assert abs((p.paid_at - datetime.fromtimestamp(ses["created"], tz=timezone.utc))
+                   .total_seconds()) < 2
+        # Sin leer: es lo que enciende el badge del panel.
+        assert p.seen_at is None
+    finally:
+        db.close()
+
+
+def test_reentrega_del_mismo_checkout_no_duplica_el_movimiento(monkeypatch):
+    """REGRESIÓN: Stripe reenvía el mismo evento si tarda la respuesta. El
+    ingreso no puede contarse dos veces en el libro."""
+    stripe_service = _prep(monkeypatch)
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        c = _nuevo_cliente(db)
+        ses = _sesion(metadata={"client_id": str(c.id), "tier": "full",
+                                "billing_period": "1m"})
+        monkeypatch.setattr(stripe_service, "_stripe", _fake_stripe(
+            _evento("checkout.session.completed", ses)))
+        stripe_service.handle_webhook(db, b"{}", "sig")
+        stripe_service.handle_webhook(db, b"{}", "sig")
+
+        db.expire_all()
+        assert len(_pagos_de(db, ses["id"])) == 1
+    finally:
+        db.close()
+
+
+def test_renovacion_de_pago_unico_deja_rastro(monkeypatch):
+    """REGRESIÓN (auditoría del libro de caja): `_mark_paid` solo escribía si
+    había transición pending→paid, así que la RENOVACIÓN de un cliente que ya
+    constaba pagado no dejaba traza, ni aviso, ni refrescaba `paid_at` (la
+    alerta de renovación seguía contando desde el primer pago para siempre)."""
+    stripe_service = _prep(monkeypatch)
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        c = _nuevo_cliente(db, pagado=True)
+        antiguo = c.paid_at
+        avisos = []
+        monkeypatch.setattr(stripe_service, "_notify_coach_payment",
+                            lambda db_, cl, **kw: avisos.append(kw))
+
+        ses = _sesion(metadata={"client_id": str(c.id), "tier": "full",
+                                "billing_period": "1m"}, amount_total=12900)
+        monkeypatch.setattr(stripe_service, "_stripe", _fake_stripe(
+            _evento("checkout.session.completed", ses)))
+        stripe_service.handle_webhook(db, b"{}", "sig")
+
+        db.expire_all()
+        assert len(_pagos_de(db, ses["id"])) == 1          # queda anotada
+        assert len(avisos) == 1                            # y el coach se entera
+        assert avisos[0]["amount_cents"] == 12900
+        from app.models import Client
+
+        assert db.get(Client, c.id).paid_at > antiguo      # contador reiniciado
+    finally:
+        db.close()
+
+
+def test_pago_huerfano_se_anota_sin_cliente(monkeypatch):
+    """El dinero entró aunque no haya ficha (borrada entre el alta y el cobro):
+    antes solo salía un push efímero; ahora se VE en el feed."""
+    stripe_service = _prep(monkeypatch)
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        ses = _sesion(metadata={"client_id": "99999999", "tier": "full",
+                                "billing_period": "1m"})
+        monkeypatch.setattr(stripe_service, "_stripe", _fake_stripe(
+            _evento("checkout.session.completed", ses)))
+        res = stripe_service.handle_webhook(db, b"{}", "sig")
+        assert res["error"] == "client_not_found"
+
+        db.expire_all()
+        pagos = _pagos_de(db, ses["id"])
+        assert len(pagos) == 1
+        assert pagos[0].client_id is None
+        # El pagador queda identificado por lo que dio Stripe.
+        assert pagos[0].customer_email == "quien@x.com"
+    finally:
+        db.close()
+
+
+def test_checkout_de_suscripcion_no_duplica_el_ingreso(monkeypatch):
+    """La oferta cobra por FACTURA (invoice.paid). Si además se anotara la
+    sesión de checkout, el primer mes contaría dos veces en los ingresos."""
+    stripe_service = _prep(monkeypatch)
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        c = _nuevo_cliente(db)
+        ses = _sesion(mode="subscription", amount_total=100,
+                      metadata={"client_id": str(c.id), "tier": "full",
+                                "billing_period": "oferta"})
+        monkeypatch.setattr(stripe_service, "_stripe", _fake_stripe(
+            _evento("checkout.session.completed", ses)))
+        stripe_service.handle_webhook(db, b"{}", "sig")
+
+        db.expire_all()
+        assert _pagos_de(db, ses["id"]) == []
+    finally:
+        db.close()
+
+
+def test_factura_fallida_y_pagada_conviven_como_dos_movimientos(monkeypatch):
+    """Una factura puede fallar y cobrarse después: son DOS movimientos de la
+    misma factura y el feed tiene que enseñar los dos (el UNIQUE es
+    objeto+estado, no solo objeto)."""
+    stripe_service = _prep(monkeypatch)
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        c = _nuevo_cliente(db)
+        c.billing_period = "oferta"
+        db.commit()
+        inv_id = f"in_test_{uuid.uuid4().hex[:10]}"
+        factura = {
+            "id": inv_id, "currency": "eur", "livemode": True,
+            "amount_paid": 12000, "amount_due": 12000,
+            "billing_reason": "subscription_cycle",
+            "created": int(datetime.now(timezone.utc).timestamp()),
+            "customer_email": c.email,
+            "lines": {"data": [{"price": {"lookup_key": "dqr_full_oferta"}}]},
+            "subscription_details": {"metadata": {"client_id": str(c.id)}},
+        }
+        monkeypatch.setattr(stripe_service, "_notify_coach_payment_failed",
+                            lambda *a, **k: None)
+        monkeypatch.setattr(stripe_service, "_notify_coach_payment", lambda *a, **k: None)
+
+        monkeypatch.setattr(stripe_service, "_stripe", _fake_stripe(
+            _evento("invoice.payment_failed", factura)))
+        stripe_service.handle_webhook(db, b"{}", "sig")
+        monkeypatch.setattr(stripe_service, "_stripe", _fake_stripe(
+            _evento("invoice.paid", factura)))
+        stripe_service.handle_webhook(db, b"{}", "sig")
+
+        db.expire_all()
+        estados = sorted(p.status for p in _pagos_de(db, inv_id))
+        assert estados == ["failed", "paid"]
+    finally:
+        db.close()
+
+
+def test_devolucion_se_anota_y_resta_de_los_ingresos(monkeypatch):
+    """Sin `charge.refunded`, un reembolso dejaba el saldo del mes inflado: el
+    feed enseñaba un ingreso que ya no existía."""
+    stripe_service = _prep(monkeypatch)
+    from app.db import SessionLocal
+    from app.services import payments as pay_svc
+
+    db = SessionLocal()
+    try:
+        c = _nuevo_cliente(db)
+        antes = pay_svc.summary(db)["month_total_cents"]
+        ahora = int(datetime.now(timezone.utc).timestamp())
+        cargo = {
+            "id": f"ch_test_{uuid.uuid4().hex[:10]}", "currency": "eur",
+            "livemode": True, "amount": 12900, "amount_refunded": 5000,
+            "created": ahora, "billing_details": {"email": c.email, "name": c.full_name},
+            "refunds": {"data": [{"created": ahora}]},
+        }
+        monkeypatch.setattr(stripe_service, "_stripe", _fake_stripe(
+            _evento("charge.refunded", cargo)))
+        res = stripe_service.handle_webhook(db, b"{}", "sig")
+        assert res["refunded"] == 5000 and res["client_id"] == c.id
+
+        db.expire_all()
+        pagos = _pagos_de(db, cargo["id"])
+        assert len(pagos) == 1 and pagos[0].status == "refunded"
+        # La devolución RESTA en el total del mes.
+        assert pay_svc.summary(db)["month_total_cents"] == antes - 5000
+    finally:
+        db.close()
+
+
+def test_modo_prueba_no_suma_en_los_totales():
+    """Un cobro de sk_test_ no es dinero real: se ve en el feed, pero el total
+    del mes no puede contarlo."""
+    from app.db import SessionLocal
+    from app.services import payments as pay_svc
+
+    db = SessionLocal()
+    try:
+        antes = pay_svc.summary(db)["month_total_cents"]
+        pay_svc.record_payment(
+            db, object_id=f"cs_prueba_{uuid.uuid4().hex[:10]}", kind="checkout",
+            status="paid", amount_cents=9900, livemode=False,
+            customer_email=f"prueba-{uuid.uuid4().hex[:8]}@x.com",
+            paid_at=datetime.now(timezone.utc))
+        db.commit()
+        assert pay_svc.summary(db)["month_total_cents"] == antes
+        assert pay_svc.summary(db)["test_count"] >= 1
+    finally:
+        db.close()
+
+
+def test_borrado_rgpd_anonimiza_el_movimiento_sin_borrarlo():
+    """El libro de caja no puede perder dinero porque alguien se dé de baja,
+    pero tampoco puede conservar sus datos personales: la fila se queda sin
+    ficha, sin nombre y sin email."""
+    from sqlalchemy import select
+
+    from app.db import SessionLocal
+    from app.models import Payment
+    from app.services import payments as pay_svc
+
+    db = SessionLocal()
+    try:
+        c = _nuevo_cliente(db)
+        obj = f"cs_rgpd_{uuid.uuid4().hex[:10]}"
+        pay_svc.record_payment(
+            db, object_id=obj, kind="checkout", status="paid", amount_cents=7900,
+            client=c, customer_name=c.full_name, customer_email=c.email,
+            paid_at=datetime.now(timezone.utc))
+        db.commit()
+
+        pay_svc.anonymize_client(db, c.id)
+        db.commit()
+        db.expire_all()
+        p = db.scalar(select(Payment).where(Payment.stripe_object_id == obj))
+        assert p is not None and p.amount_cents == 7900   # el dinero sigue
+        assert p.client_id is None and p.customer_name is None and p.customer_email is None
+        # Esta fila se limpia AQUÍ: al anonimizarla se queda sin cliente y sin
+        # email, así que la limpieza de conftest (que busca por esos dos campos)
+        # ya no puede reconocerla como sintética.
+        db.delete(p)
+        db.commit()
+    finally:
+        db.close()
+
+
+# ------------------------------------------------------------- feed (API) ----
+
+@pytest.fixture()
+def http():
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    with TestClient(app) as c:
+        yield c
+
+
+def _auth():
+    from app.security import create_access_token
+
+    return {"Authorization": f"Bearer {create_access_token(os.environ.get('ADMIN_1_USER', 'coach1'))}"}
+
+
+def test_feed_lista_marca_leido_y_apaga_el_badge(http):
+    """El ciclo completo de la pantalla: llega un cobro sin leer, se lista, se
+    sella al abrir y el badge se queda a cero (como la app del banco)."""
+    from app.db import SessionLocal
+    from app.services import payments as pay_svc
+
+    db = SessionLocal()
+    try:
+        obj = f"cs_feed_{uuid.uuid4().hex[:10]}"
+        pay_svc.record_payment(
+            db, object_id=obj, kind="checkout", status="paid", amount_cents=12900,
+            customer_name="Feed Cliente", customer_email="feed@x.com",
+            description="DQR Full · 1 mes", paid_at=datetime.now(timezone.utc))
+        db.commit()
+    finally:
+        db.close()
+
+    auth = _auth()
+    r = http.get("/api/payments?limit=100", headers=auth)
+    assert r.status_code == 200, r.text
+    datos = r.json()
+    fila = next((i for i in datos["items"] if i["stripe_object_id"] == obj), None)
+    assert fila is not None
+    assert fila["amount_cents"] == 12900
+    assert fila["display_name"] == "Feed Cliente"   # sin ficha, el nombre de Stripe
+    assert datos["unseen"] >= 1
+
+    assert http.post("/api/payments/seen", headers=auth).json()["unseen"] == 0
+    assert http.get("/api/payments/summary", headers=auth).json()["unseen"] == 0
+
+
+def test_feed_exige_sesion_de_coach(http):
+    """Los cobros son datos sensibles: sin JWT, nada."""
+    assert http.get("/api/payments").status_code in (401, 403)
+    assert http.get("/api/payments/summary").status_code in (401, 403)
+
+
+def test_filtro_por_estado_del_feed(http):
+    """Los chips de la pantalla (Cobrados / Fallidos / Devoluciones) filtran de
+    verdad en el servidor, no solo en pantalla."""
+    from app.db import SessionLocal
+    from app.services import payments as pay_svc
+
+    db = SessionLocal()
+    try:
+        obj = f"in_fallo_{uuid.uuid4().hex[:10]}"
+        pay_svc.record_payment(
+            db, object_id=obj, kind="invoice", status="failed", amount_cents=12000,
+            customer_name="Impago Test", customer_email=f"impago-{uuid.uuid4().hex[:8]}@x.com",
+            paid_at=datetime.now(timezone.utc))
+        db.commit()
+    finally:
+        db.close()
+
+    r = http.get("/api/payments?status=failed&limit=100", headers=_auth())
+    assert r.status_code == 200
+    items = r.json()["items"]
+    assert items and all(i["status"] == "failed" for i in items)
+    assert any(i["stripe_object_id"] == obj for i in items)
+
+
+# ------------------- regresiones de la revisión adversarial ------------------
+
+def test_devoluciones_parciales_sucesivas_se_suman(monkeypatch):
+    """REGRESIÓN (revisión adversarial): `charge.amount_refunded` es ACUMULADO y
+    Stripe avisa en CADA devolución. Con el id del CARGO como clave, la segunda
+    parcial se descartaba entera por idempotencia y el libro se quedaba corto
+    (30 € devueltos de 80 € reales). Ahora cada reembolso es su movimiento."""
+    stripe_service = _prep(monkeypatch)
+    from app.db import SessionLocal
+    from app.services import payments as pay_svc
+
+    db = SessionLocal()
+    try:
+        c = _nuevo_cliente(db)
+        antes = pay_svc.summary(db)["month_total_cents"]
+        ahora = int(datetime.now(timezone.utc).timestamp())
+        ch_id = f"ch_test_{uuid.uuid4().hex[:10]}"
+        re1 = {"id": f"re_{uuid.uuid4().hex[:10]}", "amount": 3000, "created": ahora}
+        re2 = {"id": f"re_{uuid.uuid4().hex[:10]}", "amount": 5000, "created": ahora + 60}
+
+        def cargo(refunds, acumulado):
+            return {"id": ch_id, "currency": "eur", "livemode": True, "amount": 12900,
+                    "amount_refunded": acumulado, "created": ahora,
+                    "billing_details": {"email": c.email, "name": c.full_name},
+                    "refunds": {"data": refunds}}
+
+        for payload in (cargo([re1], 3000), cargo([re1, re2], 8000)):
+            monkeypatch.setattr(stripe_service, "_stripe", _fake_stripe(
+                _evento("charge.refunded", payload)))
+            stripe_service.handle_webhook(db, b"{}", "sig")
+
+        db.expire_all()
+        assert pay_svc.summary(db)["month_total_cents"] == antes - 8000
+    finally:
+        db.close()
+
+
+def test_devolucion_de_un_cobro_ajeno_no_resta(monkeypatch):
+    """REGRESIÓN (revisión adversarial): una factura ajena de la misma cuenta de
+    Stripe (un taller, otro producto) NO se anota como ingreso, así que su
+    devolución tampoco puede restar — el libro enseñaría un −300 € de algo que
+    nunca sumó."""
+    stripe_service = _prep(monkeypatch)
+    from app.db import SessionLocal
+    from app.services import payments as pay_svc
+
+    db = SessionLocal()
+    try:
+        antes = pay_svc.summary(db)["month_total_cents"]
+        cargo = {
+            "id": f"ch_ajeno_{uuid.uuid4().hex[:10]}", "currency": "eur",
+            "livemode": True, "amount": 30000, "amount_refunded": 30000,
+            "created": int(datetime.now(timezone.utc).timestamp()),
+            # Ni ficha (email desconocido) ni factura nuestra anotada.
+            "billing_details": {"email": f"taller-{uuid.uuid4().hex[:6]}@otracosa.com"},
+            "invoice": f"in_ajena_{uuid.uuid4().hex[:8]}",
+            "refunds": {"data": []},
+        }
+        monkeypatch.setattr(stripe_service, "_stripe", _fake_stripe(
+            _evento("charge.refunded", cargo)))
+        res = stripe_service.handle_webhook(db, b"{}", "sig")
+        assert res == {"ignored": "cargo_ajeno"}
+
+        db.expire_all()
+        assert _pagos_de(db, cargo["id"]) == []
+        assert pay_svc.summary(db)["month_total_cents"] == antes
+    finally:
+        db.close()
+
+
+def test_factura_fallida_antigua_conserva_el_movimiento(monkeypatch):
+    """REGRESIÓN (revisión adversarial): en la rama del impago REZAGADO se salía
+    con `return` sin `db.commit()`, así que el movimiento anotado se perdía al
+    cerrar la sesión (el intento fallido desaparecía del libro)."""
+    stripe_service = _prep(monkeypatch)
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        c = _nuevo_cliente(db, pagado=True)
+        c.paid_at = datetime.now(timezone.utc)     # cobro POSTERIOR al fallo
+        c.billing_period = "oferta"
+        db.commit()
+        inv_id = f"in_rezag_{uuid.uuid4().hex[:10]}"
+        factura = {
+            "id": inv_id, "currency": "eur", "livemode": True, "amount_due": 12000,
+            "amount_paid": 0, "billing_reason": "subscription_cycle",
+            "created": int((datetime.now(timezone.utc) - timedelta(days=2)).timestamp()),
+            "customer_email": c.email,
+            "lines": {"data": [{"price": {"lookup_key": "dqr_full_oferta"}}]},
+            "subscription_details": {"metadata": {"client_id": str(c.id)}},
+        }
+        monkeypatch.setattr(stripe_service, "_stripe", _fake_stripe(
+            _evento("invoice.payment_failed", factura)))
+        res = stripe_service.handle_webhook(db, b"{}", "sig")
+        assert res["ignored"] == "invoice_fallida_antigua"
+
+        db.close()
+        db = SessionLocal()                        # sesión NUEVA: ¿persistió?
+        assert len(_pagos_de(db, inv_id)) == 1
+    finally:
+        db.close()
+
+
+def test_paid_at_se_refresca_aunque_el_movimiento_ya_estuviera_anotado(monkeypatch):
+    """REGRESIÓN (revisión adversarial): si la sincronización anotaba el cobro
+    primero, la reentrega del webhook llegaba con `movimiento_nuevo=False` y
+    `paid_at` se quedaba en el pago ANTERIOR (alerta de renovación eterna).
+    Ahora manda la FECHA del movimiento, no quién escribió la fila."""
+    stripe_service = _prep(monkeypatch)
+    from app.db import SessionLocal
+    from app.models import Client
+    from app.services import payments as pay_svc
+
+    db = SessionLocal()
+    try:
+        c = _nuevo_cliente(db, pagado=True)
+        antiguo = c.paid_at
+        ses = _sesion(metadata={"client_id": str(c.id), "tier": "full",
+                                "billing_period": "1m"},
+                      created=int(datetime.now(timezone.utc).timestamp()))
+        # La sincronización se adelanta y anota el movimiento.
+        pay_svc.record_payment(
+            db, object_id=ses["id"], kind="checkout", status="paid",
+            amount_cents=12900, client=c, customer_email=c.email,
+            paid_at=datetime.fromtimestamp(ses["created"], tz=timezone.utc), seen=True)
+        db.commit()
+
+        monkeypatch.setattr(stripe_service, "_stripe", _fake_stripe(
+            _evento("checkout.session.completed", ses)))
+        stripe_service.handle_webhook(db, b"{}", "sig")
+
+        db.expire_all()
+        assert db.get(Client, c.id).paid_at > antiguo
+    finally:
+        db.close()
+
+
+def test_sincronizacion_deja_sin_leer_lo_reciente_y_visto_lo_antiguo():
+    """REGRESIÓN (revisión adversarial): la sincronización marcaba TODO como
+    visto. Un cobro de hoy recuperado por sincronización significa que su
+    webhook se perdió: el coach no se ha enterado y debe llegarle sin leer."""
+    from app.services.payments import _visto_por_antiguedad
+
+    ahora = datetime.now(timezone.utc)
+    assert _visto_por_antiguedad(ahora) is False              # de hoy → sin leer
+    assert _visto_por_antiguedad(ahora - timedelta(days=3)) is True   # histórico
+
+
+def test_la_factura_huerfana_de_la_oferta_se_adopta_al_crear_la_ficha(monkeypatch):
+    """REGRESIÓN (revisión adversarial): en el alta self-serve de la OFERTA,
+    Stripe paga la primera factura ANTES de completar el checkout, así que el
+    movimiento se anotaba sin ficha y nadie lo reasociaba: aviso "pago sin ficha
+    asociada" eterno, el cobro no salía en la ficha del cliente y el borrado
+    RGPD no llegaba a esa fila (dejaba su nombre y su email)."""
+    stripe_service = _prep(monkeypatch)
+    from app.db import SessionLocal
+    from app.models import Client
+
+    db = SessionLocal()
+    try:
+        email = f"oferta-{uuid.uuid4().hex[:8]}@x.com"
+        inv_id = f"in_oferta_{uuid.uuid4().hex[:10]}"
+        # 1) Llega la PRIMERA factura de la suscripción: aún no hay cliente.
+        factura = {
+            "id": inv_id, "currency": "eur", "livemode": True,
+            "amount_paid": 100, "amount_due": 100,
+            "billing_reason": "subscription_create",
+            "created": int(datetime.now(timezone.utc).timestamp()),
+            "customer_email": email, "customer_name": "Nuevo Oferta",
+            "lines": {"data": [{"price": {"lookup_key": "dqr_full_oferta"}}]},
+            "subscription_details": {"metadata": {"billing_period": "oferta"}},
+        }
+        monkeypatch.setattr(stripe_service, "_stripe", _fake_stripe(
+            _evento("invoice.paid", factura)))
+        assert stripe_service.handle_webhook(db, b"{}", "sig")["ignored"] == "invoice_sin_cliente"
+        db.expire_all()
+        assert _pagos_de(db, inv_id)[0].client_id is None       # huérfano de momento
+
+        # 2) Llega el checkout y CREA la ficha: debe adoptar el movimiento.
+        ses = _sesion(mode="subscription", amount_total=100, metadata={
+            "tier": "full", "billing_period": "oferta"},
+            customer_details={"email": email, "name": "Nuevo Oferta"})
+        monkeypatch.setattr(stripe_service, "_stripe", _fake_stripe(
+            _evento("checkout.session.completed", ses)))
+        res = stripe_service.handle_webhook(db, b"{}", "sig")
+        cid = res.get("created") or res.get("marked_paid")
+        assert cid, res
+
+        db.expire_all()
+        assert _pagos_de(db, inv_id)[0].client_id == cid
+        db.query(Client).filter(Client.id == cid).count()       # la ficha existe
+    finally:
+        db.close()

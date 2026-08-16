@@ -12,6 +12,7 @@ const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const ClientsPage = lazy(() => import("./pages/ClientsPage"));
 const ClientProfilePage = lazy(() => import("./pages/ClientProfilePage"));
 const RecursosPage = lazy(() => import("./pages/RecursosPage"));
+const PagosPage = lazy(() => import("./pages/PagosPage"));
 const PortalApp = lazy(() => import("./portal/PortalApp"));
 const PortalLogin = lazy(() => import("./portal/PortalLogin"));
 const PlansPage = lazy(() => import("./pages/PlansPage"));
@@ -79,6 +80,7 @@ function CoachApp() {
         <Route index element={<DashboardPage />} />
         <Route path="clientes" element={<ClientsPage />} />
         <Route path="clientes/:id" element={<ClientProfilePage />} />
+        <Route path="pagos" element={<PagosPage />} />
         <Route path="recursos" element={<RecursosPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

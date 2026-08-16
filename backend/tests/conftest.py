@@ -25,8 +25,9 @@ def _cleanup_test_clients():
 
         from app.db import SessionLocal
         from app.models import (
-            ChangeRequest, Client, DailyLog, EmailLog, FeedbackDoc, Period,
-            Plan, ProgressPhoto, PushSubscription, VideoCall, WorkoutLog,
+            ChangeRequest, Client, DailyLog, EmailLog, FeedbackDoc, Payment,
+            Period, Plan, PlanEdit, ProgressPhoto, PushSubscription, VideoCall,
+            WorkoutLog,
         )
         from app.services.storage import delete_client_tree
     except Exception:
@@ -49,7 +50,24 @@ def _cleanup_test_clients():
         db.execute(delete(ProgressPhoto).where(ProgressPhoto.client_id.in_(ids)))
         db.execute(delete(PushSubscription).where(PushSubscription.client_id.in_(ids)))
         db.execute(delete(VideoCall).where(VideoCall.client_id.in_(ids)))
+        # Movimientos de pago sintéticos: si no se borran, el feed del panel (y
+        # los ingresos del mes) se llenan de cobros de prueba tras cada pytest.
+        # Por cliente Y por email del pagador: los tests de pago HUÉRFANO crean
+        # filas sin client_id que, sin esta segunda condición, quedaban para
+        # siempre sumando en "cobrado este mes".
+        db.execute(delete(Payment).where(
+            or_(Payment.client_id.in_(ids),
+                *[Payment.customer_email.ilike(p) for p in _TEST_EMAIL_PATTERNS])))
         db.execute(delete(Period).where(Period.client_id.in_(ids)))
+        # plan_edits.plan_id NO tiene ON DELETE (§13, aprendizaje continuo):
+        # cualquier plan editado desde el panel dejaba filas que hacían fallar
+        # el DELETE de plans con ForeignKeyViolation. Como el `except` de abajo
+        # se traga el error y hace rollback, la limpieza ENTERA no se aplicaba
+        # y pytest sí dejaba clientes de prueba en el panel (el mismo fallo que
+        # ya estaba corregido en el borrado RGPD de routers/clients.py).
+        plan_ids = list(db.scalars(select(Plan.id).where(Plan.client_id.in_(ids))))
+        if plan_ids:
+            db.execute(delete(PlanEdit).where(PlanEdit.plan_id.in_(plan_ids)))
         db.execute(delete(Plan).where(Plan.client_id.in_(ids)))
         db.execute(delete(ChangeRequest).where(ChangeRequest.client_id.in_(ids)))
         db.execute(update(EmailLog).where(EmailLog.client_id.in_(ids)).values(client_id=None))
@@ -60,7 +78,11 @@ def _cleanup_test_clients():
                 delete_client_tree(cid)
             except Exception:
                 pass  # el disco es secundario; la BD ya quedó limpia
-    except Exception:
+    except Exception as exc:  # noqa: BLE001
+        # AVISO VISIBLE: este `except` mudo escondió durante meses que la
+        # limpieza fallaba entera (una FK sin ON DELETE) y que pytest sí dejaba
+        # clientes de prueba en el panel. Si vuelve a fallar, se ve.
         db.rollback()
+        print(f"\n⚠ Limpieza de datos de prueba FALLIDA: {type(exc).__name__}: {exc}\n")
     finally:
         db.close()

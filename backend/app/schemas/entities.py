@@ -793,3 +793,61 @@ class PeriodCreateIn(BaseModel):
     plan_id: int
     starts_on: date
     days: int = Field(default=14, ge=7, le=31)
+
+
+# ------------------------------------------------------------- pagos ----
+# Libro de caja de Stripe (tabla `payments`): quién pagó, cuánto y cuándo.
+# Espejo en frontend/src/types.ts (regla A.1.5).
+PaymentKind = Literal["checkout", "invoice", "refund"]
+PaymentMovementStatus = Literal["paid", "failed", "refunded"]
+
+
+class PaymentOut(BaseModel):
+    """Un movimiento del feed de pagos del panel."""
+
+    id: int
+    kind: PaymentKind
+    status: PaymentMovementStatus
+    amount_cents: int
+    currency: str
+    # Movimiento en modo PRUEBA de Stripe: se ve, pero no suma en los totales.
+    livemode: bool
+    client_id: int | None
+    # Nombre a mostrar: el de la ficha si sigue existiendo; si no, el que dio
+    # Stripe al cobrar (un pago huérfano también tiene que decir de quién es).
+    display_name: str
+    customer_email: str | None
+    tier: str | None
+    billing_period: str | None
+    description: str | None
+    paid_at: datetime
+    seen_at: datetime | None
+    stripe_object_id: str
+
+
+class PaymentsListOut(BaseModel):
+    items: list[PaymentOut]
+    count: int          # total que cumple el filtro (para el "Ver más")
+    unseen: int
+
+
+class PaymentsSummaryOut(BaseModel):
+    """Cabecera del feed: lo que el coach mira de un vistazo."""
+
+    unseen: int
+    month_total_cents: int
+    month_count: int
+    prev_month_total_cents: int
+    failed_month: int
+    orphan_count: int
+    test_count: int
+    currency: str
+    last_payment_at: datetime | None
+    total_count: int
+    stripe_enabled: bool
+
+
+class PaymentsSeenIn(BaseModel):
+    """Marcar como leídos: los indicados o TODOS si no se manda nada."""
+
+    ids: list[int] | None = None

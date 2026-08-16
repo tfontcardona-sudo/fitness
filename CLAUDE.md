@@ -378,6 +378,12 @@ GET  /api/feedback/{id}/document           Descargar el feedback en Word.
 GET  /api/clients/{id}/photos              Fotos de progreso del cliente (metadatos).
 GET  /api/clients/{id}/photos/{photo_id}   Servir/ver/descargar una foto (JWT).
 
+GET  /api/payments                         Feed de cobros (libro de caja): limit/offset,
+                                           filtro status=paid|failed|refunded, client_id.
+GET  /api/payments/summary                 Cabecera: mes, mes anterior, sin leer, fallidos, huérfanos.
+POST /api/payments/seen                    Sella lo leído ({ids} o todos) → apaga el badge.
+POST /api/payments/sync                    Repesca de Stripe lo que falte (histórico + webhooks perdidos).
+
 GET  /api/p/{token}/training               (Portal) todas las sesiones con nombres (selector Entreno).
 GET  /api/p/{token}/feedback               (Portal) feedbacks ENVIADOS (sent_at) — "Progreso".
 ```
@@ -430,6 +436,69 @@ cd backend && python -m pytest tests/ -q
 ---
 
 ## 9. Trabajo pendiente / próximos pasos
+
+0. ✅ **PAGOS: libro de caja de Stripe en la web** (agosto 2026) — el coach ve
+   **quién pagó, cuánto y cuándo**, con los cobros como notificaciones tipo app
+   de banco. Antes un cobro solo dejaba `payment_status='paid'` + `paid_at`
+   (sobrescrito, sin importe): el histórico y las cifras NO existían.
+   - **Tabla `payments`** (modelo `Payment`, mig. 0037): un MOVIMIENTO por
+     cobro / cobro fallido / devolución, con importe en CÉNTIMOS, moneda,
+     `livemode`, fecha REAL de Stripe, cliente (nullable: los pagos huérfanos
+     también se anotan) y `seen_at` (NULL = no leído → badge).
+     **Idempotencia por `UNIQUE(stripe_object_id, status)`**: una reentrega no
+     duplica el ingreso, pero una factura que falla y luego se cobra son dos
+     movimientos distintos de la misma factura.
+   - **`services/payments.py`**: `record_payment` (best-effort con savepoint —
+     la contabilidad NUNCA puede tumbar el webhook), `summary` (mes natural en
+     la zona del coach; los pagos de prueba NO suman), `list_payments`,
+     `mark_seen`, `anonymize_client` (RGPD) y `sync_from_stripe` (rellena el
+     histórico y repesca cobros cuyo webhook se perdió: sesiones de pago único,
+     facturas de la oferta y devoluciones).
+   - **Webhook ampliado** (`stripe_service`): anota checkout, facturas y el
+     evento NUEVO `charge.refunded` (sin él una devolución dejaba saldo falso);
+     `ensure_canonical_prices` ya lo da de alta solo en el endpoint de Stripe.
+     ⚠️ Las sesiones en modo `subscription` NO se anotan (su dinero llega como
+     `invoice.paid`): anotar las dos duplicaría el primer mes de la oferta.
+   - **BUG CORREGIDO de raíz**: `_mark_paid` solo escribía si había transición
+     `pending→paid`, así que una RENOVACIÓN de pago único no dejaba traza, ni
+     aviso, ni refrescaba `paid_at` (y la alerta de renovación contaba desde el
+     primer pago para siempre). Ahora el LIBRO decide qué es nuevo
+     (`movimiento_nuevo`) y una reentrega sigue sin duplicar avisos.
+   - **Panel**: página `/pagos` (`PagosPage.tsx`) con feed agrupado por día
+     (Hoy/Ayer/fecha), importes en verde/rojo, chip de "prueba", avisos de
+     fallidos y huérfanos, filtros por estado y botón "Sincronizar". Entrada
+     "Pagos" en la barra con **badge de no leídos**; al abrir la pantalla se
+     sella lo que está A LA VISTA (el resto queda para "Marcar todo como leído").
+   - **Push al coach** con el importe en el título (`+129,00 € · Pago recibido`),
+     `tag` única por pago (con una tag compartida, dos cobros seguidos se veían
+     como una sola notificación) y enlace a `/pagos`.
+   - **Revisión adversarial (25 hallazgos → 9 confirmados, todos corregidos)**:
+     · devoluciones por REEMBOLSO (`re_…`), no por cargo — `amount_refunded` es
+       ACUMULADO y con el id del cargo la segunda parcial se descartaba entera;
+     · una devolución de un cobro AJENO de la misma cuenta ya no resta
+       (`_cargo_es_nuestro`: simetría con `_invoice_es_de_la_oferta`);
+     · `db.commit()` en la rama del impago rezagado (el movimiento se perdía);
+     · `client.paid_at` se refresca por FECHA del movimiento, no por "¿escribí
+       yo la fila?" (si la sincronización se adelantaba, se quedaba en el pago
+       anterior → alerta de renovación eterna);
+     · la sincronización deja SIN LEER lo de las últimas 24 h (un cobro reciente
+       que aparece por sync = webhook perdido: el coach no se ha enterado);
+     · **adopción de huérfanos** (`adopt_orphans`): en el alta self-serve de la
+       oferta, Stripe paga la primera factura ANTES de completar el checkout, así
+       que el movimiento nacía sin ficha y nadie lo reasociaba (aviso falso
+       eterno + el borrado RGPD no llegaba a esa fila);
+     · feed: lo que entra mientras miras se resalta y se sella, la fusión
+       reordena por fecha real, y tras sincronizar se recarga entero (lo
+       recuperado entra POR EN MEDIO, no arriba).
+   - Tests: `tests/test_payments.py` (18) — importe/fecha reales, reentrega,
+     renovación, huérfano, suscripción sin duplicar, factura fallida+pagada,
+     devolución que resta, parciales sucesivas, cargo ajeno, impago rezagado,
+     `paid_at` por fecha, sync sin leer, adopción de huérfanos, modo prueba,
+     RGPD, feed/marcado/filtro y auth.
+   - **De paso**: `tests/conftest.py` no limpiaba nada desde hacía tiempo — el
+     `DELETE` de `plans` fallaba por `plan_edits` (FK sin ON DELETE) y el
+     `except` mudo hacía rollback de TODA la limpieza. Arreglado y con aviso
+     visible si vuelve a fallar.
 
 1. ✅ **Edición del plan en la web** (`ClientPlanEditor` + `PATCH /api/plans/{id}`):
    se edita nutrición (kcal/macros/suplementos/reglas), entreno (sesiones,
