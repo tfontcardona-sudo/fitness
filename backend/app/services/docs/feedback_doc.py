@@ -1,4 +1,4 @@
-"""Documento de feedback quincenal/mensual con gráficas (H.4).
+"""Documento del informe de seguimiento con gráficas (H.4).
 
 Estructura: resumen del período en datos (peso+tendencia, adherencia,
 perímetros, volumen) → progresión de fuerza (e1RM) → composición física (fotos
@@ -142,7 +142,7 @@ def generate_feedback_doc(
         doc.add_paragraph(answers)
 
     if next_objectives:
-        doc.add_heading("Objetivos para las próximas 2 semanas", level=2)
+        doc.add_heading("Objetivos para las próximas semanas", level=2)
         add_bullets(doc, next_objectives)
 
     p = doc.add_paragraph()

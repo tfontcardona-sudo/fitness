@@ -11,9 +11,7 @@ import type { ClientStatus, DietMode, GoalType, Level, TrainingPlace } from "../
 export const STATUS_LABEL: Record<ClientStatus, string> = {
   onboarding: "Onboarding",
   active: "Activo",
-  awaiting_feedback: "Esperando cierre",
   at_risk: "En riesgo",
-  review_pending: "Revisión pendiente",
   inactive: "Inactivo",
 };
 
@@ -21,9 +19,7 @@ export const STATUS_LABEL: Record<ClientStatus, string> = {
 export const STATUS_TONE: Record<ClientStatus, string> = {
   onboarding: "#4C66C9", // índigo: aún configurándose
   active: "#F0883E", // naranja marca (oscurecido para texto): todo en marcha
-  awaiting_feedback: "#E5B94E", // ámbar: requiere acción próxima
   at_risk: "#F0716A", // rojo: atención
-  review_pending: "#7B4FC9", // violeta: en cola del coach
   inactive: "#9A9284", // gris cálido: dormido
 };
 

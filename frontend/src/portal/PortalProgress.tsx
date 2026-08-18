@@ -65,8 +65,8 @@ export function PortalProgress({ api, brand, hasTraining = true }: { api: Api; b
         <Sparkles size={26} className="mx-auto mb-2" style={{ color: accent }} />
         <p className="text-base font-semibold">Aquí verás cómo avanzas</p>
         <p className="mx-auto mt-1 max-w-xs text-sm opacity-70">
-          En cuanto registres tu <b>peso</b> en el Diario y subas tus <b>fotos</b> en la revisión
-          quincenal, esta pantalla te mostrará tu evolución.
+          En cuanto registres tu <b>peso</b> en el Diario y tus medidas en
+          <b>Evolución</b>, esta pantalla te mostrará tu progreso.
         </p>
       </div>
     );
@@ -97,7 +97,7 @@ export function PortalProgress({ api, brand, hasTraining = true }: { api: Api; b
           />
         )}
         {meanAdh != null && (
-          <Stat accent={accent} label="Constancia" value={`${meanAdh}/10`} sub="media de tus quincenas" />
+          <Stat accent={accent} label="Constancia" value={`${meanAdh}/10`} sub="media de tu seguimiento" />
         )}
       </div>
 
@@ -159,7 +159,7 @@ export function PortalProgress({ api, brand, hasTraining = true }: { api: Api; b
         </section>
       )}
 
-      {/* Medidas por quincena */}
+      {/* Medidas registradas */}
       {data.measurements.length > 0 && (
         <section className="portal-card p-4">
           <Header icon={Ruler} title="Tus medidas" />
@@ -206,7 +206,7 @@ export function PortalProgress({ api, brand, hasTraining = true }: { api: Api; b
             <>
               <PhotoColumn api={api} title="Tus fotos" date={data.photos.first_date} photos={data.photos.first} wide />
               <p className="mt-2 flex items-center gap-1.5 text-xs opacity-60">
-                <CameraOff size={13} /> Sube fotos en tu próxima revisión quincenal para verte "antes / ahora".
+                <CameraOff size={13} /> Con fotos nuevas verás la comparativa "antes / ahora".
               </p>
             </>
           )}

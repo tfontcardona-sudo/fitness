@@ -3,7 +3,7 @@
 Este repositorio es la **instancia white-label** del motor de asesorías para
 **PROFESSIONAL (Girona)**. El motor (anamnesis con IA → plan → portal →
 seguimiento → informe) es el mismo; lo que cambia entre instancias es la
-**marca** y qué piezas del motor se encienden (`FEATURE_*`). Esta guía lista TODO lo que hay
+**marca**. Esta guía lista TODO lo que hay
 que tocar para montar la siguiente instancia (otro gimnasio/empresa).
 
 > Regla de oro: **nunca** escribas el nombre de la marca, sus colores, sus
@@ -21,7 +21,7 @@ que tocar para montar la siguiente instancia (otro gimnasio/empresa).
 
 | Lado | Archivo | Qué define |
 |---|---|---|
-| Backend | `backend/app/branding.py` | Nombre, tagline, contacto, paleta por defecto, etiquetas de los planes, prefijo de lookup de Stripe, claves de la oferta, pie de los Word, remitente SMTP por defecto, prefijo de tags push, User-Agent, slug público |
+| Backend | `backend/app/branding.py` | Nombre, tagline, contacto, paleta por defecto, etiquetas de los planes, prefijo de lookup de Stripe, pie de los Word, remitente SMTP por defecto, prefijo de tags push, User-Agent, slug público |
 | Frontend | `frontend/src/lib/branding.ts` | Nombre, nombre corto, ruta del logo empaquetado, slug público |
 
 Cambia los valores de ambos y el 95 % del rebrand está hecho.
@@ -45,8 +45,8 @@ Cambia los valores de ambos y el 95 % del rebrand está hecho.
 `frontend/src/index.css` define los tokens (`--brand-accent`, hi/lo,
 `--brand-accent-2`, hi/lo). En runtime la fila `brand_config` (BD) los
 sobreescribe sin recompilar (vía `useBrand`); los del CSS son solo el primer
-arranque. En esta instancia no hay UI para editarla (Recursos apagado): se
-ajusta por seed o API. Los derivados hi/lo (luz/sombra de los gradientes) no vienen
+arranque. En esta instancia no hay UI para editar la paleta: se ajusta por seed
+o API. Los derivados hi/lo (luz/sombra de los gradientes) no vienen
 de la BD: ajústalos en el CSS al tono nuevo. Hay fallbacks del mismo tono
 repartidos como literales en componentes — búscalos por hex antes de entregar
 (`grep -rniE "#e9a90f|#37474f|#0f0e0c" frontend/src` con los hex de la
@@ -64,65 +64,62 @@ repartidos como literales en componentes — búscalos por hex antes de entregar
   el endpoint público de precios no los expone. En esta instancia: los tres
   (`nutri`, `train`, `full`), todos con pago online; el cobro en el centro sigue
   disponible (alta manual + "Marcar pagado").
-- **`OFFER_ENABLED`**: la oferta de captación (1 € el primer mes) del motor.
-  Apagada aquí: sin checkout, sin precio/cupón en Stripe, sin botón en el kit
-  de ventas y `/oferta` redirige a `/planes`.
 - Cada instancia usa **su propia cuenta de Stripe**: con la clave en el `.env`,
   `scripts/setup_stripe_prices.py` (o el auto-alta) crea productos y precios
   con el prefijo de la marca. Cambiar un importe = editar `CANONICAL_AMOUNTS`
   y ejecutar el script (reprecia Stripe de forma idempotente).
 
-## 5. Funciones del motor apagables por instancia (`FEATURE_*`)
+## 5. Piezas del motor RETIRADAS en esta instancia
 
-El motor trae módulos que no todas las marcas quieren. Se apagan con flags en
-**ambos** módulos de marca (`branding.py` + `branding.ts`) — el código y los
-tests del motor quedan intactos; solo desaparecen de la instancia:
+Antes había flags `FEATURE_*` para apagar módulos del motor. En agosto de 2026
+se decidió que Professional no los quiere y se **borraron del código**: no hay
+nada que encender ni apagar. Lo que ya no existe:
 
-- **`FEATURE_VIDEO_CALLS`** — videollamadas de revisión (Google Meet). Apaga:
-  `packages.has_video_call` (y con él portal, push, emails y alertas), la
-  agenda del panel, el ciclo en la pestaña Feedback y el banner del portal.
-  Los tests del motor las re-encienden con `monkeypatch` (ver
-  `tests/test_video_calls.py`).
-- **`FEATURE_RESOURCES`** — la **TIENDA**: página del coach (productos, vídeos,
-  página de enlaces), pestaña Tienda del portal y la alerta `missing_products`.
-  Encendida en Professional (venden sus propios productos); el catálogo de
-  arranque vive en `backend/app/seeds/products_data.py`.
-- **`FEATURE_SALES_KIT`** — kit de ventas del panel "Hoy". Apagado.
-- **`FEATURE_BIWEEKLY`** — ciclo quincenal (períodos de 14 días, cierre del
-  cliente, revisión con fecha). **Apagado** en Professional: el seguimiento es
-  CONTINUO (`FOLLOWUP_DAYS`, el período no vence), el portal cambia la pestaña
-  "Quincenal" por **Evolución** (peso, perímetros y sensaciones cuando el
-  cliente se mide, endpoint `POST /api/p/{token}/measurements`), el informe se
-  genera y se pone al día con lo registrado (mínimo 5 días; si el anterior ya se
-  envió, el nuevo es un borrador aparte) y las alertas pasan a ser "genera el
-  informe / ponlo al día / envíalo". Los tests que prueban el ciclo de 14 días
-  lo re-encienden con la fixture `ciclo_quincenal` (`tests/conftest.py`).
+- **Videollamadas de revisión (Google Meet)** — servicio de Google Calendar,
+  OAuth, endpoints, modelo, tabla, banner del portal, agenda del panel y
+  recordatorios. También se fue `GOOGLE.md`.
+- **Tienda de productos** — página del coach, pestaña Tienda del portal, la
+  rejilla y el código de descuento de la página de enlaces, el catálogo de
+  arranque y el emparejado producto⇄suplemento.
+- **Vídeos de ejercicios** — subida, portada y reproductor.
+- **Ronda diaria de WhatsApp** y **WhatsApp como canal de entrega** (todo va
+  por email). Se conserva el teléfono público del centro para el CTA de
+  `/planes`, que es contacto comercial.
+- **Ciclo quincenal** — el seguimiento es CONTINUO (`FOLLOWUP_DAYS`: el período
+  no vence), el portal tiene la pestaña **Evolución** (peso, perímetros y
+  sensaciones cuando el cliente se mide, `POST /api/p/{token}/measurements`),
+  el informe se genera y se pone al día con lo registrado (mínimo 5 días; si el
+  anterior ya se envió, el nuevo es un borrador aparte) y las alertas son
+  "genera el informe / ponlo al día / envíalo". Se conserva `biweekly_engine.py`
+  porque su decisión determinista de kcal alimenta el informe.
+- **Oferta de captación de 1 €** y las suscripciones de Stripe: los tres
+  servicios son de PAGO ÚNICO.
+- **Kit de ventas** del panel "Hoy".
 
-En Professional: vídeollamadas, kit de ventas y ciclo quincenal en `False`;
-tienda en `True`. La web queda con el ciclo esencial (anamnesis → planificación
-→ portal → informe) más el pool de rutinas y la tienda.
+Si una marca futura quisiera alguna de estas piezas, hay que recuperarlas del
+historial de git (rama `claude/dqr-white-label-4ojp01`, commits del recorte) o
+del sistema original en `main`.
 
 ## 6. Configuración por instancia (`.env`)
 
 Credenciales y dominio propios: `DOMAIN`, `BASE_URL`, `ADMIN_*`, `JWT_SECRET`,
-`PORTAL_TOKEN_SECRET`, `ANTHROPIC_API_KEY`, `SMTP_*`, `STRIPE_*`, `GOOGLE_*`,
-claves VAPID nuevas (`scripts/generate_vapid_keys.py`). Ver `.env.example`.
+`PORTAL_TOKEN_SECRET`, `ANTHROPIC_API_KEY`, `SMTP_*`, `STRIPE_*`, claves VAPID
+nuevas (`scripts/generate_vapid_keys.py`). Ver `.env.example`.
 
 ## 7. Datos sembrados
 
 `backend/app/seeds/run.py` crea la fila `brand_config` con los defaults del
 modelo (que ya leen de `branding.py`), rellena el teléfono de contacto
-(`branding.CONTACT_PHONE`) si está vacío, siembra la **tienda**
-(`products_data.PRODUCTS`, insert por título: no pisa lo que edite el coach) y
-el **pool de planificaciones** (`seeds/templates_data.py`, 3 grupos × ≥50 casos
-con su eje de dieta). Esa fila manda en runtime (colores, nombre, contacto).
+(`branding.CONTACT_PHONE`) si está vacío y siembra el **pool de
+planificaciones** (`seeds/templates_data.py`, 3 grupos × ≥50 casos con su eje de
+dieta). Esa fila manda en runtime (colores, nombre, contacto).
 
 ## 8. Checklist de entrega de una instancia nueva
 
 1. Duplicar el repo (o crear rama larga) — nunca tocar la instancia de otro cliente.
 2. Editar `backend/app/branding.py` + `frontend/src/lib/branding.ts`.
 3. Sustituir los 6 assets (§2) y los tokens/fallbacks CSS (§3).
-4. Fijar tarifas (§4), decidir los `FEATURE_*` (§5) y `.env` propio (§6).
-5. `docker compose up --build`, sembrar admins, conectar Stripe/Google.
+4. Fijar tarifas (§4) y `.env` propio (§6).
+5. `docker compose up --build`, sembrar admins, conectar Stripe.
 6. `pytest` completo + `npm run build` en verde.
 7. Revisar con el cliente la página Marca (colores finos en runtime).

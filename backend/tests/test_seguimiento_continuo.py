@@ -114,18 +114,18 @@ def _borrar(db, c):
 
 
 def test_el_periodo_no_vence_ni_pide_cierre(db):
-    """Sin ciclo quincenal el seguimiento es continuo: nunca hay que cerrarlo."""
-    from app import branding
+    """El seguimiento es continuo: nunca hay que cerrarlo."""
     from app.services.periods import PERIOD_DAYS
     from app.services.portal import period_info
 
-    assert branding.FEATURE_BIWEEKLY is False
     assert PERIOD_DAYS > 300, "el período de seguimiento no debe vencer cada 14 días"
 
     c, _plan, period = _cliente_con_seguimiento(db, 20)
     try:
         info = period_info(period, date.today())
-        assert info["can_close"] is False, "el cliente nunca ve un cierre que hacer"
+        # Ni siquiera se informa de un cierre: el concepto ya no existe.
+        assert "can_close" not in info
+        assert info["status"] == "open"
     finally:
         _borrar(db, c)
 

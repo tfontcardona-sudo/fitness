@@ -75,12 +75,6 @@ def public_register(request: Request, body: PublicRegisterIn,
                     db: Session = Depends(get_db)) -> dict:
     """Registro self-serve: crea la ficha (pago pendiente), envía el email de
     arranque (pago + anamnesis) y devuelve la URL de pago de Stripe."""
-    # La oferta (1 € el primer mes → suscripción) es SOLO del plan Full — misma
-    # validación que el alta manual: sin ella se colaba un train/nutri+oferta
-    # cuyo enlace de pago cobraría un plan que no existe.
-    if body.period == "oferta" and body.tier != "full":
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            "La oferta (1 € el primer mes) es solo del plan Full")
     email = body.email.strip().lower()
     client = db.scalar(select(Client).where(func.lower(Client.email) == email))
 

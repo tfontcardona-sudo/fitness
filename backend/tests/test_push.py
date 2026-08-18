@@ -25,15 +25,6 @@ from app.services import push as push_svc  # noqa: E402
 from app.services.portal import DAY_LABELS  # noqa: E402
 
 
-@pytest.fixture(autouse=True)
-def _videollamadas_encendidas(monkeypatch):
-    """Estos tests cubren el MOTOR (incluida la videollamada pendiente del pack
-    Full); la instancia actual las tiene apagadas, así que se encienden aquí."""
-    from app import branding
-
-    monkeypatch.setattr(branding, "FEATURE_VIDEO_CALLS", True)
-
-
 # ------------------------------------------------------------- puros ----
 
 def test_has_session_on() -> None:
@@ -71,7 +62,7 @@ def test_within_active_hours() -> None:
 
 def test_build_reminder_payload() -> None:
     one = push_svc.build_reminder_payload(
-        {"diary": True, "workout": False, "quincenal": False, "count": 1},
+        {"diary": True, "workout": False, "count": 1},
         "PG", "https://x/p/abc",
     )
     assert one["title"] == "PG"
@@ -79,12 +70,11 @@ def test_build_reminder_payload() -> None:
     assert one["url"] == "https://x/p/abc"
     assert "el diario de hoy" in one["body"]
 
-    three = push_svc.build_reminder_payload(
-        {"diary": True, "workout": True, "quincenal": True, "count": 3}, "PG", "u"
+    two = push_svc.build_reminder_payload(
+        {"diary": True, "workout": True, "count": 2}, "PG", "u"
     )
-    assert three["count"] == 3
-    assert "entreno" in three["body"] and "diario" in three["body"]
-    assert "y la revisión quincenal" in three["body"]
+    assert two["count"] == 2
+    assert "entreno" in two["body"] and "diario" in two["body"]
 
 
 def test_push_configured(monkeypatch) -> None:
@@ -177,16 +167,15 @@ def client_with_plan(db):
 
 
 @needs_db
-def test_pending_for_client(db, client_with_plan, ciclo_quincenal) -> None:
+def test_pending_for_client(db, client_with_plan) -> None:
     from app.models import DailyLog, WorkoutLog
 
     client, plan, period = client_with_plan
     today = date.today()
 
-    # Día 3, nada registrado → falta diario + entreno (hoy hay sesión), no quincenal
+    # Día 3, nada registrado → falta diario + entreno (hoy hay sesión)
     p = push_svc.pending_for_client(db, client, today)
-    assert p == {"diary": True, "workout": True, "quincenal": False,
-                 "photos": False, "count": 2}
+    assert p == {"diary": True, "workout": True, "count": 2}
 
     # Fila de diario vacía (autosave) → sigue faltando el diario
     log = DailyLog(period_id=period.id, log_date=today)
@@ -205,45 +194,16 @@ def test_pending_for_client(db, client_with_plan, ciclo_quincenal) -> None:
     db.flush()
     assert push_svc.pending_for_client(db, client, today)["count"] == 0
 
-    # Día ≥14 → toca la revisión quincenal
-    period.starts_on = today - timedelta(days=14)
+    # El seguimiento no vence: a día 20 sigue pidiendo lo mismo, sin "cierre".
+    period.starts_on = today - timedelta(days=20)
     db.flush()
-    p = push_svc.pending_for_client(db, client, today)
-    assert p["quincenal"] is True and p["count"] == 1
+    assert push_svc.pending_for_client(db, client, today)["count"] == 0
 
-    # Período cerrado → ya no toca nada: sin período abierto no hay pendientes.
+    # Sin período abierto no hay pendientes.
     period.status = "closed"
     db.flush()
     p = push_svc.pending_for_client(db, client, today)
-    assert p["diary"] is False and p["workout"] is False and p["quincenal"] is False
-    assert p["count"] == 0
-
-
-@needs_db
-def test_photos_reminder_cycle(db, client_with_plan) -> None:
-    """Tras cerrar la revisión: recordatorio de fotos (~15 min → cada 3 h) hasta
-    que el cliente confirma; entonces se apaga."""
-    from datetime import datetime, timedelta, timezone
-
-    client, plan, period = client_with_plan
-    now = datetime(2026, 7, 20, 12, 0, tzinfo=timezone.utc)
-
-    # Sin cerrar → no aplica el recordatorio de fotos
-    assert push_svc.photos_pending(db, client, now=now, min_minutes=15) is False
-
-    # Revisión enviada AHORA: el push espera 15 min; el banner (0 min) ya aplica
-    period.status = "closed"
-    period.closing_submitted_at = now
-    period.photos_confirmed = False
-    db.flush()
-    assert push_svc.photos_pending(db, client, now=now, min_minutes=0) is True
-    assert push_svc.photos_pending(db, client, now=now, min_minutes=15) is False
-    assert push_svc.photos_pending(db, client, now=now + timedelta(minutes=20), min_minutes=15) is True
-
-    # Confirmadas → se apaga en ambos casos
-    period.photos_confirmed = True
-    db.flush()
-    assert push_svc.photos_pending(db, client, now=now + timedelta(hours=6), min_minutes=0) is False
+    assert p == {"diary": False, "workout": False, "count": 0}
 
 
 @needs_db

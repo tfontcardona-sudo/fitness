@@ -50,7 +50,7 @@ TODO el producto:
 | **Marta Serra** | **Pack completo** (130 €), 8 días de seguimiento (74,8→73,9, comidas elegidas, 4 entrenos con series) + una **petición abierta** desde su portal | El portal vivo + el dossier + el circuito de dudas del cliente |
 | **Carlos Bosch** | **Pack completo** con 14 días registrados y el **informe YA redactado en borrador** (camino real del motor, sin gastar API), con **fotos** y medidas actualizadas desde su portal | **Resumen** de métricas (−1,2 kg, adherencia 89 %, e1RM) + el informe: revisar, **editar**, **Word** y **Enviar al cliente** |
 | **Jordi Puig** | **Entrenamiento** (70 €), día 5, 2 sesiones registradas, pagado en el centro | El servicio de solo entreno |
-| **Núria Camps** | **Dieta** (70 €), 9 días registrados, vegetariana y sin lactosa | El portal REDUCIDO del cliente de dieta: su diario, su evolución y la tienda — sin nada de entreno |
+| **Núria Camps** | **Dieta** (70 €), 9 días registrados, vegetariana y sin lactosa | El portal REDUCIDO del cliente de dieta: su diario, su progreso y su evolución — sin nada de entreno |
 
 La QUINTA situación —el alta de un cliente nuevo— se enseña **en vivo** durante
 la demo (paso 3 del guión): crear a "Laura Vidal" desde el pool tarda 2
@@ -110,19 +110,19 @@ opciones por comida, editor por si queréis retocar cualquier cifra.
 
 **4) El dossier (2')**
 Botón **Descargar** → PDF. Portada negra con el laurel — "esto es lo que
-recibe el cliente el día 1 por WhatsApp". Pasa 2-3 páginas: se lee como un
+recibe el cliente el día 1 por email". Pasa 2-3 páginas: se lee como un
 documento serio, con las 3 opciones por comida. Mensaje: *producto premium con
 vuestra marca, generado en un clic*.
 
 **5) El portal — en el móvil de ellos (3') ← el momento fuerte**
 Abre el enlace de Marta en un móvil (mejor el suyo). Portal oscuro con la
 marca: **Entreno** (registra una serie en vivo: peso y reps), **Diario** (peso
-bajando desde el día 1), **Evolución** (peso, perímetros y cómo se encuentra:
-lo actualiza cuando se mide, sin fechas límite) y **Tienda** (vuestros
-productos, con su código de descuento). Instala la PWA (añadir a pantalla de
-inicio → icono dorado). Abre después el de **Núria**: el portal de quien solo
-tiene dieta se reduce a su diario, su evolución y la tienda. Mensaje: *cada
-cliente ve exactamente lo que ha contratado*.
+bajando desde el día 1), **Progreso** (sus gráficas) y **Evolución** (peso,
+perímetros y cómo se encuentra: lo actualiza cuando se mide, sin fechas
+límite). Instala la PWA (añadir a pantalla de inicio → icono dorado). Abre
+después el de **Núria**: el portal de quien solo tiene dieta se reduce a su
+diario, su progreso y su evolución. Mensaje: *cada cliente ve exactamente lo
+que ha contratado*.
 
 **6) El informe — donde está el negocio (3')**
 Abre la ficha de **Carlos Bosch** → **Feedback**. Aquí NO hay quincenas ni
@@ -140,14 +140,14 @@ revisáis y decidís cuándo enviarlo*. (Con clave de IA se redacta en vivo.)
 
 **6b) La petición de Marta (1')**
 Desde "Hoy", pulsa **"Ver petición"** de Marta: su duda aparece en Seguimiento,
-se le responde por WhatsApp y se marca resuelta. Mensaje: *las dudas del
+se le responde y se marca resuelta. Mensaje: *las dudas del
 cliente no viven en tu cabeza ni en un chat perdido: entran en la cola*.
 
 **7) Cierre (1')**
 Recorre el menú: la web es SOLO el ciclo de asesoría — Hoy, Clientes,
-Rutinas y Tienda, sin distracciones (nada de módulos que no vais a usar; todo lo demás
-está apagado de fábrica para vosotros). Mensaje: *herramienta de trabajo, no
-un ERP*. Y lo
+Rutinas y Enlaces, sin distracciones (nada de módulos que no vais a usar: lo
+que no forma parte de vuestro flujo no está en el producto). Mensaje:
+*herramienta de trabajo, no un ERP*. Y lo
 que falta para arrancar de verdad: su Stripe, su dominio y su email
 (`PENDIENTE.md`) — todo configuración, cero desarrollo.
 
@@ -156,7 +156,7 @@ que falta para arrancar de verdad: su Stripe, su dominio y su email
 ## 3. Preguntas que van a hacer (y respuesta corta)
 
 - **"¿Qué recibe cada cliente?"** — El de **dieta**, su dossier de nutrición y
-  un portal con su diario, su evolución y la tienda. El de **entrenamiento**,
+  un portal con su diario, su progreso y su evolución. El de **entrenamiento**,
   su dossier de entreno y el portal con el registro de series. El del **pack**,
   las dos cosas. Todo por email, como el resto de envíos.
 - **"¿Y si el cliente no registra nada?"** — Salta el aviso en "Hoy" y le
@@ -187,7 +187,6 @@ que falta para arrancar de verdad: su Stripe, su dominio y su email
 - **Sin clave de IA**: no toques "Generar plan"/"Leer con IA"/"Generar
   informe"/"Poner al día" en vivo; todo lo demás funciona (el plan de Marta y el informe de
   Carlos ya están generados y se pueden editar, descargar y enviar).
-- **No enseñes** `/oferta` (redirige a planes: correcto, esta marca no la usa).
 - Los clientes de demo son `@demo.local`: bórralos antes de entregar la
   instancia real (re-ejecutar el script y luego eliminarlos desde el panel, o
   `wipe_demo_clients`).

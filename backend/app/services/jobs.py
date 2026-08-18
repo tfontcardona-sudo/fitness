@@ -21,7 +21,6 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app import branding
 from app.config import settings
 from app.models import Client, DailyLog, EmailLog, Period
 from app.services import email_templates as tpl
@@ -70,7 +69,7 @@ def _active_period(db: Session, client_id: int) -> Period | None:
     )
 
 
-def _facts_for(db: Session, client: Client) -> ClientFacts:
+def _facts_for(db: Session, client: Client, today: date | None = None) -> ClientFacts:
     period = _active_period(db, client.id)
     if period is None:
         return ClientFacts(status=client.status)
@@ -89,27 +88,21 @@ def _facts_for(db: Session, client: Client) -> ClientFacts:
     )
     last_activity = last_log_date or period.starts_on
 
-    if branding.FEATURE_BIWEEKLY:
-        days_logged = sum(1 for lg in logs if diary_is_filled(lg))
-        inicio, fin = period.starts_on, period.ends_on
-    else:
-        # Sin ciclo quincenal el período no vence: la constancia se mide en una
-        # VENTANA MÓVIL de 14 días (si no, un seguimiento de meses diluiría el
-        # ratio y nadie entraría nunca "en riesgo").
-        from app.services.portal import today_local
+    # El período no vence: la constancia se mide en una VENTANA MÓVIL de 14
+    # días (si no, un seguimiento de meses diluiría el ratio y nadie entraría
+    # nunca "en riesgo"). `today` es la fecha de NEGOCIO del job — la misma que
+    # se pasa a `evaluate_transition`, o los dos contarían días distintos.
+    from app.services.portal import today_local
 
-        hoy = today_local()
-        inicio = max(period.starts_on, hoy - timedelta(days=VENTANA_DIAS - 1))
-        fin = None                       # nunca vence → nunca "sin cerrar"
-        days_logged = sum(1 for lg in logs
-                          if diary_is_filled(lg) and lg.log_date >= inicio)
+    hoy = today or today_local()
+    inicio = max(period.starts_on, hoy - timedelta(days=VENTANA_DIAS - 1))
+    days_logged = sum(1 for lg in logs
+                      if diary_is_filled(lg) and lg.log_date >= inicio)
 
     return ClientFacts(
         status=client.status,
         has_active_period=True,
         period_start=inicio,
-        period_end=fin,
-        period_closed=period.status in ("closed", "analyzed"),
         days_logged_in_period=int(days_logged),
         last_activity_date=last_activity,
     )
@@ -166,34 +159,18 @@ def _maintain_client(db: Session, client: Client, today: date,
                      emailer: EmailService, brand, base: str, summary: dict) -> None:
     """Mantenimiento de UN cliente (recordatorios + transición de estado).
     El commit lo hace el caller, cliente a cliente."""
-    facts = _facts_for(db, client)
+    facts = _facts_for(db, client, today)
     decision = evaluate_transition(facts, today)
 
-    # 1) Recordatorio día 12 (no cambia estado)
+    # 1) Recordatorio por inactividad (no cambia estado)
     if decision.send_reminder and not _already_sent_today(db, client.id, "reminder_no_logs", today):
-        period = _active_period(db, client.id)
-        days_left = max(0, (period.ends_on - today).days) if period else 0
         subject, html = tpl.reminder_no_logs(
             brand, _first_name(client),
-            f"{base}/p/{client.portal_token}", days_left,
+            f"{base}/p/{client.portal_token}",
             has_training=pkgs.has_training(getattr(client, "package_tier", None)),
         )
         emailer.send(to=client.email, subject=subject, html=html,
                      kind="reminder_no_logs", client=client)
-        summary["reminders"] += 1
-
-    # 1b) Día 14+: recordatorio de CERRAR la revisión quincenal (uno al
-    # día mientras el período siga abierto y vencido).
-    closing_period = _active_period(db, client.id) if branding.FEATURE_BIWEEKLY else None
-    if (closing_period is not None and closing_period.status == "open"
-            and today >= closing_period.ends_on
-            and not _already_sent_today(db, client.id, "closing_due", today)):
-        subject, html = tpl.closing_due(
-            brand, _first_name(client),
-            f"{base}/p/{client.portal_token}", closing_period.period_index,
-        )
-        emailer.send(to=client.email, subject=subject, html=html,
-                     kind="closing_due", client=client)
         summary["reminders"] += 1
 
     # 1c) ONBOARDING fantasma (auditoría del ciclo): quien paga/registra y no

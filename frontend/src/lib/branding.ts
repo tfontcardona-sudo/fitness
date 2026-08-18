@@ -28,10 +28,6 @@ export const PUBLIC_SLUG = "professional";
  *  se contrata en el centro (reserva por WhatsApp, cobro presencial). */
 export const PUBLIC_TIERS: ReadonlyArray<string> = ["full"];
 
-/** Oferta de captación (1 € el primer mes): APAGADA en esta marca — sin botón
- *  en el kit de ventas y sin página /oferta (el backend también la veta). */
-export const OFFER_ENABLED = false;
-
 /** Tema del portal del cliente ANTES de cargar la marca (login del portal,
  *  pantallas de error): la identidad de Professional es oscura. Espejo de
  *  branding.PORTAL_THEME del backend. */
@@ -41,7 +37,6 @@ export const PORTAL_THEME: "dark" | "light" = "dark";
  *  backend). El motor las conserva; la marca quiere la web solo para el ciclo
  *  esencial: subir anamnesis → generar plan → portal → revisiones. */
 export const FEATURE_RESOURCES: boolean = true;    // TIENDA (portal + enlaces)
-export const FEATURE_BIWEEKLY: boolean = false;    // ciclo quincenal del motor
 
 // --- El centro (de professionalgirona.com) ----------------------------------
 export const CENTER_ADDRESS = "Carretera Pierre Vilar, 2 · 17002 Girona";

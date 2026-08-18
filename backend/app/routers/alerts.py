@@ -8,7 +8,6 @@ atender:
   onboarding  → crear la planificación (queda ACTIVA al generarse; "activar"
                 solo aplica a borradores antiguos)
   revisión    → generar el informe → enviarlo al cliente
-  adaptación  → adaptar el plan a la última revisión (queda activo al momento)
   seguimiento → cliente sin registros varios días
   objetivo    → 45 días en la misma etapa: valorar cambio (posponible)
 """
@@ -19,7 +18,6 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app import branding
 from app.db import get_db
 from app.deps import get_current_user
 from app.models import Client, DailyLog, FeedbackDoc, Period, Plan
@@ -121,18 +119,12 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
                                   "anamnesis", "Crear planificación"))
         return out  # sin plan publicado, el resto del ciclo no aplica
 
-    # --- Revisión quincenal recibida sin feedback ---------------------------
-    if last_period is not None and last_period.status == "closed":
-        out.append(_alert(client, "generate_feedback", "alta",
-                          f"Revisión #{last_period.period_index} recibida: revisa los datos y genera el feedback.",
-                          "seguimiento", "Generar feedback"))
-
-    # --- SEGUIMIENTO CONTINUO (sin ciclo quincenal) -------------------------
+    # --- SEGUIMIENTO CONTINUO -----------------------------------------------
     # El informe se pone al día con lo que el cliente registra y el coach lo
     # envía cuando lo ve listo. Dos avisos, que son TODO el ciclo aquí:
     #   · hay datos nuevos suficientes → ponerlo al día,
     #   · hay un informe en borrador → enviárselo.
-    if not branding.FEATURE_BIWEEKLY and last_period is not None and last_period.status == "open":
+    if last_period is not None and last_period.status == "open":
         registrados = db.scalar(
             select(func.count()).select_from(DailyLog)
             .where(DailyLog.period_id == last_period.id)
@@ -160,42 +152,8 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
                     f"{nuevos} días registrados desde el último informe: ponlo al día.",
                     "feedback", "Actualizar informe"))
 
-    # --- Feedback generado pero sin enviar / plan sin adaptar ---------------
-    # ANCLADO al último período ANALIZADO, no al último absoluto: enviar el
-    # feedback abre el período siguiente en el acto, y con el ancla vieja la
-    # alerta "sin adaptar" moría justo entonces — el ciclo nuevo corría 14 días
-    # con las kcal antiguas sin que nadie lo persiguiera (auditoría del ciclo).
-    last_analyzed = None if not branding.FEATURE_BIWEEKLY else last_period if (
-        last_period is not None and last_period.status == "analyzed"
-    ) else db.scalar(
-        select(Period).where(Period.client_id == client.id,
-                             Period.status == "analyzed")
-        .order_by(Period.period_index.desc()).limit(1)
-    )
-    if last_analyzed is not None:
-        fb = db.scalar(
-            select(FeedbackDoc).where(FeedbackDoc.period_id == last_analyzed.id)
-            .order_by(FeedbackDoc.id.desc()).limit(1)
-        )
-        if fb is not None and fb.sent_at is None:
-            out.append(_alert(client, "send_feedback", "alta",
-                              f"Feedback de la revisión #{last_analyzed.period_index} sin enviar al cliente.",
-                              "feedback", "Enviar al cliente"))
-
-        def _adapted_idx(p: Plan | None) -> int | None:
-            if p is None:
-                return None
-            return ((p.nutrition_json or {}).get("applied_adjustments") or {}).get("period_index")
-
-        if _adapted_idx(latest) != last_analyzed.period_index:
-            out.append(_alert(client, "adapt_plan", "alta",
-                              f"Planificación sin adaptar a la revisión #{last_analyzed.period_index}.",
-                              "planificacion", "Adaptar planificación"))
-        elif latest is not None and latest.status == "draft":
-            out.append(_alert(client, "publish_plan", "alta",
-                              f"Borrador adaptado a la revisión #{last_analyzed.period_index} sin activar.",
-                              "planificacion", "Activar planificación"))
-    if last_analyzed is None and latest is not None and latest.status == "draft":
+    # --- Borrador de planificación sin activar (legado) ---------------------
+    if latest is not None and latest.status == "draft":
         # Borrador antiguo suelto (legado): los planes nuevos se activan solos
         out.append(_alert(client, "publish_plan", "media",
                           f"Borrador v{latest.version} sin activar.",
@@ -213,17 +171,6 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
             out.append(_alert(client, "no_logs", "media",
                               f"Sin registros del cliente desde hace {gap} días.",
                               "seguimiento", "Ver seguimiento"))
-
-        # --- Período vencido sin cerrar: el cliente registra pero no envía ---
-        # Solo tiene sentido con ciclo quincenal: sin él, el seguimiento es
-        # continuo y no hay nada que "cerrar" ni que reclamar.
-        overdue = (today - last_period.ends_on).days if branding.FEATURE_BIWEEKLY else 0
-        if overdue >= 2:
-            out.append(_alert(
-                client, "period_overdue", "alta" if overdue >= 5 else "media",
-                f"Su revisión quincenal venció hace {overdue} días y no la ha "
-                "enviado: recuérdaselo por WhatsApp.",
-                "seguimiento", "Reclamar la revisión"))
 
     # --- Petición de cambio del cliente sin atender (portal → coach) ---------
     # El cliente escribió una duda/petición desde su portal: el coach debe

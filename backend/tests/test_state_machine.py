@@ -36,66 +36,42 @@ def test_onboarding_does_not_transition_by_time():
 def test_active_well_adhered_stays_active():
     facts = ClientFacts(
         status="active", has_active_period=True,
-        period_start=date(2026, 6, 10), period_end=date(2026, 6, 23),
-        period_closed=False, days_logged_in_period=5,
+        period_start=date(2026, 6, 10), days_logged_in_period=5,
         last_activity_date=date(2026, 6, 14),
     )
-    d = evaluate_transition(facts, TODAY)  # día 6 del período, 5 registros
+    d = evaluate_transition(facts, TODAY)  # día 6 de la ventana, 5 registros
     assert d.new_status is None
-
-
-def test_active_becomes_at_risk_when_period_unclosed_4_days():
-    facts = ClientFacts(
-        status="active", has_active_period=True,
-        period_start=date(2026, 5, 20), period_end=date(2026, 6, 10),
-        period_closed=False, days_logged_in_period=10,
-        last_activity_date=date(2026, 6, 9),
-    )
-    d = evaluate_transition(facts, TODAY)  # 5 días pasados del fin
-    assert d.new_status == "at_risk"
-    assert "sin cerrar" in d.reason
-    assert d.notify_coach_at_risk is True
 
 
 def test_active_becomes_at_risk_low_adherence_at_day_10():
     facts = ClientFacts(
         status="active", has_active_period=True,
-        period_start=date(2026, 6, 6), period_end=date(2026, 6, 19),
-        period_closed=False, days_logged_in_period=2,  # 2/10 = 20% < 30%
+        period_start=date(2026, 6, 6), days_logged_in_period=2,  # 2/10 = 20% < 30%
         last_activity_date=date(2026, 6, 8),
     )
     d = evaluate_transition(facts, TODAY)  # día 10
     assert d.new_status == "at_risk"
     assert "adherencia" in d.reason
+    assert d.notify_coach_at_risk is True
 
 
-def test_period_just_ended_not_yet_at_risk():
+def test_at_risk_vuelve_a_active_al_recuperar_la_constancia():
+    """Sin cierre de período, la recuperación depende SOLO de la ventana móvil:
+    el cliente que retoma el registro sale de riesgo solo."""
     facts = ClientFacts(
-        status="active", has_active_period=True,
-        period_start=date(2026, 5, 31), period_end=date(2026, 6, 13),
-        period_closed=False, days_logged_in_period=12,
-        last_activity_date=date(2026, 6, 13),
-    )
-    d = evaluate_transition(facts, TODAY)  # solo 2 días pasados (<4)
-    assert d.new_status is None
-
-
-def test_closed_period_does_not_trigger_at_risk():
-    facts = ClientFacts(
-        status="awaiting_feedback", has_active_period=True,
-        period_start=date(2026, 5, 20), period_end=date(2026, 6, 5),
-        period_closed=True, days_logged_in_period=14,
-        last_activity_date=date(2026, 6, 5),
+        status="at_risk", has_active_period=True,
+        period_start=date(2026, 6, 6), days_logged_in_period=8,  # 8/10 = 80%
+        last_activity_date=date(2026, 6, 14),
     )
     d = evaluate_transition(facts, TODAY)
-    assert d.new_status is None
+    assert d.new_status == "active"
+    assert "constancia recuperada" in d.reason
 
 
 def test_inactive_after_30_days_idle():
     facts = ClientFacts(
         status="active", has_active_period=True,
-        period_start=date(2026, 4, 1), period_end=date(2026, 4, 14),
-        period_closed=False, days_logged_in_period=3,
+        period_start=date(2026, 4, 1), days_logged_in_period=3,
         last_activity_date=date(2026, 5, 10),  # 36 días atrás
     )
     d = evaluate_transition(facts, TODAY)
@@ -106,8 +82,7 @@ def test_inactive_after_30_days_idle():
 def test_reminder_at_day_12_without_logs():
     facts = ClientFacts(
         status="active", has_active_period=True,
-        period_start=date(2026, 6, 4), period_end=date(2026, 6, 17),
-        period_closed=False, days_logged_in_period=4,  # 4/12=33% (no at_risk) pero <6
+        period_start=date(2026, 6, 4), days_logged_in_period=4,  # 4/12=33% (no at_risk) pero <6
         last_activity_date=date(2026, 6, 9),
     )
     d = evaluate_transition(facts, TODAY)  # día 12
@@ -118,8 +93,7 @@ def test_reminder_at_day_12_without_logs():
 def test_no_reminder_at_day_12_if_logging_well():
     facts = ClientFacts(
         status="active", has_active_period=True,
-        period_start=date(2026, 6, 4), period_end=date(2026, 6, 17),
-        period_closed=False, days_logged_in_period=10,  # registra bien
+        period_start=date(2026, 6, 4), days_logged_in_period=10,  # registra bien
         last_activity_date=date(2026, 6, 14),
     )
     d = evaluate_transition(facts, TODAY)  # día 12
@@ -127,11 +101,10 @@ def test_no_reminder_at_day_12_if_logging_well():
 
 
 def test_inactivity_takes_priority_over_at_risk():
-    # período sin cerrar Y 40 días idle → gana inactive
+    # constancia por los suelos Y 41 días idle → gana inactive
     facts = ClientFacts(
         status="active", has_active_period=True,
-        period_start=date(2026, 4, 1), period_end=date(2026, 4, 14),
-        period_closed=False, days_logged_in_period=1,
+        period_start=date(2026, 4, 1), days_logged_in_period=1,
         last_activity_date=date(2026, 5, 5),  # 41 días
     )
     d = evaluate_transition(facts, TODAY)
@@ -143,21 +116,20 @@ def test_inactivity_takes_priority_over_at_risk():
 def test_valid_transitions():
     assert can_transition("onboarding", "active")
     assert can_transition("active", "at_risk")
-    assert can_transition("active", "review_pending")
-    assert can_transition("review_pending", "active")
+    assert can_transition("at_risk", "active")
     assert can_transition("inactive", "active")
 
 
-def test_awaiting_feedback_eliminado():
-    # Estado MUERTO retirado en la auditoría del ciclo: nada lo asignaba.
+def test_estados_del_ciclo_quincenal_eliminados():
+    # "awaiting_feedback" y "review_pending" eran del ciclo de 14 días: sin
+    # cierre de período nada los asignaba y quedaban colgados.
     assert not can_transition("active", "awaiting_feedback")
-    assert not can_transition("awaiting_feedback", "review_pending")
+    assert not can_transition("active", "review_pending")
 
 
 def test_invalid_transitions():
-    assert not can_transition("onboarding", "review_pending")
+    assert not can_transition("onboarding", "at_risk")
     assert not can_transition("inactive", "at_risk")
-    assert not can_transition("review_pending", "onboarding")
 
 
 # ------------------------------------------------------------ plantillas ----
@@ -177,16 +149,11 @@ def test_template_plan_published_new_month():
     assert "nuevo plan" in subject.lower()
 
 
-def test_template_reminder_includes_days_left(ciclo_quincenal):
-    # Con ciclo quincenal el recordatorio lleva la cuenta atrás del cierre;
-    # sin él (seguimiento continuo) NO hay fecha límite que anunciar.
-    subject, html = reminder_no_logs(BRAND, "Carlos", "https://x/p/tok", days_left=3)
-    assert "3 días" in html
-
-
-def test_template_reminder_sin_ciclo_no_habla_de_cierre():
-    subject, html = reminder_no_logs(BRAND, "Carlos", "https://x/p/tok", days_left=3)
-    assert "3 días" not in html and "cerrar este período" not in html
+def test_template_reminder_no_habla_de_cierre():
+    """El seguimiento es continuo: el recordatorio no anuncia fecha límite."""
+    subject, html = reminder_no_logs(BRAND, "Carlos", "https://x/p/tok")
+    assert "Carlos" in html
+    assert "cerrar este período" not in html and "días</strong> para cerrar" not in html
 
 
 def test_template_coach_alerts():

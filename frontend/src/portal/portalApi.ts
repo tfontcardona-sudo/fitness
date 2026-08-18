@@ -9,7 +9,6 @@ import type {
   ChangeRequestOut,
   DailyLogUpsert,
   FeedbackDocOut,
-  PeriodCloseIn,
   PlanChanges,
   PortalPlanOut,
   PortalState,
@@ -139,19 +138,16 @@ export function portalApi(token: string) {
       req<Record<string, any>>("GET", `${base}/diary/${logDate}`),
     saveDiary: (body: Partial<DailyLogUpsert> & { log_date: string }) =>
       req<{ saved: boolean }>("PUT", `${base}/diary`, body),
-    close: (body: PeriodCloseIn) => req<{ closed: boolean }>("POST", `${base}/close`, body),
     // Seguimiento continuo: el cliente actualiza su evolución cuando se mide
     // (sin cerrar nada). Solo viaja lo que ha rellenado.
     saveMeasurements: (body: Record<string, unknown>) =>
       req<{ saved: boolean; fields: string[] }>("POST", `${base}/measurements`, body),
-    closePhotos: (files: File[], kind: string) => {
+    // Fotos de progreso del seguimiento en marcha (hasta 4 por tanda).
+    progressPhotos: (files: File[], kind: string) => {
       const fd = new FormData();
       files.forEach((f) => fd.append("files", f));
-      return req<unknown[]>("POST", `${base}/close/photos?kind=${kind}`, fd);
+      return req<unknown[]>("POST", `${base}/progress-photos?kind=${kind}`, fd);
     },
-    // El cliente confirma que envió sus fotos de progreso al coach (apaga el
-    // recordatorio del portal y del push).
-    confirmPhotos: () => req<{ confirmed: boolean }>("POST", `${base}/photos-confirmed`),
     feedback: () => req<FeedbackDocOut[]>("GET", `${base}/feedback`),
     changeRequest: (message: string) =>
       req<ChangeRequestOut>("POST", `${base}/change-request`, { message }),

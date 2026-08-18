@@ -46,7 +46,6 @@ from app.schemas.entities import (
     ChangeRequestOut,
     DailyLogUpsert,
     FeedbackDocOut,
-    PeriodCloseIn,
     PortalMeasurementsIn,
     PhotoOut,
     PortalBrand,
@@ -322,8 +321,6 @@ def portal_state_full(
         if period
         else portal_svc.latest_published_plan(db, client.id)
     )
-    from app.services.push import photos_pending
-
     # Clientes START (solo nutrición): sin pestaña Entreno, /training nunca se
     # llama y el aviso "plan nuevo" no se apagaría jamás — abrir el portal ya
     # cuenta como visto (su dieta va en el PDF enlazado desde la portada).
@@ -339,8 +336,6 @@ def portal_state_full(
         has_plan=plan is not None,
         period=portal_svc.period_info(period, portal_svc.today_local()),
         brand=PortalBrand(**portal_svc.brand_payload(db)),
-        # Banner del portal: se muestra ya (sin esperar los 15 min del push).
-        photos_pending=photos_pending(db, client, min_minutes=0),
         needs_anamnesis=_needs_anamnesis(client),
         today=portal_svc.today_local(),
     )
@@ -757,95 +752,6 @@ def portal_photo(
     )
 
 
-@router.post("/{token}/close", response_model=dict)
-@limiter.limit("20/minute")
-def portal_close_period(
-    request: Request,
-    body: PeriodCloseIn,
-    client: Client = Depends(get_client_by_token),
-    db: Session = Depends(get_db),
-) -> dict:
-    """Cierre del período (desde día 14). Dispara el pipeline en Fase 7;
-    aquí persiste el cierre y pasa el cliente a awaiting→review."""
-    period = portal_svc.active_period(db, client.id)
-    if period is None or period.status != "open":
-        raise HTTPException(status.HTTP_409_CONFLICT, "No tienes un período abierto")
-
-    info = portal_svc.period_info(period, portal_svc.today_local())
-    if not info or not info["can_close"]:
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN,
-            "El cierre estará disponible a partir del día 14 del período",
-        )
-
-    for field in (
-        "closing_weight_kg", "closing_rating", "closing_hardest", "closing_questions",
-        "closing_waist_cm", "closing_hip_cm", "closing_arm_cm", "closing_thigh_cm",
-        "closing_feelings_json", "adherence_diet_0_10", "adherence_training_0_10",
-        "free_meals_count", "closing_changes", "closing_next_goal",
-    ):
-        setattr(period, field, getattr(body, field))
-    period.status = "closed"
-    # Arranca el recordatorio de fotos: se enviará ~15 min después y luego cada
-    # 3 h hasta que el cliente confirme en el portal que las envió al coach.
-    period.closing_submitted_at = datetime.now(timezone.utc)
-    period.photos_confirmed = False
-
-    # El cliente pasa a esperar la revisión del coach (review_pending). También
-    # desde `inactive`: cerrar la revisión ES actividad (antes el cierre de un
-    # inactivo no avanzaba el ciclo y el feedback quedaba bloqueado — auditoría).
-    if client.status == "inactive":
-        log_event(db, "client", client.id, "status_changed",
-                  {"from": "inactive", "to": "active",
-                   "reason": "actividad del portal (cierre de revisión)"})
-        client.status = "active"
-    if client.status in ("active", "at_risk"):
-        client.status = "review_pending"
-
-    log_event(db, "client", client.id, "period_closed",
-              {"period_index": period.period_index, "rating": body.closing_rating})
-    # Push inmediato al COACH: el cierre de la revisión es el evento central del
-    # ciclo — no puede esperar al resumen de cada 3 h. Nunca tumba el cierre.
-    try:
-        base = settings.public_base_url.rstrip("/")
-        first = ((client.full_name or "").split() or ["Un cliente"])[0]
-        push_svc.send_to_coach(db, {
-            "title": "Revisión quincenal enviada",
-            "body": f"{first} ha cerrado su revisión #{period.period_index}. Genera su feedback.",
-            "count": 1,
-            "url": f"{base}/clientes/{client.id}?tab=feedback",
-            "tag": "pg-revision",
-        })
-    except Exception:
-        pass
-    db.commit()
-    return {"closed": True, "period_index": period.period_index}
-
-
-@router.post("/{token}/photos-confirmed")
-@limiter.limit("20/minute")
-def portal_confirm_photos(
-    request: Request,
-    client: Client = Depends(get_client_by_token),
-    db: Session = Depends(get_db),
-) -> dict:
-    """El cliente confirma que envió sus fotos de progreso al coach: se apaga el
-    recordatorio (portal + push). Sobre la última revisión cerrada/analizada."""
-    period = db.scalar(
-        select(Period).where(
-            Period.client_id == client.id,
-            Period.status.in_(("closed", "analyzed")),
-        ).order_by(Period.period_index.desc()).limit(1)
-    )
-    if period is None:
-        raise HTTPException(status.HTTP_409_CONFLICT, "No hay revisión que confirmar")
-    period.photos_confirmed = True
-    log_event(db, "client", client.id, "progress_photos_confirmed",
-              {"period_index": period.period_index})
-    db.commit()
-    return {"confirmed": True}
-
-
 @router.post("/{token}/measurements", response_model=dict)
 @limiter.limit("20/minute")
 def portal_measurements(
@@ -860,8 +766,6 @@ def portal_measurements(
     Se guardan en el período abierto (son SUS últimas medidas: es lo que leen el
     informe y la evolución del coach). Solo se toca lo que venga en la petición
     — el mismo criterio que el diario, para no borrar lo de antes."""
-    if branding.FEATURE_BIWEEKLY:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "No disponible")
     period = portal_svc.active_period(db, client.id)
     if period is None or period.status != "open":
         raise HTTPException(status.HTTP_409_CONFLICT, "No tienes un seguimiento abierto")
@@ -896,18 +800,18 @@ def portal_measurements(
     return {"saved": True, "fields": tocados}
 
 
-@router.post("/{token}/close/photos")
+@router.post("/{token}/progress-photos")
 @limiter.limit("20/minute")
-def portal_close_photos(
+def portal_progress_photos(
     request: Request,
- files: Annotated[List[UploadFile], File(description="hasta 4 fotos de cierre")],   kind: str = Query(default="front", pattern="^(front|side|back|detail)$"),
+ files: Annotated[List[UploadFile], File(description="hasta 4 fotos de progreso")],   kind: str = Query(default="front", pattern="^(front|side|back|detail)$"),
     client: Client = Depends(get_client_by_token),
     db: Session = Depends(get_db),
 ) -> list[PhotoOut]:
-    """Fotos del cierre (asociadas al período actual)."""
+    """Fotos de progreso del seguimiento en marcha (van al período abierto)."""
     period = portal_svc.active_period(db, client.id)
     if period is None:
-        raise HTTPException(status.HTTP_409_CONFLICT, "No tienes un período activo")
+        raise HTTPException(status.HTTP_409_CONFLICT, "No tienes un seguimiento activo")
 
     existing = db.scalar(
         select(func.count()).select_from(ProgressPhoto)
@@ -916,7 +820,7 @@ def portal_close_photos(
     if existing + len(files) > 4:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
-            f"Máximo 4 fotos por cierre (ya hay {existing})",
+            f"Máximo 4 fotos de progreso (ya hay {existing})",
         )
 
     created: list[ProgressPhoto] = []
@@ -930,7 +834,7 @@ def portal_close_photos(
         db.add(photo)
         created.append(photo)
     db.flush()
-    log_event(db, "client", client.id, "closing_photos_uploaded", {"count": len(created)})
+    log_event(db, "client", client.id, "progress_photos_uploaded", {"count": len(created)})
     db.commit()
     for p in created:
         db.refresh(p)

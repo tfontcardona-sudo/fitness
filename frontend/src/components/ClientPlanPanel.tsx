@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, Mail, Pencil, Save, X, Flag, Copy, Archive, FileText } from "lucide-react";
+import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, Mail, Pencil, X, Flag, Copy, Archive, FileText } from "lucide-react";
 import { api, getToken } from "../lib/api";
 import { pkg } from "../lib/packages";
 import { CANONICAL_MEALS, mealKeysFromNames } from "../lib/meals";
 import { GOAL_LABEL, goalDays, goalReviewDue, planMonthLabel } from "../lib/format";
 import { deficitLabel, macroPct, MACRO_TOTAL_TOLERANCE } from "../lib/nutritionTargets";
 import { isCriticalLine } from "../lib/clinical";
-import { ExpandableArea, Spinner, useToast } from "./ui";
+import { Spinner, useToast } from "./ui";
 import { MemoDetails } from "./MemoDetails";
 import { ClientPlanEditor } from "./ClientPlanEditor";
 import type { ClientOut, GoalType } from "../types";
@@ -93,9 +93,6 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
   }[]>([]);
   // Todas las versiones (archivo de planificaciones anteriores por objetivo)
   const [allPlans, setAllPlans] = useState<any[]>([]);
-  // Edición de los "Cambios aplicados" tras adaptar: texto/porqué o quitar filas.
-  const [adjDraft, setAdjDraft] = useState<{ area: string; main: string; reason: string; orig: any }[] | null>(null);
-  const [savingAdj, setSavingAdj] = useState(false);
   // Tras EDITAR el plan: recordatorio de descargar el PDF de nuevo (la versión
   // editada ya está guardada; el PDF descargado antes se queda antiguo).
   const [needsDownload, setNeedsDownload] = useState(false);
@@ -116,7 +113,6 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
     setNeedsDownload(false);
     setEditing(false);
     setEditFocus(null);
-    setAdjDraft(null);
     setMissing(null);
     Promise.all([
       api.listPlans(client.id),
@@ -160,32 +156,6 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
     }
   }
 
-  /** Guarda la edición de los cambios aplicados (persisten en portal y PDF,
-   *  que leen applied_adjustments del propio plan). */
-  async function saveAdjustments(appliedBlock: { period_index: number; items: any[] }) {
-    if (!plan || !adjDraft || savingAdj) return;
-    setSavingAdj(true);
-    try {
-      const items = adjDraft.map((d) =>
-        d.orig.detail != null
-          ? { ...d.orig, detail: d.main, reason: d.reason }
-          : { ...d.orig, change: d.main, reason: d.reason },
-      );
-      const nutrition = { ...plan.nutrition, applied_adjustments: { ...appliedBlock, items } };
-      await api.updatePlan(plan.id, { nutrition_json: nutrition });
-      setPlan({ ...plan, nutrition });
-      setAdjDraft(null);
-      // Estos cambios también salen en el PDF ("Novedades de tu plan"):
-      // el descargado antes queda antiguo.
-      setNeedsDownload(true);
-      toast.push("Cambios de la revisión actualizados");
-    } catch {
-      toast.push("No se pudieron guardar los cambios", "error");
-    } finally {
-      setSavingAdj(false);
-    }
-  }
-
   async function generate(meals?: string[]) {
     if (generating) return;
     setGenerating(true);
@@ -201,27 +171,6 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
       const detail = e?.detail ?? e?.data?.detail;
       if (detail?.missing) setMissing(detail.missing);
       else toast.push([detail?.message ?? e?.message ?? "No se pudo generar el plan", detail?.error].filter(Boolean).join(" — "), "error");
-    } finally {
-      setGenerating(false);
-    }
-  }
-
-  async function adapt() {
-    if (generating) return;
-    setGenerating(true);
-    try {
-      const r = await api.adaptPlan(client.id);
-      const plans = await api.listPlans(client.id);
-      setAllPlans(plans);
-      const full = plans.find((pl) => pl.id === r.id) ?? plans[0]; // listPlans → más reciente primero
-      if (full) setPlan(normalize(full));
-      setPeriods(await api.listPeriods(client.id).catch(() => periods));
-      setNeedsDownload(false); // versión nueva activa: el aviso de la edición anterior caduca
-      onClientChanged?.(); // resincroniza sidebar (Dieta) y estados
-      toast.push(`Plan adaptado y ACTIVO (v${r.version}): portal y PDF ya muestran la versión nueva.`);
-    } catch (e: any) {
-      const detail = e?.detail ?? e?.data?.detail;
-      toast.push([detail?.message ?? e?.message ?? "No se pudo adaptar el plan", detail?.error].filter(Boolean).join(" — "), "error");
     } finally {
       setGenerating(false);
     }
@@ -333,7 +282,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
   // ---------- Modo edición ----------
   if (editing) {
     // Peso de referencia para proteína/grasa por kg: el último cierre
-    // quincenal (peso real actual) o, si no hay, el peso inicial.
+    // del seguimiento (peso real actual) o, si no hay, el peso inicial.
     const lastClosing = periods
       .filter((p: any) => p.closing_weight_kg != null)
       .reduce<any>((a, b) => (!a || b.period_index > a.period_index ? b : a), null);
@@ -381,17 +330,6 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
   // mitad de ciclo): el seguimiento activo es el período ABIERTO, sea del plan
   // que sea; el portal ya enseña siempre la última versión publicada.
   const currentPeriod = periods.find((p) => p.status === "open") ?? periods.find((p) => p.plan_id === plan.id);
-
-  // Última revisión quincenal analizada + estado de la adaptación:
-  // - Si este plan aún NO está adaptado a ella → tarjeta de PROPUESTA (cambios
-  //   y porqués, desplegados) con el botón "Adaptar" dentro.
-  // - Si ya está adaptado → tarjeta de CAMBIOS APLICADOS (antes→después).
-  const review = periods
-    .filter((p) => p.status === "analyzed")
-    .reduce<(typeof periods)[number] | null>((a, b) => (!a || b.period_index > a.period_index ? b : a), null);
-  const appliedBlock: { period_index: number; items: { area: string; change: string; reason: string; applied: boolean; detail: string | null }[] } | null =
-    nut.applied_adjustments ?? null;
-  const alreadyAdapted = review != null && appliedBlock?.period_index === review.period_index;
 
   return (
     <div className="space-y-4">
@@ -487,7 +425,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                 const adj = (nut as any)?.applied_adjustments;
                 const manual = ((nut as any)?.manual_changes?.items ?? []).length;
                 const origen = adj?.period_index != null
-                  ? `Adaptada a la revisión quincenal #${adj.period_index}`
+                  ? `Adaptada al informe #${adj.period_index}`
                   : "Generada con IA a partir de su anamnesis";
                 return (
                   <>
@@ -751,116 +689,6 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
         }}
       />
 
-      {/* Cambios PROPUESTOS por la última revisión quincenal: se ven ANTES de
-          adaptar (qué cambia y por qué, dieta y entreno) y el botón va dentro. */}
-      {review?.plan_adjustments?.length && !alreadyAdapted ? (
-        <details open name="plan-secciones" className="card p-5" style={{ borderColor: "color-mix(in srgb, var(--brand-accent) 55%, transparent)" }}>
-          <summary className="cursor-pointer text-sm font-semibold text-zinc-100">
-            Cambios propuestos por la revisión #{review.period_index}
-            <span className="ml-2 text-xs font-normal text-zinc-500">
-              {review.plan_adjustments.length} ajustes · {hasTraining ? "dieta y entrenamiento" : "dieta"}
-            </span>
-          </summary>
-          <div className="mt-3 space-y-2">
-            {review.plan_adjustments.map((a, i) => (
-              <AdjustmentRow key={i} area={a.area} main={a.change} reason={a.reason} />
-            ))}
-          </div>
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t pt-3" style={{ borderColor: "var(--line)" }}>
-            <p className="text-xs text-zinc-500">
-              Al adaptar, la versión nueva queda <b className="text-zinc-300">ACTIVA al momento</b> (portal y
-              PDF actualizados), con calorías, macros, comidas y gramos reescalados en bloque.
-              Puedes editarla después y enviarla por email.
-            </p>
-            <button onClick={adapt} disabled={generating} className="btn btn-primary">
-              {generating ? "Adaptando…" : `Adaptar a la revisión #${review.period_index}`}
-            </button>
-          </div>
-        </details>
-      ) : null}
-
-      {/* Cambios APLICADOS en esta versión (tras adaptar): antes→después + porqué.
-          Queda visible también una vez publicado, como registro de la versión, y
-          es EDITABLE por si el coach quiere matizar el texto o quitar un ajuste. */}
-      {appliedBlock?.items?.length ? (
-        <details open={plan.status !== "published"} name="plan-secciones" className="card p-5">
-          <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 text-sm font-semibold text-zinc-100">
-            <span>
-              Cambios aplicados en esta versión
-              <span className="ml-2 text-xs font-normal text-zinc-500">revisión #{appliedBlock.period_index}</span>
-            </span>
-            {adjDraft === null && (
-              <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  setAdjDraft(appliedBlock.items.map((it) => ({ area: it.area, main: it.detail ?? it.change, reason: it.reason, orig: it })));
-                }}
-                className="flex items-center gap-1 text-xs font-normal text-zinc-400 hover:text-zinc-200"
-              >
-                <Pencil size={13} /> Editar cambios
-              </button>
-            )}
-          </summary>
-
-          {adjDraft === null ? (
-            <div className="mt-3 space-y-2">
-              {appliedBlock.items.map((it, i) => (
-                <AdjustmentRow
-                  key={i}
-                  area={it.area}
-                  main={it.detail ?? it.change}
-                  secondary={it.detail ? it.change : undefined}
-                  reason={it.reason}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="mt-3 space-y-2">
-              {adjDraft.map((d, i) => (
-                <div key={i} className="space-y-1.5 rounded-lg p-3" style={{ background: "var(--surface-raised)" }}>
-                  <div className="flex items-center justify-between gap-2">
-                    <AreaChip area={d.area} />
-                    <button
-                      onClick={() => setAdjDraft(adjDraft.filter((_, j) => j !== i))}
-                      aria-label="Quitar este cambio"
-                      className="p-1 text-zinc-500 hover:text-zinc-200"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                  <input
-                    value={d.main}
-                    onChange={(e) => setAdjDraft(adjDraft.map((x, j) => (j === i ? { ...x, main: e.target.value } : x)))}
-                    className="input w-full text-sm"
-                    placeholder="Cambio"
-                    aria-label="Cambio"
-                  />
-                  <ExpandableArea
-                    label="Por qué"
-                    value={d.reason}
-                    onChange={(v) => setAdjDraft(adjDraft.map((x, j) => (j === i ? { ...x, reason: v } : x)))}
-                  />
-                </div>
-              ))}
-              <div className="flex justify-end gap-2 pt-1">
-                <button onClick={() => setAdjDraft(null)} className="btn btn-ghost">
-                  <X size={14} /> Cancelar
-                </button>
-                <button onClick={() => saveAdjustments(appliedBlock)} disabled={savingAdj} className="btn btn-primary">
-                  <Save size={14} /> {savingAdj ? "Guardando…" : "Guardar cambios"}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {plan.status !== "published" && adjDraft === null && (
-            <p className="mt-3 border-t pt-3 text-xs text-zinc-500" style={{ borderColor: "var(--line)" }}>
-              Este borrador es de una versión antigua: revísalo y pulsa <b className="text-zinc-300">Activar</b>
-              para que el portal y el PDF lo muestren.
-            </p>
-          )}
-        </details>
-      ) : null}
 
       {/* Nutrición (los planes Train no la incluyen: sin tarjeta de ceros) */}
       {hasNutrition && (

@@ -75,10 +75,7 @@ def pay_plan_link(request: Request, tier: str, period: str,
     t = pkgs.LEGACY_TIERS.get(tier.strip().lower(), tier.strip().lower())
     # Estricto A PROPÓSITO (sin caer al plan por defecto): un enlace mal escrito
     # no puede acabar cobrando el plan más caro. Ante cualquier duda → /planes.
-    # "oferta" (1 € el primer mes → suscripción) solo existe para el plan Full.
-    valido = (t in pkgs.TIERS and period in ("1m", "3m", "6m")) or \
-             (t == "full" and period == "oferta")
-    if not valido:
+    if not (t in pkgs.TIERS and period in ("1m", "3m", "6m")):
         return RedirectResponse(f"{base}/planes", status_code=302)
 
     # Los bots de vista previa (WhatsApp/Facebook/Slack/Discord/Twitter…) y los
@@ -95,12 +92,8 @@ def pay_plan_link(request: Request, tier: str, period: str,
     if es_bot or request.method == "HEAD":
         from fastapi.responses import HTMLResponse
 
-        if period == "oferta":
-            title = f"{pkgs.label(t)} — primer mes 1 €"
-            desc = "Oferta: tu primer mes del plan completo por 1 €. Pago seguro con Stripe."
-        else:
-            title = f"{pkgs.label(t)} — pago seguro"
-            desc = "Asesoría 100 % personalizada. Pago seguro con Stripe."
+        title = f"{pkgs.label(t)} — pago seguro"
+        desc = "Asesoría 100 % personalizada. Pago seguro con Stripe."
         return HTMLResponse(
             "<!doctype html><html><head><meta charset='utf-8'>"
             f"<title>{title}</title>"
@@ -131,16 +124,6 @@ def pay_link(client: Client = Depends(get_client_by_token), db: Session = Depend
     # gracias en vez de a un checkout nuevo.
     if client.payment_status == "paid":
         return RedirectResponse(f"{base}/pago-ok", status_code=302)
-    # OFERTA con suscripción YA creada: reabrir el enlace tras un impago no
-    # puede montar una SEGUNDA suscripción (doble cobro mensual y otro primer
-    # mes a 1 €). Si su suscripción tiene una factura abierta, se le manda ahí
-    # (paga lo pendiente y actualiza la tarjeta); si no la hay, la suscripción
-    # está al día y no toca cobrar nada.
-    if client.billing_period == "oferta" and client.stripe_subscription_id:
-        from app.services.stripe_service import open_invoice_url
-
-        pendiente = open_invoice_url(client)
-        return RedirectResponse(pendiente or f"{base}/pago-ok", status_code=302)
     try:
         url = create_checkout_url(db, client.package_tier, client.billing_period,
                                   client=client)

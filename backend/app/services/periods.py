@@ -35,11 +35,6 @@ def ensure_open_period(db: Session, client_id: int, *, commit: bool = False) -> 
     client = db.get(Client, client_id)
     if client is None or client.status in ("onboarding", "inactive"):
         return None
-    # Con la revisión entregada y el feedback PENDIENTE no arranca ciclo nuevo:
-    # el siguiente período empieza cuando el coach responde (feedback enviado).
-    if client.status == "review_pending":
-        return None
-
     plan = db.scalar(
         select(Plan).where(Plan.client_id == client_id, Plan.status == "published")
         .order_by(Plan.month_index.desc(), Plan.version.desc()).limit(1)

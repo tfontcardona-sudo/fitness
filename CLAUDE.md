@@ -20,7 +20,7 @@ Software **single-tenant** para un coach de fitness/nutrición (David Quiceno,
 marca "DQ"). Automatiza el ciclo de asesoría: el cliente rellena una anamnesis
 (PDF), la IA la lee y extrae los datos, el coach genera un **plan mensual** de
 dieta + entrenamiento con IA, lo revisa, lo publica (el cliente lo ve en su
-portal) y el cliente registra su seguimiento diario hasta el cierre quincenal.
+portal) y el cliente registra su seguimiento diario en el portal.
 
 - **Backend:** FastAPI + PostgreSQL + SQLAlchemy + Alembic + APScheduler.
 - **Frontend:** React + TypeScript + Vite + Tailwind.
@@ -51,9 +51,9 @@ portal) y el cliente registra su seguimiento diario hasta el cierre quincenal.
 >   `services/portion_solver.py`): la IA selecciona alimentos; el backend fija los
 >   gramos con `solve_portions` (scipy). `filter_foods` quita alérgenos/patrón ANTES
 >   del prompt. Requiere `numpy`/`scipy` (en requirements).
-> - **Motor quincenal determinista** (`services/biweekly_engine.decide_biweekly`):
->   reglas fijas para la revisión (no criterio del modelo); pendiente de enchufar al
->   cierre de período real.
+> - **Motor de decisión determinista** (`services/biweekly_engine.decide_biweekly`):
+>   reglas fijas para el ajuste de kcal del informe (no criterio del modelo). Se
+>   conserva y alimenta el informe; el nombre del módulo es histórico.
 > - **Golden set** (`app/golden_set.py`, `tests/test_golden_set.py`): gate de CI de la
 >   capa determinista; rangos `POR_VALIDAR`.
 > - **Panel de supervisión + ICP + semáforo** (`services/review_panel.py`,
@@ -167,16 +167,16 @@ services/
     feedback.py    generate_feedback_analysis(): la IA redacta SOLO la parte
                    cualitativa del feedback (análisis, cambios, objetivos).
     prompts.py     Prompts del sistema/usuario.
-  feedback_service.py  build_period_feedback(): orquesta el feedback de un período
-                   cerrado (métricas + IA + documento Word + persistencia).
+  feedback_service.py  build_period_feedback(): orquesta el informe del período
+                   ABIERTO (métricas + IA + documento Word + persistencia).
   metrics.py       TODO el cálculo numérico: bmr, tdee, energy_targets,
                    protein_target_g, e1RM, tendencia de peso, adherencia…
   guardrails.py    Filtrado determinista de ejercicios + validación del plan.
   storage.py       Ficheros en disco: {STORAGE_PATH}/clients/{id}/{photos|documents|uploads}
                    y /brand/. save_document(), list_documents(), save_photo()…
-  docs/            Generación de documentos Word (python-docx) con marca DQ.
+  docs/            Generación de documentos Word (python-docx) con la marca.
   state_machine.py Estados del cliente/periodo.
-  scheduler.py     APScheduler (recordatorios, cierres automáticos…).
+  scheduler.py     APScheduler (recordatorios push cada 4 h, job diario…).
   swap.py          Lógica de equivalencias / intercambio de ejercicios.
   portal.py        Tokens del portal del cliente.
   audit.py         log_event(): registro de auditoría (diffs, acciones).
@@ -184,12 +184,12 @@ services/
 
 **Tablas (models.py):** `User`, `Client`, `Plan`, `Period`, `DailyLog`,
 `WorkoutLog`, `Exercise`, `ProgressPhoto`, `FeedbackDoc`, `BrandConfig`,
-`PlanTemplate` (pool), `RecommendedProduct` (tienda).
+`PlanTemplate` (pool).
 
 ### ⚠️ El flujo de PROFESSIONAL (esta instancia) — léelo antes de tocar el ciclo
 
-El motor conserva TODO (ciclo quincenal incluido), pero esta marca trabaja así
-(`branding.FEATURE_BIWEEKLY = False`):
+El ciclo quincenal, las videollamadas, la tienda y el canal de WhatsApp se
+BORRARON del código (no están detrás de un flag: no existen). El flujo real es:
 
 ```
 anamnesis (formulario web corto, /anamnesis/{token})
@@ -199,10 +199,13 @@ anamnesis (formulario web corto, /anamnesis/{token})
   → el INFORME se pone al día con esos datos y el coach lo ENVÍA cuando quiere
 ```
 
-- **No hay quincena**: `FOLLOWUP_DAYS` (365) hace que el período no venza,
-  `period_info.can_close` es siempre False y el portal cambia la pestaña
-  "Quincenal" por **Evolución** (`POST /api/p/{token}/measurements`, guarda peso
-  y perímetros en el período abierto sin cerrarlo).
+- **No hay quincena ni cierre**: `FOLLOWUP_DAYS` (365) hace que el período no
+  venza; `period_info` ya no expone `can_close` y el portal tiene la pestaña
+  **Evolución** (`POST /api/p/{token}/measurements`, guarda peso y perímetros en
+  el período abierto sin cerrarlo). Los endpoints `/close`, `/close/photos` y
+  `/photos-confirmed` se fueron; queda `POST /api/p/{token}/progress-photos`
+  (fotos sobre el período en marcha). Estados muertos `review_pending` y
+  `awaiting_feedback` eliminados (mig. 0040).
 - **Informe continuo**: `build_period_feedback` acepta el período ABIERTO
   (mínimo 5 días registrados), NO lo cierra y guarda `logs_at_generation` para
   saber si se ha quedado viejo. Regenerar cuando el anterior ya se envió crea un
@@ -211,17 +214,21 @@ anamnesis (formulario web corto, /anamnesis/{token})
   `POST /api/clients/{id}/feedback/refresh`.
 - **Alertas del flujo**: generar informe (≥7 días registrados) → ponerlo al día
   (≥7 días nuevos) → enviarlo. Las de la revisión quincenal (`period_overdue`,
-  `adapt_plan` anclada al período analizado) quedan fuera con el flag apagado.
-- **Constancia**: sin quincena, `jobs._facts_for` mide la adherencia en una
-  VENTANA MÓVIL de 14 días (si no, un seguimiento de meses diluye el ratio).
-- **Tienda** (`FEATURE_RESOURCES=True`): productos propios del centro en el
-  portal (pestaña Tienda) y en la página de enlaces; catálogo de arranque en
-  `seeds/products_data.py`, editable desde la web.
+  `adapt_plan`) ya no existen.
+- **Constancia**: `jobs._facts_for` mide la adherencia en una VENTANA MÓVIL de
+  14 días (si no, un seguimiento de meses diluye el ratio). `at_risk` entra por
+  baja constancia a día 10 de esa ventana y sale sola al recuperarla.
+- **Entrega SIEMPRE por email**: plan, informe, acceso al portal y arranque
+  (pago + anamnesis). `PackageInfo` ya no tiene `delivery` ni `directContact`.
+  El único WhatsApp que queda es el TELÉFONO PÚBLICO del centro en `/planes`
+  (contacto comercial, no un canal de entrega).
 - **Catálogo**: tres servicios de PAGO ÚNICO — Dieta 70 €, Entrenamiento 70 €,
   Pack completo 130 € (`branding.TIER_LABELS`, `stripe_service.CANONICAL_AMOUNTS`).
-- Los tests que prueban el ciclo de 14 días lo re-encienden con la fixture
-  `ciclo_quincenal`; el flujo continuo tiene los suyos en
-  `tests/test_seguimiento_continuo.py`.
+  Sin suscripciones ni oferta de captación (mig. 0041).
+- **Recordatorios push cada 4 h** (`scheduler.PUSH_EVERY_HOURS`), dentro del
+  horario activo 08–22: en la práctica 08/12/16/20 y solo a quien tenga algo
+  pendiente (diario o entreno de hoy).
+- Tests del flujo continuo en `tests/test_seguimiento_continuo.py`.
 
 ### Frontend (`frontend/src/`)
 
@@ -514,55 +521,10 @@ cd backend && python -m pytest tests/ -q
    sus archivos — `pytest` ya no ensucia el panel de desarrollo.
 6. ~~Subir el PDF de ejemplo de planificación~~ **CANCELADO por el dueño**
    (agosto 2026): se mantiene el diseño actual de las planificaciones.
-7. ✅ **Videollamadas Pro con Google Calendar / Meet** (guía: `GOOGLE.md`).
-   Flujo: el coach conecta su Google UNA vez en **Recursos → Página de enlaces**
-   (OAuth). Al **enviar la revisión quincenal**, al cliente Pro le aparece en su
-   **portal** un formulario para **PROPONER día y hora**. El coach lo ve en su
-   **agenda del Panel** y en la pestaña **Feedback**: puede **ACEPTAR** (crea el
-   evento en Google Calendar con **Meet**, invita al cliente por email y le manda
-   el enlace) o **MODIFICAR** (abre WhatsApp para acordar otra hora → queda
-   *pendiente de agendar a mano* → el coach escribe el día/hora → mismo resultado).
-   Estados de `VideoCall`: `proposed → accept|modify → scheduled|pending_manual →
-   done`. Recordatorios multicapa (coach y cliente): invitación nativa de Google +
-   email de la app (`video_call_scheduled`) + push del portal + **recordatorio el
-   día antes y 1 h antes** (`push.run_video_call_reminders`, job cada 15 min) +
-   email día antes (`video_call_reminder`, job diario) + tarjeta **"Unirme"** en
-   el portal. Reprogramar/cancelar sincroniza el evento en Google.
-   - Backend: `services/google_calendar.py` (OAuth + Calendar/Meet vía `httpx`,
-     sin librerías pesadas de Google), `routers/google_oauth.py`
-     (`/api/google/status|oauth/start|oauth/callback|disconnect`). Coach:
-     `POST /clients/{id}/video-calls/{call_id}/accept|modify`,
-     `.../schedule-meet` (a mano), `GET /api/video-calls/agenda` (agenda del
-     Panel). Portal (público): `GET|POST /api/p/{token}/video-call` (estado +
-     proponer). Modelo `GoogleCredential` (fila única con `refresh_token`) +
-     columnas en `video_calls` (`scheduled_at`, `duration_min`, `meet_url`,
-     `google_event_id`, `google_html_link`); migraciones `0026` (columnas) y
-     `0027` (status a VARCHAR(20)). Config: `GOOGLE_CLIENT_ID/SECRET`,
-     `GOOGLE_CALENDAR_ID` (gate `settings.google_enabled`, como Stripe).
-   - Frontend: "Conectar con Google" en `RecursosPage`; en el portal
-     (`PortalApp` → `VideoCallBanner`) el cliente propone/ve estado/"Unirme";
-     en `ClientFeedbackTab` (`VideoCallCycle`) el coach acepta/modifica/agenda a
-     mano; agenda de videollamadas en `DashboardPage`.
-   - Sin claves de Google en el `.env`, la integración queda desactivada (aceptar
-     pide conectar Google). Tests: `test_google_calendar.py` (servicio) +
-     `test_video_calls.py` (propuesta/aceptar/modificar/agendar, `gcal` mockeado).
-   - **Mejoras del ciclo (pulido):**
-     · **Reprogramar desde el portal del cliente:** una videollamada YA agendada
-       puede reprogramarla el propio cliente si no le va bien la hora
-       (`POST /api/p/{token}/video-call/reschedule`, botón "¿No te va bien?
-       Reprogramar" en `VideoCallBanner` estado *scheduled*). Cancela el evento en
-       Google, vuelve a `proposed` con la nueva fecha, limpia los campos de Meet y
-       avisa al coach por push (`notify_coach_video_call_rescheduled`) para que la
-       vuelva a confirmar.
-     · **Confirmación clara del coach en el portal:** la tarjeta *scheduled* dice
-       explícitamente "Tu coach ha confirmado tu videollamada" con la fecha/hora y
-       el enlace de Meet pegado; el push al cliente lo confirma igual
-       (`notify_video_call_scheduled`).
-     · **Aviso al cliente para que proponga su videollamada** si no lo hace: si es
-       Pro y su última revisión está cerrada sin propuesta, entra en los
-       recordatorios push cada 3 h (`push.videocall_pending` → `pending_for_client`
-       → `build_reminder_payload`: "agendar tu videollamada de revisión") hasta que
-       la agende.
+7. ❌ **Videollamadas Pro con Google Calendar / Meet — RETIRADAS** (agosto
+   2026). Esta marca no las usa: se borró todo (servicio de Google Calendar,
+   OAuth, modelo `GoogleCredential`, tabla `video_calls`, banner del portal,
+   agenda del panel, recordatorios y `GOOGLE.md`). Ver el punto 9 del recorte.
 8. ✅ **Auditoría integral a fondo (julio 2026)** — 6 auditorías por dominio
    (pipeline IA, coherencia nutricional, ciclo quincenal, portal, panel del
    coach, infraestructura) con TODOS los hallazgos confirmados corregidos:
@@ -731,6 +693,39 @@ cd backend && python -m pytest tests/ -q
        revert, confound, déficit real, strict align).
    - **Pendiente menor restante** (sin urgencia): editar el banco de comidas
      opción a opción desde el editor y el `swap` de ejercicios desde la web.
+
+9. ✅ **RECORTE del producto para Professional (agosto 2026)** — el dueño pidió
+   quitar "todo lo que sobra". Se BORRÓ del código (no queda detrás de ningún
+   flag; los `FEATURE_*` de marca desaparecen porque ya no hay nada que apagar):
+   - **Videollamadas + Google Meet**: servicio de Calendar, OAuth, endpoints,
+     modelo `GoogleCredential`, tabla `video_calls`, banner del portal, agenda
+     del panel, recordatorios y `GOOGLE.md`.
+   - **Tienda de productos**: `routers/resources.py`, `seeds/products_data.py`,
+     `services/product_match.py`, modelo `RecommendedProduct`, pestaña Tienda del
+     portal y la rejilla de productos/código de descuento de la página de
+     enlaces. `RecursosPage` → `EnlacesPage` (enlace de Instagram + 2 fotos).
+   - **Vídeos de ejercicios**: subida, portada, reproductor (`InlineVideo`) y el
+     botón de la rutina. El endurecimiento de imagen que vivía en
+     `save_resource_image` (tope 25 MP + recodificado sin metadatos) pasó a
+     `_save_public_image`, que es el camino que sobrevive.
+   - **WhatsApp**: ronda diaria asistida (router, `whatsapp_round.py`,
+     `whatsapp_pool.py` con sus 100 briefs, modelos y el bloque del panel "Hoy")
+     y WhatsApp como CANAL DE ENTREGA (plan, informe, acceso al portal,
+     arranque). Todo va por email. SE QUEDA el teléfono público del centro en
+     `/planes` (contacto comercial).
+   - **Ciclo quincenal residual**: `PortalClose`, `/close`, `/close/photos`,
+     `/photos-confirmed`, `can_close`, el pendiente `quincenal` del push, el
+     recordatorio `closing_due`, las alertas `period_overdue` y `adapt_plan`, el
+     servicio `adapt_plan.py` con su endpoint y su UI, el bloque "Revisiones
+     quincenales" de Seguimiento, la comparativa entre revisiones del Historial
+     y los estados muertos `review_pending`/`awaiting_feedback`. Se CONSERVA
+     `biweekly_engine.py` (la decisión determinista de kcal alimenta el informe).
+   - **Oferta de 1 €**: precio recurrente, cupón, checkout en modo suscripción,
+     webhooks de facturas/suscripciones, `stripe_subscription_id` y el botón del
+     alta. Los tres servicios son de PAGO ÚNICO.
+   - **Migraciones**: 0039 (tablas de WhatsApp), 0040 (`review_pending`), 0041
+     (oferta + `stripe_subscription_id`), 0042 (tablas de vídeos/Google/tienda).
+   - Recordatorios push cada **4 h** (antes 3 h). Suite en verde y build limpio.
 
 ---
 

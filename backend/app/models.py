@@ -73,10 +73,6 @@ class Client(Base):
     billing_period: Mapped[str] = mapped_column(
         String(12), default="1m", server_default=text("'1m'"), nullable=False
     )
-    # Suscripción de Stripe de la OFERTA (sub_…), grabada por el webhook al
-    # pagar. Con ella el enlace de pago NO crea una segunda suscripción tras un
-    # impago (manda a la factura abierta) y las cancelaciones se mapean solas.
-    stripe_subscription_id: Mapped[str | None] = mapped_column(String(64))
 
     # Anamnesis — nullable hasta que el cliente la complete vía link público
     sex: Mapped[str | None] = mapped_column(String(10))  # male|female

@@ -623,20 +623,14 @@ def edit_feedback(doc_id: int, body: FeedbackEditIn, db: Session = Depends(get_d
 
 
 def _advance_cycle_after_feedback(db: Session, fb: FeedbackDoc) -> Client | None:
-    """Marca el feedback como enviado y avanza el ciclo de la asesoría
-    (review_pending → active + abre el siguiente período). NO envía email ni
-    hace commit: eso lo decide cada endpoint."""
+    """Marca el feedback como enviado. NO envía email ni hace commit: eso lo
+    decide cada endpoint. El seguimiento es continuo: el mismo período sigue
+    abierto y el cliente sigue registrando encima."""
     from datetime import datetime, timezone
 
     fb.sent_at = datetime.now(timezone.utc)
     period = db.get(Period, fb.period_id)
     client = db.get(Client, period.client_id) if period else None
-    if client and client.status == "review_pending":
-        client.status = "active"  # cerrado el feedback, arranca el siguiente ciclo
-        # El nuevo período de 14 días empieza HOY (día del envío), no cuando
-        # alguien vuelva a abrir el portal: el ciclo queda determinista.
-        from app.services.periods import ensure_open_period
-        ensure_open_period(db, client.id)
     if client:
         log_event(db, "client", client.id, "feedback_sent", {"feedback_id": fb.id})
     return client
@@ -648,9 +642,8 @@ def _first_name_of(client: Client) -> str:
 
 @router.post("/api/feedback/{doc_id}/send")
 def send_feedback(doc_id: int, db: Session = Depends(get_db)) -> dict:
-    """Envía el feedback al cliente: lo hace visible en su portal (Progreso),
-    avanza el ciclo (review_pending → active, cierra la notificación) y le avisa
-    por email. Hasta este punto el feedback es un borrador que solo ve el coach."""
+    """Envía el informe al cliente: lo hace visible en su portal (Progreso) y le
+    avisa por email. Hasta este punto es un borrador que solo ve el coach."""
     fb = db.get(FeedbackDoc, doc_id)
     if not fb:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Feedback no encontrado")

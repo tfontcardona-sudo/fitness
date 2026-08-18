@@ -33,9 +33,8 @@ def _hoy_negocio():
 def _dias_de_seguimiento(period) -> int:
     """Días que LLEVA el seguimiento (no la duración nominal del período).
 
-    Con ciclo quincenal son los 14 del período. En seguimiento continuo el
-    período no vence (dura un año), así que contar su longitud daría "14 de 365
-    días" en la adherencia: lo que vale es lo transcurrido hasta hoy."""
+    El período no vence (dura un año), así que contar su longitud daría "14 de
+    365 días" en la adherencia: lo que vale es lo transcurrido hasta hoy."""
     fin = min(period.ends_on, _hoy_negocio())
     return max(1, (fin - period.starts_on).days + 1)
 
@@ -331,12 +330,10 @@ MIN_LOGS_CONTINUO = 5
 def build_period_feedback(db: Session, period_id: int, ai=None) -> FeedbackDoc:
     """Genera y persiste el informe (borrador) del cliente.
 
-    Con ciclo quincenal: a partir del período CERRADO por el cliente.
-    Sin él (Professional): el seguimiento es CONTINUO y el informe se puede
-    (re)generar en cualquier momento con lo que el cliente lleve registrado —
-    el período sigue abierto y el cliente sigue registrando.
+    El seguimiento es CONTINUO: el informe se puede (re)generar en cualquier
+    momento con lo que el cliente lleve registrado — el período sigue abierto y
+    el cliente sigue registrando.
     """
-    from app import branding
     from app.services.ai.client import AIClient, AIGenerationError
     from app.services.ai.feedback import generate_feedback_analysis
 
@@ -344,10 +341,7 @@ def build_period_feedback(db: Session, period_id: int, ai=None) -> FeedbackDoc:
     period = db.get(Period, period_id)
     if not period:
         raise FeedbackError("Período no encontrado")
-    continuo = not branding.FEATURE_BIWEEKLY
-    if period.status == "open" and not continuo:
-        raise FeedbackError("El período aún no está cerrado por el cliente")
-    if period.status == "open" and continuo:
+    if period.status == "open":
         registrados = db.scalar(
             select(func.count()).select_from(DailyLog)
             .where(DailyLog.period_id == period.id)
@@ -416,32 +410,28 @@ def build_period_feedback(db: Session, period_id: int, ai=None) -> FeedbackDoc:
                "weight_points": inputs["weight_points"],
                "biweekly_decision": biweekly,
                "goal_weight_kg": client.goal_weight_kg,
-               # Foto del momento en que se generó: con seguimiento continuo es
-               # lo que permite avisar de que el informe se ha quedado viejo.
+               # Foto del momento en que se generó: es lo que permite avisar
+               # de que el informe se ha quedado viejo.
                "logs_at_generation": len(logs_q),
                "generated_on": _hoy_negocio().isoformat()}
     # Regenerar NO duplica: si el período ya tiene feedback, se reemplaza su
     # contenido (mismo doc, mismo id) en vez de apilar un segundo documento.
     fb = db.scalar(select(FeedbackDoc).where(FeedbackDoc.period_id == period.id)
                    .order_by(FeedbackDoc.id.desc()).limit(1))
-    if fb is not None and not (continuo and fb.sent_at is not None):
+    if fb is not None and fb.sent_at is None:
         fb.content_json = content
         fb.docx_path = docx_rel
-        # NO se fuerza a borrador: si el cliente YA había recibido este feedback,
-        # se conserva enviado (con el texto actualizado) para no ocultárselo al
-        # regenerar. Si seguía en borrador (sent_at None), continúa en borrador.
+        # Sigue en borrador: se pone al día encima hasta que el coach lo envíe.
     else:
-        # Seguimiento continuo: si el informe anterior YA se envió, el nuevo es
-        # OTRO informe (borrador). Nunca se reescribe por debajo lo que el
-        # cliente ya tiene en su portal.
+        # Si el informe anterior YA se envió, el nuevo es OTRO informe
+        # (borrador). Nunca se reescribe por debajo lo que el cliente ya tiene
+        # en su portal.
         fb = FeedbackDoc(period_id=period.id,
-                         kind="continuous" if continuo else "biweekly",
+                         kind="continuous",
                          content_json=content, docx_path=docx_rel)
         db.add(fb)
-    # En seguimiento CONTINUO el período NO se cierra: el cliente sigue
-    # registrando y el informe se refresca encima cuando haga falta.
-    if not continuo:
-        period.status = "analyzed"
+    # El período NO se cierra: el cliente sigue registrando y el informe se
+    # refresca encima cuando haga falta.
     period.metrics_json = inputs["metrics_json"]
     period.ai_analysis_json = {**ai_out.model_dump(), "biweekly_decision": biweekly}
     period.ai_photo_analysis = ai_out.ai_photo_analysis

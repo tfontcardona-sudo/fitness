@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { Sparkles, AlertTriangle, MessageSquare, Mail, Target, TrendingUp, BarChart3, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
+import { Sparkles, MessageSquare, Mail, Target, TrendingUp, BarChart3, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
 import { api, getToken } from "../lib/api";
 import { feedbackBody } from "../lib/feedbackText";
 import { pkg } from "../lib/packages";
-import { FEATURE_BIWEEKLY } from "../lib/branding";
 import { ExpandableArea, Spinner, useToast } from "./ui";
 import type { ClientOut } from "../types";
 
@@ -37,13 +36,12 @@ function nuevosDesdeInforme(p: Period): number {
 /**
  * Feedback — el informe del cliente.
  *
- * · Con ciclo quincenal: el cliente cierra su revisión y aquí se genera.
- * · Sin él (seguimiento CONTINUO, que es como trabaja Professional): el informe
- *   se pone al día con lo que el cliente lleva registrado, en cualquier momento,
- *   y el coach lo envía cuando lo ve listo. El análisis lo redacta la IA sobre
- *   las métricas que calcula el backend (la IA nunca calcula).
+ * El seguimiento es CONTINUO: el informe se pone al día con lo que el cliente
+ * lleva registrado, en cualquier momento, y el coach lo envía cuando lo ve
+ * listo. El análisis lo redacta la IA sobre las métricas que calcula el backend
+ * (la IA nunca calcula).
  */
-export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { client: ClientOut; onClientChanged?: () => void; onGoPlan?: () => void }) {
+export function ClientFeedbackTab({ client, onClientChanged }: { client: ClientOut; onClientChanged?: () => void }) {
   const toast = useToast();
   const [periods, setPeriods] = useState<Period[] | null>(null);
   const [contents, setContents] = useState<Record<number, any>>({});
@@ -69,14 +67,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
     }
   }
 
-  // Revisión a la que ya está adaptado el último plan (para ocultar el banner
-  // "Revisar cambios…" una vez adaptada: el trabajo ya está hecho).
-  const [adaptedIdx, setAdaptedIdx] = useState<number | null>(null);
-
   const load = useCallback(() => {
-    api.listPlans(client.id)
-      .then((plans) => setAdaptedIdx(plans[0]?.nutrition_json?.applied_adjustments?.period_index ?? null))
-      .catch(() => {});
     api.listPeriods(client.id)
       .then(async (ps) => {
         setPeriods(ps);
@@ -180,64 +171,34 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
       <div className="card p-6">
         <h3 className="text-base font-semibold text-zinc-100">Feedback</h3>
         <p className="mt-1 text-sm text-zinc-400">
-          {FEATURE_BIWEEKLY
-            ? "Aún no hay períodos. El ciclo es automático: al generar la planificación se abre el período de 14 días; el cliente registra su diario, lo cierra, y aquí generas su feedback."
-            : "Aún no hay seguimiento. Al publicar su planificación se abre solo: el cliente registra su día a día en el portal y aquí tendrás su informe, que pones al día cuando quieras y le envías cuando lo veas listo."}
+          Aún no hay seguimiento. Al publicar su planificación se abre solo: el
+          cliente registra su día a día en el portal y aquí tendrás su informe,
+          que pones al día cuando quieras y le envías cuando lo veas listo.
         </p>
-        {!FEATURE_BIWEEKLY && (
-          <button className="btn btn-ghost mt-3" disabled={generating != null}
-            onClick={refreshInforme}
-            title="Abre el seguimiento y analiza lo que el cliente lleve registrado">
-            <Sparkles size={15} /> {generating != null ? "Generando…" : "Generar informe ahora"}
-          </button>
-        )}
+        <button className="btn btn-ghost mt-3" disabled={generating != null}
+          onClick={refreshInforme}
+          title="Abre el seguimiento y analiza lo que el cliente lleve registrado">
+          <Sparkles size={15} /> {generating != null ? "Generando…" : "Generar informe ahora"}
+        </button>
       </div>
     );
   }
 
-  const latestReview = periods
-    .filter((p) => p.status === "analyzed")
-    .reduce<Period | null>((a, b) => (!a || b.period_index > a.period_index ? b : a), null);
-  // El banner desaparece en cuanto la planificación YA está adaptada a esa revisión
-  const needsAdapt = latestReview != null && adaptedIdx !== latestReview.period_index;
   const maxIdx = periods.reduce((mx, p) => Math.max(mx, p.period_index), 0);
 
   return (
     <div className="space-y-4">
-      {latestReview && needsAdapt && (
-        <div
-          className="card flex flex-wrap items-center justify-between gap-2 p-3.5"
-          style={{ borderColor: "var(--brand-accent)", borderWidth: 1 }}
-        >
-          <span className="flex items-center gap-2 text-sm text-zinc-200">
-            <span
-              className="flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold text-white"
-              style={{ background: "var(--brand-accent)" }}
-            >
-              !
-            </span>
-            Revisión quincenal #{latestReview.period_index} lista — {latestReview.ends_on}
-          </span>
-          {/* Lleva a Planificación: allí se ven los cambios propuestos y su
-              porqué ANTES de adaptar (ya no se adapta a ciegas desde aquí). */}
-          <button onClick={() => onGoPlan?.()} className="btn btn-primary">
-            <Sparkles size={14} /> Revisar cambios y adaptar la planificación
-          </button>
-        </div>
-      )}
       {[...periods].sort((a, b) => b.period_index - a.period_index).map((p) => {
         const fb = p.feedback_id ? contents[p.feedback_id] : null;
         const content = fb?.content;
         const sent: string | null = fb?.sent_at ?? null;
-        // Con ciclo quincenal hace falta que el cliente cierre; sin él, basta
-        // con que lleve datos suficientes (el backend exige un mínimo).
+        // Basta con que el cliente lleve datos suficientes (el backend exige
+        // un mínimo de 5 días registrados).
         const registrados = p.days_logged ?? 0;
-        const canGenerate = FEATURE_BIWEEKLY ? p.status !== "open" : registrados >= 5;
+        const canGenerate = registrados >= 5;
         const nuevos = nuevosDesdeInforme(p);
-        const daysElapsed = Math.floor((Date.now() - new Date(p.starts_on + "T00:00:00").getTime()) / 86400000) + 1;
-        // Con quincena, el resumen sale a los 14 días; en seguimiento continuo,
-        // en cuanto hay datos que resumir.
-        const ready = p.status !== "open" || (FEATURE_BIWEEKLY ? daysElapsed >= 14 : registrados >= 1);
+        // El resumen sale en cuanto hay datos que resumir.
+        const ready = p.status !== "open" || registrados >= 1;
         const m = metrics[p.id];
         const isCurrent = p.period_index === maxIdx;
         return (
@@ -256,7 +217,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-base font-semibold text-zinc-100">
-                    {FEATURE_BIWEEKLY ? `Período ${p.period_index}` : "Seguimiento"}
+                    Seguimiento
                   </h3>
                   <span className="rounded-full px-2 py-0.5 text-xs font-medium" style={badge(p.status)}>
                     {STATUS_LABEL[p.status] ?? p.status}
@@ -268,7 +229,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                   )}
                 </div>
                 <p className="mt-0.5 text-xs text-zinc-500">
-                  {FEATURE_BIWEEKLY ? `${p.starts_on} → ${p.ends_on}` : `desde el ${p.starts_on}`}
+                  desde el {p.starts_on}
                 </p>
               </div>
               <div className="flex gap-2" onClick={(e) => e.preventDefault()}>
@@ -280,13 +241,13 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                 {canGenerate && !p.feedback_id && (
                   <button onClick={() => generate(p.id)} disabled={generating === p.id} className="btn btn-primary">
                     <Sparkles size={15} />
-                    {generating === p.id ? "Generando…" : FEATURE_BIWEEKLY ? "Generar feedback" : "Generar informe"}
+                    {generating === p.id ? "Generando…" : "Generar informe"}
                   </button>
                 )}
-                {/* Seguimiento continuo: el informe se pone al día con lo que el
-                    cliente haya registrado desde la última vez. Si el anterior ya
-                    se envió, sale un borrador NUEVO (no se toca el que recibió). */}
-                {!FEATURE_BIWEEKLY && canGenerate && p.feedback_id && (
+                {/* El informe se pone al día con lo que el cliente haya
+                    registrado desde la última vez. Si el anterior ya se envió,
+                    sale un borrador NUEVO (no se toca el que recibió). */}
+                {canGenerate && p.feedback_id && (
                   <button onClick={() => generate(p.id)} disabled={generating === p.id}
                     className={nuevos >= 5 ? "btn btn-primary" : "btn btn-ghost"}
                     title="Vuelve a analizar todo lo que el cliente lleva registrado">
@@ -298,12 +259,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
               </div>
             </summary>
 
-            {p.status === "open" && FEATURE_BIWEEKLY && (
-              <div className="mt-3 flex items-center gap-2 rounded-lg p-2.5 text-xs" style={{ background: "rgba(154,107,21,0.09)", color: "#E5B94E" }}>
-                <AlertTriangle size={14} /> El período aún está abierto: el cliente debe cerrarlo antes de generar el feedback.
-              </div>
-            )}
-            {p.status === "open" && !FEATURE_BIWEEKLY && (
+            {p.status === "open" && (
               <div className="mt-3 flex items-center gap-2 rounded-lg p-2.5 text-xs"
                 style={{ background: "color-mix(in srgb, var(--brand-accent) 10%, transparent)", color: "var(--text-dim)" }}>
                 <TrendingUp size={14} />
@@ -343,13 +299,12 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
             {m && (
               <div className="mt-4 space-y-3 border-t pt-4" style={{ borderColor: "var(--line)" }}>
                 <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                  <BarChart3 size={13} /> {FEATURE_BIWEEKLY ? "Resumen de las 2 semanas" : "Resumen del seguimiento"}
+                  <BarChart3 size={13} /> Resumen del seguimiento
                 </div>
-                {/* Antes → después de los datos en 15 días (peso día 1 → día 15) */}
+                {/* Antes → ahora: peso del primer registro contra el último */}
                 <div className="mt-3">
                   <SubTitle icon={TrendingUp}
-                    text={FEATURE_BIWEEKLY ? "Antes → después (15 días)"
-                      : `Antes → ahora (${registrados} días registrados)`} />
+                    text={`Antes → ahora (${registrados} días registrados)`} />
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                     {/* Bajar peso solo es "bueno" si el objetivo lo pide */}
                     <BAStat label="Peso (kg)" before={m.weight?.start_kg} after={m.weight?.end_kg} lowerBetter={client.goal_type !== "muscle_gain"} />
@@ -372,9 +327,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                 {info.hasTraining && Array.isArray(m.strength) && m.strength.length > 0 && (
                   <div>
                     <SubTitle icon={TrendingUp}
-                      text={FEATURE_BIWEEKLY
-                        ? "Fuerza por grupo muscular (vs revisiones anteriores)"
-                        : "Fuerza por grupo muscular"} />
+                      text="Fuerza por grupo muscular" />
                     <ul className="space-y-1 text-sm">
                       {m.strength.map((s: any, i: number) => (
                         <li key={i} className="rounded-lg px-3 py-2" style={{ background: "var(--surface-raised)" }}>
@@ -476,7 +429,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                 )}
                 {Array.isArray(content.next_objectives) && content.next_objectives.length > 0 && (
                   <div>
-                    <SubTitle icon={Target} text={FEATURE_BIWEEKLY ? "Objetivos próximas 2 semanas" : "Próximos objetivos"} />
+                    <SubTitle icon={Target} text="Próximos objetivos" />
                     <ul className="list-disc space-y-0.5 pl-5 text-sm text-zinc-400">
                       {content.next_objectives.map((o: string, i: number) => <li key={i}>{o}</li>)}
                     </ul>
@@ -598,7 +551,7 @@ function FeedbackEditor({ docId, content, sentAt, onCancel, onSaved }: {
       <FbArea label="Análisis" value={d.natural_analysis} onChange={(v) => set("natural_analysis", v)} rows={4} />
       <FbArea label="Cambios en el plan (uno por línea)" value={d.changes_bullets} onChange={(v) => set("changes_bullets", v)} />
       <FbArea label="Respuesta a sus dudas" value={d.answers} onChange={(v) => set("answers", v)} />
-      <FbArea label={FEATURE_BIWEEKLY ? "Objetivos próximas 2 semanas (uno por línea)" : "Próximos objetivos (uno por línea)"} value={d.next_objectives} onChange={(v) => set("next_objectives", v)} />
+      <FbArea label="Próximos objetivos (uno por línea)" value={d.next_objectives} onChange={(v) => set("next_objectives", v)} />
       <FbArea label="Mensaje de cierre" value={d.closing_message} onChange={(v) => set("closing_message", v)} rows={2} />
       <FbArea
         label="Ajustes propuestos a la planificación (uno por línea — se aplican al pulsar «Adaptar»)"

@@ -166,8 +166,9 @@ def _backdate_open_period(client_id: int, days_ago: int) -> None:
 
 # ============================================================ A.3 ====
 
-def test_a3_full_cycle_alta_to_close(client, auth, ciclo_quincenal):
-    """Alta → plan → 14 registros → cierre, sin intervención manual del flujo."""
+def test_a3_full_cycle_alta_to_seguimiento(client, auth):
+    """Alta → plan → 14 registros → medidas, sin intervención manual del flujo.
+    El seguimiento es CONTINUO: no hay cierre ni fecha límite."""
     cid, token, plan_id = _create_active_client(client, auth, start_days_ago=14)
 
     # Registrar varios días
@@ -178,14 +179,16 @@ def test_a3_full_cycle_alta_to_close(client, auth, ciclo_quincenal):
             "sleep_hours": 7.5, "energy_1_5": 4, "workout_sets": [],
         })
 
-    # Cierre disponible (día 14) y se cierra
+    # El período sigue abierto y el cliente actualiza su evolución cuando quiere
     state = client.get(f"/api/p/{token}/state").json()
-    assert state["period"]["can_close"] is True
-    res = client.post(f"/api/p/{token}/close", json={
-        "closing_weight_kg": 80.5, "closing_rating": 4, "closing_waist_cm": 84,
+    assert state["period"]["status"] == "open"
+    assert "can_close" not in state["period"]
+    res = client.post(f"/api/p/{token}/measurements", json={
+        "weight_kg": 80.5, "waist_cm": 84,
     })
     assert res.status_code == 200
-    assert client.get(f"/api/clients/{cid}", headers=auth).json()["status"] == "review_pending"
+    ficha = client.get(f"/api/clients/{cid}", headers=auth).json()
+    assert ficha["status"] in ("active", "at_risk")
 
 
 def test_a3_guardrails_block_out_of_range(client, auth):

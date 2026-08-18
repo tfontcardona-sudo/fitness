@@ -31,8 +31,8 @@ ADHERENCE_LOCK = 0.80          # < → no se tocan kcal, se trabaja adherencia
 FATIGUE_RED = 4.0             # ≥ (sobre 5) = fatiga en rojo
 # CONTRATO: kcal_delta_pct viaja en PUNTOS PORCENTUALES (±6.0 = ±6%). La
 # auditoría matemática encontró que se emitía la FRACCIÓN (0.06) y el consumidor
-# (`adapt_plan`) dividía entre 100: el ajuste determinista del §8 se aplicaba
-# como ±0,06% — un no-op. Unidades fijadas aquí y verificadas por test e2e.
+# dividía entre 100: el ajuste determinista del §8 se aplicaba como ±0,06% — un
+# no-op. Unidades fijadas aquí y verificadas por test e2e.
 KCAL_STEP_PCT = 6.0          # ±6 puntos % (dentro del 5-8% recomendado)
 DEFICIT_WEEKS_FOR_BREAK = 8  # semanas de déficit → considerar refeed/diet break
 RATE_TOLERANCE = 0.1         # holgura del ritmo (%/sem) antes de considerarlo fuera

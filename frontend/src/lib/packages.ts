@@ -9,7 +9,7 @@
  *  Los tres comparten la MISMA maquinaria (anamnesis → plan → portal →
  *  feedback); solo cambia qué se le entrega al cliente y qué ve en su portal.
  */
-import type { BillingPeriod, PackageTier, PublicBillingPeriod } from "../types";
+import type { PackageTier, PublicBillingPeriod } from "../types";
 
 export interface PackageInfo {
   tier: PackageTier;
@@ -77,16 +77,8 @@ export const BILLING_PERIODS: { value: PublicBillingPeriod; label: string }[] = 
   { value: "unico", label: "Pago único" },
 ];
 
-/** Oferta de captación (solo plan Full): 1 € el primer mes → 120 €/mes en
- *  SUSCRIPCIÓN de Stripe (renovación automática). Espejo de las constantes
- *  OFFER_* de backend/app/services/stripe_service.py. */
-export const OFFER_PERIOD: BillingPeriod = "oferta";
-export const OFFER_FIRST_EUR = 1;
-export const OFFER_MONTHLY_EUR = 120;
-
 /** Etiqueta de una duración. En esta marca todo es pago único. */
 export function billingLabel(period: string | null | undefined): string {
-  if (period === OFFER_PERIOD) return "Oferta 1 €";
   const legado: Record<string, string> = { "1m": "Mensual", "3m": "Trimestral", "6m": "Semestral" };
   return BILLING_PERIODS.find((b) => b.value === period)?.label
     ?? legado[period ?? ""] ?? "Pago único";

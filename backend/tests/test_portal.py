@@ -156,7 +156,7 @@ def test_full_portal_cycle(client, auth):
     assert state["has_plan"] is True
     assert state["period"]["period_index"] == 1
     assert state["period"]["days_left"] >= 0
-    assert state["period"]["can_close"] is False  # día 1, aún no
+    assert "can_close" not in state["period"]  # no hay cierre: seguimiento continuo
 
     # 7) Vista HOY: comidas con opciones; sesión según el weekday
     todayv = client.get(f"/api/p/{token}/today").json()
@@ -198,15 +198,15 @@ def test_full_portal_cycle(client, auth):
     got2 = client.get(f"/api/p/{token}/diary/{today.isoformat()}").json()
     assert len(got2["workout_sets"]) == 2
 
-    # 12) Cierre antes de día 14 → 403
-    close_body = {"closing_weight_kg": 80.5, "closing_rating": 4}
-    assert client.post(f"/api/p/{token}/close", json=close_body).status_code == 403
+    # 12) El endpoint de cierre ya no existe: el seguimiento no se cierra.
+    assert client.post(f"/api/p/{token}/close", json={"closing_weight_kg": 80.5}).status_code == 404
 
 
-def test_close_period_when_due(client, auth, ciclo_quincenal):
-    """Período que empezó hace 14 días: el cierre debe estar disponible."""
+def test_measurements_y_fotos_del_seguimiento(client, auth):
+    """Seguimiento continuo: el cliente actualiza medidas y sube fotos de
+    progreso sobre el período ABIERTO, sin cerrar nada."""
     body = client.post("/api/clients", headers=auth,
-                       json={"full_name": "Cierre Listo", "email": f"cierre-{uuid.uuid4().hex[:8]}@example.com"}).json()
+                       json={"full_name": "Evolucion Cont", "email": f"evol-{uuid.uuid4().hex[:8]}@example.com"}).json()
     cid = body["client"]["id"]
     token = body["links"]["portal_token"]
 
@@ -217,41 +217,23 @@ def test_close_period_when_due(client, auth, ciclo_quincenal):
     }).json()
     client.post(f"/api/plans/{plan['id']}/publish", headers=auth)
 
-    # Publicar ya abre el período 1 (empieza HOY). Para probar el cierre sin
-    # esperar 14 días reales, retrasamos su ventana en la BD (el endpoint de crear
-    # período es idempotente por el invariante de un solo período abierto).
-    from sqlalchemy import select as _select
-    from app.db import SessionLocal
-    from app.models import Period
-    _db = SessionLocal()
-    try:
-        _p = _db.scalar(
-            _select(Period).where(Period.client_id == cid, Period.status == "open")
-            .order_by(Period.period_index.desc()).limit(1)
-        )
-        _p.starts_on = date.today() - timedelta(days=14)
-        _p.ends_on = _p.starts_on + timedelta(days=13)
-        _db.commit()
-    finally:
-        _db.close()
-
-    state = client.get(f"/api/p/{token}/state").json()
-    assert state["period"]["can_close"] is True
-
-    # Cierre con foto
+    # Fotos de progreso sobre el período en marcha
     img = Image.new("RGB", (40, 40), (90, 80, 70))
     b = io.BytesIO(); img.save(b, format="JPEG"); b.seek(0)
-    photos = client.post(f"/api/p/{token}/close/photos",
+    photos = client.post(f"/api/p/{token}/progress-photos",
                          files=[("files", ("c.jpg", b, "image/jpeg"))])
     assert photos.status_code == 200
 
-    res = client.post(f"/api/p/{token}/close", json={
-        "closing_weight_kg": 80.2, "closing_rating": 4,
-        "closing_hardest": "Las cenas el finde", "closing_waist_cm": 84,
-    })
-    assert res.status_code == 200 and res.json()["closed"] is True
-    # cliente pasa a review_pending
-    assert client.get(f"/api/clients/{cid}", headers=auth).json()["status"] == "review_pending"
+    # Medidas: solo viaja lo que el cliente ha rellenado
+    res = client.post(f"/api/p/{token}/measurements",
+                      json={"weight_kg": 80.2, "waist_cm": 84})
+    assert res.status_code == 200 and res.json()["saved"] is True
+    assert set(res.json()["fields"]) == {"weight_kg", "waist_cm"}
+
+    # El período NO se cierra y el cliente sigue activo
+    state = client.get(f"/api/p/{token}/state").json()
+    assert state["period"]["status"] == "open"
+    assert client.get(f"/api/clients/{cid}", headers=auth).json()["status"] != "review_pending"
 
 
 def test_change_request_creates_and_alerts(client, auth):

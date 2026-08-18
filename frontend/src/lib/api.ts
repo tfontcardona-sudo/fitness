@@ -229,19 +229,6 @@ export const api = {
       };
       days_logged?: number;
       today_logged?: boolean;
-      quincenal_pending?: boolean;
-      quincenals?: {
-        period_index: number; starts_on: string; ends_on: string; status: string; analyzed: boolean;
-        weight_before: number | null; weight_after: number | null;
-        waist_before: number | null; waist_after: number | null;
-        hip_before: number | null; hip_after: number | null;
-        arm_before: number | null; arm_after: number | null;
-        thigh_before: number | null; thigh_after: number | null;
-        feelings: Record<string, number> | null; feelings_score_10: number | null;
-        adherence_diet: number | null; adherence_training: number | null;
-        free_meals: number | null; changes: string | null; hardest: string | null;
-        next_goal: string | null; questions: string | null;
-      }[];
     }>("GET", `/clients/${clientId}/tracking`),
   anamnesisTemplateUrl: () => `/api/anamnesis-template`,
   // meals (opcional): claves canónicas del reparto de comidas elegido por el
@@ -253,9 +240,6 @@ export const api = {
       nutrition: any; training: any; education: any;
     }>("POST", `/clients/${clientId}/generate-plan?month_index=${monthIndex}`,
       meals && meals.length ? { meals } : undefined),
-  adaptPlan: (clientId: number) =>
-    request<{ id: number; month_index: number; version: number; status: string }>(
-      "POST", `/clients/${clientId}/adapt-plan`),
   publishPlan: (planId: number) =>
     request<{ status: string }>("POST", `/plans/${planId}/publish`),
   updatePlan: (planId: number, patch: { nutrition_json?: any; training_json?: any; education_json?: any; base_rev?: number }) =>

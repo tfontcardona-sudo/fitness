@@ -14,7 +14,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from html import escape
 
-from app import branding
 
 
 def _esc(value: str | None) -> str:
@@ -95,7 +94,7 @@ def portal_access(brand: Brand, first_name: str, login_url: str,
     """Email de bienvenida con el acceso personal al portal (usuario y clave)."""
     from html import escape
     first_name, username, password = escape(first_name), escape(username), escape(password)
-    registras = "tus entrenamientos, tu diario y tu revisión quincenal" if has_training else "tu diario y tu revisión quincenal"
+    registras = "tus entrenamientos, tu diario y tu evolución" if has_training else "tu diario y tu evolución"
     progreso = "peso, fuerza, medidas y fotos" if has_training else "peso, medidas y fotos"
     subject = f"Tu acceso personal a tu portal · {brand.name}"
     box = (
@@ -194,18 +193,16 @@ def plan_published(brand: Brand, first_name: str, portal_url: str, is_new_month:
     return subject, _shell(brand, "Tu plan está listo", body, portal_url, "Abrir mi portal")
 
 
-def reminder_no_logs(brand: Brand, first_name: str, portal_url: str, days_left: int,
+def reminder_no_logs(brand: Brand, first_name: str, portal_url: str,
                      has_training: bool = True) -> tuple[str, str]:
     first_name = _esc(first_name)
     subject = f"Un recordatorio rápido de tu seguimiento · {brand.name}"
     que = "tu peso, entrenos y adherencia" if has_training else "tu peso y adherencia"
-    # Sin ciclo quincenal (marca) no hay cuenta atrás que meter en el texto: el
-    # seguimiento es continuo y el informe se mantiene al día con lo que registra.
-    cierre = (f" Quedan <strong>{days_left} días</strong> para cerrar este período."
-              if branding.FEATURE_BIWEEKLY else "")
+    # No hay cuenta atrás que meter en el texto: el seguimiento es continuo y el
+    # informe se mantiene al día con lo que el cliente registra.
     body = (
         f"<p>Hola {first_name}, hemos visto que llevas unos días sin registrar tu "
-        f"seguimiento.{cierre}</p><p>Registrar {que} nos permite ajustar "
+        f"seguimiento.</p><p>Registrar {que} nos permite ajustar "
         "tu plan con precisión. ¡Solo te lleva un minuto al día!</p>"
     )
     return subject, _shell(brand, "¿Cómo va tu seguimiento?", body, portal_url, "Registrar ahora")
@@ -226,20 +223,6 @@ def onboarding_reminder(brand: Brand, first_name: str, anamnesis_url: str,
     )
     return subject, _shell(brand, "Falta un paso para empezar", body,
                            anamnesis_url, "Completar mi anamnesis")
-
-
-def closing_due(brand: Brand, first_name: str, portal_url: str, period_index: int) -> tuple[str, str]:
-    first_name = _esc(first_name)
-    subject = f"Es momento de cerrar tu período · {brand.name}"
-    body = (
-        f"<p>Hola {first_name}, tu período actual ha llegado a su fin. Para preparar "
-        "tu siguiente fase necesitamos que completes el <strong>cierre</strong>: peso "
-        "final, medidas opcionales, alguna foto y cómo te ha ido.</p>"
-        "<p>Con esa información ajustaremos tu plan para que sigas progresando.</p>"
-    )
-    return subject, _shell(brand, "Cierra tu período", body, f"{portal_url}/cierre", "Completar cierre")
-
-
 
 
 def feedback_ready(brand: Brand, first_name: str, portal_url: str,
@@ -288,8 +271,8 @@ def plan_delivery(brand: Brand, first_name: str, portal_url: str,
     )
     body = (
         f"<p>{intro}</p>{pdf_line}"
-        "<p>Desde tu portal registras tu día a día (peso, diario y revisión "
-        "quincenal) y ves tu progreso.</p>"
+        "<p>Desde tu portal registras tu día a día (peso, diario y tus "
+        "medidas) y ves tu progreso.</p>"
     )
     return subject, _shell(brand, "Tu plan está listo", body, portal_url, "Abrir mi portal")
 
@@ -316,11 +299,11 @@ def plan_manual_update(brand: Brand, first_name: str, items: list[str],
 
 
 def feedback_delivery(brand: Brand, first_name: str, content: dict) -> tuple[str, str]:
-    """Entrega del feedback quincenal por EMAIL (paquetes Start/Full): el informe
-    completo (análisis, cambios, respuestas y objetivos) va en el propio correo."""
+    """Entrega del informe de seguimiento por EMAIL: el informe completo
+    (análisis, cambios, respuestas y objetivos) va en el propio correo."""
     first_name = _esc(first_name)
-    subject = f"Tu feedback de la revisión quincenal · {brand.name}"
-    parts: list[str] = [f"<p>Hola {first_name}, aquí tienes el feedback de estas dos semanas.</p>"]
+    subject = f"Tu informe de seguimiento · {brand.name}"
+    parts: list[str] = [f"<p>Hola {first_name}, aquí tienes tu informe de seguimiento.</p>"]
 
     def _section(title: str, inner: str) -> str:
         return (

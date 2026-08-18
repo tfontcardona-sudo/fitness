@@ -15,11 +15,9 @@ import {
   UserPlus,
 } from "lucide-react";
 import { api, keepIfSame, REFRESH_MS } from "../lib/api";
-import { FEATURE_BIWEEKLY } from "../lib/branding";
 import type { ClientOut, CoachAlert } from "../types";
 import { PageLoader, StatusBadge } from "../components/ui";
 import { goalReviewDue, initials, relativeDays } from "../lib/format";
-import { pkg } from "../lib/packages";
 
 /**
  * Dashboard = "qué toca hacer AHORA con cada cliente". Cada cliente se traduce
@@ -41,30 +39,16 @@ interface Accion {
   to?: string;               // destino explícito (si no es el perfil del cliente)
 }
 
-// Sin ciclo quincenal no hay "revisión": lo que el coach envía es el INFORME.
-const CAT_INFORME = FEATURE_BIWEEKLY ? "Revisión" : "Informe";
+// Aquí no hay "revisión": lo que el coach envía es el INFORME.
+const CAT_INFORME = "Informe";
 
 function nextAction(c: ClientOut): Accion | null {
-  if (c.status === "review_pending")
-    return {
-      client: c, prio: 1, tone: "#7B4FC9", icon: ClipboardCheck, category: CAT_INFORME,
-      title: `Revisión quincenal #${c.review_period_index ?? c.pending_review_period ?? ""} subida`,
-      detail: "El cliente ha cerrado sus 2 semanas: revisa los datos y genera su feedback.",
-      cta: "Generar feedback", tab: "feedback",
-    };
   if (c.status === "at_risk")
     return {
       client: c, prio: 1, tone: "#F0716A", icon: HeartPulse, category: "Riesgo",
       title: "Adherencia baja",
       detail: "Lleva días sin registrar o con adherencia baja: revisa su seguimiento y contáctalo.",
       cta: "Ver seguimiento", tab: "seguimiento",
-    };
-  if (c.pending_review)
-    return {
-      client: c, prio: 2, tone: "#F0883E", icon: Sparkles, category: "Adaptar",
-      title: `Feedback de la revisión #${c.pending_review_period ?? ""} listo`,
-      detail: `Revisa los cambios propuestos (${pkg(c.package_tier).hasTraining ? "dieta y entreno" : "dieta"}) y adapta su planificación.`,
-      cta: "Adaptar planificación", tab: "planificacion",
     };
   if (c.status === "onboarding" && !c.goal_type)
     // Aún SIN anamnesis: el botón lleva a completarla/leerla (lo que falta).
@@ -143,9 +127,8 @@ export default function DashboardPage() {
       } else if (al.kind === "send_feedback") {
         acciones.push({
           client: cli, prio: 1, tone: "#7B4FC9", icon: Send, category: CAT_INFORME,
-          title: FEATURE_BIWEEKLY ? "Feedback generado · falta enviarlo"
-            : "Informe listo · falta enviarlo",
-          detail: al.message, cta: FEATURE_BIWEEKLY ? "Enviar feedback" : "Enviar informe",
+          title: "Informe listo · falta enviarlo",
+          detail: al.message, cta: "Enviar informe",
           tab: "feedback",
         });
       } else if (al.kind === "generate_feedback") {
@@ -154,8 +137,7 @@ export default function DashboardPage() {
         acciones.push({
           client: cli, prio: al.severity === "alta" ? 1 : 2, tone: "#7B4FC9",
           icon: ClipboardCheck, category: CAT_INFORME,
-          title: FEATURE_BIWEEKLY ? "Revisión recibida · genera el feedback"
-            : "Informe pendiente de generar",
+          title: "Informe pendiente de generar",
           detail: al.message, cta: al.action, tab: al.tab,
         });
       } else if (al.kind === "regenerate_goal") {

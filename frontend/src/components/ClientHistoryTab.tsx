@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { TrendingDown, History, Ruler, LineChart } from "lucide-react";
+import { TrendingDown, History, Ruler } from "lucide-react";
 import { api } from "../lib/api";
-import { FEATURE_BIWEEKLY } from "../lib/branding";
 import { Spinner } from "./ui";
 import type { ClientOut } from "../types";
 
@@ -56,10 +55,6 @@ export function ClientHistoryTab({ client }: { client: ClientOut }) {
         </div>
       </div>
 
-      {/* Comparativa entre revisiones: solo con ciclo quincenal (sin él no hay
-          revisiones que comparar; la evolución vive en el informe continuo). */}
-      {FEATURE_BIWEEKLY && <ReviewComparison h={h} lowerBetter={client.goal_type !== "muscle_gain"} />}
-
       {/* Medidas corporales antes → después */}
       {hasMeasures && (
         <div className="card p-5">
@@ -72,12 +67,13 @@ export function ClientHistoryTab({ client }: { client: ClientOut }) {
         </div>
       )}
 
-      {/* Evolución por período (desplegable) */}
+      {/* Evolución por período (desplegable). El seguimiento es CONTINUO: con
+          un solo período no hay nada que comparar y el bloque sobra (los datos
+          de ese período ya están arriba y en Feedback). */}
+      {h.periods.length > 1 && (
       <div className="card p-5">
         <Title icon={TrendingDown} text="Evolución por período" />
-        {h.periods.length === 0 ? (
-          <p className="mt-2 text-xs text-zinc-500">Aún no hay períodos.</p>
-        ) : (
+        {(
           <div className="mt-3 space-y-2">
             {h.periods.slice().reverse().map((p) => (
               <details key={p.period_index} name="historial-periodos" className="overflow-hidden rounded-lg border" style={{ borderColor: "var(--line)" }}>
@@ -113,6 +109,7 @@ export function ClientHistoryTab({ client }: { client: ClientOut }) {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }
@@ -159,134 +156,3 @@ function Stat({ label, value, highlight }: { label: string; value: string; highl
   );
 }
 
-/**
- * Comparativa entre revisiones quincenales: cómo evoluciona el peso revisión a
- * revisión (gráfico de línea con el valor en cada punto) + tabla con números y
- * porcentajes (Δ kg, Δ %, adherencia y fuerza por período) + fila TOTAL.
- */
-function ReviewComparison({ h, lowerBetter }: { h: Hist; lowerBetter: boolean }) {
-  const rows = h.periods.filter((p) => p.closing_weight_kg != null);
-  if (rows.length === 0) return null;
-
-  // Puntos del gráfico: peso inicial ("Inicio") + cierre de cada revisión
-  const points: { label: string; value: number }[] = [];
-  if (h.start_weight_kg != null) points.push({ label: "Inicio", value: h.start_weight_kg });
-  rows.forEach((p) => points.push({ label: `R${p.period_index}`, value: p.closing_weight_kg as number }));
-
-  const pct = (from: number | null, to: number | null) =>
-    from != null && to != null && from !== 0 ? Math.round(((to - from) / from) * 1000) / 10 : null;
-
-  const totalDelta = h.start_weight_kg != null && h.current_weight_kg != null
-    ? Math.round((h.current_weight_kg - h.start_weight_kg) * 10) / 10 : null;
-  const totalPct = pct(h.start_weight_kg, h.current_weight_kg);
-
-  // Peso "antes" de cada revisión = cierre de la anterior (o el inicial)
-  const beforeOf = (i: number): number | null =>
-    i === 0 ? (h.start_weight_kg ?? null) : (rows[i - 1].closing_weight_kg as number);
-
-  return (
-    <div className="card p-5">
-      <Title icon={LineChart} text="Evolución tras las revisiones quincenales" accent="var(--brand-accent-2)" />
-
-      {points.length >= 2 && <WeightLine points={points} />}
-
-      <div className="mt-3 overflow-x-auto">
-        <table className="w-full min-w-[520px] text-sm">
-          <thead>
-            <tr className="text-left text-[11px] uppercase tracking-wide" style={{ color: "var(--brand-accent-2)" }}>
-              <th className="py-1.5 pr-3 font-semibold">Revisión</th>
-              <th className="py-1.5 pr-3 font-semibold">Peso</th>
-              <th className="py-1.5 pr-3 font-semibold">Δ kg</th>
-              <th className="py-1.5 pr-3 font-semibold">Δ %</th>
-              <th className="py-1.5 pr-3 font-semibold">Adherencia</th>
-              <th className="py-1.5 font-semibold">Fuerza</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((p, i) => {
-              const before = beforeOf(i);
-              const after = p.closing_weight_kg as number;
-              const dKg = before != null ? Math.round((after - before) * 10) / 10 : null;
-              const dPct = pct(before, after);
-              return (
-                <tr key={p.period_index} className="border-t" style={{ borderColor: "var(--line)" }}>
-                  <td className="py-2 pr-3 font-medium text-zinc-200">#{p.period_index}</td>
-                  <td className="py-2 pr-3 text-zinc-300">{before != null ? `${before} → ` : ""}{after} kg</td>
-                  <td className="py-2 pr-3"><DeltaCell v={dKg} unit="kg" lowerBetter={lowerBetter} /></td>
-                  <td className="py-2 pr-3"><DeltaCell v={dPct} unit="%" lowerBetter={lowerBetter} /></td>
-                  <td className="py-2 pr-3 text-zinc-300">{p.adherence_pct != null ? `${p.adherence_pct}%` : "—"}</td>
-                  <td className="py-2 text-zinc-300">
-                    {p.strength_gain_pct != null ? `${p.strength_gain_pct > 0 ? "+" : ""}${p.strength_gain_pct}%` : "—"}
-                  </td>
-                </tr>
-              );
-            })}
-            <tr className="border-t font-semibold" style={{ borderColor: "var(--line)" }}>
-              <td className="py-2 pr-3 text-zinc-100">Total</td>
-              <td className="py-2 pr-3 text-zinc-200">
-                {h.start_weight_kg ?? "—"} → {h.current_weight_kg ?? "—"} kg
-              </td>
-              <td className="py-2 pr-3"><DeltaCell v={totalDelta} unit="kg" lowerBetter={lowerBetter} /></td>
-              <td className="py-2 pr-3"><DeltaCell v={totalPct} unit="%" lowerBetter={lowerBetter} /></td>
-              <td className="py-2 pr-3 text-zinc-300">—</td>
-              <td className="py-2 text-zinc-300">
-                {h.total_strength_gain_pct != null ? `${h.total_strength_gain_pct > 0 ? "+" : ""}${h.total_strength_gain_pct}%` : "—"}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-/** Delta con signo y color según si mejora (baja en pérdida / sube en volumen). */
-function DeltaCell({ v, unit, lowerBetter }: { v: number | null; unit: string; lowerBetter: boolean }) {
-  if (v == null) return <span className="text-zinc-500">—</span>;
-  const good = lowerBetter ? v < 0 : v > 0;
-  const color = v === 0 ? "#948C7D" : good ? "var(--brand-accent)" : "#F0716A";
-  return <span className="font-medium" style={{ color }}>{v > 0 ? "+" : ""}{v} {unit}</span>;
-}
-
-/** Línea del peso por revisión: marcas finas, punto con anillo del fondo y el
- *  valor rotulado en cada punto (pocos puntos; si hay muchos, solo los clave). */
-function WeightLine({ points }: { points: { label: string; value: number }[] }) {
-  const W = 560, H = 150, padX = 30, padTop = 26, padBottom = 24;
-  const vals = points.map((p) => p.value);
-  const lo0 = Math.min(...vals), hi0 = Math.max(...vals);
-  const span = hi0 - lo0 || 1;
-  const lo = lo0 - span * 0.15, hi = hi0 + span * 0.15;
-  const x = (i: number) => points.length === 1 ? W / 2 : padX + (i / (points.length - 1)) * (W - 2 * padX);
-  const y = (v: number) => padTop + (1 - (v - lo) / (hi - lo)) * (H - padTop - padBottom);
-  // Con muchos puntos, solo se rotulan los clave (primero, último, mín y máx)
-  const labelAll = points.length <= 6;
-  const iMin = vals.indexOf(lo0), iMax = vals.indexOf(hi0);
-  const showLabel = (i: number) => labelAll || i === 0 || i === points.length - 1 || i === iMin || i === iMax;
-
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="mt-3 w-full" role="img" aria-label="Evolución del peso por revisión">
-      {/* rejilla recesiva */}
-      {[0.25, 0.5, 0.75].map((t) => (
-        <line key={t} x1={padX - 8} x2={W - padX + 8} y1={padTop + t * (H - padTop - padBottom)} y2={padTop + t * (H - padTop - padBottom)}
-          stroke="var(--line)" strokeWidth="1" />
-      ))}
-      <polyline
-        points={points.map((p, i) => `${x(i)},${y(p.value)}`).join(" ")}
-        fill="none" stroke="var(--brand-accent)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"
-      />
-      {points.map((p, i) => (
-        <g key={i}>
-          <circle cx={x(i)} cy={y(p.value)} r="4.5" fill="var(--brand-accent)" stroke="var(--surface)" strokeWidth="2">
-            <title>{p.label}: {p.value} kg</title>
-          </circle>
-          {showLabel(i) && (
-            <text x={x(i)} y={y(p.value) - 10} textAnchor="middle" fontSize="11" fontWeight="600" fill="#F5F3EE">
-              {p.value}
-            </text>
-          )}
-          <text x={x(i)} y={H - 6} textAnchor="middle" fontSize="10" fill="#948C7D">{p.label}</text>
-        </g>
-      ))}
-    </svg>
-  );
-}

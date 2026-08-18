@@ -63,34 +63,11 @@ TIER_LABELS = {
 # Professional vende los tres, todos de pago único.
 PUBLIC_TIERS = ("nutri", "train", "full")
 
-# Oferta de captación (1 € el primer mes → suscripción). La maquinaria existe
-# en el motor, pero esta marca NO la usa: apagada de raíz (sin checkout, sin
-# precio/cupón en Stripe, sin botón en el kit de ventas).
-OFFER_ENABLED = False
-
-# --- Funciones del motor apagadas en esta instancia --------------------------
-# El motor las conserva (código y tests intactos); la marca decide si se usan.
-# El flujo de Professional es corto y directo: anamnesis → se le asigna dieta,
-# entrenamiento o ambos → portal donde registra su evolución → feedback que el
-# coach envía cuando lo ve listo. Sin ciclo quincenal ni videollamadas.
-FEATURE_VIDEO_CALLS = False   # videollamadas de revisión (Google Meet)
-FEATURE_SALES_KIT = False     # kit de ventas del panel "Hoy"
-
-# TIENDA: productos propios del centro, visibles en el portal del cliente y en
-# la página pública de enlaces. Professional sí la usa (es venta cruzada).
-FEATURE_RESOURCES = True
-
-# Ciclo QUINCENAL del motor (períodos de 14 días, cierre del cliente y revisión
-# con fecha). Professional no lo usa: el cliente registra su evolución cuando
-# quiere y el feedback se mantiene al día solo. Apagarlo simplifica el portal,
-# el panel y las alertas.
-FEATURE_BIWEEKLY = False
-
-# Duración del período de seguimiento. Con el ciclo quincenal APAGADO no hay
-# "cierre": el período es un seguimiento CONTINUO que el cliente alimenta
-# cuando quiere (el motor sigue necesitando un período al que colgar los
-# registros diarios, pero deja de vencer y de pedir cierre).
-FOLLOWUP_DAYS = 14 if FEATURE_BIWEEKLY else 365
+# Duración del período de seguimiento. Aquí NO hay ciclo quincenal ni cierre:
+# el período es un seguimiento CONTINUO que el cliente alimenta cuando quiere
+# (el motor sigue necesitando un período al que colgar los registros diarios,
+# pero no vence ni pide cierre). Un año de margen sobra para eso.
+FOLLOWUP_DAYS = 365
 
 # --- Método del banco de comidas de la marca ---------------------------------
 # "options": TODAS las tomas del plan flexible llevan opciones CERRADAS (combos
@@ -112,13 +89,11 @@ DOC_PRODUCTS = {
 }
 
 # --- Stripe ------------------------------------------------------------------
-# Prefijo de los lookup_key de precios ({prefix}_{tier}_{period}) y claves de
-# la oferta de captación. Cada instancia usa SU cuenta de Stripe, así que el
-# prefijo solo tiene que ser estable dentro de la instancia.
+# Prefijo de los lookup_key de precios ({prefix}_{tier}_{period}). Cada
+# instancia usa SU cuenta de Stripe, así que el prefijo solo tiene que ser
+# estable dentro de la instancia.
 STRIPE_LOOKUP_PREFIX = "pgirona"
 STRIPE_TIER_METADATA_KEY = "app_tier"  # metadata que marca el Producto de cada plan
-OFFER_LOOKUP = f"{STRIPE_LOOKUP_PREFIX}_full_oferta"
-OFFER_COUPON_ID = f"{STRIPE_LOOKUP_PREFIX}_oferta_primer_mes"
 
 # --- Varios ------------------------------------------------------------------
 PUSH_TAG_PREFIX = "pg"  # tags de notificaciones push ("pg-plan", "pg-coach"…)

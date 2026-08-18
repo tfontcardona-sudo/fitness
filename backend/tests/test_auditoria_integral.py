@@ -54,7 +54,7 @@ def test_kcal_delta_en_puntos_porcentuales():
     ))
     assert d.action == "adjust_kcal"
     assert d.kcal_delta_pct == -6.0
-    # Aplicado como en adapt_plan (d_pct/100): −6% de verdad, no −0,06%.
+    # Aplicado sobre las kcal (d_pct/100): −6% de verdad, no −0,06%.
     import math
     assert math.floor(2000 * (1 + d.kcal_delta_pct / 100) + 0.5) == 1880
 
@@ -247,20 +247,6 @@ def test_e1rm_ignora_series_maratonianas():
     assert prog and prog[0].best_set == (100, 5)
 
 
-# ------------------------------------------------ adaptación (texto de IA) ----
-
-def test_parse_change_entiende_porcentajes():
-    """'bajar los carbohidratos un 10%' se aplicaba como −10 g."""
-    from app.services.adapt_plan import _apply, _parse_change
-
-    mode, val = _parse_change("bajar los carbohidratos un 10%")
-    assert (mode, val) == ("pct", -10.0)
-    assert _apply(200, mode, val) == 180
-
-    mode, val = _parse_change("reducir a 150 g")
-    assert (mode, val) == ("abs", 150.0)
-
-
 # ---------------------------------------------- API: concurrencia y estados ---
 
 pytestmark_db = pytest.mark.skipif(not DB, reason="Requiere PostgreSQL")
@@ -331,42 +317,6 @@ def test_patch_estado_valida_la_maquina(http):
     # active → onboarding: transición ilegal → 409.
     r2 = http.patch(f"/api/clients/{cid}", headers=auth, json={"status": "onboarding"})
     assert r2.status_code == 409
-
-
-@pytestmark_db
-def test_alerta_adaptar_sobrevive_al_envio_del_feedback(http, ciclo_quincenal):
-    """La alerta 'sin adaptar' moría al abrirse el período siguiente: el ciclo 2
-    corría con las kcal viejas sin que nadie lo persiguiera."""
-    from app.db import SessionLocal
-    from app.models import Client, Period, Plan
-    from app.routers.alerts import client_alerts
-    from app.security import new_portal_token
-
-    db = SessionLocal()
-    uid = uuid.uuid4().hex[:8]
-    c = Client(full_name=f"Adap {uid}", email=f"adap-{uid}@test.local",
-               portal_token="p", status="active", goal_type="fat_loss")
-    db.add(c); db.flush(); c.portal_token = new_portal_token(c.id)
-    plan = Plan(client_id=c.id, month_index=1, version=1, status="published",
-                goal_type="fat_loss",
-                nutrition_json={"target_kcal": 2000,
-                                 "macros": {"protein_g": 150, "carbs_g": 200, "fat_g": 60}},
-                training_json={}, education_json={})
-    db.add(plan); db.flush()
-    today = date.today()
-    # Revisión 1 ANALIZADA (feedback enviado) y período 2 ya ABIERTO.
-    db.add(Period(client_id=c.id, plan_id=plan.id, period_index=1,
-                  starts_on=today - timedelta(days=30), ends_on=today - timedelta(days=16),
-                  status="analyzed"))
-    db.add(Period(client_id=c.id, plan_id=plan.id, period_index=2,
-                  starts_on=today - timedelta(days=2), ends_on=today + timedelta(days=12),
-                  status="open"))
-    db.commit()
-
-    alerts = client_alerts(db, c)
-    kinds = {a["kind"] for a in alerts}
-    assert "adapt_plan" in kinds, kinds
-    db.close()
 
 
 # ------------------------------------------- historial de planes (§4) ---

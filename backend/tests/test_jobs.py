@@ -116,13 +116,14 @@ def _count_status_changes(db, client_id):
     )
 
 
-def test_job_transitions_to_at_risk_and_alerts_coach(db, _no_real_email, ciclo_quincenal):
+def test_job_transitions_to_at_risk_and_alerts_coach(db, _no_real_email):
+    """Seguimiento en marcha y constancia por los suelos en la ventana móvil."""
     from app.services.jobs import run_daily_maintenance
 
     today = date(2026, 6, 20)
     client = _make_client(db, status="active", email="atrisk@example.com")
-    # período terminado hace 5 días, sin cerrar
-    _make_period(db, client, start=date(2026, 5, 26), end=date(2026, 6, 15), status="open")
+    # Seguimiento abierto desde hace 3 semanas y NINGÚN registro: 0% < 30%.
+    _make_period(db, client, start=date(2026, 5, 26), end=date(2027, 5, 26), status="open")
 
     summary = run_daily_maintenance(db, today)
     db.refresh(client)
@@ -133,12 +134,12 @@ def test_job_transitions_to_at_risk_and_alerts_coach(db, _no_real_email, ciclo_q
     assert _count_emails(db, client.id, "coach_at_risk") == 1
 
 
-def test_job_is_idempotent(db, _no_real_email, ciclo_quincenal):
+def test_job_is_idempotent(db, _no_real_email):
     from app.services.jobs import run_daily_maintenance
 
     today = date(2026, 6, 20)
     client = _make_client(db, status="active", email="idem@example.com")
-    _make_period(db, client, start=date(2026, 5, 26), end=date(2026, 6, 15), status="open")
+    _make_period(db, client, start=date(2026, 5, 26), end=date(2027, 5, 26), status="open")
 
     run_daily_maintenance(db, today)
     run_daily_maintenance(db, today)  # segunda pasada mismo día
@@ -151,13 +152,13 @@ def test_job_is_idempotent(db, _no_real_email, ciclo_quincenal):
     assert _count_emails(db, client.id, "coach_at_risk") == 1
 
 
-def test_job_sends_reminder_day_12(db, _no_real_email, ciclo_quincenal):
+def test_job_sends_reminder_day_12(db, _no_real_email):
     from app.services.jobs import run_daily_maintenance
 
     start = date(2026, 6, 1)
     today = start + timedelta(days=11)  # día 12
     client = _make_client(db, status="active", email="reminder@example.com")
-    period = _make_period(db, client, start=start, end=start + timedelta(days=13), status="open")
+    period = _make_period(db, client, start=start, end=start + timedelta(days=365), status="open")
     # 4 registros: no at_risk pero por debajo del umbral de recordatorio
     for i in range(4):
         _add_log(db, period, start + timedelta(days=i))
@@ -179,7 +180,7 @@ def test_job_marks_inactive_after_30_days(db, _no_real_email):
     today = date(2026, 6, 20)
     client = _make_client(db, status="active", email="inactive@example.com")
     # último log hace 35 días
-    period = _make_period(db, client, start=date(2026, 4, 1), end=date(2026, 4, 14), status="open")
+    period = _make_period(db, client, start=date(2026, 4, 1), end=date(2027, 4, 1), status="open")
     _add_log(db, period, date(2026, 5, 16))
 
     run_daily_maintenance(db, today)
@@ -187,14 +188,14 @@ def test_job_marks_inactive_after_30_days(db, _no_real_email):
     assert client.status == "inactive"
 
 
-def test_job_respects_client_email_toggle(db, _no_real_email, ciclo_quincenal):
+def test_job_respects_client_email_toggle(db, _no_real_email):
     from app.services.jobs import run_daily_maintenance
 
     today = date(2026, 6, 20)
     client = _make_client(db, status="active", email="notoggle@example.com")
     client.emails_enabled = False
     db.commit()
-    _make_period(db, client, start=date(2026, 5, 26), end=date(2026, 6, 15), status="open")
+    _make_period(db, client, start=date(2026, 5, 26), end=date(2027, 5, 26), status="open")
 
     run_daily_maintenance(db, today)
     db.refresh(client)

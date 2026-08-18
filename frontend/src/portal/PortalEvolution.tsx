@@ -8,7 +8,7 @@ import type { portalApi } from "./portalApi";
 type Api = ReturnType<typeof portalApi>;
 
 /**
- * EVOLUCIÓN — la pantalla del seguimiento continuo (sin ciclo quincenal).
+ * EVOLUCIÓN — la pantalla del seguimiento continuo.
  *
  * El cliente actualiza su cuerpo cuando le toca medirse: peso, perímetros y
  * cómo se encuentra. No cierra nada ni hay cuenta atrás; con esto el informe

@@ -16,17 +16,13 @@ export type PackageTier = "nutri" | "train" | "full";
 // "unico" = pago único (el modelo de Professional). Las mensuales son legado
 // del motor y se conservan para no romper fichas antiguas.
 export type PublicBillingPeriod = "unico" | "1m" | "3m" | "6m";
-// Duración contratada del plan (decide el precio de Stripe que se cobra):
-// mensual, trimestral, semestral, u "oferta" (1 € el primer mes → 120 €/mes
-// en suscripción, solo plan Full).
-export type BillingPeriod = PublicBillingPeriod | "oferta";
+// Duración contratada del plan (decide el precio de Stripe que se cobra).
+export type BillingPeriod = PublicBillingPeriod;
 export type PaymentStatus = "pending" | "paid";
 export type ClientStatus =
   | "onboarding"
   | "active"
-  | "awaiting_feedback"
   | "at_risk"
-  | "review_pending"
   | "inactive";
 export type DietAdherence = "yes" | "partial" | "no";
 export type PhotoKind = "front" | "side" | "back" | "detail";
@@ -309,10 +305,7 @@ export interface ClientOut {
   portal_access_sent_at?: string | null;
   created_at: string;
   updated_at: string;
-  pending_review?: boolean;
-  pending_review_period?: number | null;
   has_published_plan?: boolean;
-  review_period_index?: number | null;
 }
 
 export interface ExerciseOut {
@@ -384,8 +377,7 @@ export interface LandingOut {
   contact_email: string | null;
 }
 
-/** GET /api/public/plan-prices — importes reales de cada plan × duración
- *  (solo las 3 duraciones públicas; la oferta no sale en el catálogo). */
+/** GET /api/public/plan-prices — importes reales de cada plan × duración. */
 export interface PlanPricesOut {
   currency: string;
   tiers: Record<PackageTier, Record<PublicBillingPeriod,
@@ -417,23 +409,6 @@ export interface DailyLogUpsert {
   chosen_options_json?: Record<string, OptionKey> | null;
   option_feedback_json?: Record<string, "up" | "down"> | null;
   workout_sets: WorkoutSetIn[];
-}
-
-export interface PeriodCloseIn {
-  closing_weight_kg: number;
-  closing_rating?: number | null;
-  closing_hardest?: string | null;
-  closing_questions?: string | null;
-  closing_waist_cm?: number | null;
-  closing_hip_cm?: number | null;
-  closing_arm_cm?: number | null;
-  closing_thigh_cm?: number | null;
-  closing_feelings_json?: Record<string, number> | null;
-  adherence_diet_0_10?: number | null;
-  adherence_training_0_10?: number | null;
-  free_meals_count?: number | null;
-  closing_changes?: string | null;
-  closing_next_goal?: string | null;
 }
 
 export interface ChangeRequestOut {
@@ -493,7 +468,6 @@ export interface PortalPeriodInfo {
   days_total: number;
   days_elapsed: number;
   days_left: number;
-  can_close: boolean;
   status: PeriodStatus;
 }
 
@@ -505,8 +479,6 @@ export interface PortalState {
   has_plan: boolean;
   period: PortalPeriodInfo | null;
   brand: PortalBrand;
-  // Tras enviar la revisión: falta confirmar el envío de las fotos al coach.
-  photos_pending?: boolean;
   // Onboarding sin anamnesis: el portal enseña el camino a /anamnesis/{token}.
   needs_anamnesis?: boolean;
   // Fecha de NEGOCIO (YYYY-MM-DD, zona del coach): Diario/Entreno registran
@@ -518,8 +490,6 @@ export interface PortalState {
 export interface PushPending {
   diary: boolean;
   workout: boolean;
-  quincenal: boolean;
-  photos?: boolean;
   plan?: boolean;
   count: number;
 }
@@ -586,8 +556,8 @@ export interface TodayView {
   already_logged: boolean;
 }
 
-/** Cambios aplicados al plan en la última adaptación (revisión quincenal):
- *  qué cambió (con antes→después si fue automático), dónde y por qué. */
+/** Cambios aplicados al plan en la última edición: qué cambió (con
+ *  antes→después si fue automático), dónde y por qué. */
 export interface PlanChangeItem {
   area: string;               // "dieta" | "entreno" | otro
   change: string;             // el cambio tal como lo propuso el feedback

@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Bell, BellOff, CalendarCheck, Camera, Check, ChevronDown, Dumbbell, LineChart, LogOut, NotebookPen, Ruler, Share, Smartphone, X } from "lucide-react";
+import { Bell, BellOff, Check, ChevronDown, Dumbbell, LineChart, LogOut, NotebookPen, Ruler, Share, Smartphone, X } from "lucide-react";
 import { portalApi, portalSession, PortalError } from "./portalApi";
 import { pkg } from "../lib/packages";
-import { FEATURE_BIWEEKLY, PORTAL_THEME } from "../lib/branding";
+import { PORTAL_THEME } from "../lib/branding";
 import type { PortalState } from "../types";
 import { PortalWorkout } from "./PortalWorkout";
 import { PortalDiary } from "./PortalDiary";
-import { PortalClose } from "./PortalClose";
 import { PortalEvolution } from "./PortalEvolution";
 import { PortalProgress } from "./PortalProgress";
 import { PortalToastProvider, usePortalToast } from "./PortalToast";
@@ -136,7 +135,6 @@ export default function PortalApp({ token }: { token: string }) {
   }
 
   const light = state.brand.portal_theme === "light";
-  const canClose = state.period?.can_close ?? false;
 
   // Plan sin entreno (nutri): sin pestaña de entreno. La vista por defecto pasa
   // a ser el Diario (si la URL trae ?tab=entreno, se reencamina a diario).
@@ -148,11 +146,9 @@ export default function PortalApp({ token }: { token: string }) {
     { id: "entreno", label: "Entreno", icon: Dumbbell },
     { id: "diario", label: "Diario", icon: NotebookPen },
     { id: "progreso", label: "Progreso", icon: LineChart },
-    { id: "cierre", label: FEATURE_BIWEEKLY ? "Quincenal" : "Evolución",
-      icon: FEATURE_BIWEEKLY ? CalendarCheck : Ruler },
+    // EVOLUCIÓN: el cliente actualiza peso y medidas cuando se mide.
+    { id: "cierre", label: "Evolución", icon: Ruler },
   ];
-  // Sin ciclo quincenal la pestaña de cierre se convierte en EVOLUCIÓN: el
-  // cliente actualiza peso y medidas cuando se mide, sin cerrar nada.
   const TABS = ALL_TABS;
   const visibleTabs = isStart ? TABS.filter((t) => t.id !== "entreno") : TABS;
 
@@ -169,16 +165,6 @@ export default function PortalApp({ token }: { token: string }) {
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-3">
-            {FEATURE_BIWEEKLY && state.period && (
-              <div className="text-right">
-                {/* Azul (secundario): es un dato del ciclo, no una acción.
-                    Nunca negativo (período vencido pendiente de cerrar → 0). */}
-                <p className="text-2xl font-bold" style={{ color: state.brand.color_secondary, textShadow: `0 0 12px ${state.brand.color_secondary}55` }}>
-                  {Math.max(0, state.period.days_left)}
-                </p>
-                <p className="text-[11px] opacity-50">días restantes</p>
-              </div>
-            )}
             <PushToggle api={apiClient} />
             {portalSession.token() && (
               <button
@@ -209,9 +195,6 @@ export default function PortalApp({ token }: { token: string }) {
               </span>
             </a>
           )}
-          {state.photos_pending && (
-            <PhotosReminder api={apiClient} accent={state.brand.color_primary} onConfirmed={reload} />
-          )}
           <WelcomeSetup api={apiClient} token={token} accent={state.brand.color_primary}
             secondary={state.brand.color_secondary} hasTraining={!isStart} />
           {/* key={effTab} → transición suave (animate-rise respeta reduced-motion) */}
@@ -219,22 +202,9 @@ export default function PortalApp({ token }: { token: string }) {
             {effTab === "entreno" && <PortalWorkout api={apiClient} brand={state.brand} periodStatus={state.period?.status ?? null} businessToday={state.today ?? null} />}
             {effTab === "diario" && <PortalDiary api={apiClient} brand={state.brand} periodStatus={state.period?.status ?? null} businessToday={state.today ?? null} />}
             {effTab === "progreso" && <PortalProgress api={apiClient} brand={state.brand} hasTraining={!isStart} />}
-            {effTab === "cierre" && !FEATURE_BIWEEKLY && (
+            {effTab === "cierre" && (
               <PortalEvolution api={apiClient} brand={state.brand} onSaved={reload}
                 hasTraining={!isStart} />
-            )}
-            {effTab === "cierre" && FEATURE_BIWEEKLY && (
-              <PortalClose
-                api={apiClient}
-                token={token}
-                brand={state.brand}
-                onClosed={reload}
-                canClose={canClose}
-                daysLeft={state.period?.days_left ?? null}
-                closeDate={state.period?.ends_on ?? null}
-                periodStatus={state.period?.status ?? null}
-                hasTraining={!isStart}
-              />
             )}
           </div>
         </main>
@@ -244,7 +214,6 @@ export default function PortalApp({ token }: { token: string }) {
           style={{ backdropFilter: "blur(12px)" }}>
           {visibleTabs.map(({ id, label, icon: Icon }) => {
             const active = effTab === id;
-            const alert = id === "cierre" && canClose;  // "!" el día que ya se puede rellenar
             return (
               <button
                 key={id}
@@ -255,7 +224,6 @@ export default function PortalApp({ token }: { token: string }) {
               >
                 <span className="nav-ico p-1"><Icon size={20} /></span>
                 <span className="text-[10px] font-medium">{label}</span>
-                {alert && <span className="portal-tab-badge">!</span>}
               </button>
             );
           })}
@@ -320,65 +288,6 @@ function PushToggle({ api }: { api: ReturnType<typeof portalApi> }) {
     >
       {on ? <Bell size={18} /> : <BellOff size={18} />}
     </button>
-  );
-}
-
-/** Recordatorio de FOTOS DE PROGRESO: tras enviar la revisión quincenal, el
- *  cliente confirma aquí si ya envió sus 3 fotos al coach. "Sí" apaga el aviso
- *  (portal y push); "Todavía no" lo pliega y el push seguirá recordándoselo cada
- *  3 h hasta que confirme. */
-function PhotosReminder({ api, accent, onConfirmed }: {
-  api: ReturnType<typeof portalApi>; accent: string; onConfirmed: () => void;
-}) {
-  const toast = usePortalToast();
-  const [busy, setBusy] = useState(false);
-  // "Todavía no": se pliega en ESTA sesión; el aviso vuelve al recargar (sigue
-  // pendiente) y el push lo recuerda cada 3 h.
-  const [snoozed, setSnoozed] = useState(false);
-
-  if (snoozed) return null;
-
-  const confirm = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await api.confirmPhotos();
-      toast.push("¡Gracias! Fotos confirmadas 📸");
-      onConfirmed();
-    } catch {
-      toast.push("No se pudo confirmar, inténtalo de nuevo");
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="portal-card mb-4 p-3.5">
-      <div className="flex items-start gap-2.5">
-        <span className="mt-0.5 shrink-0" style={{ color: accent }}><Camera size={18} /></span>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold">¿Ya enviaste tus fotos de progreso a tu coach?</p>
-          <p className="mt-0.5 text-[11px] opacity-60">
-            3 fotos (frontal, lateral y espalda), mismo sitio y luz que la vez anterior.
-          </p>
-          <div className="mt-2.5 flex flex-wrap gap-2">
-            <button
-              onClick={confirm}
-              disabled={busy}
-              className="portal-btn3d min-h-[36px] px-4 py-1.5 text-xs font-semibold"
-            >
-              <span className="inline-flex items-center gap-1"><Check size={13} /> Sí, ya las envié</span>
-            </button>
-            <button
-              onClick={() => { setSnoozed(true); toast.push("Te lo recordaré cada 3 h hasta que las envíes"); }}
-              disabled={busy}
-              className="tap min-h-[36px] rounded-xl px-3 py-1.5 text-xs font-medium opacity-60 hover:opacity-90"
-            >
-              Todavía no
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
   );
 }
 

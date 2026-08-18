@@ -101,46 +101,10 @@ def _feelings_score_10(feelings: dict | None) -> float | None:
     return round(statistics.median(vals) * 2, 1)
 
 
-def _quincenal_entry(db: Session, period: Period, prev: Period | None) -> dict:
-    """Datos completos de una revisión quincenal con ANTES/DESPUÉS (día 1 vs 15)."""
-    logs = list(db.scalars(
-        select(DailyLog).where(DailyLog.period_id == period.id).order_by(DailyLog.log_date)
-    ))
-    first_w = next((lg.weight_kg for lg in logs if lg.weight_kg is not None), None)
-    before_w = first_w if first_w is not None else (prev.closing_weight_kg if prev else None)
-    return {
-        "period_index": period.period_index,
-        "starts_on": period.starts_on.isoformat(),
-        "ends_on": period.ends_on.isoformat(),
-        "status": period.status,
-        "analyzed": period.status == "analyzed",
-        # Peso día 1 → día 15
-        "weight_before": before_w,
-        "weight_after": period.closing_weight_kg,
-        # Perímetros (cinta): período anterior → este
-        "waist_before": prev.closing_waist_cm if prev else None, "waist_after": period.closing_waist_cm,
-        "hip_before": prev.closing_hip_cm if prev else None, "hip_after": period.closing_hip_cm,
-        "arm_before": prev.closing_arm_cm if prev else None, "arm_after": period.closing_arm_cm,
-        "thigh_before": prev.closing_thigh_cm if prev else None, "thigh_after": period.closing_thigh_cm,
-        # Sensaciones + valoración /10
-        "feelings": period.closing_feelings_json,
-        "feelings_score_10": _feelings_score_10(period.closing_feelings_json),
-        "adherence_diet": period.adherence_diet_0_10,
-        "adherence_training": period.adherence_training_0_10,
-        "free_meals": period.free_meals_count,
-        "changes": period.closing_changes, "hardest": period.closing_hardest,
-        "next_goal": period.closing_next_goal, "questions": period.closing_questions,
-        # §8 (hardening): raíl de decisión determinista (regla + acción), si existe.
-        "biweekly_decision": (period.ai_analysis_json or {}).get("biweekly_decision"),
-    }
-
-
 @router.get("/{client_id}/tracking")
 def client_tracking(client_id: int, db: Session = Depends(get_db)) -> dict:
     """Seguimiento en tiempo real (el coach hace polling): registros diarios
-    (con nº de series) + MEDIA de lo registrado, y REVISIONES QUINCENALES con
-    antes/después. Abrir esta pestaña marca las revisiones como vistas (apaga el
-    aviso '!' de la lista de clientes)."""
+    (con nº de series) + MEDIA de lo registrado."""
     from datetime import date as _date
 
     client = db.get(Client, client_id)
@@ -159,12 +123,6 @@ def client_tracking(client_id: int, db: Session = Depends(get_db)) -> dict:
     if not periods:
         return {"has_period": False}
     period = periods[-1]  # el más reciente
-
-    # Marcar como vista la última revisión recibida (apaga el aviso "!")
-    for pr in periods:
-        if pr.status in ("closed", "analyzed") and pr.coach_reviewed_at is None:
-            pr.coach_reviewed_at = datetime.now(timezone.utc)
-    db.commit()
 
     logs = db.scalars(
         select(DailyLog)
@@ -203,13 +161,6 @@ def client_tracking(client_id: int, db: Session = Depends(get_db)) -> dict:
     today = today_local()  # fecha de NEGOCIO (settings.tz), no UTC del servidor
     days_elapsed = (min(today, period.ends_on) - period.starts_on).days + 1
 
-    # Revisiones quincenales acumuladas (más reciente primero), con antes/después
-    quincenals = []
-    for i in range(len(periods) - 1, -1, -1):
-        pr = periods[i]
-        if pr.status in ("closed", "analyzed"):
-            quincenals.append(_quincenal_entry(db, pr, periods[i - 1] if i > 0 else None))
-
     return {
         "has_period": True,
         "period": {
@@ -224,8 +175,6 @@ def client_tracking(client_id: int, db: Session = Depends(get_db)) -> dict:
         "daily_averages": averages,
         "days_logged": len(logs),
         "today_logged": any(lg.log_date == today for lg in logs),
-        "quincenals": quincenals,
-        "quincenal_pending": period.status == "open",
     }
 
 
@@ -241,13 +190,6 @@ def _get_or_404(db: Session, client_id: int) -> Client:
 def create_client(body: ClientCreate, db: Session = Depends(get_db)) -> ClientCreatedOut:
     """Alta mínima: nombre + email (+ teléfono). El resto lo aporta el cliente
     en el wizard de anamnesis vía el link público que devuelve esta llamada."""
-    # La periodicidad "oferta" (1 € → 120 €/mes en suscripción) es SOLO del plan
-    # Full: un alta train/nutri con oferta cobraría un plan que no existe.
-    from app.services import packages as pkgs
-    if body.billing_period == "oferta" and pkgs.normalize(body.package_tier) != "full":
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            "La oferta (1 € el primer mes) es solo del plan Full")
-
     # Email normalizado a minúsculas: así el login (que compara en minúsculas) y
     # la unicidad usan la MISMA clave y no pueden crearse "A@x" y "a@x".
     email = (body.email or "").strip().lower()
@@ -321,28 +263,9 @@ def list_clients(
         stmt = stmt.where(or_(Client.full_name.ilike(like), Client.email.ilike(like)))
     clients = list(db.scalars(stmt))
 
-    # Aviso "!": última revisión quincenal recibida y aún NO vista en Seguimiento.
-    pending: dict[int, int] = {}
-    reviews: dict[int, int] = {}
     with_plan: set[int] = set()
     if clients:
         ids = [c.id for c in clients]
-        rows = db.execute(
-            select(Period.client_id, func.max(Period.period_index))
-            .where(
-                Period.client_id.in_(ids),
-                Period.status.in_(("closed", "analyzed")),
-                Period.coach_reviewed_at.is_(None),
-            )
-            .group_by(Period.client_id)
-        ).all()
-        pending = {cid: idx for cid, idx in rows}
-        # Nº de la última revisión recibida (para "Revisión #N pendiente")
-        reviews = {cid: idx for cid, idx in db.execute(
-            select(Period.client_id, func.max(Period.period_index))
-            .where(Period.client_id.in_(ids), Period.status.in_(("closed", "analyzed")))
-            .group_by(Period.client_id)
-        ).all()}
         # ¿Planificación hecha? (carpetas Activos vs Pendientes de la cartera)
         with_plan = set(db.scalars(
             select(Plan.client_id).where(Plan.client_id.in_(ids), Plan.status == "published").distinct()
@@ -351,10 +274,6 @@ def list_clients(
     out = []
     for c in clients:
         item = ClientOut.model_validate(c)
-        if c.id in pending:
-            item.pending_review = True
-            item.pending_review_period = pending[c.id]
-        item.review_period_index = reviews.get(c.id)
         item.has_published_plan = c.id in with_plan
         out.append(item)
     return out
@@ -412,19 +331,6 @@ def update_client(client_id: int, body: ClientUpdate, db: Session = Depends(get_
     changes = body.model_dump(exclude_unset=True)
     if not changes:
         return ClientOut.model_validate(client)
-
-    # Combinación RESULTANTE válida: la oferta (1 € → suscripción) es solo del
-    # plan Full. Cubre tanto poner billing "oferta" a un train/nutri como
-    # cambiar de plan a un cliente que YA está en la oferta.
-    if "billing_period" in changes or "package_tier" in changes:
-        from app.services import packages as pkgs
-        billing_final = changes.get("billing_period", client.billing_period)
-        tier_final = changes.get("package_tier", client.package_tier)
-        if billing_final == "oferta" and pkgs.normalize(tier_final) != "full":
-            raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
-                "La oferta (1 € el primer mes) es solo del plan Full: cambia "
-                "antes la duración si quieres otro plan.")
 
     # Cambio de ESTADO manual (auditoría del ciclo: `inactive` era una trampa
     # sin salida — la transición "reactivación manual" existía en la máquina
@@ -1300,25 +1206,6 @@ def generate_client_plan(
         # ya al generar, sin esperar a recargar la lista.
         "created_at": plan.created_at.isoformat() if plan.created_at else None,
         "published_at": plan.published_at.isoformat() if plan.published_at else None,
-    }
-
-
-@router.post("/{client_id}/adapt-plan")
-def adapt_client_plan(client_id: int, db: Session = Depends(get_db)) -> dict:
-    """Adapta el plan a la ÚLTIMA REVISIÓN QUINCENAL aplicando de forma
-    determinista los ajustes ya calculados por la IA en el feedback (macros de
-    dieta + cargas de entreno). NO llama a la IA → funciona siempre. La versión
-    adaptada queda ACTIVA al momento (no hay paso de publicar)."""
-    from app.services.adapt_plan import AdaptError, adapt_plan_from_feedback
-
-    _client_or_404_docs(db, client_id)
-    try:
-        plan = adapt_plan_from_feedback(db, client_id)
-    except AdaptError as exc:
-        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
-    return {
-        "id": plan.id, "month_index": plan.month_index, "version": plan.version,
-        "status": plan.status,
     }
 
 

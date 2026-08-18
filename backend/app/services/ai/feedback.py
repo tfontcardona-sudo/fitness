@@ -1,4 +1,4 @@
-"""Análisis de feedback con IA (parte cualitativa del informe quincenal).
+"""Análisis de feedback con IA (parte cualitativa del informe de seguimiento).
 
 El backend calcula TODAS las métricas (peso, adherencia, e1RM, perímetros) en
 services/metrics.py y se las entrega ya hechas. La IA SOLO redacta el análisis
@@ -71,15 +71,15 @@ class FeedbackAIOutput(BaseModel):
         default_factory=list,
         description="CUADRÍCULA DE CAMBIOS: 2-6 ajustes concretos (área, cambio, porqué) "
         "que se aplicarán al plan de dieta y entrenamiento, deducidos de los datos "
-        "registrados (entrenos, diario, revisión quincenal).",
+        "registrados (entrenos y diario del portal).",
     )
     answers: str | None = Field(
         default=None,
-        description="Respuesta a las dudas que dejó el cliente al cerrar (si las hay).",
+        description="Respuesta a las dudas que dejó el cliente (si las hay).",
     )
     next_objectives: list[str] = Field(
         default_factory=list,
-        description="2-4 objetivos concretos para las próximas 2 semanas.",
+        description="2-4 objetivos concretos para las próximas semanas.",
     )
     closing_message: str = Field(
         default="",
@@ -91,8 +91,8 @@ class FeedbackAIOutput(BaseModel):
     )
 
 
-_SYSTEM = """Eres el dietista-entrenador de la asesoría redactando el FEEDBACK quincenal \
-para tu cliente, en castellano.
+_SYSTEM = """Eres el dietista-entrenador de la asesoría redactando el INFORME DE \
+SEGUIMIENTO para tu cliente, en castellano.
 
 TONO Y REDACCIÓN: profesional, serio y cercano, en castellano cuidado, con frases \
 completas y bien construidas. Honesto y constructivo (sin adular). NO uses emojis, \
@@ -110,17 +110,17 @@ REGLA CRÍTICA: NO calcules ni inventes números. El backend ya te entrega las m
 (cambio de peso, ritmo semanal, adherencia, energía/sueño, progresión de fuerza). \
 Úsalas tal cual; tu trabajo es INTERPRETARLAS y dar recomendaciones accionables.
 
-- natural_analysis: resumen BREVE (MÁXIMO 3-4 frases cortas) de cómo ha ido el período \
+- natural_analysis: resumen BREVE (MÁXIMO 3-4 frases cortas) de cómo va el seguimiento \
 (peso, adherencia, energía, fuerza). Reconoce lo bueno y señala lo mejorable. NO te \
 extiendas: el detalle va en changes_bullets y next_objectives, no lo repitas aquí.
 - changes_bullets: máximo 5 cambios concretos para el plan y POR QUÉ (p. ej. "subo 100 \
 kcal porque el ritmo de bajada es muy agresivo").
 - plan_adjustments: la CUADRÍCULA DE CAMBIOS del informe (2-6 filas). Cada fila = {area, \
 change, reason}. Basa cada ajuste en los DATOS REGISTRADOS por el cliente (series de \
-entreno y su progresión, peso/sueño/pasos/saciedad/agua del diario, sensaciones y \
-adherencia de la revisión quincenal). Cubre dieta Y entrenamiento cuando proceda.
+entreno y su progresión, peso/sueño/pasos/saciedad/agua del diario, medidas y \
+sensaciones que haya apuntado). Cubre dieta Y entrenamiento cuando proceda.
 - answers: responde a las dudas del cliente si las dejó; si no, déjalo en null.
-- next_objectives: 2-4 objetivos claros y medibles para las próximas 2 semanas.
+- next_objectives: 2-4 objetivos claros y medibles para las próximas semanas.
 - closing_message: 1-2 frases de cierre motivadoras.
 - ai_photo_analysis: SOLO si te indican que hay fotos; describe la evolución visible \
 de forma prudente. Si no hay fotos, déjalo en null.
@@ -142,7 +142,7 @@ usa solo las áreas "Dieta", "Cardio/NEAT" o "Hábitos" (NUNCA "Entrenamiento").
 
 def _user_prompt(payload: dict) -> str:
     return (
-        "Redacta el feedback del período con estos DATOS YA CALCULADOS por el backend "
+        "Redacta el informe de seguimiento con estos DATOS YA CALCULADOS por el backend "
         "(no recalcules). Devuelve el JSON del esquema.\n\n"
         + json.dumps(payload, ensure_ascii=False, indent=2)
     )
@@ -157,7 +157,7 @@ def generate_feedback_analysis(payload: dict, ai, nutrition_only: bool = False) 
         system=_SYSTEM + (_NUTRITION_ONLY_NOTE if nutrition_only else ""),
         user=_user_prompt(payload),
         schema=FeedbackAIOutput,
-        temperature=0,  # §14: la lectura de la revisión quincenal es determinista
+        temperature=0,  # §14: la lectura de los datos del seguimiento es determinista
     )
     # Saneo defensivo: este texto va verbatim al PDF y al email.
     out.natural_analysis = _clean_text(out.natural_analysis) or ""

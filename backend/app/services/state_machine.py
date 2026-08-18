@@ -1,9 +1,7 @@
 """Máquina de estados del cliente (G.2).
 
-    onboarding → active → review_pending
-              → (at_risk si +4 días sin cerrar tras fin de período
-                 o <30% de registros a día 10)
-              → review_pending → active …
+    onboarding → active → (at_risk si <30% de registros a día 10)
+                        → active (si recupera la constancia)
     inactive (manual o >30 días sin actividad)
 
 Diseño en dos capas:
@@ -18,9 +16,9 @@ Diseño en dos capas:
    corresponda. Idempotente: ejecutarla dos veces el mismo día no duplica
    transiciones ni emails (los emails de aviso se controlan por kind+día).
 
-Las transiciones que dependen de eventos (publicar plan → active; enviar
-feedback → review_pending→active) las disparan los endpoints/pipeline, no el
-scheduler; aquí vive solo lo que depende del paso del tiempo.
+Las transiciones que dependen de eventos (publicar plan → active) las disparan
+los endpoints/pipeline, no el scheduler; aquí vive solo lo que depende del paso
+del tiempo.
 """
 
 from __future__ import annotations
@@ -29,8 +27,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 # Umbrales de G.2
-AT_RISK_DAYS_AFTER_PERIOD_END = 4   # +4 días sin cerrar tras fin de período
-LOG_RATIO_CHECK_DAY = 10            # a día 10 del período
+LOG_RATIO_CHECK_DAY = 10            # a día 10 de la ventana de seguimiento
 LOG_RATIO_MIN = 0.30               # <30% de registros → at_risk
 INACTIVE_DAYS = 30                 # >30 días sin actividad → inactive
 REMINDER_DAY = 12                  # recordatorio si no registra (día 12)
@@ -42,11 +39,10 @@ class ClientFacts:
 
     status: str
     has_active_period: bool = False
+    # Inicio de la VENTANA de constancia (14 días móviles, ver jobs._facts_for).
     period_start: date | None = None
-    period_end: date | None = None
-    period_closed: bool = False
     days_logged_in_period: int = 0
-    last_activity_date: date | None = None  # último log o cierre
+    last_activity_date: date | None = None  # último registro
 
 
 @dataclass
@@ -66,8 +62,8 @@ def _period_day(today: date, start: date) -> int:
 def evaluate_transition(facts: ClientFacts, today: date) -> TransitionDecision:
     """Decide la transición por paso del tiempo. Función pura.
 
-    Orden de prioridad: inactividad > at_risk > recordatorio. Estados terminales
-    o gestionados por eventos (onboarding, review_pending) no transicionan aquí.
+    Orden de prioridad: inactividad > at_risk > recordatorio. El estado
+    `onboarding` no transiciona aquí (espera al evento de publicar el plan).
     """
     status = facts.status
 
@@ -83,30 +79,19 @@ def evaluate_transition(facts: ClientFacts, today: date) -> TransitionDecision:
         return TransitionDecision(None)
 
     # RECUPERACIÓN at_risk → active: si el cliente retomó el registro y su
-    # adherencia vuelve al mínimo, sale de riesgo solo (antes se quedaba en
-    # at_risk hasta el cierre del período aunque hubiera remontado).
-    if status == "at_risk" and facts.period_start is not None and not facts.period_closed:
+    # constancia vuelve al mínimo en la ventana móvil, sale de riesgo solo.
+    if status == "at_risk" and facts.period_start is not None:
         day = _period_day(today, facts.period_start)
-        if day >= 1 and facts.period_end is not None and today <= facts.period_end:
+        if day >= 1:
             ratio = facts.days_logged_in_period / day if day else 0
             if ratio >= LOG_RATIO_MIN:
                 return TransitionDecision(
-                    "active", f"adherencia recuperada ({ratio * 100:.0f}%)"
+                    "active", f"constancia recuperada ({ratio * 100:.0f}%)"
                 )
 
     if status == "active":
-        # ¿Período terminado y sin cerrar +4 días? → at_risk
-        if facts.period_end is not None and not facts.period_closed:
-            days_past_end = (today - facts.period_end).days
-            if days_past_end >= AT_RISK_DAYS_AFTER_PERIOD_END:
-                return TransitionDecision(
-                    "at_risk",
-                    f"{days_past_end} días sin cerrar el período",
-                    notify_coach_at_risk=True,
-                )
-
-        # ¿Baja adherencia a día 10? → at_risk
-        if facts.period_start is not None and not facts.period_closed:
+        # ¿Baja constancia a día 10 de la ventana? → at_risk
+        if facts.period_start is not None:
             day = _period_day(today, facts.period_start)
             if day >= LOG_RATIO_CHECK_DAY:
                 expected = day
@@ -119,12 +104,11 @@ def evaluate_transition(facts: ClientFacts, today: date) -> TransitionDecision:
                     )
 
         # Recordatorio día 12 si aún no ha registrado nada hoy/poco (no cambia
-        # estado). También a los `at_risk`: el cliente con baja adherencia es
+        # estado). También a los `at_risk`: el cliente con baja constancia es
         # justo el que MÁS necesita el empujón (antes quedaba excluido).
         if (
             status in ("active", "at_risk")
             and facts.period_start is not None
-            and not facts.period_closed
             and _period_day(today, facts.period_start) == REMINDER_DAY
             and facts.days_logged_in_period < REMINDER_DAY // 2
         ):
@@ -134,14 +118,13 @@ def evaluate_transition(facts: ClientFacts, today: date) -> TransitionDecision:
 
 
 # valid transitions for event-driven changes (validación defensiva)
-# ("awaiting_feedback" eliminado: era un estado MUERTO — nada lo asignaba y
-# confundía la máquina real, auditoría del ciclo. El flujo salta de active a
-# review_pending directamente al cerrar la revisión.)
+# ("awaiting_feedback" y "review_pending" eliminados: eran estados del ciclo
+# quincenal — sin cierre de período nada los asignaba y solo confundían la
+# máquina real.)
 VALID_TRANSITIONS = {
     "onboarding": {"active", "inactive"},
-    "active": {"review_pending", "at_risk", "inactive"},
-    "at_risk": {"review_pending", "active", "inactive"},
-    "review_pending": {"active", "inactive"},
+    "active": {"at_risk", "inactive"},
+    "at_risk": {"active", "inactive"},
     "inactive": {"active"},  # reactivación manual
 }
 

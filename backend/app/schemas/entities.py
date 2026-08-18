@@ -48,17 +48,13 @@ DietPattern = Literal["vegano", "vegetariano", "pescetariano", "sin_cerdo", "hal
 # Paquete/plan contratado por el cliente (define qué incluye y cómo se le entrega):
 #   start = solo nutrición · full = nutrición + entreno · pro = full + contacto directo
 PackageTier = Literal["nutri", "train", "full"]
-# Duración contratada del plan: mensual, trimestral o semestral (cada paquete
-# tiene un precio de Stripe por duración, 9 combinaciones) + "oferta": la
-# promoción de captación del plan Full — 1 € el primer mes y después
-# 120 €/mes en SUSCRIPCIÓN de Stripe (renovación automática).
-# "unico" = PAGO ÚNICO (el modelo de Professional). Las duraciones
-# mensuales y la oferta son del motor y se conservan para instancias que
-# vendan por suscripción; esta marca solo usa "unico".
-BillingPeriod = Literal["unico", "1m", "3m", "6m", "oferta"]
+# Duración contratada del plan. "unico" = PAGO ÚNICO, que es el modelo de esta
+# marca (los tres servicios). Las duraciones mensuales son del motor y se
+# conservan para instancias que vendan por suscripción.
+BillingPeriod = Literal["unico", "1m", "3m", "6m"]
 PaymentStatus = Literal["pending", "paid"]
 ClientStatus = Literal[
-    "onboarding", "active", "awaiting_feedback", "at_risk", "review_pending", "inactive"
+    "onboarding", "active", "at_risk", "inactive"
 ]
 DietAdherence = Literal["yes", "partial", "no"]
 PhotoKind = Literal["front", "side", "back", "detail"]
@@ -240,14 +236,8 @@ class ClientOut(BaseModel):
     portal_access_sent_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
-    # Aviso de revisión quincenal nueva sin ver por el coach (lista de clientes).
-    # No viene de la BD; lo rellena el listado. Se apaga al abrir Seguimiento.
-    pending_review: bool = False
-    pending_review_period: int | None = None
-    # Rellenados por el listado para las CARPETAS de la cartera:
-    # ¿tiene planificación publicada? y nº de la última revisión recibida.
+    # Rellenado por el listado para las CARPETAS de la cartera.
     has_published_plan: bool = False
-    review_period_index: int | None = None
 
 
 # ------------------------------------------------------------ exercises ----
@@ -378,27 +368,7 @@ class DailyLogUpsert(BaseModel):
     workout_sets: list[WorkoutSetIn] = Field(default_factory=list)
 
 
-# --------------------------------------------------- revisión quincenal ----
-class PeriodCloseIn(BaseModel):
-    closing_weight_kg: float = Field(gt=30, lt=300)
-    closing_rating: int | None = Field(default=None, ge=1, le=5)  # legado (opcional)
-    closing_hardest: str | None = None            # ¿Qué te cuesta más? (sec 5)
-    closing_questions: str | None = None
-    closing_waist_cm: float | None = Field(default=None, gt=30, lt=250)
-    closing_hip_cm: float | None = Field(default=None, gt=30, lt=250)
-    closing_arm_cm: float | None = Field(default=None, gt=10, lt=80)
-    closing_thigh_cm: float | None = Field(default=None, gt=20, lt=120)
-    # Sensaciones (sec 2): {"energia":4,"hambre":3,"sueno":4,"recuperacion":5,"animo":4,"digestiones":3}
-    # Valores acotados 1-5: un 0 o un 99 distorsionaría la nota /10 del coach y
-    # la fatiga que lee el motor quincenal.
-    closing_feelings_json: dict[str, Annotated[int, Field(ge=1, le=5)]] | None = None
-    adherence_diet_0_10: int | None = Field(default=None, ge=0, le=10)
-    adherence_training_0_10: int | None = Field(default=None, ge=0, le=10)
-    free_meals_count: int | None = Field(default=None, ge=0, le=50)
-    closing_changes: str | None = None            # Cambios importantes (sec 4)
-    closing_next_goal: str | None = None          # Objetivo próximas 2 semanas (sec 6)
-
-
+# ------------------------------------------------- seguimiento continuo ----
 class PortalMeasurementsIn(BaseModel):
     """Medidas del cliente en SEGUIMIENTO CONTINUO (sin cierre quincenal).
 
@@ -516,7 +486,6 @@ class PortalPeriodInfo(BaseModel):
     days_total: int
     days_elapsed: int
     days_left: int
-    can_close: bool  # desde día 14
     status: Literal["open", "closed", "analyzed"]
 
 
@@ -531,9 +500,6 @@ class PortalState(BaseModel):
     has_plan: bool
     period: PortalPeriodInfo | None
     brand: PortalBrand
-    # Tras enviar la revisión: recordatorio de confirmar el envío de las fotos
-    # de progreso al coach (persiste hasta que el cliente lo confirme).
-    photos_pending: bool = False
     # Onboarding sin anamnesis: el portal muestra el camino a /anamnesis/{token}
     # (antes el cliente veía pestañas vacías sin ninguna ruta — auditoría).
     needs_anamnesis: bool = False
@@ -576,8 +542,6 @@ class PushPendingOut(BaseModel):
 
     diary: bool
     workout: bool
-    quincenal: bool
-    photos: bool = False  # confirmar envío de fotos de progreso tras la revisión
     plan: bool = False  # planificación nueva sin ver (suma 1 al badge)
     count: int
 

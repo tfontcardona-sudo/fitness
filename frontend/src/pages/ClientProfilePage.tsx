@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Check, BellRing, ChevronRight, Pencil, Smartphone, ClipboardCheck, Trash2, CreditCard } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight, Pencil, Smartphone, ClipboardCheck, Trash2, CreditCard } from "lucide-react";
 import { api, keepIfSame, REFRESH_MS } from "../lib/api";
 import type { ClientOut } from "../types";
 import {
@@ -37,9 +37,6 @@ export default function ClientProfilePage() {
   const [deleting, setDeleting] = useState(false);
   const [portalUrl, setPortalUrl] = useState<string | null>(null);
   const [payUrl, setPayUrl] = useState<string | null>(null);
-  // Aviso "revisión cerrada": solo mientras el feedback de la última revisión
-  // NO exista todavía. En cuanto el coach lo genera, el aviso desaparece.
-  const [feedbackPending, setFeedbackPending] = useState(false);
   // La pestaña Anamnesis tiene edición local; avisamos si se sale con cambios sin
   // guardar (el panel se re-monta al cambiar de pestaña y perdería el borrador).
   const [anamnesisDirty, setAnamnesisDirty] = useState(false);
@@ -115,21 +112,6 @@ export default function ClientProfilePage() {
     if (t && valid.includes(t)) changeTab(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
-
-  useEffect(() => {
-    if (client?.status !== "review_pending") {
-      setFeedbackPending(false);
-      return;
-    }
-    api.listPeriods(clientId)
-      .then((ps: any[]) => {
-        const latest = ps
-          .filter((p) => p.status !== "open")
-          .reduce<any>((a, b) => (!a || b.period_index > a.period_index ? b : a), null);
-        setFeedbackPending(latest != null && !latest.feedback_id);
-      })
-      .catch(() => setFeedbackPending(true));
-  }, [client, clientId, reloadKey]);
 
   // Precargamos el enlace del portal con el ORIGEN actual del navegador (en dev
   // :5173, en prod el dominio) para poder abrirlo de forma síncrona (sin que el
@@ -222,23 +204,6 @@ export default function ClientProfilePage() {
       <Link to="/clientes" className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-300">
         <ArrowLeft size={15} /> Clientes
       </Link>
-
-      {/* Notificación: el cliente cerró su período → toca generar feedback.
-          Se oculta en cuanto el feedback ya está generado. */}
-      {client.status === "review_pending" && feedbackPending && (
-        <div
-          className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3.5"
-          style={{ borderColor: "var(--brand-accent)", background: "color-mix(in srgb, var(--brand-accent) 10%, transparent)" }}
-        >
-          <div className="flex items-center gap-2.5 text-sm text-zinc-200">
-            <BellRing size={18} style={{ color: "var(--brand-accent)" }} />
-            <span><b>El cliente ha cerrado su período.</b> Revisa los datos y genera el feedback.</span>
-          </div>
-          <button onClick={() => changeTab("feedback")} className="btn btn-primary">
-            Ir a Feedback
-          </button>
-        </div>
-      )}
 
       {/* Rejilla con filas: en MÓVIL el orden es identidad → contenido →
           extras (el coach llega a las pestañas sin scrollear toda la barra);
@@ -431,7 +396,7 @@ export default function ClientProfilePage() {
             {tab === "anamnesis" && <ClientAnamnesisTab client={client} onSaved={reload} onDirtyChange={setAnamnesisDirty} />}
             {tab === "planificacion" && <ClientPlanPanel client={client} onClientChanged={reload} onEditingChange={setPlanEditing} />}
             {tab === "seguimiento" && <ClientTrackingTab client={client} />}
-            {tab === "feedback" && <ClientFeedbackTab client={client} onClientChanged={reload} onGoPlan={() => changeTab("planificacion")} />}
+            {tab === "feedback" && <ClientFeedbackTab client={client} onClientChanged={reload} />}
             {tab === "historial" && <ClientHistoryTab client={client} />}
           </div>
         </div>
@@ -551,12 +516,6 @@ function BillingRow({ client, onSaved }: { client: ClientOut; onSaved: () => voi
           {BILLING_PERIODS.map((b) => (
             <option key={b.value} value={b.value}>{b.label}</option>
           ))}
-          {/* La oferta se muestra y se puede (re)aplicar SOLO en plan Full:
-              sin esta opción, un cliente de la oferta salía con el select en
-              blanco y cambiarlo era un billete de ida sin vuelta. */}
-          {pkg(client.package_tier).tier === "full" && (
-            <option value="oferta">Oferta 1 € → 120 €/mes</option>
-          )}
         </select>
       </dd>
     </div>
