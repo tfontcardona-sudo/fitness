@@ -324,52 +324,11 @@ export interface ExerciseOut {
   movement_pattern: string;
   equipment: string[];
   level_min: 1 | 2 | 3;
-  video_url: string | null;
-  // Vídeo SUBIDO como archivo (media/…): tiene prioridad sobre video_url.
-  video_path: string | null;
   image_url: string | null;
   technique_notes: string | null;
   biomechanics_notes: string | null;
   contraindications: string[];
   archived: boolean;
-}
-
-// --- Productos recomendados (sección Recursos del portal) ---
-export type ProductCategory = "suplemento" | "material" | "otro";
-
-export interface RecommendedProductOut {
-  id: number;
-  title: string;
-  description: string | null;
-  url: string;
-  category: string;
-  image_url: string | null; // URL efectiva (subida servida por la API o externa)
-  has_upload: boolean;
-  active: boolean;
-  sort_order: number;
-  discount_code: string | null;
-}
-
-export interface RecommendedProductIn {
-  title: string;
-  description?: string | null;
-  url: string;
-  category?: ProductCategory;
-  image_url?: string | null;
-  /** Código de descuento de la marca (afiliación), copiable en el portal. */
-  discount_code?: string | null;
-  active?: boolean;
-}
-
-export interface RecommendedProductUpdate {
-  title?: string;
-  description?: string | null;
-  url?: string;
-  category?: ProductCategory;
-  image_url?: string | null;
-  active?: boolean;
-  sort_order?: number;
-  discount_code?: string | null;
 }
 
 export interface BrandConfigOut {
@@ -387,42 +346,8 @@ export interface BrandConfigOut {
   portal_theme: Theme;
   // Página pública de enlaces (/professional): foto de fondo + afiliación del partner.
   links_photo_path: string | null;
-  partner_store_url: string | null;
-  partner_discount_code: string | null;
-  // Portada única de todos los vídeos de ejercicios.
-  video_cover_path: string | null;
   // Foto de fondo de la página pública de planes (/planes).
   plans_photo_path: string | null;
-  // Enlace de reservas de la videollamada (Google Calendar/Meet, Calendly…).
-  meet_url: string | null;
-}
-
-/** Videollamada quincenal de un cliente Pro. El cliente propone → el coach
- *  acepta (crea el Meet) o modifica (agenda a mano). */
-export interface VideoCallOut {
-  id: number;
-  client_id: number;
-  period_index: number;
-  // proposed | pending_manual | scheduled | done ("pending" = dato antiguo)
-  status: "proposed" | "pending_manual" | "scheduled" | "done" | "pending";
-  scheduled_for: string | null; // ISO date
-  // Cuando se agenda con Google Calendar/Meet: hora concreta, duración y enlaces.
-  scheduled_at?: string | null; // ISO datetime
-  duration_min?: number | null;
-  meet_url?: string | null;
-  google_html_link?: string | null;
-}
-
-/** Fila de la agenda de videollamadas del coach (Panel). */
-export interface VideoCallAgendaItem {
-  id: number;
-  client_id: number;
-  client_name: string;
-  scheduled_at: string;   // ISO datetime
-  when_label: string;     // "jueves 21 de julio a las 17:00"
-  duration_min: number | null;
-  meet_url: string | null;
-  is_past: boolean;       // pasada sin confirmar (a marcar como realizada)
 }
 
 /** GET /api/ai-credit — saldo local de créditos de la API de Anthropic.
@@ -454,12 +379,9 @@ export interface LandingOut {
   logo_url: string | null;
   links_photo_url: string | null;
   plans_photo_url: string | null;
-  partner_store_url: string | null;
-  partner_discount_code: string | null;
   /** Contacto público del coach: /planes abre WhatsApp con este teléfono. */
   contact_phone: string | null;
   contact_email: string | null;
-  products: { title: string; url: string; category: string; image_url: string | null }[];
 }
 
 /** GET /api/public/plan-prices — importes reales de cada plan × duración
@@ -632,7 +554,6 @@ export interface TodayExercise {
   technique_cue: string | null;
   /** Indicaciones personalizadas del coach para este cliente. */
   coach_notes?: string | null;
-  video_url: string | null;
 }
 
 /** Semana del mesociclo que el cliente vive hoy: fase, carga, RIR y porqué. */
@@ -694,35 +615,6 @@ export interface FeedbackDocOut {
   content_json: Record<string, unknown> | null;
 }
 
-// --- Sección Recursos del portal (GET /api/p/{token}/resources) ---
-export interface ResourceExerciseVideo {
-  exercise_id: number;
-  title: string;
-  muscle: string | null;
-  video_url: string;
-  image_url: string | null;
-  technique_notes: string | null;
-}
-
-export interface ResourceProduct {
-  id: number;
-  title: string;
-  description: string | null;
-  url: string;
-  category: string;
-  image_url: string | null;
-  discount_code?: string | null;
-  // URL de compra con el código pre-aplicado (tienda Shopify del partner).
-  buy_url?: string | null;
-  // True si corresponde a un suplemento pautado en SU planificación.
-  in_plan?: boolean;
-}
-
-export interface PortalResources {
-  exercise_videos: ResourceExerciseVideo[];
-  products: ResourceProduct[];
-}
-
 // Progreso del cliente que ve él mismo en el portal (GET /api/p/{token}/progress)
 export interface PortalProgress {
   weight: {
@@ -760,29 +652,6 @@ export interface CoachAlert {
   message: string;
   tab: string;
   action: string;
-}
-
-/** Ronda diaria de seguimiento por WhatsApp (pool de 100 mensajes). */
-export interface WhatsAppRoundItem {
-  client_id: number;
-  name: string;
-  phone: string | null;
-  tier: PackageTier;
-  brief_key: string;
-  brief_tema: string;
-  text: string;
-  already_sent: boolean;
-}
-
-export interface WhatsAppRoundOut {
-  round_id: number;
-  date: string;
-  brief_index: number;
-  brief_key: string;
-  brief_tema: string;
-  pool_size: number;
-  items: WhatsAppRoundItem[];
-  pending: number;
 }
 
 // --- Pool de rutinas (página Rutinas del coach) ---

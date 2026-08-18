@@ -5,7 +5,6 @@ import {
   CENTER_ADDRESS, CENTER_EMAIL, CENTER_SCHEDULE, CENTER_WHATSAPP_DISPLAY,
 } from "../lib/branding";
 import { PACKAGES } from "../lib/packages";
-import { waPhone, waUrl } from "../lib/whatsapp";
 
 /**
  * Página PÚBLICA de servicios — el catálogo REAL de la marca, los tres de
@@ -59,10 +58,13 @@ export default function PlansPage() {
     api.publicLanding().then(setLanding).catch(() => setLanding(null));
   }, []);
 
-  const coachDigits = waPhone(landing?.contact_phone)
-    || waPhone(CENTER_WHATSAPP_DISPLAY.startsWith("+") ? CENTER_WHATSAPP_DISPLAY : `+34 ${CENTER_WHATSAPP_DISPLAY}`);
+  // Teléfono público del centro en formato wa.me (dígitos con prefijo de país;
+  // 9 dígitos → España). Es el ÚNICO uso de WhatsApp que queda: el contacto
+  // comercial de la web pública, no un canal de entrega.
+  const digits = (landing?.contact_phone || CENTER_WHATSAPP_DISPLAY).replace(/\D/g, "");
+  const coachDigits = digits ? (digits.length === 9 ? `34${digits}` : digits) : null;
   const contactHref = (text: string): string | null =>
-    coachDigits ? waUrl(coachDigits, text) : null;
+    coachDigits ? `https://wa.me/${coachDigits}?text=${encodeURIComponent(text)}` : null;
 
   const gold = PACKAGES.full.color;
   const bg = landing?.color_bg ?? "#0F0E0C";

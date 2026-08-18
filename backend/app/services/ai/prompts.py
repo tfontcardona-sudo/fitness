@@ -45,7 +45,7 @@ encima de la perfección teórica.
 
 REDACCIÓN (todos los textos que generes van a un PDF profesional o al portal del cliente): \
 en castellano cuidado, con frases COMPLETAS y bien construidas, nunca cortadas a medias. \
-NO uses emojis, iconos ni símbolos decorativos (corrompen el PDF y el mensaje de WhatsApp). \
+NO uses emojis, iconos ni símbolos decorativos (corrompen el PDF y el email). \
 Evita las exclamaciones en cadena, las muletillas y los tecnicismos innecesarios. Sé conciso: \
 respeta los límites de longitud del schema y no rellenes.
 

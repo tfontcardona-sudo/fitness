@@ -186,7 +186,7 @@ def test_pending_for_client(db, client_with_plan, ciclo_quincenal) -> None:
     # Día 3, nada registrado → falta diario + entreno (hoy hay sesión), no quincenal
     p = push_svc.pending_for_client(db, client, today)
     assert p == {"diary": True, "workout": True, "quincenal": False,
-                 "photos": False, "videocall": False, "count": 2}
+                 "photos": False, "count": 2}
 
     # Fila de diario vacía (autosave) → sigue faltando el diario
     log = DailyLog(period_id=period.id, log_date=today)
@@ -211,18 +211,12 @@ def test_pending_for_client(db, client_with_plan, ciclo_quincenal) -> None:
     p = push_svc.pending_for_client(db, client, today)
     assert p["quincenal"] is True and p["count"] == 1
 
-    # Período cerrado → ya no toca diario/entreno/quincenal. Con el pack FULL,
-    # que incluye videollamada, queda pendiente agendarla (aviso legítimo).
+    # Período cerrado → ya no toca nada: sin período abierto no hay pendientes.
     period.status = "closed"
     db.flush()
     p = push_svc.pending_for_client(db, client, today)
     assert p["diary"] is False and p["workout"] is False and p["quincenal"] is False
-    assert p["videocall"] is True and p["count"] == 1
-
-    # En un plan SIN videollamada (nutri/train) no queda nada pendiente.
-    client.package_tier = "nutri"
-    db.flush()
-    assert push_svc.pending_for_client(db, client, today)["count"] == 0
+    assert p["count"] == 0
 
 
 @needs_db

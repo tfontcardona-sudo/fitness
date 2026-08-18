@@ -7,7 +7,7 @@ atender:
 
   onboarding  → crear la planificación (queda ACTIVA al generarse; "activar"
                 solo aplica a borradores antiguos)
-  revisión    → generar el feedback → enviarlo por WhatsApp
+  revisión    → generar el informe → enviarlo al cliente
   adaptación  → adaptar el plan a la última revisión (queda activo al momento)
   seguimiento → cliente sin registros varios días
   objetivo    → 45 días en la misma etapa: valorar cambio (posponible)
@@ -55,7 +55,7 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
     from app.services.portal import today_local
 
     # Fecha de NEGOCIO (settings.tz): con date.today() en UTC, de madrugada las
-    # alertas de "sin registros"/videollamada salían descuadradas un día.
+    # alertas de "sin registros" salían descuadradas un día.
     today = today or today_local()
     out: list[dict] = []
     if client.status == "inactive":
@@ -180,7 +180,7 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
         if fb is not None and fb.sent_at is None:
             out.append(_alert(client, "send_feedback", "alta",
                               f"Feedback de la revisión #{last_analyzed.period_index} sin enviar al cliente.",
-                              "feedback", "Enviar por WhatsApp"))
+                              "feedback", "Enviar al cliente"))
 
         def _adapted_idx(p: Plan | None) -> int | None:
             if p is None:
@@ -247,85 +247,6 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
             client, "change_request", "alta",
             f"{prefix}«{extracto}»",
             "seguimiento", "Ver petición"))
-
-    # --- Suplementos del plan SIN producto en Recursos ----------------------
-    # El portal del cliente destaca los productos de SU planificación (con el
-    # código del coach). Si un suplemento pautado no tiene producto subido, el
-    # cliente no lo verá comprable → aviso para subirlo a Recursos.
-    from app.models import RecommendedProduct
-    from app.services.product_match import match_products, plan_supplement_names
-
-    sups = plan_supplement_names(published.nutrition_json) if branding.FEATURE_RESOURCES else []
-    if sups:
-        titles = list(db.scalars(
-            select(RecommendedProduct.title).where(RecommendedProduct.active.is_(True))
-        ))
-        missing = match_products(sups, titles)["missing"]
-        if missing:
-            listado = ", ".join(missing[:4]) + ("…" if len(missing) > 4 else "")
-            out.append(_alert(
-                client, "missing_products", "media",
-                f"Suplementos de su plan que no están en la tienda: {listado}. "
-                "Añádelos en Tienda → Productos para que le salgan en su portal "
-                "con tu código.",
-                "planificacion", "Ver planificación"))
-
-    # --- Videollamada quincenal (Pro) ---------------------------------------
-    # El cliente propone día/hora al enviar su revisión → el coach ACEPTA (crea el
-    # Meet) o MODIFICA (lo acuerda por WhatsApp y agenda a mano). Estados:
-    # proposed → accept|modify → scheduled|pending_manual → done. Se ancla a la
-    # última revisión CERRADA/ANALIZADA; los agendados salen SIEMPRE (aunque el
-    # siguiente período ya se haya abierto): una llamada no puede olvidarse.
-    from app.models import VideoCall
-    from app.services.portal import format_when_es
-
-    if pkgs.has_video_call(client.package_tier):
-        last_review = db.scalar(
-            select(Period).where(Period.client_id == client.id,
-                                 Period.status.in_(("closed", "analyzed")))
-            .order_by(Period.period_index.desc()).limit(1)
-        )
-        if last_review is not None:
-            vc = db.scalar(select(VideoCall).where(
-                VideoCall.client_id == client.id,
-                VideoCall.period_index == last_review.period_index))
-            if vc is None:
-                out.append(_alert(
-                    client, "video_call_wait", "media",
-                    f"Revisión #{last_review.period_index}: esperando que el cliente proponga "
-                    "la videollamada (o agéndala tú a mano).",
-                    "feedback", "Agendar videollamada"))
-
-    # TODAS las videollamadas vivas — de cualquier revisión y aunque el cliente
-    # ya no sea Pro: una propuesta sin responder o una llamada agendada no puede
-    # esfumarse en silencio (antes, al cerrar la revisión siguiente quedaban
-    # huérfanas y desaparecían de las alertas para siempre).
-    for vc in (db.scalars(select(VideoCall).where(
-            VideoCall.client_id == client.id,
-            VideoCall.status.in_(("proposed", "pending_manual", "scheduled"))))
-            if branding.FEATURE_VIDEO_CALLS else ()):
-        if vc.status == "proposed" and vc.scheduled_at is not None:
-            out.append(_alert(
-                client, "video_call_proposed", "alta",
-                f"El cliente propuso videollamada: {format_when_es(vc.scheduled_at)}. "
-                "Acéptala o modifícala.",
-                "feedback", "Aceptar o modificar"))
-        elif vc.status == "pending_manual":
-            out.append(_alert(
-                client, "video_call_manual", "alta",
-                "Videollamada a agendar a mano (acordado por WhatsApp): escribe el día y la hora.",
-                "feedback", "Agendar día y hora"))
-        elif vc.status == "scheduled" and vc.scheduled_for is not None:
-            if vc.scheduled_for == today + timedelta(days=1):
-                out.append(_alert(
-                    client, "video_call_tomorrow", "alta",
-                    f"Videollamada MAÑANA ({vc.scheduled_for.strftime('%d/%m')}).",
-                    "feedback", "Ver videollamada"))
-            elif vc.scheduled_for <= today:
-                out.append(_alert(
-                    client, "video_call_confirm", "alta",
-                    "¿Se realizó la videollamada? Confírmala, o reagéndala si no pudo ser.",
-                    "feedback", "Confirmar videollamada"))
 
     # --- Objetivo cambiado sin regenerar el plan ----------------------------
     # Tras cambiar el objetivo, si la IA falló al regenerar, el cliente seguiría
@@ -449,35 +370,3 @@ def list_alerts(db: Session = Depends(get_db)) -> dict:
     alerts.sort(key=lambda a: (0 if a["severity"] == "alta" else 1, a["client_name"]))
     return {"alerts": alerts, "count": len(alerts),
             "high": sum(1 for a in alerts if a["severity"] == "alta")}
-
-
-@router.get("/video-calls/agenda")
-def video_calls_agenda(db: Session = Depends(get_db)) -> dict:
-    """Agenda de videollamadas AGENDADAS (con Meet): día, hora, cliente y enlace.
-    Salen ordenadas por fecha y permanecen hasta que el coach las confirma como
-    realizadas (las ya pasadas sin confirmar salen marcadas para revisar)."""
-    from app.models import VideoCall
-    from app.services.portal import format_when_es, today_local
-
-    today = today_local()
-    rows = db.scalars(
-        select(VideoCall).where(VideoCall.status == "scheduled",
-                                VideoCall.scheduled_at.is_not(None))
-        .order_by(VideoCall.scheduled_at.asc())
-    ).all()
-    out = []
-    for vc in rows:
-        client = db.get(Client, vc.client_id)
-        if client is None or client.status == "inactive":
-            continue
-        out.append({
-            "id": vc.id,
-            "client_id": vc.client_id,
-            "client_name": client.full_name,
-            "scheduled_at": vc.scheduled_at.isoformat(),
-            "when_label": format_when_es(vc.scheduled_at),
-            "duration_min": vc.duration_min,
-            "meet_url": vc.meet_url,
-            "is_past": vc.scheduled_for is not None and vc.scheduled_for < today,
-        })
-    return {"calls": out, "count": len(out)}

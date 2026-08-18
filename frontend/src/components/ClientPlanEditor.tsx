@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { Save, X, Plus, Trash2, Utensils, Dumbbell, Target, AlertTriangle, Check, ChevronDown, ChevronUp, PlayCircle } from "lucide-react";
+import { Save, X, Plus, Trash2, Utensils, Dumbbell, Target, AlertTriangle, Check, ChevronDown, ChevronUp } from "lucide-react";
 import { api } from "../lib/api";
 import {
   GOAL_RULES, goalTargets, kcalOf, macrosForKcal, macrosScaledToKcal, rescaledFrom, targetBounds,
@@ -836,23 +836,6 @@ export function ClientPlanEditor({
                     >
                       <ChevronDown size={15} />
                     </button>
-                    {(() => {
-                      // Mismo re-filtro que el portal: una URL legada sin http(s)
-                      // no puede abrirse (se resolvería como ruta de la app o algo peor).
-                      const rawUrl = (library.find((e) => e.id === ex.exercise_id)?.video_url ?? "").trim();
-                      const video = /^https?:\/\//i.test(rawUrl) ? rawUrl : null;
-                      return video ? (
-                        <button
-                          onClick={(e) => { e.preventDefault(); window.open(video, "_blank", "noopener"); }}
-                          aria-label="Ver vídeo del ejercicio"
-                          title="Ver vídeo del ejercicio"
-                          className="p-0.5 hover:opacity-80"
-                          style={{ color: "var(--brand-accent-2)" }}
-                        >
-                          <PlayCircle size={15} />
-                        </button>
-                      ) : null;
-                    })()}
                     <button
                       onClick={(e) => { e.preventDefault(); mutate((d) => d.training.sessions[si].exercises.splice(ei, 1)); }}
                       aria-label="Quitar ejercicio"

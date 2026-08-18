@@ -1,14 +1,13 @@
 """Planes contratables y sus capacidades — FUENTE ÚNICA DE VERDAD.
 
-Tres planes con la MISMA maquinaria interna (anamnesis → plan → portal →
-seguimiento → revisión); solo cambian los servicios incluidos:
+Tres servicios de PAGO ÚNICO con la MISMA maquinaria interna (anamnesis →
+plan → portal → seguimiento → informe); solo cambia lo que incluyen:
 
-  - nutri: solo NUTRICIÓN.
-  - train: solo ENTRENAMIENTO.
-  - full:  las dos cosas (y la videollamada de revisión).
+  - nutri: solo DIETA (70 €).
+  - train: solo ENTRENAMIENTO (70 €).
+  - full:  las dos cosas + la cuota del gimnasio (130 €).
 
-El contacto diario por WhatsApp está en los TRES: es el canal con el cliente,
-no un extra de gama alta.
+Todo se entrega por EMAIL en los tres.
 
 Antes estas reglas vivían como comparaciones de cadenas repartidas por routers y
 servicios (`package_tier == "start"`, `!= "pro"`…), que es justo donde se cuelan
@@ -51,18 +50,6 @@ def has_nutrition(tier: str | None) -> bool:
 def has_training(tier: str | None) -> bool:
     """¿El plan incluye entrenamiento? (train y full)."""
     return normalize(tier) in ("train", "full")
-
-
-def has_direct_contact(tier: str | None) -> bool:
-    """WhatsApp diario: incluido en TODOS los planes."""
-    normalize(tier)  # valida
-    return True
-
-
-def has_video_call(tier: str | None) -> bool:
-    """Videollamada de revisión (Google Meet): solo en el pack completo, y solo
-    si la instancia la tiene encendida (branding.FEATURE_VIDEO_CALLS)."""
-    return branding.FEATURE_VIDEO_CALLS and normalize(tier) == "full"
 
 
 def label(tier: str | None) -> str:

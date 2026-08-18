@@ -259,15 +259,13 @@ class ExerciseIn(BaseModel):
     movement_pattern: str
     equipment: list[str] = Field(default_factory=list)
     level_min: int = Field(ge=1, le=3)
-    video_url: str | None = Field(default=None, max_length=500)
-    image_url: str | None = Field(default=None, max_length=500)
     technique_notes: str | None = None
     biomechanics_notes: str | None = None
     contraindications: list[str] = Field(default_factory=list)
 
     # El portal muestra el vídeo (enlace) y la imagen del ejercicio: exige http(s)
     # para no guardar un javascript:/data: que se renderizaría como enlace/imagen.
-    _v_urls = field_validator("video_url", "image_url")(_http_url_or_none)
+
 
 
 def _passthrough(v):
@@ -279,14 +277,12 @@ class ExerciseOut(ExerciseIn):
 
     id: int
     archived: bool
-    # Vídeo SUBIDO como archivo (media/…): tiene prioridad sobre video_url.
-    video_path: str | None = None
 
     # SALIDA tolerante: anula el validador http(s) heredado de ExerciseIn. Los
     # datos LEGADOS (URLs guardadas antes de existir la validación) no pueden
     # romper el GET de la biblioteca — la validación estricta es de ENTRADA; el
     # portal además re-filtra las URLs al construir los recursos.
-    _v_urls = field_validator("video_url", "image_url")(_passthrough)
+
 
 
 # ---------------------------------------------------------------- brand ----
@@ -304,18 +300,6 @@ class BrandConfigIn(BaseModel):
     # generador de documentos la consumía (control muerto — auditoría #6). Si
     # algún día los Word tienen tema oscuro, reintroducir aquí Y en docs/.
     portal_theme: Theme = branding.PORTAL_THEME
-    # Página pública de enlaces (/professional): tienda del partner y código de descuento.
-    partner_store_url: str | None = Field(default=None, max_length=300)
-    partner_discount_code: str | None = Field(default=None, max_length=40)
-    # Enlace de reservas de videollamada (Google Calendar/Meet, Calendly…).
-    meet_url: str | None = Field(default=None, max_length=300)
-
-    _v_partner_url = field_validator("partner_store_url", "meet_url")(_http_url_or_none)
-
-    @field_validator("partner_discount_code")
-    @classmethod
-    def _v_partner_code(cls, v: str | None) -> str | None:
-        return _clean_discount_code(v)
 
 
 class BrandConfigOut(BrandConfigIn):
@@ -324,13 +308,8 @@ class BrandConfigOut(BrandConfigIn):
     id: int
     logo_path: str | None
     links_photo_path: str | None = None
-    video_cover_path: str | None = None
     plans_photo_path: str | None = None
     contact_email: str | None  # relaja EmailStr al leer de DB
-    # SALIDA tolerante (mismo criterio que ExerciseOut): una URL legada sin
-    # http(s) guardada en DB no puede tumbar con 500 el GET de la marca —
-    # la validación estricta es de ENTRADA.
-    _v_partner_url = field_validator("partner_store_url", "meet_url")(_passthrough)
 
 
 # ------------------------------------------------- registro público (landing) ----
@@ -354,15 +333,6 @@ class PublicRegisterIn(BaseModel):
         return v
 
 
-class LandingProductOut(BaseModel):
-    """Producto recomendado tal y como se muestra en la landing pública."""
-
-    title: str
-    url: str
-    category: str
-    image_url: str | None
-
-
 class LandingOut(BaseModel):
     """GET /api/public/landing — datos públicos de la página de enlaces (/professional)."""
 
@@ -374,93 +344,10 @@ class LandingOut(BaseModel):
     logo_url: str | None
     links_photo_url: str | None
     plans_photo_url: str | None = None
-    partner_store_url: str | None
-    partner_discount_code: str | None
     # Contacto público del coach (Marca → contacto): /planes abre WhatsApp con
     # este teléfono para pedir información (los precios no se publican).
     contact_phone: str | None = None
     contact_email: str | None = None
-    # Catálogo de productos recomendados (comprables con el código de arriba).
-    products: list[LandingProductOut] = []
-
-
-# -------------------------------------------------- videollamadas (Pro) ----
-class VideoCallOut(BaseModel):
-    """Estado de la videollamada quincenal de un cliente Pro."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    client_id: int
-    period_index: int
-    # proposed (cliente propuso) | pending_manual (a agendar a mano) | scheduled
-    # (agendada con Meet) | done. "pending" queda por compatibilidad con datos previos.
-    status: Literal["proposed", "pending_manual", "scheduled", "done", "pending"]
-    scheduled_for: date | None
-    # Cuando se agenda con Google Calendar/Meet: hora concreta, duración y enlaces.
-    scheduled_at: datetime | None = None
-    duration_min: int | None = None
-    meet_url: str | None = None
-    google_html_link: str | None = None
-
-
-# ------------------------------------------ productos recomendados (portal) ----
-# Catálogo único que el coach gestiona y el cliente ve en la sección "Recursos".
-ProductCategory = Literal["suplemento", "material", "otro"]
-
-
-def _clean_discount_code(v: str | None) -> str | None:
-    """Recorta espacios; vacío → None (permite 'borrar' el código en un PATCH)."""
-    if v is None:
-        return None
-    v = v.strip()
-    return v or None
-
-
-class RecommendedProductIn(BaseModel):
-    title: str = Field(min_length=1, max_length=160)
-    description: str | None = Field(default=None, max_length=300)
-    url: str = Field(min_length=3, max_length=500)
-    category: ProductCategory = "suplemento"
-    image_url: str | None = Field(default=None, max_length=500)  # URL externa (opcional)
-    # Código de descuento de la marca (afiliación): visible y copiable en el portal.
-    discount_code: str | None = Field(default=None, max_length=40)
-    active: bool = True
-    # sort_order NO se pide al crear: el alta añade al final; se reordena por PATCH.
-
-    _v_url = field_validator("url")(_http_url_required)
-    _v_image = field_validator("image_url")(_http_url_or_none)
-    _v_code = field_validator("discount_code")(_clean_discount_code)
-
-
-class RecommendedProductUpdate(BaseModel):
-    title: str | None = Field(default=None, min_length=1, max_length=160)
-    description: str | None = Field(default=None, max_length=300)
-    url: str | None = Field(default=None, min_length=3, max_length=500)
-    category: ProductCategory | None = None
-    image_url: str | None = Field(default=None, max_length=500)
-    discount_code: str | None = Field(default=None, max_length=40)
-    active: bool | None = None
-    sort_order: int | None = Field(default=None, ge=0, le=100000)
-
-    _v_url = field_validator("url")(_http_url_required)
-    _v_image = field_validator("image_url")(_http_url_or_none)
-    _v_code = field_validator("discount_code")(_clean_discount_code)
-
-
-class RecommendedProductOut(BaseModel):
-    """Salida con la imagen EFECTIVA ya resuelta (archivo subido o URL externa)."""
-
-    id: int
-    title: str
-    description: str | None
-    url: str
-    category: str
-    image_url: str | None  # URL para mostrar (servida si hay subida, si no la externa)
-    discount_code: str | None
-    has_upload: bool        # ¿tiene imagen subida? (el formulario del coach lo necesita)
-    active: bool
-    sort_order: int
 
 
 # ----------------------------------------------------- diario del portal ----
@@ -563,7 +450,7 @@ class ClientCreatedOut(BaseModel):
 
 
 class ExerciseUpdate(BaseModel):
-    """PATCH parcial de la biblioteca (incluye video_url editable, F.3)."""
+    """PATCH parcial de la biblioteca."""
 
     canonical_name: str | None = Field(default=None, min_length=3, max_length=160)
     aliases: list[str] | None = None
@@ -572,13 +459,11 @@ class ExerciseUpdate(BaseModel):
     movement_pattern: str | None = None
     equipment: list[str] | None = None
     level_min: int | None = Field(default=None, ge=1, le=3)
-    video_url: str | None = Field(default=None, max_length=500)
-    image_url: str | None = Field(default=None, max_length=500)
     technique_notes: str | None = None
     biomechanics_notes: str | None = None
     contraindications: list[str] | None = None
 
-    _v_urls = field_validator("video_url", "image_url")(_http_url_or_none)
+
 
 
 class AnamnesisStateOut(BaseModel):
@@ -726,7 +611,6 @@ class TodayExercise(BaseModel):
     # Peso sugerido AJUSTADO a la semana del mesociclo (espejo de types.ts)
     week_weight_hint_kg: float | None = None
     technique_cue: str | None
-    video_url: str | None
 
 
 class TodaySession(BaseModel):
@@ -756,41 +640,6 @@ class PortalPlanOut(BaseModel):
     training: dict | None
     education: dict | None
     diet_mode: DietMode | None
-
-
-# --------------------------------------------------- recursos del portal ----
-class ResourceExerciseVideo(BaseModel):
-    """Vídeo de un ejercicio de la rutina del cliente (título + imagen + vídeo)."""
-
-    exercise_id: int
-    title: str
-    muscle: str | None = None
-    video_url: str
-    image_url: str | None = None  # miniatura (subida por el coach o portada YouTube)
-    technique_notes: str | None = None
-
-
-class ResourceProduct(BaseModel):
-    """Producto recomendado (título + imagen + enlace + código de descuento)."""
-
-    id: int
-    title: str
-    description: str | None = None
-    url: str
-    category: str
-    image_url: str | None = None
-    discount_code: str | None = None
-    # URL de compra con el código pre-aplicado (tiendas Shopify del partner).
-    buy_url: str | None = None
-    # True si corresponde a un suplemento pautado EN SU planificación.
-    in_plan: bool = False
-
-
-class PortalResourcesOut(BaseModel):
-    """GET /api/p/{token}/resources — vídeos de sus ejercicios + productos."""
-
-    exercise_videos: list[ResourceExerciseVideo]
-    products: list[ResourceProduct]
 
 
 class DailyLogOut(BaseModel):

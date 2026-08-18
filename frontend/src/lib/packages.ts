@@ -10,7 +10,6 @@
  *  feedback); solo cambia qué se le entrega al cliente y qué ve en su portal.
  */
 import type { BillingPeriod, PackageTier, PublicBillingPeriod } from "../types";
-import { FEATURE_VIDEO_CALLS } from "./branding";
 
 export interface PackageInfo {
   tier: PackageTier;
@@ -20,9 +19,6 @@ export interface PackageInfo {
   includes: string; // resumen de qué incluye (para el selector del alta)
   hasNutrition: boolean; // incluye dieta
   hasTraining: boolean; // incluye entrenamiento
-  directContact: boolean; // WhatsApp diario (los tres)
-  hasVideoCall: boolean; // videollamada de revisión (solo full)
-  delivery: "email" | "whatsapp"; // vía por defecto para enviar plan/feedback
   /** Precio de referencia al mes (€). El COBRO real lo fija Stripe. */
   priceMonthEur: number;
   color: string; // color de la etiqueta
@@ -37,9 +33,6 @@ export const PACKAGES: Record<PackageTier, PackageInfo> = {
     includes: "Plan de entrenamiento a medida + app para registrar tus entrenos y tu evolución.",
     hasNutrition: false,
     hasTraining: true,
-    directContact: true,
-    hasVideoCall: false,
-    delivery: "email",
     priceMonthEur: 70, // PAGO ÚNICO
     color: "#37474F",
   },
@@ -51,9 +44,6 @@ export const PACKAGES: Record<PackageTier, PackageInfo> = {
     includes: "Plan de nutrición a medida + app para registrar peso y medidas.",
     hasNutrition: true,
     hasTraining: false,
-    directContact: true,
-    hasVideoCall: false,
-    delivery: "email",
     priceMonthEur: 70, // PAGO ÚNICO
     color: "#5C7A3A",
   },
@@ -66,9 +56,6 @@ export const PACKAGES: Record<PackageTier, PackageInfo> = {
       "Dieta y entrenamiento a medida, la cuota del gimnasio incluida y la app con todo tu seguimiento.",
     hasNutrition: true,
     hasTraining: true,
-    directContact: true,
-    hasVideoCall: FEATURE_VIDEO_CALLS,
-    delivery: "email",
     priceMonthEur: 130, // PAGO ÚNICO
     color: "#E9A90F",
   },

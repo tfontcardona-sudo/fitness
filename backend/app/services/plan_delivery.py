@@ -2,8 +2,8 @@
 
 Un único constructor del documento para las dos puertas de salida:
 - descarga del coach (`GET /api/plans/{id}/document`),
-- enlace público tokenizado del cliente (`GET /api/p/{token}/plan.pdf`), pensado
-  para mandarse por WhatsApp con un clic desde la ficha del cliente.
+- enlace público tokenizado del cliente (`GET /api/p/{token}/plan.pdf`), que
+  viaja en el email de entrega.
 """
 
 from __future__ import annotations

@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from app.config import settings
 
 # Emojis y símbolos decorativos: aunque el prompt los prohíbe, saneamos por
-# defensa porque este texto va VERBATIM al PDF y a WhatsApp (donde algunos
+# defensa porque este texto va VERBATIM al PDF y al email (donde algunos
 # móviles corrompen el mensaje con emojis). Rango de pictogramas Unicode +
 # variation selectors + zero-width joiners.
 _EMOJI_RE = re.compile(
@@ -159,7 +159,7 @@ def generate_feedback_analysis(payload: dict, ai, nutrition_only: bool = False) 
         schema=FeedbackAIOutput,
         temperature=0,  # §14: la lectura de la revisión quincenal es determinista
     )
-    # Saneo defensivo: este texto va verbatim al PDF y a WhatsApp.
+    # Saneo defensivo: este texto va verbatim al PDF y al email.
     out.natural_analysis = _clean_text(out.natural_analysis) or ""
     out.closing_message = _clean_text(out.closing_message) or ""
     out.answers = _clean_text(out.answers)

@@ -26,7 +26,7 @@ def _cleanup_test_clients():
         from app.db import SessionLocal
         from app.models import (
             ChangeRequest, Client, DailyLog, EmailLog, FeedbackDoc, Period,
-            Plan, PlanEdit, ProgressPhoto, PushSubscription, VideoCall, WorkoutLog,
+            Plan, PlanEdit, ProgressPhoto, PushSubscription, WorkoutLog,
         )
         from app.services.storage import delete_client_tree
     except Exception:
@@ -48,7 +48,6 @@ def _cleanup_test_clients():
             db.execute(delete(FeedbackDoc).where(FeedbackDoc.period_id.in_(period_ids)))
         db.execute(delete(ProgressPhoto).where(ProgressPhoto.client_id.in_(ids)))
         db.execute(delete(PushSubscription).where(PushSubscription.client_id.in_(ids)))
-        db.execute(delete(VideoCall).where(VideoCall.client_id.in_(ids)))
         db.execute(delete(Period).where(Period.client_id.in_(ids)))
         # plan_edits (§13) referencia plans sin ON DELETE: fuera primero, o el
         # DELETE de plans revienta si algún test/coach editó un plan.

@@ -3,7 +3,7 @@
 Al guardar el editor, se compara el plan ANTES y DESPUÉS y se produce una lista
 de frases humanas ("Calorías: 2200 → 2000 kcal", "Press banca: 3×8-10 → 4×8-10",
 "Añadido Curl femoral"…). Esa lista alimenta el aviso "planificación modificada"
-del panel y el mensaje de WhatsApp/email al cliente — sin depender de la IA:
+del panel y el email al cliente — sin depender de la IA:
 el diff es exacto siempre.
 """
 from __future__ import annotations

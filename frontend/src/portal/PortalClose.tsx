@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, Mail, MessageCircle } from "lucide-react";
+import { Check, Mail } from "lucide-react";
 import type { PortalBrand } from "../types";
 import { usePortalToast } from "./PortalToast";
 import type { portalApi } from "./portalApi";
@@ -46,15 +46,13 @@ const FEELINGS_NUTRITION: { key: string; label: string }[] = [
  * REVISIÓN QUINCENAL (cierre de período, desde el día 14). Réplica del documento
  * del coach: medidas, sensaciones (1-5), adherencia (0-10), comidas libres,
  * cambios, qué cuesta, objetivo. Al enviar dispara el feedback de adaptación IA.
- * Las fotos de progreso se envían por WhatsApp (no se suben aquí).
+ * Las fotos de progreso se envían por email (no se suben aquí).
  */
-export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, closeDate, periodStatus, hasTraining = true, directContact = true }: {
+export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, closeDate, periodStatus, hasTraining = true }: {
   api: Api; token: string; brand: PortalBrand; onClosed: () => void; canClose: boolean;
   daysLeft: number | null; closeDate: string | null; periodStatus?: string | null;
   // Paquete solo-nutrición (Start): sin adherencia ni sensaciones de entreno.
   hasTraining?: boolean;
-  // Contacto directo (Pro): las fotos van por WhatsApp; si no, por email.
-  directContact?: boolean;
 }) {
   const FEELINGS = hasTraining ? FEELINGS_TRAINING : FEELINGS_NUTRITION;
   const fechaCae = closeDate
@@ -312,15 +310,12 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
           placeholder={hasTraining ? 'Algo concreto: "bajar 0,5 kg", "dormir 7 h", "mejorar técnica de sentadilla"…' : 'Algo concreto: "bajar 0,5 kg", "dormir 7 h", "comer más verdura cada día"…'} />
       </Section>
 
-      {/* 7 · Fotos — banner informativo en azul de marca; icono y canal según
-          cómo recibe este cliente sus entregas (Pro → WhatsApp; resto → email). */}
+      {/* 7 · Fotos — banner informativo en azul de marca. */}
       <Section n={7} title="Fotos de progreso">
         <div className="flex items-start gap-2 rounded-xl border p-3 text-sm" style={{ borderColor: `${brand.color_secondary}55`, background: `${brand.color_secondary}10` }}>
-          {directContact
-            ? <MessageCircle size={18} style={{ color: brand.color_secondary }} className="mt-0.5 shrink-0" />
-            : <Mail size={18} style={{ color: brand.color_secondary }} className="mt-0.5 shrink-0" />}
+          <Mail size={18} style={{ color: brand.color_secondary }} className="mt-0.5 shrink-0" />
           <p className="opacity-80">
-            Envía 3 fotos (<b>frontal</b>, <b>lateral</b> y <b>espalda</b>) a tu coach por <b>{directContact ? "WhatsApp" : "email"}</b>.
+            Envía 3 fotos (<b>frontal</b>, <b>lateral</b> y <b>espalda</b>) a tu coach por <b>email</b>.
             Fondo neutro, buena luz, misma hora y lugar que la vez anterior, sin filtros.
           </p>
         </div>

@@ -1,7 +1,7 @@
-"""Endurecimiento de las subidas de imagen (fotos de progreso y productos).
+"""Endurecimiento de las subidas de imagen (fotos de progreso y de la web).
 
 Dos invariantes de seguridad/corrección, para AMBOS caminos (save_photo, que es
-alcanzable desde el portal del cliente, y save_resource_image, del coach):
+alcanzable desde el portal del cliente, y save_links_photo, del coach):
 - Una "bomba" (pequeña comprimida, enorme en píxeles) se rechaza ANTES de
   decodificar — no infla la memoria del worker.
 - Un PNG con PALETA (modo P) se guarda con sus colores reales (el rebuild
@@ -18,7 +18,7 @@ from app.services.storage import (
     PhotoValidationError,
     abs_path,
     save_photo,
-    save_resource_image,
+    save_links_photo,
 )
 
 
@@ -43,10 +43,10 @@ def test_save_photo_rechaza_bomba_de_pixeles():
         save_photo(999_001, raw)
 
 
-def test_save_resource_image_rechaza_bomba_de_pixeles():
+def test_save_links_photo_rechaza_bomba_de_pixeles():
     raw = _bomb_png(6000)  # 36 MP > tope de 25 MP
     with pytest.raises(PhotoValidationError):
-        save_resource_image(raw)
+        save_links_photo(raw, "foto.png")
 
 
 def test_save_photo_paleta_conserva_colores():
@@ -56,8 +56,8 @@ def test_save_photo_paleta_conserva_colores():
     assert r > 150 and g < 100  # rojo, no negro
 
 
-def test_save_resource_image_paleta_conserva_colores():
-    rel = save_resource_image(_palette_png())
+def test_save_links_photo_paleta_conserva_colores():
+    rel = save_links_photo(_palette_png(), "foto.png")
     out = Image.open(abs_path(rel)).convert("RGB")
     r, g, _ = out.getpixel((16, 16))
     assert r > 150 and g < 100

@@ -447,7 +447,7 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
         return plan
 
     # La versión adaptada queda ACTIVA al momento (portal y PDF actualizados);
-    # el coach puede retocarla con Editar y enviarla por WhatsApp.
+    # el coach puede retocarla con Editar y enviarla al cliente.
     from app.services.plan_activation import activate_plan
 
     activate_plan(db, plan)

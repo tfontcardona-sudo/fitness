@@ -34,7 +34,6 @@ export function keepIfSame<T>(prev: T, next: T): T {
 }
 
 import type {
-  WhatsAppRoundOut,
   AiCreditOut,
   BrandConfigOut,
   CoachAlert,
@@ -48,12 +47,7 @@ import type {
   MeOut,
   PlanPricesOut,
   PortalLinkOut,
-  RecommendedProductIn,
-  RecommendedProductOut,
-  RecommendedProductUpdate,
   TokenOut,
-  VideoCallAgendaItem,
-  VideoCallOut,
 } from "../types";
 
 const TOKEN_KEY = "fitness_coach_token";
@@ -168,7 +162,7 @@ export const api = {
   // Alta manual: envía por email el mensaje de arranque (pago + anamnesis).
   sendOnboarding: (id: number) =>
     request<{ status: string; email: string }>("POST", `/clients/${id}/send-onboarding`),
-  // Enlace ESTABLE de pago de un cliente (para mandarlo por WhatsApp/email).
+  // Enlace ESTABLE de pago de un cliente (para mandarlo por email).
   payLinkUrl: (portalToken: string) => `${window.location.origin}/api/pay/${portalToken}`,
   exportClientUrl: (id: number) => `/api/clients/${id}/export`,
   listPlans: (clientId: number) =>
@@ -312,7 +306,7 @@ export const api = {
   sendFeedback: (docId: number) =>
     request<{ sent: boolean; sent_at: string }>("POST", `/feedback/${docId}/send`),
   // Entrega por EMAIL (paquetes Start/Full): el informe va en el propio correo
-  // y el ciclo avanza igual que con WhatsApp.
+  // y el ciclo avanza solo.
   sendFeedbackEmail: (docId: number) =>
     request<{ sent: boolean; sent_at: string; email_status: string }>(
       "POST", `/feedback/${docId}/send-email`),
@@ -342,33 +336,8 @@ export const api = {
     request<{ sent: boolean; email_status: string; attached_pdf: boolean }>(
       "POST", `/plans/${planId}/send-update-email`),
 
-  // --- videollamadas quincenales (Pro): el cliente propone → coach acepta/modifica ---
-  listVideoCalls: (clientId: number) =>
-    request<VideoCallOut[]>("GET", `/clients/${clientId}/video-calls`),
-  // Aceptar la propuesta del cliente tal cual (crea el evento + Meet + invita).
-  acceptVideoCall: (clientId: number, callId: number, durationMin = 30) =>
-    request<VideoCallOut>("POST", `/clients/${clientId}/video-calls/${callId}/accept`, { duration_min: durationMin }),
-  // Modificar: queda pendiente de agendar a mano (se acuerda por WhatsApp).
-  modifyVideoCall: (clientId: number, callId: number) =>
-    request<VideoCallOut>("POST", `/clients/${clientId}/video-calls/${callId}/modify`),
-  videoCallDone: (clientId: number, callId: number) =>
-    request<VideoCallOut>("POST", `/clients/${clientId}/video-calls/${callId}/done`),
-  videoCallReschedule: (clientId: number, callId: number) =>
-    request<VideoCallOut>("POST", `/clients/${clientId}/video-calls/${callId}/reschedule`),
-  // Agenda a mano (o acepta con otra hora): crea el evento con Meet, invita al
-  // cliente y devuelve el enlace. startAt en formato "YYYY-MM-DDTHH:MM".
-  scheduleVideoCallMeet: (clientId: number, periodIndex: number, startAt: string, durationMin: number) =>
-    request<VideoCallOut>("POST", `/clients/${clientId}/video-calls/schedule-meet`,
-      { period_index: periodIndex, start_at: startAt, duration_min: durationMin }),
-  // Agenda del coach: videollamadas agendadas (día, hora, cliente, enlace).
-  videoCallsAgenda: () =>
-    request<{ calls: VideoCallAgendaItem[]; count: number }>("GET", "/video-calls/agenda"),
 
   // --- Google Calendar / Meet (conexión de la cuenta del coach) ---
-  googleStatus: () =>
-    request<{ enabled: boolean; connected: boolean; email: string | null }>("GET", "/google/status"),
-  googleStart: () => request<{ authorize_url: string }>("GET", "/google/oauth/start"),
-  googleDisconnect: () => request<{ disconnected: boolean }>("POST", "/google/disconnect"),
 
   // --- push del COACH (su móvil recibe el resumen de alertas cada 3 h) ---
   coachPushPublicKey: () =>
@@ -378,17 +347,6 @@ export const api = {
   coachPushUnsubscribe: (sub: { endpoint: string; p256dh: string; auth: string }) =>
     request<{ removed: boolean }>("POST", "/coach/push/unsubscribe", sub),
 
-  // Autorrelleno del formulario de producto: lee la página del enlace y devuelve
-  // título, descripción e imagen (metadatos OpenGraph).
-  scrapeProduct: (url: string) =>
-    request<{ title: string | null; description: string | null; image_url: string | null }>(
-      "POST", "/resources/products/scrape", { url }),
-
-  // --- ronda diaria de WhatsApp ---
-  getWhatsAppRound: (useAi = true, force = false) =>
-    request<WhatsAppRoundOut>("GET", `/whatsapp/round?use_ai=${useAi}&force=${force}`),
-  markWhatsAppSent: (round_id: number, client_id: number, text: string) =>
-    request<{ ok: boolean }>("POST", "/whatsapp/round/sent", { round_id, client_id, text }),
 
   // --- créditos IA (Anthropic) ---
   getAiCredit: () => request<AiCreditOut>("GET", "/ai-credit"),
@@ -400,7 +358,7 @@ export const api = {
   // El PUT lleva SOLO los campos de BrandConfigIn: las rutas de archivos
   // subidos (logo, fotos, portada) se gestionan por sus endpoints de subida.
   updateBrand: (body: Omit<BrandConfigOut, "id" | "logo_path" | "links_photo_path"
-    | "video_cover_path" | "plans_photo_path">) =>
+    | "plans_photo_path">) =>
     request<BrandConfigOut>("PUT", "/brand", body),
   uploadLogo: (file: File) => {
     const fd = new FormData();
@@ -419,21 +377,6 @@ export const api = {
     fd.append("file", file);
     return request<BrandConfigOut>("POST", "/brand/plans-photo", fd);
   },
-  // Portada única de todos los vídeos de ejercicios.
-  uploadVideoCover: (file: File) => {
-    const fd = new FormData();
-    fd.append("file", file);
-    return request<BrandConfigOut>("POST", "/brand/video-cover", fd);
-  },
-  // Vídeo del ejercicio subido como archivo (tiene prioridad sobre el enlace).
-  uploadExerciseVideo: (id: number, file: File) => {
-    const fd = new FormData();
-    fd.append("file", file);
-    return request<ExerciseOut>("POST", `/exercises/${id}/video`, fd);
-  },
-  deleteExerciseVideo: (id: number) =>
-    request<ExerciseOut>("DELETE", `/exercises/${id}/video`),
-
   // --- página pública de enlaces + registro self-serve ---
   publicLanding: () => request<LandingOut>("GET", "/public/landing"),
   publicPlanPrices: () => request<PlanPricesOut>("GET", "/public/plan-prices"),
@@ -471,21 +414,6 @@ export const api = {
     request<ExerciseOut>("POST", `/exercises/${id}/restore`),
   updateExercise: (id: number, patch: Partial<ExerciseOut>) =>
     request<ExerciseOut>("PATCH", `/exercises/${id}`, patch),
-
-  // --- recursos: productos recomendados (sección Recursos del portal) ---
-  listProducts: () => request<RecommendedProductOut[]>("GET", "/resources/products"),
-  createProduct: (body: RecommendedProductIn) =>
-    request<RecommendedProductOut>("POST", "/resources/products", body),
-  updateProduct: (id: number, patch: RecommendedProductUpdate) =>
-    request<RecommendedProductOut>("PATCH", `/resources/products/${id}`, patch),
-  deleteProduct: (id: number) => request<void>("DELETE", `/resources/products/${id}`),
-  uploadProductImage: (id: number, file: File) => {
-    const fd = new FormData();
-    fd.append("file", file);
-    return request<RecommendedProductOut>("POST", `/resources/products/${id}/image`, fd);
-  },
-  removeProductImage: (id: number) =>
-    request<RecommendedProductOut>("DELETE", `/resources/products/${id}/image`),
 
   // --- pool de rutinas (página Rutinas) ---
   templateCategories: () =>

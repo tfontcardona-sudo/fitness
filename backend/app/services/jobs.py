@@ -196,31 +196,7 @@ def _maintain_client(db: Session, client: Client, today: date,
                      kind="closing_due", client=client)
         summary["reminders"] += 1
 
-    # 1c) Recordatorio (email) de la videollamada de MAÑANA (Pro con evento
-    # agendado en Google Meet). Complementa la invitación nativa de Google y el
-    # push del portal: capa extra "para que no pase por alto". Uno al día.
-    if pkgs.has_video_call(getattr(client, "package_tier", None)):
-        from datetime import timedelta
-
-        from app.models import VideoCall
-        from app.services.portal import format_when_es
-
-        vc = db.scalar(
-            select(VideoCall).where(
-                VideoCall.client_id == client.id,
-                VideoCall.status == "scheduled",
-                VideoCall.scheduled_for == today + timedelta(days=1),
-            )
-        )
-        if (vc is not None and vc.meet_url and vc.scheduled_at is not None
-                and not _already_sent_today(db, client.id, "video_call_reminder", today)):
-            subject, html = tpl.video_call_reminder(
-                brand, _first_name(client), format_when_es(vc.scheduled_at), vc.meet_url)
-            emailer.send(to=client.email, subject=subject, html=html,
-                         kind="video_call_reminder", client=client)
-            summary["reminders"] += 1
-
-    # 1d) ONBOARDING fantasma (auditoría del ciclo): quien paga/registra y no
+    # 1c) ONBOARDING fantasma (auditoría del ciclo): quien paga/registra y no
     # envía la anamnesis no recibía NINGÚN recordatorio nunca más. D+3 y D+7.
     if client.status == "onboarding" and getattr(client, "created_at", None):
         days_onb = (today - client.created_at.date()).days

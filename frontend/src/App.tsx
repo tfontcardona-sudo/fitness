@@ -1,7 +1,7 @@
 import { Suspense, lazy } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { useAuth } from "./hooks/useAuth";
-import { FEATURE_RESOURCES, PUBLIC_SLUG } from "./lib/branding";
+import { PUBLIC_SLUG } from "./lib/branding";
 import { PageLoader } from "./components/ui";
 import LoginPage from "./pages/LoginPage";
 import AppShell from "./components/AppShell";
@@ -12,7 +12,7 @@ import AppShell from "./components/AppShell";
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const ClientsPage = lazy(() => import("./pages/ClientsPage"));
 const ClientProfilePage = lazy(() => import("./pages/ClientProfilePage"));
-const RecursosPage = lazy(() => import("./pages/RecursosPage"));
+const EnlacesPage = lazy(() => import("./pages/EnlacesPage"));
 const RutinasPage = lazy(() => import("./pages/RutinasPage"));
 const PortalApp = lazy(() => import("./portal/PortalApp"));
 const PortalLogin = lazy(() => import("./portal/PortalLogin"));
@@ -80,9 +80,8 @@ function CoachApp() {
         <Route path="clientes/:id" element={<ClientProfilePage />} />
         {/* Pool de rutinas por carpetas: usar con un cliente / subir / editar. */}
         <Route path="rutinas" element={<RutinasPage />} />
-        {/* Recursos: fuera en esta instancia (FEATURE_RESOURCES); sin la ruta,
-            /recursos cae en el comodín y redirige al panel. */}
-        {FEATURE_RESOURCES && <Route path="recursos" element={<RecursosPage />} />}
+        {/* Página pública de enlaces (Instagram) y sus fotos. */}
+        <Route path="enlaces" element={<EnlacesPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

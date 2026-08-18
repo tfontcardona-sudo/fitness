@@ -233,7 +233,7 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
             setattr(plan, field, value)
     # Cambios manuales DETECTADOS (diff exacto antes/después): se ACUMULAN en
     # nutrition_json.manual_changes hasta que el coach los envía al cliente
-    # (WhatsApp/email) o los descarta — el panel muestra el aviso mientras tanto.
+    # (email) o los descarta — el panel muestra el aviso mientras tanto.
     from app.services.plan_diff import manual_change_summary
 
     diff_items = manual_change_summary(
@@ -625,7 +625,7 @@ def edit_feedback(doc_id: int, body: FeedbackEditIn, db: Session = Depends(get_d
 def _advance_cycle_after_feedback(db: Session, fb: FeedbackDoc) -> Client | None:
     """Marca el feedback como enviado y avanza el ciclo de la asesoría
     (review_pending → active + abre el siguiente período). NO envía email ni
-    hace commit: eso lo decide cada endpoint (WhatsApp vs email)."""
+    hace commit: eso lo decide cada endpoint."""
     from datetime import datetime, timezone
 
     fb.sent_at = datetime.now(timezone.utc)
@@ -675,7 +675,7 @@ def send_feedback(doc_id: int, db: Session = Depends(get_db)) -> dict:
 @router.post("/api/feedback/{doc_id}/send-email")
 def send_feedback_email(doc_id: int, db: Session = Depends(get_db)) -> dict:
     """Entrega el feedback POR EMAIL (paquetes Start/Full): el informe completo
-    va en el propio correo y el ciclo avanza igual que con el envío por WhatsApp."""
+    va en el propio correo y el ciclo avanza solo."""
     fb = db.get(FeedbackDoc, doc_id)
     if not fb:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Feedback no encontrado")
@@ -770,7 +770,7 @@ def download_plan_document(
 @router.post("/api/plans/{plan_id}/send-email")
 def send_plan_email(plan_id: int, db: Session = Depends(get_db)) -> dict:
     """Entrega la planificación POR EMAIL (paquetes Start/Full): adjunta el PDF
-    del plan y enlaza el portal de seguimiento. Equivale al envío por WhatsApp
+    del plan y enlaza el portal de seguimiento. Es la vía de entrega
     de los paquetes Pro, pero por correo."""
     from app.services.plan_delivery import build_plan_pdf
 
@@ -818,7 +818,7 @@ def _clear_manual_changes(plan: Plan) -> list[str]:
 @router.post("/api/plans/{plan_id}/manual-changes/ack")
 def ack_manual_changes(plan_id: int, db: Session = Depends(get_db)) -> dict:
     """Marca los cambios manuales como ENVIADOS/atendidos (los quita del aviso).
-    Lo llama la web tras abrir el WhatsApp con el mensaje, o al descartarlos."""
+    Lo llama la web tras enviar el email con los cambios, o al descartarlos."""
     plan = db.get(Plan, plan_id)
     if not plan:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan no encontrado")

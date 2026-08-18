@@ -60,7 +60,7 @@ class Client(Base):
     phone: Mapped[str | None] = mapped_column(String(40))
     # Paquete/plan contratado: nutri (solo dieta) | train (solo entreno) |
     # full (las dos + videollamada). Define qué se genera, qué ve el cliente en
-    # el portal y cómo se le entrega. El WhatsApp diario está en los TRES.
+    # el portal y cómo se le entrega.
     # Las capacidades se consultan en services/packages.py, nunca comparando
     # cadenas sueltas (migración 0032 renombró start→nutri y pro→full).
     package_tier: Mapped[str] = mapped_column(
@@ -418,64 +418,10 @@ class BrandConfig(Base):
     contact_web: Mapped[str | None] = mapped_column(String(200))
     docs_theme: Mapped[str] = mapped_column(String(10), default="light")  # light|dark
     portal_theme: Mapped[str] = mapped_column(String(10), default=branding.PORTAL_THEME)  # light|dark
-    # Página pública de enlaces (link del perfil de Instagram, /professional): foto de
-    # fondo + afiliación del partner (tienda ESN y código de descuento del coach).
+    # Fotos de las páginas públicas: la de enlaces (/professional, el link del
+    # perfil de Instagram) y la de contratación (/planes). Ambas en media/…
     links_photo_path: Mapped[str | None] = mapped_column(String(500))
-    partner_store_url: Mapped[str | None] = mapped_column(String(300))
-    # Código de descuento ÚNICO del coach (afiliación): se muestra en la landing
-    # /professional, en los productos del portal y en Recursos. Cambiarlo aquí lo cambia
-    # en TODOS los sitios a la vez.
-    partner_discount_code: Mapped[str | None] = mapped_column(String(40))
-    # Portada única para TODOS los vídeos de ejercicios (media/…).
-    video_cover_path: Mapped[str | None] = mapped_column(String(500))
-    # Foto de fondo de la página pública de PLANES (/planes), independiente de
-    # la de la landing /professional (media/…).
     plans_photo_path: Mapped[str | None] = mapped_column(String(500))
-    # Enlace de RESERVAS de videollamada del coach (página de citas de Google
-    # Calendar/Meet, Calendly…): va en el WhatsApp de "agendar videollamada".
-    meet_url: Mapped[str | None] = mapped_column(String(300))
-
-
-# -------------------------------------------------- recommended_products ----
-class RecommendedProduct(Base):
-    """Producto recomendado por el coach (suplemento, material…) que se muestra
-    en la sección "Recursos" del portal del cliente.
-
-    Catálogo ÚNICO (single-tenant): todos los clientes ven los productos con
-    `active=True`, ordenados por `sort_order`. La imagen puede ser un archivo
-    subido (`image_path`, servido por la API) o una URL externa (`image_url`);
-    si hay archivo subido, tiene prioridad.
-    """
-
-    __tablename__ = "recommended_products"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    title: Mapped[str] = mapped_column(String(160))
-    description: Mapped[str | None] = mapped_column(String(300))
-    url: Mapped[str] = mapped_column(String(500))  # enlace de compra/afiliado
-    # suplemento | material | otro (informativo; agrupa las tarjetas del portal)
-    category: Mapped[str] = mapped_column(
-        String(20), default="suplemento", server_default=text("'suplemento'"), nullable=False
-    )
-    image_path: Mapped[str | None] = mapped_column(String(500))  # imagen subida (storage)
-    image_url: Mapped[str | None] = mapped_column(String(500))   # o URL externa
-    # Código de descuento del coach para esa marca (afiliación, p. ej. ESN):
-    # el cliente lo copia en el portal y lo usa al pagar en la web de la marca.
-    discount_code: Mapped[str | None] = mapped_column(String(40))
-    active: Mapped[bool] = mapped_column(
-        Boolean, default=True, server_default=text("true"), nullable=False
-    )
-    sort_order: Mapped[int] = mapped_column(
-        Integer, default=0, server_default=text("0"), nullable=False
-    )
-    # server_default alineado con la migración 0017: la columna es NOT NULL con
-    # default en BD, así ningún camino (ORM o SQL directo) puede dejarla nula.
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, server_default=text("now()")
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow, server_default=text("now()")
-    )
 
 
 # --------------------------------------------------- push_subscriptions ----
@@ -501,71 +447,6 @@ class PushSubscription(Base):
     user_agent: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
-
-# ------------------------------------------------------------ video_calls ----
-class VideoCall(Base):
-    """Videollamada de revisión QUINCENAL de un cliente Pro.
-
-    Ciclo: al llegar la revisión quincenal (período closed/analyzed) toca una →
-    alerta "agendar" → el coach la propone por WhatsApp con su enlace de
-    reservas → cuando el cliente elige día, el coach apunta la fecha
-    (scheduled_for) → recordatorio el día antes (coach y cliente) → tras la
-    fecha, la web pregunta si se realizó: sí → done · no → se reagenda (vuelve
-    a pending y el ciclo empieza de nuevo).
-    """
-
-    __tablename__ = "video_calls"
-    __table_args__ = (UniqueConstraint("client_id", "period_index"),)
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
-    period_index: Mapped[int] = mapped_column(Integer)
-    # proposed (cliente propuso día/hora) | pending_manual (a agendar a mano) |
-    # scheduled (agendada con Meet) | done. "pending" queda por compatibilidad.
-    status: Mapped[str] = mapped_column(String(20), default="proposed", nullable=False)
-    # Fecha (día) de la cita. Se mantiene aunque haya integración con Google:
-    # los recordatorios/alertas existentes razonan por día y se deriva de
-    # scheduled_at cuando la cita se crea con hora concreta.
-    scheduled_for: Mapped[date | None] = mapped_column(Date)
-    # --- Integración Google Calendar / Meet (cuando el coach agenda con hora) ---
-    # Momento exacto de la videollamada (con zona horaria) y duración en minutos.
-    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    duration_min: Mapped[int | None] = mapped_column(Integer)
-    # Enlace de Google Meet del evento + id/enlace del evento en Google Calendar
-    # (para poder reprogramarlo o cancelarlo por API). Nulos si se agendó a mano
-    # sin Google (flujo de reservas clásico).
-    meet_url: Mapped[str | None] = mapped_column(String(500))
-    google_event_id: Mapped[str | None] = mapped_column(String(255))
-    google_html_link: Mapped[str | None] = mapped_column(String(500))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow
-    )
-
-
-# ------------------------------------------------------ google_credentials ----
-class GoogleCredential(Base):
-    """Credenciales OAuth de la cuenta de Google del COACH (fila única).
-
-    Single-tenant: hay un solo coach, así que una sola fila. Se guarda el
-    `refresh_token` (permanente) para poder mintar `access_token` cuando toque
-    crear/editar eventos de Calendar sin volver a pedir permiso. El coach conecta
-    su cuenta una vez desde Ajustes (OAuth) y puede desconectarla.
-    """
-
-    __tablename__ = "google_credentials"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    google_email: Mapped[str | None] = mapped_column(String(200))
-    access_token: Mapped[str | None] = mapped_column(Text)
-    refresh_token: Mapped[str | None] = mapped_column(Text)
-    token_expiry: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    scope: Mapped[str | None] = mapped_column(Text)
-    connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow
-    )
 
 
 # ------------------------------------------------------------ email_log ----
@@ -665,39 +546,6 @@ class AiUsageEvent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, index=True
     )
-
-
-class WhatsAppRound(Base):
-    """Ronda diaria de seguimiento por WhatsApp (§ pool de 100 mensajes).
-
-    Una fila por DÍA: fija qué brief del pool toca, de modo que dos aperturas del
-    panel el mismo día no cambien el mensaje. `brief_index` avanza uno por día y
-    vuelve a empezar al llegar a 100.
-    """
-
-    __tablename__ = "whatsapp_rounds"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    round_date: Mapped[date] = mapped_column(Date, unique=True, index=True)
-    brief_index: Mapped[int] = mapped_column(Integer)
-    brief_key: Mapped[str] = mapped_column(String(60))
-    # {client_id: texto}: lo redactado HOY. La IA escribe una vez por cliente y
-    # día; reabrir el panel no vuelve a gastar llamadas (solo "Reescribir").
-    texts_json: Mapped[dict | None] = mapped_column(JSONB)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-
-class WhatsAppSend(Base):
-    """Envío de la ronda a UN cliente (lo marca el coach al pulsar enviar)."""
-
-    __tablename__ = "whatsapp_sends"
-    __table_args__ = (UniqueConstraint("round_id", "client_id", name="uq_wa_send_round_client"),)
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    round_id: Mapped[int] = mapped_column(ForeignKey("whatsapp_rounds.id"), index=True)
-    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), index=True)
-    text: Mapped[str | None] = mapped_column(Text)
-    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 # ------------------------------------------------------------ audit_log ----

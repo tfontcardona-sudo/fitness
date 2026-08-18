@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Mail, Pencil, PlayCircle, Save, X, Flag, Copy, Archive, FileText } from "lucide-react";
+import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, Mail, Pencil, Save, X, Flag, Copy, Archive, FileText } from "lucide-react";
 import { api, getToken } from "../lib/api";
-import { manualUpdateMessage, openWhatsApp, planAndFeedbackMessage, planMessage, waPhone, waUrl } from "../lib/whatsapp";
 import { pkg } from "../lib/packages";
 import { CANONICAL_MEALS, mealKeysFromNames } from "../lib/meals";
 import { GOAL_LABEL, goalDays, goalReviewDue, planMonthLabel } from "../lib/format";
@@ -67,18 +66,16 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
   onEditingChange?: (editing: boolean) => void;
 }) {
   const toast = useToast();
-  // Paquete del cliente: Start es solo nutrición (sin entreno) y la entrega va
-  // por email; Full por email; Pro por WhatsApp.
+  // Paquete del cliente: decide si hay dieta, entreno o las dos cosas. La
+  // entrega es SIEMPRE por email en los tres servicios.
   const info = pkg(client.package_tier);
   const hasTraining = info.hasTraining;
   const hasNutrition = info.hasNutrition;
-  const byEmail = info.delivery === "email";
   const [plan, setPlan] = useState<PlanData | null>(null);
   // Recarga manual del panel (tras asignar una plantilla del pool).
   const [reloadTick, setReloadTick] = useState(0);
   const [exMap, setExMap] = useState<Record<number, string>>({});
   // Vídeo de cada ejercicio (biblioteca): botón directo en la rutina.
-  const [exVideo, setExVideo] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -96,8 +93,6 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
   }[]>([]);
   // Todas las versiones (archivo de planificaciones anteriores por objetivo)
   const [allPlans, setAllPlans] = useState<any[]>([]);
-  // Último feedback generado (para poder enviarlo junto al plan por WhatsApp).
-  const [fb, setFb] = useState<{ id: number; content: any; sent: boolean } | null>(null);
   // Edición de los "Cambios aplicados" tras adaptar: texto/porqué o quitar filas.
   const [adjDraft, setAdjDraft] = useState<{ area: string; main: string; reason: string; orig: any }[] | null>(null);
   const [savingAdj, setSavingAdj] = useState(false);
@@ -113,13 +108,11 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
   // Al montar O AL CAMBIAR DE CLIENTE: carga el último plan + ejercicios +
   // períodos. El estado se RESETEA primero — sin esto, al saltar del cliente A
   // al B (alerta/panel con la misma pestaña abierta) B heredaba el plan, el
-  // feedback y el editor abierto de A (incluso el WhatsApp salía con el
-  // feedback de A).
+  // feedback y el editor abierto de A.
   useEffect(() => {
     let alive = true;
     setLoading(true);
     setPlan(null);
-    setFb(null);
     setNeedsDownload(false);
     setEditing(false);
     setEditFocus(null);
@@ -133,28 +126,13 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
       .then(([plans, exs, pds]) => {
         if (!alive) return;
         const map: Record<number, string> = {};
-        const vids: Record<number, string> = {};
         exs.forEach((e) => {
           map[e.id] = e.canonical_name;
-          // Solo URLs http(s): una legada sin esquema se renderizaría como
-          // ruta relativa de la app (mismo re-filtro que el portal).
-          const v = (e.video_url ?? "").trim();
-          if (/^https?:\/\//i.test(v)) vids[e.id] = v;
         });
         setExMap(map);
-        setExVideo(vids);
         setPeriods(pds);
         setAllPlans(plans);
         if (plans.length) setPlan(normalize(plans[0])); // [0] = versión más reciente
-        // Feedback más reciente (si existe): habilita el envío conjunto.
-        const withFb = pds
-          .filter((p: any) => p.feedback_id)
-          .reduce<any>((a, b) => (!a || b.period_index > a.period_index ? b : a), null);
-        if (withFb?.feedback_id) {
-          api.getFeedback(withFb.feedback_id)
-            .then((f) => alive && setFb({ id: withFb.feedback_id, content: f.content, sent: !!f.sent_at }))
-            .catch(() => {});
-        }
       })
       .catch(() => {})
       .finally(() => alive && setLoading(false));
@@ -163,68 +141,8 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
     };
   }, [client.id, reloadTick]);
 
-  /** Enlace público al PDF del plan (endpoint por token — sin login). */
-  async function planPdfUrl(): Promise<string> {
-    const link = await api.portalLink(client.id);
-    return `${window.location.origin}/api/p/${link.portal_token}/plan.pdf`;
-  }
-
-  /** Un clic: abre WhatsApp del cliente con el mensaje profesional del plan
-   *  y el enlace directo a su PDF. */
-  async function sendPlanWhatsApp() {
-    const phone = waPhone(client.phone);
-    if (!phone) {
-      toast.push("Añade el teléfono del cliente en su ficha para enviarlo por WhatsApp", "error");
-      return;
-    }
-    // Abrimos la pestaña YA, dentro del gesto de clic: si esperáramos al await de
-    // planPdfUrl(), Safari/iOS bloquearían el window.open y el botón no haría nada.
-    const win = window.open("", "_blank");
-    try {
-      const pdfUrl = await planPdfUrl();
-      const adaptedIdx = plan?.nutrition?.applied_adjustments?.period_index ?? null;
-      const url = waUrl(phone, planMessage(client.full_name, pdfUrl, adaptedIdx, plan?.month_index ?? 1));
-      if (win) win.location.href = url; else openWhatsApp(phone, planMessage(client.full_name, pdfUrl, adaptedIdx, plan?.month_index ?? 1));
-      // El enlace genera el PDF al abrirse → el cliente recibe la versión
-      // vigente: el aviso de re-descarga queda resuelto.
-      setNeedsDownload(false);
-      toast.push("WhatsApp abierto con el enlace del plan — dale a enviar");
-    } catch {
-      if (win) win.close();
-      toast.push("No se pudo obtener el enlace del plan", "error");
-    }
-  }
-
-  /** Un clic: plan + feedback juntos en un solo WhatsApp (mensaje profesional).
-   *  Si el feedback aún no constaba como enviado, se marca (el ciclo avanza). */
-  async function sendPlanAndFeedbackWhatsApp() {
-    if (!fb) return;
-    const phone = waPhone(client.phone);
-    if (!phone) {
-      toast.push("Añade el teléfono del cliente en su ficha para enviarlo por WhatsApp", "error");
-      return;
-    }
-    const win = window.open("", "_blank"); // ver nota en sendPlanWhatsApp
-    try {
-      const pdfUrl = await planPdfUrl();
-      const adaptedIdx = plan?.nutrition?.applied_adjustments?.period_index ?? null;
-      const url = waUrl(phone, planAndFeedbackMessage(client.full_name, fb.content, pdfUrl, adaptedIdx));
-      if (win) win.location.href = url; else openWhatsApp(phone, planAndFeedbackMessage(client.full_name, fb.content, pdfUrl, adaptedIdx));
-      setNeedsDownload(false); // el enlace enviado sirve la versión vigente
-      toast.push("WhatsApp abierto con el plan y el feedback — dale a enviar");
-      if (!fb.sent) {
-        await api.sendFeedback(fb.id).catch(() => {});
-        setFb({ ...fb, sent: true });
-        onClientChanged?.();
-      }
-    } catch {
-      if (win) win.close();
-      toast.push("No se pudo preparar el envío", "error");
-    }
-  }
-
-  /** Entrega la planificación POR EMAIL (paquetes Start/Full): el backend adjunta
-   *  el PDF y enlaza el portal. Equivale al envío por WhatsApp de Pro. */
+  /** Entrega la planificación POR EMAIL: el backend adjunta el PDF y enlaza
+   *  el portal del cliente. Es la única vía de entrega. */
   async function sendPlanByEmail() {
     if (!plan) return;
     try {
@@ -278,7 +196,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
       setPeriods(await api.listPeriods(client.id).catch(() => periods));
       setNeedsDownload(false); // versión nueva: el aviso de re-descarga ya no aplica
       onClientChanged?.(); // resincroniza sidebar (Dieta), badges y carpetas
-      toast.push(`Planificación generada y ACTIVA — revísala y envíasela por ${byEmail ? "email" : "WhatsApp"}`);
+      toast.push("Planificación generada y ACTIVA — revísala y envíasela por email");
     } catch (e: any) {
       const detail = e?.detail ?? e?.data?.detail;
       if (detail?.missing) setMissing(detail.missing);
@@ -371,7 +289,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
             <p className="mt-1 text-sm text-zinc-400">
               Genera el plan de {hasTraining ? "dieta y entrenamiento" : "dieta"} con IA a partir de los datos de la
               anamnesis. Queda ACTIVO al momento: revísalo, edítalo si quieres y envíaselo
-              por {byEmail ? "email" : "WhatsApp"}.
+              por email.
             </p>
 
             {missing && (
@@ -439,7 +357,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
           setEditFocus(null);
           if (changed) {
             // El PDF descargado antes ya NO refleja esta edición: avisar hasta
-            // que el coach lo vuelva a descargar (o lo reenvíe por WhatsApp).
+            // que el coach lo vuelva a descargar (o lo reenvíe por email).
             setNeedsDownload(true);
             toast.push("Cambios guardados — envíale la actualización al cliente");
           } else {
@@ -612,19 +530,9 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
             >
               <FileText size={15} /> Word editable
             </button>
-            {plan.status === "published" && byEmail && (
+            {plan.status === "published" && (
               <button onClick={sendPlanByEmail} className="btn btn-primary col-span-2 sm:col-span-1">
                 <Mail size={15} /> Enviar plan por email
-              </button>
-            )}
-            {plan.status === "published" && !byEmail && (
-              <button onClick={sendPlanWhatsApp} className={`${fb ? "btn btn-ghost" : "btn btn-primary"} col-span-2 sm:col-span-1`}>
-                <MessageCircle size={15} /> Enviar plan por WhatsApp
-              </button>
-            )}
-            {plan.status === "published" && !byEmail && fb && (
-              <button onClick={sendPlanAndFeedbackWhatsApp} className="btn btn-primary col-span-2 sm:col-span-1">
-                <MessageCircle size={15} /> Enviar plan + feedback
               </button>
             )}
             {plan.status !== "published" && (
@@ -739,7 +647,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
 
       {/* CAMBIOS MANUALES detectados al editar (diff exacto): el sistema sabe
           que esta versión es un ajuste esporádico del coach → aviso con la
-          lista de lo cambiado y envío por WhatsApp/email que LO EXPLICA. */}
+          lista de lo cambiado y email al cliente que LO EXPLICA. */}
       {(() => {
         const manualItems: string[] = ((nut as any)?.manual_changes?.items ?? []) as string[];
         if (!manualItems.length) return null;
@@ -748,27 +656,6 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
             setAllPlans(plans);
             if (plans.length) setPlan(normalize(plans[0]));
           }).catch(() => {});
-        const sendWa = async () => {
-          const phone = waPhone(client.phone);
-          if (!phone) {
-            toast.push("Añade el teléfono del cliente para enviarlo por WhatsApp", "error");
-            return;
-          }
-          const win = window.open("", "_blank"); // anti-bloqueo de popups en iOS
-          try {
-            const pdfUrl = await planPdfUrl();
-            const url = waUrl(phone, manualUpdateMessage(client.full_name, manualItems, pdfUrl));
-            if (win) win.location.href = url;
-            else openWhatsApp(phone, manualUpdateMessage(client.full_name, manualItems, pdfUrl));
-            await api.ackManualChanges(plan.id);
-            setNeedsDownload(false);
-            refreshPlans();
-            toast.push("WhatsApp abierto con los cambios explicados — dale a enviar");
-          } catch {
-            win?.close();
-            toast.push("No se pudo preparar el envío", "error");
-          }
-        };
         const sendEmail = async () => {
           if (sendingUpd) return;
           setSendingUpd(true);
@@ -807,10 +694,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                   )}
                 </ul>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <button onClick={sendWa} className="btn btn-primary !px-3 !py-1.5 text-xs">
-                    <MessageCircle size={13} /> Enviar por WhatsApp
-                  </button>
-                  <button onClick={sendEmail} disabled={sendingUpd} className="btn btn-ghost !px-3 !py-1.5 text-xs">
+                  <button onClick={sendEmail} disabled={sendingUpd} className="btn btn-primary !px-3 !py-1.5 text-xs">
                     <Mail size={13} /> {sendingUpd ? "Enviando…" : "Enviar por email"}
                   </button>
                   <button onClick={downloadPdf} className="btn btn-ghost !px-3 !py-1.5 text-xs">
@@ -841,7 +725,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
             <AlertTriangle size={16} className="mt-0.5 shrink-0" style={{ color: "var(--brand-accent)" }} />
             <p className="text-sm text-zinc-300">
               <b className="text-zinc-100">Planificación editada y guardada.</b> El PDF descargado
-              antes ya no vale: descárgalo de nuevo (o reenvía el enlace por {byEmail ? "email" : "WhatsApp"}) para que el
+              antes ya no vale: descárgalo de nuevo (o reenvía el enlace por email) para que el
               cliente reciba la versión actualizada.
             </p>
           </div>
@@ -886,7 +770,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
             <p className="text-xs text-zinc-500">
               Al adaptar, la versión nueva queda <b className="text-zinc-300">ACTIVA al momento</b> (portal y
               PDF actualizados), con calorías, macros, comidas y gramos reescalados en bloque.
-              Puedes editarla después y enviarla por {byEmail ? "email" : "WhatsApp"}.
+              Puedes editarla después y enviarla por email.
             </p>
             <button onClick={adapt} disabled={generating} className="btn btn-primary">
               {generating ? "Adaptando…" : `Adaptar a la revisión #${review.period_index}`}
@@ -1158,20 +1042,6 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                           {ex.tempo ? ` · tempo ${ex.tempo}` : ""}
                           {ex.start_weight_hint_kg != null ? ` · ~${ex.start_weight_hint_kg} kg` : ""}
                         </span>
-                        {exVideo[ex.exercise_id] && (
-                          <a
-                            href={exVideo[ex.exercise_id]}
-                            target="_blank"
-                            rel="noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            aria-label={`Ver vídeo de ${exName(ex.exercise_id)}`}
-                            title="Ver vídeo del ejercicio"
-                            className="ml-1.5 inline-flex translate-y-[2px] hover:opacity-80"
-                            style={{ color: "var(--brand-accent-2)" }}
-                          >
-                            <PlayCircle size={14} />
-                          </a>
-                        )}
                       </summary>
                       {hasDetail && (
                         <div className="mt-1.5 space-y-0.5 border-t pt-1.5 pl-1 text-zinc-500" style={{ borderColor: "var(--line)" }}>
@@ -1520,7 +1390,6 @@ function GoalStageCard({ client, currentMonth, onClientChanged, onRegenerated }:
   const toast = useToast();
   const info = pkg(client.package_tier);
   const hasTraining = info.hasTraining;
-  const byEmail = info.delivery === "email";
   const days = goalDays(client);
   const due = goalReviewDue(client);
   const [analysis, setAnalysis] = useState<string | null>(null);
@@ -1561,7 +1430,7 @@ function GoalStageCard({ client, currentMonth, onClientChanged, onRegenerated }:
       onClientChanged?.();
       await api.generatePlan(client.id, currentMonth + 1);
       await onRegenerated();
-      toast.push(`Planificación nueva generada y ACTIVA para el objetivo nuevo — envíasela por ${byEmail ? "email" : "WhatsApp"}.`);
+      toast.push("Planificación nueva generada y ACTIVA para el objetivo nuevo — envíasela por email.");
       setConfirming(false);
       setNewGoal("");
       setAnalysis(null);

@@ -1,17 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Bell, BellOff, CalendarCheck, Camera, Check, ChevronDown, Dumbbell, LineChart, LogOut, NotebookPen, Ruler, Share, ShoppingBag, Smartphone, Video, X } from "lucide-react";
+import { Bell, BellOff, CalendarCheck, Camera, Check, ChevronDown, Dumbbell, LineChart, LogOut, NotebookPen, Ruler, Share, Smartphone, X } from "lucide-react";
 import { portalApi, portalSession, PortalError } from "./portalApi";
-import type { VideoCallStatus } from "./portalApi";
 import { pkg } from "../lib/packages";
-import { FEATURE_BIWEEKLY, FEATURE_RESOURCES, PORTAL_THEME } from "../lib/branding";
+import { FEATURE_BIWEEKLY, PORTAL_THEME } from "../lib/branding";
 import type { PortalState } from "../types";
 import { PortalWorkout } from "./PortalWorkout";
 import { PortalDiary } from "./PortalDiary";
 import { PortalClose } from "./PortalClose";
 import { PortalEvolution } from "./PortalEvolution";
 import { PortalProgress } from "./PortalProgress";
-import { PortalResources } from "./PortalResources";
 import { PortalToastProvider, usePortalToast } from "./PortalToast";
 import {
   enablePush,
@@ -30,7 +28,7 @@ import {
 // El portal del cliente es SOLO seguimiento: Entreno, Tienda, Diario y Progreso
 // (la pestaña Quincenal solo existe si la marca usa el ciclo de 14 días). Quien
 // contrata solo la dieta ve únicamente la evolución de su cuerpo y la tienda.
-type Tab = "entreno" | "recursos" | "diario" | "progreso" | "cierre";
+type Tab = "entreno" | "diario" | "progreso" | "cierre";
 
 /**
  * Portal del cliente: mobile-first, sin login. El token sale de la URL
@@ -53,7 +51,6 @@ export default function PortalApp({ token }: { token: string }) {
   const rawTab = params.get("tab");
   const tab: Tab =
     rawTab === "diario" || rawTab === "progreso" || rawTab === "cierre"
-      || (rawTab === "recursos" && FEATURE_RESOURCES)
       ? (rawTab as Tab)
       : "entreno";
   const setTab = (t: Tab) => setParams(t === "entreno" ? {} : { tab: t });
@@ -149,7 +146,6 @@ export default function PortalApp({ token }: { token: string }) {
 
   const ALL_TABS: { id: Tab; label: string; icon: typeof Dumbbell }[] = [
     { id: "entreno", label: "Entreno", icon: Dumbbell },
-    { id: "recursos", label: "Tienda", icon: ShoppingBag },
     { id: "diario", label: "Diario", icon: NotebookPen },
     { id: "progreso", label: "Progreso", icon: LineChart },
     { id: "cierre", label: FEATURE_BIWEEKLY ? "Quincenal" : "Evolución",
@@ -157,7 +153,7 @@ export default function PortalApp({ token }: { token: string }) {
   ];
   // Sin ciclo quincenal la pestaña de cierre se convierte en EVOLUCIÓN: el
   // cliente actualiza peso y medidas cuando se mide, sin cerrar nada.
-  const TABS = ALL_TABS.filter((t) => FEATURE_RESOURCES || t.id !== "recursos");
+  const TABS = ALL_TABS;
   const visibleTabs = isStart ? TABS.filter((t) => t.id !== "entreno") : TABS;
 
   return (
@@ -213,9 +209,6 @@ export default function PortalApp({ token }: { token: string }) {
               </span>
             </a>
           )}
-          {caps.hasVideoCall && (
-            <VideoCallBanner api={apiClient} accent={state.brand.color_secondary} />
-          )}
           {state.photos_pending && (
             <PhotosReminder api={apiClient} accent={state.brand.color_primary} onConfirmed={reload} />
           )}
@@ -224,7 +217,6 @@ export default function PortalApp({ token }: { token: string }) {
           {/* key={effTab} → transición suave (animate-rise respeta reduced-motion) */}
           <div key={effTab} className="animate-rise">
             {effTab === "entreno" && <PortalWorkout api={apiClient} brand={state.brand} periodStatus={state.period?.status ?? null} businessToday={state.today ?? null} />}
-            {effTab === "recursos" && <PortalResources api={apiClient} brand={state.brand} hasTraining={!isStart} />}
             {effTab === "diario" && <PortalDiary api={apiClient} brand={state.brand} periodStatus={state.period?.status ?? null} businessToday={state.today ?? null} />}
             {effTab === "progreso" && <PortalProgress api={apiClient} brand={state.brand} hasTraining={!isStart} />}
             {effTab === "cierre" && !FEATURE_BIWEEKLY && (
@@ -242,7 +234,6 @@ export default function PortalApp({ token }: { token: string }) {
                 closeDate={state.period?.ends_on ?? null}
                 periodStatus={state.period?.status ?? null}
                 hasTraining={!isStart}
-                directContact={caps.directContact}
               />
             )}
           </div>
@@ -272,178 +263,6 @@ export default function PortalApp({ token }: { token: string }) {
       </div>
     </PortalToastProvider>
   );
-}
-
-/** Fecha de HOY (YYYY-MM-DD) para el mínimo del selector. */
-function portalLocalToday(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-/** Videollamada de revisión en el portal (Pro). Se muestra sobre cualquier
- *  pestaña para que no pase por alto. Estados:
- *   - book: al enviar la revisión, el cliente PROPONE día y hora.
- *   - proposed: propuesta enviada, esperando confirmación del coach.
- *   - pending_manual: el coach la agenda (te escribirá por WhatsApp).
- *   - scheduled: agendada → botón "Unirme" (Google Meet). */
-function VideoCallBanner({ api, accent }: { api: ReturnType<typeof portalApi>; accent: string }) {
-  const toast = usePortalToast();
-  const [vc, setVc] = useState<VideoCallStatus | null>(null);
-  const [date, setDate] = useState("");
-  const [time, setTime] = useState("17:00");
-  const [busy, setBusy] = useState(false);
-  const [showResched, setShowResched] = useState(false);
-
-  const reload = useCallback(() => {
-    api.videoCall().then(setVc).catch(() => {});
-  }, [api]);
-  useEffect(reload, [reload]);
-
-  if (!vc || vc.state === "none") return null;
-
-  const box = {
-    background: `color-mix(in srgb, ${accent} 12%, transparent)`,
-    border: `1px solid color-mix(in srgb, ${accent} 35%, transparent)`,
-  } as const;
-  const header = (
-    <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest" style={{ color: accent }}>
-      <Video size={13} /> Videollamada de revisión
-    </div>
-  );
-
-  async function propose() {
-    if (!date || !time || busy) return;
-    setBusy(true);
-    try {
-      const r = await api.proposeVideoCall(`${date}T${time}`);
-      setVc(r);
-      toast.push("Propuesta enviada. Tu coach la confirmará.");
-    } catch (e: any) {
-      toast.push(e?.message ?? "No se pudo enviar la propuesta");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function reschedule() {
-    if (!date || !time || busy) return;
-    setBusy(true);
-    try {
-      const r = await api.rescheduleVideoCall(`${date}T${time}`);
-      setVc(r);
-      setShowResched(false);
-      toast.push("Reprogramación enviada. Tu coach confirmará la nueva hora.");
-    } catch (e: any) {
-      toast.push(e?.message ?? "No se pudo reprogramar");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // AGENDADA → confirmación del coach + "Unirme" y opción de reprogramar.
-  if (vc.state === "scheduled" && vc.call) {
-    return (
-      <div className="mb-4 rounded-2xl p-4" style={box}>
-        {header}
-        <p className="mt-1 text-sm font-semibold">Tu coach ha confirmado tu videollamada</p>
-        <p className="mt-0.5 text-sm font-medium capitalize">{vc.call.when_label}</p>
-        {vc.call.duration_min ? <p className="text-[11px] opacity-50">{vc.call.duration_min} min</p> : null}
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {vc.call.meet_url && (
-            <a href={vc.call.meet_url} target="_blank" rel="noopener noreferrer"
-              className="tap inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white"
-              style={{ background: accent }}>
-              <Video size={15} /> {vc.call.is_today ? "Unirme ahora" : "Unirme a Meet"}
-            </a>
-          )}
-          {!showResched && (
-            <button onClick={() => setShowResched(true)}
-              className="tap inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold"
-              style={{ border: `1px solid color-mix(in srgb, ${accent} 45%, transparent)`, color: accent }}>
-              ¿No te va bien? Reprogramar
-            </button>
-          )}
-        </div>
-        {showResched && (
-          <div className="mt-3">
-            <p className="text-xs opacity-70">Propón una nueva fecha y hora; tu coach la confirmará.</p>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <input type="date" className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: `color-mix(in srgb, ${accent} 35%, transparent)`, background: "transparent" }}
-                value={date} min={portalLocalToday()} onChange={(e) => setDate(e.target.value)} />
-              <input type="time" className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: `color-mix(in srgb, ${accent} 35%, transparent)`, background: "transparent" }}
-                value={time} onChange={(e) => setTime(e.target.value)} />
-              <button onClick={reschedule} disabled={!date || !time || busy}
-                className="tap inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                style={{ background: accent }}>
-                <CalendarCheck size={15} /> Reprogramar
-              </button>
-              <button onClick={() => setShowResched(false)} disabled={busy}
-                className="tap inline-flex items-center rounded-xl px-3 py-1.5 text-xs font-semibold opacity-70">
-                Cancelar
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // TOCA PROPONER → formulario día + hora.
-  if (vc.state === "book") {
-    return (
-      <div className="mb-4 rounded-2xl p-4" style={box}>
-        {header}
-        <p className="mt-1 text-sm">Agenda tu videollamada de revisión con tu coach: elige el día y la hora que mejor te vengan.</p>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <input type="date" className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: `color-mix(in srgb, ${accent} 35%, transparent)`, background: "transparent" }}
-            value={date} min={portalLocalToday()} onChange={(e) => setDate(e.target.value)} />
-          <input type="time" className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: `color-mix(in srgb, ${accent} 35%, transparent)`, background: "transparent" }}
-            value={time} onChange={(e) => setTime(e.target.value)} />
-          <button onClick={propose} disabled={!date || !time || busy}
-            className="tap inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-            style={{ background: accent }}>
-            <CalendarCheck size={15} /> Solicitar
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // PROPUESTA ENVIADA → esperando al coach (con opción de cambiarla).
-  if (vc.state === "proposed") {
-    return (
-      <div className="mb-4 rounded-2xl p-4" style={box}>
-        {header}
-        <p className="mt-1 text-sm">
-          Has propuesto: <b className="capitalize">{vc.call?.when_label}</b>. Tu coach lo confirmará
-          en breve; te avisaremos con el enlace.
-        </p>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <input type="date" className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: `color-mix(in srgb, ${accent} 35%, transparent)`, background: "transparent" }}
-            value={date} min={portalLocalToday()} onChange={(e) => setDate(e.target.value)} />
-          <input type="time" className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: `color-mix(in srgb, ${accent} 35%, transparent)`, background: "transparent" }}
-            value={time} onChange={(e) => setTime(e.target.value)} />
-          <button onClick={propose} disabled={!date || !time || busy}
-            className="tap inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold"
-            style={{ border: `1px solid color-mix(in srgb, ${accent} 45%, transparent)`, color: accent }}>
-            Cambiar propuesta
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // PENDIENTE MANUAL → el coach la agenda contigo por WhatsApp.
-  if (vc.state === "pending_manual") {
-    return (
-      <div className="mb-4 rounded-2xl p-4" style={box}>
-        {header}
-        <p className="mt-1 text-sm">Tu coach se pondrá en contacto contigo por WhatsApp para acordar el día y la hora de tu videollamada.</p>
-      </div>
-    );
-  }
-
-  return null;
 }
 
 /** Interruptor de NOTIFICACIONES en la cabecera: campana = activadas (toca para

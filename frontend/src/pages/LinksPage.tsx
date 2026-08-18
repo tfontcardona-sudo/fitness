@@ -1,50 +1,30 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Copy, Dumbbell, Search, ShoppingBag } from "lucide-react";
+import { Dumbbell } from "lucide-react";
 import { api } from "../lib/api";
 import { BRAND_NAME } from "../lib/branding";
 import type { LandingOut } from "../types";
 
 /**
- * Página PÚBLICA de enlaces (/professional) — el link del perfil de Instagram del coach.
- * Foto del coach de fondo (configurable en Recursos → Página de enlaces) y dos
- * accesos: "Trabaja conmigo" (planes con pago) y la TIENDA del centro (sus
- * productos, con el código de descuento).
+ * Página PÚBLICA de enlaces (/professional) — el link del perfil de Instagram
+ * del centro. Foto de fondo (configurable en Enlaces) y un único acceso:
+ * "Trabaja conmigo", que lleva a la página de planes con pago.
  */
 export default function LinksPage() {
   const [data, setData] = useState<LandingOut | null>(null);
-  const [copied, setCopied] = useState(false);
-  // Buscador de productos: cuando el catálogo es largo, filtra por nombre.
-  const [q, setQ] = useState("");
 
   useEffect(() => {
     api.publicLanding().then(setData).catch(() => setData(null));
   }, []);
 
-  const filteredProducts = useMemo(() => {
-    const all = data?.products ?? [];
-    const needle = q.trim().toLowerCase();
-    if (!needle) return all;
-    return all.filter((p) =>
-      p.title.toLowerCase().includes(needle)
-      || (p.category ?? "").toLowerCase().includes(needle));
-  }, [data, q]);
-
   const primary = data?.color_primary ?? "#E9A90F";
   const secondary = data?.color_secondary ?? "#37474F";
   const bg = data?.color_bg ?? "#0F0E0C";
 
-  function copyCode() {
-    if (!data?.partner_discount_code) return;
-    navigator.clipboard.writeText(data.partner_discount_code).catch(() => {});
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-6 py-10"
       style={{ background: bg }}>
-      {/* Fondo: foto del coach (si está configurada) con velo oscuro para que
+      {/* Fondo: foto del centro (si está configurada) con velo oscuro para que
           los botones se lean siempre; sin foto, degradado de marca. */}
       {data?.links_photo_url ? (
         <>
@@ -68,88 +48,13 @@ export default function LinksPage() {
         {data?.tagline && <p className="mt-1 text-sm text-white/80">{data.tagline}</p>}
 
         <div className="mt-8 w-full space-y-3">
-          {/* OFERTA de la campaña de story/post ("link en la bio" → aquí):
-              arriba del todo y con su gancho, para que el que viene del
-              carrusel la encuentre al primer toque. */}
-          <Link to="/oferta"
-            className="flex w-full flex-col items-center justify-center rounded-2xl px-5 py-4 text-white shadow-xl transition-transform active:scale-[0.97]"
-            style={{ background: "#C2453A" }}>
-            <span className="text-base font-extrabold">⚡ Oferta: tu primer mes por 1 €</span>
-            <span className="mt-0.5 text-xs font-semibold text-white/85">
-              Plan completo · plazas limitadas
-            </span>
-          </Link>
-
           {/* Trabaja conmigo → página de planes con pago */}
           <Link to="/planes"
             className="flex w-full items-center justify-center gap-2.5 rounded-2xl px-5 py-4 text-base font-bold text-white shadow-xl transition-transform active:scale-[0.97]"
             style={{ background: primary }}>
             <Dumbbell size={20} /> Trabaja conmigo
           </Link>
-
-          {/* Tienda del centro (sus productos) + código de descuento */}
-          {data?.partner_store_url && (
-            <a href={data.partner_store_url} target="_blank" rel="noopener noreferrer"
-              className="flex w-full items-center justify-center gap-2.5 rounded-2xl px-5 py-4 text-base font-bold text-white shadow-xl transition-transform active:scale-[0.97]"
-              style={{ background: secondary }}>
-              <ShoppingBag size={20} /> Tienda {data?.name ?? BRAND_NAME}
-            </a>
-          )}
-          {data?.partner_discount_code && (
-            <button onClick={copyCode}
-              className="mx-auto flex items-center gap-2 rounded-full border border-white/30 bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur transition-transform active:scale-[0.97]">
-              <Copy size={14} />
-              {copied ? "¡Código copiado!" : <>Código de descuento: <span style={{ color: primary }}>{data.partner_discount_code}</span></>}
-            </button>
-          )}
         </div>
-
-        {/* Productos recomendados: los mismos del portal, comprables aquí con
-            el código de descuento de arriba. */}
-        {data && data.products.length > 0 && (
-          <div className="mt-10 w-full">
-            <p className="mb-3 text-sm font-bold uppercase tracking-wider text-white/70">
-              Nuestros productos
-            </p>
-            {/* Buscador: solo cuando hay catálogo suficiente para que ayude */}
-            {data.products.length > 4 && (
-              <div className="relative mb-3">
-                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/50" />
-                <input
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="Buscar producto…"
-                  className="w-full rounded-xl border border-white/20 bg-white/10 py-2.5 pl-9 pr-3 text-sm text-white placeholder-white/50 outline-none backdrop-blur focus:border-white/40"
-                />
-              </div>
-            )}
-            {filteredProducts.length === 0 ? (
-              <p className="py-4 text-sm text-white/50">No hay productos que coincidan con «{q}».</p>
-            ) : (
-            <div className="grid grid-cols-2 gap-3">
-              {filteredProducts.map((p, i) => (
-                <a key={i} href={p.url} target="_blank" rel="noopener noreferrer"
-                  className="overflow-hidden rounded-2xl border border-white/15 bg-white/10 text-left backdrop-blur transition-transform active:scale-[0.97]">
-                  {p.image_url ? (
-                    <img src={p.image_url} alt="" className="aspect-square w-full object-cover" />
-                  ) : (
-                    <div className="flex aspect-square w-full items-center justify-center"
-                      style={{ background: `${secondary}33` }}>
-                      <ShoppingBag size={28} className="text-white/50" />
-                    </div>
-                  )}
-                  <div className="p-2.5">
-                    <p className="truncate text-xs font-semibold text-white">{p.title}</p>
-                    <p className="mt-0.5 text-[11px] font-semibold" style={{ color: primary }}>
-                      Comprar{data.partner_discount_code ? ` · código ${data.partner_discount_code}` : ""}
-                    </p>
-                  </div>
-                </a>
-              ))}
-            </div>
-            )}
-          </div>
-        )}
 
         <p className="mt-10 text-xs text-white/50">Pago seguro con Stripe</p>
       </div>

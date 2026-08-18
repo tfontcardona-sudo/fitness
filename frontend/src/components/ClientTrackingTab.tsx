@@ -57,7 +57,7 @@ function ChangeRequestsCard({ clientId }: { clientId: number }) {
         ))}
       </ul>
       <p className="mt-2 text-[11px] text-zinc-500">
-        Respóndele por WhatsApp o aplica el cambio en su planificación; después márcala resuelta.
+        Respóndele o aplica el cambio en su planificación; después márcala resuelta.
       </p>
     </div>
   );

@@ -12,7 +12,6 @@ import type {
   PeriodCloseIn,
   PlanChanges,
   PortalPlanOut,
-  PortalResources,
   PortalState,
   PushPending,
   PortalProgress,
@@ -20,21 +19,6 @@ import type {
   TodayView,
   TrainingWeek,
 } from "../types";
-
-/** Estado de la videollamada de revisión en el portal (Pro). */
-export interface VideoCallStatus {
-  // none: nada · book: toca proponer día/hora · proposed: esperando al coach ·
-  // pending_manual: el coach la agenda (te escribirá) · scheduled: agendada (Unirme)
-  state: "none" | "book" | "proposed" | "pending_manual" | "scheduled";
-  period_index?: number;
-  call?: {
-    scheduled_at?: string;
-    when_label?: string;
-    duration_min?: number | null;
-    meet_url?: string | null;
-    is_today?: boolean;
-  } | null;
-}
 
 export class PortalError extends Error {
   status: number;
@@ -149,7 +133,6 @@ export function portalApi(token: string) {
         "GET", `${base}/workout-history`,
       ),
     plan: () => req<PortalPlanOut>("GET", `${base}/plan`),
-    resources: () => req<PortalResources>("GET", `${base}/resources`),
     progress: () => req<PortalProgress>("GET", `${base}/progress`),
     photoUrl: (id: number) => `/api${base}/photos/${id}`,
     getDiary: (logDate: string) =>
@@ -170,14 +153,6 @@ export function portalApi(token: string) {
     // recordatorio del portal y del push).
     confirmPhotos: () => req<{ confirmed: boolean }>("POST", `${base}/photos-confirmed`),
     feedback: () => req<FeedbackDocOut[]>("GET", `${base}/feedback`),
-    // Estado de la videollamada de revisión (proponer / esperando / agendada).
-    videoCall: () => req<VideoCallStatus>("GET", `${base}/video-call`),
-    // El cliente propone día y hora (ISO "YYYY-MM-DDTHH:MM").
-    proposeVideoCall: (startAt: string) =>
-      req<VideoCallStatus>("POST", `${base}/video-call`, { start_at: startAt }),
-    // El cliente REPROGRAMA una videollamada ya agendada (nueva fecha/hora).
-    rescheduleVideoCall: (startAt: string) =>
-      req<VideoCallStatus>("POST", `${base}/video-call/reschedule`, { start_at: startAt }),
     changeRequest: (message: string) =>
       req<ChangeRequestOut>("POST", `${base}/change-request`, { message }),
     // --- Web Push (§8.1) ---

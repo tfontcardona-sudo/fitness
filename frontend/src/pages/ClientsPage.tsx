@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { AlertTriangle, CalendarPlus, CheckCircle2, ClipboardList, Copy, CreditCard, Mail, MessageCircle, Search, Send, UserPlus, ChevronRight, Flag } from "lucide-react";
+import { AlertTriangle, CalendarPlus, CheckCircle2, ClipboardList, Copy, CreditCard, Mail, Search, Send, UserPlus, ChevronRight, Flag } from "lucide-react";
 import { useDismiss, useModalFocus } from "../lib/useDismiss";
 import { api, ApiError, keepIfSame, REFRESH_MS } from "../lib/api";
 import type { ClientCreatedOut, ClientOut } from "../types";
 import { EmptyState, PageLoader, StatusBadge, useToast } from "../components/ui";
 import { Avatar } from "./DashboardPage";
 import { GOAL_LABEL, goalReviewDue, relativeDays } from "../lib/format";
-import { onboardingMessage, openWhatsApp, portalAccessMessage, waPhone } from "../lib/whatsapp";
 import { BILLING_PERIODS, OFFER_MONTHLY_EUR, PACKAGES, PACKAGE_ORDER, pkg } from "../lib/packages";
 import type { BillingPeriod, PackageTier } from "../types";
 
@@ -425,38 +424,10 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
     toast.push("Enlace copiado");
   }
 
-  // Abre WhatsApp del cliente con el acceso al portal ya escrito. Necesita el
-  // teléfono (el que se puso en el alta); si no hay, avisa.
-  function sendPortalWhatsApp() {
-    if (!created) return;
-    const digits = waPhone(created.client.phone ?? phone);
-    if (!digits) {
-      toast.push("Añade el teléfono del cliente para enviarlo por WhatsApp", "error");
-      return;
-    }
-    openWhatsApp(digits, portalAccessMessage(created.client.full_name, created.links.portal_url));
-    toast.push("WhatsApp abierto con el acceso al portal — dale a enviar");
-  }
-
   const [sendingOnb, setSendingOnb] = useState(false);
-  // Envío combinado de ARRANQUE: enlace de pago + anamnesis en un solo mensaje,
-  // por WhatsApp (Pro) o email (Start/Full) según el plan del cliente.
+  // Envío combinado de ARRANQUE: enlace de pago + anamnesis en un solo email.
   async function sendOnboarding() {
     if (!created || sendingOnb) return;
-    const info = pkg(created.client.package_tier);
-    const payUrl = api.payLinkUrl(created.links.portal_token);
-    if (info.delivery === "whatsapp") {
-      const digits = waPhone(created.client.phone ?? phone);
-      if (!digits) {
-        toast.push("Añade el teléfono del cliente para enviarlo por WhatsApp", "error");
-        return;
-      }
-      openWhatsApp(digits, onboardingMessage(
-        created.client.full_name, info.label, payUrl,
-        `${window.location.origin}/anamnesis/${created.links.portal_token}`));
-      toast.push("WhatsApp abierto con el pago y la anamnesis — dale a enviar");
-      return;
-    }
     setSendingOnb(true);
     try {
       const r = await api.sendOnboarding(created.client.id);
@@ -490,7 +461,7 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
               <h3 className="text-base font-semibold text-zinc-100">Nuevo cliente</h3>
               <p className="mt-1 text-sm text-zinc-500">
                 Al crearlo se le enviará por email su acceso al portal (usuario, contraseña
-                y enlace). Solo necesitas nombre y email; el teléfono es para WhatsApp.
+                y enlace). Solo necesitas nombre y email; el teléfono es opcional.
               </p>
             </div>
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-1">
@@ -613,8 +584,8 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
           <div className="min-h-0 flex-1 overflow-y-auto p-6">
             <h3 className="text-base font-semibold text-zinc-100">Cliente creado</h3>
 
-            {/* Envío COMBINADO de arranque: pago del plan + anamnesis en un solo
-                mensaje, por WhatsApp (Pro) o email (Start/Full) según el plan. */}
+            {/* Envío COMBINADO de arranque: pago del plan + anamnesis en un
+                solo email. */}
             <div className="mt-3 rounded-xl border p-3"
               style={{ borderColor: "var(--brand-accent)", background: "color-mix(in srgb, var(--brand-accent) 8%, transparent)" }}>
               <p className="text-sm font-semibold text-zinc-100">Enviar pago + anamnesis</p>
@@ -623,9 +594,7 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
                 y el de la anamnesis, con la instrucción de devolverla rellena.
               </p>
               <button onClick={sendOnboarding} disabled={sendingOnb} className="btn btn-primary mt-2 w-full justify-center">
-                {pkg(created.client.package_tier).delivery === "whatsapp"
-                  ? <><MessageCircle size={15} /> Enviar por WhatsApp</>
-                  : <><Mail size={15} /> {sendingOnb ? "Enviando…" : "Enviar por email"}</>}
+                <Mail size={15} /> {sendingOnb ? "Enviando…" : "Enviar por email"}
               </button>
             </div>
 
@@ -638,12 +607,12 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
               </button>
             </div>
 
-            {/* Enlace del PORTAL del cliente (su app / web): para enviarlo también
-                por WhatsApp además del correo automático. Es el enlace de la web,
-                donde el cliente primero rellena la anamnesis y luego hace el
-                seguimiento y ve su planificación. */}
+            {/* Enlace del PORTAL del cliente (su app / web): además del correo
+                automático, el coach puede copiarlo y mandarlo por donde quiera.
+                Es el enlace de la web, donde el cliente primero rellena la
+                anamnesis y luego hace el seguimiento y ve su planificación. */}
             <p className="mt-4 text-xs text-zinc-500">
-              Enlace del portal del cliente (para enviarlo también por WhatsApp, opcional):
+              Enlace del portal del cliente (para copiarlo, opcional):
             </p>
             <div className="mt-1.5 flex items-center gap-2 rounded-xl border p-3" style={{ borderColor: "var(--line-strong)" }}>
               <code className="flex-1 truncate text-xs text-zinc-300">{created.links.portal_url}</code>
@@ -651,9 +620,6 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
                 <Copy size={14} />
               </button>
             </div>
-            <button className="btn btn-ghost mt-2 w-full justify-center text-xs" onClick={sendPortalWhatsApp}>
-              <MessageCircle size={14} style={{ color: "#25D366" }} /> Enviar por WhatsApp
-            </button>
 
             <div className="mt-6 flex justify-end">
               <button className="btn btn-primary" onClick={onClose}>

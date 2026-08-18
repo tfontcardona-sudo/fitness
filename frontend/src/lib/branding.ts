@@ -40,7 +40,6 @@ export const PORTAL_THEME: "dark" | "light" = "dark";
 /** Funciones del motor APAGADAS en esta instancia (espejo de los FEATURE_* del
  *  backend). El motor las conserva; la marca quiere la web solo para el ciclo
  *  esencial: subir anamnesis → generar plan → portal → revisiones. */
-export const FEATURE_VIDEO_CALLS: boolean = false; // videollamadas de revisión
 export const FEATURE_RESOURCES: boolean = true;    // TIENDA (portal + enlaces)
 export const FEATURE_BIWEEKLY: boolean = false;    // ciclo quincenal del motor
 

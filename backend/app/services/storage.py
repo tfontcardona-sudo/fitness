@@ -164,25 +164,44 @@ def media_dir(sub: str = "") -> Path:
     return p
 
 
+# Tope de PÍXELES de una imagen pública (logo, fondos de las páginas): 25 MP
+# sobra para cualquier foto de móvil y corta las "bombas" de descompresión.
+MAX_PUBLIC_IMAGE_PIXELS = 25_000_000
+
+
 def _save_public_image(raw: bytes, dest_dir: Path, stem: str, what: str) -> str:
-    """Valida una imagen (≤5 MB, JPG/PNG/WebP) y la guarda con nombre fijo
-    (reemplaza la anterior aunque cambie la extensión)."""
+    """Valida una imagen (≤5 MB, ≤25 MP, JPG/PNG/WebP) y la guarda con nombre
+    fijo (reemplaza la anterior aunque cambie la extensión). Se re-codifica para
+    quitar los metadatos (EXIF con geolocalización, etc.)."""
     if len(raw) > 5 * 1024 * 1024:
         raise PhotoValidationError(f"{what} supera 5 MB")
     try:
         img = Image.open(io.BytesIO(raw))
+        # Rechazo por DIMENSIONES antes de decodificar: Image.open solo lee la
+        # cabecera, así que una 'bomba' (pequeña comprimida, enorme en píxeles)
+        # se corta aquí sin llegar a ocupar memoria.
+        if img.width * img.height > MAX_PUBLIC_IMAGE_PIXELS:
+            raise PhotoValidationError(f"{what} es demasiado grande (usa menos resolución)")
         img.load()
+    except PhotoValidationError:
+        raise
+    except Image.DecompressionBombError as exc:
+        raise PhotoValidationError(f"{what} es demasiado grande") from exc
     except (UnidentifiedImageError, OSError) as exc:
         raise PhotoValidationError("El archivo no es una imagen válida") from exc
     if img.format not in ALLOWED_FORMATS:
         raise PhotoValidationError("Formato no soportado (usa JPG, PNG o WebP)")
-    for old in dest_dir.glob(f"{stem}.*"):
+    fmt = img.format
+    # convert() re-codifica en C (sin listas de píxeles en memoria) y resuelve la
+    # PALETA de los PNG modo "P", que copiada por índices salía negra/corrupta.
+    clean = img.convert("RGB") if fmt == "JPEG" else img.convert("RGBA")
+    for stale in dest_dir.glob(f"{stem}.*"):
         try:
-            old.unlink()
+            stale.unlink()
         except Exception:
             pass
-    dest = dest_dir / f"{stem}.{_EXT[img.format]}"
-    img.save(dest, format=img.format)
+    dest = dest_dir / f"{stem}.{_EXT[fmt]}"
+    clean.save(dest, format=fmt, **({"quality": 88} if fmt == "JPEG" else {}))
     return str(dest.relative_to(storage_root()))
 
 
@@ -191,67 +210,9 @@ def save_links_photo(raw: bytes, filename_hint: str) -> str:
     return _save_public_image(raw, media_dir("brand"), "links-photo", "La foto")
 
 
-def save_video_cover(raw: bytes, filename_hint: str) -> str:
-    """Portada ÚNICA para todos los vídeos de ejercicios."""
-    return _save_public_image(raw, media_dir("brand"), "video-cover", "La portada")
-
-
 def save_plans_photo(raw: bytes, filename_hint: str) -> str:
     """Foto de fondo de la página pública de planes (/planes)."""
     return _save_public_image(raw, media_dir("brand"), "plans-photo", "La foto")
-
-
-MAX_VIDEO_MB = 300
-# Formatos de vídeo habituales; el navegador reproduce mp4/webm/mov nativamente.
-_VIDEO_EXTS = {".mp4", ".mov", ".webm", ".m4v", ".avi", ".mkv", ".wmv", ".3gp"}
-
-
-class VideoValidationError(ValueError):
-    """Vídeo no soportado o demasiado grande."""
-
-
-def save_exercise_video(exercise_id: int, fileobj, original_name: str) -> str:
-    """Guarda el vídeo SUBIDO de un ejercicio (reemplaza el anterior). Escribe a
-    disco en trozos (los vídeos no caben cómodos en RAM). Devuelve la ruta
-    relativa al storage (media/exercises/…)."""
-    import shutil
-
-    ext = ("." + original_name.rsplit(".", 1)[-1].lower()) if "." in (original_name or "") else ""
-    if ext not in _VIDEO_EXTS:
-        raise VideoValidationError(
-            "Formato de vídeo no soportado (usa MP4, MOV, WebM, AVI, MKV…)")
-    folder = media_dir("exercises")
-    for old in folder.glob(f"ex{exercise_id}_*"):
-        try:
-            old.unlink()
-        except Exception:
-            pass
-    dest = folder / f"ex{exercise_id}_{secrets.token_hex(4)}{ext}"
-    written = 0
-    limit = MAX_VIDEO_MB * 1024 * 1024
-    with dest.open("wb") as out:
-        while True:
-            chunk = fileobj.read(1024 * 1024)
-            if not chunk:
-                break
-            written += len(chunk)
-            if written > limit:
-                out.close()
-                dest.unlink(missing_ok=True)
-                raise VideoValidationError(f"El vídeo supera {MAX_VIDEO_MB} MB")
-            out.write(chunk)
-    if written == 0:
-        dest.unlink(missing_ok=True)
-        raise VideoValidationError("El archivo está vacío")
-    return str(dest.relative_to(storage_root()))
-
-
-def delete_exercise_video(exercise_id: int) -> None:
-    for old in media_dir("exercises").glob(f"ex{exercise_id}_*"):
-        try:
-            old.unlink()
-        except Exception:
-            pass
 
 
 def media_url(rel_path: str | None) -> str | None:
@@ -261,61 +222,13 @@ def media_url(rel_path: str | None) -> str | None:
     origen que la API (Caddy proxya /api), así que "/api/media/…" funciona
     siempre: aunque DOMAIN/BASE_URL estén sin poner o mal puestos, o el cliente
     entre por otro nombre de host. Con URL absoluta, un `.env` incompleto dejaba
-    los vídeos e imágenes subidos sin cargar (y el botón de vídeo sin salir).
-    Mismo criterio que el frontend (api.mediaUrl). Solo se usa en respuestas que
+    las imágenes subidas sin cargar. Mismo criterio que el frontend
+    (api.mediaUrl). Solo se usa en respuestas que
     pinta el navegador; los emails y documentos construyen sus URLs aparte.
     """
     if not rel_path or not rel_path.startswith("media/"):
         return None
     return f"/api/media/{rel_path[len('media/'):]}"
-
-
-def resources_dir() -> Path:
-    p = storage_root() / "resources"
-    p.mkdir(parents=True, exist_ok=True)
-    return p
-
-
-# Tope de PÍXELES de una imagen de producto (~25 MP): por debajo del umbral de la
-# DecompressionBombError de Pillow (~89-178 MP), que dejaba pasar imágenes de
-# <5 MB comprimidos pero cientos de MB descomprimidos.
-MAX_RESOURCE_IMAGE_PIXELS = 25_000_000
-
-
-def save_resource_image(raw: bytes, filename_hint: str = "") -> str:
-    """Valida y guarda la imagen de un producto recomendado, quitando metadatos al
-    re-codificar. Devuelve la ruta relativa. Nombre aleatorio único: cada subida
-    crea un archivo nuevo (la anterior se borra aparte para no dejar huérfanos)."""
-    if len(raw) > 5 * 1024 * 1024:
-        raise PhotoValidationError("La imagen supera 5 MB")
-    try:
-        img = Image.open(io.BytesIO(raw))
-        # Rechazo por DIMENSIONES antes de decodificar: Image.open solo lee la
-        # cabecera, así que una 'bomba' (pequeña comprimida, enorme en píxeles)
-        # se corta aquí sin llegar a ocupar memoria.
-        if img.width * img.height > MAX_RESOURCE_IMAGE_PIXELS:
-            raise PhotoValidationError("La imagen es demasiado grande (usa una de menos resolución)")
-        img.load()
-    except PhotoValidationError:
-        raise
-    except Image.DecompressionBombError as exc:
-        raise PhotoValidationError("La imagen es demasiado grande") from exc
-    except (UnidentifiedImageError, OSError) as exc:
-        raise PhotoValidationError("El archivo no es una imagen válida") from exc
-    if img.format not in ALLOWED_FORMATS:
-        raise PhotoValidationError("Formato no soportado (usa JPG, PNG o WebP)")
-
-    fmt = img.format
-    # Re-codificación SIN metadatos con convert() (en C, sin listas de píxeles en
-    # memoria): resuelve además la PALETA de los PNG modo "P" — el rebuild por
-    # putdata copiaba los índices sin la paleta y la imagen salía corrupta/negra.
-    clean = img.convert("RGB") if fmt == "JPEG" else img.convert("RGBA")
-
-    name = f"{secrets.token_hex(12)}.{_EXT[fmt]}"
-    dest = resources_dir() / name
-    params = {"quality": 88} if fmt == "JPEG" else {}
-    clean.save(dest, format=fmt, **params)
-    return str(dest.relative_to(storage_root()))
 
 
 def delete_storage_file(rel: str | None) -> None:

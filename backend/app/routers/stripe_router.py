@@ -4,7 +4,7 @@
                               elegido y devuelve la URL (la página de planes hace
                               redirect).
 - GET  /api/pay/{token}       enlace ESTABLE del alta manual: el cliente lo abre
-                              (desde el WhatsApp/email del coach) y va a Stripe.
+                              (desde el email del coach) y va a Stripe.
 - POST /api/stripe/webhook    aviso de Stripe al cobrar: marca el pago o crea el
                               perfil del cliente. Verificado por firma.
 
@@ -62,7 +62,7 @@ def public_checkout(request: Request, body: CheckoutIn, db: Session = Depends(ge
 @limiter.limit("10/minute")
 def pay_plan_link(request: Request, tier: str, period: str,
                   db: Session = Depends(get_db)):
-    """Enlace de pago DIRECTO de un plan × duración, para enviarlo por WhatsApp
+    """Enlace de pago DIRECTO de un plan × duración, para enviarlo por email
     a un interesado SIN darlo de alta antes (kit de ventas del panel). Crea una
     Checkout Session self-serve y redirige a Stripe; al pagar, el webhook crea
     su ficha con el plan pagado y le envía portal + anamnesis (mismo circuito

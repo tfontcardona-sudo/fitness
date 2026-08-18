@@ -23,13 +23,12 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import get_db
-from app.models import BrandConfig, Client, RecommendedProduct
+from app.models import BrandConfig, Client
 from app.ratelimit import client_key
-from app.schemas.entities import LandingOut, LandingProductOut, PublicRegisterIn
+from app.schemas.entities import LandingOut, PublicRegisterIn
 from app.security import new_portal_token
 from app.services.audit import log_event
 from app.services.onboarding import send_onboarding_email
-from app.services.portal import product_image_url
 from app.services.storage import media_url
 from app.services.stripe_service import StripeError, create_checkout_url, get_plan_prices
 
@@ -41,16 +40,11 @@ _log = logging.getLogger("app.public")
 @router.get("/landing", response_model=LandingOut)
 @limiter.limit("60/minute")
 def public_landing(request: Request, db: Session = Depends(get_db)) -> LandingOut:
-    """Datos públicos de la página de enlaces (/professional): marca, foto, afiliación y
-    catálogo de productos (comprables con el código único del coach)."""
+    """Datos públicos de la página de enlaces (/professional): marca, colores,
+    fotos y contacto."""
     brand = db.scalar(select(BrandConfig).limit(1))
     if brand is None:  # BD recién creada sin seed: valores por defecto
         brand = BrandConfig()
-    products = db.scalars(
-        select(RecommendedProduct)
-        .where(RecommendedProduct.active.is_(True))
-        .order_by(RecommendedProduct.sort_order, RecommendedProduct.id)
-    ).all()
     return LandingOut(
         name=brand.name,
         tagline=brand.tagline,
@@ -62,14 +56,8 @@ def public_landing(request: Request, db: Session = Depends(get_db)) -> LandingOu
         logo_url=None,
         links_photo_url=media_url(brand.links_photo_path),
         plans_photo_url=media_url(brand.plans_photo_path),
-        partner_store_url=brand.partner_store_url,
-        partner_discount_code=brand.partner_discount_code,
         contact_phone=brand.contact_phone,
         contact_email=brand.contact_email,
-        products=[LandingProductOut(
-            title=p.title, url=p.url, category=p.category,
-            image_url=product_image_url(p),
-        ) for p in products],
     )
 
 

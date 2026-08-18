@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { Sparkles, AlertTriangle, MessageSquare, MessageCircle, Mail, Video, Target, TrendingUp, BarChart3, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
+import { Sparkles, AlertTriangle, MessageSquare, Mail, Target, TrendingUp, BarChart3, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
 import { api, getToken } from "../lib/api";
-import { feedbackBody, feedbackMessage, openWhatsApp, videoCallModifyMessage, videoCallScheduledMessage, waPhone } from "../lib/whatsapp";
+import { feedbackBody } from "../lib/feedbackText";
 import { pkg } from "../lib/packages";
 import { FEATURE_BIWEEKLY } from "../lib/branding";
 import { ExpandableArea, Spinner, useToast } from "./ui";
-import type { ClientOut, VideoCallOut } from "../types";
+import type { ClientOut } from "../types";
 
 interface Period {
   id: number;
@@ -51,13 +51,9 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
   const [editingFb, setEditingFb] = useState<number | null>(null);
   const [metrics, setMetrics] = useState<Record<number, any>>({});
   const [loadingMetrics, setLoadingMetrics] = useState<number | null>(null);
-  // Paquete del cliente: define cómo se entrega el feedback (email en Start/Full,
-  // WhatsApp en Pro) y si hay contacto directo (videollamada de revisión en Pro).
+  // Paquete del cliente: decide qué bloques del informe tienen sentido
+  // (la fuerza solo si entrena). La entrega es SIEMPRE por email.
   const info = pkg(client.package_tier);
-  const byEmail = info.delivery === "email";
-  // Videollamadas: solo si el plan las incluye Y la instancia las tiene
-  // encendidas (branding.FEATURE_VIDEO_CALLS, plegado en pkg().hasVideoCall).
-  const videoCalls = info.hasVideoCall;
 
   /** Carga el resumen de métricas de un período (se muestra SIEMPRE, sin botón:
    *  al cargar la pestaña para el período actual y al desplegar los antiguos). */
@@ -76,54 +72,6 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
   // Revisión a la que ya está adaptado el último plan (para ocultar el banner
   // "Revisar cambios…" una vez adaptada: el trabajo ya está hecho).
   const [adaptedIdx, setAdaptedIdx] = useState<number | null>(null);
-
-  // Videollamadas quincenales (Pro): el cliente propone → el coach acepta/modifica.
-  // Se necesita Google conectado para crear el evento con Meet.
-  const [calls, setCalls] = useState<VideoCallOut[]>([]);
-  const [googleConnected, setGoogleConnected] = useState(false);
-
-  const loadCalls = useCallback(() => {
-    if (!videoCalls) return;
-    api.listVideoCalls(client.id).then(setCalls).catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client.id, videoCalls]);
-  useEffect(loadCalls, [loadCalls]);
-  useEffect(() => {
-    if (!videoCalls) return;
-    api.googleStatus().then((s) => setGoogleConnected(s.connected)).catch(() => {});
-  }, [videoCalls]);
-
-  function _whenLabel(call: VideoCallOut): string {
-    return call.scheduled_at
-      ? new Date(call.scheduled_at).toLocaleString("es-ES", {
-          weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit",
-        })
-      : "";
-  }
-
-  /** Pro: comparte por WhatsApp la videollamada YA agendada (fecha + Meet). */
-  function shareMeetWhatsApp(call: VideoCallOut) {
-    const phone = waPhone(client.phone);
-    if (!phone) {
-      toast.push("Añade el teléfono del cliente en su ficha para avisarle", "error");
-      return;
-    }
-    openWhatsApp(phone, videoCallScheduledMessage(client.full_name, _whenLabel(call), call.meet_url ?? ""));
-  }
-
-  /** Pro: MODIFICAR la propuesta → abre WhatsApp para acordar el nuevo día/hora y
-   *  deja la videollamada pendiente de agendar a mano. */
-  async function modifyVideoCall(call: VideoCallOut) {
-    const phone = waPhone(client.phone);
-    if (phone) openWhatsApp(phone, videoCallModifyMessage(client.full_name, _whenLabel(call)));
-    try {
-      await api.modifyVideoCall(client.id, call.id);
-      loadCalls();
-      toast.push("Acuerda el día por WhatsApp y luego agéndala a mano aquí");
-    } catch (e: any) {
-      toast.push(e?.message ?? "No se pudo modificar", "error");
-    }
-  }
 
   const load = useCallback(() => {
     api.listPlans(client.id)
@@ -159,7 +107,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
     setGenerating(periodId);
     try {
       await api.generateFeedback(periodId);
-      toast.push(`Feedback generado. Revísalo y envíalo por ${byEmail ? "email" : "WhatsApp"}.`);
+      toast.push("Feedback generado. Revísalo y envíalo por email.");
       load();
       onClientChanged?.(); // el aviso "Ir a Feedback" del perfil desaparece
     } catch (e: any) {
@@ -193,52 +141,29 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
       .catch(() => toast.push("No se pudo copiar", "error"));
   }
 
-  /** Entrega el feedback al cliente según su paquete:
-   *  - Start/Full → por EMAIL (el informe va en el correo; el backend avanza el ciclo).
-   *  - Pro → por WhatsApp (abre el chat con el feedback ya escrito).
+  /** Entrega el informe al cliente POR EMAIL (única vía en los tres servicios).
    *  La primera vez marca el feedback como enviado (el ciclo avanza a "activo");
    *  se puede reenviar cuantas veces haga falta. */
-  async function deliverFeedback(feedbackId: number, content: any, alreadySent: boolean, periodIndex = 0) {
-    if (byEmail) {
-      try {
-        const r = await api.sendFeedbackEmail(feedbackId);
-        // El backend marca "enviado" y avanza el ciclo ANTES del email: si el
-        // email falló, decir "enviado" sin más dejaba al cliente sin informe
-        // y a nadie enterado (auditoría del ciclo).
-        if (r.email_status === "sent") {
-          toast.push(alreadySent ? "Feedback reenviado por email" : "Feedback enviado por email al cliente");
-        } else {
-          toast.push(
-            r.email_status === "disabled"
-              ? "El ciclo ha avanzado pero los EMAILS ESTÁN DESACTIVADOS: envíaselo por WhatsApp"
-              : "El ciclo ha avanzado pero el EMAIL FALLÓ: reenvíalo o mándalo por WhatsApp",
-            "error",
-          );
-        }
-        load();
-        onClientChanged?.();
-      } catch {
-        toast.push("No se pudo enviar el email", "error");
-      }
-      return;
-    }
-    const phone = waPhone(client.phone);
-    if (!phone) {
-      toast.push("Añade el teléfono del cliente en su ficha para enviarlo por WhatsApp", "error");
-      return;
-    }
-    openWhatsApp(phone, feedbackMessage(client.full_name, content, periodIndex));
-    if (alreadySent) {
-      toast.push("WhatsApp abierto con el feedback — dale a enviar");
-      return;
-    }
+  async function deliverFeedback(feedbackId: number, alreadySent: boolean) {
     try {
-      await api.sendFeedback(feedbackId);
-      toast.push("WhatsApp abierto con el feedback listo — dale a enviar");
+      const r = await api.sendFeedbackEmail(feedbackId);
+      // El backend marca "enviado" y avanza el ciclo ANTES del email: si el
+      // email falló, decir "enviado" sin más dejaba al cliente sin informe
+      // y a nadie enterado (auditoría del ciclo).
+      if (r.email_status === "sent") {
+        toast.push(alreadySent ? "Feedback reenviado por email" : "Feedback enviado por email al cliente");
+      } else {
+        toast.push(
+          r.email_status === "disabled"
+            ? "El ciclo ha avanzado pero los EMAILS ESTÁN DESACTIVADOS: revisa la configuración de correo"
+            : "El ciclo ha avanzado pero el EMAIL FALLÓ: vuelve a intentar el envío",
+          "error",
+        );
+      }
       load();
       onClientChanged?.();
     } catch {
-      /* el WhatsApp ya está abierto; el marcado puede reintentarse */
+      toast.push("No se pudo enviar el email", "error");
     }
   }
 
@@ -277,31 +202,8 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
   const needsAdapt = latestReview != null && adaptedIdx !== latestReview.period_index;
   const maxIdx = periods.reduce((mx, p) => Math.max(mx, p.period_index), 0);
 
-  // Videollamada (Pro): se ancla a la ÚLTIMA revisión cerrada/analizada (igual
-  // que la alerta). Se muestra ARRIBA del todo y SIEMPRE visible — antes vivía
-  // dentro del período, que queda plegado, así que al pulsar la notificación
-  // el coach no veía los botones de aceptar/modificar.
-  const lastReviewIdx = periods
-    .filter((p) => p.status === "closed" || p.status === "analyzed")
-    .reduce((mx, p) => Math.max(mx, p.period_index), 0);
-  const callForLastReview = calls.find((c) => c.period_index === lastReviewIdx) ?? null;
-  const showVideoCall = videoCalls && lastReviewIdx > 0 && callForLastReview?.status !== "done";
-
   return (
     <div className="space-y-4">
-      {/* Videollamada quincenal (Pro), SIEMPRE arriba y visible: el cliente
-          propone → el coach acepta o modifica → agendada con Meet. */}
-      {showVideoCall && (
-        <VideoCallCycle
-          clientId={client.id}
-          periodIndex={lastReviewIdx}
-          call={callForLastReview}
-          googleConnected={googleConnected}
-          onModify={modifyVideoCall}
-          onShareMeet={shareMeetWhatsApp}
-          onChanged={loadCalls}
-        />
-      )}
       {latestReview && needsAdapt && (
         <div
           className="card flex flex-wrap items-center justify-between gap-2 p-3.5"
@@ -371,8 +273,8 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
               </div>
               <div className="flex gap-2" onClick={(e) => e.preventDefault()}>
                 {p.feedback_id && content && !sent && (
-                  <button onClick={() => deliverFeedback(p.feedback_id as number, content, false, p.period_index)} className="btn btn-primary">
-                    {byEmail ? <><Mail size={15} /> Enviar por email</> : <><MessageCircle size={15} /> Enviar por WhatsApp</>}
+                  <button onClick={() => deliverFeedback(p.feedback_id as number, false)} className="btn btn-primary">
+                    <Mail size={15} /> Enviar por email
                   </button>
                 )}
                 {canGenerate && !p.feedback_id && (
@@ -412,9 +314,6 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                     : `${registrados} días registrados: con 5 ya se puede generar un informe fiable.`}
               </div>
             )}
-
-            {/* La videollamada quincenal (Pro) se muestra ARRIBA del todo, no
-                dentro del período (que queda plegado). Ver `showVideoCall`. */}
 
             {/* Datos del cierre */}
             {p.status !== "open" && (
@@ -542,11 +441,11 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                   <SubTitle icon={TrendingUp} text="Feedback" />
                   <div className="flex items-center gap-3">
                     <button
-                      onClick={() => deliverFeedback(p.feedback_id as number, content, !!sent, p.period_index)}
+                      onClick={() => deliverFeedback(p.feedback_id as number, !!sent)}
                       className="flex items-center gap-1 text-xs font-medium hover:opacity-80"
                       style={{ color: "var(--brand-accent)" }}
                     >
-                      {byEmail ? <><Mail size={13} /> Enviar por email</> : <><MessageCircle size={13} /> Enviar por WhatsApp</>}
+                      <Mail size={13} /> Enviar por email
                     </button>
                     <button onClick={() => copyAll(content)} className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200">
                       <Copy size={13} /> Copiar todo
@@ -593,226 +492,8 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
   );
 }
 
-/** Ciclo de la videollamada quincenal (Pro), por período:
- *  sin registro → "Proponer por WhatsApp" (abre el chat con el enlace de reservas)
- *  → pendiente → apuntar la fecha elegida (activa los recordatorios del día antes)
- *  → reservada → confirmar realizada (se cierra) o reagendar (vuelve a empezar). */
-const VC_COLOR = "#0EA5E9";
-
-/** Fecha de HOY local en formato YYYY-MM-DD (para el min del selector). */
-function localToday(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify, onShareMeet, onChanged }: {
-  clientId: number;
-  periodIndex: number;
-  call: VideoCallOut | null;
-  googleConnected: boolean;
-  onModify: (call: VideoCallOut) => void;
-  onShareMeet: (call: VideoCallOut) => void;
-  onChanged: () => void;
-}) {
-  const toast = useToast();
-  const [gDate, setGDate] = useState("");       // agendar a mano: día
-  const [gTime, setGTime] = useState("17:00");  // …hora
-  const [gDur, setGDur] = useState(30);         // …duración (min)
-  const [busy, setBusy] = useState(false);
-
-  async function run(fn: () => Promise<unknown>, okMsg: string) {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await fn();
-      toast.push(okMsg);
-      onChanged();
-    } catch (e: any) {
-      toast.push(e?.message ?? "No se pudo actualizar la videollamada", "error");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function copyLink(url: string) {
-    try {
-      await navigator.clipboard.writeText(url);
-      toast.push("Enlace de Meet copiado");
-    } catch {
-      toast.push("No se pudo copiar el enlace", "error");
-    }
-  }
-
-  const cuando = call?.scheduled_at
-    ? new Date(call.scheduled_at).toLocaleString("es-ES", {
-        weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit",
-      })
-    : null;
-
-  const durationSelect = (
-    <select className="input !w-auto !py-1.5 text-xs" value={gDur}
-      onChange={(e) => setGDur(Number(e.target.value))}>
-      <option value={30}>30 min</option>
-      <option value={45}>45 min</option>
-      <option value={60}>60 min</option>
-    </select>
-  );
-
-  const notConnectedNote = !googleConnected ? (
-    <p className="text-[11px]" style={{ color: "#E5B94E" }}>
-      Conecta Google en <b>Recursos → Página de enlaces</b> para agendar con Meet.
-    </p>
-  ) : null;
-
-  // Bloque "agendar a mano" (día + hora + duración → crea el evento con Meet).
-  // `min` del picker no impide teclear una fecha pasada a mano: se valida.
-  const gDatePast = gDate !== "" && gDate < localToday();
-  const manualScheduler = (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <input type="date" className="input !w-auto !py-1.5 text-xs" value={gDate}
-          min={localToday()} onChange={(e) => setGDate(e.target.value)} />
-        <input type="time" className="input !w-auto !py-1.5 text-xs" value={gTime}
-          onChange={(e) => setGTime(e.target.value)} />
-        {durationSelect}
-        <button
-          className="btn btn-primary !px-3 !py-1.5 text-xs"
-          disabled={!gDate || !gTime || busy || !googleConnected || gDatePast}
-          title={!googleConnected ? "Conecta Google en Recursos para agendar con Meet"
-            : !gDate || !gTime ? "Elige el día y la hora"
-            : gDatePast ? "La fecha ya pasó: elige un día futuro" : undefined}
-          onClick={() => run(
-            () => api.scheduleVideoCallMeet(clientId, periodIndex, `${gDate}T${gTime}`, gDur),
-            "Videollamada agendada en Meet y enlace enviado al cliente",
-          )}
-        >
-          <Video size={13} /> Agendar con Meet
-        </button>
-      </div>
-      {gDatePast && (
-        <p className="text-[11px]" style={{ color: "#F0716A" }}>La fecha elegida ya pasó.</p>
-      )}
-      {notConnectedNote}
-    </div>
-  );
-
-  return (
-    <div className="mt-3 rounded-lg p-3"
-      style={{ background: `color-mix(in srgb, ${VC_COLOR} 7%, transparent)`, border: `1px solid color-mix(in srgb, ${VC_COLOR} 25%, transparent)` }}>
-      <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide" style={{ color: VC_COLOR }}>
-        <Video size={13} /> Videollamada quincenal
-        {call?.status === "done" && <CheckCircle2 size={13} style={{ color: "#2E7D46" }} />}
-      </div>
-
-      {/* Sin propuesta aún: al cliente le aparece en su portal al enviar la
-          revisión. El coach también puede agendarla a mano. */}
-      {call === null && (
-        <div className="mt-2 space-y-2">
-          <p className="text-xs text-zinc-400">
-            El cliente aún no ha propuesto día/hora (le aparece en su portal al enviar
-            la revisión). Si lo prefieres, agéndala tú a mano:
-          </p>
-          {manualScheduler}
-        </div>
-      )}
-
-      {/* Propuesta del cliente: aceptar tal cual o modificar (WhatsApp). */}
-      {call?.status === "proposed" && (
-        <div className="mt-2 space-y-2">
-          <p className="text-xs text-zinc-300">
-            El cliente propuso: <b>{cuando}</b>. Acéptala o modifícala.
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            {durationSelect}
-            <button
-              className="btn btn-primary !px-3 !py-1.5 text-xs"
-              disabled={busy || !googleConnected}
-              onClick={() => run(
-                () => api.acceptVideoCall(clientId, call.id, gDur),
-                "Videollamada agendada en Meet y enlace enviado al cliente",
-              )}
-            >
-              <CheckCircle2 size={13} /> Aceptar y crear Meet
-            </button>
-            <button className="btn btn-ghost !px-3 !py-1.5 text-xs" disabled={busy}
-              onClick={() => onModify(call)}>
-              <Pencil size={13} /> Modificar (WhatsApp)
-            </button>
-          </div>
-          {notConnectedNote}
-        </div>
-      )}
-
-      {/* Pendiente de agendar a mano (tras Modificar): acordado por WhatsApp. */}
-      {(call?.status === "pending_manual" || call?.status === "pending") && (
-        <div className="mt-2 space-y-2">
-          <p className="text-xs text-zinc-400">
-            Pendiente de agendar a mano. Acuerda el día con el cliente por WhatsApp y
-            escríbelo aquí:
-          </p>
-          {manualScheduler}
-          <button className="text-[11px] text-zinc-500 hover:text-zinc-300"
-            onClick={() => onModify(call)}>
-            Reenviar WhatsApp al cliente
-          </button>
-        </div>
-      )}
-
-      {call?.status === "scheduled" && (
-        <div className="mt-2 space-y-2">
-          <p className="text-xs text-zinc-300">
-            Agendada para el <b>{cuando}</b>
-            {call.duration_min ? <span className="text-zinc-500"> ({call.duration_min} min)</span> : null}.
-          </p>
-          {call.meet_url && (
-            <div className="flex flex-wrap gap-2">
-              <a href={call.meet_url} target="_blank" rel="noopener noreferrer"
-                className="btn btn-primary !px-3 !py-1.5 text-xs">
-                <Video size={13} /> Unirme a Meet
-              </a>
-              <button className="btn btn-ghost !px-3 !py-1.5 text-xs" onClick={() => copyLink(call.meet_url!)}>
-                <Copy size={13} /> Copiar enlace
-              </button>
-              <button className="btn btn-ghost !px-3 !py-1.5 text-xs" onClick={() => onShareMeet(call)}>
-                <MessageCircle size={13} /> Enviar por WhatsApp
-              </button>
-            </div>
-          )}
-          <p className="text-xs text-zinc-500">¿Se realizó la videollamada?</p>
-          <div className="flex flex-wrap gap-2">
-            <button
-              className="btn btn-primary !px-3 !py-1.5 text-xs"
-              disabled={busy}
-              onClick={() => run(
-                () => api.videoCallDone(clientId, call.id),
-                "Videollamada confirmada como realizada",
-              )}
-            >
-              <CheckCircle2 size={13} /> Sí, realizada
-            </button>
-            <button
-              className="btn btn-ghost !px-3 !py-1.5 text-xs"
-              disabled={busy}
-              onClick={() => run(
-                () => api.videoCallReschedule(clientId, call.id),
-                "Evento cancelado en Google: acuerda una nueva fecha y agéndala a mano",
-              )}
-            >
-              <X size={13} /> No, reagendar
-            </button>
-          </div>
-        </div>
-      )}
-
-      {call?.status === "done" && (
-        <p className="mt-1.5 text-xs" style={{ color: "#2E7D46" }}>
-          Realizada. La siguiente tocará con la próxima revisión quincenal.
-        </p>
-      )}
-    </div>
-  );
-}
-
 const STATUS_LABEL: Record<string, string> = { open: "Abierto", closed: "Cerrado", analyzed: "Analizado" };
+
 function badge(status: string): React.CSSProperties {
   if (status === "analyzed") return { background: "color-mix(in srgb, var(--brand-accent) 15%, transparent)", color: "var(--brand-accent)" };
   if (status === "closed") return { background: "rgba(154,107,21,0.14)", color: "#E5B94E" };
@@ -911,7 +592,7 @@ function FeedbackEditor({ docId, content, sentAt, onCancel, onSaved }: {
       {sentAt && (
         <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-600">
           Este feedback YA SE ENVIÓ el {new Date(sentAt).toLocaleDateString("es-ES")}: el cliente
-          recibió aquella versión por WhatsApp/email. Si lo editas, reenvíaselo para que le llegue la nueva.
+          recibió aquella versión por email. Si lo editas, reenvíaselo para que le llegue la nueva.
         </p>
       )}
       <FbArea label="Análisis" value={d.natural_analysis} onChange={(v) => set("natural_analysis", v)} rows={4} />

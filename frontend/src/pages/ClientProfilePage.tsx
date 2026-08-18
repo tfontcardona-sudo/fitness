@@ -380,7 +380,7 @@ export default function ClientProfilePage() {
             móvil; columna izquierda-abajo en escritorio) */}
         <aside className="order-last min-w-0 space-y-3 lg:order-none lg:col-start-1 lg:row-start-2">
           {/* Anamnesis: enviar enlace + subir PDF rellenado */}
-          <ClientDocuments client={client} onUploaded={reload} portalUrl={portalUrl} />
+          <ClientDocuments client={client} onUploaded={reload} />
           <button
             onClick={() => setConfirmRegen(true)}
             className="w-full text-center text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
@@ -563,7 +563,7 @@ function BillingRow({ client, onSaved }: { client: ClientOut; onSaved: () => voi
   );
 }
 
-/** Teléfono editable en línea: imprescindible para los envíos por WhatsApp
+/** Teléfono editable en línea: el contacto directo del cliente
  *  (feedback y plan). Lápiz → escribir → Enter o ✓ para guardar. */
 function PhoneRow({ client, onSaved }: { client: ClientOut; onSaved: () => void }) {
   const toast = useToast();
@@ -611,7 +611,7 @@ function PhoneRow({ client, onSaved }: { client: ClientOut; onSaved: () => void 
         </dd>
       ) : (
         <dd className="flex items-center gap-1.5 font-medium text-zinc-200">
-          {client.phone || <span className="font-normal text-zinc-500">añádelo para WhatsApp</span>}
+          {client.phone || <span className="font-normal text-zinc-500">sin teléfono</span>}
           <button onClick={() => setEditing(true)} aria-label="Editar teléfono" className="p-1 text-zinc-500 hover:text-zinc-200">
             <Pencil size={13} />
           </button>

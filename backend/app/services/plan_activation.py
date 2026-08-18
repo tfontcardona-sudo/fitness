@@ -1,7 +1,7 @@
 """Activación de planes SIN botón "Publicar".
 
 La planificación queda ACTIVA en el momento de generarla, adaptarla o editarla
-(el envío al cliente va por WhatsApp, no hay paso de publicación): se supersede
+(el envío al cliente va por email, no hay paso de publicación): se supersede
 cualquier plan publicado anterior, se abre el período de seguimiento si no lo
 hay, se fija la etapa del objetivo y se avisa al cliente por email (opcional).
 El endpoint POST /plans/{id}/publish sigue existiendo para activar borradores

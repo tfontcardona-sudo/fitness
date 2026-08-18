@@ -36,7 +36,7 @@ from app.db import SessionLocal  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.models import (  # noqa: E402
     ChangeRequest, Client, DailyLog, EmailLog, Exercise, FeedbackDoc, Period,
-    Plan, PlanEdit, ProgressPhoto, PushSubscription, VideoCall, WorkoutLog,
+    Plan, PlanEdit, ProgressPhoto, PushSubscription, WorkoutLog,
 )
 from app.security import new_portal_token  # noqa: E402
 from app.services.periods import PERIOD_DAYS  # noqa: E402
@@ -60,7 +60,6 @@ def wipe_demo_clients(db) -> int:
         db.execute(delete(FeedbackDoc).where(FeedbackDoc.period_id.in_(period_ids)))
     db.execute(delete(ProgressPhoto).where(ProgressPhoto.client_id.in_(ids)))
     db.execute(delete(PushSubscription).where(PushSubscription.client_id.in_(ids)))
-    db.execute(delete(VideoCall).where(VideoCall.client_id.in_(ids)))
     db.execute(delete(Period).where(Period.client_id.in_(ids)))
     # Si el coach EDITÓ un plan durante una demo, sus plan_edits (§13) bloquean
     # el DELETE de plans por FK: fuera primero.
@@ -410,7 +409,7 @@ def _carlos_feedback_payload(decision) -> dict:
         "closing_message": (
             "Gran trabajo, Carlos. Constancia en el registro, fuerza al alza y el peso "
             "moviéndose donde queremos: el proceso está funcionando. Seguimos con el "
-            "plan ajustado; cualquier duda, por WhatsApp."
+            "plan ajustado; cualquier duda, escríbeme."
         ),
         "ai_photo_analysis": (
             "Primera revisión con fotos: quedan como referencia de partida para "

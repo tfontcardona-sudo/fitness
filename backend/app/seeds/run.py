@@ -14,13 +14,12 @@ from sqlalchemy import func, select
 from app import branding
 from app.config import settings
 from app.db import SessionLocal
-from app.models import BrandConfig, Exercise, Food, RecommendedProduct, User
+from app.models import BrandConfig, Exercise, Food, User
 from app.security import hash_password
 from app.seeds.exercises_data import EXERCISES
 from app.seeds.foods_data import FOODS
 from app.seeds.home_exercises_data import HOME_EXERCISES
 from app.seeds.machines_data import MACHINE_EXERCISES
-from app.seeds.products_data import PRODUCTS
 
 
 def seed_exercises(db) -> int:
@@ -73,23 +72,6 @@ def seed_foods(db) -> int:
     return len(missing)
 
 
-def seed_products(db) -> int:
-    """TIENDA del centro: inserta POR TÍTULO los que falten (como la maquinaria).
-
-    Así la tienda del portal y de la página de enlaces no nace vacía. NO pisa lo
-    que el coach haya editado ni reactiva lo que haya desactivado: si el título
-    ya existe, se respeta tal cual."""
-    if not branding.FEATURE_RESOURCES:
-        return 0
-    existing = set(db.scalars(select(RecommendedProduct.title)))
-    missing = [d for d in PRODUCTS if d["title"] not in existing]
-    if not missing:
-        return 0
-    db.add_all(RecommendedProduct(**data) for data in missing)
-    db.commit()
-    return len(missing)
-
-
 def seed_brand(db) -> bool:
     if db.scalar(select(func.count()).select_from(BrandConfig)):
         return False
@@ -101,7 +83,7 @@ def seed_brand(db) -> bool:
 # Teléfono público del negocio: destino del botón "Contacta conmigo" de /planes
 # (y de cualquier contacto público futuro). Se rellena solo si el campo está
 # VACÍO — lo que el coach escriba en Marca → teléfono de contacto siempre manda.
-COACH_WHATSAPP = branding.CONTACT_PHONE
+COACH_PHONE = branding.CONTACT_PHONE
 
 
 def seed_coach_contact(db) -> bool:
@@ -112,7 +94,7 @@ def seed_coach_contact(db) -> bool:
         return False
     changed = False
     if not (brand.contact_phone or "").strip():
-        brand.contact_phone = COACH_WHATSAPP
+        brand.contact_phone = COACH_PHONE
         changed = True
     if not (brand.contact_email or "").strip():
         brand.contact_email = branding.CONTACT_EMAIL
@@ -152,7 +134,6 @@ def main() -> None:
         n_maq = seed_machines(db)
         n_home = seed_home_exercises(db)
         n_food = seed_foods(db)
-        n_prod = seed_products(db)
         brand = seed_brand(db)
         contacto = seed_coach_contact(db)
         n_admins = seed_admins(db)
@@ -165,10 +146,9 @@ def main() -> None:
             f"maquinaria nueva: {n_maq} · "
             f"casa/bandas nuevos: {n_home} · "
             f"alimentos nuevos: {n_food} · "
-            f"productos de la tienda nuevos: {n_prod} · "
             f"rutinas del pool nuevas: {n_tpl} · "
             f"brand: {'creada' if brand else 'ya existía'} · "
-            f"whatsapp del coach: {'rellenado' if contacto else 'ya estaba'} · "
+            f"teléfono del coach: {'rellenado' if contacto else 'ya estaba'} · "
             f"admins creados: {n_admins}"
         )
     finally:

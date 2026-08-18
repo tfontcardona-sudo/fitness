@@ -6,23 +6,23 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
-  ShoppingBag,
+  Link2 as LinkIcon,
   Users,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useBrand } from "../hooks/useBrand";
-import { BRAND_NAME, FEATURE_RESOURCES } from "../lib/branding";
+import { BRAND_NAME } from "../lib/branding";
 import { AlertsBell } from "./AlertsBell";
 import { AiCreditButton } from "./AiCreditButton";
 
 // La web del coach se queda con el ciclo esencial (anamnesis → plan →
-// seguimiento) + el pool de Rutinas: la Tienda solo si la instancia la enciende.
+// seguimiento) + el pool de Rutinas y la página pública de enlaces.
 const NAV = [
   { to: "/", label: "Hoy", icon: LayoutDashboard, end: true },
   { to: "/clientes", label: "Clientes", icon: Users, end: false },
   { to: "/rutinas", label: "Rutinas", icon: Dumbbell, end: false },
-  { to: "/recursos", label: "Tienda", icon: ShoppingBag, end: false },
-].filter((item) => FEATURE_RESOURCES || item.to !== "/recursos");
+  { to: "/enlaces", label: "Enlaces", icon: LinkIcon, end: false },
+];
 
 /** ¿Pantalla de móvil? (reactiva al girar el dispositivo) */
 function useIsMobile(): boolean {

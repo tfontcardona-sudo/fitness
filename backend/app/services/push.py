@@ -192,33 +192,6 @@ def photos_pending(db: Session, client: Client, *, now: datetime | None = None,
     return now >= submitted + timedelta(minutes=min_minutes)
 
 
-def videocall_pending(db: Session, client: Client) -> bool:
-    """¿Falta que el cliente PROPONGA su videollamada de revisión? (solo Pro).
-    True si su última revisión (cerrada/analizada) aún no tiene una videollamada
-    propuesta por él ni agendada/en curso por el coach — es decir, el portal le
-    muestra el formulario para agendar y todavía no lo ha usado."""
-    if not pkgs.has_video_call(client.package_tier):
-        return False
-    from app.models import Period, VideoCall
-
-    p = db.scalar(
-        select(Period).where(
-            Period.client_id == client.id,
-            Period.status.in_(("closed", "analyzed")),
-        ).order_by(Period.period_index.desc()).limit(1)
-    )
-    if p is None:
-        return False
-    vc = db.scalar(select(VideoCall).where(
-        VideoCall.client_id == client.id,
-        VideoCall.period_index == p.period_index))
-    # Sin videollamada, o propuesta sin fecha (estado 'book' del portal): toca
-    # que el cliente la agende. Con propuesta/agendada/manual/hecha, no.
-    if vc is None:
-        return True
-    return vc.status == "proposed" and vc.scheduled_at is None
-
-
 def pending_for_client(db: Session, client: Client, today: date,
                        now: datetime | None = None) -> dict:
     """Qué le falta hoy al cliente: diario, entreno, revisión quincenal y/o
@@ -228,15 +201,14 @@ def pending_for_client(db: Session, client: Client, today: date,
     fotos aplica tras cerrar una revisión (~15 min después) hasta que confirme.
     """
     out = {"diary": False, "workout": False, "quincenal": False,
-           "photos": False, "videocall": False, "count": 0}
-    # Fotos y videollamada: independientes del período abierto (van sobre la
-    # revisión ya cerrada). La videollamada solo aplica en Pro.
+           "photos": False, "count": 0}
+    # Las fotos son independientes del período abierto (van sobre la revisión
+    # ya cerrada).
     out["photos"] = photos_pending(db, client, now=now, min_minutes=15)
-    out["videocall"] = videocall_pending(db, client)
 
     period = portal_svc.active_period(db, client.id)
     if period is None or period.status != "open":
-        out["count"] = int(out["photos"]) + int(out["videocall"])
+        out["count"] = int(out["photos"])
         return out
 
     info = portal_svc.period_info(period, today) or {}
@@ -264,7 +236,7 @@ def pending_for_client(db: Session, client: Client, today: date,
             out["workout"] = not has_sets
 
     out["count"] = (int(out["diary"]) + int(out["workout"]) + int(out["quincenal"])
-                    + int(out["photos"]) + int(out["videocall"]))
+                    + int(out["photos"]))
     return out
 
 
@@ -277,8 +249,6 @@ def build_reminder_payload(pending: dict, brand_name: str, portal_url: str) -> d
         parts.append("el diario de hoy")
     if pending.get("quincenal"):
         parts.append("la revisión quincenal")
-    if pending.get("videocall"):
-        parts.append("agendar tu videollamada de revisión")
     if pending.get("photos"):
         parts.append("confirmar el envío de tus fotos de progreso")
 
@@ -325,137 +295,6 @@ def notify_plan_published(db: Session, client: Client, *, republished: bool = Fa
         brand.get("name", ""), f"{base}/p/{client.portal_token}", republished=republished
     )
     return send_to_client(db, client, payload)
-
-
-def notify_video_call_scheduled(db: Session, client: Client, when_label: str,
-                                meet_url: str) -> int:
-    """Avisa al cliente (push) de que su videollamada quedó agendada. No commit.
-    Abre el enlace de Meet al tocar la notificación. Silencioso sin push/devices."""
-    if not push_configured():
-        return 0
-    brand = portal_svc.brand_payload(db)
-    payload = {
-        "title": brand.get("name", "Tu asesoría"),
-        "body": f"Tu coach ha confirmado tu videollamada: {when_label}. Enlace de Meet listo, toca para verlo.",
-        "count": 1,
-        "url": meet_url,
-        "tag": "pg-videollamada",
-    }
-    return send_to_client(db, client, payload)
-
-
-def notify_coach_video_call_proposed(db: Session, client: Client, when_label: str) -> int:
-    """Avisa al COACH (push) de que un cliente propuso día/hora de videollamada.
-    Al tocar, abre el panel del coach. Silencioso sin push/dispositivos."""
-    if not push_configured():
-        return 0
-    base = settings.public_base_url.rstrip("/")
-    name = (client.full_name or "Un cliente").split()[0] if (client.full_name or "").strip() else "Un cliente"
-    payload = {
-        "title": "Videollamada propuesta",
-        "body": f"{name} propuso videollamada: {when_label}. Acéptala o modifícala.",
-        "count": 1,
-        "url": f"{base}/clientes/{client.id}?tab=feedback",
-        "tag": "pg-vc-propuesta",
-    }
-    return send_to_coach(db, payload)
-
-
-def notify_coach_video_call_rescheduled(db: Session, client: Client, when_label: str) -> int:
-    """Avisa al COACH (push) de que un cliente REPROGRAMÓ su videollamada ya
-    agendada y propone una nueva fecha/hora. Al tocar, abre el panel del coach.
-    Silencioso sin push/dispositivos."""
-    if not push_configured():
-        return 0
-    base = settings.public_base_url.rstrip("/")
-    name = (client.full_name or "Un cliente").split()[0] if (client.full_name or "").strip() else "Un cliente"
-    payload = {
-        "title": "Videollamada reprogramada",
-        "body": f"{name} no puede a la hora agendada y propone: {when_label}. Acéptala o modifícala.",
-        "count": 1,
-        "url": f"{base}/clientes/{client.id}?tab=feedback",
-        "tag": "pg-vc-propuesta",
-    }
-    return send_to_coach(db, payload)
-
-
-def run_video_call_reminders(db: Session, now: datetime | None = None) -> dict:
-    """Recordatorios de las videollamadas AGENDADAS, a coach y cliente:
-      - el DÍA ANTES (una vez, en horario activo),
-      - 1 H ANTES el mismo día (una vez).
-    Corre cada ~15 min (scheduler). Dedup por AuditLog (evento vc_reminder + tag).
-    """
-    if not push_configured():
-        return {"skipped": "push sin configurar"}
-    from datetime import timedelta
-
-    from app.models import AuditLog, VideoCall
-
-    now_utc = now or datetime.now(timezone.utc)
-    tz = ZoneInfo(settings.tz)
-    now_local = now_utc.astimezone(tz)
-    today = now_local.date()
-
-    brand = portal_svc.brand_payload(db)
-    brand_name = brand.get("name", "Tu asesoría")
-
-    def _already(call_id: int, tag: str) -> bool:
-        return bool(db.scalar(select(AuditLog.id).where(
-            AuditLog.entity == "video_call", AuditLog.entity_id == call_id,
-            AuditLog.event == "vc_reminder",
-            AuditLog.detail_json["tag"].astext == tag).limit(1)))
-
-    calls = db.scalars(select(VideoCall).where(
-        VideoCall.status == "scheduled",
-        VideoCall.scheduled_at.is_not(None))).all()
-    sent = 0
-    for vc in calls:
-        client = db.get(Client, vc.client_id)
-        if client is None or client.status == "inactive":
-            continue
-        sched_local = vc.scheduled_at.astimezone(tz)
-        delta = sched_local - now_local
-        hora = sched_local.strftime("%H:%M")
-        first = (client.full_name or "").split()[0] if (client.full_name or "").strip() else "Cliente"
-
-        # --- El día antes (fecha == hoy+1), una vez, en horario activo ---------
-        if (vc.scheduled_for == today + timedelta(days=1)
-                and _within_active_hours(now_local)):
-            tag = f"day:{vc.scheduled_for.isoformat()}"
-            if not _already(vc.id, tag):
-                sent += _send_videocall_reminder(
-                    db, client, vc, brand_name,
-                    client_body=f"Mañana a las {hora} tienes tu videollamada de revisión. ¡Te espero!",
-                    coach_body=f"{first}: videollamada MAÑANA a las {hora}.")
-                log_event(db, "video_call", vc.id, "vc_reminder", {"tag": tag})
-
-        # --- 1 hora antes (falta entre 45 y 75 min), una vez ------------------
-        elif timedelta(minutes=45) <= delta <= timedelta(minutes=75):
-            tag = f"hour:{sched_local.strftime('%Y%m%d%H')}"
-            if not _already(vc.id, tag):
-                sent += _send_videocall_reminder(
-                    db, client, vc, brand_name,
-                    client_body=f"En 1 hora (a las {hora}) es tu videollamada de revisión. ¡Prepárate!",
-                    coach_body=f"{first}: videollamada EN 1 HORA (a las {hora}).")
-                log_event(db, "video_call", vc.id, "vc_reminder", {"tag": tag})
-
-    db.commit()
-    return {"reminders": sent}
-
-
-def _send_videocall_reminder(db: Session, client: Client, vc, brand_name: str,
-                             *, client_body: str, coach_body: str) -> int:
-    """Manda el recordatorio de una videollamada al cliente y al coach (a Meet)."""
-    base = settings.public_base_url.rstrip("/")
-    n = send_to_client(db, client, {
-        "title": brand_name, "body": client_body, "count": 1,
-        "url": vc.meet_url or f"{base}/p/{client.portal_token}", "tag": "pg-videollamada",
-    })
-    n += send_to_coach(db, {
-        "title": "Videollamada", "body": coach_body, "count": 1,
-        "url": vc.meet_url or f"{base}/clientes/{client.id}?tab=feedback", "tag": "pg-vc-coach",
-    })
-    return n
 
 
 # --------------------------------------------------------------- envío ----
@@ -550,9 +389,6 @@ def run_push_reminders(db: Session, now: datetime | None = None) -> dict:
             log_event(db, "client", client.id, "push_reminder_sent",
                       {"pending": pending, "devices": ok})
 
-    # Los recordatorios de VIDEOLLAMADA (día antes + 1 h antes, a coach y cliente)
-    # los gestiona run_video_call_reminders en su propio job (cada 15 min), porque
-    # el "1 h antes" necesita granularidad fina que este ciclo de 3 h no da.
     db.commit()
     summary = {"clients_notified": notified, "devices": devices,
                "subscribed_clients": len(client_ids)}
