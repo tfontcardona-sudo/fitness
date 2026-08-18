@@ -79,14 +79,11 @@ def test_adherencia_cero_no_es_perfecta():
     from app.services.biweekly_period import _adherence_ratio
     from app.services.metrics import AdherenceSummary
 
-    class P:  # período sin 0-10 del cierre
-        adherence_diet_0_10 = None
-
     todo_no = AdherenceSummary(diet_yes=0, diet_partial=0, diet_no=10,
                                diet_adherence_ratio=0.0)
-    assert _adherence_ratio(P(), todo_no) == 0.0
+    assert _adherence_ratio(todo_no) == 0.0
     sin_datos = AdherenceSummary()
-    assert _adherence_ratio(P(), sin_datos) == 1.0
+    assert _adherence_ratio(sin_datos) == 1.0
 
 
 def test_weight_trend_descarta_outliers():

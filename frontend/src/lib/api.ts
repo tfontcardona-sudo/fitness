@@ -45,7 +45,6 @@ import type {
   ExerciseOut,
   LandingOut,
   MeOut,
-  PlanPricesOut,
   PortalLinkOut,
   TokenOut,
 } from "../types";
@@ -155,16 +154,11 @@ export const api = {
     request<{ status: string; email: string; password: string | null }>(
       "POST", `/clients/${id}/send-portal-access`),
   // Pagos (Stripe)
-  // Registro personal: crea la sesión de pago del plan × duración elegidos y
-  // devuelve la URL de Stripe.
-  publicCheckout: (tier: string, period: string) =>
-    request<{ url: string }>("POST", "/public/checkout", { tier, period }),
   // Alta manual: envía por email el mensaje de arranque (pago + anamnesis).
   sendOnboarding: (id: number) =>
     request<{ status: string; email: string }>("POST", `/clients/${id}/send-onboarding`),
   // Enlace ESTABLE de pago de un cliente (para mandarlo por email).
   payLinkUrl: (portalToken: string) => `${window.location.origin}/api/pay/${portalToken}`,
-  exportClientUrl: (id: number) => `/api/clients/${id}/export`,
   listPlans: (clientId: number) =>
     request<{
       id: number; month_index: number; version: number; status: string;
@@ -268,15 +262,11 @@ export const api = {
   resolveChangeRequest: (crId: number) =>
     request<{ id: number; status: string }>("POST", `/change-requests/${crId}/resolve`),
 
-  // --- feedback (cierre → informe) ---
-  createPeriod: (clientId: number, planId: number, startsOn: string, days = 14) =>
-    request<{ period_id: number; period_index: number; starts_on: string; ends_on: string }>(
-      "POST", `/clients/${clientId}/periods`, { plan_id: planId, starts_on: startsOn, days }),
+  // --- informe del seguimiento ---
   listPeriods: (clientId: number) =>
     request<{
       id: number; plan_id: number | null; period_index: number; starts_on: string; ends_on: string; status: string;
-      closing_weight_kg: number | null; closing_rating: number | null;
-      closing_hardest: string | null; closing_questions: string | null;
+      closing_weight_kg: number | null; measured_at: string | null;
       closing_waist_cm: number | null; closing_hip_cm: number | null;
       closing_arm_cm: number | null; closing_thigh_cm: number | null;
       feedback_id: number | null;
@@ -287,10 +277,7 @@ export const api = {
   getFeedback: (docId: number) =>
     request<{ id: number; period_id: number; kind: string; content: any; sent_at: string | null }>(
       "GET", `/feedback/${docId}`),
-  sendFeedback: (docId: number) =>
-    request<{ sent: boolean; sent_at: string }>("POST", `/feedback/${docId}/send`),
-  // Entrega por EMAIL (paquetes Start/Full): el informe va en el propio correo
-  // y el ciclo avanza solo.
+  // Entrega por EMAIL: el informe va en el propio correo.
   sendFeedbackEmail: (docId: number) =>
     request<{ sent: boolean; sent_at: string; email_status: string }>(
       "POST", `/feedback/${docId}/send-email`),
@@ -339,16 +326,6 @@ export const api = {
 
   // --- brand ---
   getBrand: () => request<BrandConfigOut>("GET", "/brand"),
-  // El PUT lleva SOLO los campos de BrandConfigIn: las rutas de archivos
-  // subidos (logo, fotos, portada) se gestionan por sus endpoints de subida.
-  updateBrand: (body: Omit<BrandConfigOut, "id" | "logo_path" | "links_photo_path"
-    | "plans_photo_path">) =>
-    request<BrandConfigOut>("PUT", "/brand", body),
-  uploadLogo: (file: File) => {
-    const fd = new FormData();
-    fd.append("file", file);
-    return request<BrandConfigOut>("POST", "/brand/logo", fd);
-  },
   // Foto de fondo de la página pública de enlaces (/professional).
   uploadLinksPhoto: (file: File) => {
     const fd = new FormData();
@@ -363,16 +340,9 @@ export const api = {
   },
   // --- página pública de enlaces + registro self-serve ---
   publicLanding: () => request<LandingOut>("GET", "/public/landing"),
-  publicPlanPrices: () => request<PlanPricesOut>("GET", "/public/plan-prices"),
   // URL pública de un archivo bajo media/ (foto de landing, portada de vídeos…).
   mediaUrl: (path: string | null | undefined) =>
     path && path.startsWith("media/") ? `/api/media/${path.slice(6)}` : null,
-  // Registro personal desde /planes: crea la ficha, envía el email de arranque
-  // (pago + anamnesis) y devuelve la URL de pago de Stripe (o null si no está).
-  publicRegister: (body: {
-    full_name: string; email: string; phone: string; tier: string; period: string;
-  }) => request<{ url: string | null; email_status: string }>("POST", "/public/register", body),
-
   // --- exercises ---
   listExercises: (params: { q?: string; pattern?: string; muscle?: string; include_archived?: boolean } = {}) => {
     const qs = new URLSearchParams();
@@ -392,12 +362,6 @@ export const api = {
     equipment?: string[];
     level_min?: number;
   }) => request<ExerciseOut>("POST", "/exercises", body),
-  archiveExercise: (id: number) =>
-    request<ExerciseOut>("POST", `/exercises/${id}/archive`),
-  restoreExercise: (id: number) =>
-    request<ExerciseOut>("POST", `/exercises/${id}/restore`),
-  updateExercise: (id: number, patch: Partial<ExerciseOut>) =>
-    request<ExerciseOut>("PATCH", `/exercises/${id}`, patch),
 
   // --- pool de rutinas (página Rutinas) ---
   templateCategories: () =>

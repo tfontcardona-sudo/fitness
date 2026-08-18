@@ -7,7 +7,7 @@ hasta que se hablen con ellos.
 
 | # | Punto | Qué hace falta de ellos | Estado |
 |---|---|---|---|
-| 1 | **Stripe** (cobro online de los tres servicios) | Crear su cuenta de Stripe y pasar la clave (`STRIPE_SECRET_KEY` + webhook). El sistema crea los precios solo: Dieta 70 €, Entrenamiento 70 € y Pack completo 130 €, todos de **pago único** (`pgirona_*`). | Pendiente de hablar |
+| 1 | **Stripe** (cobro online de los tres servicios) | Crear su cuenta de Stripe y pasar la clave (`STRIPE_SECRET_KEY` + webhook, escuchando solo `checkout.session.completed`). El sistema crea los precios solo: Dieta 70 €, Entrenamiento 70 € y Pack completo 130 €, todos de **pago único** (`pgirona_*`). | Pendiente de hablar |
 | 2 | **Dominio y despliegue** | Decidir dominio (p. ej. `app.professionalgirona.com`), apuntar DNS y desplegar en su VPS (`deploy/install-vps.sh`). | Pendiente de hablar |
 | 3 | **Logo definitivo** | El actual es una recreación fiel (serif + laurel). Si quieren el PNG original, se sustituye el archivo empaquetado (`frontend/public/brand-logo.png` + assets del dossier) en 1 minuto. | Se queda el actual salvo que digan lo contrario |
 | 4 | **Email remitente** | Contraseña de aplicación de Gmail de `professionalsaludifitness@gmail.com` (o la cuenta que decidan) → `SMTP_USER/PASS`. Es la vía de TODOS los envíos: anamnesis, planificaciones e informes. | Se enlazará cuando digan |

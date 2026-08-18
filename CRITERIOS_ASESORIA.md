@@ -20,8 +20,8 @@ preferencias del coach por encima de lo que el cliente declaró: objetivo, núme
 de comidas, alimentos que le gustan o rechaza, alergias, lesiones, medicación,
 horarios y contexto salen de SU anamnesis, leída completa y sin omitir nada. El
 sistema debe entender el documento entero — frase a frase, incluidas notas a
-mano y comentarios sueltos — porque el plan, el seguimiento diario y las
-revisiones quincenales se construyen y se juzgan contra esa información. Si un
+mano y comentarios sueltos — porque el plan, el seguimiento diario y los
+informes se construyen y se juzgan contra esa información. Si un
 dato de la anamnesis es ambiguo o contradictorio, se recoge y lo resuelve el
 coach: nunca se descarta en silencio.
 
@@ -119,8 +119,8 @@ adaptados al nivel real declarado.
 
 **Criterio del coach**: tono **serio y profesional con un toque cercano**, y
 COHERENTE en todos los mensajes que recibe el cliente, sean del tipo que sean
-(plan, revisión quincenal, modificación, videollamada, recordatorio, email,
-push). Una sola voz de marca:
+(plan, informe de seguimiento, modificación, recordatorio, email, push).
+Una sola voz de marca:
 - Se abre saludando por el nombre y yendo al grano; se cierra con un refuerzo
   breve y la puerta abierta ("cualquier duda, me escribes").
 - Se explica siempre el PORQUÉ de cada decisión en lenguaje claro, sin

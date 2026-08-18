@@ -174,13 +174,6 @@ export default function DashboardPage() {
           title: "Pago pendiente",
           detail: al.message, cta: al.action, tab: al.tab,
         });
-      } else if (al.kind === "period_overdue") {
-        acciones.push({
-          client: cli, prio: al.severity === "alta" ? 1 : 2, tone: "#F0716A", icon: Hourglass,
-          category: CAT_INFORME,
-          title: "Revisión vencida sin enviar",
-          detail: al.message, cta: al.action, tab: al.tab,
-        });
       } else if (al.kind === "no_logs") {
         acciones.push({
           client: cli, prio: 3, tone: "#F0716A", icon: HeartPulse, category: "Seguimiento",

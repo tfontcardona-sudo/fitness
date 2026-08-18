@@ -33,12 +33,9 @@ export class PortalError extends Error {
 const FIELD_ES: Record<string, string> = {
   weight_kg: "el peso", sleep_hours: "las horas de sueño", steps: "los pasos",
   satiety_1_10: "la saciedad", water_liters: "el agua", reps: "las repeticiones",
-  closing_weight_kg: "el peso final", closing_waist_cm: "la cintura",
-  closing_hip_cm: "la cadera", closing_arm_cm: "el brazo", closing_thigh_cm: "el muslo",
-  adherence_diet_0_10: "la adherencia a la dieta",
-  adherence_training_0_10: "la adherencia al entreno",
-  free_meals_count: "las comidas libres", closing_rating: "la valoración",
-  closing_feelings_json: "las sensaciones", start_at: "la fecha y hora",
+  // Campos de "Evolución" (POST /measurements), con sus nombres de la API.
+  waist_cm: "la cintura", hip_cm: "la cadera", arm_cm: "el brazo",
+  thigh_cm: "el muslo", feelings_json: "las sensaciones", notes: "las notas",
   message: "el mensaje", email: "el email", password: "la contraseña",
 };
 

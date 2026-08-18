@@ -19,8 +19,9 @@ export interface PackageInfo {
   includes: string; // resumen de qué incluye (para el selector del alta)
   hasNutrition: boolean; // incluye dieta
   hasTraining: boolean; // incluye entrenamiento
-  /** Precio de referencia al mes (€). El COBRO real lo fija Stripe. */
-  priceMonthEur: number;
+  /** Precio del servicio (€), de PAGO ÚNICO. El COBRO real lo fija Stripe;
+   *  esto es el espejo visual de CANONICAL_AMOUNTS del backend. */
+  priceEur: number;
   color: string; // color de la etiqueta
 }
 
@@ -33,7 +34,7 @@ export const PACKAGES: Record<PackageTier, PackageInfo> = {
     includes: "Plan de entrenamiento a medida + app para registrar tus entrenos y tu evolución.",
     hasNutrition: false,
     hasTraining: true,
-    priceMonthEur: 70, // PAGO ÚNICO
+    priceEur: 70,
     color: "#37474F",
   },
   nutri: {
@@ -44,7 +45,7 @@ export const PACKAGES: Record<PackageTier, PackageInfo> = {
     includes: "Plan de nutrición a medida + app para registrar peso y medidas.",
     hasNutrition: true,
     hasTraining: false,
-    priceMonthEur: 70, // PAGO ÚNICO
+    priceEur: 70,
     color: "#5C7A3A",
   },
   full: {
@@ -56,7 +57,7 @@ export const PACKAGES: Record<PackageTier, PackageInfo> = {
       "Dieta y entrenamiento a medida, la cuota del gimnasio incluida y la app con todo tu seguimiento.",
     hasNutrition: true,
     hasTraining: true,
-    priceMonthEur: 130, // PAGO ÚNICO
+    priceEur: 130,
     color: "#E9A90F",
   },
 };

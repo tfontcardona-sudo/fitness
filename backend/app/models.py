@@ -191,36 +191,27 @@ class Period(Base):
     ends_on: Mapped[date] = mapped_column(Date)
     status: Mapped[str] = mapped_column(String(20), default="open")  # open|closed|analyzed
 
-    # Cierre / REVISIÓN QUINCENAL (cliente)
+    # EVOLUCIÓN del cliente: lo que apunta en el portal cuando se mide. El
+    # prefijo `closing_` es histórico (venía del cierre quincenal, que ya no
+    # existe); hoy lo escribe POST /api/p/{token}/measurements sobre el período
+    # ABIERTO, tantas veces como el cliente quiera.
     closing_weight_kg: Mapped[float | None] = mapped_column(Float)
-    closing_rating: Mapped[int | None] = mapped_column(Integer)  # 1–5 (global, legado)
-    closing_hardest: Mapped[str | None] = mapped_column(Text)    # ¿Qué te está costando más? (sec 5)
-    closing_questions: Mapped[str | None] = mapped_column(Text)
     closing_waist_cm: Mapped[float | None] = mapped_column(Float)
     closing_hip_cm: Mapped[float | None] = mapped_column(Float)
     closing_arm_cm: Mapped[float | None] = mapped_column(Float)
     closing_thigh_cm: Mapped[float | None] = mapped_column(Float)
-    # Sensaciones (sec 2): {energia,hambre,sueno,recuperacion,animo,digestiones} cada 1–5
+    # Sensaciones: {energia,hambre,sueno,recuperacion,animo,digestiones} cada 1–5
     closing_feelings_json: Mapped[dict | None] = mapped_column(JSONB)
-    adherence_diet_0_10: Mapped[int | None] = mapped_column(Integer)      # Adherencia dieta (sec 3)
-    adherence_training_0_10: Mapped[int | None] = mapped_column(Integer)  # Adherencia entreno (sec 3)
-    free_meals_count: Mapped[int | None] = mapped_column(Integer)         # Comidas libres/saltadas (sec 3)
-    closing_changes: Mapped[str | None] = mapped_column(Text)             # Cambios importantes (sec 4)
-    closing_next_goal: Mapped[str | None] = mapped_column(Text)          # Objetivo próximas 2 semanas (sec 6)
+    closing_changes: Mapped[str | None] = mapped_column(Text)   # "algo que contarle al coach"
+    # Cuándo actualizó el cliente esas medidas por última vez. Sin esto, el
+    # portal y el panel las fechaban con el inicio del seguimiento (que puede
+    # ser de hace meses) y no había forma de saber si estaban al día.
+    measured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # Pipeline (backend + IA)
     metrics_json: Mapped[dict | None] = mapped_column(JSONB)
     ai_analysis_json: Mapped[dict | None] = mapped_column(JSONB)
     ai_photo_analysis: Mapped[str | None] = mapped_column(Text)
-    # Momento en que el coach vio esta revisión en Seguimiento (apaga el aviso "!"
-    # en la lista de clientes). Nulo = revisión nueva sin ver.
-    coach_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # Momento en que el cliente ENVIÓ la revisión quincenal (para el recordatorio
-    # de fotos: ~15 min después y luego cada 3 h hasta que confirme).
-    closing_submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # El cliente confirmó en el portal que envió sus fotos de progreso al coach.
-    # Mientras sea False (tras cerrar la revisión), se le recuerda.
-    photos_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     client: Mapped[Client] = relationship(back_populates="periods")

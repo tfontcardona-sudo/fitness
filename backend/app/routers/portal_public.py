@@ -634,29 +634,44 @@ def portal_progress(
     if current_kg is None:
         current_kg = client.current_weight_kg
 
-    # --- Medidas y adherencia por período cerrado ---------------------------
+    # --- Medidas que el cliente apunta en "Evolución" -----------------------
+    # Van sobre el período ABIERTO (el seguimiento es continuo, no se cierra
+    # nada): filtrar por períodos cerrados dejaba esta sección SIEMPRE vacía
+    # aunque el cliente se midiera cada semana.
     periods = db.scalars(
-        select(Period)
-        .where(Period.client_id == client.id, Period.status.in_(("closed", "analyzed")))
-        .order_by(Period.period_index)
+        select(Period).where(Period.client_id == client.id).order_by(Period.period_index)
     ).all()
     measurements: list[dict] = []
-    adherence: list[dict] = []
     for p in periods:
-        label = p.ends_on.isoformat()
         if any(v is not None for v in (p.closing_waist_cm, p.closing_hip_cm,
                                        p.closing_arm_cm, p.closing_thigh_cm, p.closing_weight_kg)):
+            medido = p.measured_at.date() if p.measured_at else p.starts_on
             measurements.append({
-                "label": label, "weight_kg": p.closing_weight_kg,
+                "label": medido.isoformat(), "weight_kg": p.closing_weight_kg,
                 "waist_cm": p.closing_waist_cm, "hip_cm": p.closing_hip_cm,
                 "arm_cm": p.closing_arm_cm, "thigh_cm": p.closing_thigh_cm,
             })
-        if p.adherence_diet_0_10 is not None or p.adherence_training_0_10 is not None:
-            adherence.append({
-                "label": label,
-                "diet_0_10": p.adherence_diet_0_10,
-                "training_0_10": p.adherence_training_0_10,
-            })
+
+    # --- Constancia: la que se DEDUCE de su diario --------------------------
+    # Antes venía de un 0-10 que el cliente se auto-puntuaba al cerrar la
+    # quincena. Sin cierre, ese dato no existe: la constancia sale de lo que
+    # registra de verdad cada día, que además es mejor dato.
+    adherence: list[dict] = []
+    adh_rows = db.execute(
+        select(DailyLog.diet_adherence, func.count())
+        .join(Period, Period.id == DailyLog.period_id)
+        .where(Period.client_id == client.id, DailyLog.diet_adherence.isnot(None))
+        .group_by(DailyLog.diet_adherence)
+    ).all()
+    conteo = {k: n for k, n in adh_rows}
+    total = sum(conteo.values())
+    if total:
+        puntos = conteo.get("yes", 0) + 0.5 * conteo.get("partial", 0)
+        adherence.append({
+            "label": "diario",
+            "diet_0_10": round(puntos / total * 10, 1),
+            "training_0_10": None,
+        })
 
     # --- Fuerza: mejor e1RM por ejercicio (primera sesión vs mejor) ----------
     strength_rows = db.execute(
@@ -785,6 +800,7 @@ def portal_measurements(
     if not tocados:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             "No has rellenado ninguna medida")
+    period.measured_at = datetime.now(timezone.utc)
     # El peso también entra en el diario de hoy: es la serie que lee la
     # evolución (y así una medición no queda fuera de la gráfica).
     if "weight_kg" in datos:

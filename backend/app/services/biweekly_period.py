@@ -54,11 +54,11 @@ def _strength_trend(db: Session, period: Period, prev: Period | None) -> str | N
     return "flat"
 
 
-def _adherence_ratio(period: Period, adh: M.AdherenceSummary) -> float:
-    """Adherencia de dieta 0..1. Prioriza el 0-10 que reporta el cliente al cerrar;
-    si falta, cae al ratio derivado del registro diario."""
-    if period.adherence_diet_0_10 is not None:
-        return max(0.0, min(1.0, period.adherence_diet_0_10 / 10.0))
+def _adherence_ratio(adh: M.AdherenceSummary) -> float:
+    """Adherencia de dieta 0..1, derivada del REGISTRO DIARIO del cliente.
+
+    Antes se priorizaba un 0-10 que el cliente se auto-puntuaba al cerrar la
+    quincena; sin cierre ese dato no existe y el diario es mejor fuente."""
     # 0.0 real (todo "no") es un DATO, no una ausencia: el `or 1.0` anterior
     # convertía al peor cliente en adherencia perfecta y el motor ajustaba kcal
     # en vez de bloquear (auditoría #6). Sin registros de dieta → 1.0 neutro.
@@ -130,7 +130,7 @@ def checkin_inputs_from_period(db: Session, period: Period, client: Client) -> C
         "diet_adherence": dl.diet_adherence, "sleep_hours": dl.sleep_hours,
         "energy_1_5": dl.energy_1_5, "mood_1_5": dl.mood_1_5, "fatigue_1_5": dl.fatigue_1_5,
     } for dl in logs], period_days)
-    adherence_ratio = _adherence_ratio(period, adh)
+    adherence_ratio = _adherence_ratio(adh)
 
     weight_kg = (period.closing_weight_kg
                  or (raw_points[-1][1] if raw_points else None)

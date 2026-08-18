@@ -206,6 +206,15 @@ anamnesis (formulario web corto, /anamnesis/{token})
   `/photos-confirmed` se fueron; queda `POST /api/p/{token}/progress-photos`
   (fotos sobre el período en marcha). Estados muertos `review_pending` y
   `awaiting_feedback` eliminados (mig. 0040).
+- **Las medidas van al período ABIERTO**: `POST /api/p/{token}/measurements`
+  escribe en las columnas `closing_*` (nombre histórico) y sella `measured_at`
+  (mig. 0044). ⚠️ TODO lo que filtre por períodos CERRADOS deja esas medidas
+  invisibles — así estuvieron el progreso del cliente y la pestaña Feedback del
+  coach. Regresión cubierta en `test_seguimiento_continuo.py`.
+- **La constancia sale del DIARIO**, no de una auto-puntuación: los campos del
+  formulario de cierre (`closing_rating`, `closing_hardest`, `closing_questions`,
+  `closing_next_goal`, `free_meals_count`, `adherence_*_0_10`) se borraron con
+  la mig. 0043 porque nadie podía rellenarlos ya.
 - **Informe continuo**: `build_period_feedback` acepta el período ABIERTO
   (mínimo 5 días registrados), NO lo cierra y guarda `logs_at_generation` para
   saber si se ha quedado viejo. Regenerar cuando el anterior ya se envió crea un
@@ -726,6 +735,31 @@ cd backend && python -m pytest tests/ -q
    - **Migraciones**: 0039 (tablas de WhatsApp), 0040 (`review_pending`), 0041
      (oferta + `stripe_subscription_id`), 0042 (tablas de vídeos/Google/tienda).
    - Recordatorios push cada **4 h** (antes 3 h). Suite en verde y build limpio.
+
+10. ✅ **Limpieza y arreglos posteriores al recorte (agosto 2026)** — pasada
+    final "déjalo limpio y funcional". Lo que se BORRÓ por muerto:
+    `scripts/seed_demo_tracking.py` y `scripts/backtest_workflow.py` (simulaban
+    el ciclo quincenal), 10 columnas del formulario de cierre (mig. 0043),
+    `jinja2`/`aiosmtplib`/`pytest-asyncio` de requirements (nunca se importaron),
+    el bloque `GOOGLE_*` del `.env.example`, y en el frontend los métodos de
+    `api.ts` sin consumidor. Lo que estaba ROTO y ahora funciona:
+    - **El botón "Contratar" de `/planes` no cobraba**: `pay_plan_link` validaba
+      la duración contra una lista escrita a mano (`1m/3m/6m`) que se quedó sin
+      `unico` al pasar la marca a pago único → rebotaba a `/planes` sin abrir
+      Stripe. Ahora valida contra `stripe_service._PERIODS`. Test de regresión.
+    - **Las medidas del cliente eran invisibles**: su Progreso y la pestaña
+      Feedback filtraban por períodos cerrados, que ya no existen.
+    - **La constancia del portal salía vacía**: venía del 0-10 del cierre; ahora
+      se deriva del diario.
+    - **Faltaba descargar el informe en Word** desde la pestaña Feedback (el
+      endpoint existía y ningún botón lo llamaba).
+    - **`generate-plan` iba a ciegas**: los ajustes del último informe y el
+      historial de seguimiento se leían de períodos `analyzed`, que ya no se
+      producen; ahora salen del último informe ENVIADO y del período abierto.
+    - **`at_risk` no tenía salida**: la recuperación exigía `period_end`, que en
+      seguimiento continuo es None.
+    - Los precios de `/planes` estaban escritos a mano por tercera vez: ahora
+      salen de `packages.ts` (`priceEur`), espejo de `CANONICAL_AMOUNTS`.
 
 ---
 

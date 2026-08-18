@@ -456,7 +456,7 @@ def resolve_change_request(cr_id: int, db: Session = Depends(get_db)) -> ChangeR
     return ChangeRequestOut.model_validate(cr)
 
 
-# ------------------------------------------------------- feedback (cierre → informe) ----
+# ------------------------------------------------------------- informe del seguimiento ----
 
 class PeriodOut(BaseModel):
     id: int
@@ -466,9 +466,8 @@ class PeriodOut(BaseModel):
     ends_on: date
     status: str
     closing_weight_kg: float | None = None
-    closing_rating: int | None = None
-    closing_hardest: str | None = None
-    closing_questions: str | None = None
+    # Cuándo actualizó el cliente sus medidas (None = aún no se ha medido).
+    measured_at: datetime | None = None
     closing_waist_cm: float | None = None
     closing_hip_cm: float | None = None
     closing_arm_cm: float | None = None

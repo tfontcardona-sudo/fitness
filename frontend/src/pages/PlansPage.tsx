@@ -39,7 +39,12 @@ const BULLETS: Record<string, string[]> = {
   ],
 };
 
-const PRICE: Record<string, string> = { nutri: "70 €", train: "70 €", full: "130 €" };
+// Los importes SALEN de packages.ts (espejo de CANONICAL_AMOUNTS del backend):
+// tenerlos escritos aquí a mano era un tercer sitio donde el precio podía
+// quedarse viejo — y el precio que se cobra lo pone Stripe, no esta página.
+const PRICE: Record<string, string> = Object.fromEntries(
+  (["nutri", "train", "full"] as const).map((t) => [t, `${PACKAGES[t].priceEur} €`]),
+);
 
 const WA: Record<string, string> = {
   nutri: "¡Hola! Me interesa el plan de dieta (70 €). ¿Cómo empezamos?",

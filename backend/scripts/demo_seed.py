@@ -677,16 +677,11 @@ def crear_carlos(db) -> Client:
         closing_arm_cm=36.5, closing_thigh_cm=58.0,
         closing_feelings_json={"energia": 4, "hambre": 2, "sueno": 4,
                                "recuperacion": 4, "animo": 5, "digestiones": 4},
-        adherence_diet_0_10=9, adherence_training_0_10=8, free_meals_count=2,
-        closing_hardest="Las cenas del fin de semana.",
-        closing_changes="Mucha más energía en los entrenos desde la semana 2.",
-        closing_next_goal="Bajar de 83 kg manteniendo las cargas.",
-        closing_questions="¿Puedo cambiar el arroz de la cena por patata?",
-        # Medidas que el propio cliente actualizó desde "Evolución" (el portal
-        # continuo las guarda aquí: son SUS últimas medidas, no un cierre).
-        closing_submitted_at=datetime.now(timezone.utc) - timedelta(hours=18),
-        photos_confirmed=True,
-        coach_reviewed_at=None,
+        closing_changes="Mucha más energía en los entrenos desde la semana 2. "
+                        "Lo que peor llevo son las cenas del fin de semana.",
+        measured_at=datetime.now(timezone.utc) - timedelta(days=1),
+        # Todo lo anterior es lo que el propio cliente apuntó desde "Evolución":
+        # el portal continuo lo guarda aquí, no es un cierre de quincena.
     )
     db.add(period)
     db.flush()

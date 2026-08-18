@@ -155,13 +155,9 @@ El webhook es cómo Stripe le dice a la app "este pago se ha completado". Sin
    ```
    https://app.professionalgirona.com/api/stripe/webhook
    ```
-3. **Eventos a escuchar**: selecciona
-   **`checkout.session.completed`**, **`invoice.paid`**,
-   **`invoice.payment_failed`** y **`customer.subscription.deleted`** (los
-   tres últimos mantienen al día las renovaciones y bajas de la OFERTA de
-   suscripción — impagos incluidos). Si el endpoint ya existe con solo el
-   primero, no hace falta tocarlo a mano: el propio sistema añade los que
-   falten por API al alinear los precios (script del deploy o auto-alta).
+3. **Eventos a escuchar**: solo **`checkout.session.completed`**. Los tres
+   servicios son de PAGO ÚNICO: no hay suscripciones que renovar ni facturas
+   recurrentes que seguir.
 4. Al crearlo, abre el endpoint y copia el **Secreto de firma** (Signing
    secret): empieza por `whsec_...`. Sirve para que el servidor compruebe que
    el aviso viene DE VERDAD de Stripe.
@@ -299,7 +295,7 @@ Cuando el modo de prueba funcione entero y Stripe haya **activado** la cuenta
   bloquea nada.
 - **No regenerar el enlace del portal a la ligera**: el enlace de pago usa el
   mismo token que el portal del cliente. Si pulsas "Regenerar enlace del
-  portal" en la ficha, el enlace de pago ya enviado por WhatsApp/email **deja
+  portal" en la ficha, el enlace de pago ya enviado por email **deja
   de funcionar** (da "No encontrado"): copia el botón verde de nuevo y
   reenvíalo.
 - **Reembolsos, recibos, facturas**: desde el Dashboard de Stripe (Pagos). Los

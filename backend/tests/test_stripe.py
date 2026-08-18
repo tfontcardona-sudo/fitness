@@ -447,6 +447,14 @@ def test_enlace_de_pago_directo_por_plan(monkeypatch):
     monkeypatch.setattr(sr, "create_checkout_url",
                         lambda db, t, p, **kw: f"https://stripe.test/{t}/{p}")
     with TestClient(app) as http:
+        # PAGO ÚNICO: es el enlace REAL del botón "Contratar" de /planes. Estuvo
+        # rebotando a /planes sin cobrar porque la lista de duraciones válidas
+        # se escribió a mano y se quedó con las mensuales del motor.
+        for tier in ("nutri", "train", "full"):
+            r = http.get(f"/api/pay/plan/{tier}/unico", follow_redirects=False)
+            assert r.status_code == 302, tier
+            assert r.headers["location"] == f"https://stripe.test/{tier}/unico", tier
+
         r = http.get("/api/pay/plan/full/3m", follow_redirects=False)
         assert r.status_code == 302
         assert r.headers["location"] == "https://stripe.test/full/3m"

@@ -960,41 +960,44 @@ def generate_client_plan(
     except Exception:
         deep_analysis = None
 
-    # Ajustes del ÚLTIMO feedback quincenal → el nuevo plan queda modificado en
-    # consecuencia (dieta y entreno) según lo que el cliente registró.
+    # Ajustes del ÚLTIMO informe enviado → el plan nuevo se genera en
+    # consecuencia (dieta y entreno) con lo que el cliente lleva registrado.
     adj_notes = ""
-    last_analyzed = db.scalar(
-        select(Period)
-        .where(Period.client_id == client_id, Period.status == "analyzed")
-        .order_by(Period.period_index.desc())
+    ultimo_fb = db.scalar(
+        select(FeedbackDoc)
+        .join(Period, Period.id == FeedbackDoc.period_id)
+        .where(Period.client_id == client_id, FeedbackDoc.sent_at.isnot(None))
+        .order_by(FeedbackDoc.id.desc())
         .limit(1)
     )
-    if last_analyzed and last_analyzed.ai_analysis_json:
-        aj = last_analyzed.ai_analysis_json.get("plan_adjustments") or []
-        objs = last_analyzed.ai_analysis_json.get("next_objectives") or []
+    if ultimo_fb and ultimo_fb.content_json:
+        aj = ultimo_fb.content_json.get("plan_adjustments") or []
+        objs = ultimo_fb.content_json.get("next_objectives") or []
         if aj:
             lines = [f"- [{a.get('area')}] {a.get('change')} (motivo: {a.get('reason')})" for a in aj]
-            adj_notes = ("AJUSTES DEL ÚLTIMO FEEDBACK QUINCENAL (aplícalos al nuevo plan de "
-                         "dieta y entrenamiento):\n" + "\n".join(lines))
+            adj_notes = ("CAMBIOS DEL ÚLTIMO INFORME ENVIADO AL CLIENTE (aplícalos al plan "
+                         "nuevo de dieta y entrenamiento):\n" + "\n".join(lines))
             if objs:
                 adj_notes += "\nObjetivos próximos: " + "; ".join(str(o) for o in objs)
 
-    # Historial REAL de seguimiento (peso, adherencia y fuerza por revisión):
-    # la IA parte del recorrido completo del cliente, no solo de la anamnesis.
+    # Historial REAL de seguimiento (peso, adherencia y fuerza): la IA parte del
+    # recorrido completo del cliente, no solo de la anamnesis. El seguimiento es
+    # CONTINUO, así que el período ABIERTO es justo el que tiene los datos —
+    # filtrarlo (como hacía el ciclo quincenal) dejaba a la IA a ciegas.
     history_block = None
     try:
         h = client_history(client_id, db)
-        reviews = [{k: p.get(k) for k in ("period_index", "closing_weight_kg",
-                                          "weight_delta_kg", "adherence_pct",
-                                          "strength_gain_pct")}
-                   for p in h["periods"] if p["status"] != "open"]
-        if reviews:
+        seguimiento = [{k: p.get(k) for k in ("period_index", "closing_weight_kg",
+                                              "weight_delta_kg", "adherence_pct",
+                                              "strength_gain_pct")}
+                       for p in h["periods"]]
+        if seguimiento:
             history_block = {
                 "peso_inicial_kg": h.get("start_weight_kg"),
                 "peso_actual_kg": h.get("current_weight_kg"),
                 "fuerza_total_pct": h.get("total_strength_gain_pct"),
                 "medidas_antes_despues": h.get("measures"),
-                "revisiones_quincenales": reviews,
+                "seguimiento": seguimiento,
             }
     except Exception:
         history_block = None

@@ -71,11 +71,16 @@ def pay_plan_link(request: Request, tier: str, period: str,
     from app.config import settings
     from app.services import packages as pkgs
 
+    from app.services.stripe_service import _PERIODS
+
     base = settings.public_base_url.rstrip("/")
     t = pkgs.LEGACY_TIERS.get(tier.strip().lower(), tier.strip().lower())
     # Estricto A PROPÓSITO (sin caer al plan por defecto): un enlace mal escrito
     # no puede acabar cobrando el plan más caro. Ante cualquier duda → /planes.
-    if not (t in pkgs.TIERS and period in ("1m", "3m", "6m")):
+    # Las duraciones válidas son las que conoce Stripe (`_PERIODS`, con "unico"
+    # a la cabeza): tenerlas escritas a mano aquí dejó fuera el pago único —
+    # el botón "Contratar" de /planes usa /unico y rebotaba a /planes sin cobrar.
+    if not (t in pkgs.TIERS and period in _PERIODS):
         return RedirectResponse(f"{base}/planes", status_code=302)
 
     # Los bots de vista previa (WhatsApp/Facebook/Slack/Discord/Twitter…) y los

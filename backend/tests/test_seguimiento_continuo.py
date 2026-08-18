@@ -257,6 +257,44 @@ def test_el_cliente_actualiza_su_evolucion_sin_cerrar_nada(db):
 
         # Sin nada que guardar → 422 con mensaje claro
         assert http.post(f"/api/p/{c.portal_token}/measurements", json={}).status_code == 422
+
+        # Queda FECHADO: sin esto, portal y panel las databan con el inicio del
+        # seguimiento y nadie sabía si estaban al día.
+        assert p.measured_at is not None
+    finally:
+        _borrar(db, c)
+
+
+def test_las_medidas_llegan_al_coach_y_al_progreso_del_cliente(db):
+    """REGRESIÓN: el período NO se cierra nunca, así que todo lo que filtraba
+    por períodos cerrados dejaba las medidas invisibles — el cliente las
+    rellenaba en "Evolución" y no las veía ni él (Progreso) ni el coach
+    (Feedback), aunque estaban guardadas."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.security import create_access_token
+
+    c, _plan, _period = _cliente_con_seguimiento(db, 8)
+    http = TestClient(app)
+    auth = {"Authorization": f"Bearer {create_access_token('coach1')}"}
+    try:
+        assert http.post(f"/api/p/{c.portal_token}/measurements",
+                         json={"weight_kg": 68.4, "waist_cm": 78.5}).status_code == 200
+
+        # 1) El CLIENTE las ve en su Progreso, con la fecha real de la medición
+        prog = http.get(f"/api/p/{c.portal_token}/progress").json()
+        assert prog["measurements"], "las medidas del período ABIERTO deben salir"
+        assert prog["measurements"][0]["waist_cm"] == 78.5
+        assert prog["measurements"][0]["label"] == date.today().isoformat()
+
+        # 2) …y su constancia sale del DIARIO (ya no hay auto-puntuación 0-10)
+        assert prog["adherence"], "la constancia se deriva de sus registros"
+        assert 0 <= prog["adherence"][0]["diet_0_10"] <= 10
+
+        # 3) El COACH las ve en el listado que alimenta la pestaña Feedback
+        fila = http.get(f"/api/clients/{c.id}/periods", headers=auth).json()[0]
+        assert fila["closing_waist_cm"] == 78.5 and fila["measured_at"]
     finally:
         _borrar(db, c)
 

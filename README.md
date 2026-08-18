@@ -2,8 +2,8 @@
 
 Plataforma **single-tenant** para gestionar asesorías premium de nutrición y
 entrenamiento: generación de planes con IA bajo guardrails de seguridad, portal
-del cliente sin login, recalibración quincenal automática, feedbacks con
-gráficas y documentos Word con marca.
+del cliente sin login, seguimiento continuo con informes que se ponen al
+día solos, gráficas y documentos Word con marca.
 
 **Stack:** FastAPI · PostgreSQL · SQLAlchemy/Alembic · APScheduler · React+TS+Vite+Tailwind · Caddy · Docker · Anthropic API
 

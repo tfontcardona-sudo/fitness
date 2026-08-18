@@ -414,7 +414,7 @@ function UseDialog({ tpl, onClose }: { tpl: TemplateListItem; onClose: () => voi
             <select className="input" value={tier} onChange={(e) => setTier(e.target.value)}>
               {PACKAGE_ORDER.map((k) => (
                 <option key={k} value={k}>
-                  {PACKAGES[k].label} — {PACKAGES[k].priceMonthEur} €
+                  {PACKAGES[k].label} — {PACKAGES[k].priceEur} €
                 </option>
               ))}
             </select>

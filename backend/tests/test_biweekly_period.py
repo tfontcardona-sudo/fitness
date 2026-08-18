@@ -50,29 +50,31 @@ def _mk_plan(db, client_id):
     return pl
 
 
-def _mk_period(db, client_id, idx, starts, *, closing_weight=None, adherence_0_10=9,
+def _mk_period(db, client_id, idx, starts, *, closing_weight=None,
                waist=None, feelings=None):
     from app.models import Period
     p = Period(
         client_id=client_id, plan_id=_mk_plan(db, client_id).id, period_index=idx,
         starts_on=starts, ends_on=starts + timedelta(days=13),
         status="closed", closing_weight_kg=closing_weight,
-        adherence_diet_0_10=adherence_0_10, closing_waist_cm=waist,
-        closing_feelings_json=feelings,
+        closing_waist_cm=waist, closing_feelings_json=feelings,
     )
     db.add(p)
     db.flush()
     return p
 
 
-def _add_weighins(db, period, series):
-    """series: lista de (offset_dias, peso_kg) → DailyLog con peso."""
+def _add_weighins(db, period, series, *, adherencia="yes"):
+    """series: lista de (offset_dias, peso_kg) → DailyLog con peso.
+
+    La adherencia del motor sale del REGISTRO DIARIO (ya no hay auto-puntuación
+    0-10 del cierre), así que se fija aquí."""
     from app.models import DailyLog
     for off, w in series:
         db.add(DailyLog(
             period_id=period.id,
             log_date=period.starts_on + timedelta(days=off), weight_kg=w,
-            diet_adherence="yes",
+            diet_adherence=adherencia,
         ))
     db.flush()
 
@@ -95,8 +97,10 @@ def test_adherencia_baja_bloquea_kcal():
     from app.services.biweekly_period import decision_for_period
     with SessionLocal() as db:
         c = _mk_client(db)
-        p = _mk_period(db, c.id, 1, date(2026, 2, 1), closing_weight=81.0, adherence_0_10=5)
-        _add_weighins(db, p, [(0, 82.0), (4, 81.7), (8, 81.4), (12, 81.1)])
+        p = _mk_period(db, c.id, 1, date(2026, 2, 1), closing_weight=81.0)
+        # La mitad de los días sin cumplir la dieta → 50 % < 80 % del umbral.
+        _add_weighins(db, p, [(0, 82.0), (4, 81.7)], adherencia="yes")
+        _add_weighins(db, p, [(8, 81.4), (12, 81.1)], adherencia="no")
         dec = decision_for_period(db, p, c)
         assert dec.action == "work_adherence"
         assert dec.rule == "adherencia_baja"
@@ -111,7 +115,7 @@ def test_fuera_de_ritmo_ajusta_kcal_sin_tocar_proteina():
         c = _mk_client(db, goal_type="fat_loss", body_fat_pct=18.0)
         # Buena adherencia pero peso prácticamente plano en 2 semanas (pérdida
         # demasiado lenta para fat_loss) → ajuste de kcal, proteína bloqueada.
-        p = _mk_period(db, c.id, 1, date(2026, 3, 1), closing_weight=81.95, adherence_0_10=10)
+        p = _mk_period(db, c.id, 1, date(2026, 3, 1), closing_weight=81.95)
         _add_weighins(db, p, [(0, 82.0), (3, 82.0), (6, 81.98), (9, 81.97), (12, 81.96)])
         dec = decision_for_period(db, p, c)
         assert dec.action == "adjust_kcal"
@@ -126,7 +130,7 @@ def test_serializable_y_con_snapshot():
     from app.services.biweekly_period import decision_for_period, decision_to_json
     with SessionLocal() as db:
         c = _mk_client(db)
-        p = _mk_period(db, c.id, 1, date(2026, 4, 1), closing_weight=81.0, adherence_0_10=9)
+        p = _mk_period(db, c.id, 1, date(2026, 4, 1), closing_weight=81.0)
         _add_weighins(db, p, [(0, 82.0), (6, 81.5), (12, 81.0)])
         js = decision_to_json(decision_for_period(db, p, c))
         assert set(js) >= {"action", "rule", "rationale", "inputs_snapshot", "protein_locked"}

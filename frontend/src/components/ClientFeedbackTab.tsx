@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Sparkles, MessageSquare, Mail, Target, TrendingUp, BarChart3, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
+import { Sparkles, MessageSquare, Mail, Download, Target, TrendingUp, BarChart3, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
 import { api, getToken } from "../lib/api";
 import { feedbackBody } from "../lib/feedbackText";
 import { pkg } from "../lib/packages";
@@ -13,9 +13,7 @@ interface Period {
   ends_on: string;
   status: string;
   closing_weight_kg: number | null;
-  closing_rating: number | null;
-  closing_hardest: string | null;
-  closing_questions: string | null;
+  measured_at: string | null;
   closing_waist_cm: number | null;
   closing_hip_cm: number | null;
   closing_arm_cm: number | null;
@@ -73,7 +71,7 @@ export function ClientFeedbackTab({ client, onClientChanged }: { client: ClientO
         setPeriods(ps);
         // El resumen del período ACTUAL se carga solo (los antiguos, al desplegarlos)
         const latest = ps.reduce<Period | null>((a, b) => (!a || b.period_index > a.period_index ? b : a), null);
-        if (latest && latest.status !== "open") loadMetrics(latest.id);
+        if (latest) loadMetrics(latest.id);
         // Carga el contenido de los feedbacks ya existentes para mostrarlo.
         const withFb = ps.filter((p) => p.feedback_id);
         const entries = await Promise.all(
@@ -124,6 +122,28 @@ export function ClientFeedbackTab({ client, onClientChanged }: { client: ClientO
     } finally {
       setGenerating(null);
     }
+  }
+
+  /** Descarga el informe en Word. El endpoint exige JWT, así que no vale un
+   *  <a href>: se pide con fetch y se guarda el blob. */
+  function downloadWord(feedbackId: number) {
+    fetch(api.feedbackDocumentUrl(feedbackId), {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
+      .then((r) => {
+        // Sin esto, un 401/500 guardaba un archivo corrupto con el JSON del error.
+        if (!r.ok) throw new Error(`Error ${r.status}`);
+        return r.blob();
+      })
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `informe_${client.full_name.replace(/\s+/g, "_").toLowerCase()}.docx`;
+        a.click();
+        URL.revokeObjectURL(url);
+      })
+      .catch(() => toast.push("No se pudo descargar el informe", "error"));
   }
 
   function copyAll(content: any) {
@@ -271,23 +291,32 @@ export function ClientFeedbackTab({ client, onClientChanged }: { client: ClientO
               </div>
             )}
 
-            {/* Datos del cierre */}
-            {p.status !== "open" && (
-              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {p.closing_weight_kg != null && <Stat label="Peso final" value={`${p.closing_weight_kg} kg`} />}
-                {p.closing_rating != null && <Stat label="Valoración" value={`${p.closing_rating}/5`} />}
-                {p.closing_waist_cm != null && <Stat label="Cintura" value={`${p.closing_waist_cm} cm`} />}
-                {p.closing_hip_cm != null && <Stat label="Cadera" value={`${p.closing_hip_cm} cm`} />}
-                {p.closing_arm_cm != null && <Stat label="Brazo" value={`${p.closing_arm_cm} cm`} />}
-                {p.closing_thigh_cm != null && <Stat label="Muslo" value={`${p.closing_thigh_cm} cm`} />}
+            {/* Últimas medidas que el CLIENTE apuntó desde "Evolución" (van
+                sobre el período abierto: aquí no se cierra nada). */}
+            {(p.closing_weight_kg != null || p.closing_waist_cm != null
+              || p.closing_hip_cm != null || p.closing_arm_cm != null
+              || p.closing_thigh_cm != null) && (
+              <div className="mt-3">
+                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                  Sus últimas medidas
+                  {p.measured_at && (
+                    <span className="ml-2 font-normal normal-case tracking-normal text-zinc-600">
+                      actualizadas el {new Date(p.measured_at).toLocaleDateString("es-ES")}
+                    </span>
+                  )}
+                </p>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {p.closing_weight_kg != null && <Stat label="Peso" value={`${p.closing_weight_kg} kg`} />}
+                  {p.closing_waist_cm != null && <Stat label="Cintura" value={`${p.closing_waist_cm} cm`} />}
+                  {p.closing_hip_cm != null && <Stat label="Cadera" value={`${p.closing_hip_cm} cm`} />}
+                  {p.closing_arm_cm != null && <Stat label="Brazo" value={`${p.closing_arm_cm} cm`} />}
+                  {p.closing_thigh_cm != null && <Stat label="Muslo" value={`${p.closing_thigh_cm} cm`} />}
+                </div>
               </div>
             )}
-            {p.closing_hardest && <p className="mt-2 text-xs text-zinc-400"><b className="text-zinc-300">Lo más difícil:</b> {p.closing_hardest}</p>}
-            {p.closing_questions && <p className="mt-1 text-xs text-zinc-400"><b className="text-zinc-300">Dudas:</b> {p.closing_questions}</p>}
 
-            {/* Fotos de progreso del período: el coach las VE aquí al generar el
-                feedback (antes se subían pero ningún componente las mostraba). */}
-            {p.status !== "open" && <PeriodPhotos clientId={client.id} periodId={p.id} />}
+            {/* Fotos de progreso: el coach las VE aquí al generar el informe. */}
+            <PeriodPhotos clientId={client.id} periodId={p.id} />
 
             {/* Resumen de métricas (sin IA): fuerza, peso, adherencia, objetivo.
                 Se muestra SIEMPRE, ya cargado — sin botones que pulsar. */}
@@ -399,6 +428,10 @@ export function ClientFeedbackTab({ client, onClientChanged }: { client: ClientO
                       style={{ color: "var(--brand-accent)" }}
                     >
                       <Mail size={13} /> Enviar por email
+                    </button>
+                    <button onClick={() => downloadWord(p.feedback_id as number)}
+                      className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200">
+                      <Download size={13} /> Descargar Word
                     </button>
                     <button onClick={() => copyAll(content)} className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200">
                       <Copy size={13} /> Copiar todo

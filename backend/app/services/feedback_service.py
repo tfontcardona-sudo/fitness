@@ -367,21 +367,16 @@ def build_period_feedback(db: Session, period_id: int, ai=None) -> FeedbackDoc:
             "pasos": dl.steps, "saciedad_1_10": dl.satiety_1_10, "agua_l": dl.water_liters,
             "adherencia_dieta": dl.diet_adherence, "notas": dl.free_notes,
         } for dl in logs_q],
-        # REVISIÓN QUINCENAL completa
-        "revision_quincenal": {
+        # Lo que el cliente apunta en "Evolución" cuando se mide (peso,
+        # perímetros, cómo se encuentra y lo que quiera contar). Es lo ÚNICO
+        # que reporta él: la adherencia sale de su diario, no de una
+        # auto-puntuación.
+        "evolucion_del_cliente": {
             "peso_kg": period.closing_weight_kg,
             "medidas_cm": {"cintura": period.closing_waist_cm, "cadera": period.closing_hip_cm,
                            "brazo": period.closing_arm_cm, "muslo": period.closing_thigh_cm},
             "sensaciones_1_5": period.closing_feelings_json,
-            "adherencia_dieta_0_10": period.adherence_diet_0_10,
-            # En solo-nutrición no hay adherencia de entreno que reportar.
-            **({} if nutrition_only else {"adherencia_entreno_0_10": period.adherence_training_0_10}),
-            "comidas_libres": period.free_meals_count,
-            "cambios_importantes": period.closing_changes,
-            "lo_mas_dificil": period.closing_hardest,
-            "objetivo_proximo": period.closing_next_goal,
-            "dudas": period.closing_questions,
-            "valoracion_1_5": period.closing_rating,
+            "lo_que_cuenta": period.closing_changes,
         },
         "hay_fotos": bool(inputs["photo_pairs"]),
     }
