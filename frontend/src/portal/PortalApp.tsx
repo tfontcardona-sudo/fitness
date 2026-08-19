@@ -4,6 +4,7 @@ import { Bell, BellOff, CalendarCheck, Camera, Check, ChevronDown, Dumbbell, Fil
 import { portalApi, portalSession, PortalError } from "./portalApi";
 import type { VideoCallStatus } from "./portalApi";
 import { pkg } from "../lib/packages";
+import { useAppUpdate } from "../lib/appUpdate";
 import type { PortalState } from "../types";
 import { PortalWorkout } from "./PortalWorkout";
 import { PortalDiary } from "./PortalDiary";
@@ -37,7 +38,14 @@ type Tab = "entreno" | "recursos" | "diario" | "progreso" | "cierre";
  */
 export default function PortalApp({ token }: { token: string }) {
   const apiClient = useMemo(() => portalApi(token), [token]);
+  // Actualización EN CALIENTE de la app instalada: al volver del segundo plano
+  // con una versión nueva desplegada se recarga sola; en uso activo, aviso
+  // discreto para tocar y actualizar. El cliente nunca reinstala nada.
+  const update = useAppUpdate();
   const [state, setState] = useState<PortalState | null>(null);
+  // Sube en cada recarga del estado: los hijos con fetch propio (videollamada)
+  // se refrescan a la vez que el resto del portal.
+  const [stateVersion, setStateVersion] = useState(0);
   const [error, setError] = useState<string | null>(null);
   // 404 = token inválido/caducado (sesión fuera). Cualquier otro fallo (red,
   // 500, 429) es TEMPORAL: se ofrece reintentar sin tocar la sesión — antes
@@ -60,6 +68,7 @@ export default function PortalApp({ token }: { token: string }) {
       .state()
       .then((s) => {
         setState(s);
+        setStateVersion((v) => v + 1);
         applyBrand(s);
         refreshBadge(apiClient); // badge del icono = pendientes de hoy
       })
@@ -78,11 +87,18 @@ export default function PortalApp({ token }: { token: string }) {
     registerServiceWorker();
     resyncPushIfGranted(apiClient);
     const onFocus = () => refreshBadge(apiClient);
+    // Al VOLVER a la app (segundo plano → visible) se refresca también el
+    // estado: la fecha de negocio, la pausa y la videollamada quedan al día
+    // sin recargar (una PWA resucitada al día siguiente ya no escribe ayer).
+    const onVisible = () => {
+      refreshBadge(apiClient);
+      if (!document.hidden) reload();
+    };
     window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [token, apiClient]);
 
@@ -136,6 +152,15 @@ export default function PortalApp({ token }: { token: string }) {
 
   const light = state.brand.portal_theme === "light";
   const canClose = state.period?.can_close ?? false;
+  // Estado del período para las pestañas. Ventana "feedback generado pero aún
+  // no enviado": el período pasa a `analyzed` (deja de ser el activo → null)
+  // pero el cliente sigue `review_pending`. Sin este sintético, el portal
+  // perdía la pausa: el diario aparecía VACÍO y editable, cada guardado moría
+  // con 409 (dato perdido) y la pestaña Quincenal retrocedía a "se desbloquea
+  // al completar tus 2 semanas" — todo mientras el coach redactaba el feedback
+  // (auditoría crítica). Con "closed" sintético, la pausa se mantiene.
+  const periodStatus: string | null =
+    state.period?.status ?? (state.status === "review_pending" ? "closed" : null);
 
   // Plan sin entreno (nutri): sin pestaña de entreno. La vista por defecto pasa
   // a ser el Diario (si la URL trae ?tab=entreno, se reencamina a diario).
@@ -162,17 +187,49 @@ export default function PortalApp({ token }: { token: string }) {
             <div className="min-w-0">
               <p className="truncate text-[10px] uppercase tracking-widest opacity-50">{state.brand.name}</p>
               <h1 className="truncate text-xl font-semibold">Hola, {state.first_name}</h1>
+              {/* Racha 🔥: días seguidos con el diario al día. A partir de 2
+                  (un solo día no es racha); el cliente no quiere romperla. */}
+              {(state.streak_days ?? 0) >= 2 && (
+                <p className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold"
+                   style={{ color: state.brand.color_primary }}>
+                  🔥 {state.streak_days} días seguidos al día
+                </p>
+              )}
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-3">
             {state.period && (
-              <div className="text-right">
-                {/* Azul (secundario): es un dato del ciclo, no una acción.
+              <div className="flex flex-col items-center">
+                {/* Anillo de progreso de la quincena: el número dentro del
+                    círculo que se va cerrando — se VE cuánto queda, no solo se
+                    lee. Azul (secundario): dato del ciclo, no una acción.
                     Nunca negativo (período vencido pendiente de cerrar → 0). */}
-                <p className="text-2xl font-bold" style={{ color: state.brand.color_secondary, textShadow: `0 0 12px ${state.brand.color_secondary}55` }}>
-                  {Math.max(0, state.period.days_left)}
-                </p>
-                <p className="text-[11px] opacity-50">días restantes</p>
+                {(() => {
+                  const total = Math.max(1, state.period.days_total);
+                  const hecho = Math.max(0, Math.min(total, state.period.days_elapsed));
+                  const R = 20;
+                  const C = 2 * Math.PI * R;
+                  return (
+                    <div className="relative h-12 w-12">
+                      <svg viewBox="0 0 48 48" className="h-12 w-12 -rotate-90">
+                        <circle cx="24" cy="24" r={R} fill="none" strokeWidth="4"
+                          stroke={`${state.brand.color_secondary}30`} />
+                        <circle cx="24" cy="24" r={R} fill="none" strokeWidth="4"
+                          strokeLinecap="round"
+                          stroke={state.brand.color_secondary}
+                          strokeDasharray={C}
+                          strokeDashoffset={C * (1 - hecho / total)}
+                          style={{ transition: "stroke-dashoffset 0.8s cubic-bezier(0.16,1,0.3,1)",
+                                   filter: `drop-shadow(0 0 4px ${state.brand.color_secondary}66)` }} />
+                      </svg>
+                      <span className="absolute inset-0 flex items-center justify-center text-base font-bold"
+                        style={{ color: state.brand.color_secondary }}>
+                        {Math.max(0, state.period.days_left)}
+                      </span>
+                    </div>
+                  );
+                })()}
+                <p className="mt-0.5 text-[10px] opacity-50">días restantes</p>
               </div>
             )}
             <PushToggle api={apiClient} />
@@ -226,18 +283,23 @@ export default function PortalApp({ token }: { token: string }) {
             </a>
           )}
           {caps.hasVideoCall && (
-            <VideoCallBanner api={apiClient} accent={state.brand.color_secondary} />
+            <VideoCallBanner api={apiClient} accent={state.brand.color_secondary} refreshKey={stateVersion} />
           )}
           {state.photos_pending && (
             <PhotosReminder api={apiClient} accent={state.brand.color_primary} onConfirmed={reload} />
           )}
           <WelcomeSetup api={apiClient} token={token} accent={state.brand.color_primary}
             secondary={state.brand.color_secondary} hasTraining={!isStart} />
-          {/* key={effTab} → transición suave (animate-rise respeta reduced-motion) */}
-          <div key={effTab} className="animate-rise">
-            {effTab === "entreno" && <PortalWorkout api={apiClient} brand={state.brand} periodStatus={state.period?.status ?? null} businessToday={state.today ?? null} />}
+          {/* key={effTab+fecha}: transición suave al cambiar de pestaña Y
+              remontaje si cambia la FECHA DE NEGOCIO — una PWA resucitada días
+              después registraba en el día viejo, pisándolo en silencio
+              (auditoría crítica). El refetch del estado corre al volver del
+              segundo plano (abajo); cada pestaña vuelca sus pendientes en
+              visibilitychange antes del remontaje. */}
+          <div key={`${effTab}-${state.today ?? ""}`} className="animate-rise">
+            {effTab === "entreno" && <PortalWorkout api={apiClient} brand={state.brand} periodStatus={periodStatus} businessToday={state.today ?? null} />}
             {effTab === "recursos" && <PortalResources api={apiClient} brand={state.brand} hasTraining={!isStart} />}
-            {effTab === "diario" && <PortalDiary api={apiClient} brand={state.brand} periodStatus={state.period?.status ?? null} businessToday={state.today ?? null} />}
+            {effTab === "diario" && <PortalDiary api={apiClient} brand={state.brand} periodStatus={periodStatus} businessToday={state.today ?? null} hasPeriod={state.period != null || state.status === "review_pending"} hasNutrition={caps.hasNutrition} />}
             {effTab === "progreso" && <PortalProgress api={apiClient} brand={state.brand} hasTraining={!isStart} token={token} />}
             {effTab === "cierre" && (
               <PortalClose
@@ -248,13 +310,30 @@ export default function PortalApp({ token }: { token: string }) {
                 canClose={canClose}
                 daysLeft={state.period?.days_left ?? null}
                 closeDate={state.period?.ends_on ?? null}
-                periodStatus={state.period?.status ?? null}
+                periodStatus={periodStatus}
                 hasTraining={!isStart}
+                hasNutrition={caps.hasNutrition}
                 directContact={caps.directContact}
               />
             )}
           </div>
         </main>
+
+        {/* Versión nueva desplegada con la app en uso: aviso discreto sobre la
+            navegación — un toque y el portal queda al día, sin reinstalar. */}
+        {update.ready && (
+          <button
+            onClick={update.apply}
+            className="animate-rise fixed inset-x-0 z-50 mx-auto mb-2 flex w-fit items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold shadow-lg"
+            style={{
+              bottom: "calc(4.5rem + env(safe-area-inset-bottom))",
+              background: state.brand.color_primary,
+              color: "#fff",
+            }}
+          >
+            ✨ Portal actualizado — toca para recargar
+          </button>
+        )}
 
         {/* Navegación inferior: 3 pestañas, relieve + neón */}
         <nav className="portal-nav fixed inset-x-0 bottom-0 z-40 mx-auto flex max-w-md justify-around px-2 py-2"
@@ -294,7 +373,7 @@ function portalLocalToday(): string {
  *   - proposed: propuesta enviada, esperando confirmación del coach.
  *   - pending_manual: el coach la agenda (te escribirá por WhatsApp).
  *   - scheduled: agendada → botón "Unirme" (Google Meet). */
-function VideoCallBanner({ api, accent }: { api: ReturnType<typeof portalApi>; accent: string }) {
+function VideoCallBanner({ api, accent, refreshKey = 0 }: { api: ReturnType<typeof portalApi>; accent: string; refreshKey?: number }) {
   const toast = usePortalToast();
   const [vc, setVc] = useState<VideoCallStatus | null>(null);
   const [date, setDate] = useState("");
@@ -305,7 +384,10 @@ function VideoCallBanner({ api, accent }: { api: ReturnType<typeof portalApi>; a
   const reload = useCallback(() => {
     api.videoCall().then(setVc).catch(() => {});
   }, [api]);
-  useEffect(reload, [reload]);
+  // refreshKey: el padre lo incrementa al recargar el estado (enviar la
+  // revisión, volver del segundo plano) — sin esto, el formulario para
+  // agendar la videollamada no aparecía hasta recargar la app a mano.
+  useEffect(reload, [reload, refreshKey]);
 
   if (!vc || vc.state === "none") return null;
 

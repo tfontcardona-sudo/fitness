@@ -631,6 +631,10 @@ class PortalState(BaseModel):
     # otra zona horaria ya no crea el registro en un día que el backend
     # considera distinto (422 "fuera del período" o hueco en la adherencia).
     today: date | None = None
+    # Racha de días CONSECUTIVOS con el diario rellenado (🔥 en la cabecera):
+    # palanca de adherencia — el cliente no quiere romperla. El día de HOY aún
+    # sin rellenar no la rompe (se rompe al acabar el día vacío).
+    streak_days: int = 0
 
 
 class PushKeyOut(BaseModel):
@@ -798,8 +802,8 @@ class PeriodCreateIn(BaseModel):
 # ------------------------------------------------------------- pagos ----
 # Libro de caja de Stripe (tabla `payments`): quién pagó, cuánto y cuándo.
 # Espejo en frontend/src/types.ts (regla A.1.5).
-PaymentKind = Literal["checkout", "invoice", "refund"]
-PaymentMovementStatus = Literal["paid", "failed", "refunded"]
+PaymentKind = Literal["checkout", "invoice", "refund", "subscription"]
+PaymentMovementStatus = Literal["paid", "failed", "refunded", "canceled"]
 
 
 class PaymentOut(BaseModel):

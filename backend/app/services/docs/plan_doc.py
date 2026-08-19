@@ -153,16 +153,21 @@ SUPLEMENTACION_DEFAULT = [
 
 def _goal_label(goal: str | None) -> str:
     return {"fat_loss": "Pérdida de grasa", "muscle_gain": "Ganancia muscular",
-            "recomp": "Recomposición"}.get(goal or "", "Plan personalizado")
+            "recomp": "Recomposición", "maintenance": "Mantenimiento",
+            "injury_recovery": "Recuperación de lesión"}.get(goal or "", "Plan personalizado")
 
 
 def _objetivo_pairs(goal: str | None) -> list[tuple[str, str]]:
     """OBJETIVOS como el ejemplo: dos líneas con etiqueta en negrita vino
-    ("Antropométrico: …" / "Nutricional: …")."""
+    ("Antropométrico: …" / "Nutricional: …"). Los cinco objetivos del sistema
+    tienen texto propio: maintenance/injury_recovery imprimían el relleno
+    genérico "Según objetivo." en el PDF del cliente (auditoría)."""
     anthro = {
         "fat_loss": "Déficit.",
         "muscle_gain": "Superávit.",
         "recomp": "Mantenimiento / recomposición.",
+        "maintenance": "Mantenimiento del peso.",
+        "injury_recovery": "Mantenimiento durante la recuperación.",
     }.get(goal or "", "Según objetivo.")
     nutri = {
         "fat_loss": "organizar y planificar la alimentación diaria, manteniendo proteína "
@@ -171,6 +176,10 @@ def _objetivo_pairs(goal: str | None) -> list[tuple[str, str]]:
                        "proteína suficientes para ganar masa muscular.",
         "recomp": "organizar y planificar la alimentación diaria, con proteína alta para "
                   "perder grasa y ganar o mantener músculo.",
+        "maintenance": "consolidar hábitos y sostener el peso con una alimentación "
+                       "equilibrada, con proteína suficiente para conservar masa muscular.",
+        "injury_recovery": "apoyar la recuperación con energía en mantenimiento y proteína "
+                           "alta para minimizar la pérdida de masa muscular.",
     }.get(goal or "", "organizar y planificar la alimentación diaria según tu objetivo.")
     return [("Antropométrico", anthro), ("Nutricional", nutri)]
 
@@ -561,6 +570,7 @@ def generate_plan_doc(
 
 
     if not include_training or not training:
+        _education_section(doc, education, include_training=False)
         buf = io.BytesIO()
         doc.save(buf)
         return buf.getvalue()
@@ -629,9 +639,45 @@ def generate_plan_doc(
         section_bar(doc, "Semana de descarga (deload)", BLUE)
         info_box(doc, [training["deload_instructions"]])
 
+    _education_section(doc, education, include_training=True)
+
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()
+
+
+def _education_section(doc: Document, education: dict | None, *, include_training: bool) -> None:
+    """Contenido educativo del plan (píldoras, técnica por patrones, FAQ).
+    Se generaba con IA y se guardaba en education_json pero NUNCA llegaba al
+    documento del cliente (auditoría): el parámetro entraba y no se usaba.
+    Cada tarjeta viaja entera a la página siguiente si no cabe (cant_split)."""
+    edu = education or {}
+    pills = [p for p in (edu.get("pills") or []) if (p.get("for_client") or "").strip()]
+    biomech = [b for b in (edu.get("biomech_by_pattern") or []) if b.get("pattern")]
+    faq = [f for f in (edu.get("faq") or []) if (f.get("q") or "").strip()]
+    if not (pills or biomech or faq):
+        return
+
+    if pills:
+        section_bar(doc, "Aprende con tu plan", GOLD)
+        info_box(doc, [(p.get("topic", ""), p["for_client"].strip()) for p in pills],
+                 fill=CREAM, label_color=WINE, cant_split=True)
+
+    # La técnica por patrones solo tiene sentido si el documento lleva entreno.
+    if biomech and include_training:
+        section_bar(doc, "Técnica: claves por patrón de movimiento", BLUE)
+        items = []
+        for b in biomech:
+            cues = " · ".join(c.strip() for c in (b.get("cues") or []) if c and c.strip())
+            why = (b.get("why") or "").strip()
+            body = cues + (f" — {why}" if why else "")
+            items.append((b.get("pattern", ""), body))
+        info_box(doc, items, fill=CREAM, label_color=WINE, cant_split=True)
+
+    if faq:
+        section_bar(doc, "Preguntas frecuentes", WINE)
+        info_box(doc, [(f.get("q", "").strip(), (f.get("a") or "").strip()) for f in faq],
+                 fill=CREAM, label_color=WINE, cant_split=True)
 
 
 def _render_equivalences(container, eq: dict, image_path: str | None = None) -> None:

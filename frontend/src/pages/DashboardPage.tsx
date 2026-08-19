@@ -336,7 +336,7 @@ export default function DashboardPage() {
                   </div>
                   <div className="space-y-2.5">
                     {items.map((a) => (
-                      <ActionCard key={`${a.client.id}-${a.category}`} a={a} />
+                      <ActionCard key={`${a.client.id}-${a.category}-${a.title}`} a={a} />
                     ))}
                   </div>
                 </div>
@@ -392,7 +392,7 @@ export default function DashboardPage() {
           </h2>
           <div className="space-y-2">
             {enEspera.map((a) => (
-              <ActionCard key={`${a.client.id}-${a.category}`} a={a} quiet />
+              <ActionCard key={`${a.client.id}-${a.category}-${a.title}`} a={a} quiet />
             ))}
           </div>
         </section>

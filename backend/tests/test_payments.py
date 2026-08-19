@@ -641,3 +641,161 @@ def test_la_factura_huerfana_de_la_oferta_se_adopta_al_crear_la_ficha(monkeypatc
         db.query(Client).filter(Client.id == cid).count()       # la ficha existe
     finally:
         db.close()
+
+
+def test_la_baja_de_suscripcion_se_ve_en_el_feed_sin_sumar(monkeypatch):
+    """Petición del dueño: TODO lo que pase en Stripe debe verse en la web. La
+    baja de la suscripción entra en el feed como movimiento informativo
+    (importe 0, gris) sin tocar los ingresos del mes."""
+    stripe_service = _prep(monkeypatch)
+    from app.db import SessionLocal
+    from app.services import payments as pay_svc
+
+    db = SessionLocal()
+    try:
+        c = _nuevo_cliente(db, pagado=True)
+        c.billing_period = "oferta"
+        sub_id = f"sub_test_{uuid.uuid4().hex[:10]}"
+        c.stripe_subscription_id = sub_id
+        db.commit()
+        antes = pay_svc.summary(db)["month_total_cents"]
+
+        evento = {"id": f"evt_{uuid.uuid4().hex[:10]}",
+                  "type": "customer.subscription.deleted",
+                  "created": int(datetime.now(timezone.utc).timestamp()),
+                  "data": {"object": {"id": sub_id, "livemode": True,
+                                       "metadata": {"client_id": str(c.id)},
+                                       "canceled_at": int(datetime.now(timezone.utc).timestamp())}}}
+        monkeypatch.setattr(stripe_service, "_stripe", _fake_stripe(evento))
+        res = stripe_service.handle_webhook(db, b"{}", "sig")
+        assert res == {"subscription_cancelled": c.id}
+
+        db.expire_all()
+        filas = _pagos_de(db, sub_id)
+        assert len(filas) == 1
+        assert filas[0].status == "canceled" and filas[0].amount_cents == 0
+        assert pay_svc.summary(db)["month_total_cents"] == antes  # no suma ni resta
+    finally:
+        db.close()
+
+
+def test_serie_mensual_de_ingresos_neta_y_sin_huecos():
+    """La gráfica de Pagos: cobrado − devuelto por mes natural, con CEROS en
+    los meses sin movimiento (la tendencia no puede saltarse un mes malo) y
+    sin contar pagos de prueba."""
+    from app.db import SessionLocal
+    from app.services import payments as pay_svc
+
+    db = SessionLocal()
+    try:
+        ahora = datetime.now(timezone.utc)
+        uid = uuid.uuid4().hex[:6]
+        antes = pay_svc.monthly_series(db, months=6)
+        pay_svc.record_payment(
+            db, object_id=f"cs_serie_{uid}", kind="checkout", status="paid",
+            amount_cents=10000, customer_email=f"serie-{uid}@x.com",
+            paid_at=ahora, seen=True)
+        pay_svc.record_payment(
+            db, object_id=f"re_serie_{uid}", kind="refund", status="refunded",
+            amount_cents=2500, customer_email=f"serie-{uid}@x.com",
+            paid_at=ahora, seen=True)
+        pay_svc.record_payment(  # prueba: no debe sumar
+            db, object_id=f"cs_serie_test_{uid}", kind="checkout", status="paid",
+            amount_cents=99999, livemode=False, customer_email=f"serie-{uid}@x.com",
+            paid_at=ahora, seen=True)
+        db.commit()
+
+        serie = pay_svc.monthly_series(db, months=6)
+        assert len(serie) == 6 and len(antes) == 6  # sin huecos
+        assert serie[-1]["month"] == ahora.astimezone(pay_svc._tz()).strftime("%Y-%m")
+        # Delta del mes actual: +100 € − 25 € = 75 €; el de PRUEBA no cuenta
+        # (por delta: otros tests de la suite también anotan en este mes).
+        assert serie[-1]["total_cents"] - antes[-1]["total_cents"] == 7500
+    finally:
+        db.close()
+
+
+def test_sync_no_anota_devoluciones_de_cobros_ajenos(monkeypatch):
+    """REGRESIÓN (auditoría crítica): el webhook ya filtraba las devoluciones de
+    cobros AJENOS (_cargo_es_nuestro), pero la SINCRONIZACIÓN las anotaba igual
+    — reintroducía el bug por la puerta de atrás y restaba dinero que nunca
+    sumó."""
+    from app.config import settings
+    from app.db import SessionLocal
+    from app.services import payments as pay_svc
+
+    db = SessionLocal()
+    try:
+        monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_x")
+        antes = pay_svc.summary(db)["month_total_cents"]
+        ahora = int(datetime.now(timezone.utc).timestamp())
+        cargo_ajeno = {
+            "id": f"ch_sync_ajeno_{uuid.uuid4().hex[:8]}", "currency": "eur",
+            "livemode": True, "amount": 30000, "amount_refunded": 30000,
+            "created": ahora,
+            "billing_details": {"email": f"ajeno-{uuid.uuid4().hex[:6]}@otro.com"},
+            "invoice": None, "refunds": {"data": []},
+        }
+
+        class _Iter:
+            def __init__(self, data): self._d = data
+            def auto_paging_iter(self): return iter(self._d)
+
+        class _Charge:
+            @staticmethod
+            def list(**kw): return _Iter([cargo_ajeno])
+
+        class _Vacio:
+            @staticmethod
+            def list(**kw): return _Iter([])
+
+        class _Checkout:
+            Session = _Vacio
+
+        class _FakeStripe:
+            Charge = _Charge
+            Invoice = _Vacio
+            checkout = _Checkout
+
+        from app.services import stripe_service
+        monkeypatch.setattr(stripe_service, "_stripe", lambda: _FakeStripe)
+
+        res = pay_svc.sync_from_stripe(db, days=30)
+        assert res["errors"] == []
+        db.expire_all()
+        assert _pagos_de(db, cargo_ajeno["id"]) == []
+        assert pay_svc.summary(db)["month_total_cents"] == antes
+    finally:
+        db.close()
+
+
+def test_checkout_ajeno_no_crea_ficha(monkeypatch):
+    """REGRESIÓN (auditoría crítica): un checkout de OTRO producto de la misma
+    cuenta de Stripe (Payment Link de un ebook, un taller) no lleva nuestra
+    metadata. Antes creaba una ficha «Full pagado» al comprador y le enviaba
+    portal + anamnesis de una asesoría que no contrató. Ahora se anota como
+    huérfano en el libro (el dinero se VE) sin fabricar clientes."""
+    stripe_service = _prep(monkeypatch)
+    from sqlalchemy import func as sqlfunc, select
+
+    from app.db import SessionLocal
+    from app.models import Client
+
+    db = SessionLocal()
+    try:
+        email = f"ebook-{uuid.uuid4().hex[:8]}@x.com"
+        ses = _sesion(metadata={},  # SIN tier ni client_id: sesión ajena
+                      customer_details={"email": email, "name": "Comprador Ebook"},
+                      amount_total=1500)
+        monkeypatch.setattr(stripe_service, "_stripe", _fake_stripe(
+            _evento("checkout.session.completed", ses)))
+        res = stripe_service.handle_webhook(db, b"{}", "sig")
+        assert res == {"ignored": "checkout_ajeno"}
+
+        db.expire_all()
+        assert db.scalar(select(sqlfunc.count(Client.id)).where(
+            sqlfunc.lower(Client.email) == email)) == 0        # sin ficha
+        pagos = _pagos_de(db, ses["id"])
+        assert len(pagos) == 1 and pagos[0].client_id is None  # pero se VE
+    finally:
+        db.close()

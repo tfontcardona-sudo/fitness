@@ -590,6 +590,8 @@ export interface PortalState {
   // Fecha de NEGOCIO (YYYY-MM-DD, zona del coach): Diario/Entreno registran
   // sobre ella, no sobre el reloj del dispositivo (viajes con otra zona).
   today?: string | null;
+  // Racha de días consecutivos con el diario rellenado (🔥 de la cabecera).
+  streak_days?: number;
 }
 
 /** GET /api/p/{token}/push/pending — espejo de PushPendingOut. */
@@ -786,8 +788,8 @@ export interface WhatsAppRoundOut {
 }
 
 /** --- Pagos (libro de caja de Stripe) — espejo de schemas/entities.py --- */
-export type PaymentKind = "checkout" | "invoice" | "refund";
-export type PaymentMovementStatus = "paid" | "failed" | "refunded";
+export type PaymentKind = "checkout" | "invoice" | "refund" | "subscription";
+export type PaymentMovementStatus = "paid" | "failed" | "refunded" | "canceled";
 
 export interface PaymentOut {
   id: number;

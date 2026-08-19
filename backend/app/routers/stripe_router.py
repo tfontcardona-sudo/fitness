@@ -120,9 +120,13 @@ def pay_plan_link(request: Request, tier: str, period: str,
 
 
 @router.get("/api/pay/{token}")
-def pay_link(client: Client = Depends(get_client_by_token), db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def pay_link(request: Request, client: Client = Depends(get_client_by_token),
+             db: Session = Depends(get_db)):
     """Enlace estable de pago del alta manual: redirige a Stripe con el plan y la
-    duración de ESE cliente. Lo abre desde el mensaje que le envía el coach."""
+    duración de ESE cliente. Lo abre desde el mensaje que le envía el coach.
+    Con rate limit (como los otros enlaces públicos de pago): cada apertura sin
+    pagar crea una Checkout Session REAL en Stripe."""
     from app.config import settings
 
     base = settings.public_base_url.rstrip("/")

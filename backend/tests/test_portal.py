@@ -270,3 +270,45 @@ def test_change_request_creates_and_alerts(client, auth):
     # y puede resolverla
     rid = crs[0]["id"]
     assert client.post(f"/api/change-requests/{rid}/resolve", headers=auth).json()["status"] == "resolved"
+
+
+def test_racha_de_dias_del_portal():
+    """Racha 🔥: días consecutivos con el diario rellenado. Una fila VACÍA no
+    cuenta (el autosave las crea antes de teclear) y el día de HOY sin rellenar
+    no rompe la racha (se rompe al acabar el día en blanco)."""
+    import uuid as _uuid
+    from datetime import date, timedelta
+
+    from app.db import SessionLocal
+    from app.models import Client, DailyLog, Period, Plan
+    from app.security import new_portal_token
+    from app.services.portal import streak_days
+
+    db = SessionLocal()
+    try:
+        uid = _uuid.uuid4().hex[:8]
+        c = Client(full_name=f"Racha {uid}", email=f"racha-{uid}@x.com",
+                   portal_token="p", status="active")
+        db.add(c); db.flush(); c.portal_token = new_portal_token(c.id)
+        plan = Plan(client_id=c.id, month_index=1, version=1, status="published",
+                    nutrition_json={}, training_json={}, education_json={})
+        db.add(plan); db.flush()
+        hoy = date.today()
+        per = Period(client_id=c.id, plan_id=plan.id, period_index=1,
+                     starts_on=hoy - timedelta(days=13), ends_on=hoy + timedelta(days=1),
+                     status="open")
+        db.add(per); db.flush()
+        # Ayer y anteayer rellenados; hace 3 días una fila VACÍA (no cuenta);
+        # hoy sin fila (no rompe).
+        db.add(DailyLog(period_id=per.id, log_date=hoy - timedelta(days=1), weight_kg=80.0))
+        db.add(DailyLog(period_id=per.id, log_date=hoy - timedelta(days=2), sleep_hours=7.5))
+        db.add(DailyLog(period_id=per.id, log_date=hoy - timedelta(days=3)))
+        db.commit()
+
+        assert streak_days(db, c.id, hoy) == 2
+        # Rellenar HOY extiende la racha a 3.
+        db.add(DailyLog(period_id=per.id, log_date=hoy, diet_adherence="yes"))
+        db.commit()
+        assert streak_days(db, c.id, hoy) == 3
+    finally:
+        db.close()

@@ -85,6 +85,13 @@ def payments_summary(db: Session = Depends(get_db)) -> PaymentsSummaryOut:
     return PaymentsSummaryOut(**pay_svc.summary(db))
 
 
+@router.get("/monthly")
+def payments_monthly(months: int = Query(default=6, ge=2, le=24),
+                     db: Session = Depends(get_db)) -> dict:
+    """Ingresos netos por mes (gráfica de barras de la pantalla de Pagos)."""
+    return {"months": pay_svc.monthly_series(db, months=months)}
+
+
 @router.post("/seen")
 def mark_seen(body: PaymentsSeenIn | None = None,
               db: Session = Depends(get_db)) -> dict:

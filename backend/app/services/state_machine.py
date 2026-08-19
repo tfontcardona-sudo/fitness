@@ -118,17 +118,20 @@ def evaluate_transition(facts: ClientFacts, today: date) -> TransitionDecision:
                         notify_coach_at_risk=True,
                     )
 
-        # Recordatorio día 12 si aún no ha registrado nada hoy/poco (no cambia
-        # estado). También a los `at_risk`: el cliente con baja adherencia es
-        # justo el que MÁS necesita el empujón (antes quedaba excluido).
-        if (
-            status in ("active", "at_risk")
-            and facts.period_start is not None
-            and not facts.period_closed
-            and _period_day(today, facts.period_start) == REMINDER_DAY
-            and facts.days_logged_in_period < REMINDER_DAY // 2
-        ):
-            return TransitionDecision(None, "recordatorio día 12", send_reminder=True)
+    # Recordatorio día 12 si aún no ha registrado nada hoy/poco (no cambia
+    # estado). También a los `at_risk`: el cliente con baja adherencia es
+    # justo el que MÁS necesita el empujón. ⚠️ FUERA de la rama `active` — la
+    # primera corrección añadió at_risk al guard pero lo dejó ANIDADO dentro de
+    # `if status == "active":`, así que para at_risk seguía siendo inalcanzable
+    # (código muerto, auditoría crítica).
+    if (
+        status in ("active", "at_risk")
+        and facts.period_start is not None
+        and not facts.period_closed
+        and _period_day(today, facts.period_start) == REMINDER_DAY
+        and facts.days_logged_in_period < REMINDER_DAY // 2
+    ):
+        return TransitionDecision(None, "recordatorio día 12", send_reminder=True)
 
     return TransitionDecision(None)
 

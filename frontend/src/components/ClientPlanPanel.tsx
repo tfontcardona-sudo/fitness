@@ -36,6 +36,16 @@ interface PlanData {
   published_at?: string | null;
 }
 
+/** El plan VIGENTE de la lista: el PUBLICADO si existe y, si no, el más nuevo
+ *  por id. El backend ordena por (mes DESC, versión DESC), así que `plans[0]`
+ *  podía ser un plan SUSTITUIDO de un mes posterior generado y descartado —
+ *  el coach veía (y enviaba) una versión que el cliente no tiene (auditoría). */
+function vigente(plans: any[]): any | null {
+  if (!plans.length) return null;
+  return plans.find((p) => p.status === "published")
+    ?? [...plans].sort((a, b) => (b.id ?? 0) - (a.id ?? 0))[0];
+}
+
 /** Normaliza un plan venga de generatePlan (nutrition/...) o de listPlans (nutrition_json/...). */
 function normalize(p: any): PlanData {
   return {
@@ -142,7 +152,8 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
         setExVideo(vids);
         setPeriods(pds);
         setAllPlans(plans);
-        if (plans.length) setPlan(normalize(plans[0])); // [0] = versión más reciente
+        const v = vigente(plans);
+        if (v) setPlan(normalize(v));
         // Feedback más reciente (si existe): habilita el envío conjunto.
         const withFb = pds
           .filter((p: any) => p.feedback_id)
@@ -210,9 +221,15 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
       setNeedsDownload(false); // el enlace enviado sirve la versión vigente
       toast.push("WhatsApp abierto con el plan y el feedback — dale a enviar");
       if (!fb.sent) {
-        await api.sendFeedback(fb.id).catch(() => {});
-        setFb({ ...fb, sent: true });
-        onClientChanged?.();
+        // Solo se marca enviado si el backend LO REGISTRÓ: antes el catch mudo
+        // dejaba la UI en "enviado" con el ciclo sin avanzar (auditoría).
+        try {
+          await api.sendFeedback(fb.id);
+          setFb({ ...fb, sent: true });
+          onClientChanged?.();
+        } catch {
+          toast.push("WhatsApp abierto, pero el envío NO quedó registrado — reinténtalo desde Feedback", "error");
+        }
       }
     } catch {
       if (win) win.close();
@@ -251,8 +268,11 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
           : { ...d.orig, change: d.main, reason: d.reason },
       );
       const nutrition = { ...plan.nutrition, applied_adjustments: { ...appliedBlock, items } };
-      await api.updatePlan(plan.id, { nutrition_json: nutrition });
-      setPlan({ ...plan, nutrition });
+      // La respuesta trae el rev incrementado por el backend: guardarla evita
+      // que la SIGUIENTE edición muera con un 409 falso de "otra pestaña"
+      // (auditoría crítica). Mismo patrón que el save del editor.
+      const r = await api.updatePlan(plan.id, { nutrition_json: nutrition });
+      setPlan(normalize({ ...plan, nutrition_json: r.nutrition_json ?? nutrition }));
       setAdjDraft(null);
       // Estos cambios también salen en el PDF ("Novedades de tu plan"):
       // el descargado antes queda antiguo.
@@ -302,7 +322,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
       const r = await api.adaptPlan(client.id);
       const plans = await api.listPlans(client.id);
       setAllPlans(plans);
-      const full = plans.find((pl) => pl.id === r.id) ?? plans[0]; // listPlans → más reciente primero
+      const full = plans.find((pl) => pl.id === r.id) ?? vigente(plans);
       if (full) setPlan(normalize(full));
       setPeriods(await api.listPeriods(client.id).catch(() => periods));
       setNeedsDownload(false); // versión nueva activa: el aviso de la edición anterior caduca
@@ -809,7 +829,8 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
         const refreshPlans = () =>
           api.listPlans(client.id).then((plans) => {
             setAllPlans(plans);
-            if (plans.length) setPlan(normalize(plans[0]));
+            const v = vigente(plans);
+            if (v) setPlan(normalize(v));
           }).catch(() => {});
         const sendWa = async () => {
           const phone = waPhone(client.phone);
@@ -924,7 +945,8 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
           const plans = await api.listPlans(client.id).catch(() => null);
           if (plans) {
             setAllPlans(plans);
-            if (plans.length) setPlan(normalize(plans[0]));
+            const v = vigente(plans);
+            if (v) setPlan(normalize(v));
           }
           setPeriods(await api.listPeriods(client.id).catch(() => periods));
         }}

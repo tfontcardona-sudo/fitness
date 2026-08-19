@@ -21,7 +21,10 @@ def criterios_reference() -> str:
     """Criterio del coach (CRITERIOS_ASESORIA.md, hardening §7) como bloque de
     referencia para inyectar en la generación. Omite las líneas [PENDIENTE TONI]
     (aún sin rellenar). Devuelve '' si el archivo no existe (nunca rompe)."""
-    for base in (Path(__file__).resolve().parents[4], Path.cwd(), Path.cwd().parent):
+    # parents[3] = /code en el contenedor (el compose monta ahí el archivo);
+    # parents[4] = raíz del repo en desarrollo local sin Docker.
+    _here = Path(__file__).resolve()
+    for base in (_here.parents[3], _here.parents[4], Path.cwd(), Path.cwd().parent):
         f = base / "CRITERIOS_ASESORIA.md"
         try:
             if f.exists():

@@ -59,7 +59,11 @@ export default function ClientsPage() {
     api
       .listClients({ q: q.length >= 2 ? q : undefined })
       .then((cs) => setClients((prev) => keepIfSame(prev, cs)))  // sin re-render si nada cambió
-      .catch(() => setClients([]));
+      // Fallo de red: se CONSERVA la cartera en pantalla (antes se vaciaba y
+      // salía "Da de alta tu primer cliente" con 30 clientes reales — susto
+      // gratuito en cada microcorte, auditoría). Solo si aún no había datos se
+      // enseña la lista vacía.
+      .catch(() => setClients((prev) => prev ?? []));
   }, [q]);
 
   useEffect(() => {

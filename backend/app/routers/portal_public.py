@@ -334,6 +334,7 @@ def portal_state_full(
         photos_pending=photos_pending(db, client, min_minutes=0),
         needs_anamnesis=_needs_anamnesis(client),
         today=portal_svc.today_local(),
+        streak_days=portal_svc.streak_days(db, client.id, portal_svc.today_local()),
     )
 
 

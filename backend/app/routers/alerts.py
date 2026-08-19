@@ -208,9 +208,26 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
 
     # --- Cliente sin registros varios días (período abierto) ----------------
     if last_period is not None and last_period.status == "open":
-        last_log = db.scalar(
-            select(func.max(DailyLog.log_date)).where(DailyLog.period_id == last_period.id)
-        )
+        # Solo cuentan filas CON CONTENIDO: el autosave del portal crea la fila
+        # vacía con solo abrir la pantalla, y ese max() crudo reseteaba el gap
+        # — un cliente que solo ABRÍA la app nunca disparaba la alerta
+        # (auditoría crítica). Registro real = diario rellenado, series de
+        # entreno o comidas elegidas.
+        from app.models import WorkoutLog
+        from app.services.push import _DIARY_FIELDS
+
+        logs_periodo = list(db.scalars(
+            select(DailyLog).where(DailyLog.period_id == last_period.id)))
+        con_series = set(db.scalars(
+            select(WorkoutLog.daily_log_id).where(
+                WorkoutLog.daily_log_id.in_([l.id for l in logs_periodo] or [0]))))
+        fechas_reales = [
+            l.log_date for l in logs_periodo
+            if l.id in con_series
+            or l.chosen_options_json
+            or any(getattr(l, f, None) not in (None, "") for f in _DIARY_FIELDS)
+        ]
+        last_log = max(fechas_reales) if fechas_reales else None
         since = last_log or (last_period.starts_on - date.resolution)
         gap = (today - since).days
         days_in = (today - last_period.starts_on).days

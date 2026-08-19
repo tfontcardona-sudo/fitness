@@ -78,7 +78,10 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
       api
         .getClientTracking(client.id)
         // keepIfSame: no re-renderiza la tabla cada 3 s si los datos son idénticos.
-        .then((d) => alive && setData((prev) => keepIfSame(prev, d)))
+        // Un poll con éxito LIMPIA el error: antes un fallo transitorio de
+        // red dejaba la pestaña clavada en el error para siempre (el polling
+        // seguía trayendo datos buenos que nunca se enseñaban — auditoría).
+        .then((d) => alive && (setErr(null), setData((prev) => keepIfSame(prev, d))))
         .catch((e) => alive && setErr(e?.message ?? "Error"));
     load();
     timer.current = window.setInterval(load, REFRESH_MS); // polling → tiempo real
@@ -88,7 +91,9 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
     };
   }, [client.id]);
 
-  if (err) return <div className="card p-5 text-sm text-red-400">No se pudo cargar el seguimiento: {err}</div>;
+  // El error solo tapa la vista si NO hay datos que enseñar; con datos ya
+  // cargados se mantiene la tabla (el siguiente poll lo resuelve solo).
+  if (err && !data) return <div className="card p-5 text-sm text-red-400">No se pudo cargar el seguimiento: {err}</div>;
   if (!data) return <div className="card p-5 text-sm opacity-60">Cargando seguimiento…</div>;
   if (!data.has_period)
     return (

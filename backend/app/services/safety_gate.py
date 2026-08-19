@@ -116,6 +116,20 @@ class RedFlag:
     source: str  # de dónde salió (edad, imc, o el término de texto)
 
 
+def _term_in(term: str, text: str) -> bool:
+    """Busca el término con FRONTERA de palabra al inicio (y también al final si
+    es corto). Con subcadena pura, "agotado" disparaba la bandera GOTA y "sopa"
+    la de SOP — etiqueta clínica falsa que retenía el plan y quedaba escrita en
+    la ficha (auditoría crítica). Los términos largos siguen siendo prefijos a
+    propósito ("hipotiroid" cubre hipotiroidismo/hipotiroidea)."""
+    import re as _re
+
+    pat = r"\b" + _re.escape(term)
+    if len(term) <= 4:
+        pat += r"\b"          # término corto: palabra completa (gota, sop, tca)
+    return _re.search(pat, text) is not None
+
+
 def _text_of(profile: dict) -> str:
     parts = [profile.get(k) for k in
              ("medical_notes", "medication_notes", "injuries_notes",
@@ -146,7 +160,7 @@ def red_flags(profile: dict, *, unresolved_contradictions: list[str] | None = No
 
     text = _text_of(profile)
     for code, label, terms in _RED_TERMS:
-        hit = next((t for t in terms if t in text), None)
+        hit = next((t for t in terms if _term_in(t, text)), None)
         if hit:
             flags.append(RedFlag(code, label, hit))
 

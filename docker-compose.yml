@@ -26,6 +26,9 @@ services:
       STORAGE_PATH: /storage
     volumes:
       - ./storage:/storage
+      # El criterio del coach vive en la raíz del repo (fuera del build context
+      # ./backend): sin este mount la generación de planes NO lo inyecta.
+      - ./CRITERIOS_ASESORIA.md:/code/CRITERIOS_ASESORIA.md:ro
     depends_on:
       db:
         condition: service_healthy
