@@ -79,7 +79,7 @@ class AnamnesisExtraction(BaseModel):
     body_fat_pct: float | None = None
 
     # --- Objetivo (PDF: "Motivo y objetivos") ---
-    goal_type: str | None = Field(None, description="fat_loss|muscle_gain|recomp")
+    goal_type: str | None = Field(None, description="fat_loss|muscle_gain|recomp|maintenance")
     goal_weight_kg: float | None = None
 
     # --- Entrenamiento (PDF: "Experiencia con pesas" / "Entrenamiento actual y preferencias") ---
@@ -223,7 +223,8 @@ aparezca en CUALQUIER parte del documento. NO dejes en null un campo cuyo dato e
   · sex ← "Sexo biológico": Hombre→"male", Mujer→"female" (Otro→null).
   · height_cm ← "Altura"; start_weight_kg ← "Peso actual"; goal_weight_kg ← "Peso objetivo".
   · goal_type ← "Motivo y objetivos" (NO hay casilla: INFIÉRELO del texto): perder grasa/definir/\
-adelgazar→"fat_loss"; ganar músculo/volumen→"muscle_gain"; recomposición/mantener/tonificar→"recomp".
+adelgazar→"fat_loss"; ganar músculo/volumen→"muscle_gain"; recomposición/tonificar→"recomp"; \
+mantener el peso (sin ganar ni perder)→"maintenance".
   · level ← "Nivel auto-percibido en sala de pesas": Principiante→"beginner"; Intermedio→\
 "intermediate"; Avanzado→"advanced".
   · training_place ← "Dónde entrenas": Gimnasio/gym→"gym"; Casa→"home"; Exterior→"outdoor".

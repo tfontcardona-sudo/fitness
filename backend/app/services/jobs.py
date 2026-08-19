@@ -120,6 +120,11 @@ def run_daily_maintenance(db: Session, today: date | None = None) -> dict:
     for c in clients:
         if ensure_open_period(db, c.id) is not None:
             summary["periods_opened"] += 1
+    # Consolidar las aperturas ANTES del mantenimiento: sin este commit, el
+    # primer fallo del bucle de abajo hacía rollback y se llevaba por delante
+    # los períodos recién abiertos de TODOS los clientes de esta ejecución
+    # (auditoría crítica) — el mantenimiento ya comitea cliente a cliente.
+    db.commit()
 
     emailer = EmailService(db)
     brand = brand_from_config(db)

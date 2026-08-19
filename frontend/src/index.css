@@ -417,3 +417,62 @@ button, [role="button"], summary, a {
   color: #fff; background: var(--p-accent-2);
   box-shadow: 0 0 0 1px rgba(46, 94, 140, 0.4), 0 0 10px rgba(46, 94, 140, 0.55);
 }
+
+/* ============== PULIDO PREMIUM (mismo diseño, más detalle) ==============
+   Micro-detalles de calidad percibida. Nada cambia de identidad: misma
+   paleta, mismas formas — solo más cuidado en cómo entra, responde y se
+   alinea cada pieza. prefers-reduced-motion (arriba) los anula todos. */
+
+/* Cifras SIEMPRE alineadas (dinero, kilos, días, series): los números a ancho
+   fijo evitan el "baile" al cambiar un dígito y dan aspecto de app de banco. */
+.portal-root, .card, .coach-mobile, td, .tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Entrada en cascada: los bloques de cada pantalla del portal aparecen con un
+   pelín de retardo escalonado (6 primeros), como las apps nativas premium. */
+.animate-rise > * { animation: rise 0.34s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-rise > *:nth-child(2) { animation-delay: 0.05s; }
+.animate-rise > *:nth-child(3) { animation-delay: 0.09s; }
+.animate-rise > *:nth-child(4) { animation-delay: 0.13s; }
+.animate-rise > *:nth-child(5) { animation-delay: 0.16s; }
+.animate-rise > *:nth-child(n+6) { animation-delay: 0.19s; }
+
+/* Foco visible con la marca (teclado y accesibilidad): un anillo suave en vez
+   del outline azul del navegador, coherente en portal y panel. */
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--brand-accent, #e8833a) 70%, transparent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Selección de texto con el tono de marca (detalle pequeño, se nota). */
+::selection {
+  background: color-mix(in srgb, var(--brand-accent, #e8833a) 25%, transparent);
+}
+
+/* Tarjetas del PANEL: elevación sutil al pasar el ratón (solo escritorio). */
+.card { transition: box-shadow 0.2s ease, border-color 0.2s ease; }
+@media (hover: hover) {
+  .card:hover { box-shadow: 0 4px 16px rgba(38, 33, 26, 0.08); }
+}
+/* Botones del panel: el mismo feedback táctil inmediato que ya tiene el portal. */
+.btn { transition: transform 0.1s ease, opacity 0.15s ease, background 0.15s ease; }
+.btn:active { transform: scale(0.97); }
+
+/* Nav del portal: la pestaña activa "sube" 1px con transición — el cambio de
+   pestaña se siente físico, no un repintado seco. */
+.portal-nav .nav-ico { transition: box-shadow 0.25s ease, transform 0.25s ease; }
+.portal-nav .nav-active .nav-ico { transform: translateY(-1px); }
+
+/* Detalles del portal: los desplegables giran su flecha suavemente y las
+   tarjetas responden al toque con una compresión mínima (sensación táctil). */
+.portal-root summary { transition: opacity 0.15s ease; }
+.portal-root details svg { transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+.portal-root details[open] > summary svg.chev { transform: rotate(180deg); }
+
+/* Barras de progreso (medidor de días, adherencia): el ancho se anima al
+   cambiar — el avance se VE avanzar. */
+.portal-root .progress-fill, .card .progress-fill {
+  transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}

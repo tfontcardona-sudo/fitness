@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Eye, FileText, Pencil, Save, Sparkles } from "lucide-react";
 import { api, ApiError, getToken } from "../lib/api";
-import type { ClientOut, GoalType, Level } from "../types";
+import type { ClientOut } from "../types";
 import { ExpandableArea, Spinner, useToast } from "./ui";
 import { ACTIVITY_LABEL, ageFrom, DIET_LABEL, GOAL_LABEL, LEVEL_LABEL, PLACE_LABEL } from "../lib/format";
 
@@ -127,7 +127,7 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
 
       {editMode && (<>
       <Section title="Datos personales">
-        <Select label="Sexo" value={(current("sex") as string) ?? ""} onChange={(v) => set("sex", v as any)}
+        <Select label="Sexo" value={(current("sex") as string) ?? ""} onChange={(v) => set("sex", (v || null) as any)}
           options={[["", "—"], ["male", "Hombre"], ["female", "Mujer"]]} />
         {/* Vaciar la fecha emite "" que el backend rechaza con un 422 críptico:
             se mapea a null (= sin fecha). */}
@@ -143,15 +143,15 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
       </Section>
 
       <Section title="Objetivo y nivel">
-        <Select label="Objetivo" value={(current("goal_type") as string) ?? ""} onChange={(v) => set("goal_type", v as GoalType)}
+        <Select label="Objetivo" value={(current("goal_type") as string) ?? ""} onChange={(v) => set("goal_type", (v || null) as any)}
           options={[["", "—"], ["fat_loss", "Pérdida de grasa"], ["muscle_gain", "Ganancia muscular"], ["recomp", "Recomposición"], ["maintenance", "Mantenimiento"], ["injury_recovery", "Recuperación de lesión"]]} />
-        <Select label="Nivel" value={(current("level") as string) ?? ""} onChange={(v) => set("level", v as Level)}
+        <Select label="Nivel" value={(current("level") as string) ?? ""} onChange={(v) => set("level", (v || null) as any)}
           options={[["", "—"], ["beginner", "Principiante"], ["intermediate", "Intermedio"], ["advanced", "Avanzado"]]} />
       </Section>
 
       <Section title="Entrenamiento">
         <Num label="Días por semana" value={current("training_days") as number} onChange={(v) => set("training_days", v as any)} />
-        <Select label="Actividad diaria (fuera del entreno)" value={(current("daily_activity_level") as string) ?? ""} onChange={(v) => set("daily_activity_level", v as any)}
+        <Select label="Actividad diaria (fuera del entreno)" value={(current("daily_activity_level") as string) ?? ""} onChange={(v) => set("daily_activity_level", (v || null) as any)}
           options={[
             ["", "—"],
             ["sedentary", "Sedentaria — oficina, sentado casi todo el día"],
@@ -160,7 +160,7 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
             ["very_active", "Muy activa — trabajo físico intenso"],
           ]} />
         <Num label="Duración sesión (min)" value={current("session_max_min") as number} onChange={(v) => set("session_max_min", v as any)} />
-        <Select label="Dónde entrena" value={(current("training_place") as string) ?? ""} onChange={(v) => set("training_place", v as any)}
+        <Select label="Dónde entrena" value={(current("training_place") as string) ?? ""} onChange={(v) => set("training_place", (v || null) as any)}
           options={[["", "—"], ["gym", "Gimnasio"], ["home", "Casa"], ["outdoor", "Exterior"]]} />
         <CSV label="Material (solo casa/exterior)" value={current("equipment") as string[]} onChange={(v) => set("equipment", v as any)} />
       </Section>
@@ -170,7 +170,7 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
       </Section>
 
       <Section title="Dieta">
-        <Select label="Modo de dieta" value={(current("diet_mode") as string) ?? ""} onChange={(v) => set("diet_mode", v as any)}
+        <Select label="Modo de dieta" value={(current("diet_mode") as string) ?? ""} onChange={(v) => set("diet_mode", (v || null) as any)}
           options={[["", "—"], ["flexible_7", "Flexible (equivalencias)"], ["strict", "Menú cerrado"]]} />
         {/* Patrón ético/religioso: se respeta al 100% en generación, banco de
             emergencia, Revisor 0 y alertas (violación = veto, no aviso). */}

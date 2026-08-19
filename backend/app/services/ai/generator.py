@@ -703,11 +703,14 @@ def generate_monthly_plan(
         tk = float(ctx.target_kcal)
         ai_k = float(nutd.get("target_kcal") or 0)
         m = nutd.get("macros") or {}
+        # Mismas tolerancias que el Revisor 0 (DET_*): si aquí se toleraba más
+        # (G>8, HC>15) que en el validador (G>5, HC>10), un eco intermedio
+        # pasaba sin fijar y el plan acababa vetado sin necesidad.
         deviated = (
-            abs(ai_k - tk) > max(30.0, tk * 0.02)
-            or abs(float(m.get("protein_g") or 0) - float(mp.get("protein_g") or 0)) > 5
-            or abs(float(m.get("fat_g") or 0) - float(mp.get("fat_g") or 0)) > 8
-            or abs(float(m.get("carbs_g") or 0) - float(mp.get("carbs_g") or 0)) > 15
+            abs(ai_k - tk) > max(30.0, tk * gr.DET_KCAL_TOL_PCT)
+            or abs(float(m.get("protein_g") or 0) - float(mp.get("protein_g") or 0)) > gr.DET_PROTEIN_TOL_G
+            or abs(float(m.get("fat_g") or 0) - float(mp.get("fat_g") or 0)) > gr.DET_FAT_TOL_G
+            or abs(float(m.get("carbs_g") or 0) - float(mp.get("carbs_g") or 0)) > gr.DET_CARB_TOL_G
         )
         if deviated:
             rescale_nutrition(nutd, _copy.deepcopy(nutd), tk,

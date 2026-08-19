@@ -37,8 +37,10 @@ const EMPTY: DiaryForm = {
  * sueño, adherencia y cómo se siente); los ejercicios del día ya van en HOY.
  * Cada cambio se guarda con debounce para no perder nada (G.4: autosave).
  */
-export function PortalDiary({ api, brand, periodStatus = null, businessToday = null }: {
+export function PortalDiary({ api, brand, periodStatus = null, businessToday = null,
+  hasPeriod = true, hasNutrition = true }: {
   api: Api; brand: PortalBrand; periodStatus?: string | null; businessToday?: string | null;
+  hasPeriod?: boolean; hasNutrition?: boolean;
 }) {
   const toast = usePortalToast();
   // Fecha CONGELADA al montar: recalcularla en cada render hacía que, pasada
@@ -48,8 +50,11 @@ export function PortalDiary({ api, brand, periodStatus = null, businessToday = n
   // viaje con el móvil en otra zona ya no registra en el día equivocado.
   const [today] = useState(() => businessToday || localToday());
   // Revisión enviada (período cerrado): el backend rechazaría el guardado —
-  // se avisa y no se programan guardados.
-  const readOnly = periodStatus != null && periodStatus !== "open";
+  // se avisa y no se programan guardados. SIN período (onboarding, plan aún
+  // sin activar) el backend también rechaza con 409: el diario se muestra
+  // igual pero deshabilitado, con su explicación — antes era editable y lo
+  // tecleado se perdía en silencio (auditoría crítica).
+  const readOnly = (periodStatus != null && periodStatus !== "open") || !hasPeriod;
   const [form, setForm] = useState<DiaryForm | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [loadTry, setLoadTry] = useState(0);
@@ -148,11 +153,23 @@ export function PortalDiary({ api, brand, periodStatus = null, businessToday = n
     <div className="space-y-5">
       {readOnly && (
         <div className="portal-card border-l-4 p-3.5 text-sm" style={{ borderLeftColor: brand.color_primary }}>
-          <p className="font-semibold">Revisión enviada — diario en pausa</p>
-          <p className="mt-1 text-xs opacity-70">
-            Tu coach está preparando tu feedback. Con el nuevo período volverás a
-            registrar tu día a día aquí.
-          </p>
+          {hasPeriod ? (
+            <>
+              <p className="font-semibold">Revisión enviada — diario en pausa</p>
+              <p className="mt-1 text-xs opacity-70">
+                Tu coach está preparando tu feedback. Con el nuevo período volverás a
+                registrar tu día a día aquí.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="font-semibold">Tu seguimiento está a punto de empezar</p>
+              <p className="mt-1 text-xs opacity-70">
+                En cuanto tu coach active tu planificación podrás registrar aquí tu
+                día a día. Te avisaremos con una notificación.
+              </p>
+            </>
+          )}
         </div>
       )}
       <div>
@@ -188,6 +205,7 @@ export function PortalDiary({ api, brand, periodStatus = null, businessToday = n
         />
       </Field>
 
+      {hasNutrition && (
       <Field label="¿Seguiste la dieta?">
         <div className="flex gap-2">
           {ADHERENCE.map((a) => (
@@ -207,6 +225,7 @@ export function PortalDiary({ api, brand, periodStatus = null, businessToday = n
           ))}
         </div>
       </Field>
+      )}
 
       <ScaleField label="Energía" value={form.energy_1_5} onChange={(v) => update({ energy_1_5: v })} accent={brand.color_primary} />
       <ScaleField label="Ánimo" value={form.mood_1_5} onChange={(v) => update({ mood_1_5: v })} accent={brand.color_primary} />

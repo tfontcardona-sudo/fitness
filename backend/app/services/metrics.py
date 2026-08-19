@@ -393,14 +393,25 @@ def macro_targets(
         # por suelo de HC se capa al TDEE (el suelo de HC es el flexible; los de
         # proteína y grasa no se tocan) y se deja constancia.
         carbs = carb_floor
-        if (goal_type == "fat_loss" and tdee and
-                protein * 4 + carbs * 4 + fat * 9 > tdee):
-            capped = _rhu(max(0.0, (tdee - protein * 4 - fat * 9)) / 4)
+        # Techo que el Revisor 0 acepta para este objetivo: sin superávit en
+        # fat_loss/recomp/maintenance/injury_recovery (tope = TDEE) y superávit
+        # máximo del validador en muscle_gain. Antes el tope solo existía en
+        # fat_loss: un cliente pesado en RECOMP quedaba con suelos > TDEE+15%
+        # y la generación se vetaba SIEMPRE (auditoría).
+        tope = None
+        if tdee:
+            if goal_type == "muscle_gain":
+                from app.services.guardrails import SURPLUS_MAX_PCT as _surplus
+                tope = tdee * (1 + _surplus)
+            else:
+                tope = tdee
+        if tope is not None and protein * 4 + carbs * 4 + fat * 9 > tope:
+            capped = _rhu(max(0.0, (tope - protein * 4 - fat * 9)) / 4)
             if capped < carbs:
                 carbs = capped
                 notes.append(
-                    "⚠ los suelos por peso total superaban el TDEE: los HC se "
-                    "capan al mantenimiento. Con este peso corporal valora "
+                    "⚠ los suelos por peso total superaban el techo calórico del "
+                    "objetivo: los HC se capan a él. Con este peso corporal valora "
                     "calcular sobre masa magra o replantear el ritmo."
                 )
         else:

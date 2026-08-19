@@ -36,7 +36,10 @@ def _parse_change(text: str) -> tuple[str | None, float | None]:
     '200 g'). El objetivo 'a/hasta N' tiene prioridad sobre el verbo (así
     'reducir a 150' fija 150, no resta 150). Sin número → (None, None)."""
     t = _norm(text)
-    m = re.search(r"([+-]?\d+(?:[.,]\d+)?)", text or "")
+    # Separador de MILES fuera antes de leer el número: "2.100 kcal" es 2100,
+    # no 2.1 (el punto solo es de miles si le siguen exactamente 3 dígitos).
+    text = re.sub(r"(?<=\d)\.(?=\d{3}\b)", "", text or "")
+    m = re.search(r"([+-]?\d+(?:[.,]\d+)?)", text)
     if not m:
         return (None, None)
     val = float(m.group(1).replace(",", "."))
@@ -158,7 +161,15 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
             # Cada CLÁUSULA se interpreta por separado: así "subir proteína a 180
             # y bajar grasa a 55" aplica 180 a proteína y 55 a grasa (antes el
             # primer número se aplicaba a TODOS los macros nombrados → corrupción).
-            clauses = [c for c in re.split(r"\s+y\s+|[,;]|\.", change) if c.strip()] or [change]
+            # Los números se NORMALIZAN antes de trocear: "2.100 kcal" lleva un
+            # punto de MILES y ",5" una coma decimal — sin esto, el split por
+            # [.,] partía "Reducir calorías a 2.100" en "…a 2" + "100 kcal" y
+            # fijaba target_kcal=2 (auditoría crítica). El punto solo trocea
+            # frases si va seguido de espacio o fin de texto.
+            change_norm_num = re.sub(r"(?<=\d)\.(?=\d{3}\b)", "", change)
+            change_norm_num = re.sub(r"(?<=\d),(?=\d)", ".", change_norm_num)
+            clauses = [c for c in re.split(r"\s+y\s+|[,;]|\.(?=\s|$)", change_norm_num)
+                       if c.strip()] or [change_norm_num]
             seen: set[str] = set()
             for clause in clauses:
                 c_norm = _norm(clause)

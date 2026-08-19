@@ -216,7 +216,12 @@ def ensure_canonical_prices(stripe, log=None) -> list[str]:
         # `charge.refunded` entró con el LIBRO DE CAJA (tabla payments): sin él
         # una devolución no restaría de los ingresos y el feed de pagos del
         # panel enseñaría un saldo falso.
-        necesarios = {"checkout.session.completed", "invoice.paid",
+        # `checkout.session.async_payment_succeeded`: los métodos de pago
+        # diferidos (SEPA, transferencia) llegan con `completed` en estado
+        # "unpaid" (se ignora) y el OK real viene después en este evento —
+        # sin escucharlo, ese cobro no marcaba nunca al cliente como pagado.
+        necesarios = {"checkout.session.completed",
+                      "checkout.session.async_payment_succeeded", "invoice.paid",
                       "invoice.payment_failed", "customer.subscription.deleted",
                       "charge.refunded"}
         for ep in stripe.WebhookEndpoint.list(limit=100)["data"]:
@@ -229,11 +234,13 @@ def ensure_canonical_prices(stripe, log=None) -> list[str]:
                 stripe.WebhookEndpoint.modify(
                     ep["id"], enabled_events=sorted(actuales | necesarios))
                 note("  ~ webhook: añadidos invoice.paid / invoice.payment_failed / "
-                     "customer.subscription.deleted / charge.refunded")
+                     "customer.subscription.deleted / charge.refunded / "
+                     "checkout.session.async_payment_succeeded")
     except Exception as exc:  # noqa: BLE001 — clave restringida, sin red…
         note(f"  ! webhook sin comprobar ({exc}): añade a mano invoice.paid, "
-             "invoice.payment_failed, customer.subscription.deleted y "
-             "charge.refunded en el dashboard")
+             "invoice.payment_failed, customer.subscription.deleted, "
+             "charge.refunded y checkout.session.async_payment_succeeded "
+             "en el dashboard")
     return out
 
 
@@ -512,7 +519,7 @@ def _notify_coach_payment(db: Session, client: Client, *, new_client: bool,
         base = settings.public_base_url.rstrip("/")
         importe = f"+{_euros(amount_cents)} · " if amount_cents else ""
         push_svc.send_to_coach(db, {
-            "title": f"{importe}{'Nuevo cliente pagado 🎉' if new_client else 'Pago recibido'}",
+            "title": f"💰 {importe}{'Nuevo cliente pagado 🎉' if new_client else 'Pago recibido'}",
             "body": (f"{first} se ha registrado y pagado el plan {client.package_tier}."
                      if new_client else
                      f"{first} ha completado el pago de su plan {client.package_tier}."),
@@ -538,7 +545,7 @@ def _notify_orphan_payment(db: Session, session: dict) -> None:
         who = details.get("email") or details.get("name") or "desconocido"
         amount = (session.get("amount_total") or 0) / 100.0
         push_svc.send_to_coach(db, {
-            "title": "Pago sin cliente asociado ⚠️",
+            "title": "💰⚠️ Pago sin cliente asociado",
             "body": (f"Stripe cobró {amount:.2f} € a {who} pero no hay ficha a la "
                      "que asociarlo. Revísalo en el panel de Stripe."),
             "count": 1,
@@ -551,7 +558,7 @@ def _notify_orphan_payment(db: Session, session: dict) -> None:
 
 def _mark_paid(db: Session, client: Client, period: str | None = None, *,
                movimiento_nuevo: bool = False, amount_cents: int | None = None,
-               pagado_en: datetime | None = None) -> None:
+               pagado_en: datetime | None = None, tier: str | None = None) -> None:
     """Marca el cobro en la ficha del cliente.
 
     `movimiento_nuevo` lo decide el LIBRO DE CAJA (services/payments): es True
@@ -563,6 +570,13 @@ def _mark_paid(db: Session, client: Client, period: str | None = None, *,
     # La duración que el cliente pagó de verdad manda sobre la de la ficha.
     if (period in _PERIODS or period == OFFER_PERIOD) and client.billing_period != period:
         client.billing_period = period
+    # Y el PLAN pagado también: un cliente existente que compra OTRA tarifa por
+    # el enlace del kit de ventas quedaba con la tarifa antigua en la ficha (y
+    # el siguiente cobro/documento salía del plan equivocado — auditoría).
+    if tier and tier in pkgs.TIERS and client.package_tier != tier:
+        log_event(db, "client", client.id, "tier_changed_by_payment",
+                  {"antes": client.package_tier, "ahora": tier})
+        client.package_tier = tier
     transicion = client.payment_status != "paid"
     client.payment_status = "paid"
     # Fecha del último cobro: la renovación reinicia el contador de la alerta.
@@ -711,7 +725,7 @@ def _notify_coach_payment_failed(db: Session, client: Client) -> None:
         first = ((client.full_name or "").split() or ["Un cliente"])[0]
         base = settings.public_base_url.rstrip("/")
         push_svc.send_to_coach(db, {
-            "title": "Cobro fallido ⚠️",
+            "title": "💰⚠️ Cobro fallido",
             "body": (f"La renovación de {first} no se pudo cobrar. Stripe "
                      "reintentará; si no entra, escríbele o revisa Stripe."),
             "count": 1,
@@ -883,7 +897,7 @@ def _handle_charge_refunded(db: Session, event: dict) -> dict:
             quien = (client.full_name if client else None) or facturado.get("name") or email or "un cobro"
             base = settings.public_base_url.rstrip("/")
             push_svc.send_to_coach(db, {
-                "title": f"Devolución de {_euros(devuelto)}",
+                "title": f"💸 Devolución de {_euros(devuelto)}",
                 "body": f"Stripe ha reembolsado {_euros(devuelto)} a {quien}. Revisa si sigue de alta.",
                 "count": 1,
                 "url": f"{base}/pagos",
@@ -997,13 +1011,27 @@ def _handle_subscription_deleted(db: Session, event: dict) -> dict:
         client.stripe_subscription_id = None
     log_event(db, "client", client.id, "subscription_cancelled",
               {"subscription": sub_id})
+    # La baja también SE VE en el feed de Pagos (importe 0, fuera de los
+    # totales): un push se esfuma; el movimiento queda y explica por qué esa
+    # suscripción dejó de generar cobros mensuales.
+    from app.services import payments as pay_svc
+
+    pay_svc.record_payment(
+        db, object_id=sub_id or f"sub_baja_{client.id}", kind="subscription",
+        status="canceled", amount_cents=0,
+        livemode=bool(sub.get("livemode", True)), client=client,
+        description="Baja de la suscripción (oferta)",
+        paid_at=pay_svc.ts_to_dt(sub.get("canceled_at") or sub.get("ended_at")
+                                 or event.get("created")),
+        event_id=event.get("id"),
+    )
     try:
         from app.services import push as push_svc
 
         first = ((client.full_name or "").split() or ["Un cliente"])[0]
         base = settings.public_base_url.rstrip("/")
         push_svc.send_to_coach(db, {
-            "title": "Suscripción cancelada",
+            "title": "💰 Suscripción cancelada",
             "body": (f"{first} ha dejado la suscripción de la oferta: no habrá "
                      "más cobros mensuales. Revisa su ficha."),
             "count": 1,
@@ -1026,7 +1054,7 @@ def _notify_coach_offer_reused(db: Session, client: Client) -> None:
         first = ((client.full_name or "").split() or ["Un cliente"])[0]
         base = settings.public_base_url.rstrip("/")
         push_svc.send_to_coach(db, {
-            "title": "Cliente EXISTENTE con la oferta ⚠️",
+            "title": "💰⚠️ Cliente EXISTENTE con la oferta",
             "body": (f"{first} ya estaba dado de alta y ha contratado la oferta "
                      "de 1 €. Revisa que te cuadre (puedes cancelar la "
                      "suscripción en Stripe si no)."),
@@ -1058,7 +1086,8 @@ def handle_webhook(db: Session, payload: bytes, sig_header: str | None) -> dict:
         return _handle_subscription_deleted(db, event)
     if event["type"] == "charge.refunded":
         return _handle_charge_refunded(db, event)
-    if event["type"] != "checkout.session.completed":
+    if event["type"] not in ("checkout.session.completed",
+                             "checkout.session.async_payment_succeeded"):
         return {"ignored": event["type"]}
 
     session = event["data"]["object"]
@@ -1068,9 +1097,22 @@ def handle_webhook(db: Session, payload: bytes, sig_header: str | None) -> dict:
 
     evt_id = event.get("id")
     meta = session.get("metadata") or {}
+    client_id = meta.get("client_id") or session.get("client_reference_id")
+    # SIMETRÍA con facturas (`invoice_ajena`) y cargos (`cargo_ajeno`): una
+    # Checkout Session de OTRO producto de la misma cuenta (un Payment Link de
+    # un ebook, un taller) no lleva NUESTRA metadata — las sesiones que crea
+    # create_checkout_url siempre llevan `tier` (las legadas en vuelo pueden no
+    # llevar billing_period) o `client_id`. Sin este filtro, ese pago ajeno
+    # creaba una ficha «Full pagado» al comprador y le enviaba portal +
+    # anamnesis de una asesoría que no contrató (auditoría crítica). Se anota
+    # en el libro como huérfano (el dinero entró y se VE), pero no se fabrica
+    # ningún cliente.
+    if not client_id and not meta.get("tier"):
+        _anotar_checkout(db, session, None, event_id=evt_id)
+        db.commit()
+        return {"ignored": "checkout_ajeno"}
     tier = pkgs.normalize(meta.get("tier"))
     period = meta.get("billing_period")
-    client_id = meta.get("client_id") or session.get("client_reference_id")
     importe = session.get("amount_total")
 
     # Alta manual: marcar ese cliente como pagado.
@@ -1086,7 +1128,7 @@ def handle_webhook(db: Session, payload: bytes, sig_header: str | None) -> dict:
             return {"error": "client_not_found", "client_id": client_id}
         nuevo = _anotar_checkout(db, session, client, event_id=evt_id)
         _mark_paid(db, client, period, movimiento_nuevo=nuevo, amount_cents=importe,
-                   pagado_en=_pay_svc_ts(session.get("created")))
+                   pagado_en=_pay_svc_ts(session.get("created")), tier=tier)
         db.commit()
         _tag_subscription(db, session, client)
         return {"marked_paid": client.id}
@@ -1109,7 +1151,7 @@ def handle_webhook(db: Session, payload: bytes, sig_header: str | None) -> dict:
         era_oferta = existing.billing_period == OFFER_PERIOD
         nuevo = _anotar_checkout(db, session, existing, event_id=evt_id)
         _mark_paid(db, existing, period, movimiento_nuevo=nuevo, amount_cents=importe,
-                   pagado_en=_pay_svc_ts(session.get("created")))
+                   pagado_en=_pay_svc_ts(session.get("created")), tier=tier)
         try:  # la factura de la oferta pudo llegar antes y quedar sin ficha
             from app.services.payments import adopt_orphans
 

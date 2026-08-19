@@ -163,7 +163,7 @@ def check_nutrition(
 # aversión => WARNING (preferencia).
 _ALLERGEN_SYNONYMS: dict[str, tuple[str, ...]] = {
     "lactosa": ("lactosa", "leche", "yogur", "queso", "nata", "mantequilla", "lacteo",
-                "cuajada", "kefir", "requeson", "cremoso"),
+                "cuajada", "kefir", "requeson"),  # "cremoso" fuera: es TEXTURA, no lácteo — vetaba un hummus cremoso sin lácteos
     "leche": ("leche", "lactosa", "yogur", "queso", "nata", "mantequilla", "lacteo", "requeson"),
     # ⚠️ Los términos con frontera de palabra van en RAW STRING (r"\b…"): en un
     # string normal "\b" es el carácter backspace y el término queda inerte —
@@ -435,7 +435,9 @@ def check_training(
             r.warnings.append(
                 "el plan no declara progresión semanal (weekly_progression): "
                 "añádela o explícala en las notas")
-        dl = training.get("deload")
+        # El schema real llama al campo deload_instructions; "deload" solo se
+        # acepta por compatibilidad con planes legados.
+        dl = training.get("deload_instructions") or training.get("deload")
         if not dl:
             r.warnings.append(
                 "el plan no declara semana de descarga (deload): el criterio "
@@ -515,7 +517,14 @@ def _all_option_texts(opt: dict) -> list[str]:
 
 
 def _iter_options(nutrition: dict):
-    """Itera (slot, option) sobre el banco, sea flexible_7 o strict."""
+    """Itera (slot, option) sobre el banco, sea flexible_7 o strict.
+
+    Incluye las EQUIVALENCIAS del modo flexible como pseudo-opciones: sus
+    alimentos ("Cambia 60 g de arroz por…") llegan igual al plato del cliente
+    y antes escapaban a TODA la validación determinista — un alérgeno o una
+    violación del patrón dietético dentro de una equivalencia pasaba sin veto
+    ni flag (auditoría crítica). Sin gramos ni macros, los checks de porciones
+    y Atwater las ignoran solos."""
     bank = nutrition.get("meal_bank") or {}
     if bank.get("mode") == "strict":
         for d in bank.get("days") or []:
@@ -525,6 +534,15 @@ def _iter_options(nutrition: dict):
         for slot in bank.get("slots") or []:
             for o in slot.get("options") or []:
                 yield slot.get("slot"), o
+            eq = slot.get("equivalences") or {}
+            for g in eq.get("groups") or []:
+                items = [it for it in (g.get("items") or []) if it.get("food")]
+                if items:
+                    yield slot.get("slot"), {
+                        "key": "equivalencias",
+                        "title": f"equivalencias · {g.get('name') or 'grupo'}",
+                        "ingredients": [{"food": it["food"]} for it in items],
+                    }
 
 
 def _check_portions(r: GuardrailReport, slot, opt: dict) -> None:
@@ -540,8 +558,11 @@ def _check_portions(r: GuardrailReport, slot, opt: dict) -> None:
                 f"porción irreal: slot {slot} '{key}' — {grams:.0f} ml de "
                 f"'{ing.get('food')}' (máx. razonable {PORTION_LIQUID_ABSURD_ML} ml)"
             )
+        # La convención del sistema es que TODOS los gramos van EN CRUDO (lo
+        # dictan los prompts), así que la IA escribe "Arroz", no "arroz crudo":
+        # exigir la palabra dejaba el tope sin efecto (690 g de "Arroz" pasaban).
         if (not is_liquid and any(h in food for h in _DRY_CEREAL_HINTS)
-                and "crudo" in food and grams > PORTION_DRY_CEREAL_ABSURD_G):
+                and grams > PORTION_DRY_CEREAL_ABSURD_G):
             r.violations.append(
                 f"porción irreal: slot {slot} '{key}' — {grams:.0f} g en crudo de "
                 f"'{ing.get('food')}' (máx. razonable {PORTION_DRY_CEREAL_ABSURD_G} g)"

@@ -85,7 +85,14 @@ export default function PagosPage() {
   // aunque ya se hayan sellado como leídos (si no, el punto azul desaparecería
   // ante los ojos del coach y no sabría qué era nuevo).
   const [nuevos, setNuevos] = useState<Set<number>>(new Set());
+  const [meses, setMeses] = useState<{ month: string; total_cents: number; count: number }[] | null>(null);
   const selladoRef = useRef(false);
+
+  // Gráfica de ingresos: 6 meses netos (cobrado − devuelto, sin pagos de
+  // prueba). Se carga una vez y se refresca junto al feed.
+  useEffect(() => {
+    api.paymentsMonthly(6).then((r) => setMeses(r.months)).catch(() => {});
+  }, []);
 
   const cargar = useCallback(
     (opts: { silencioso?: boolean } = {}) => {
@@ -287,6 +294,36 @@ export default function PagosPage() {
             </span>
           )}
         </p>
+        {/* Gráfica de 6 meses: la tendencia del negocio de un vistazo. Barras
+            puras (sin librerías): mes actual en naranja de marca. */}
+        {meses && meses.some((m) => m.total_cents > 0) && (
+          <div className="mt-4 flex items-end gap-2" style={{ height: 72 }}>
+            {(() => {
+              const max = Math.max(...meses.map((m) => m.total_cents), 1);
+              return meses.map((m, i) => {
+                const actual = i === meses.length - 1;
+                const alto = Math.max(4, Math.round((Math.max(0, m.total_cents) / max) * 56));
+                const etiqueta = new Date(`${m.month}-01T12:00:00`)
+                  .toLocaleDateString("es-ES", { month: "short" }).replace(".", "");
+                return (
+                  <div key={m.month} className="flex flex-1 flex-col items-center gap-1"
+                       title={`${etiqueta}: ${fmtMoney(m.total_cents, resumen?.currency ?? "eur")} · ${m.count} cobro${m.count === 1 ? "" : "s"}`}>
+                    <div className="w-full rounded-t-md transition-all duration-500"
+                         style={{
+                           height: alto,
+                           background: actual
+                             ? "var(--brand-accent)"
+                             : "color-mix(in srgb, var(--brand-accent) 25%, transparent)",
+                         }} />
+                    <span className="text-[10px]" style={{ color: actual ? "var(--brand-accent)" : "var(--text-faint)" }}>
+                      {etiqueta}
+                    </span>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        )}
         {/* Avisos que el coach debe perseguir, no un adorno. */}
         <div className="mt-3 flex flex-wrap gap-2">
           {(resumen?.failed_month ?? 0) > 0 && (
@@ -398,7 +435,9 @@ function Movimiento({ pago, nuevo, onClick }: {
 }) {
   const cobrado = pago.status === "paid";
   const devuelto = pago.status === "refunded";
-  const tono = cobrado ? "#2E7D46" : devuelto ? "#9A6B15" : "#C2453A";
+  // Baja de suscripción: hecho informativo sin dinero — gris neutro, sin signo.
+  const baja = pago.status === "canceled";
+  const tono = cobrado ? "#2E7D46" : devuelto ? "#9A6B15" : baja ? "#8B8172" : "#C2453A";
   const signo = cobrado ? "+" : "−";
   const Icono = cobrado ? ArrowUpRight : devuelto ? ArrowDownLeft : AlertTriangle;
   const sinFicha = pago.client_id === null;
@@ -441,14 +480,14 @@ function Movimiento({ pago, nuevo, onClick }: {
         <span className="mt-0.5 block truncate text-xs text-zinc-500">
           {hora(pago.paid_at)}
           {pago.description ? ` · ${pago.description}` : ""}
-          {!cobrado && !devuelto ? " · no se pudo cobrar" : ""}
+          {!cobrado && !devuelto && !baja ? " · no se pudo cobrar" : ""}
           {sinFicha ? " · sin ficha asociada" : ""}
         </span>
       </span>
 
       <span className="shrink-0 text-right">
         <span className="block text-sm font-semibold" style={{ color: tono }}>
-          {signo}{fmtMoney(pago.amount_cents, pago.currency)}
+          {baja ? "baja" : `${signo}${fmtMoney(pago.amount_cents, pago.currency)}`}
         </span>
       </span>
     </button>

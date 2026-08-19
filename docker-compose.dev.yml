@@ -13,6 +13,7 @@ services:
     volumes:
       - ./backend:/code
       - ./storage:/storage
+      - ./CRITERIOS_ASESORIA.md:/code/CRITERIOS_ASESORIA.md:ro
     ports:
       - "8000:8000"
     environment:

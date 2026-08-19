@@ -451,8 +451,12 @@ export default function ClientProfilePage() {
             ))}
           </div>
 
-          {/* key=tab: el panel se re-monta y hace su micro-animación al cambiar */}
-          <div key={tab} className="tab-panel">
+          {/* key=cliente+tab: el panel se re-monta al cambiar de pestaña (su
+              micro-animación) Y al cambiar de CLIENTE — sin el id en la key,
+              el borrador a medias de la anamnesis del cliente A sobrevivía al
+              salto al perfil de B y "Guardar" volcaba los datos de A sobre la
+              ficha de B (auditoría crítica: corrupción de datos entre fichas). */}
+          <div key={`${client.id}-${tab}`} className="tab-panel">
             {tab === "resumen" && <ClientSummaryTab client={client} />}
             {tab === "anamnesis" && <ClientAnamnesisTab client={client} onSaved={reload} onDirtyChange={setAnamnesisDirty} />}
             {tab === "planificacion" && <ClientPlanPanel client={client} onClientChanged={reload} onEditingChange={setPlanEditing} />}

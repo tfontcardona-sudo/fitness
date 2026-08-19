@@ -48,11 +48,12 @@ const FEELINGS_NUTRITION: { key: string; label: string }[] = [
  * cambios, qué cuesta, objetivo. Al enviar dispara el feedback de adaptación IA.
  * Las fotos de progreso se envían por WhatsApp (no se suben aquí).
  */
-export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, closeDate, periodStatus, hasTraining = true, directContact = true }: {
+export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, closeDate, periodStatus, hasTraining = true, hasNutrition = true, directContact = true }: {
   api: Api; token: string; brand: PortalBrand; onClosed: () => void; canClose: boolean;
   daysLeft: number | null; closeDate: string | null; periodStatus?: string | null;
   // Paquete solo-nutrición (Start): sin adherencia ni sensaciones de entreno.
   hasTraining?: boolean;
+  hasNutrition?: boolean;
   // Contacto directo (Pro): las fotos van por WhatsApp; si no, por email.
   directContact?: boolean;
 }) {
@@ -123,18 +124,23 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
     if (perErr) return perErr;
     const adh = (v: string, name: string) => {
       const n = num(v);
-      return v !== "" && !(Number.isFinite(n) && n >= 0 && n <= 10)
-        ? `Revisa ${name} (0-10)` : null;
+      // ENTERO 0-10: el backend lo exige (422 si llega "7,5") — mejor avisar
+      // aquí que perder el envío de la revisión (auditoría crítica).
+      return v !== "" && !(Number.isFinite(n) && Number.isInteger(n) && n >= 0 && n <= 10)
+        ? `Revisa ${name} (0-10, sin decimales)` : null;
     };
-    const adhErr = adh(adhDiet, "la adherencia a la dieta")
+    const adhErr = (hasNutrition ? adh(adhDiet, "la adherencia a la dieta") : null)
       ?? (hasTraining ? adh(adhTrain, "la adherencia al entreno") : null);
     if (adhErr) return adhErr;
     const fm = num(freeMeals);
-    if (freeMeals !== "" && !(Number.isFinite(fm) && fm >= 0 && fm <= 50))
-      return "Revisa las comidas libres (0-50)";
+    if (freeMeals !== "" && !(Number.isFinite(fm) && Number.isInteger(fm) && fm >= 0 && fm <= 50))
+      return "Revisa las comidas libres (0-50, sin decimales)";
     return null;
   })();
-  const canSubmit = num(weight) > 30 && allFeelings && adhDiet !== ""
+  // La dieta solo se exige si el plan la INCLUYE: al cliente de solo entreno
+  // (tier train) se le obligaba a puntuar una dieta que no existe (auditoría).
+  const canSubmit = num(weight) > 30 && allFeelings
+    && (!hasNutrition || adhDiet !== "")
     && (!hasTraining || adhTrain !== "") && !rangeError && !busy;
 
   async function submit() {
@@ -277,14 +283,16 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
           cliente no tiene rutina): en su lugar van dieta + comidas libres. */}
       <Section n={3} title="Adherencia al plan">
         <div className="grid grid-cols-2 gap-3">
-          <NumField label="Dieta (0-10)" value={adhDiet} onChange={setAdhDiet} min={0} max={10} required />
+          {hasNutrition && (
+            <NumField label="Dieta (0-10)" value={adhDiet} onChange={setAdhDiet} min={0} max={10} required />
+          )}
           {hasTraining ? (
             <NumField label="Entreno (0-10)" value={adhTrain} onChange={setAdhTrain} min={0} max={10} required />
           ) : (
             <NumField label="Comidas libres (nº aprox.)" value={freeMeals} onChange={setFreeMeals} min={0} max={50} />
           )}
         </div>
-        {hasTraining && (
+        {hasTraining && hasNutrition && (
           <div className="mt-3">
             <NumField label="Comidas libres o saltadas (nº aprox.)" value={freeMeals} onChange={setFreeMeals} min={0} max={50} />
           </div>

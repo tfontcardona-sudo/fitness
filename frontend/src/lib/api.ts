@@ -429,6 +429,10 @@ export const api = {
     return request<PaymentsListOut>("GET", `/payments${qs ? `?${qs}` : ""}`);
   },
   paymentsSummary: () => request<PaymentsSummaryOut>("GET", "/payments/summary"),
+  /** Ingresos netos por mes (gráfica de la pantalla de Pagos). */
+  paymentsMonthly: (months = 6) =>
+    request<{ months: { month: string; total_cents: number; count: number }[] }>(
+      "GET", `/payments/monthly?months=${months}`),
   /** Sella lo leído (sin ids = todos): apaga el punto azul y el badge. */
   markPaymentsSeen: (ids?: number[]) =>
     request<{ marked: number; unseen: number }>("POST", "/payments/seen", ids ? { ids } : {}),

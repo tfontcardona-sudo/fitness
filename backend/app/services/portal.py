@@ -13,7 +13,7 @@ opciones por slot; estricto: el plato del día).
 from __future__ import annotations
 
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
@@ -166,6 +166,45 @@ def current_training_week(db: Session, plan: Plan | None, today: date) -> dict |
         "started_on": start,
         "why": why,
     }
+
+
+def streak_days(db, client_id: int, today: date) -> int:
+    """Días CONSECUTIVOS con el diario rellenado, contando hacia atrás.
+
+    Palanca de adherencia (racha 🔥 del portal): el cliente no quiere romperla.
+    Reglas: una fila VACÍA no cuenta (existen — el autosave crea la fila antes
+    de teclear); el día de HOY aún sin rellenar no rompe la racha (se rompe al
+    terminar el día en blanco). Tope de mirada: 90 días (más que de sobra y la
+    consulta se mantiene barata)."""
+    from sqlalchemy import or_, select
+
+    from app.models import DailyLog, Period
+
+    desde = today - timedelta(days=90)
+    con_algo = [
+        DailyLog.weight_kg.is_not(None), DailyLog.sleep_hours.is_not(None),
+        DailyLog.steps.is_not(None), DailyLog.satiety_1_10.is_not(None),
+        DailyLog.water_liters.is_not(None), DailyLog.diet_adherence.is_not(None),
+        DailyLog.energy_1_5.is_not(None), DailyLog.mood_1_5.is_not(None),
+        DailyLog.fatigue_1_5.is_not(None), DailyLog.free_notes.is_not(None),
+        DailyLog.chosen_options_json.is_not(None),
+    ]
+    dias = set(db.scalars(
+        select(DailyLog.log_date)
+        .join(Period, DailyLog.period_id == Period.id)
+        .where(Period.client_id == client_id,
+               DailyLog.log_date >= desde, DailyLog.log_date <= today,
+               or_(*con_algo))
+    ))
+    if not dias:
+        return 0
+    racha = 0
+    # Hoy vacío no rompe: si hoy no está, se empieza a contar desde ayer.
+    cursor = today if today in dias else today - timedelta(days=1)
+    while cursor in dias:
+        racha += 1
+        cursor -= timedelta(days=1)
+    return racha
 
 
 def period_info(period: Period | None, today: date) -> dict | None:

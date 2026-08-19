@@ -437,6 +437,67 @@ cd backend && python -m pytest tests/ -q
 
 ## 9. Trabajo pendiente / próximos pasos
 
+00. ✅ **SIGUIENTE NIVEL DQR (agosto 2026)** — ronda integral sobre el libro de
+   caja: Stripe completo en web+móvil, PWA con actualización en caliente,
+   auditoría crítica (17 hallazgos confirmados por verificador adversarial +
+   triaje manual, TODOS corregidos) y pulido premium. Suite completa en verde,
+   `tsc` limpio, build OK.
+   - **Stripe visible al 100%**: emoji 💰/💸 en TODOS los push de pagos; la BAJA
+     de la suscripción de la oferta ahora es un movimiento del feed
+     (`kind=subscription`/`status=canceled`, gris, no suma); un checkout AJENO
+     de la misma cuenta (sin `tier` ni `client_id`) se anota como huérfano y NO
+     fabrica ficha; **gráfica de ingresos netos de 6 meses** en `/pagos`
+     (`GET /api/payments/monthly`, `monthly_series` con meses a cero).
+   - **Pagos blindados (triaje de auditoría)**: sin doble resta de devoluciones
+     (fila agregada `ch_…` del webhook vs filas `re_…` del sync —
+     `record_refunds_of_charge` detecta la agregada y la actualiza);
+     `seen` de una devolución por la FECHA DEL REEMBOLSO, no la del cargo
+     (`seen_by_age`); contadores de fallidos/huérfanos solo `livemode`;
+     `sync_from_stripe` devuelve `partial` si el freno `SYNC_MAX_OBJECTS` cortó
+     y **pone al día la ficha** (`_refresca_ficha`: payment_status/paid_at por
+     fecha) al repescar un cobro cuyo webhook se perdió; comprar OTRA tarifa por
+     el enlace del kit de ventas actualiza `package_tier` (evento de auditoría);
+     `checkout.session.async_payment_succeeded` (SEPA/transferencia) se trata
+     como `completed` y se suscribe en `ensure_canonical_prices`; rate limit en
+     `GET /api/pay/{token}` (cada apertura crea una Checkout Session real).
+   - **PWA en caliente** (`frontend/src/lib/appUpdate.ts` + `useAppUpdate` en
+     `PortalApp` y `AppShell`): compara el bundle hasheado de `/` (no-store)
+     cada 30 min y al volver a primer plano; recarga sola tras ≥5 min oculto o
+     muestra banner "✨ actualizado — toca para recargar". El cliente con la
+     app instalada recibe cambios SIN reinstalar. El sw.js no cachea assets.
+   - **Portal premium**: racha 🔥 de días al día (`portal.streak_days`, cuenta
+     solo días CON contenido, hoy vacío no la rompe), anillo de progreso SVG de
+     la quincena, refetch de `/state` al volver a primer plano (fecha de negocio
+     y videollamada frescas), remount por cambio de fecha de negocio, estado de
+     pausa sintético (`review_pending`→closed) en Entreno/Diario/Cierre, CSS
+     premium (tabular-nums, stagger de entrada, focus-visible de marca,
+     transiciones de botones/nav/chevrons).
+   - **Auditoría corregida (lo gordo)**: `CRITERIOS_ASESORIA.md` NO llegaba al
+     contenedor (build context `./backend`) → mount en ambos compose +
+     `parents[3]` en `prompts.criterios_reference` — sin esto el criterio del
+     coach NUNCA se inyectaba en producción; el contenido EDUCATIVO (3ª llamada
+     IA) no llegaba al PDF → sección "Aprende con tu plan"/técnica/FAQ en
+     `plan_doc` (`_education_section`); recordatorio del día 12 era código
+     muerto para `at_risk` (anidado en la rama `active`); el borrador de
+     anamnesis de un cliente se FILTRABA al perfil de otro (key del panel de
+     pestañas); tolerancias del generador alineadas con el Revisor 0
+     (`DET_*`); `check_training` leía `deload` (el schema dice
+     `deload_instructions`) → aviso falso siempre; extracción: "mantener" ya
+     mapea a `maintenance` (no `recomp`); suelos de macros capados al techo
+     calórico DEL OBJETIVO (un cliente pesado en recomp quedaba vetado para
+     siempre); textos de objetivo del PDF para maintenance/injury_recovery;
+     equivalencias del banco ahora pasan por el Revisor 0 (alérgenos/patrón);
+     lista roja con fronteras de palabra ("agotado" ya no dispara GOTA, "sopa"
+     no dispara SOP); "cremoso" fuera de los sinónimos de lactosa; separadores
+     de miles en `adapt_plan`; commit por iteración al abrir períodos
+     (`jobs.py`); alerta `no_logs` cuenta solo días con contenido real;
+     `plans[0]`→`vigente()` en el panel de planificación (4 sitios); PATCH del
+     plan captura la respuesta del backend; Diario/Cierre del portal: solo
+     enteros 0-10, campos de dieta ocultos sin nutrición contratada, banner
+     correcto antes del período.
+   - Tests nuevos: baja de suscripción en el feed, serie mensual, sync sin
+     devoluciones ajenas, checkout ajeno, racha del portal, día 12 at_risk.
+
 0. ✅ **PAGOS: libro de caja de Stripe en la web** (agosto 2026) — el coach ve
    **quién pagó, cuánto y cuándo**, con los cobros como notificaciones tipo app
    de banco. Antes un cobro solo dejaba `payment_status='paid'` + `paid_at`

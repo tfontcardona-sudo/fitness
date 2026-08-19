@@ -187,3 +187,25 @@ def test_template_coach_alerts():
     assert "at_risk" in h1 and "Carlos Ruiz" in s1
     s2, h2 = coach_change_request(BRAND, "Marta López", "No puedo hacer sentadilla", "https://x/clients/2")
     assert "ajuste" in s2.lower() and "sentadilla" in h2
+
+
+def test_recordatorio_dia_12_alcanza_a_los_at_risk():
+    """REGRESIÓN (auditoría crítica): el guard del recordatorio decía incluir a
+    los at_risk pero estaba ANIDADO dentro de la rama `active` — para at_risk
+    era código muerto y el cliente con peor adherencia nunca recibía el
+    empujón del día 12."""
+    from datetime import date, timedelta
+
+    from app.services.state_machine import ClientFacts, evaluate_transition
+
+    hoy = date.today()
+    facts = ClientFacts(
+        status="at_risk",
+        last_activity_date=hoy - timedelta(days=1),   # activo: no cae a inactive
+        period_start=hoy - timedelta(days=11),        # día 12 del período
+        period_end=hoy + timedelta(days=2),
+        period_closed=False,
+        days_logged_in_period=3,                      # <6 (poco) pero <30% no: 3/12=25% → sigue at_risk
+    )
+    d = evaluate_transition(facts, hoy)
+    assert d.send_reminder, f"el at_risk del día 12 debe recibir recordatorio: {d}"
