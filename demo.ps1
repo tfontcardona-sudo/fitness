@@ -1,6 +1,6 @@
 # Demo de Professional en tu PC (Windows), en un comando:
 #   clic derecho → "Ejecutar con PowerShell"   (o: powershell -ExecutionPolicy Bypass -File demo.ps1)
-# Levanta todo con Docker Desktop, siembra los 3 clientes de demo y da los enlaces.
+# Levanta todo con Docker Desktop, siembra los 4 clientes de demo y da los enlaces.
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
@@ -18,6 +18,26 @@ if (-not (Test-Path ".env")) {
   Write-Host "OK .env creado (panel: professional / Professional-Demo-2026)" -ForegroundColor Green
   Write-Host "   Para IA en vivo (leer anamnesis / generar plan): añade ANTHROPIC_API_KEY al .env"
 }
+
+# ACTUALIZARSE PRIMERO: el doble clic debe traer la ultima version del codigo.
+# Sin esto, el lanzador levantaba lo que hubiera en la carpeta aunque los
+# cambios llevaran semanas subidos (paso: la web "no cambiaba nunca").
+if ((Get-Command git -ErrorAction SilentlyContinue) -and (Test-Path ".git")) {
+  Write-Host "-> Buscando la ultima version del codigo..." -ForegroundColor Cyan
+  git pull --ff-only
+  if ($LASTEXITCODE -eq 0) {
+    Write-Host "OK Codigo al dia" -ForegroundColor Green
+  } else {
+    Write-Host "! No se pudo actualizar (¿sin conexion o cambios locales?): sigo con la version de la carpeta" -ForegroundColor Yellow
+  }
+}
+
+# Apaga ESTE proyecto si estaba (a medias o entero): re-ejecutar = reiniciar.
+# Sin esto, el chequeo de puertos de abajo se tropezaba con NUESTROS propios
+# contenedores y el script abortaba culpando a otro proyecto.
+# Va por cmd a propósito: con $ErrorActionPreference=Stop, un `2>$null` de
+# PowerShell 5.1 convierte el stderr normal de compose en error fatal.
+cmd /c "docker compose -f docker-compose.yml -f docker-compose.dev.yml down --remove-orphans >nul 2>&1"
 
 # Si DQR (u otro proyecto) esta arrancado en este PC, usa los mismos puertos:
 # hay que pararlo primero (los proyectos estan AISLADOS, pero no caben a la vez).
@@ -43,7 +63,7 @@ for ($i = 0; $i -lt 60; $i++) {
 }
 if (-not $ok) { Write-Host "X La API no arranca; mira: docker compose logs api" -ForegroundColor Red; Read-Host "Enter para salir"; exit 1 }
 
-Write-Host "-> Sembrando los 3 clientes de demo..." -ForegroundColor Cyan
+Write-Host "-> Sembrando los 4 clientes de demo..." -ForegroundColor Cyan
 docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T api python scripts/demo_seed.py
 
 Write-Host ""

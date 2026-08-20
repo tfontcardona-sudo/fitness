@@ -22,6 +22,23 @@ if [ ! -f .env ]; then
   echo "  · Para IA en vivo (leer anamnesis / generar plan): añade ANTHROPIC_API_KEY al .env"
 fi
 
+# ACTUALIZARSE PRIMERO: el doble clic debe traer la última versión del código.
+# Sin esto, el lanzador levantaba lo que hubiera en la carpeta aunque los
+# cambios llevaran semanas subidos (pasó: la web "no cambiaba nunca").
+if command -v git >/dev/null 2>&1 && [ -d .git ]; then
+  echo "→ Buscando la última versión del código…"
+  if git pull --ff-only; then
+    echo "✓ Código al día"
+  else
+    echo "! No se pudo actualizar (¿sin conexión o cambios locales?): sigo con la versión de la carpeta"
+  fi
+fi
+
+# Apaga ESTE proyecto si estaba (a medias o entero): re-ejecutar = reiniciar.
+# Sin esto, el chequeo de puertos de abajo se tropezaba con NUESTROS propios
+# contenedores y el script abortaba culpando a otro proyecto.
+docker compose -f docker-compose.yml -f docker-compose.dev.yml down --remove-orphans >/dev/null 2>&1 || true
+
 # Si DQR (u otro proyecto) está arrancado en este PC, usa los mismos puertos:
 # hay que pararlo primero (los proyectos están AISLADOS, pero no caben a la vez).
 for port in 5173 8000 5432 8025; do
