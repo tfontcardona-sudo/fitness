@@ -442,6 +442,51 @@ cd backend && python -m pytest tests/ -q
 
 ## 9. Trabajo pendiente / próximos pasos
 
+00000. ✅ **SEGURIDAD INTEGRAL (agosto 2026): anti-pirateo / anti-robo /
+   anti-copia.** Auditoría de seguridad por 6 dominios con verificación
+   adversarial (workflow, 26 hallazgos confirmados/plausibles) + endurecimiento.
+   Todo en verde (504 tests). **Ver `SECURITY.md`** para la foto completa y los
+   pasos manuales del dueño. Lo implementado en código:
+   - **Cabeceras de seguridad HTTP** (`frontend/Caddyfile`): HSTS,
+     `X-Frame-Options: DENY` + CSP con `frame-ancestors 'none'` (la web NO se
+     puede enmarcar/clonar por iframe), `nosniff`, `Referrer-Policy`,
+     `Permissions-Policy` y CSP que solo permite el propio origen + Google Fonts
+     + reproductores de vídeo (YouTube-nocookie/Vimeo). La CSP mantiene
+     `style-src 'unsafe-inline'` (Tailwind/estilos inline); `script-src 'self'`.
+   - **`SecurityHeadersMiddleware`** (ASGI puro en `main.py`, NO BaseHTTPMiddleware
+     — para no romper el streaming/Range de los vídeos): `nosniff` en toda la API
+     y `Cache-Control: no-store` + `Referrer-Policy: no-referrer` en `/api/p/`
+     (portal con datos de salud).
+   - **Guardián de secretos** (`config.insecure_secrets()` /
+     `blocking_secret_problems()` + gate en `lifespan`): en producción
+     (`settings.is_production` = hay dominio) REHÚSA arrancar SOLO si
+     `JWT_SECRET`/`PORTAL_TOKEN_SECRET` son los de ejemplo del repo (público). Un
+     secreto propio pero <32 solo AVISA (no brickea una prod en marcha). En dev
+     todo es aviso. Los tokens de test son cortos pero sin dominio → no bloquea.
+   - **`/api/docs` y `/api/openapi.json` ocultos en producción** (docs_url/openapi
+     condicionados a `is_production`; redoc off).
+   - **CORS**: en producción solo `settings.public_base_url` (localhost solo en
+     dev); métodos/cabeceras enumerados (antes `*`).
+   - **Manejador 500**: expone el detalle SOLO a coach autenticado
+     (`_peticion_de_coach` decodifica el JWT), no por prefijo de ruta — cierra la
+     fuga en rutas PRE-login como `/api/auth/login`.
+   - **Login sin timing oracle**: `security.dummy_verify` gasta un bcrypt señuelo
+     cuando el usuario no existe (mismo tiempo exista o no la cuenta).
+   - **`docker-compose.dev.yml`**: todos los puertos a `127.0.0.1` (nunca
+     expuestos si se levanta el overlay dev por error en un servidor).
+   - **`deploy.yml`**: `git pull` autenticado con `GH_PAT` (cabecera efímera, no
+     persiste el token) SI el secreto existe → el repo puede pasar a PRIVADO sin
+     romper el auto-deploy; si no existe, pull anónimo como antes.
+   - **`.env.example`**: contraseña de Postgres y secretos con instrucciones de
+     generación (no valores triviales).
+   - Historial de git escaneado: **0 secretos versionados** (seguro para privado).
+   - Tests: `tests/test_seguridad.py` (guardián de secretos, gate de arranque,
+     CORS, `_peticion_de_coach`, cabecera nosniff, login genérico).
+   - **PENDIENTE del dueño (manual, en `SECURITY.md`)**: hacer el repo PRIVADO +
+     `GH_PAT`; secretos largos en el `.env`; contraseña real de Postgres; SSH por
+     clave + no-root + ufw. Riesgo aceptado documentado: tokens en localStorage
+     (mitigado por CSP) y enlaces de portal sin caducidad (revocables a mano).
+
 0000. ✅ **RONDA 3 (agosto 2026): Word de ida y vuelta + créditos al mínimo +
    pulido integral.** Todo en verde (suite completa, tsc, build).
    - **WORD EDITABLE DE IDA Y VUELTA** (petición estrella del dueño): botón

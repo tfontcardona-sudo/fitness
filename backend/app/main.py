@@ -28,6 +28,28 @@ APP_VERSION = "0.2.0"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # SEGURIDAD (lo primero): los secretos de firma NO pueden ser los de ejemplo
+    # del repositorio público ni ser cortos. En producción se REHÚSA arrancar
+    # con secretos forjables (mejor una caída visible que sesiones falsificables);
+    # en dev/tests solo se avisa.
+    _secret_problems = settings.insecure_secrets()
+    if _secret_problems:
+        _seclog = logging.getLogger("app.security")
+        detalle = "; ".join(_secret_problems)
+        # Solo se REHÚSA arrancar por lo catastrófico (secreto de ejemplo del
+        # repo público). Un secreto corto pero propio se avisa fuerte pero no
+        # tumba una producción en marcha (evita una caída por un aviso de higiene).
+        _blocking = settings.blocking_secret_problems()
+        if settings.is_production and _blocking:
+            _seclog.critical(
+                "ARRANQUE BLOQUEADO por seguridad: %s. Genera secretos largos y "
+                "aleatorios (p. ej. `python -c \"import secrets; print(secrets.token_urlsafe(48))\"`), "
+                "ponlos en el .env del servidor (JWT_SECRET / PORTAL_TOKEN_SECRET) y reinicia.",
+                "; ".join(_blocking),
+            )
+            raise RuntimeError(f"Secretos inseguros en producción: {'; '.join(_blocking)}")
+        _seclog.warning("Revisa los secretos de firma: %s", detalle)
+
     # Aviso claro en los logs si el email está activado pero sin configurar: es
     # la causa nº1 de "no llegan los correos" (típicamente SMTP_PASS vacío).
     from app.services.email_service import email_config_status
@@ -68,11 +90,18 @@ async def lifespan(app: FastAPI):
     engine.dispose()
 
 
+# En producción se OCULTAN la documentación interactiva y el esquema OpenAPI:
+# exponerlos da a un desconocido el mapa completo de la API (facilita copiarla y
+# buscar puntos débiles). En dev siguen disponibles en /api/docs.
+_docs_url = None if settings.is_production else "/api/docs"
+_openapi_url = None if settings.is_production else "/api/openapi.json"
+
 app = FastAPI(
     title="Sistema de Asesorías Fitness",
     version=APP_VERSION,
-    docs_url="/api/docs",
-    openapi_url="/api/openapi.json",
+    docs_url=_docs_url,
+    redoc_url=None,
+    openapi_url=_openapi_url,
     lifespan=lifespan,
 )
 
@@ -100,39 +129,91 @@ def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONRespons
 
 # Los errores NO controlados dejaban un 500 opaco ("Internal Server Error") que
 # no decía nada al coach ni facilitaba el diagnóstico. Ahora: traza completa en
-# los logs + causa legible en la respuesta (la web la muestra en el aviso).
-# App single-tenant tras login: exponer el tipo/mensaje del error es aceptable
-# y ahorra un viaje a los logs del servidor.
+# los logs + causa legible en la respuesta SOLO para el coach autenticado.
 _errlog = logging.getLogger("app.errors")
+
+
+def _peticion_de_coach(request: Request) -> bool:
+    """¿La petición trae un JWT de coach válido? Solo entonces se expone el
+    detalle del error. Antes se decidía por PREFIJO de ruta, pero rutas
+    PRE-login como /api/auth/login (accesibles por cualquier anónimo) no
+    estaban en la lista y filtraban el tipo/mensaje de la excepción (posibles
+    fragmentos de SQL, rutas internas…). Atarlo a la autenticación cierra ese
+    hueco para todas las rutas presentes y futuras."""
+    from app.security import decode_access_token
+
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        return False
+    return decode_access_token(auth[7:].strip()) is not None
 
 
 @app.exception_handler(Exception)
 async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     _errlog.exception("Error no controlado en %s %s", request.method, request.url.path)
-    # En las rutas PÚBLICAS (sin login: landing, registro, portal por token,
-    # Stripe) el detalle del error NO se expone a desconocidos — va al log.
-    path = request.url.path
-    public = path.startswith(("/api/public", "/api/p/", "/api/stripe", "/api/pay",
-                              "/api/google/oauth/callback"))
-    detail = ("Error interno, inténtalo de nuevo en un momento" if public
-              else f"Error interno ({type(exc).__name__}): {exc}")
+    # A un desconocido NUNCA se le da el detalle interno del error (va al log).
+    # Al coach autenticado sí, para que la web muestre la causa sin ir al servidor.
+    detail = (f"Error interno ({type(exc).__name__}): {exc}"
+              if _peticion_de_coach(request)
+              else "Error interno, inténtalo de nuevo en un momento")
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"detail": {"message": detail}},
     )
 
 
+# CORS: en producción el ÚNICO origen legítimo es el dominio público. Los
+# localhost solo se permiten en desarrollo — dejarlos en producción daba a
+# cualquier página del localhost de la víctima (un dev-server, una app local)
+# un origen de confianza para pedir a la API con credenciales. Métodos y
+# cabeceras se enumeran (antes '*') para no exponer más de lo que se usa.
+_cors_origins = [settings.public_base_url]
+if not settings.is_production:
+    _cors_origins += ["http://localhost", "http://localhost:5173"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        settings.public_base_url,
-        "http://localhost",
-        "http://localhost:5173",
-    ],
+    allow_origins=_cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
+
+
+class SecurityHeadersMiddleware:
+    """Cabeceras de seguridad a nivel de aplicación (defensa en profundidad
+    además de las de Caddy; también protegen si se accede a la API directamente).
+
+    Es ASGI puro (no BaseHTTPMiddleware): solo AÑADE cabeceras en la respuesta,
+    sin leer/buffer el cuerpo — así NO rompe el streaming ni las peticiones Range
+    de los vídeos de ejercicios (/api/media).
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        path = scope.get("path", "")
+
+        async def _send(message):
+            if message["type"] == "http.response.start":
+                headers = message.setdefault("headers", [])
+                # El navegador no adivina el tipo (bloquea trucos de sniffing).
+                headers.append((b"x-content-type-options", b"nosniff"))
+                # El PORTAL sirve datos de salud por token en la URL: ni se
+                # cachea (historial/proxies) ni se filtra el token por Referer.
+                if path.startswith("/api/p/"):
+                    headers.append((b"cache-control", b"no-store"))
+                    headers.append((b"referrer-policy", b"no-referrer"))
+            await send(message)
+
+        await self.app(scope, receive, _send)
+
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(auth.router)
 app.include_router(clients.router)

@@ -3,6 +3,34 @@
 {$DOMAIN::80} {
 	encode gzip
 
+	# ------------------------------------------------------------------------
+	# CABECERAS DE SEGURIDAD (se aplican a TODAS las respuestas).
+	# Blindan la web contra clonado por iframe, robo de sesión y fugas de datos.
+	# ------------------------------------------------------------------------
+	header {
+		# Fuerza HTTPS durante 1 año: el navegador no vuelve a hablar por HTTP
+		# (evita interceptar la sesión). Sin efecto mientras se sirva por :80.
+		Strict-Transport-Security "max-age=31536000"
+		# Nadie puede meter la web dentro de un <iframe> ajeno para clonarla o
+		# engañar al usuario (clickjacking). DENY = ni siquiera el propio dominio.
+		X-Frame-Options "DENY"
+		# El navegador NO adivina el tipo de un fichero (bloquea trucos de subida).
+		X-Content-Type-Options "nosniff"
+		# Al salir a un sitio externo NO se filtra la URL completa (protege el
+		# token del enlace del portal, que va en la ruta /p/{token}).
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Se desactivan APIs del navegador que la web no usa.
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		# Política de contenido: solo se carga lo del propio dominio, más las
+		# fuentes de Google y los reproductores de vídeo de los ejercicios
+		# (YouTube-nocookie y Vimeo van EN iframe DENTRO de la web; que la web no
+		# pueda ser enmarcada lo controla frame-ancestors, aparte de frame-src).
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: blob: https://img.youtube.com https://i.ytimg.com; font-src 'self' https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self'; connect-src 'self'; frame-src https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com; media-src 'self' blob:; form-action 'self'"
+		# No anunciar qué servidor corre por debajo (menos pistas a un atacante).
+		-Server
+		-X-Powered-By
+	}
+
 	handle /api/* {
 		# X-Real-IP = IP real del cliente que ve Caddy ({remote_host}); no es
 		# falseable por el cliente. El backend la usa para limitar por IP en

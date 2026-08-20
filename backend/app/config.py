@@ -152,6 +152,43 @@ class Settings(BaseSettings):
             return f"https://{self.domain}"
         return self.base_url
 
+    @property
+    def is_production(self) -> bool:
+        """Producción = hay un dominio público configurado. En dev/tests el
+        dominio está vacío, así que los guardianes de secretos solo AVISAN."""
+        return bool(self.domain)
+
+    # Valores por defecto que viven en el repositorio (público): usarlos en
+    # producción permitiría FALSIFICAR sesiones y tokens. Nunca deben llegar al
+    # servidor sin sustituir.
+    _INSECURE_DEFAULTS = {
+        "jwt_secret": "dev-insecure-jwt-secret",
+        "portal_token_secret": "dev-insecure-portal-secret",
+    }
+
+    def insecure_secrets(self) -> list[str]:
+        """Lista de secretos de firma inseguros (por defecto o demasiado cortos).
+        Un secreto corto o conocido se puede adivinar/forjar: quien lo tenga
+        fabrica tokens de coach (acceso total) o de cualquier cliente."""
+        return self._secret_problems(blocking_only=False)
+
+    def blocking_secret_problems(self) -> list[str]:
+        """Solo los problemas CATASTRÓFICOS que justifican no arrancar: el
+        secreto es EXACTAMENTE el de ejemplo del repo (público → cualquiera
+        forja tokens). Un secreto corto pero propio es débil, no catastrófico:
+        se avisa, pero NO se tira abajo una producción que ya funciona."""
+        return self._secret_problems(blocking_only=True)
+
+    def _secret_problems(self, *, blocking_only: bool) -> list[str]:
+        problemas: list[str] = []
+        for campo, inseguro in self._INSECURE_DEFAULTS.items():
+            valor = getattr(self, campo, "") or ""
+            if valor == inseguro:
+                problemas.append(f"{campo.upper()} sigue con el valor de ejemplo del repo")
+            elif not blocking_only and len(valor) < 32:
+                problemas.append(f"{campo.upper()} es demasiado corto (<32 caracteres)")
+        return problemas
+
 
 @lru_cache
 def get_settings() -> Settings:
