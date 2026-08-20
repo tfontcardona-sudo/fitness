@@ -24,6 +24,12 @@ _portal_serializer = URLSafeSerializer(settings.portal_token_secret, salt="porta
 
 
 # ----------------------------------------------------------- contraseñas ----
+# Hash "señuelo" con el mismo coste que uno real. Se comprueba contra él cuando
+# el usuario NO existe, para que el login tarde lo mismo exista o no la cuenta
+# (si no, un atacante deduce qué usuarios existen por el tiempo de respuesta).
+_DUMMY_HASH = "$2b$12$1T4qBf3OLClLci8FfGJlNeUlyCQveRc66T4g1LxH3T.JZetkolDyW"
+
+
 def hash_password(plain: str) -> str:
     return bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
@@ -33,6 +39,12 @@ def verify_password(plain: str, hashed: str) -> bool:
         return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
     except ValueError:
         return False
+
+
+def dummy_verify(plain: str) -> None:
+    """Gasta el mismo tiempo que un verify real contra un hash señuelo. Se llama
+    cuando el usuario no existe para igualar el tiempo de respuesta del login."""
+    verify_password(plain, _DUMMY_HASH)
 
 
 # ------------------------------------------------------------ JWT coaches ----

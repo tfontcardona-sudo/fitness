@@ -1,10 +1,16 @@
 # Uso: docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
-# Añade: hot-reload del backend, servidor Vite, Mailpit para ver emails, puertos abiertos.
+# Añade: hot-reload del backend, servidor Vite, Mailpit para ver emails.
+#
+# SEGURIDAD: todos los puertos de este overlay se publican SOLO en 127.0.0.1
+# (localhost). Así, si por error se levantara este overlay en un servidor con IP
+# pública, ni la base de datos, ni la API sin proxy, ni Mailpit quedarían
+# expuestos a Internet. En producción se usa docker-compose.yml SOLO (la API va
+# por `expose`, no `ports`, y solo Caddy publica 80/443).
 
 services:
   db:
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
 
   api:
     build:
@@ -15,7 +21,7 @@ services:
       - ./storage:/storage
       - ./CRITERIOS_ASESORIA.md:/code/CRITERIOS_ASESORIA.md:ro
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       SMTP_HOST: mailpit
       SMTP_PORT: "1025"
@@ -39,7 +45,7 @@ services:
       - ./frontend:/app
       - frontend_node_modules:/app/node_modules
     ports:
-      - "5173:5173"
+      - "127.0.0.1:5173:5173"
     environment:
       VITE_API_URL: http://api:8000
 
@@ -47,8 +53,8 @@ services:
     image: axllent/mailpit:latest
     restart: unless-stopped
     ports:
-      - "8025:8025"   # UI web para ver los emails enviados
-      - "1025:1025"   # SMTP
+      - "127.0.0.1:8025:8025"   # UI web para ver los emails enviados
+      - "127.0.0.1:1025:1025"   # SMTP
 
 volumes:
   frontend_node_modules:

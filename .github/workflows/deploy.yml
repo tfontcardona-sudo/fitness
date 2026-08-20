@@ -9,6 +9,15 @@
 #   VPS_PASSWORD  (la contraseña SSH del servidor)
 # Sin esos secretos, la acción falla sin tocar nada (el servidor sigue igual).
 #
+# SECRETO OPCIONAL (necesario SOLO si el repositorio pasa a PRIVADO):
+#   GH_PAT   Personal Access Token de GitHub con permiso de LECTURA del repo
+#            (Fine-grained token → Repository access: solo este repo →
+#             Contents: Read-only). Con el repo privado, un `git pull` anónimo
+#            fallaría; si GH_PAT está definido, el pull se autentica con él SIN
+#            guardar el token en el disco del servidor (se pasa como cabecera
+#            efímera). Si el repo sigue público, no hace falta y el pull normal
+#            funciona igual.
+#
 # También se puede lanzar a mano desde la pestaña Actions (workflow_dispatch).
 
 name: Desplegar en el VPS
@@ -33,9 +42,22 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           command_timeout: 30m
+          # El token viaja al servidor como variable de entorno (no queda en el
+          # YAML ni en el código). Vacío si el repo aún es público.
+          envs: GH_PAT
           script: |
             set -e
             cd /root/fitness
-            git pull origin main
+            if [ -n "${GH_PAT}" ]; then
+              # Repo privado: autentica el pull con una cabecera efímera (el
+              # token NO se persiste en .git/config ni en el historial de shell).
+              AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "${GH_PAT}" | base64 | tr -d '\n')"
+              git -c http.extraheader="${AUTH}" pull origin main
+            else
+              # Repo público: pull normal, sin credenciales.
+              git pull origin main
+            fi
             docker compose up -d --build
             docker compose ps
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
