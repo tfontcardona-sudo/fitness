@@ -117,11 +117,15 @@ extiendas: el detalle va en changes_bullets y next_objectives, no lo repitas aqu
 - changes_bullets: máximo 5 cambios concretos para el plan y POR QUÉ (p. ej. "subo 100 \
 kcal porque el ritmo de bajada es muy agresivo").
 - plan_adjustments: la CUADRÍCULA DE CAMBIOS del informe (2-6 filas). Cada fila = {area, \
-change, reason}. Basa cada ajuste en los DATOS REGISTRADOS por el cliente (series de \
-entreno y su progresión, peso/sueño/pasos/saciedad/agua del diario, sensaciones y \
-adherencia de la revisión quincenal). Cubre dieta Y entrenamiento cuando proceda.
-- answers: responde a las dudas del cliente si las dejó; si no, déjalo en null.
-- next_objectives: 2-4 objetivos claros y medibles para las próximas 2 semanas.
+change, reason}; "change" = acción concreta en máx ~12 palabras, con la cifra si la hay \
+("Subir CH +30 g en comida y cena"). Basa cada ajuste en los DATOS REGISTRADOS por el \
+cliente (series de entreno y su progresión, peso/sueño/pasos/saciedad/agua del diario, \
+sensaciones y adherencia de la revisión quincenal). Cubre dieta Y entrenamiento cuando proceda.
+- answers: responde a las dudas del cliente si las dejó (máximo 2-3 frases POR duda, la \
+respuesta directa primero; si requiere desarrollo, remite a la revisión o al plan); si no \
+dejó dudas, null.
+- next_objectives: 2-4 objetivos claros y medibles para las próximas 2 semanas, cada uno \
+en una línea de máx ~12 palabras.
 - closing_message: 1-2 frases de cierre motivadoras.
 
 Devuelve SOLO un objeto JSON válido conforme al esquema. Sin texto adicional."""

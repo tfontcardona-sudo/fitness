@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Mail, Pencil, PlayCircle, Save, X, Flag, Copy, Archive, FileText, FileUp } from "lucide-react";
+import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Mail, MoreHorizontal, Pencil, PlayCircle, Save, X, Flag, Copy, Archive, FileText, FileUp } from "lucide-react";
 import { api, getToken } from "../lib/api";
 import { manualUpdateMessage, openWhatsApp, planAndFeedbackMessage, planMessage, waPhone, waUrl } from "../lib/whatsapp";
 import { pkg } from "../lib/packages";
@@ -610,37 +610,22 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
               <h3 className="text-base font-semibold text-zinc-100">
                 Planificación · {planMonthLabel(plan.published_at ?? plan.created_at)}
               </h3>
+              {/* UN chip de estado (antes "Activa · v3" + "● En uso por el
+                  cliente" decían casi lo mismo en dos chips distintos). */}
               <span
-                className="rounded-full px-2 py-0.5 text-xs font-medium"
-                style={{ background: "color-mix(in srgb, var(--brand-accent-2) 14%, transparent)", color: "var(--brand-accent-2)" }}
-              >
-                Mes {plan.month_index} de asesoría
-              </span>
-              <span
-                className="rounded-full px-2 py-0.5 text-xs font-medium"
+                className="rounded-full px-2 py-0.5 text-xs font-semibold"
                 style={
                   plan.status === "published"
-                    ? { background: "color-mix(in srgb, var(--brand-accent) 15%, transparent)", color: "var(--brand-accent)" }
+                    ? { background: "rgba(22,163,74,0.12)", color: "#2E7D46" }
                     : { background: "rgba(38,33,26,0.08)", color: "#7A7060" }
                 }
               >
                 {plan.status === "published"
-                  ? "Activa"
+                  ? "● Activa · la ve el cliente"
                   : plan.guardrail_flags?.some((f) => f.startsWith("base sin IA"))
                     ? "Base del coach — sin activar"
                     : "Borrador antiguo"} · v{plan.version}
               </span>
-              {plan.status === "published" && (
-                // Verde con brillo: ESTA versión es la que ve el cliente ahora
-                // mismo (portal, PDF y semana del mesociclo).
-                <span className="rounded-full px-2 py-0.5 text-xs font-bold"
-                  style={{
-                    background: "rgba(57, 255, 20, 0.12)", color: "#2E7D46",
-                    boxShadow: "0 0 8px rgba(57, 255, 20, 0.35)",
-                  }}>
-                  ● En uso por el cliente
-                </span>
-              )}
               {/* §9: semáforo del panel de supervisión + ICP (confianza del plan). */}
               {plan.review?.color && (() => {
                 const c = plan.review.color;
@@ -662,39 +647,47 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                 );
               })()}
             </div>
-            {/* §9: hallazgos del panel — también en ÁMBAR (antes solo en rojo:
-                un ámbar con hallazgos se veía como un simple chip). */}
-            {(plan.review?.color === "rojo" || plan.review?.color === "ambar")
-              && (plan.review.findings?.length ?? 0) > 0 && (
-              <ul className={`mt-1.5 space-y-0.5 text-xs ${plan.review.color === "rojo" ? "text-red-700" : "text-amber-700"}`}>
-                {plan.review!.findings!
-                  .filter((f) => plan.review!.color !== "rojo" || f.severity === "bloqueante")
-                  .slice(0, 4)
-                  .map((f, i) => <li key={i}>• {f.description}</li>)}
-              </ul>
-            )}
-            {(plan.review?.degraded_reviewers?.length ?? 0) > 0 && (
-              <p className="mt-1 text-xs text-amber-700">
-                ⚠ Revisión degradada: {plan.review!.degraded_reviewers!.length} revisor(es) IA no llegaron a ejecutarse.
-              </p>
-            )}
-            {/* Flags del guardarraíl y avisos de generación: antes se
-                persistían pero NINGUNA pantalla los mostraba (auditoría). */}
-            {(plan.guardrail_flags?.length ?? 0) > 0 && (
-              <ul className="mt-1.5 space-y-0.5 text-xs">
-                {plan.guardrail_flags
-                  // El aviso "base sin IA" es del ciclo de PREPARACIÓN: con el
-                  // plan ya activado dejaría un estado falso en ámbar eterno.
-                  .filter((f) => plan.status !== "published" || !f.startsWith("base sin IA"))
-                  .slice(0, 6).map((f, i) => (
-                  <li key={i}
-                    className={f.startsWith("violation:") || f.startsWith("retenido")
-                      ? "text-red-700" : "text-amber-700"}>
-                    • {f}
-                  </li>
-                ))}
-              </ul>
-            )}
+            {/* AVISOS en dos niveles: lo BLOQUEANTE (rojo) siempre a la vista —
+                es la razón de que el plan no llegue al cliente —; el resto
+                (ámbar) plegado con contador para no apilar ~10 líneas. */}
+            {(() => {
+              const findings = (plan.review?.color === "rojo" || plan.review?.color === "ambar")
+                ? (plan.review?.findings ?? []) : [];
+              const flags = (plan.guardrail_flags ?? [])
+                // El aviso "base sin IA" es del ciclo de PREPARACIÓN: con el
+                // plan ya activado dejaría un estado falso en ámbar eterno.
+                .filter((f) => plan.status !== "published" || !f.startsWith("base sin IA"));
+              const rojoFindings = findings.filter((f) => f.severity === "bloqueante");
+              const rojoFlags = flags.filter((f) => f.startsWith("violation:") || f.startsWith("retenido"));
+              const ambarFindings = findings.filter((f) => f.severity !== "bloqueante");
+              const ambarFlags = flags.filter((f) => !f.startsWith("violation:") && !f.startsWith("retenido"));
+              const degraded = plan.review?.degraded_reviewers?.length ?? 0;
+              const nAmbar = ambarFindings.length + ambarFlags.length + (degraded > 0 ? 1 : 0);
+              return (
+                <>
+                  {(rojoFindings.length > 0 || rojoFlags.length > 0) && (
+                    <ul className="mt-1.5 space-y-0.5 text-xs text-red-700">
+                      {rojoFindings.map((f, i) => <li key={`f${i}`}>• {f.description}</li>)}
+                      {rojoFlags.map((f, i) => <li key={`g${i}`}>• {f}</li>)}
+                    </ul>
+                  )}
+                  {nAmbar > 0 && (
+                    <details className="mt-1">
+                      <summary className="cursor-pointer text-xs font-medium text-amber-700">
+                        Avisos de la revisión automática · {nAmbar}
+                      </summary>
+                      <ul className="mt-0.5 space-y-0.5 text-xs text-amber-700">
+                        {ambarFindings.map((f, i) => <li key={`f${i}`}>• {f.description}</li>)}
+                        {ambarFlags.map((f, i) => <li key={`g${i}`}>• {f}</li>)}
+                        {degraded > 0 && (
+                          <li>• La revisión automática quedó incompleta ({degraded} revisor{degraded === 1 ? "" : "es"} sin ejecutar): repasa el plan con más atención.</li>
+                        )}
+                      </ul>
+                    </details>
+                  )}
+                </>
+              );
+            })()}
             {/* REGISTRO de qué versión es esta: su origen (IA / adaptación a
                 revisión #N) y si lleva cambios manuales sin enviar. */}
             <p className="mt-0.5 text-xs text-zinc-500">
@@ -709,13 +702,12 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                     : "Generada con IA a partir de su anamnesis";
                 return (
                   <>
-                    {origen}
+                    Mes {plan.month_index} de asesoría · {origen}
                     {manual > 0 && (
                       <span className="font-medium" style={{ color: "var(--brand-accent)" }}>
                         {" "}· con {manual} cambio{manual === 1 ? "" : "s"} manual{manual === 1 ? "" : "es"} sin enviar
                       </span>
                     )}
-                    {" "}· esta es siempre la versión más reciente; las anteriores quedan en el archivo de abajo.
                   </>
                 );
               })()}
@@ -727,43 +719,65 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
             <button onClick={() => setEditing(true)} className="btn btn-ghost">
               <Pencil size={15} /> Editar
             </button>
-            <button
-              onClick={() => {
-                setHistOpen(true);
-                setHist(null);
-                api.planHistory(plan.id).then(setHist).catch(() => setHist([]));
-              }}
-              className="btn btn-ghost"
-              title="Versiones anteriores del plan: restaura cualquiera si una edición salió mal"
-            >
-              <Archive size={15} /> Historial
-            </button>
             <button onClick={downloadPdf} className="btn btn-ghost">
               <Download size={15} /> Descargar PDF
             </button>
-            <button
-              onClick={() => downloadDocument("docx")}
-              className="btn btn-ghost"
-              title="Word editable: modifica cualquier apartado del documento antes de enviarlo"
-            >
-              <FileText size={15} /> Word editable
-            </button>
-            <label
-              className="btn btn-ghost cursor-pointer"
-              title="Sube el Word que editaste: el sistema lee tus cambios y te los enseña antes de aplicarlos al plan"
-            >
-              {importing ? <Spinner /> : <FileUp size={15} />} Subir Word editado
-              <input
-                type="file"
-                accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                className="hidden"
-                disabled={importing}
-                onChange={(e) => {
-                  onWordPicked(e.target.files?.[0]);
-                  e.target.value = ""; // permite volver a subir el mismo archivo
-                }}
+            {/* Las acciones poco frecuentes viven en un menú: la botonera pasa
+                de 6-7 botones del mismo peso a 3-4 (lo frecuente destaca). */}
+            <details className="relative">
+              <summary className="btn btn-ghost w-full cursor-pointer list-none sm:w-auto">
+                <MoreHorizontal size={15} /> Más
+              </summary>
+              {/* Fondo invisible: clic fuera del menú lo cierra. */}
+              <div
+                className="fixed inset-0 z-10"
+                onClick={(e) => e.currentTarget.closest("details")?.removeAttribute("open")}
               />
-            </label>
+              <div
+                className="absolute right-0 z-20 mt-1 w-60 rounded-xl border p-1 shadow-lg"
+                style={{ borderColor: "var(--line-strong)", background: "var(--surface)" }}
+              >
+                <button
+                  onClick={(e) => {
+                    e.currentTarget.closest("details")?.removeAttribute("open");
+                    setHistOpen(true);
+                    setHist(null);
+                    api.planHistory(plan.id).then(setHist).catch(() => setHist([]));
+                  }}
+                  className="btn btn-ghost w-full justify-start"
+                  title="Versiones anteriores del plan: restaura cualquiera si una edición salió mal"
+                >
+                  <Archive size={15} /> Historial de versiones
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.currentTarget.closest("details")?.removeAttribute("open");
+                    downloadDocument("docx");
+                  }}
+                  className="btn btn-ghost w-full justify-start"
+                  title="Word editable: modifica cualquier apartado del documento antes de enviarlo"
+                >
+                  <FileText size={15} /> Word editable
+                </button>
+                <label
+                  className="btn btn-ghost w-full cursor-pointer justify-start"
+                  title="Sube el Word que editaste: el sistema lee tus cambios y te los enseña antes de aplicarlos al plan"
+                >
+                  {importing ? <Spinner /> : <FileUp size={15} />} Subir Word editado
+                  <input
+                    type="file"
+                    accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    className="hidden"
+                    disabled={importing}
+                    onChange={(e) => {
+                      e.currentTarget.closest("details")?.removeAttribute("open");
+                      onWordPicked(e.target.files?.[0]);
+                      e.target.value = ""; // permite volver a subir el mismo archivo
+                    }}
+                  />
+                </label>
+              </div>
+            </details>
             {plan.status === "published" && byEmail && (
               <button onClick={sendPlanByEmail} className="btn btn-primary col-span-2 sm:col-span-1">
                 <Mail size={15} /> Enviar plan por email
@@ -863,7 +877,9 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
               </button>
             </div>
             {importPreview.changes.length > 0 ? (
-              <ul className="mb-2 space-y-1">
+              // Tope de altura con scroll propio: con 40 cambios, los botones
+              // Aplicar/Descartar seguían fuera de pantalla.
+              <ul className="mb-2 max-h-64 space-y-1 overflow-y-auto pr-1">
                 {importPreview.changes.map((c, i) => (
                   <li key={i} className="flex items-start gap-2 text-xs text-zinc-300">
                     <Pencil size={12} className="mt-0.5 shrink-0" style={{ color: "var(--brand-accent)" }} />
@@ -918,12 +934,14 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
           >
             <CalendarDays size={14} style={{ color: "var(--brand-accent-2)" }} />
             {currentPeriod ? (
-              <span className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
+              <span
+                className="flex flex-wrap items-center gap-2 text-xs text-zinc-400"
+                title="El período de 14 días se renueva solo tras cada feedback"
+              >
                 Seguimiento activo · {currentPeriod.starts_on} → {currentPeriod.ends_on}
                 <span className="rounded-full px-2 py-0.5 font-semibold" style={{ background: "color-mix(in srgb, var(--brand-accent-2) 15%, transparent)", color: "var(--brand-accent-2)" }}>
                   {currentPeriod.status === "open" ? "abierto" : currentPeriod.status === "closed" ? "cerrado" : "analizado"}
                 </span>
-                <span className="text-zinc-500">se renueva solo tras cada feedback</span>
               </span>
             ) : (
               <span className="text-xs text-zinc-500">
@@ -1051,9 +1069,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
           <div className="flex items-start gap-2">
             <AlertTriangle size={16} className="mt-0.5 shrink-0" style={{ color: "var(--brand-accent)" }} />
             <p className="text-sm text-zinc-300">
-              <b className="text-zinc-100">Planificación editada y guardada.</b> El PDF descargado
-              antes ya no vale: descárgalo de nuevo (o reenvía el enlace por {byEmail ? "email" : "WhatsApp"}) para que el
-              cliente reciba la versión actualizada.
+              El PDF descargado no incluye tu última edición.
             </p>
           </div>
           <button onClick={downloadPdf} className="btn btn-primary shrink-0">
@@ -1096,9 +1112,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
           </div>
           <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t pt-3" style={{ borderColor: "var(--line)" }}>
             <p className="text-xs text-zinc-500">
-              Al adaptar, la versión nueva queda <b className="text-zinc-300">ACTIVA al momento</b> (portal y
-              PDF actualizados), con calorías, macros, comidas y gramos reescalados en bloque.
-              Puedes editarla después y enviarla por {byEmail ? "email" : "WhatsApp"}.
+              Adaptar activa la versión nueva al momento (portal y PDF).
             </p>
             <button onClick={adapt} disabled={generating} className="btn btn-primary">
               {generating ? "Adaptando…" : `Adaptar a la revisión #${review.period_index}`}
@@ -1362,7 +1376,9 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                 {(s.exercises ?? []).map((ex: any, j: number) => {
                   const hasDetail = ex.progression_rule || ex.technique_cue || ex.biomech_cue || ex.coach_notes;
                   return (
-                    <details key={j} name="plan-vista-sesiones" className="rounded-md p-2 text-xs" style={{ background: "var(--surface)" }}>
+                    // Sin name compartido: abrir un ejercicio ya NO cierra el
+                    // anterior (el acordeón exclusivo queda para secciones).
+                    <details key={j} className="rounded-md p-2 text-xs" style={{ background: "var(--surface)" }}>
                       <summary className="cursor-pointer">
                         <span className="font-medium text-zinc-200">{exName(ex.exercise_id)}</span>
                         <span className="ml-1 text-zinc-400">
@@ -1562,7 +1578,6 @@ function ImportantPointsCard({ client }: { client: ClientOut }) {
       <SectionTitle icon={AlertTriangle} title="Puntos importantes del cliente" />
       <p className="mb-2 text-xs text-zinc-500">
         De su anamnesis: lo que hay que respetar en {hasTraining ? "dieta y entrenamiento" : "dieta"}.
-        <span className="font-medium" style={{ color: RED }}> Lo crítico, en rojo.</span>
       </p>
       <div className="space-y-2">
         {blocks.map((b) => {
@@ -1805,7 +1820,6 @@ function GoalStageCard({ client, currentMonth, onClientChanged, onRegenerated }:
           <Flag size={15} style={{ color: "var(--brand-accent-2)" }} />
           Objetivo: {client.goal_type ? GOAL_LABEL[client.goal_type] : "—"}
           {days != null && <span className="text-xs font-normal text-zinc-500">{days} días en esta etapa</span>}
-          <span className="text-xs font-normal" style={{ color: "var(--brand-accent-2)" }}>· pulsa para cambiar</span>
         </span>
         {due != null && (
           <span className="rounded-full px-2 py-0.5 text-xs font-bold text-white" style={{ background: "var(--brand-accent)" }}>

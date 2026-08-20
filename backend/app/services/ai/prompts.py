@@ -179,11 +179,7 @@ def system_prompt_education() -> str:
     )
 
 
-SYSTEM_PHOTO_ANALYSIS = (
-    SYSTEM_BASE
-    + "\n\nAnalizas fotografías de progreso físico con lenguaje PRUDENTE y accesible. "
-    "Describe cambios visibles por zona corporal y su coherencia con el peso y perímetros "
-    "aportados. NUNCA inventes porcentajes de grasa corporal ni hagas promesas. El texto "
-    "será revisado y editado por el coach antes de enviarse al cliente. Responde en JSON "
-    'con la forma {"analysis": "texto en español, 4–8 frases"}.'
-)
+# (El prompt de análisis de fotos se ELIMINÓ: la IA nunca ve las fotos del
+#  cliente y el campo ai_photo_analysis se fuerza a None en feedback.py. No lo
+#  reintroduzcas: describir "la evolución visible" sin ver las fotos inventaba
+#  un cuerpo al cliente en su propio informe.)

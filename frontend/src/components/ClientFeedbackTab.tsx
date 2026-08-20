@@ -272,19 +272,8 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
 
   return (
     <div className="space-y-4">
-      {/* Videollamada quincenal (Pro), SIEMPRE arriba y visible: el cliente
-          propone → el coach acepta o modifica → agendada con Meet. */}
-      {showVideoCall && (
-        <VideoCallCycle
-          clientId={client.id}
-          periodIndex={lastReviewIdx}
-          call={callForLastReview}
-          googleConnected={googleConnected}
-          onModify={modifyVideoCall}
-          onShareMeet={shareMeetWhatsApp}
-          onChanged={loadCalls}
-        />
-      )}
+      {/* La DECISIÓN pendiente va primera: adaptar el plan a la revisión es la
+          acción que cierra el ciclo. La videollamada va después. */}
       {latestReview && needsAdapt && (
         <div
           className="card flex flex-wrap items-center justify-between gap-2 p-3.5"
@@ -306,6 +295,45 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
           </button>
         </div>
       )}
+      {/* Videollamada quincenal (Pro). Si YA está agendada (nada que hacer),
+          se colapsa a una línea; desplegada solo cuando pide acción del coach. */}
+      {showVideoCall && (callForLastReview?.status === "scheduled" ? (
+        <details className="card p-3.5">
+          <summary className="flex cursor-pointer flex-wrap items-center gap-2 text-sm text-zinc-300">
+            <Video size={15} style={{ color: VC_COLOR }} />
+            <span className="font-medium" style={{ color: VC_COLOR }}>Videollamada confirmada</span>
+            {callForLastReview.scheduled_at && <span className="text-zinc-400">· {_whenLabel(callForLastReview)}</span>}
+            {callForLastReview.meet_url && (
+              <a href={callForLastReview.meet_url} target="_blank" rel="noreferrer"
+                 onClick={(e) => e.stopPropagation()}
+                 className="ml-auto text-xs font-semibold underline" style={{ color: VC_COLOR }}>
+                Unirme
+              </a>
+            )}
+          </summary>
+          <div className="mt-3">
+            <VideoCallCycle
+              clientId={client.id}
+              periodIndex={lastReviewIdx}
+              call={callForLastReview}
+              googleConnected={googleConnected}
+              onModify={modifyVideoCall}
+              onShareMeet={shareMeetWhatsApp}
+              onChanged={loadCalls}
+            />
+          </div>
+        </details>
+      ) : (
+        <VideoCallCycle
+          clientId={client.id}
+          periodIndex={lastReviewIdx}
+          call={callForLastReview}
+          googleConnected={googleConnected}
+          onModify={modifyVideoCall}
+          onShareMeet={shareMeetWhatsApp}
+          onChanged={loadCalls}
+        />
+      ))}
       {[...periods].sort((a, b) => b.period_index - a.period_index).map((p) => {
         const fb = p.feedback_id ? contents[p.feedback_id] : null;
         const content = fb?.content;
@@ -390,12 +418,20 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                 {p.closing_thigh_cm != null && <Stat label="Muslo" value={`${p.closing_thigh_cm} cm`} />}
               </div>
             )}
-            {p.closing_hardest && <p className="mt-2 text-xs text-zinc-400"><b className="text-zinc-300">Lo más difícil:</b> {p.closing_hardest}</p>}
-            {p.closing_questions && <p className="mt-1 text-xs text-zinc-400"><b className="text-zinc-300">Dudas:</b> {p.closing_questions}</p>}
+            {/* La voz del cliente es oro para la asesoría: tamaño normal y las
+                dudas destacadas en ámbar (exigen respuesta en la revisión). */}
+            {p.closing_hardest && <p className="mt-2 text-sm text-zinc-300"><b>Lo más difícil:</b> {p.closing_hardest}</p>}
+            {p.closing_questions && (
+              <p className="mt-1 rounded-lg border-l-2 py-1 pl-2 text-sm text-zinc-300"
+                 style={{ borderColor: "#9A6B15", background: "color-mix(in srgb, #9A6B15 8%, transparent)" }}>
+                <b style={{ color: "#9A6B15" }}>Dudas para ti:</b> {p.closing_questions}
+              </p>
+            )}
 
-            {/* Fotos de progreso del período: el coach las VE aquí al generar el
-                feedback (antes se subían pero ningún componente las mostraba). */}
-            {p.status !== "open" && <PeriodPhotos clientId={client.id} periodId={p.id} />}
+            {/* Fotos de progreso del período: plegadas y con carga PEREZOSA —
+                las imágenes solo se descargan si el coach abre el desplegable
+                (8 blobs en mitad de la columna interrumpían la lectura). */}
+            {p.status !== "open" && <PeriodPhotosFolded clientId={client.id} periodId={p.id} />}
 
             {/* Resumen de métricas (sin IA): fuerza, peso, adherencia, objetivo.
                 Se muestra SIEMPRE, ya cargado — sin botones que pulsar. */}
@@ -409,73 +445,48 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                 <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">
                   <BarChart3 size={13} /> Resumen de las 2 semanas
                 </div>
-                {/* Antes → después de los datos en 15 días (peso día 1 → día 15) */}
-                <div className="mt-3">
-                  <SubTitle icon={TrendingUp} text="Antes → después (15 días)" />
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    {/* Bajar peso solo es "bueno" si el objetivo lo pide */}
-                    <BAStat label="Peso (kg)" before={m.weight?.start_kg} after={m.weight?.end_kg} lowerBetter={client.goal_type !== "muscle_gain"} />
-                    {p.closing_waist_cm != null && <BAStat label="Cintura (cm)" before={null} after={p.closing_waist_cm} lowerBetter />}
-                    {p.closing_hip_cm != null && <BAStat label="Cadera (cm)" before={null} after={p.closing_hip_cm} lowerBetter />}
-                    {p.closing_arm_cm != null && <BAStat label="Brazo (cm)" before={null} after={p.closing_arm_cm} />}
-                  </div>
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  <Stat label="Δ peso corporal" value={fmtDelta(m.weight?.delta_kg, "kg")} />
-                  <Stat label="Peso actual" value={m.body_weight_now_kg != null ? `${m.body_weight_now_kg} kg` : "—"} />
+                {/* EVOLUCIÓN, sin duplicados: el peso con su antes→después real
+                    (los perímetros ya están arriba en "Datos del cierre"; aquí
+                    con before=null pintaban "— → 92" y parecían datos rotos). */}
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {/* Bajar peso solo es "bueno" si el objetivo lo pide */}
+                  <BAStat label="Peso (kg)" before={m.weight?.start_kg} after={m.weight?.end_kg} lowerBetter={client.goal_type !== "muscle_gain"} />
+                  <Stat label="Ritmo semanal" value={fmtDelta(m.weight?.weekly_rate_kg, "kg/sem")} />
                   <Stat label="A su objetivo" value={m.distance_to_goal_kg != null ? `${Math.abs(m.distance_to_goal_kg)} kg` : "—"} />
                   <Stat
                     label="Adherencia dieta"
                     value={`${m.adherence?.diet_pct ?? 0}% · ${(m.adherence?.diet_days_yes ?? 0) + (m.adherence?.diet_days_partial ?? 0)} de ${m.adherence?.period_days ?? 0} días`}
                   />
                   <Stat label="Días registrados" value={`${m.adherence?.days_logged ?? 0}/${m.adherence?.period_days ?? 0}`} />
-                  <Stat label="Ritmo semanal" value={fmtDelta(m.weight?.weekly_rate_kg, "kg/sem")} />
                 </div>
                 {info.hasTraining && Array.isArray(m.strength) && m.strength.length > 0 && (
                   <div>
-                    <SubTitle icon={TrendingUp} text="Fuerza por grupo muscular (vs revisiones anteriores)" />
+                    <SubTitle icon={TrendingUp} text="Fuerza (vs revisiones anteriores)" />
+                    {/* Señal primero: cuántos mejoran. Top 3 a la vista; el
+                        detalle completo, plegado (para la asesoría bastan 2-3
+                        señales, no 8 filas de datos crudos). */}
+                    {(() => {
+                      const withDelta = m.strength.filter((s: any) => s.delta_kg != null);
+                      const up = withDelta.filter((s: any) => s.delta_kg > 0).length;
+                      return withDelta.length > 0 ? (
+                        <p className="mb-1.5 text-xs text-zinc-400">
+                          {up} de {withDelta.length} ejercicios mejoran esta quincena.
+                        </p>
+                      ) : null;
+                    })()}
                     <ul className="space-y-1 text-sm">
-                      {m.strength.map((s: any, i: number) => (
-                        <li key={i} className="rounded-lg px-3 py-2" style={{ background: "var(--surface-raised)" }}>
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="flex min-w-0 items-center gap-2">
-                              {s.muscle && (
-                                <span
-                                  className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
-                                  style={{ background: "color-mix(in srgb, var(--brand-accent-2) 15%, transparent)", color: "var(--brand-accent-2)" }}
-                                >
-                                  {s.muscle}
-                                </span>
-                              )}
-                              <span className="truncate text-zinc-300">{s.name}</span>
-                            </span>
-                            <span className="whitespace-nowrap text-zinc-400">
-                              e1RM {Math.round(s.e1rm_kg)} kg
-                              {s.delta_kg != null && (
-                                <span style={{ color: s.delta_kg >= 0 ? "var(--brand-accent)" : "#C2453A" }}>
-                                  {" "}{s.delta_kg >= 0 ? "▲" : "▼"} {Math.abs(s.delta_kg)} kg
-                                  {s.pct != null ? ` (${s.pct >= 0 ? "+" : ""}${s.pct}%)` : ""}
-                                </span>
-                              )}
-                            </span>
-                          </div>
-                          <div className="mt-0.5 text-xs text-zinc-500">
-                            {s.avg_weight_kg != null && (
-                              <>
-                                Peso medio {s.avg_weight_kg} kg
-                                {s.avg_weight_delta_kg != null && (
-                                  <span style={{ color: s.avg_weight_delta_kg >= 0 ? "var(--brand-accent)" : "#C2453A" }}>
-                                    {" "}({s.avg_weight_delta_kg >= 0 ? "+" : ""}{s.avg_weight_delta_kg} kg)
-                                  </span>
-                                )}
-                              </>
-                            )}
-                            {s.avg_reps != null && <> · {s.avg_reps} reps de media</>}
-                            {s.delta_kg == null && <> · primera revisión con datos de este ejercicio</>}
-                          </div>
-                        </li>
-                      ))}
+                      {m.strength.slice(0, 3).map((s: any, i: number) => <StrengthRow key={i} s={s} />)}
                     </ul>
+                    {m.strength.length > 3 && (
+                      <details className="mt-1">
+                        <summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-zinc-300">
+                          Ver los {m.strength.length} ejercicios
+                        </summary>
+                        <ul className="mt-1 space-y-1 text-sm">
+                          {m.strength.slice(3).map((s: any, i: number) => <StrengthRow key={i} s={s} />)}
+                        </ul>
+                      </details>
+                    )}
                   </div>
                 )}
                 {info.hasTraining && (!m.strength || m.strength.length === 0) && (
@@ -519,17 +530,60 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                     <p className="text-sm text-zinc-300">{content.natural_analysis}</p>
                   </div>
                 )}
-                {Array.isArray(content.changes_bullets) && content.changes_bullets.length > 0 && (
+                {/* LAS DECISIONES primero: la cuadrícula que se aplicará al
+                    plan, en tabla legible (antes solo existía en el Word). */}
+                {Array.isArray(content.plan_adjustments) && content.plan_adjustments.length > 0 && (
                   <div>
-                    <SubTitle icon={Sparkles} text="Cambios en el plan" />
-                    <ul className="list-disc space-y-0.5 pl-5 text-sm text-zinc-400">
-                      {content.changes_bullets.map((b: string, i: number) => <li key={i}>{b}</li>)}
-                    </ul>
+                    <SubTitle icon={Sparkles} text="Decisiones para la próxima quincena" />
+                    <div className="space-y-1 text-sm">
+                      {content.plan_adjustments.map((a: any, i: number) => (
+                        <div key={i} className="rounded-lg px-3 py-2" style={{ background: "var(--surface-raised)" }}>
+                          <div className="flex flex-wrap items-baseline gap-2">
+                            {a.area && (
+                              <span className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+                                style={{ background: "color-mix(in srgb, var(--brand-accent) 14%, transparent)", color: "var(--brand-accent)" }}>
+                                {a.area}
+                              </span>
+                            )}
+                            <span className="font-medium text-zinc-200">{a.change}</span>
+                          </div>
+                          {a.reason && <p className="mt-0.5 text-xs text-zinc-500">{a.reason}</p>}
+                        </div>
+                      ))}
+                    </div>
                   </div>
+                )}
+                {/* La narrativa de los cambios repite las decisiones con más
+                    palabras: visible solo si NO hay cuadrícula; si la hay, plegada. */}
+                {Array.isArray(content.changes_bullets) && content.changes_bullets.length > 0 && (
+                  (Array.isArray(content.plan_adjustments) && content.plan_adjustments.length > 0) ? (
+                    <details>
+                      <summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-zinc-300">
+                        Explicación de los cambios ({content.changes_bullets.length})
+                      </summary>
+                      <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-zinc-400">
+                        {content.changes_bullets.map((b: string, i: number) => <li key={i}>{b}</li>)}
+                      </ul>
+                    </details>
+                  ) : (
+                    <div>
+                      <SubTitle icon={Sparkles} text="Cambios en el plan" />
+                      <ul className="list-disc space-y-0.5 pl-5 text-sm text-zinc-400">
+                        {content.changes_bullets.map((b: string, i: number) => <li key={i}>{b}</li>)}
+                      </ul>
+                    </div>
+                  )
                 )}
                 {content.answers && (
                   <div>
                     <SubTitle icon={MessageSquare} text="Respuesta a sus dudas" />
+                    {/* La duda del cliente citada junto a su respuesta: antes
+                        estaban a 60 líneas de distancia. */}
+                    {p.closing_questions && (
+                      <p className="mb-1 border-l-2 pl-2 text-xs italic text-zinc-500" style={{ borderColor: "var(--line-strong)" }}>
+                        «{p.closing_questions}»
+                      </p>
+                    )}
                     <p className="text-sm text-zinc-300">{content.answers}</p>
                   </div>
                 )}
@@ -541,7 +595,14 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                     </ul>
                   </div>
                 )}
-                {content.closing_message && <p className="text-sm italic text-zinc-400">{content.closing_message}</p>}
+                {content.closing_message && (
+                  <details>
+                    <summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-zinc-300">
+                      Mensaje de cierre que recibirá el cliente
+                    </summary>
+                    <p className="mt-1 text-sm italic text-zinc-400">{content.closing_message}</p>
+                  </details>
+                )}
               </div>
             )}
           </details>
@@ -888,6 +949,51 @@ function FbArea({ label, value, onChange, rows = 3 }: { label: string; value: st
   return <ExpandableArea label={label} value={value} onChange={onChange} rows={rows} />;
 }
 
+/** Fila de fuerza de un ejercicio (e1RM + delta + detalle). Compartida entre
+ *  el top 3 visible y la lista completa plegada. */
+function StrengthRow({ s }: { s: any }) {
+  return (
+    <li className="rounded-lg px-3 py-2" style={{ background: "var(--surface-raised)" }}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex min-w-0 items-center gap-2">
+          {s.muscle && (
+            <span
+              className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+              style={{ background: "color-mix(in srgb, var(--brand-accent-2) 15%, transparent)", color: "var(--brand-accent-2)" }}
+            >
+              {s.muscle}
+            </span>
+          )}
+          <span className="truncate text-zinc-300">{s.name}</span>
+        </span>
+        <span className="whitespace-nowrap text-zinc-400">
+          e1RM {Math.round(s.e1rm_kg)} kg
+          {s.delta_kg != null && (
+            <span style={{ color: s.delta_kg >= 0 ? "var(--brand-accent)" : "#C2453A" }}>
+              {" "}{s.delta_kg >= 0 ? "▲" : "▼"} {Math.abs(s.delta_kg)} kg
+              {s.pct != null ? ` (${s.pct >= 0 ? "+" : ""}${s.pct}%)` : ""}
+            </span>
+          )}
+        </span>
+      </div>
+      <div className="mt-0.5 text-xs text-zinc-500">
+        {s.avg_weight_kg != null && (
+          <>
+            Peso medio {s.avg_weight_kg} kg
+            {s.avg_weight_delta_kg != null && (
+              <span style={{ color: s.avg_weight_delta_kg >= 0 ? "var(--brand-accent)" : "#C2453A" }}>
+                {" "}({s.avg_weight_delta_kg >= 0 ? "+" : ""}{s.avg_weight_delta_kg} kg)
+              </span>
+            )}
+          </>
+        )}
+        {s.avg_reps != null && <> · {s.avg_reps} reps de media</>}
+        {s.delta_kg == null && <> · primera revisión con datos de este ejercicio</>}
+      </div>
+    </li>
+  );
+}
+
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg p-2.5 text-center" style={{ background: "var(--surface-raised)" }}>
@@ -912,8 +1018,32 @@ const KIND_LABEL: Record<string, string> = {
 
 /** Fotos de progreso del período (fetch con JWT → blob: las fotos de clientes
  *  NO son públicas). Muestra miniaturas; un toque abre la foto a tamaño real. */
+/** Envoltorio plegado de las fotos: consulta solo el NÚMERO (metadatos, barato)
+ *  y no descarga ninguna imagen hasta que el coach abre el desplegable. */
+function PeriodPhotosFolded({ clientId, periodId }: { clientId: number; periodId: number }) {
+  const [count, setCount] = useState<number | null>(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    api.listClientPhotos(clientId)
+      .then((all) => { if (alive) setCount(all.filter((p) => p.period_id === periodId).length); })
+      .catch(() => { if (alive) setCount(0); });
+    return () => { alive = false; };
+  }, [clientId, periodId]);
+  if (!count) return null;
+  return (
+    <details className="mt-2" onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+      <summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-zinc-300">
+        Fotos del período ({count})
+      </summary>
+      {open && <PeriodPhotos clientId={clientId} periodId={periodId} />}
+    </details>
+  );
+}
+
 function PeriodPhotos({ clientId, periodId }: { clientId: number; periodId: number }) {
   const [photos, setPhotos] = useState<{ id: number; kind: string; url: string }[] | null>(null);
+  const [total, setTotal] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -921,6 +1051,7 @@ function PeriodPhotos({ clientId, periodId }: { clientId: number; periodId: numb
     api.listClientPhotos(clientId)
       .then(async (all) => {
         const mine = all.filter((p) => p.period_id === periodId);
+        if (alive) setTotal(mine.length);
         const loaded: { id: number; kind: string; url: string }[] = [];
         for (const p of mine.slice(0, 8)) {
           try {
@@ -959,6 +1090,11 @@ function PeriodPhotos({ clientId, periodId }: { clientId: number; periodId: numb
           </a>
         ))}
       </div>
+      {total > photos.length && (
+        <p className="mt-1 text-[11px] text-zinc-500">
+          Mostrando {photos.length} de {total}; el resto, en la ficha de fotos del cliente.
+        </p>
+      )}
     </div>
   );
 }
