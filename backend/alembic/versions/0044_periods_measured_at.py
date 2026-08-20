@@ -18,7 +18,12 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("periods", sa.Column("measured_at", sa.DateTime(timezone=True), nullable=True))
+    # IF NOT EXISTS a propósito: la migración 0001 crea las tablas con
+    # `create_all` desde los modelos ACTUALES, así que en una base de datos
+    # nueva esta columna YA viene creada y un ADD a secas abortaba el arranque
+    # ("column measured_at already exists") dejando la API en bucle de
+    # reinicio. Con datos ya existentes, en cambio, hay que añadirla.
+    op.execute("ALTER TABLE periods ADD COLUMN IF NOT EXISTS measured_at TIMESTAMPTZ")
     # Retroactivo: lo ya medido se fecha en el inicio del período (es lo único
     # que se sabe de ello) para no dejar la columna a NULL en datos existentes.
     op.execute(

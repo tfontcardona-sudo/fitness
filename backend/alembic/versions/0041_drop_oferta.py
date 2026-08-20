@@ -21,8 +21,10 @@ depends_on = None
 
 def upgrade() -> None:
     op.execute("UPDATE clients SET billing_period = 'unico' WHERE billing_period = 'oferta'")
-    with op.batch_alter_table("clients") as batch:
-        batch.drop_column("stripe_subscription_id")
+    # IF EXISTS a propósito: la migración 0001 crea las tablas con `create_all`
+    # desde los modelos ACTUALES, así que en una base de datos nueva esta
+    # columna no llegó a existir nunca y un DROP a secas reventaba el arranque.
+    op.execute("ALTER TABLE clients DROP COLUMN IF EXISTS stripe_subscription_id")
 
 
 def downgrade() -> None:
