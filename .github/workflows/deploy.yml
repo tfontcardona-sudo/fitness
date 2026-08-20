@@ -1,0 +1,41 @@
+# Despliegue AUTOMÁTICO al VPS: cada vez que main cambia (merge de una PR),
+# esta acción entra por SSH al servidor, trae el código y reconstruye los
+# contenedores. Así "fusionar = desplegar" — nadie tiene que tocar la terminal.
+#
+# REQUISITO (una sola vez): en GitHub → Settings → Secrets and variables →
+# Actions → New repository secret, crear:
+#   VPS_HOST      46.225.57.25
+#   VPS_USER      root
+#   VPS_PASSWORD  (la contraseña SSH del servidor)
+# Sin esos secretos, la acción falla sin tocar nada (el servidor sigue igual).
+#
+# También se puede lanzar a mano desde la pestaña Actions (workflow_dispatch).
+
+name: Desplegar en el VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Desplegar por SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          command_timeout: 30m
+          script: |
+            set -e
+            cd /root/fitness
+            git pull origin main
+            docker compose up -d --build
+            docker compose ps

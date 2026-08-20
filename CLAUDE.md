@@ -254,11 +254,14 @@ la seguridad del sistema (dietas/ejercicios mal calculados).
 ## 4. El flujo de negocio (el ciclo de asesoría)
 
 ```
-1. ANAMNESIS (1 vez)  → "Camí A": el coach descarga el PDF oficial de DQ
-   (GET /api/anamnesis-template), lo envía por correo manualmente, el cliente
-   lo rellena y lo devuelve. El coach lo sube al perfil del cliente.
-   · Al subirlo, la IA lo LEE automáticamente y rellena la ficha.
-   · Una sola anamnesis por cliente (subir otra reemplaza la anterior).
+1. ANAMNESIS (1 vez)  → el cliente abre /anamnesis/{token} (email/WhatsApp de
+   arranque) y rellena el FORMULARIO DIGITAL por pasos (vía oficial desde
+   agosto 2026, decisión del dueño): los datos van directos a la ficha, se
+   firma el consentimiento RGPD (PDF generado) y puede subir fotos iniciales.
+   · Alternativa (plegada en la misma página): descargar el PDF oficial,
+     rellenarlo y subirlo — la IA lo LEE automáticamente y rellena la ficha.
+   · Una sola anamnesis por cliente (el formulario responde 409 tras enviarse;
+     subir otro PDF reemplaza el anterior).
 2. REVISIÓN          → el coach revisa los datos extraídos en la pestaña
    Anamnesis (la IA puede equivocarse con texto manuscrito) y corrige.
 3. PLAN              → pestaña Planificación → Generar → revisar → Publicar +
@@ -270,9 +273,11 @@ la seguridad del sistema (dietas/ejercicios mal calculados).
 6. FEEDBACK          → el coach genera feedback + el siguiente plan → vuelve a 4.
 ```
 
-**Decisión de diseño (Camí A):** la anamnesis oficial es el PDF de DQ. NO se usa
-un formulario digital largo en el portal; el PDF es el documento maestro. La IA
-lo lee, pero el coach revisa antes de generar (seguridad > automatización ciega).
+**Decisión de diseño (agosto 2026 — sustituye al "Camí A"):** la vía oficial es
+el FORMULARIO DIGITAL del portal (el PDF de 10 páginas no era rellenable y
+obligaba a imprimir); el PDF sigue disponible como alternativa. En ambas vías
+el coach REVISA la ficha antes de generar (seguridad > automatización ciega).
+"Anamnesis recibida" = `consent_signed_at` (formulario) O un PDF subido.
 
 ---
 
@@ -436,6 +441,80 @@ cd backend && python -m pytest tests/ -q
 ---
 
 ## 9. Trabajo pendiente / próximos pasos
+
+000. ✅ **SIGUIENTE NIVEL DQR · RONDA 2 (agosto 2026)** — el dueño aprobó las 8
+   propuestas de la ronda 1 y pidió además aprendizaje de las ediciones del
+   coach y recorte del gasto de créditos. Todo implementado y en verde:
+   - **Anamnesis DIGITAL como vía oficial** (decisión del dueño — sustituye el
+     "Camí A" del §4): `AnamnesisPage.tsx` reescrita como wizard de 6 pasos
+     (móvil primero) contra los endpoints que YA existían
+     (`POST /api/p/{token}/anamnesis`, consentimiento RGPD con PDF, fotos
+     iniciales); nuevo `GET .../anamnesis/prefill` (pre-relleno, 409 tras
+     enviar); el PDF queda como alternativa plegada. Unificado "anamnesis
+     recibida" en las DOS vías: `consent_signed_at` cuenta en el banner del
+     portal, la alerta del panel ("(formulario del portal)"), y los
+     recordatorios D+3/D+7; `storage.list_documents` EXCLUYE
+     `consentimiento_rgpd.pdf` (se colaba como anamnesis); push 📋 al coach
+     también desde el formulario; `send_portal_access` al enviar (alta
+     manual); `_links.anamnesis_url` corregida a `/anamnesis/{token}`;
+     `daily_activity_level` validado como Literal.
+   - **Entreno premium**: temporizador de DESCANSO entre series (píldora
+     flotante con cuenta atrás + vibración; arranca al completar peso+reps con
+     el `rest_sec` prescrito, que ahora también se muestra) y **récords
+     personales** — `GET /p/{token}/workout-history` devuelve `records` (mejor
+     e1RM histórico por ejercicio, series ≤15 reps como metrics) y el portal
+     celebra 🎉 el PR al registrarlo (sin confeti en la primera sesión: es la
+     línea base) y muestra "🏆 Tu récord" bajo el objetivo.
+   - **Resumen semanal del coach** (`services/weekly_digest.py` + job lunes
+     08:00 + plantilla `coach_weekly_summary`): push 📊 + email con tabla por
+     cliente (días registrados /7, Δ peso 14 d, avisos: riesgo/revisión/
+     renovación/pago). Idempotente por semana vía EmailLog.
+   - **Pagos ronda 2** (mig. 0038): `payments.fee_cents` (comisión de Stripe,
+     consultada best-effort SOLO en movimientos nuevos vía
+     `_fee_de_cobro`/BalanceTransaction) y `payments.payment_intent`
+     (`_cargo_es_nuestro` ahora reconoce cargos por PI → robusto al borrado
+     RGPD); resumen con `month_fee_cents` y neto en `/pagos`; **export CSV**
+     (`GET /api/payments/export.csv`, BOM+`;` para Excel es-ES, botón
+     Exportar); **recordatorio de renovación AL CLIENTE**
+     (`services/renewals.py` una sola verdad + email `renewal_reminder` una
+     vez por ciclo vía `clients.renewal_reminder_sent_at`, y
+     `GET /api/pay/{token}` reabre checkout en ventana de renovación aunque la
+     ficha diga paid — antes el CTA moría en /pago-ok).
+   - **Aprendizaje del coach (§13 EN VIVO)**: `services/coach_lessons.py`
+     destila las filas de `plan_edits` en 3-8 LECCIONES cualitativas (modelo
+     ligero; filtro determinista que veta lecciones con cifras — la IA sigue
+     sin calcular), sidecar `brand/_coach_lessons.json`, refresco automático
+     en el mantenimiento diario (≥5 ediciones nuevas), inyección en el USER
+     prompt de los 3 núcleos de generación (no invalida la caché del system), y
+     transparencia total: `GET/POST /api/learning/lessons[/refresh]` + pestaña
+     "Aprendizaje" en Recursos.
+   - **Ahorro de créditos**: PROMPT CACHING transparente
+     (`AIClient._system_payload`: system ≥4000 chars → bloque con
+     `cache_control`; el PDF de la extracción también se cachea → el reintento
+     lee al 10%); el PANEL §9 comparte contexto cacheado entre los 8-10 roles
+     (2 bloques: criterio+anamnesis | plan — el bucle de reparación conserva el
+     primero); `_record_usage` convierte tokens de caché a equivalentes
+     (×1,25/×0,1); el EDUCATIVO baja a `model_light` + caché en sidecar por
+     split (`EDUCATION_CACHE_ENABLED`, false en tests) y su fallo ya NO tumba
+     el plan full (antes obligaba a repagar núcleo+comidas+panel);
+     `_raw_call_with_pdf` con la misma red anti-`temperature` que `_raw_call`.
+   - **Auto-despliegue**: `.github/workflows/deploy.yml` — merge a main → SSH
+     al VPS → `git pull` + `docker compose up -d --build`. Requiere secretos
+     `VPS_HOST`/`VPS_USER`/`VPS_PASSWORD` en GitHub (una vez).
+   - **Revisión adversarial del diff (5 confirmados, corregidos)**: subir un
+     PDF de anamnesis BORRABA `consentimiento_rgpd.pdf` (prueba legal RGPD
+     irrecuperable — excluido del barrido + regresión); errores de la subida
+     de fotos del formulario invisibles + contador desincronizado con
+     `photos_count`; caché educativa sin versión de prompt (la clave ahora
+     hashea los prompts → mejorar el prompt invalida sola); el filtro numérico
+     de lecciones podía VACIAR el sidecar pisando las lecciones buenas (ahora
+     conserva y reintenta); ventana del resumen semanal era de 8 días ("8/7").
+   - Tests: `tests/test_siguiente_nivel2.py` (19) — renovación (ventana, email
+     una vez por ciclo, pay_link renovable), resumen semanal (contenido +
+     idempotencia), lecciones (destilado, filtro numérico, bloque), caching
+     (payload, panel compartido, educativo ligero+caché), récords del portal,
+     anamnesis digital (consent no cuenta como anamnesis, banner/alerta/422) y
+     pagos (fee+PI, cargo por PI, summary, CSV).
 
 00. ✅ **SIGUIENTE NIVEL DQR (agosto 2026)** — ronda integral sobre el libro de
    caja: Stripe completo en web+móvil, PWA con actualización en caliente,
@@ -831,11 +910,9 @@ cd backend && python -m pytest tests/ -q
        (refresco propio `ALERTS_REFRESH_MS` = 20 s).
    - **Pendiente menor restante** (sin urgencia): editar el banco de comidas
      opción a opción desde el editor y el `swap` de ejercicios desde la web.
-     **Decisión pendiente del dueño:** la anamnesis oficial es un PDF de 10
-     páginas **no rellenable** (sin `/AcroForm`): el cliente debe imprimirlo o
-     usar una app externa. Existe un formulario digital en el backend sin usar.
-     Cambiarlo tocaría el "Camí A" (§4), que decidió el dueño: no se toca sin su
-     visto bueno.
+     ~~Decisión pendiente del dueño: anamnesis PDF no rellenable vs formulario
+     digital~~ **RESUELTO (agosto 2026)**: el dueño aprobó el formulario
+     digital como vía oficial (ver §4 y la ronda 000 de arriba).
 
 ---
 

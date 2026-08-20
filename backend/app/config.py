@@ -138,6 +138,9 @@ class Settings(BaseSettings):
     tz: str = "Europe/Madrid"
     # Apaga TODOS los jobs (recordatorios, cierres, resúmenes): tests/CI.
     scheduler_enabled: bool = True
+    # Caché del contenido educativo por split (sidecar): el mismo split reutiliza
+    # las píldoras/técnica/FAQ ya generadas → 0 créditos. false en tests.
+    education_cache_enabled: bool = True
 
     @property
     def public_base_url(self) -> str:

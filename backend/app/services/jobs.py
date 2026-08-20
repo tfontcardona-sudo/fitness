@@ -146,6 +146,17 @@ def run_daily_maintenance(db: Session, today: date | None = None) -> dict:
                 "mantenimiento fallido del cliente %s; se continúa", client.id)
             db.rollback()
 
+    # Aprendizaje del coach (§13 en vivo): si hay suficientes ediciones nuevas
+    # de planes, se re-destilan las lecciones (modelo ligero, best-effort).
+    try:
+        from app.services.coach_lessons import maybe_refresh
+
+        refreshed = maybe_refresh(db)
+        if refreshed is not None:
+            summary["lessons_refreshed"] = len(refreshed.get("lessons") or [])
+    except Exception:  # noqa: BLE001
+        pass
+
     return summary
 
 
@@ -217,6 +228,9 @@ def _maintain_client(db: Session, client: Client, today: date,
                 has_doc = bool(list_documents(client.id))
             except Exception:  # noqa: BLE001
                 has_doc = True  # ante la duda, no molestar
+            # El formulario digital del portal también cuenta como enviada.
+            if getattr(client, "consent_signed_at", None) is not None:
+                has_doc = True
             kind = f"onboarding_reminder_d{days_onb}"
             if not has_doc and not _already_sent_today(db, client.id, kind, today):
                 anamnesis_url = f"{base}/anamnesis/{client.portal_token}"
@@ -224,6 +238,33 @@ def _maintain_client(db: Session, client: Client, today: date,
                     brand, _first_name(client), anamnesis_url, days_onb)
                 emailer.send(to=client.email, subject=subject, html=html,
                              kind=kind, client=client)
+                summary["reminders"] += 1
+
+    # 1e) RENOVACIÓN al cliente: su plan de pago único vence en ≤7 días (o ya
+    # venció). UNA vez por ciclo pagado: el sello renewal_reminder_sent_at se
+    # compara contra paid_at — un pago nuevo re-arma el aviso del ciclo
+    # siguiente. El CTA es su enlace estable de pago, que en ventana de
+    # renovación vuelve a abrir un checkout (routers/stripe_router.pay_link).
+    from app.services.renewals import renewal_window, RENEWAL_WARN_DAYS
+
+    ventana = renewal_window(client, today)
+    if ventana is not None and ventana[1] <= RENEWAL_WARN_DAYS:
+        ya_avisado = (client.renewal_reminder_sent_at is not None
+                      and client.paid_at is not None
+                      and client.renewal_reminder_sent_at >= client.paid_at)
+        if not ya_avisado:
+            ends_on, left = ventana
+            subject, html = tpl.renewal_reminder(
+                brand, _first_name(client),
+                f"{base}/api/pay/{client.portal_token}",
+                ends_on.strftime("%d/%m/%Y"), expired=left < 0,
+            )
+            resultado = emailer.send(to=client.email, subject=subject, html=html,
+                                     kind="renewal_reminder", client=client)
+            if resultado == "sent":
+                from datetime import datetime, timezone
+
+                client.renewal_reminder_sent_at = datetime.now(timezone.utc)
                 summary["reminders"] += 1
 
     # 2) Cambio de estado

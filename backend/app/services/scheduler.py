@@ -91,6 +91,20 @@ def _video_call_reminder_job() -> None:
         db.close()
 
 
+def _weekly_digest_job() -> None:
+    db = SessionLocal()
+    try:
+        from app.services.weekly_digest import run_weekly_digest
+
+        summary = run_weekly_digest(db)
+        logger.info("resumen semanal del coach: %s", summary)
+    except Exception:  # nunca tumbar el scheduler por un fallo puntual
+        logger.exception("fallo en el resumen semanal del coach")
+        db.rollback()
+    finally:
+        db.close()
+
+
 def start_scheduler() -> BackgroundScheduler:
     global _scheduler
     if _scheduler is not None:
@@ -137,6 +151,17 @@ def start_scheduler() -> BackgroundScheduler:
         coalesce=True,
         max_instances=1,
         misfire_grace_time=600,
+    )
+    # Resumen SEMANAL del coach: lunes a las 08:00 locales (push 📊 + email con
+    # la semana de todos los clientes). Idempotente por semana dentro del job.
+    sched.add_job(
+        _weekly_digest_job,
+        trigger=CronTrigger(day_of_week="mon", hour=8, minute=0, timezone=settings.tz),
+        id="weekly_coach_summary",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+        misfire_grace_time=6 * 3600,
     )
     sched.start()
     logger.info(

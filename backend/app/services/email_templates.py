@@ -410,3 +410,75 @@ def coach_at_risk(brand: Brand, client_name: str, reason: str, dashboard_url: st
         "<p>Quizá convenga un contacto personal para recuperar la adherencia.</p>"
     )
     return subject, _shell(brand, "Cliente en riesgo", body, dashboard_url, "Abrir panel")
+
+
+def renewal_reminder(brand: Brand, first_name: str, pay_url: str,
+                     ends_label: str, expired: bool) -> tuple[str, str]:
+    """Renovación del plan de pago único AL CLIENTE (una vez por ciclo).
+    El CTA es su enlace estable de pago, que en ventana de renovación vuelve a
+    abrir un checkout aunque la ficha conste como pagada."""
+    first_name = _esc(first_name)
+    if expired:
+        subject = f"Tu plan ha vencido — renuévalo para seguir · {brand.name}"
+        body = (
+            f"<p>Hola {first_name}, tu plan de asesoría <strong>venció el "
+            f"{_esc(ends_label)}</strong>.</p>"
+            "<p>Para que tu seguimiento no se pare (planificación, revisiones y "
+            "ajustes quincenales), renueva cuando quieras desde el botón de abajo. "
+            "El pago es seguro con Stripe.</p>"
+        )
+        titulo = "Renueva tu asesoría"
+    else:
+        subject = f"Tu plan termina pronto — renueva tu asesoría · {brand.name}"
+        body = (
+            f"<p>Hola {first_name}, tu plan de asesoría <strong>termina el "
+            f"{_esc(ends_label)}</strong>.</p>"
+            "<p>Si quieres seguir con tu planificación, revisiones y ajustes sin "
+            "cortes, puedes renovarlo ya desde el botón de abajo. El pago es "
+            "seguro con Stripe.</p>"
+        )
+        titulo = "Tu plan termina pronto"
+    body += "<p>Si tienes cualquier duda, responde a este correo y lo vemos.</p>"
+    return subject, _shell(brand, titulo, body, pay_url, "Renovar mi plan")
+
+
+def coach_weekly_summary(brand: Brand, digest) -> tuple[str, str]:
+    """Resumen SEMANAL al coach (lunes): la semana de todos sus clientes en una
+    tabla. `digest` es un WeeklyDigest de services/weekly_digest.py."""
+    subject = f"[Resumen] Tu semana {digest.week_label}: " \
+              f"{digest.on_track_count}/{digest.active_count} clientes al día"
+    filas = []
+    for c in digest.clients:
+        peso = ""
+        if c.weight_delta_kg is not None:
+            signo = "+" if c.weight_delta_kg > 0 else ""
+            peso = f"{signo}{c.weight_delta_kg:.1f} kg".replace(".", ",")
+        avisos = ", ".join(c.flags) if c.flags else "—"
+        filas.append(
+            "<tr>"
+            f"<td style='padding:6px 10px;border-bottom:1px solid #eee'>{_esc(c.name)}</td>"
+            f"<td style='padding:6px 10px;border-bottom:1px solid #eee;text-align:center'>{c.days_logged}/7</td>"
+            f"<td style='padding:6px 10px;border-bottom:1px solid #eee;text-align:center'>{_esc(peso) or '—'}</td>"
+            f"<td style='padding:6px 10px;border-bottom:1px solid #eee'>{_esc(avisos)}</td>"
+            "</tr>"
+        )
+    tabla = (
+        "<table style='border-collapse:collapse;width:100%;font-size:14px'>"
+        "<tr>"
+        "<th style='padding:6px 10px;text-align:left;border-bottom:2px solid #ddd'>Cliente</th>"
+        "<th style='padding:6px 10px;border-bottom:2px solid #ddd'>Días</th>"
+        "<th style='padding:6px 10px;border-bottom:2px solid #ddd'>Peso 14 d</th>"
+        "<th style='padding:6px 10px;text-align:left;border-bottom:2px solid #ddd'>Avisos</th>"
+        "</tr>" + "".join(filas) + "</table>"
+    )
+    partes = [f"<p><strong>{digest.on_track_count} de {digest.active_count}</strong> "
+              "clientes con ≥5 días registrados esta semana.</p>", tabla]
+    if digest.renewals:
+        partes.append("<p><strong>Renovaciones al caer:</strong> "
+                      f"{_esc(', '.join(digest.renewals))}</p>")
+    if digest.unpaid:
+        partes.append("<p><strong>Pagos pendientes:</strong> "
+                      f"{_esc(', '.join(digest.unpaid))}</p>")
+    body = "".join(partes)
+    return subject, _shell(brand, f"Resumen semanal · {digest.week_label}", body,
+                           None, None)

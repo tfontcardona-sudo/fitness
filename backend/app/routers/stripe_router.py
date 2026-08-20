@@ -132,9 +132,15 @@ def pay_link(request: Request, client: Client = Depends(get_client_by_token),
     base = settings.public_base_url.rstrip("/")
     # YA PAGADO: el botón del email de arranque vive para siempre — reabrirlo
     # tras pagar NO puede cobrar una segunda vez. Se le lleva a la página de
-    # gracias en vez de a un checkout nuevo.
+    # gracias en vez de a un checkout nuevo. EXCEPCIÓN: si su ciclo pagado está
+    # a ≤7 días de vencer (o ya venció), el MISMO enlace vuelve a abrir un
+    # checkout — es el CTA del email de renovación al cliente.
     if client.payment_status == "paid":
-        return RedirectResponse(f"{base}/pago-ok", status_code=302)
+        from app.services.portal import today_local
+        from app.services.renewals import is_due
+
+        if not is_due(client, today_local()):
+            return RedirectResponse(f"{base}/pago-ok", status_code=302)
     # OFERTA con suscripción YA creada: reabrir el enlace tras un impago no
     # puede montar una SEGUNDA suscripción (doble cobro mensual y otro primer
     # mes a 1 €). Si su suscripción tiene una factura abierta, se le manda ahí

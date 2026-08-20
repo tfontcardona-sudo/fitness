@@ -55,6 +55,7 @@ def _to_out(pago, nombres: dict) -> PaymentOut:
         paid_at=pago.paid_at,
         seen_at=pago.seen_at,
         stripe_object_id=pago.stripe_object_id,
+        fee_cents=pago.fee_cents,
     )
 
 
@@ -90,6 +91,65 @@ def payments_monthly(months: int = Query(default=6, ge=2, le=24),
                      db: Session = Depends(get_db)) -> dict:
     """Ingresos netos por mes (gráfica de barras de la pantalla de Pagos)."""
     return {"months": pay_svc.monthly_series(db, months=months)}
+
+
+@router.get("/export.csv")
+def export_csv(db: Session = Depends(get_db)):
+    """Libro de caja completo en CSV para la gestoría. Separador ';' y BOM
+    UTF-8 para que Excel en español lo abra bien a doble clic. Se descarga
+    desde el panel con el JWT en la cabecera (fetch → blob), como los Word."""
+    import csv
+    import io
+    from zoneinfo import ZoneInfo
+
+    from fastapi.responses import Response
+
+    from app.config import settings as cfg
+    from app.models import Payment
+
+    filas = db.execute(
+        select(Payment, Client.full_name)
+        .outerjoin(Client, Client.id == Payment.client_id)
+        .order_by(Payment.paid_at.desc())
+    ).all()
+    tz = ZoneInfo(cfg.tz)
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=";")
+    w.writerow(["Fecha", "Hora", "Cliente", "Email", "Concepto", "Tipo", "Estado",
+                "Importe (€)", "Comisión Stripe (€)", "Neto (€)", "Moneda",
+                "Modo", "ID de Stripe"])
+    estados = {"paid": "Cobrado", "failed": "Fallido", "refunded": "Devolución",
+               "canceled": "Baja"}
+    tipos = {"checkout": "Pago único", "invoice": "Suscripción",
+             "refund": "Devolución", "subscription": "Suscripción"}
+    for pago, nombre in filas:
+        local = pago.paid_at.astimezone(tz) if pago.paid_at else None
+        importe = pago.amount_cents / 100
+        if pago.status == "refunded":
+            importe = -importe
+        fee = (pago.fee_cents / 100) if pago.fee_cents is not None else None
+        neto = (importe - fee) if (fee is not None and importe > 0) else None
+        # Formato numérico español: coma decimal (Excel es-ES).
+        def _num(v):
+            return (f"{v:.2f}".replace(".", ",")) if v is not None else ""
+        w.writerow([
+            local.strftime("%d/%m/%Y") if local else "",
+            local.strftime("%H:%M") if local else "",
+            nombre or pago.customer_name or "",
+            pago.customer_email or "",
+            pago.description or "",
+            tipos.get(pago.kind, pago.kind),
+            estados.get(pago.status, pago.status),
+            _num(importe), _num(fee), _num(neto),
+            (pago.currency or "eur").upper(),
+            "Real" if pago.livemode else "Prueba",
+            pago.stripe_object_id,
+        ])
+    contenido = "﻿" + buf.getvalue()  # BOM: Excel detecta UTF-8
+    return Response(
+        content=contenido, media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="pagos_dqr.csv"'},
+    )
 
 
 @router.post("/seen")

@@ -145,7 +145,10 @@ export function portalApi(token: string) {
     today: () => req<TodayView>("GET", `${base}/today`),
     training: () => req<{ sessions: TodaySession[]; plan_changes?: PlanChanges | null; week?: TrainingWeek | null }>("GET", `${base}/training`),
     workoutHistory: () =>
-      req<{ history: Record<string, { date: string; sets: { set: number; weight_kg: number | null; reps: number | null }[] }[]> }>(
+      req<{
+        history: Record<string, { date: string; sets: { set: number; weight_kg: number | null; reps: number | null }[] }[]>;
+        records?: Record<string, { e1rm_kg: number; weight_kg: number; reps: number; date: string }>;
+      }>(
         "GET", `${base}/workout-history`,
       ),
     plan: () => req<PortalPlanOut>("GET", `${base}/plan`),

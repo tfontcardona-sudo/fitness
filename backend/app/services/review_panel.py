@@ -335,11 +335,37 @@ def make_ai_reviewer(
     from app.schemas.ai import ReviewerOutput  # schema Pydantic del veredicto
     from app.config import settings
 
+    # AHORRO (prompt caching): el contexto compartido (instrucciones + criterio
+    # + anamnesis + plan) es IDÉNTICO para los 8-10 roles del panel y se
+    # reenviaba entero en cada llamada. Ahora viaja como bloques de system con
+    # cache_control: el primer rol escribe la caché y los demás la leen al 10%.
+    # Dos cortes: (criterio+anamnesis) | (plan) — así el bucle de reparación,
+    # que solo cambia el PLAN, conserva cacheado el primer tramo.
+    extra = (f"\n\nCRITERIO DEL COACH (referencia):\n{criterios_text}"
+             if criterios_text else "")
+    _instrucciones = (
+        SYSTEM_REVIEWER + "\n\n"
+        "Revisa el PLAN contra la ANAMNESIS del cliente. Devuelve SOLO un JSON "
+        "con EXACTAMENTE estas claves: \"veredicto\" "
+        "(aprobado|aprobado_con_reservas|rechazado), \"puntuacion_rubrica\" "
+        "(entero 0-100) y \"hallazgos\" (lista; cada hallazgo con \"severidad\" "
+        "(bloqueante|mayor|menor), \"descripcion\", \"cita_anamnesis\", "
+        "\"donde_en_el_plan\" y \"correccion_propuesta\"). No inventes datos "
+        "que no estén en la anamnesis."
+    )
+    system_blocks = [
+        {"type": "text",
+         "text": f"{_instrucciones}{extra}\n\n=== ANAMNESIS ===\n{anamnesis_text}",
+         "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": f"=== PLAN ===\n{plan_text}",
+         "cache_control": {"type": "ephemeral"}},
+    ]
+
     def reviewer(role: dict) -> ReviewerVerdict:
-        prompt = reviewer_prompt(role, plan_text, anamnesis_text, criterios_text)
         out = ai_client.generate_json(
-            model=settings.model_light, system=SYSTEM_REVIEWER,
-            user=prompt, schema=ReviewerOutput,
+            model=settings.model_light, system=system_blocks,
+            user=f"Eres «{role['name']}». Tu rúbrica: {role['rubric']}",
+            schema=ReviewerOutput,
             temperature=0,  # §14: cada revisor juzga de forma determinista
         )
         hallazgos = [ReviewFinding(

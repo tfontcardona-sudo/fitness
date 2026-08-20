@@ -60,7 +60,9 @@ def _links(client: Client) -> PortalLinkOut:
     return PortalLinkOut(
         portal_token=client.portal_token,
         portal_url=f"{base}/p/{client.portal_token}",
-        anamnesis_url=f"{base}/p/{client.portal_token}/anamnesis",
+        # La ruta REAL del front es /anamnesis/{token} (App.tsx); la antigua
+        # /p/{token}/anamnesis no existía y el enlace copiado moría en el portal.
+        anamnesis_url=f"{base}/anamnesis/{client.portal_token}",
     )
 
 
@@ -635,8 +637,13 @@ def ingest_anamnesis_pdf(db: Session, client_id: int, content: bytes,
     # después se retiran las versiones anteriores.
     from app.services.storage import client_dir
     folder = client_dir(client_id, "documents")
+    # El justificante RGPD del formulario digital vive en esta misma carpeta y
+    # NO es una anamnesis: barrerlo aquí destruía la prueba legal del
+    # consentimiento de forma irreversible (el 409 del formulario impide
+    # regenerarlo) e indetectable (list_documents lo excluye a propósito).
     previous = [p for p in folder.iterdir()
-                if p.is_file() and p.suffix.lower() == ".pdf"]
+                if p.is_file() and p.suffix.lower() == ".pdf"
+                and p.name != "consentimiento_rgpd.pdf"]
     rel = save_document(client_id, content, filename or "anamnesis.pdf")
     # Una sola anamnesis por cliente: fuera las anteriores (la nueva ya está).
     for old in previous:

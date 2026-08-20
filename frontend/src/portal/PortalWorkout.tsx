@@ -12,6 +12,7 @@ type Api = ReturnType<typeof portalApi>;
 interface SetRow { weight_kg: number | null; reps: number | null }
 interface HistSet { set: number; weight_kg: number | null; reps: number | null }
 interface HistSession { date: string; sets: HistSet[] }
+interface ExRecord { e1rm_kg: number; weight_kg: number; reps: number; date: string }
 
 /**
  * Entreno: el cliente registra SU rutina — series con peso y reps por ejercicio.
@@ -40,6 +41,13 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
   const [todayDay, setTodayDay] = useState<string | null>(null);
   const [sets, setSets] = useState<Record<number, SetRow[]>>({});
   const [history, setHistory] = useState<Record<string, HistSession[]>>({});
+  // Récord histórico por ejercicio (mejor e1RM de sesiones previas, lo sirve el
+  // backend): al completar una serie que lo supera, se celebra al momento.
+  const [records, setRecords] = useState<Record<string, ExRecord>>({});
+  // Temporizador de DESCANSO entre series: arranca al completar una serie
+  // (peso + reps) con el rest_sec prescrito para ese ejercicio.
+  const [rest, setRest] = useState<{ left: number; total: number; exName: string } | null>(null);
+  const restTimer = useRef<number | null>(null);
   // Vídeo abierto EN la propia pantalla (uno como mucho: abrir otro cierra el
   // anterior, y cerrar el que está abierto devuelve al cliente a su rutina).
   const [openVideoId, setOpenVideoId] = useState<number | null>(null);
@@ -63,6 +71,7 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
       setPlanChanges(tr.plan_changes ?? null);
       setWeek(tr.week ?? null);
       setHistory(hist.history ?? {});
+      setRecords(hist.records ?? {});
       setTodayDay(t.session?.day ?? null);
       if (t.session) {
         const i = ss.findIndex((s) => s.day === t.session!.day && s.name === t.session!.name);
@@ -150,13 +159,66 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
     };
   }, []);
 
+  function startRest(sec: number, exName: string) {
+    if (restTimer.current) window.clearInterval(restTimer.current);
+    setRest({ left: sec, total: sec, exName });
+    restTimer.current = window.setInterval(() => {
+      setRest((r) => {
+        if (!r) return r;
+        if (r.left <= 1) {
+          if (restTimer.current) window.clearInterval(restTimer.current);
+          restTimer.current = null;
+          try { navigator.vibrate?.([200, 100, 200]); } catch { /* sin soporte */ }
+          toast.push("💪 Descanso terminado — a por la siguiente serie");
+          return null;
+        }
+        return { ...r, left: r.left - 1 };
+      });
+    }, 1000);
+  }
+  function cancelRest() {
+    if (restTimer.current) window.clearInterval(restTimer.current);
+    restTimer.current = null;
+    setRest(null);
+  }
+  useEffect(() => () => { if (restTimer.current) window.clearInterval(restTimer.current); }, []);
+
+  // Serie COMPLETADA (transición a peso+reps rellenos): récord + descanso.
+  function serieCompletada(exId: number, row: SetRow) {
+    const ex = selected?.exercises.find((e) => e.exercise_id === exId);
+    const w = row.weight_kg ?? 0;
+    const reps = row.reps ?? 0;
+    // Mismo criterio que el backend (metrics.epley_1rm, series ≤15 reps). Solo
+    // se celebra si YA había récord previo: la primera sesión no es un desfile
+    // de confeti, es la línea base.
+    if (w > 0 && reps > 0 && reps <= 15) {
+      const e1 = reps === 1 ? w : w * (1 + reps / 30);
+      const rec = records[String(exId)];
+      if (rec && e1 > rec.e1rm_kg + 0.01) {
+        try { navigator.vibrate?.([100, 60, 100, 60, 250]); } catch { /* sin soporte */ }
+        toast.push(`🎉 ¡Récord personal en ${ex?.name ?? "este ejercicio"}! ${w} kg × ${reps}`);
+        setRecords((r) => ({
+          ...r,
+          [String(exId)]: { e1rm_kg: e1, weight_kg: w, reps, date: today },
+        }));
+      }
+    }
+    if (ex?.rest_sec) startRest(ex.rest_sec, ex.name);
+  }
+
   function setRow(exId: number, idx: number, patch: Partial<SetRow>) {
     if (readOnly) return;
+    const prevRow = sets[exId]?.[idx];
+    const nuevoRow = { ...(prevRow ?? { weight_kg: null, reps: null }), ...patch };
+    const transicion = prevRow != null
+      && !(prevRow.weight_kg != null && prevRow.reps != null)
+      && nuevoRow.weight_kg != null && nuevoRow.reps != null;
     setSets((s) => {
       const next = { ...s, [exId]: s[exId].map((r, i) => (i === idx ? { ...r, ...patch } : r)) };
       flush(next);
       return next;
     });
+    if (transicion) serieCompletada(exId, nuevoRow);
   }
   function removeSet(exId: number, idx: number) {
     if (readOnly) return;
@@ -400,7 +462,13 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
                                 ? ` (sem ${week.week})` : ""
                             }`
                           : ""}
+                        {ex.rest_sec ? ` · descanso ${ex.rest_sec}s` : ""}
                       </p>
+                      {records[String(ex.exercise_id)] && (
+                        <p className="text-[11px] font-medium" style={{ color: brand.color_secondary }}>
+                          🏆 Tu récord: {records[String(ex.exercise_id)].weight_kg} kg × {records[String(ex.exercise_id)].reps}
+                        </p>
+                      )}
                     </div>
                     {doneCount > 0 && (
                       <span className="flex shrink-0 items-center gap-1 text-xs" style={{ color: brand.color_primary }}>
@@ -465,6 +533,33 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
         </>
       )}
       <p className="pb-2 text-center text-xs opacity-40">Se guarda automáticamente</p>
+
+      {/* Temporizador de DESCANSO: píldora flotante sobre la barra de pestañas.
+          Arranca sola al completar una serie con el descanso prescrito; se
+          puede saltar con la X. Vibra al terminar (si el móvil lo permite). */}
+      {rest && (
+        <div
+          className="fixed bottom-20 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full px-4 py-2.5 shadow-lg"
+          style={{ background: brand.color_primary, color: "#fff" }}
+          role="timer"
+          aria-label={`Descanso: ${rest.left} segundos`}
+        >
+          <span className="text-lg font-bold tabular-nums">
+            {Math.floor(rest.left / 60)}:{String(rest.left % 60).padStart(2, "0")}
+          </span>
+          <div className="h-1.5 w-24 overflow-hidden rounded-full bg-white/25">
+            <div
+              className="h-full rounded-full bg-white transition-all duration-1000 ease-linear"
+              style={{ width: `${Math.max(2, Math.round((rest.left / rest.total) * 100))}%` }}
+            />
+          </div>
+          <span className="max-w-[90px] truncate text-[11px] opacity-80">{rest.exName}</span>
+          <button onClick={cancelRest} aria-label="Saltar descanso"
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20">
+            <X size={14} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

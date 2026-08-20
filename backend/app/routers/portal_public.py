@@ -120,8 +120,12 @@ def _photos_count(db: Session, client_id: int) -> int:
 
 
 def _needs_anamnesis(client: Client) -> bool:
-    """Onboarding sin PDF de anamnesis: el portal debe señalar el camino."""
+    """Onboarding sin anamnesis: el portal debe señalar el camino. Cuenta como
+    recibida por CUALQUIERA de las dos vías: el formulario digital (sello de
+    consentimiento) o el PDF subido."""
     if client.status != "onboarding":
+        return False
+    if client.consent_signed_at is not None:
         return False
     try:
         from app.services.storage import list_documents
@@ -190,9 +194,65 @@ def submit_anamnesis(
     )
     log_event(db, "client", client.id, "anamnesis_submitted", {"diet_mode": client.diet_mode})
     log_event(db, "client", client.id, "consent_pdf_generated", {"path": pdf_rel})
+
+    # Acceso al portal: en el alta MANUAL del coach el email de credenciales
+    # salía al subir el PDF — con el formulario digital también debe salir.
+    if client.portal_access_sent_at is None:
+        try:
+            from app.services.portal_access import send_portal_access
+
+            send_portal_access(db, client)
+        except Exception:  # noqa: BLE001 — el acceso se puede reenviar a mano
+            pass
+
     db.commit()
     db.refresh(client)
+
+    # El coach se entera al INSTANTE, igual que con la subida del PDF (la vía
+    # PDF avisa desde ingest_anamnesis_pdf; el formulario avisaba a nadie).
+    try:
+        from app.services import push as push_svc
+
+        push_svc.send_to_coach(db, {
+            "title": f"📋 {client.full_name} ha enviado su anamnesis",
+            "body": "Formulario del portal completado: revisa la ficha y genera su planificación.",
+            "url": f"/clientes/{client.id}?tab=anamnesis",
+            "tag": f"anamnesis-{client.id}",
+        })
+    except Exception:  # noqa: BLE001 — el push nunca rompe el envío
+        pass
     return _state(db, client)
+
+
+@router.get("/{token}/anamnesis/prefill")
+@limiter.limit("30/minute")
+def anamnesis_prefill(
+    request: Request,
+    client: Client = Depends(get_client_by_token),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Valores actuales de la ficha para PRE-RELLENAR el formulario digital
+    (el coach pudo apuntar ya algunos datos en el alta). Solo mientras la
+    anamnesis no esté enviada; después, los cambios son cosa del coach."""
+    if client.consent_signed_at is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "La anamnesis ya fue enviada")
+    campos = ("sex", "birth_date", "height_cm", "start_weight_kg", "body_fat_pct",
+              "goal_type", "goal_weight_kg", "goal_deadline", "level",
+              "training_days", "daily_activity_level", "session_max_min",
+              "training_place", "equipment", "meals_per_day",
+              "food_allergies", "food_dislikes", "food_likes",
+              "injuries_notes", "medical_notes", "medication_notes",
+              "sport_history", "lifestyle_notes", "current_supplements",
+              "diet_mode", "diet_pattern", "strict_free_meal_enabled")
+    from datetime import date as _fecha
+
+    out = {}
+    for campo in campos:
+        v = getattr(client, campo, None)
+        if isinstance(v, (_fecha, datetime)):
+            v = v.isoformat()
+        out[campo] = v
+    return out
 
 
 @router.post("/{token}/anamnesis/photos")
@@ -819,7 +879,24 @@ def portal_workout_history(
     for ex_id, by_date in hist.items():
         for dt in sorted(by_date.keys(), reverse=True)[:5]:
             out.setdefault(str(ex_id), []).append({"date": dt, "sets": by_date[dt]})
-    return {"history": out}
+
+    # RÉCORD histórico por ejercicio (mejor e1RM de TODAS las sesiones previas,
+    # mismo criterio que metrics: series ≤15 reps): el portal celebra el PR en
+    # el momento de registrarlo, no dos semanas después en el feedback.
+    from app.services.metrics import epley_1rm
+
+    records: dict[str, dict] = {}
+    for log_date, ex_id, _set_number, weight, reps in rows:
+        if log_date == today or not weight or not reps or reps > 15:
+            continue
+        e = epley_1rm(weight, reps)
+        rec = records.get(str(ex_id))
+        if rec is None or e > rec["e1rm_kg"]:
+            records[str(ex_id)] = {
+                "e1rm_kg": e, "weight_kg": weight, "reps": reps,
+                "date": log_date.isoformat(),
+            }
+    return {"history": out, "records": records}
 
 
 @router.get("/{token}/progress", response_model=dict)

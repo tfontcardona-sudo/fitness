@@ -594,6 +594,58 @@ Temas de píldoras a rotar: sobrecarga progresiva, RIR, tempo, volumen, técnica
 sueño y recuperación, NEAT, hidratación, deload, gestión de la fatiga."""
 
 
+def _education_with_cache(ai: AIClient, *, split_name: str, variant: str,
+                          user: str) -> EducationOutput:
+    """Contenido educativo con AHORRO doble (auditoría de costes):
+
+    1. Modelo LIGERO: las píldoras/técnica/FAQ son contenido genérico por split
+       — pagarlas al modelo pesado era el peor ratio coste/valor del pipeline.
+    2. Caché en sidecar por (split, variante): lo ÚNICO del cliente en el
+       prompt educativo es el nombre del split, así que dos clientes con el
+       mismo split reciben el mismo educativo — la segunda vez cuesta 0.
+
+    La caché se puede apagar con EDUCATION_CACHE_ENABLED=false (tests)."""
+    import hashlib
+    import json as _json
+
+    from app.config import settings as _cfg
+
+    # La clave incluye el TEXTO de los prompts: mejorar el prompt educativo
+    # invalida la caché solo (antes servía contenido del prompt viejo para
+    # siempre — hallazgo de la revisión adversarial). El split ya viaja dentro
+    # del user prompt; variant/model se mantienen por legibilidad.
+    clave = (f"{variant}|{(split_name or '').strip().lower()}|{_cfg.model_light}"
+             f"|{system_prompt_education()}|{user}")
+    digest = hashlib.sha1(clave.encode("utf-8")).hexdigest()[:16]
+    cache_file = None
+    if _cfg.education_cache_enabled:
+        try:
+            from app.services.storage import storage_root
+
+            d = storage_root() / "brand"
+            d.mkdir(parents=True, exist_ok=True)
+            cache_file = d / "_education_cache.json"
+            if cache_file.exists():
+                data = _json.loads(cache_file.read_text(encoding="utf-8"))
+                hit = data.get(digest)
+                if hit:
+                    return EducationOutput.model_validate(hit)
+        except Exception:  # noqa: BLE001 — la caché nunca rompe la generación
+            cache_file = None
+
+    edu = ai.generate_json(model=_cfg.model_light, system=system_prompt_education(),
+                           user=user, schema=EducationOutput)
+    if cache_file is not None:
+        try:
+            data = _json.loads(cache_file.read_text(encoding="utf-8")) if cache_file.exists() else {}
+            data[digest] = edu.model_dump()
+            cache_file.write_text(_json.dumps(data, ensure_ascii=False),
+                                  encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            pass
+    return edu
+
+
 # --------------------------------------------------------------- pipeline ----
 
 def generate_monthly_plan(
@@ -611,6 +663,16 @@ def generate_monthly_plan(
     flags: list[str] = []
     model = settings.model_heavy
 
+    # LECCIONES del coach (§13 en vivo): lo que corrigió a mano en planes
+    # anteriores, destilado en pautas cualitativas. Va en el USER prompt (no en
+    # el system) para no invalidar la caché del system prompt entre clientes.
+    try:
+        from app.services.coach_lessons import lessons_reference
+
+        _lecciones = lessons_reference()
+    except Exception:  # noqa: BLE001 — el aprendizaje nunca bloquea generar
+        _lecciones = ""
+
     if not include_nutrition:
         # --- Plan SOLO ENTRENAMIENTO -------------------------------------
         if not include_training:
@@ -619,7 +681,7 @@ def generate_monthly_plan(
         try:
             tcore = ai.generate_json(
                 model=model, system=system_prompt_training_only(),
-                user=_core_user_prompt_training_only(ctx),
+                user=_core_user_prompt_training_only(ctx) + _lecciones,
                 schema=TrainingOnlyCoreOutput,
             )
         except AIGenerationError as exc:
@@ -640,9 +702,9 @@ def generate_monthly_plan(
 
         education_t: EducationOutput | None = None
         try:
-            education_t = ai.generate_json(
-                model=model, system=system_prompt_education(),
-                user=_education_user_prompt_training(tcore.training), schema=EducationOutput,
+            education_t = _education_with_cache(
+                ai, split_name=tcore.training.split_name, variant="train",
+                user=_education_user_prompt_training(tcore.training),
             )
         except AIGenerationError:
             # El educativo es complementario: su fallo no tumba el plan.
@@ -658,7 +720,7 @@ def generate_monthly_plan(
         try:
             core = ai.generate_json(
                 model=model, system=system_prompt_full(),
-                user=_core_user_prompt(ctx), schema=PlanCoreOutput,
+                user=_core_user_prompt(ctx) + _lecciones, schema=PlanCoreOutput,
             )
         except AIGenerationError as exc:
             raise PlanGenerationError(f"núcleo del plan: {exc}") from exc
@@ -668,7 +730,7 @@ def generate_monthly_plan(
         try:
             core = ai.generate_json(
                 model=model, system=system_prompt_nutrition_only(),
-                user=_core_user_prompt_nutrition_only(ctx),
+                user=_core_user_prompt_nutrition_only(ctx) + _lecciones,
                 schema=NutritionOnlyCoreOutput,
             )
         except AIGenerationError as exc:
@@ -815,12 +877,16 @@ def generate_monthly_plan(
     education: EducationOutput | None = None
     if include_training:
         try:
-            education = ai.generate_json(
-                model=model, system=system_prompt_education(),
-                user=_education_user_prompt(core), schema=EducationOutput,
+            education = _education_with_cache(
+                ai, split_name=core.training.split_name, variant="full",
+                user=_education_user_prompt(core),
             )
-        except AIGenerationError as exc:
-            raise PlanGenerationError(f"contenido educativo: {exc}") from exc
+        except AIGenerationError:
+            # AHORRO + robustez (auditoría de costes): antes un fallo aquí
+            # tumbaba TODO el plan y obligaba a repagar núcleo + comidas +
+            # panel. El educativo es complementario: mismo trato que en el
+            # plan solo-entreno — el plan sale y queda constancia del aviso.
+            flags.append("aviso: no se pudo generar el contenido educativo")
 
     return GeneratedPlan(
         nutrition=core.nutrition, meals=meals, training=training_core,
