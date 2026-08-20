@@ -1,0 +1,23 @@
+# Saltos de línea: el repo se ejecuta DENTRO de contenedores Linux.
+#
+# Git para Windows convierte por defecto a CRLF al clonar (core.autocrlf=true).
+# Cuando eso le pasa a un script de shell, el shebang queda como "#!/bin/sh\r" y
+# Docker responde con un error engañoso:
+#     exec /code/entrypoint.sh: no such file or directory
+# (el archivo existe; lo que no existe es el intérprete "/bin/sh\r").
+# Por eso TODO va con LF, salvo los lanzadores que ejecuta Windows.
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Binarios: que Git no toque su contenido.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.pdf binary
+*.docx binary
+*.ico binary
+*.woff binary
+*.woff2 binary

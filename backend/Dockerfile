@@ -19,7 +19,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN chmod +x /code/entrypoint.sh
+# Cinturón y tirantes con los saltos de línea de Windows: aunque .gitattributes
+# fuerza LF, una copia clonada ANTES de existir ese fichero (o un ZIP hecho en
+# Windows) trae el entrypoint en CRLF y el contenedor falla con un error que no
+# se entiende: "exec /code/entrypoint.sh: no such file or directory". Quitar el
+# \r aquí hace que la imagen arranque venga como venga el archivo.
+RUN sed -i 's/\r$//' /code/entrypoint.sh && chmod +x /code/entrypoint.sh
 
 EXPOSE 8000
 ENTRYPOINT ["/code/entrypoint.sh"]
