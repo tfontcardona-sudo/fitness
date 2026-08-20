@@ -441,6 +441,14 @@ export const api = {
     request<{ created: number; scanned: number; errors: string[] }>(
       "POST", `/payments/sync${days ? `?days=${days}` : ""}`),
 
+  /** Lecciones aprendidas de las ediciones del coach (aprendizaje continuo). */
+  learningLessons: () =>
+    request<{ lessons: string[]; updated_at: string | null; source_edits: number;
+              total_edits: number; min_edits: number }>("GET", "/learning/lessons"),
+  refreshLearningLessons: () =>
+    request<{ lessons: string[]; updated_at: string | null; source_edits: number;
+              skipped?: string | null }>("POST", "/learning/lessons/refresh"),
+
   getAiCredit: () => request<AiCreditOut>("GET", "/ai-credit"),
   setAiCredit: (balance_usd: number) =>
     request<AiCreditOut>("PUT", "/ai-credit", { balance_usd }),

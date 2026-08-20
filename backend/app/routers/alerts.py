@@ -45,24 +45,16 @@ def _alert(client: Client, kind: str, severity: str, message: str, tab: str,
     }
 
 
-# Duración contratada (días) de cada periodicidad de pago único. "oferta" es
-# una suscripción de Stripe: se renueva sola, no genera aviso.
-_BILLING_DAYS = {"1m": 30, "3m": 90, "6m": 180}
-RENEWAL_WARN_DAYS = 7
-
-
 def _renewal_alert(client: Client, today: date) -> dict | None:
-    """Aviso de RENOVACIÓN de un plan de pago único a punto de agotarse."""
-    if getattr(client, "payment_status", None) != "paid":
+    """Aviso de RENOVACIÓN de un plan de pago único a punto de agotarse.
+    La fórmula vive en services/renewals.py (una sola verdad, compartida con el
+    email al cliente y con el enlace de pago)."""
+    from app.services.renewals import RENEWAL_WARN_DAYS, renewal_window
+
+    w = renewal_window(client, today)
+    if w is None:
         return None
-    if getattr(client, "stripe_subscription_id", None):
-        return None  # suscripción: se cobra sola
-    paid_at = getattr(client, "paid_at", None)
-    days = _BILLING_DAYS.get(getattr(client, "billing_period", "") or "")
-    if paid_at is None or days is None:
-        return None
-    ends_on = paid_at.date() + timedelta(days=days)
-    left = (ends_on - today).days
+    ends_on, left = w
     if left > RENEWAL_WARN_DAYS:
         return None
     if left >= 0:
@@ -139,11 +131,15 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
                 has_doc = bool(list_documents(client.id))
             except Exception:  # noqa: BLE001 — el storage nunca tumba las alertas
                 has_doc = False
-            if has_doc:
+            # El formulario DIGITAL del portal también cuenta como recibida
+            # (sello de consentimiento): mismos datos, sin PDF que leer.
+            por_formulario = getattr(client, "consent_signed_at", None) is not None
+            if has_doc or por_formulario:
                 extra = ("" if client.goal_type else
                          " (la IA no pudo extraer todos los campos: revísalos a mano)")
+                origen = " (formulario del portal)" if (por_formulario and not has_doc) else ""
                 out.append(_alert(client, "create_plan", "alta",
-                                  f"Anamnesis recibida{extra}: revísala y genera la planificación.",
+                                  f"Anamnesis recibida{origen}{extra}: revísala y genera la planificación.",
                                   "anamnesis", "Revisar anamnesis"))
             else:
                 days_wait = ((today - client.created_at.date()).days

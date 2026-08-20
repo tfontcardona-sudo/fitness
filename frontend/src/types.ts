@@ -809,6 +809,8 @@ export interface PaymentOut {
   paid_at: string;
   seen_at: string | null;
   stripe_object_id: string;
+  /** Comisión de Stripe en céntimos; null = sin dato (histórico o fallo). */
+  fee_cents: number | null;
 }
 
 export interface PaymentsListOut {
@@ -820,6 +822,8 @@ export interface PaymentsListOut {
 export interface PaymentsSummaryOut {
   unseen: number;
   month_total_cents: number;
+  /** Comisiones de Stripe del mes (céntimos): neto = total − comisiones. */
+  month_fee_cents: number;
   month_count: number;
   prev_month_total_cents: number;
   failed_month: number;

@@ -126,6 +126,11 @@ def list_documents(client_id: int) -> list[dict]:
         return []
     items = []
     for f in folder.iterdir():
+        # El consentimiento RGPD del formulario digital también vive aquí como
+        # PDF: NO es la anamnesis y no puede colarse como tal (apagaría el
+        # banner del portal y la IA intentaría "leerlo" como cuestionario).
+        if f.name == "consentimiento_rgpd.pdf":
+            continue
         if f.is_file() and f.suffix.lower() == ".pdf" and not f.name.startswith("_"):
             st = f.stat()
             items.append({

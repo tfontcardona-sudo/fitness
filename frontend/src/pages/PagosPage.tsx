@@ -5,9 +5,10 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   CheckCheck,
+  Download,
   RefreshCw,
 } from "lucide-react";
-import { ALERTS_REFRESH_MS, api, ApiError, keepIfSame } from "../lib/api";
+import { ALERTS_REFRESH_MS, api, ApiError, getToken, keepIfSame } from "../lib/api";
 import { EmptyState, PageLoader, Spinner, useToast } from "../components/ui";
 import type { PaymentOut, PaymentsSummaryOut } from "../types";
 
@@ -81,6 +82,7 @@ export default function PagosPage() {
   const [cargando, setCargando] = useState(false);
   const [falloCarga, setFalloCarga] = useState(false);
   const [sincronizando, setSincronizando] = useState(false);
+  const [exportando, setExportando] = useState(false);
   // Los que estaban SIN LEER al entrar: se resaltan mientras dura la visita
   // aunque ya se hayan sellado como leídos (si no, el punto azul desaparecería
   // ante los ojos del coach y no sabría qué era nuevo).
@@ -193,6 +195,30 @@ export default function PagosPage() {
     }
   }
 
+  async function exportarCsv() {
+    // Descarga con JWT en la cabecera (fetch → blob), como los Word del panel.
+    setExportando(true);
+    try {
+      const res = await fetch("/api/payments/export.csv", {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (!res.ok) throw new Error();
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "pagos_dqr.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.push("No se pudo exportar el libro de pagos", "error");
+    } finally {
+      setExportando(false);
+    }
+  }
+
   async function sincronizar() {
     setSincronizando(true);
     try {
@@ -259,14 +285,24 @@ export default function PagosPage() {
           <p className="text-xs uppercase tracking-widest text-zinc-500">Pagos</p>
           <h1 className="mt-1 text-2xl font-semibold text-zinc-100">Cobros de Stripe</h1>
         </div>
-        <button
-          onClick={sincronizar}
-          disabled={sincronizando}
-          className="btn btn-ghost"
-          title="Trae de Stripe los cobros que falten (histórico o webhooks perdidos)"
-        >
-          {sincronizando ? <Spinner /> : <RefreshCw size={15} />} Sincronizar
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={exportarCsv}
+            disabled={exportando}
+            className="btn btn-ghost"
+            title="Descarga el libro de pagos completo en CSV (para la gestoría)"
+          >
+            {exportando ? <Spinner /> : <Download size={15} />} Exportar
+          </button>
+          <button
+            onClick={sincronizar}
+            disabled={sincronizando}
+            className="btn btn-ghost"
+            title="Trae de Stripe los cobros que falten (histórico o webhooks perdidos)"
+          >
+            {sincronizando ? <Spinner /> : <RefreshCw size={15} />} Sincronizar
+          </button>
+        </div>
       </header>
 
       {falloCarga && (
@@ -294,6 +330,16 @@ export default function PagosPage() {
             </span>
           )}
         </p>
+        {/* Neto real tras comisiones de Stripe (solo si hay fee consultado). */}
+        {(resumen?.month_fee_cents ?? 0) > 0 && (
+          <p className="mt-0.5 text-sm text-zinc-500">
+            comisiones Stripe −{fmtMoney(resumen!.month_fee_cents, resumen?.currency ?? "eur")}
+            {" · neto "}
+            <span className="font-medium text-zinc-300">
+              {fmtMoney(mes - resumen!.month_fee_cents, resumen?.currency ?? "eur")}
+            </span>
+          </p>
+        )}
         {/* Gráfica de 6 meses: la tendencia del negocio de un vistazo. Barras
             puras (sin librerías): mes actual en naranja de marca. */}
         {meses && meses.some((m) => m.total_cents > 0) && (

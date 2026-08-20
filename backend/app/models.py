@@ -129,6 +129,9 @@ class Client(Base):
         String(12), default="pending", server_default=text("'paid'"), nullable=False
     )
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Email de renovación enviado AL CLIENTE en este ciclo (se compara contra
+    # paid_at: un pago nuevo re-arma el recordatorio del ciclo siguiente).
+    renewal_reminder_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     portal_token: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     # Acceso del cliente al portal con login (usuario = email). El hash y la
     # marca de envío nacen nulos y se rellenan al enviar el acceso por email.
@@ -703,6 +706,12 @@ class Payment(Base):
     kind: Mapped[str] = mapped_column(String(20))    # checkout|invoice|refund
     status: Mapped[str] = mapped_column(String(12))  # paid|failed|refunded
     amount_cents: Mapped[int] = mapped_column(Integer, default=0)
+    # Comisión que Stripe se queda de este cobro (céntimos). Best-effort: NULL
+    # si no se pudo consultar el BalanceTransaction — nunca bloquea el webhook.
+    fee_cents: Mapped[int | None] = mapped_column(Integer)
+    # pi_… del cobro: ata checkout/factura/cargo/devolución entre sí aunque la
+    # ficha se borre (RGPD) — la pertenencia no depende solo del email.
+    payment_intent: Mapped[str | None] = mapped_column(String(80), index=True)
     currency: Mapped[str] = mapped_column(String(8), default="eur")
     # Pago en modo PRUEBA de Stripe (clave sk_test_): no es dinero real y no
     # puede sumar en los totales del coach sin avisar.

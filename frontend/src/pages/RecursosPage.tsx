@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Dumbbell,
   ExternalLink,
+  GraduationCap,
   GripVertical,
   Image as ImageIcon,
   Package,
@@ -34,7 +35,7 @@ import { ConfirmDialog, EmptyState, PageLoader, Spinner, useToast } from "../com
 export default function RecursosPage() {
   // Al volver del OAuth de Google (/recursos?google=…) abrimos directamente la
   // pestaña "Página de enlaces", donde está el bloque de conexión con Google.
-  const [tab, setTab] = useState<"productos" | "videos" | "enlaces">(
+  const [tab, setTab] = useState<"productos" | "videos" | "enlaces" | "aprendizaje">(
     () => (new URLSearchParams(window.location.search).has("google") ? "enlaces" : "productos"),
   );
   return (
@@ -47,7 +48,7 @@ export default function RecursosPage() {
       </header>
 
       <div className="mb-6 inline-flex rounded-xl border p-1" style={{ borderColor: "var(--line-strong)" }}>
-        {([["productos", "Productos", Package], ["videos", "Vídeos de ejercicios", Video], ["enlaces", "Página de enlaces", ExternalLink]] as const).map(
+        {([["productos", "Productos", Package], ["videos", "Vídeos de ejercicios", Video], ["enlaces", "Página de enlaces", ExternalLink], ["aprendizaje", "Aprendizaje", GraduationCap]] as const).map(
           ([id, label, Icon]) => (
             <button
               key={id}
@@ -66,7 +67,84 @@ export default function RecursosPage() {
         )}
       </div>
 
-      {tab === "productos" ? <ProductsManager /> : tab === "videos" ? <ExerciseVideosManager /> : <LinksPageManager />}
+      {tab === "productos" ? <ProductsManager /> : tab === "videos" ? <ExerciseVideosManager />
+        : tab === "enlaces" ? <LinksPageManager /> : <LearningManager />}
+    </div>
+  );
+}
+
+/* ============================================ Aprendizaje del sistema ============================================ */
+
+/** Lo que el sistema ha APRENDIDO de tus correcciones a los planes: lecciones
+ *  cualitativas que se inyectan en cada generación nueva. Transparencia total:
+ *  aquí se ven, y se pueden regenerar cuando quieras. */
+function LearningManager() {
+  const toast = useToast();
+  const [data, setData] = useState<Awaited<ReturnType<typeof api.learningLessons>> | null>(null);
+  const [refrescando, setRefrescando] = useState(false);
+
+  useEffect(() => {
+    api.learningLessons().then(setData).catch(() => setData(null));
+  }, []);
+
+  async function refrescar() {
+    setRefrescando(true);
+    try {
+      const r = await api.refreshLearningLessons();
+      if (r.skipped) {
+        toast.push(r.skipped);
+      } else {
+        toast.push("Lecciones actualizadas con tus últimas correcciones");
+      }
+      const d = await api.learningLessons();
+      setData(d);
+    } catch (e) {
+      toast.push(e instanceof ApiError ? e.message : "No se pudieron regenerar las lecciones", "error");
+    } finally {
+      setRefrescando(false);
+    }
+  }
+
+  if (data === null) return <PageLoader />;
+  return (
+    <div className="space-y-4">
+      <div className="card p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-zinc-100">Lo que el sistema ha aprendido de ti</h2>
+            <p className="mt-1 text-sm text-zinc-500">
+              Cada corrección que haces a un plan generado se registra ({data.total_edits} hasta ahora).
+              El sistema las destila en lecciones y las aplica en cada plan nuevo — sin tocar nunca
+              los números, que siempre los calcula el sistema.
+            </p>
+          </div>
+          <button onClick={refrescar} disabled={refrescando} className="btn btn-ghost">
+            {refrescando ? <Spinner /> : null} Regenerar ahora
+          </button>
+        </div>
+        {data.lessons.length === 0 ? (
+          <p className="mt-4 rounded-xl border p-4 text-sm text-zinc-400" style={{ borderColor: "var(--line-strong)" }}>
+            Aún no hay lecciones. {data.total_edits < data.min_edits
+              ? `Se necesitan al menos ${data.min_edits} correcciones tuyas a planes generados (llevas ${data.total_edits}).`
+              : "Pulsa «Regenerar ahora» para destilarlas de tus correcciones."}
+          </p>
+        ) : (
+          <ul className="mt-4 space-y-2">
+            {data.lessons.map((l, i) => (
+              <li key={i} className="flex items-start gap-2 rounded-xl border p-3 text-sm text-zinc-200"
+                  style={{ borderColor: "var(--line-strong)" }}>
+                <GraduationCap size={15} className="mt-0.5 shrink-0" style={{ color: "var(--brand-accent)" }} />
+                {l}
+              </li>
+            ))}
+          </ul>
+        )}
+        {data.updated_at && (
+          <p className="mt-3 text-xs text-zinc-600">
+            Última destilación: {new Date(data.updated_at).toLocaleString("es-ES")} · basada en {data.source_edits} correcciones
+          </p>
+        )}
+      </div>
     </div>
   );
 }

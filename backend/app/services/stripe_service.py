@@ -624,8 +624,43 @@ def _anotar_checkout(db: Session, session: dict, client: Client | None, *,
         customer_email=detalles.get("email"), tier=tier, billing_period=period,
         description=pay_svc.describe(tier, period),
         paid_at=pay_svc.ts_to_dt(session.get("created")), event_id=event_id,
+        payment_intent=_pi_of(session),
     )
+    # La comisión SOLO se consulta para movimientos nuevos (una reentrega del
+    # webhook no vuelve a llamar a Stripe) y jamás bloquea el cobro.
+    if pago is not None and pago.fee_cents is None:
+        pago.fee_cents = _fee_de_cobro(payment_intent=pago.payment_intent)
     return pago is not None
+
+
+def _pi_of(objeto: dict) -> str | None:
+    """El pi_… de una Checkout Session o factura (string o dict según versión)."""
+    v = (objeto or {}).get("payment_intent")
+    if isinstance(v, dict):
+        v = v.get("id")
+    return v or None
+
+
+def _fee_de_cobro(*, payment_intent: str | None = None,
+                  charge_id: str | None = None) -> int | None:
+    """Comisión (céntimos) que Stripe se quedó de un cobro. UNA llamada extra a
+    la API por cobro NUEVO; best-effort: cualquier fallo → None. El fee es
+    informativo (para el neto del panel) y nunca puede tumbar el webhook."""
+    try:
+        stripe = _stripe()
+        ch = None
+        if charge_id:
+            ch = stripe.Charge.retrieve(charge_id, expand=["balance_transaction"])
+        elif payment_intent:
+            pi = stripe.PaymentIntent.retrieve(
+                payment_intent, expand=["latest_charge.balance_transaction"])
+            ch = pi.get("latest_charge")
+        txn = (ch or {}).get("balance_transaction")
+        if isinstance(txn, dict) and txn.get("fee") is not None:
+            return int(txn["fee"])
+    except Exception:  # noqa: BLE001 — informativo, jamás rompe el cobro
+        pass
+    return None
 
 
 def _create_selfserve_client(db: Session, *, name: str, email: str,
@@ -827,7 +862,13 @@ def _anotar_factura(db: Session, invoice: dict, client: Client | None, *,
         description=pay_svc.describe(client.package_tier if client else OFFER_TIER,
                                      OFFER_PERIOD, kind="invoice", billing_reason=razon),
         paid_at=pay_svc.ts_to_dt(cuando), event_id=event_id,
+        payment_intent=_pi_of(invoice),
     )
+    if pago is not None and pagada and pago.fee_cents is None:
+        cargo = invoice.get("charge")
+        cargo_id = cargo.get("id") if isinstance(cargo, dict) else cargo
+        pago.fee_cents = _fee_de_cobro(charge_id=cargo_id,
+                                       payment_intent=pago.payment_intent)
     return pago is not None
 
 
@@ -844,16 +885,24 @@ def _cargo_es_nuestro(db: Session, charge: dict, client: Client | None) -> bool:
     entrar en el libro de caja — igual que `_invoice_es_de_la_oferta` filtra las
     facturas ajenas en el ingreso.
 
-    Es nuestro si el pagador tiene ficha, o si su factura ya está anotada."""
+    Es nuestro si el pagador tiene ficha, si su factura ya está anotada, o si
+    su payment_intent ya consta en el libro (robusto al borrado RGPD de la
+    ficha: la pertenencia deja de depender solo del email)."""
     if client is not None:
         return True
     from app.models import Payment
 
     inv = charge.get("invoice")
     inv_id = inv.get("id") if isinstance(inv, dict) else inv
-    if inv_id:
+    if inv_id and db.scalar(
+        select(Payment.id).where(Payment.stripe_object_id == inv_id).limit(1)
+    ) is not None:
+        return True
+    pi = charge.get("payment_intent")
+    pi_id = pi.get("id") if isinstance(pi, dict) else pi
+    if pi_id:
         return db.scalar(
-            select(Payment.id).where(Payment.stripe_object_id == inv_id).limit(1)
+            select(Payment.id).where(Payment.payment_intent == pi_id).limit(1)
         ) is not None
     return False
 

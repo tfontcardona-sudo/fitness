@@ -104,6 +104,8 @@ def record_payment(
     paid_at: datetime | None = None,
     event_id: str | None = None,
     seen: bool = False,
+    fee_cents: int | None = None,
+    payment_intent: str | None = None,
 ) -> Payment | None:
     """Anota un movimiento en el libro. Devuelve la fila creada, o None si ya
     estaba anotada (idempotente por objeto+estado) o si algo falló.
@@ -127,6 +129,8 @@ def record_payment(
             kind=kind if kind in KINDS else "checkout",
             status=status,
             amount_cents=int(amount_cents or 0),
+            fee_cents=int(fee_cents) if fee_cents is not None else None,
+            payment_intent=payment_intent or None,
             currency=(currency or "eur").lower(),
             livemode=bool(livemode),
             client_id=client.id if client is not None else None,
@@ -174,11 +178,13 @@ def record_refunds_of_charge(db: Session, charge: dict, *,
     """
     facturado = charge.get("billing_details") or {}
     email = (facturado.get("email") or charge.get("receipt_email") or "").strip().lower() or None
+    pi = charge.get("payment_intent")
     comun = dict(
         kind="refund", status="refunded", currency=charge.get("currency") or "eur",
         livemode=bool(charge.get("livemode", True)), client=client,
         customer_name=facturado.get("name"), customer_email=email,
         description="Devolución", event_id=event_id, seen=seen,
+        payment_intent=(pi.get("id") if isinstance(pi, dict) else pi) or None,
     )
     # ¿Existe ya una fila AGREGADA por el id del cargo? (la escribió un webhook
     # cuya carga no traía la lista de reembolsos). Si existe, la sincronización
@@ -289,9 +295,17 @@ def summary(db: Session) -> dict:
             Payment.client_id.is_(None), Payment.status == "paid",
             Payment.livemode.is_(True))
     ) or 0)
+    # Comisiones de Stripe del mes (solo cobros con fee consultado): permiten
+    # enseñar el NETO real que llega al banco, no solo el bruto cobrado.
+    mes_fees = int(db.scalar(
+        select(func.coalesce(func.sum(Payment.fee_cents), 0)).where(
+            Payment.paid_at >= mes_ini, Payment.paid_at < mes_fin,
+            Payment.livemode.is_(True), Payment.status == "paid")
+    ) or 0)
     return {
         "unseen": unseen_count(db),
         "month_total_cents": mes_total,
+        "month_fee_cents": mes_fees,
         "month_count": mes_cobros,
         "prev_month_total_cents": prev_total,
         "failed_month": fallidos,
@@ -525,6 +539,9 @@ def sync_from_stripe(db: Session, *, days: int = SYNC_DEFAULT_DAYS) -> dict:
                                      period or (cliente.billing_period if cliente else None)),
                 paid_at=ts_to_dt(s.get("created")),
                 seen=_visto_por_antiguedad(ts_to_dt(s.get("created"))),
+                payment_intent=(s.get("payment_intent") or None)
+                if not isinstance(s.get("payment_intent"), dict)
+                else s["payment_intent"].get("id"),
             ) is not None:
                 creados += 1
                 _refresca_ficha(cliente, pagado_en=ts_to_dt(s.get("created")),
@@ -554,6 +571,9 @@ def sync_from_stripe(db: Session, *, days: int = SYNC_DEFAULT_DAYS) -> dict:
                                      billing_reason=inv.get("billing_reason")),
                 paid_at=ts_to_dt(pagada_en),
                 seen=_visto_por_antiguedad(ts_to_dt(pagada_en)),
+                payment_intent=(inv.get("payment_intent") or None)
+                if not isinstance(inv.get("payment_intent"), dict)
+                else inv["payment_intent"].get("id"),
             ) is not None:
                 creados += 1
                 _refresca_ficha(cliente, pagado_en=ts_to_dt(pagada_en),

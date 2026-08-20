@@ -30,6 +30,14 @@ TEMPERATURE = 0.3
 # núcleo del plan son salidas grandes; 8000 truncaba el JSON → fallo de parseo.
 MAX_TOKENS = 16000
 
+# PROMPT CACHING (ahorro de créditos): un system prompt a partir de este tamaño
+# se envía como bloque con cache_control — la primera llamada escribe la caché
+# (+25% de ese tramo) y las siguientes en ~5 min lo LEEN al 10% del precio.
+# Gana en: reintentos de validación, bucle de reparación del panel (hasta 30
+# llamadas con el mismo contexto) y generaciones seguidas. Por debajo del
+# mínimo cacheable de la API el marcador se ignora en silencio (sin coste).
+CACHE_SYSTEM_MIN_CHARS = 4000
+
 T = TypeVar("T", bound=BaseModel)
 
 _JSON_FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
@@ -102,17 +110,36 @@ class AIClient:
     @staticmethod
     def _record_usage(model: str, resp) -> None:
         """Descuenta el coste real (tokens de la respuesta) del saldo local de
-        créditos (botón "Créditos IA" del sidebar). Best-effort: nunca rompe."""
+        créditos (botón "Créditos IA" del sidebar). Best-effort: nunca rompe.
+
+        Con prompt caching, los tokens cacheados van en campos aparte y con otro
+        precio (escritura ×1,25; lectura ×0,1): se convierten a "tokens de
+        entrada equivalentes" para que el saldo local siga cuadrando."""
         usage = getattr(resp, "usage", None)
         if usage is None:
             return
         from app.services.ai_credit import record_usage
 
+        entrada = float(getattr(usage, "input_tokens", 0) or 0)
+        entrada += 1.25 * float(getattr(usage, "cache_creation_input_tokens", 0) or 0)
+        entrada += 0.10 * float(getattr(usage, "cache_read_input_tokens", 0) or 0)
         record_usage(
             model,
-            getattr(usage, "input_tokens", 0) or 0,
+            int(round(entrada)),
             getattr(usage, "output_tokens", 0) or 0,
         )
+
+    @staticmethod
+    def _system_payload(system):
+        """System prompt → carga para la API. Uno GRANDE se marca con
+        cache_control (ver CACHE_SYSTEM_MIN_CHARS); una lista de bloques ya
+        montada por el llamador (p. ej. el panel §9) pasa tal cual."""
+        if isinstance(system, list):
+            return system
+        if isinstance(system, str) and len(system) >= CACHE_SYSTEM_MIN_CHARS:
+            return [{"type": "text", "text": system,
+                     "cache_control": {"type": "ephemeral"}}]
+        return system
 
     @staticmethod
     def _effective_temperature(model: str, temperature: float | None) -> float | None:
@@ -137,7 +164,7 @@ class AIClient:
                 return self._anthropic().messages.create(**kwargs)
             raise
 
-    def _raw_call(self, *, model: str, system: str, user: str,
+    def _raw_call(self, *, model: str, system: "str | list", user: str,
                   temperature: float | None = None) -> str:
         """Una llamada cruda al modelo. Sobrescribible en tests.
 
@@ -148,7 +175,7 @@ class AIClient:
             kwargs = {
                 "model": model,
                 "max_tokens": MAX_TOKENS,
-                "system": system,
+                "system": self._system_payload(system),
                 "messages": [{"role": "user", "content": user}],
             }
             if temperature is not None:
@@ -181,7 +208,7 @@ class AIClient:
             kwargs = {
                 "model": model,
                 "max_tokens": MAX_TOKENS,
-                "system": system,
+                "system": self._system_payload(system),
                 "messages": [{
                     "role": "user",
                     "content": [
@@ -192,6 +219,10 @@ class AIClient:
                                 "media_type": "application/pdf",
                                 "data": b64,
                             },
+                            # El PDF (~10 páginas en base64) es EL coste de la
+                            # extracción: cachearlo hace que el reintento de
+                            # validación lo LEA al 10% en vez de repagarlo entero.
+                            "cache_control": {"type": "ephemeral"},
                         },
                         {"type": "text", "text": user},
                     ],
@@ -199,7 +230,9 @@ class AIClient:
             }
             if temperature is not None:
                 kwargs["temperature"] = temperature
-            resp = self._anthropic().messages.create(**kwargs)
+            # Misma red de seguridad del retry-sin-temperature que _raw_call
+            # (antes esta ruta llamaba a la API directamente — asimetría).
+            resp = self._create_message(kwargs)
         except Exception as exc:
             translated = _translate_api_error(exc)
             if translated:
@@ -241,7 +274,7 @@ class AIClient:
         )
 
     def generate_json(
-        self, *, model: str, system: str, user: str, schema: type[T],
+        self, *, model: str, system: "str | list", user: str, schema: type[T],
         temperature: float | None = None,
     ) -> T:
         """Genera, parsea y valida. Reintenta UNA vez con el error inyectado."""
