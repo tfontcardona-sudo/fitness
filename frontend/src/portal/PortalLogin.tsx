@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { LogIn } from "lucide-react";
+import { Eye, EyeOff, LogIn } from "lucide-react";
 import { portalLogin, portalSession, PortalError } from "./portalApi";
 
 /**
@@ -16,6 +16,9 @@ export default function PortalLogin() {
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // La contraseña la genera el coach y llega por correo: teclearla a ciegas
+  // en el móvil es el fallo de acceso nº 1 — el ojo la deja verificar.
+  const [showPass, setShowPass] = useState(false);
 
   // Si ya hay sesión recordada, entra directo. Si no, autorrellena el email.
   useEffect(() => {
@@ -58,21 +61,34 @@ export default function PortalLogin() {
           <span className="mb-1 block text-xs font-medium opacity-70">Email</span>
           <input
             type="email" inputMode="email" autoComplete="username" required
+            autoFocus={!portalSession.email()}
             value={email} onChange={(e) => setEmail(e.target.value)}
             placeholder="tu@email.com"
+            aria-invalid={error != null}
             className="w-full rounded-xl px-3 py-3 text-base outline-none"
             style={{ border: "1px solid var(--p-line)", background: "var(--p-card-top)", color: "var(--p-ink)" }}
           />
         </label>
         <label className="block">
           <span className="mb-1 block text-xs font-medium opacity-70">Contraseña</span>
-          <input
-            type="password" autoComplete="current-password" required
-            value={password} onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
-            className="w-full rounded-xl px-3 py-3 text-base outline-none"
-            style={{ border: "1px solid var(--p-line)", background: "var(--p-card-top)", color: "var(--p-ink)" }}
-          />
+          <div className="relative">
+            <input
+              type={showPass ? "text" : "password"} autoComplete="current-password" required
+              value={password} onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              aria-invalid={error != null}
+              className="w-full rounded-xl px-3 py-3 pr-11 text-base outline-none"
+              style={{ border: "1px solid var(--p-line)", background: "var(--p-card-top)", color: "var(--p-ink)" }}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPass((v) => !v)}
+              aria-label={showPass ? "Ocultar contraseña" : "Mostrar contraseña"}
+              className="absolute inset-y-0 right-0 flex w-11 items-center justify-center opacity-60"
+            >
+              {showPass ? <EyeOff size={17} /> : <Eye size={17} />}
+            </button>
+          </div>
         </label>
 
         <label className="flex items-center gap-2 text-sm">
@@ -82,7 +98,7 @@ export default function PortalLogin() {
         </label>
 
         {error && (
-          <p className="rounded-lg px-3 py-2 text-sm" style={{ background: "rgba(179,38,30,0.10)", color: "#b3261e" }}>
+          <p role="alert" className="rounded-lg px-3 py-2 text-sm" style={{ background: "rgba(179,38,30,0.10)", color: "#b3261e" }}>
             {error}
           </p>
         )}

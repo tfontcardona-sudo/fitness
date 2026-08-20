@@ -135,11 +135,13 @@ SYSTEM = (
 def _user_prompt(brief: Brief, ctx: dict, *, franja: str, dia_semana: str) -> str:
     import json
 
+    # JSON compacto (sin indent): mismo contenido, ~25% menos tokens de entrada.
+    ctx_json = json.dumps(ctx, ensure_ascii=False, separators=(",", ":"))
     return (
         f"TEMA DE HOY: {brief.tema}\n"
         f"QUÉ DEBE CONSEGUIR: {brief.guia}\n\n"
         f"MOMENTO: {dia_semana}, franja de {franja}. Saluda acorde a la hora.\n\n"
-        f"CLIENTE (usa solo lo que haya aquí):\n{json.dumps(ctx, ensure_ascii=False, indent=2)}\n\n"
+        f"CLIENTE (usa solo lo que haya aquí):\n{ctx_json}\n\n"
         "Escribe SOLO el texto del mensaje, sin comillas ni explicaciones."
     )
 
@@ -167,6 +169,7 @@ def compose_for_client(brief: Brief, ctx: dict, *, ai=None, now: datetime | None
             system=SYSTEM,
             user=_user_prompt(brief, ctx, franja=franja_of(now),
                               dia_semana=_DIAS[now.weekday()]),
+            max_tokens=300,  # ~40 palabras de salida: techo anti-desbocadas
         )
         text = (raw or "").strip().strip('"').strip()
         return text or fallback_text(brief, ctx)

@@ -222,7 +222,7 @@ class _ScriptedAI:
         self._payload = payload
         self.calls = []
 
-    def generate_json(self, *, model, system, user, schema, temperature=None):
+    def generate_json(self, *, model, system, user, schema, temperature=None, **_kw):
         self.calls.append({"model": model, "system": system, "user": user})
         return schema.model_validate(self._payload)
 
@@ -291,7 +291,7 @@ def test_panel_de_revisores_comparte_contexto_cacheado():
         def __init__(self):
             self.calls = []
 
-        def generate_json(self, *, model, system, user, schema, temperature=None):
+        def generate_json(self, *, model, system, user, schema, temperature=None, **_kw):
             self.calls.append({"system": system, "user": user})
             return schema.model_validate(
                 {"veredicto": "aprobado", "puntuacion_rubrica": 90, "hallazgos": []})

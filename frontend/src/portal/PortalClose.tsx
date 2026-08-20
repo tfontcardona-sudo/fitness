@@ -104,6 +104,7 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
   }, [weight, waist, hip, arm, thigh, feelings, adhDiet, adhTrain, freeMeals,
       changes, hardest, nextGoal, questions, token, closeDate, done]);
 
+  const [confirmSend, setConfirmSend] = useState(false);
   const allFeelings = FEELINGS.every((f) => feelings[f.key] > 0);
   // Coma o punto valen ("82,5"): el número se normaliza en un único sitio.
   const num = (v: string): number => Number(v.trim().replace(",", "."));
@@ -263,9 +264,11 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
           {FEELINGS.map((f) => (
             <div key={f.key}>
               <p className="mb-1.5 text-sm">{f.label}</p>
-              <div className="flex justify-between gap-1.5">
+              <div className="flex justify-between gap-1.5" role="radiogroup" aria-label={f.label}>
                 {[1, 2, 3, 4, 5].map((n) => (
-                  <button key={n} onClick={() => setFeelings((s) => ({ ...s, [f.key]: n }))}
+                  <button key={n} type="button" onClick={() => setFeelings((s) => ({ ...s, [f.key]: n }))}
+                    aria-label={`${f.label}: ${n} de 5`}
+                    aria-pressed={feelings[f.key] === n}
                     className="tap flex-1 rounded-lg border py-2 text-sm font-semibold"
                     style={feelings[f.key] === n
                       ? { borderColor: brand.color_primary, background: `${brand.color_primary}1f`, color: brand.color_primary }
@@ -339,12 +342,43 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
           value={questions} onChange={(e) => setQuestions(e.target.value)} placeholder="Cualquier pregunta…" />
       </Field>
 
-      <button onClick={submit} disabled={!canSubmit} className="portal-btn3d w-full py-4 text-sm uppercase tracking-wide">
-        {busy ? "Enviando…" : "Enviar revisión a mi coach"}
-      </button>
+      {/* Envío en DOS toques: cierra el período y deja Diario/Entreno en
+          pausa — un roce accidental no puede costar la quincena. */}
+      {!confirmSend ? (
+        <button onClick={() => { if (canSubmit) { setConfirmSend(true); window.setTimeout(() => setConfirmSend(false), 6000); } }}
+          disabled={!canSubmit} className="portal-btn3d w-full py-4 text-sm uppercase tracking-wide">
+          Enviar revisión a mi coach
+        </button>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-center text-xs opacity-70">
+            ¿Enviar ya tu revisión? Después no podrás editarla y tu diario queda
+            en pausa hasta que tu coach abra el nuevo período.
+          </p>
+          <div className="flex gap-2">
+            <button onClick={() => setConfirmSend(false)} className="w-1/3 rounded-xl border py-3 text-sm" style={{ borderColor: "rgba(128,128,128,0.3)" }}>
+              Aún no
+            </button>
+            <button onClick={() => { setConfirmSend(false); submit(); }} disabled={!canSubmit}
+              className="portal-btn3d w-2/3 py-3 text-sm uppercase tracking-wide">
+              {busy ? "Enviando…" : "Sí, enviar"}
+            </button>
+          </div>
+        </div>
+      )}
       {!canSubmit && !busy && (
         <p className="text-center text-xs opacity-40">
-          {rangeError ?? "Completa el peso, las sensaciones y la adherencia."}
+          {rangeError ?? (() => {
+            // Decir QUÉ falta, no un genérico: con 7 secciones el bloqueo era
+            // invisible (una sensación sin puntuar dejaba el botón gris mudo).
+            const faltan: string[] = [];
+            if (!(num(weight) > 30)) faltan.push("tu peso final");
+            const sinPuntuar = FEELINGS.filter((f) => !(feelings[f.key] > 0)).length;
+            if (sinPuntuar > 0) faltan.push(sinPuntuar === 1 ? "1 sensación por puntuar" : `${sinPuntuar} sensaciones por puntuar`);
+            if (hasNutrition && adhDiet === "") faltan.push("la adherencia a la dieta");
+            if (hasTraining && adhTrain === "") faltan.push("la adherencia al entreno");
+            return faltan.length ? `Falta: ${faltan.join(" · ")}` : "Completa el peso, las sensaciones y la adherencia.";
+          })()}
         </p>
       )}
     </div>

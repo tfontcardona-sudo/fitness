@@ -143,21 +143,35 @@ export default function ClientsPage() {
         {clients === null ? (
           <PageLoader />
         ) : visible.length === 0 ? (
-          <EmptyState
-            title={filter === "all" ? "Sin clientes que mostrar" : "Nada en esta carpeta"}
-            hint={
-              filter === "all"
-                ? "Da de alta tu primer cliente para generarle el enlace de anamnesis."
-                : "Cuando un cliente esté en este punto del ciclo aparecerá aquí."
-            }
-            action={
-              filter === "all" ? (
-                <button className="btn btn-primary" onClick={() => setShowNew(true)}>
-                  <UserPlus size={16} /> Nuevo cliente
+          q.trim().length >= 2 ? (
+            // Búsqueda sin resultados: NUNCA el mensaje de "primer cliente"
+            // (con la cartera llena parecía que se habían borrado todos).
+            <EmptyState
+              title={`Ningún cliente coincide con «${q.trim()}»`}
+              hint="Prueba con otro nombre o email."
+              action={
+                <button className="btn btn-ghost" onClick={() => setQ("")}>
+                  Limpiar búsqueda
                 </button>
-              ) : undefined
-            }
-          />
+              }
+            />
+          ) : (
+            <EmptyState
+              title={filter === "all" ? "Sin clientes que mostrar" : "Nada en esta carpeta"}
+              hint={
+                filter === "all"
+                  ? "Da de alta tu primer cliente para generarle el enlace de anamnesis."
+                  : "Cuando un cliente esté en este punto del ciclo aparecerá aquí."
+              }
+              action={
+                filter === "all" ? (
+                  <button className="btn btn-primary" onClick={() => setShowNew(true)}>
+                    <UserPlus size={16} /> Nuevo cliente
+                  </button>
+                ) : undefined
+              }
+            />
+          )
         ) : (
           <>
             {/* Tabla en pantallas medianas/grandes; TARJETAS en el móvil */}
@@ -292,7 +306,10 @@ function ClientsTable({ clients }: { clients: ClientOut[] }) {
             <th className="px-4 py-3 font-medium">Cliente</th>
             <th className="px-4 py-3 font-medium">Objetivo</th>
             <th className="px-4 py-3 font-medium">Estado</th>
-            <th className="px-4 py-3 font-medium">Actualizado</th>
+            <th className="px-4 py-3 font-medium"
+              title="Última modificación de la ficha (no es la última vez que el cliente registró)">
+              Ficha act.
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -342,7 +359,10 @@ function ClientsTable({ clients }: { clients: ClientOut[] }) {
               <td className="px-4 py-3">
                 <CycleBadges c={c} />
               </td>
-              <td className="px-4 py-3 text-zinc-500">{relativeDays(c.updated_at)}</td>
+              <td className="px-4 py-3 text-zinc-500"
+                title="Última modificación de la ficha (no es la última vez que el cliente registró)">
+                {relativeDays(c.updated_at)}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -644,7 +664,9 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
                 scroll del formulario. */}
             <div className="shrink-0 flex justify-end gap-2 border-t p-6 pt-4"
               style={{ borderColor: "var(--line)" }}>
-              <button className="btn btn-ghost" onClick={onClose}>
+              {/* safeClose: con datos escritos pregunta antes de descartar
+                  (igual que ESC y el clic fuera del modal). */}
+              <button className="btn btn-ghost" onClick={safeClose}>
                 Cancelar
               </button>
               <button className="btn btn-primary" disabled={busy || !name || !email} onClick={submit}>

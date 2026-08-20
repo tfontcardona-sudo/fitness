@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, keepIfSame, REFRESH_MS } from "../lib/api";
 import { pkg } from "../lib/packages";
 import type { ClientOut } from "../types";
+import { useToast } from "./ui";
 
 type Tracking = Awaited<ReturnType<typeof api.getClientTracking>>;
 type ChangeRequest = Awaited<ReturnType<typeof api.listChangeRequests>>[number];
@@ -11,6 +12,7 @@ type ChangeRequest = Awaited<ReturnType<typeof api.listChangeRequests>>[number];
  *  bloque es el único sitio donde el coach puede LEERLAS y cerrarlas (antes el
  *  texto solo viajaba por email y la alerta no se podía apagar nunca). */
 function ChangeRequestsCard({ clientId }: { clientId: number }) {
+  const toast = useToast();
   const [crs, setCrs] = useState<ChangeRequest[] | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
 
@@ -25,6 +27,9 @@ function ChangeRequestsCard({ clientId }: { clientId: number }) {
     try {
       await api.resolveChangeRequest(id);
       await load();
+    } catch {
+      // Sin esto, el fallo era mudo: el botón volvía y la alerta seguía viva.
+      toast.push("No se pudo marcar como resuelta", "error");
     } finally {
       setBusy(null);
     }
@@ -113,6 +118,9 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
   const avg = data.daily_averages;
   const quincenals = data.quincenals ?? [];
   const pct = p.days_total ? Math.min(100, Math.round((p.days_elapsed / p.days_total) * 100)) : 0;
+  // Fecha LOCAL de hoy (YYYY-MM-DD) para resaltar la fila del día en la tabla.
+  const ahora = new Date();
+  const hoyISO = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, "0")}-${String(ahora.getDate()).padStart(2, "0")}`;
 
   return (
     <div className="space-y-4">
@@ -149,12 +157,18 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
               <thead className="text-zinc-500">
                 <tr className="text-left">
                   <th className="px-3 py-2">Fecha</th><th>Peso</th><th>Sueño</th>
-                  <th>Pasos</th><th>Sac.</th><th>Agua</th><th>Dieta</th>{hasTraining && <th>Series</th>}
+                  <th>Pasos</th>
+                  <th title="Saciedad (1-10)">Sac.</th>
+                  <th title="Litros de agua">Agua</th>
+                  <th title="Adherencia a la dieta: sí / parcial / no">Dieta</th>
+                  {hasTraining && <th title="Series de entreno registradas">Series</th>}
                 </tr>
               </thead>
               <tbody className="text-zinc-200">
                 {daily.map((d) => (
-                  <tr key={d.date} className="border-t border-white/5">
+                  // La fila de HOY se resalta: es la que el coach mira primero.
+                  <tr key={d.date} className="border-t border-white/5"
+                    style={d.date === hoyISO ? { background: "var(--surface-raised)" } : undefined}>
                     <td className="px-3 py-2">{d.date}</td>
                     <td>{fmt1(d.weight_kg)}</td>
                     <td>{fmt1(d.sleep_hours)}</td>

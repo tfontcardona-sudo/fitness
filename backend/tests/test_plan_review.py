@@ -61,7 +61,7 @@ class _FakeAI:
     def __init__(self, veredicto="aprobado", puntuacion=88, hallazgos=None):
         self._v, self._p, self._h = veredicto, puntuacion, hallazgos or []
 
-    def generate_json(self, *, model, system, user, schema, temperature=None):
+    def generate_json(self, *, model, system, user, schema, temperature=None, **_kw):
         return schema(veredicto=self._v, puntuacion_rubrica=self._p, hallazgos=self._h)
 
 

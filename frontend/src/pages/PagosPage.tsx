@@ -373,12 +373,22 @@ export default function PagosPage() {
         {/* Avisos que el coach debe perseguir, no un adorno. */}
         <div className="mt-3 flex flex-wrap gap-2">
           {(resumen?.failed_month ?? 0) > 0 && (
-            <Chip tone="#C2453A" icon={AlertTriangle}>
+            <Chip
+              tone="#C2453A"
+              icon={AlertTriangle}
+              title="Ver solo los cobros fallidos"
+              // El chip APLICA el filtro: un clic y el feed enseña solo lo fallido.
+              onClick={() => {
+                setFiltro("failed");
+                setItems(null);
+              }}
+            >
               {resumen!.failed_month} cobro{resumen!.failed_month === 1 ? "" : "s"} fallido{resumen!.failed_month === 1 ? "" : "s"} este mes
             </Chip>
           )}
           {(resumen?.orphan_count ?? 0) > 0 && (
-            <Chip tone="#9A6B15" icon={AlertTriangle}>
+            <Chip tone="#9A6B15" icon={AlertTriangle}
+              title="Cobros que llegaron sin cliente asociado: revísalos en el feed">
               {resumen!.orphan_count} pago{resumen!.orphan_count === 1 ? "" : "s"} sin ficha asociada
             </Chip>
           )}
@@ -461,14 +471,23 @@ export default function PagosPage() {
   );
 }
 
-function Chip({ tone, icon: Icon, children }: {
+function Chip({ tone, icon: Icon, children, onClick, title }: {
   tone: string; icon?: typeof AlertTriangle; children: React.ReactNode;
+  /** Con onClick el chip es un BOTÓN (p. ej. aplicar un filtro del feed). */
+  onClick?: () => void; title?: string;
 }) {
+  const cls = "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium";
+  const style = { background: `color-mix(in srgb, ${tone} 14%, transparent)`, color: tone };
+  if (onClick) {
+    return (
+      <button onClick={onClick} title={title} className={cls} style={style}>
+        {Icon && <Icon size={13} />}
+        {children}
+      </button>
+    );
+  }
   return (
-    <span
-      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium"
-      style={{ background: `color-mix(in srgb, ${tone} 14%, transparent)`, color: tone }}
-    >
+    <span title={title} className={cls} style={style}>
       {Icon && <Icon size={13} />}
       {children}
     </span>

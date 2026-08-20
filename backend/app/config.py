@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     model_heavy: str = "claude-opus-4-8"
     model_light: str = "claude-haiku-4-5-20251001"
+    # Modelo del FEEDBACK quincenal (solo redacta; no calcula). Vacío = usa el
+    # pesado. Ponlo a un modelo intermedio para ahorrar sin apenas riesgo.
+    model_feedback: str = ""
 
     # --- Base de datos ---
     database_url: str = "postgresql+psycopg://fitness:fitness@db:5432/fitness"

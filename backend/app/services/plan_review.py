@@ -134,21 +134,46 @@ def review_and_repair(
         )
 
     current = nutrition
+
+    # AHORRO (auditoría de costes): antes los 8-10 roles IA se pagaban ANTES de
+    # cualquier reparación, y el caso típico (la IA se desvió en números → el
+    # clamp lo arregla) costaba DOS pasadas completas del panel. Ahora:
+    # 1) El Revisor 0 (código, coste 0) se consulta primero: si veta, se
+    #    repara EN SECO antes de pagar un solo rol — el panel corre ya sobre
+    #    el plan reparado y la iteración extra desaparece. Si el Revisor 0
+    #    aprueba, no se toca nada (mismo comportamiento de siempre).
+    det = rp.deterministic_reviewer(current, profile, objective_macros=objective_macros)
+    if det.veredicto == "rechazado":
+        repaired = reconcile_nutrition(copy.deepcopy(current), weight_kg, clamp=True)
+        if repaired != current:
+            current = repaired
+
+    # 2) Las banderas ROJAS del perfil (edad, IMC, patologías) son INVARIANTES
+    #    entre iteraciones: con banderas, el panel queda vetado SIEMPRE y
+    #    reintentar solo repaga los roles para acabar igual. Una sola pasada
+    #    (sus hallazgos siguen siendo útiles para el coach) y escalado.
+    try:
+        from app.services.safety_gate import red_flags as _red_flags
+
+        max_iter = 1 if _red_flags(profile) else MAX_REVIEW_ITERATIONS
+    except Exception:  # noqa: BLE001 — ante la duda, comportamiento clásico
+        max_iter = MAX_REVIEW_ITERATIONS
+
     panel = None
-    for i in range(1, MAX_REVIEW_ITERATIONS + 1):
+    for i in range(1, max_iter + 1):
         panel = rp.run_panel(current, profile, objective_macros=objective_macros,
                              ai_reviewer=reviewer_for(current), is_checkin=is_checkin)
         if not panel.blocking() and not panel.vetoed:
             return current, summarize(panel, iterations=i, escalated=False)
         # Reparación DETERMINISTA acotada: reconciliar/clamp a rangos fisiológicos.
         repaired = reconcile_nutrition(copy.deepcopy(current), weight_kg, clamp=True)
-        if repaired == current or i == MAX_REVIEW_ITERATIONS:
+        if repaired == current or i == max_iter:
             # No hay cambio numérico que reparar (bloqueante cualitativo) o se agotó
             # el margen: se ESCALA (rojo) y se conserva el plan válido actual.
             return current, summarize(panel, iterations=i, escalated=True)
         current = repaired
 
-    return current, summarize(panel, iterations=MAX_REVIEW_ITERATIONS, escalated=True)
+    return current, summarize(panel, iterations=max_iter, escalated=True)
 
 
 def _criterios_text() -> str:

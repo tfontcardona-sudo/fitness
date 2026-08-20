@@ -442,6 +442,70 @@ cd backend && python -m pytest tests/ -q
 
 ## 9. Trabajo pendiente / próximos pasos
 
+0000. ✅ **RONDA 3 (agosto 2026): Word de ida y vuelta + créditos al mínimo +
+   pulido integral.** Todo en verde (suite completa, tsc, build).
+   - **WORD EDITABLE DE IDA Y VUELTA** (petición estrella del dueño): botón
+     "Subir Word editado" en Planificación. `services/word_import.py` re-parsea
+     el .docx (100% determinista, 0 créditos: el documento lo generamos
+     nosotros y sus tablas se reconocen por cabecera + barra de sección):
+     kcal/macros del resumen energético (vía `rescale_nutrition` desde la
+     base — ANTES de aplicar horas/nombres de tomas, que el rescale
+     reconstruye), horas/nombres de tomas (por posición; nº distinto → aviso),
+     progresión semanal, tablas de sesión (series/reps/RIR/descanso, celda
+     "Clave técnica" des-concatenada en technique_cue / "Indicación para ti" /
+     "Cómo progresar", CAMBIO de ejercicio por nombre contra la biblioteca
+     canonical+aliases normalizados, altas/bajas de filas), suplementos
+     ("Nombre — dosis (momento)", all-or-nothing por caja), deload y pasos.
+     `POST /api/plans/{id}/import-word` (multipart, 15 MB, magia PK) devuelve
+     PREVIEW {changes (frases de plan_diff + extras), warnings, jsons
+     candidatos, base_rev} y NO persiste: el coach confirma en el panel y la
+     aplicación va por el MISMO PATCH de siempre (sanitizado, reconcile,
+     historial, rev/409, plan_edits→lecciones §13, manual_changes). Lo no
+     parseable (recetas del banco, tarjetas, educativo) se avisa → editor web.
+     Tests: `tests/test_word_import.py` (e2e con docx real mutado con
+     python-docx, rechazo de archivos ajenos, sin-cambios limpio).
+   - **CRÉDITOS RONDA 2** (`services/plan_review.review_and_repair` reordenado:
+     Revisor 0 gratis primero → reparación determinista ANTES de pagar los
+     8-10 roles; banderas rojas del perfil (invariantes) → UNA pasada del
+     panel y escalado, adiós al 3× inútil). `max_tokens` POR LLAMADA en
+     `AIClient` (whatsapp 300, revisores 2000, lecciones 800, feedback 4000;
+     generación conserva 16000). Feedback: payload compacto (sin indent),
+     instrucciones muertas de ai_photo_analysis fuera, y `MODEL_FEEDBACK`
+     configurable (vacío = pesado; solo redacta, no calcula). Análisis de
+     cambio de objetivo cacheado por hash del resumen (sidecar
+     `_goal_review.json`; mismo estado → 0 créditos). Ronda WhatsApp: ctx
+     compacto + confirmación antes de "Reescribir" (re-paga toda la ronda).
+   - **PULIDO INTEGRAL** (36 mejoras verificadas contra el código):
+     · PORTAL: objetivo kcal/macros del día en el Diario (api.plan(), estaba
+       sin usar); `fmt1`/`shortDate` es-ES en PortalUi (adiós "82.5" y
+       "0.30000000000000004"); autosave con pie vivo "Guardando…/Guardado ✓"
+       (toast solo errores); "+ Añadir serie" en Entreno (tope 20); aria en
+       escalas/adherencia/sensaciones; el cierre dice QUÉ falta exactamente y
+       pide confirmación en dos toques; "1 día restante"/"¡toca revisión!";
+       hitos de peso celebrados (±1/3/5 kg); login con ojo de contraseña,
+       role=alert y autoFocus; fecha corta en el historial de ejercicio.
+     · PANEL: pestaña del perfil en la URL (sobrevive a recargar/atrás);
+       agenda con "Hoy/Mañana · 17:00" resaltado; estado vacío correcto al
+       buscar; Cancelar del alta usa safeClose; tooltips en sidebar contraída;
+       "Leer con IA" deshabilitado sin PDF + confirmación de sobrescritura;
+       aviso dirty visible en modo ficha; catch con toast al resolver
+       peticiones; chip de fallidos de /pagos aplica el filtro; "Ficha act."
+       con title honesto; titles en la tabla de registros + fila de hoy
+       resaltada; "Cliente desde"/"Último pago" en la ficha.
+     · DOCUMENTOS/COMUNICACIÓN: el Word del plan dice MES y fecha de
+       generación (month_index no se usaba) y el pie sale de la MARCA (estaba
+       hardcodeado); doc_brand pasa tagline/contact_email; bloque de cierre
+       "Cualquier duda" con contacto y portal; el informe quincenal lleva
+       cabecera/pie/nº de página (setup_branded_pages), portada con FECHAS
+       reales del período y objetivo del cliente, y la gráfica de fuerza por
+       fin muestra el DELTA vs período anterior (charts ya sabía pintarlo);
+       `_fmt_delta` con coma y 1 decimal ("Sin cambios" a 0); email del
+       feedback con CTA al portal + INFORME PDF ADJUNTO (gráficas y fotos —
+       antes solo texto); push nuevo `notify_feedback_ready` (dq-feedback,
+       ?tab=progreso); push del plan personalizado ("Mario, tu plan del mes 3
+       ya está listo"); dieta semanal sin filas/tabla vacías; tono unificado
+       a primera persona del coach en los recordatorios.
+
 000. ✅ **SIGUIENTE NIVEL DQR · RONDA 2 (agosto 2026)** — el dueño aprobó las 8
    propuestas de la ronda 1 y pidió además aprendizaje de las ediciones del
    coach y recorte del gasto de créditos. Todo implementado y en verde:

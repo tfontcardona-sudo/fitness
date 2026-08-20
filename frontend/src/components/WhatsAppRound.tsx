@@ -115,10 +115,16 @@ export function WhatsAppRound() {
                   <strong style={{ color: "var(--text)" }}>{round.brief_tema}</strong>
                 </span>
                 <button
-                  onClick={() => void load(true)}
+                  onClick={() => {
+                    // Cada reescritura re-paga TODA la ronda (una llamada de IA
+                    // por cliente): confirmación para evitar el clic reflejo.
+                    if (window.confirm(
+                      `¿Reescribir los mensajes de hoy? Se vuelven a generar los ${round.items.length} con IA (gasta créditos).`,
+                    )) void load(true);
+                  }}
                   className="tap flex items-center gap-1.5 font-semibold"
                   style={{ color: "var(--brand-accent)" }}
-                  title="Vuelve a redactar todos los mensajes de hoy con IA"
+                  title="Vuelve a redactar todos los mensajes de hoy con IA (gasta créditos)"
                 >
                   <RefreshCw size={12} /> Reescribir
                 </button>

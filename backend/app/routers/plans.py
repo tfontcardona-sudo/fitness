@@ -17,7 +17,8 @@ publicación a una llamada de IA en vivo (que puede orquestarse aparte).
 
 from datetime import date, datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
+from fastapi import File as FastFile
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -717,6 +718,14 @@ def send_feedback(doc_id: int, db: Session = Depends(get_db)) -> dict:
                                   kind="feedback_ready", client=client)
         except Exception:
             pass
+        # Push al MOMENTO de mayor valor del ciclo: el informe está listo. Antes
+        # dependía de que el cliente abriera el correo (auditoría de calidad).
+        try:
+            from app.services import push as push_svc
+
+            push_svc.notify_feedback_ready(db, client)
+        except Exception:  # noqa: BLE001
+            pass
     db.commit()
     return {"sent": True, "sent_at": fb.sent_at.isoformat()}
 
@@ -733,10 +742,34 @@ def send_feedback_email(doc_id: int, db: Session = Depends(get_db)) -> dict:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Cliente no encontrado")
 
     brand = brand_from_config(db)
-    subject, html = tpl.feedback_delivery(brand, _first_name_of(client), fb.content_json or {})
+    portal_url = f"{settings.public_base_url}/p/{client.portal_token}"
+    subject, html = tpl.feedback_delivery(brand, _first_name_of(client),
+                                          fb.content_json or {}, portal_url=portal_url)
+    # El informe COMPLETO (gráficas, comparativa de fuerza y fotos) va adjunto
+    # en PDF: el email solo llevaba el texto y perdía lo más premium del ciclo.
+    adjuntos = None
+    try:
+        if fb.docx_path:
+            from app.services.storage import abs_path as _abs
+
+            ruta = _abs(fb.docx_path)
+            if ruta.exists():
+                crudo = ruta.read_bytes()
+                try:
+                    from app.services.docs.pdf_convert import docx_bytes_to_pdf
+
+                    adjuntos = [(f"informe_progreso_{fb.id}.pdf",
+                                 docx_bytes_to_pdf(crudo), "application/pdf")]
+                except Exception:  # noqa: BLE001 — sin LibreOffice, va el Word
+                    adjuntos = [(
+                        f"informe_progreso_{fb.id}.docx", crudo,
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    )]
+    except Exception:  # noqa: BLE001 — sin adjunto sigue saliendo el email
+        adjuntos = None
     email_status = EmailService(db).send(
         to=client.email, subject=subject, html=html,
-        kind="feedback_delivery", client=client,
+        kind="feedback_delivery", client=client, attachments=adjuntos,
     )
     db.commit()
     return {"sent": True, "sent_at": fb.sent_at.isoformat(), "email_status": email_status}
@@ -814,6 +847,63 @@ def download_plan_document(
         media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.post("/api/plans/{plan_id}/import-word")
+def import_plan_word(
+    plan_id: int,
+    file: "UploadFile" = FastFile(...),
+    db: Session = Depends(get_db),
+) -> dict:
+    """IDA Y VUELTA del Word editable: el coach sube el .docx que editó en Word
+    y aquí se LEE (determinista, 0 créditos de IA) y se devuelven los JSON
+    candidatos + la lista de cambios detectados + avisos. NO aplica nada: la
+    aplicación la hace el PATCH de siempre desde el panel, previa confirmación
+    del coach (mismo camino: sanitizado, reconcile, historial, rev, §13)."""
+    from app.services.word_import import MAX_DOCX_BYTES, WordImportError, parse_word_edits
+
+    plan = db.get(Plan, plan_id)
+    if not plan:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan no encontrado")
+    if plan.status == "superseded":
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "Este plan fue sustituido por una versión más nueva")
+    data = file.file.read(MAX_DOCX_BYTES + 1)
+    if len(data) > MAX_DOCX_BYTES:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "El Word supera el tamaño máximo (15 MB)")
+    if not data.startswith(b"PK"):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "El archivo no es un .docx (¿has subido un PDF o un .doc antiguo?)")
+    try:
+        r = parse_word_edits(db, plan, data)
+    except WordImportError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+
+    # Frases legibles del diff (mismas que el resto del sistema) + las extra
+    # del parser (textos que plan_diff no describe), sin duplicar.
+    from app.services.plan_diff import manual_change_summary
+
+    frases = manual_change_summary(
+        db,
+        old_nutrition=plan.nutrition_json, new_nutrition=r["nutrition_json"],
+        old_training=plan.training_json, new_training=r["training_json"],
+    )
+    vistos = set(frases)
+    for extra in r["extra_changes"]:
+        if extra not in vistos:
+            frases.append(extra)
+            vistos.add(extra)
+
+    rev = int((plan.nutrition_json or {}).get("rev") or 0)
+    return {
+        "changes": frases,
+        "warnings": r["warnings"],
+        "has_changes": bool(frases),
+        "base_rev": rev,
+        "nutrition_json": r["nutrition_json"],
+        "training_json": r["training_json"],
+    }
 
 
 @router.post("/api/plans/{plan_id}/send-email")

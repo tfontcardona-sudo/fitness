@@ -260,9 +260,25 @@ def _gather_doc_inputs(db: Session, period: Period, client: Client) -> dict:
     progress = M.exercise_e1rm_progress(sets)[:5]
     ex_ids = {p.exercise_id for p in progress} | {s["exercise_id"] for s in sets}
     ex_info = {e.id: e for e in db.scalars(select(Exercise).where(Exercise.id.in_(ex_ids)))} if ex_ids else {}
+
+    # DELTA vs el período anterior: la sección se llama "Progresión de fuerza"
+    # y solo enseñaba valores absolutos — el "+2,5 kg" que el cliente quiere
+    # ver ya lo sabe pintar la gráfica (charts.e1rm_chart, delta_kg).
+    prev_for_delta = _prev_period(db, period)
+    prev_best: dict[int, float] = {}
+    if prev_for_delta is not None:
+        prev_logs = db.scalars(
+            select(DailyLog.id).where(DailyLog.period_id == prev_for_delta.id)
+        ).all()
+        if prev_logs:
+            prev_sets = _workout_sets_for_logs(db, list(prev_logs))
+            for pp in M.exercise_e1rm_progress(prev_sets):
+                prev_best[pp.exercise_id] = pp.best_e1rm_kg
     e1rm_exercises = [{
         "name": ex_info[p.exercise_id].canonical_name if p.exercise_id in ex_info else f"#{p.exercise_id}",
         "e1rm_kg": p.best_e1rm_kg,
+        **({"delta_kg": round(p.best_e1rm_kg - prev_best[p.exercise_id], 1)}
+           if p.exercise_id in prev_best else {}),
     } for p in progress]
 
     weeks = max(1.0, period_days / 7)
@@ -284,10 +300,35 @@ def _gather_doc_inputs(db: Session, period: Period, client: Client) -> dict:
     }
 
 
+_MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
+             "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+
+
+def _period_label(period: Period) -> str | None:
+    """"Del 1 al 14 de agosto de 2026" — el rango real del período, que es lo
+    que el cliente busca al comparar informes ("Período 7" no le dice nada)."""
+    a, b = period.starts_on, period.ends_on
+    if not a or not b:
+        return None
+    if a.month == b.month:
+        return f"Del {a.day} al {b.day} de {_MESES_ES[b.month - 1]} de {b.year}"
+    return (f"Del {a.day} de {_MESES_ES[a.month - 1]} al {b.day} de "
+            f"{_MESES_ES[b.month - 1]} de {b.year}")
+
+
+def _goal_label_es(goal: str | None) -> str | None:
+    return {"fat_loss": "Objetivo: pérdida de grasa",
+            "muscle_gain": "Objetivo: ganancia muscular",
+            "recomp": "Objetivo: recomposición corporal",
+            "maintenance": "Objetivo: mantenimiento",
+            "injury_recovery": "Objetivo: recuperación de lesión"}.get(goal or "")
+
+
 def _write_feedback_doc(db: Session, client: Client, period: Period, inputs: dict, ai_out) -> str:
     """Genera el .docx con las gráficas + el texto (de la IA o editado) y lo guarda."""
     docx = generate_feedback_doc(
         brand=_doc_brand(db), client_name=client.full_name, period_index=period.period_index,
+        period_label=_period_label(period), goal_label=_goal_label_es(client.goal_type),
         metrics=inputs["metrics_json"], weight_points=inputs["weight_points"],
         goal_kg=client.goal_weight_kg, e1rm_exercises=inputs["e1rm_exercises"],
         perimeters=inputs["perimeters"], volume_by_group=inputs["volume_by_group"],

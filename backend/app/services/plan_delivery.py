@@ -40,6 +40,7 @@ def doc_brand(db: Session):
             logo_abs = None
     return DocBrand(name=cfg.name, color_primary=cfg.color_primary,
                     color_secondary=cfg.color_secondary, font_family=cfg.font_family,
+                    tagline=cfg.tagline, contact_email=cfg.contact_email,
                     logo_path=logo_abs)
 
 

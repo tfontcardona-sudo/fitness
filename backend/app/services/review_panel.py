@@ -367,6 +367,7 @@ def make_ai_reviewer(
             user=f"Eres «{role['name']}». Tu rúbrica: {role['rubric']}",
             schema=ReviewerOutput,
             temperature=0,  # §14: cada revisor juzga de forma determinista
+            max_tokens=2000,  # JSON de 0-6 hallazgos: techo holgado anti-desbocadas
         )
         hallazgos = [ReviewFinding(
             severity=h.severidad, description=h.descripcion,
