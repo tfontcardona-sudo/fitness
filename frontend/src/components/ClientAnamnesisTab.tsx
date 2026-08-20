@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Eye, FileText, Pencil, Save, Sparkles } from "lucide-react";
+import { ChevronDown, Eye, FileText, Pencil, Save, Sparkles } from "lucide-react";
 import { api, ApiError, getToken } from "../lib/api";
 import type { ClientOut } from "../types";
 import { ExpandableArea, Spinner, useToast } from "./ui";
-import { ACTIVITY_LABEL, ageFrom, DIET_LABEL, GOAL_LABEL, LEVEL_LABEL, PLACE_LABEL } from "../lib/format";
+import { ACTIVITY_LABEL, ageFrom, DIET_LABEL, DIET_PATTERN_LABEL, GOAL_LABEL, LEVEL_LABEL, PLACE_LABEL } from "../lib/format";
+import { isCriticalLine, isRelevantClinical } from "../lib/clinical";
 
 /**
  * Tab Anamnesis: ficha estructurada del cliente. Es la fuente de datos que la
@@ -97,13 +98,15 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
 
   return (
     <div className="space-y-4">
-      <div className="card flex flex-wrap items-center justify-between gap-3 p-4">
-        <div className="flex items-center gap-2.5">
-          <Sparkles size={17} style={{ color: "var(--brand-accent)" }} />
-          <div>
-            <p className="text-sm font-medium text-zinc-200">Leer anamnesis con IA</p>
-            <p className="text-xs text-zinc-500">Lee el PDF subido y rellena estos campos automáticamente.</p>
-          </div>
+      {/* Barra fina: el 95% del tiempo el coach viene a LEER la ficha — la
+          explicación de "Leer con IA" solo aparece cuando aún no hay datos. */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Sparkles size={15} style={{ color: "var(--brand-accent)" }} />
+          <p className="text-sm font-medium text-zinc-200">Anamnesis</p>
+          {!client.goal_type && !pdfName && (
+            <span className="text-xs text-zinc-500">Sube el PDF y púlsalo para rellenar la ficha con IA.</span>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {/* Aviso de borrador SIEMPRE visible (también al volver a "Ver ficha"):
@@ -141,7 +144,15 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
       {analysis && (
         <div className="card p-4">
           <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">Análisis de la IA</p>
-          <p className="text-sm text-zinc-300">{analysis}</p>
+          {/* La síntesis viene en puntos ("- …"): se muestra como lista, no
+              como párrafo corrido. Si es prosa antigua, cae a texto normal. */}
+          {splitNote(analysis).length > 1 ? (
+            <ul className="list-disc space-y-0.5 pl-4 text-sm text-zinc-300">
+              {splitNote(analysis).map((l, i) => <li key={i}>{l}</li>)}
+            </ul>
+          ) : (
+            <p className="text-sm text-zinc-300">{analysis}</p>
+          )}
         </div>
       )}
 
@@ -198,9 +209,7 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
             emergencia, Revisor 0 y alertas (violación = veto, no aviso). */}
         <Select label="Patrón dietético (ético/religioso)"
           value={(current("diet_pattern") as string) ?? ""} onChange={(v) => set("diet_pattern", (v || null) as any)}
-          options={[["", "Ninguno"], ["vegano", "Vegano"], ["vegetariano", "Vegetariano"],
-                    ["pescetariano", "Pescetariano"], ["sin_cerdo", "Sin cerdo"],
-                    ["halal", "Halal"], ["kosher", "Kosher"]]} />
+          options={[["", "Ninguno"], ...Object.entries(DIET_PATTERN_LABEL)]} />
         <CSV label="Alimentos que le gustan" value={current("food_likes") as string[]} onChange={(v) => set("food_likes", v as any)} />
         <CSV label="Alimentos que evita" value={current("food_dislikes") as string[]} onChange={(v) => set("food_dislikes", v as any)} />
         <CSV label="Alergias" value={current("food_allergies") as string[]} onChange={(v) => set("food_allergies", v as any)} />
@@ -264,6 +273,10 @@ function splitNote(text: string | null | undefined): string[] {
   return t.split(/\n+/).map((s) => s.replace(/^[-•*]\s*/, "").trim()).filter(Boolean);
 }
 
+/** Ficha ordenada por lo que el coach necesita: (1) qué respetar — alergias,
+ *  patrón, lesiones, clínica —, (2) quién es y su objetivo, (3) entreno y
+ *  dieta, (4) contexto de vida. Lo vacío se COLAPSA a una línea (no roba
+ *  espacio) y lo largo se pliega dejando lo crítico siempre a la vista. */
 function AnamnesisView({ client }: { client: ClientOut }) {
   const age = ageFrom(client.birth_date);
   const pairs = (rows: [string, string | null | undefined][]) =>
@@ -273,50 +286,124 @@ function AnamnesisView({ client }: { client: ClientOut }) {
     : client.meals_per_day == null
       ? "Lo decide el equipo (reparto óptimo para su objetivo)"
       : `${client.meals_per_day} al día`;
+  const allergies = client.food_allergies ?? [];
+  const pattern = client.diet_pattern ? DIET_PATTERN_LABEL[client.diet_pattern] ?? client.diet_pattern : null;
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      <VCard color={V_COLORS.datos} title="Datos personales" rows={pairs([
-        ["Sexo", client.sex === "male" ? "Hombre" : client.sex === "female" ? "Mujer" : null],
-        ["Nacimiento", client.birth_date],
-        ["Edad", age ? `${age} años` : null],
-      ])} />
-      <VCard color={V_COLORS.cuerpo} title="Antropometría y objetivo" rows={pairs([
-        ["Altura", client.height_cm ? `${client.height_cm} cm` : null],
-        ["Peso inicial", client.start_weight_kg ? `${client.start_weight_kg} kg` : null],
-        ["% graso", client.body_fat_pct ? `${client.body_fat_pct}%` : null],
-        ["Peso objetivo", client.goal_weight_kg ? `${client.goal_weight_kg} kg` : null],
-        ["Objetivo", client.goal_type ? GOAL_LABEL[client.goal_type] : null],
-        ["Nivel", client.level ? LEVEL_LABEL[client.level] : null],
-      ])} />
-      <VCard color={V_COLORS.entreno} title="Entrenamiento" rows={pairs([
-        ["Días / semana", client.training_days ? String(client.training_days) : null],
-        ["Actividad diaria", client.daily_activity_level ? ACTIVITY_LABEL[client.daily_activity_level] ?? client.daily_activity_level : null],
-        ["Duración sesión", client.session_max_min ? `${client.session_max_min} min` : null],
-        ["Dónde", client.training_place ? PLACE_LABEL[client.training_place] : null],
-        ["Material", client.equipment?.length ? client.equipment.join(", ") : null],
-      ])} note={client.sport_history} noteLabel="Experiencia y otros deportes" />
-      <VCard color={V_COLORS.dieta} title="Dieta" rows={pairs([
-        ["Modo", client.diet_mode ? DIET_LABEL[client.diet_mode] : null],
-        ["Comidas del día", meals],
-        ["Le gustan", client.food_likes?.length ? client.food_likes.join(", ") : null],
-        ["Evita", client.food_dislikes?.length ? client.food_dislikes.join(", ") : null],
-        ["Alergias", client.food_allergies?.length ? client.food_allergies.join(", ") : null],
-      ])} />
-      <VNotes color={V_COLORS.lesiones} title="Lesiones y movilidad" text={client.injuries_notes} />
-      <VNotes color={V_COLORS.clinica} title="Historia clínica y salud" text={client.medical_notes} />
-      <VNotes color={V_COLORS.datos} title="Medicación" text={client.medication_notes} />
-      <VNotes color={V_COLORS.clinica} title="Suplementación actual" text={client.current_supplements} />
-      <div className="sm:col-span-2">
-        <VNotes color={V_COLORS.vida} title="Estilo de vida, motivo y objetivos" text={client.lifestyle_notes} />
+    <div className="space-y-3">
+      {/* QUÉ RESPETAR — chips de seguridad, siempre lo primero que se ve. */}
+      {(allergies.length > 0 || pattern) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {allergies.map((a) => (
+            <span key={a} className="rounded-full px-2.5 py-1 text-xs font-semibold"
+              style={{ background: "color-mix(in srgb, #B3261E 14%, transparent)", color: "#B3261E" }}>
+              ⚠ Alergia: {a}
+            </span>
+          ))}
+          {pattern && (
+            <span className="rounded-full px-2.5 py-1 text-xs font-semibold"
+              style={{ background: "color-mix(in srgb, #9A6B15 14%, transparent)", color: "#9A6B15" }}>
+              Patrón: {pattern}
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        {/* 1ª fila: SEGURIDAD (lo crítico nunca se pliega ni baja). */}
+        <VNotes color={V_COLORS.lesiones} title="Lesiones y movilidad" text={client.injuries_notes}
+          emptyLabel="Sin lesiones declaradas ✓" />
+        <VNotes color={V_COLORS.clinica} title="Historia clínica y salud" text={client.medical_notes}
+          emptyLabel="Sin patologías declaradas ✓" />
+
+        {/* 2ª fila: quién es + su entrenamiento. */}
+        <VCard color={V_COLORS.cuerpo} title="Perfil y objetivo" rows={pairs([
+          ["Sexo · edad", [client.sex === "male" ? "Hombre" : client.sex === "female" ? "Mujer" : null,
+                           age ? `${age} años` : null].filter(Boolean).join(" · ") || null],
+          ["Altura", client.height_cm ? `${client.height_cm} cm` : null],
+          ["Peso inicial", client.start_weight_kg ? `${client.start_weight_kg} kg` : null],
+          ["% graso", client.body_fat_pct ? `${client.body_fat_pct}%` : null],
+          ["Peso objetivo", client.goal_weight_kg ? `${client.goal_weight_kg} kg` : null],
+          ["Objetivo", client.goal_type ? GOAL_LABEL[client.goal_type] : null],
+          ["Nivel", client.level ? LEVEL_LABEL[client.level] : null],
+        ])} />
+        <VCard color={V_COLORS.entreno} title="Entrenamiento" rows={pairs([
+          ["Días / semana", client.training_days ? String(client.training_days) : null],
+          ["Actividad diaria", client.daily_activity_level ? ACTIVITY_LABEL[client.daily_activity_level] ?? client.daily_activity_level : null],
+          ["Duración sesión", client.session_max_min ? `${client.session_max_min} min` : null],
+          ["Dónde", client.training_place ? PLACE_LABEL[client.training_place] : null],
+          ["Material", client.equipment?.length ? client.equipment.join(", ") : null],
+        ])} note={client.sport_history} noteLabel="Experiencia y otros deportes" />
+
+        {/* 3ª fila: dieta + medicación/suplementación (fusionadas: fragmentaban
+            la parrilla con tarjetas casi vacías). */}
+        <VCard color={V_COLORS.dieta} title="Dieta" rows={pairs([
+          ["Modo", client.diet_mode ? DIET_LABEL[client.diet_mode] : null],
+          ["Patrón", pattern],
+          ["Comidas del día", meals],
+          ["Le gustan", client.food_likes?.length ? client.food_likes.join(", ") : null],
+          ["Evita", client.food_dislikes?.length ? client.food_dislikes.join(", ") : null],
+          ["Alergias", allergies.length ? allergies.join(", ") : null],
+        ])} />
+        <VDouble
+          color={V_COLORS.clinica}
+          a={{ title: "Medicación", text: client.medication_notes, empty: "Sin medicación" }}
+          b={{ title: "Suplementación actual", text: client.current_supplements, empty: "Sin suplementación" }}
+        />
+
+        {/* 4ª fila: contexto de vida (plegado; los temas salen como subtítulos). */}
+        <div className="sm:col-span-2">
+          <VNotes color={V_COLORS.vida} title="Estilo de vida, motivo y objetivos" text={client.lifestyle_notes} />
+        </div>
       </div>
     </div>
   );
+}
+
+/** Dos sub-bloques cortos en UNA tarjeta (medicación + suplementación): juntos
+ *  ocupan una celda en vez de dos tarjetas casi vacías. */
+function VDouble({ color, a, b }: {
+  color: string;
+  a: { title: string; text: string | null | undefined; empty: string };
+  b: { title: string; text: string | null | undefined; empty: string };
+}) {
+  const la = splitNote(a.text);
+  const lb = splitNote(b.text);
+  return (
+    <div className="card border-l-2 p-4" style={{ borderLeftColor: color }}>
+      {[{ ...a, lines: la }, { ...b, lines: lb }].map((s, i) => (
+        <div key={s.title} className={i === 1 ? "mt-3" : ""}>
+          <p
+            className="mb-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+            style={{ background: `color-mix(in srgb, ${color} 13%, transparent)`, color }}
+          >
+            {s.title}
+          </p>
+          {s.lines.length ? (
+            <ul className="list-disc space-y-0.5 pl-4 text-sm text-zinc-300">
+              {s.lines.map((l, j) => <li key={j}><NoteLine line={l} /></li>)}
+            </ul>
+          ) : (
+            <p className="text-xs text-zinc-500">{s.empty}</p>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Una línea de nota. Si la IA la prefijó por tema ("Sueño: 6 h…"), el tema se
+ *  pinta como subtítulo en negrita para que el ojo encuentre cada bloque. */
+function NoteLine({ line }: { line: string }) {
+  const m = /^([A-ZÁÉÍÓÚÑ][\wáéíóúñüö/ ]{1,24}):\s+(.+)$/.exec(line);
+  if (!m) return <>{line}</>;
+  return (<><span className="font-medium text-zinc-200">{m[1]}:</span> {m[2]}</>);
 }
 
 function VCard({ color, title, rows, note, noteLabel }: {
   color: string; title: string; rows: [string, string | null | undefined][];
   note?: string | null; noteLabel?: string;
 }) {
+  const [noteOpen, setNoteOpen] = useState(false);
   const noteLines = splitNote(note);
   if (!rows.length && !noteLines.length) return null;
   return (
@@ -339,16 +426,39 @@ function VCard({ color, title, rows, note, noteLabel }: {
         <>
           {noteLabel && <p className="mt-2 text-xs text-zinc-500">{noteLabel}</p>}
           <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-zinc-400">
-            {noteLines.map((l, i) => <li key={i}>{l}</li>)}
+            {(noteOpen ? noteLines : noteLines.slice(0, VISIBLE_LINES)).map((l, i) => <li key={i}>{l}</li>)}
           </ul>
+          {noteLines.length > VISIBLE_LINES && !noteOpen && (
+            <button onClick={() => setNoteOpen(true)}
+              className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-300">
+              <ChevronDown size={13} /> Ver todo ({noteLines.length - VISIBLE_LINES} más)
+            </button>
+          )}
         </>
       )}
     </div>
   );
 }
 
-function VNotes({ color, title, text }: { color: string; title: string; text: string | null | undefined }) {
-  const lines = splitNote(text);
+/** Nº de líneas visibles por tarjeta antes de plegar. Lo crítico va SIEMPRE
+ *  arriba y nunca queda oculto: el plegado solo esconde lo informativo. */
+const VISIBLE_LINES = 4;
+
+function VNotes({ color, title, text, emptyLabel }: {
+  color: string; title: string; text: string | null | undefined; emptyLabel?: string;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const raw = splitNote(text);
+  // Prioridad de lectura: crítico (rojo) → relevante → resto (negaciones,
+  // "sin cambios"…). El orden ORIGINAL se conserva dentro de cada grupo.
+  const critical = raw.filter((l) => isCriticalLine(l));
+  const relevant = raw.filter((l) => !isCriticalLine(l) && isRelevantClinical(l));
+  const rest = raw.filter((l) => !isCriticalLine(l) && !isRelevantClinical(l));
+  const ordered = [...critical, ...relevant, ...rest];
+  // Nunca se pliega una línea crítica: el corte visible respeta el bloque rojo.
+  const cut = Math.max(VISIBLE_LINES, critical.length);
+  const visible = showAll ? ordered : ordered.slice(0, cut);
+  const hidden = ordered.length - visible.length;
   return (
     <div className="card border-l-2 p-4" style={{ borderLeftColor: color }}>
       <p
@@ -357,12 +467,38 @@ function VNotes({ color, title, text }: { color: string; title: string; text: st
       >
         {title}
       </p>
-      {lines.length ? (
-        <ul className="list-disc space-y-0.5 pl-4 text-sm text-zinc-300">
-          {lines.map((l, i) => <li key={i}>{l}</li>)}
-        </ul>
+      {ordered.length ? (
+        <>
+          <ul className="list-disc space-y-0.5 pl-4 text-sm text-zinc-300">
+            {visible.map((l, i) => (
+              <li
+                key={i}
+                className={isCriticalLine(l) ? "font-medium" : ""}
+                style={isCriticalLine(l) ? { color } : undefined}
+              >
+                <NoteLine line={l} />
+              </li>
+            ))}
+          </ul>
+          {hidden > 0 && (
+            <button
+              onClick={() => setShowAll(true)}
+              className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-300"
+            >
+              <ChevronDown size={13} /> Ver todo ({hidden} más)
+            </button>
+          )}
+          {showAll && ordered.length > cut && (
+            <button
+              onClick={() => setShowAll(false)}
+              className="mt-2 block text-xs font-medium text-zinc-500 hover:text-zinc-300"
+            >
+              Mostrar menos
+            </button>
+          )}
+        </>
       ) : (
-        <p className="text-xs text-zinc-500">Sin datos.</p>
+        <p className="text-xs text-zinc-500">{emptyLabel ?? "Sin datos."}</p>
       )}
     </div>
   );

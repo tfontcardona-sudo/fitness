@@ -59,6 +59,17 @@ export const DIET_LABEL: Record<DietMode, string> = {
   strict: "Estricta",
 };
 
+/** Patrón dietético ético/religioso (clients.diet_pattern). Una sola verdad:
+ *  vista y select de la Anamnesis salen de aquí. */
+export const DIET_PATTERN_LABEL: Record<string, string> = {
+  vegano: "Vegano",
+  vegetariano: "Vegetariano",
+  pescetariano: "Pescetariano",
+  sin_cerdo: "Sin cerdo",
+  halal: "Halal",
+  kosher: "Kosher",
+};
+
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);

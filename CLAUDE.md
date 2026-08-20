@@ -442,6 +442,61 @@ cd backend && python -m pytest tests/ -q
 
 ## 9. Trabajo pendiente / próximos pasos
 
+000000. ✅ **INFORMACIÓN DEL CLIENTE: menos, mejor y ordenada (agosto 2026).**
+   Queja del dueño: "demasiada información mal estructurada, un texto enorme con
+   puntos, no se sabe dónde mirar". Inventario UX por 5 auditores (workflow) +
+   reestructuración. Principio: NO se pierde ningún dato (la anamnesis manda,
+   lo clínico JAMÁS se recorta ni se pliega); se JERARQUIZA la presentación y se
+   le ponen topes de ESCRITURA a la IA. Suite (505) + tsc + build en verde.
+   - **Prompts de extracción** (`extraction.py`): "lectura exhaustiva, escritura
+     selectiva" (excepción sin recorte: lesiones/patologías/alergias/medicación);
+     notas por sección en viñetas con PLANTILLA y tope (lifestyle 6 viñetas
+     prefijadas por tema empezando por "- Motivo:", medical con prefijos
+     Clínica/Digestivo/Salud femenina, sport_history máx 4, suplementos máx 6,
+     medicación "Nombre — dosis — frecuencia"); negaciones agrupadas en una
+     línea; sin duplicar datos entre secciones; deep_analysis 3-5 puntos de máx
+     ~20 palabras (una DECISIÓN por punto). Topes espejados en los Field()
+     description (viajan en el schema). Feedback: change ~12 palabras, answers
+     2-3 frases/duda, objetivos ~12 palabras. `SYSTEM_PHOTO_ANALYSIS` (huérfano)
+     eliminado de prompts.py.
+   - **Anamnesis (panel)**: ficha reordenada por lo que el coach necesita —
+     chips de seguridad arriba (⚠ alergias + patrón dietético, que NO se
+     mostraba: bug), 1ª fila Lesiones+Clínica (lo crítico SIEMPRE visible, nunca
+     plegado), Perfil fusionado (datos+antropometría), Medicación+Suplementación
+     en una tarjeta, vacíos colapsados ("Sin lesiones declaradas ✓"), notas
+     plegadas tras 4 líneas (`VISIBLE_LINES`, orden crítico→relevante→resto con
+     lib/clinical), prefijos "Tema:" pintados como subtítulos (`NoteLine`),
+     análisis de la IA como lista, toolbar compacta. `DIET_PATTERN_LABEL` en
+     lib/format (una verdad para vista+select).
+   - **Resumen**: Notas clínicas en DOS niveles (crítico desplegado, informativo
+     tras "+N notas informativas").
+   - **Seguimiento**: "Puntos a vigilar" de la última revisión PROMOCIONADO a
+     bloque fijo arriba (estaba enterrado en el acordeón); MEDIAS del período en
+     tarjetas encima de la tabla y la tabla de 14 filas plegada (summary con
+     hoy registrado/pendiente); sensaciones solo las ≤3 + chip "Resto en 4-5 ✓";
+     "Dudas para ti" primero y a ancho completo; textos largos con line-clamp
+     + "Ver más" (con detección real de desbordamiento); peticiones line-clamp-5.
+   - **Feedback**: banner "Revisar y adaptar" PRIMERO (encima de videollamada);
+     videollamada YA agendada colapsada a una línea (fecha + Unirme); fuera los
+     BAStat rotos de perímetros ("— → 92"); rejilla de stats deduplicada (peso
+     antes→después + ritmo + a objetivo + adherencia + días); fuerza = línea
+     resumen "X de N mejoran" + top 3 + resto plegado (`StrengthRow`); fotos
+     plegadas con carga PEREZOSA (`PeriodPhotosFolded`: 0 blobs hasta abrir, y
+     avisa "Mostrando 8 de N"); la cuadrícula `plan_adjustments` por fin VISIBLE
+     como "Decisiones para la próxima quincena" (antes solo en el Word), bullets
+     plegados si hay cuadrícula; dudas del cliente citadas junto a su respuesta
+     y destacadas en ámbar; mensaje de cierre plegado.
+   - **Planificación**: cabecera con UN chip de estado ("● Activa · la ve el
+     cliente"); avisos en dos niveles (bloqueantes rojos siempre visibles;
+     ámbar+degraded en details "Avisos de la revisión automática · N" — antes
+     ~10 líneas apiladas y los hallazgos >4 se ocultaban SIN contador); "Mes X"
+     a la línea de origen; coletillas didácticas fuera (versión más reciente,
+     pulsa para cambiar, se renueva solo→title); botonera con menú "Más"
+     (Historial/Word/Subir Word, cierra al hacer clic fuera); preview del
+     import Word con max-height y botones siempre a la vista; abrir un ejercicio
+     ya no cierra el anterior (name compartido quitado); banner re-descarga PDF
+     en una línea.
+
 00000. ✅ **SEGURIDAD INTEGRAL (agosto 2026): anti-pirateo / anti-robo /
    anti-copia.** Auditoría de seguridad por 6 dominios con verificación
    adversarial (workflow, 26 hallazgos confirmados/plausibles) + endurecimiento.

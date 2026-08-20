@@ -44,7 +44,9 @@ function ChangeRequestsCard({ clientId }: { clientId: number }) {
         {open.map((c) => (
           <li key={c.id} className="flex items-start justify-between gap-3 rounded-lg bg-zinc-900/60 p-3">
             <div className="min-w-0">
-              <p className="whitespace-pre-wrap text-sm text-zinc-200">{c.message}</p>
+              {/* Tope de 5 líneas: un mensaje kilométrico no empuja el resto
+                  de la pestaña (el texto completo, en el title). */}
+              <p className="line-clamp-5 whitespace-pre-wrap text-sm text-zinc-200" title={c.message}>{c.message}</p>
               <p className="mt-1 text-[11px] text-zinc-500">
                 {new Date(c.created_at).toLocaleString("es-ES", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
               </p>
@@ -147,8 +149,37 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
         </div>
       </div>
 
-      <div className="card overflow-hidden p-0">
-        <div className="border-b border-white/5 px-4 py-2 text-xs font-semibold text-zinc-300">Registros diarios</div>
+      {/* PUNTOS A VIGILAR de la última revisión, como bloque FIJO arriba: es
+          exactamente lo que el coach necesita al preparar la asesoría (antes
+          estaba enterrado dentro del acordeón de la revisión). */}
+      {quincenals.length > 0 && (
+        <Vigilar
+          q={quincenals[0]}
+          goal={client.goal_type}
+          extras={{
+            daysLogged: data.days_logged ?? null,
+            daysTotal: data.period?.days_total ?? 14,
+            sleep: avg?.sleep_hours ?? null,
+            satiety: avg?.satiety_1_10 ?? null,
+          }}
+        />
+      )}
+
+      {/* MEDIAS primero (lo que decide), la tabla cruda de 14 filas plegada. */}
+      {avg && daily.length > 0 && (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <AvgCard label="Peso medio" value={fmt1(avg.weight_kg)} unit="kg" />
+          <AvgCard label="Sueño medio" value={fmt1(avg.sleep_hours)} unit="h" />
+          <AvgCard label="Adherencia dieta" value={avg.diet_adherence_pct != null ? `${avg.diet_adherence_pct}%` : "—"} />
+          <AvgCard label="Pasos / día" value={avg.steps != null ? String(Math.round(avg.steps)) : "—"} />
+        </div>
+      )}
+
+      <details className="card overflow-hidden p-0">
+        <summary className="cursor-pointer border-b border-white/5 px-4 py-2 text-xs font-semibold text-zinc-300 hover:text-zinc-100">
+          Registros diarios · {daily.length}
+          {data.today_logged ? " (hoy registrado)" : " (hoy pendiente)"}
+        </summary>
         {daily.length === 0 ? (
           <p className="p-4 text-sm text-amber-400">Sin registros todavía (pendiente).</p>
         ) : (
@@ -197,7 +228,7 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
             </table>
           </div>
         )}
-      </div>
+      </details>
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">
@@ -223,17 +254,9 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
                 </span>
               </summary>
               <div className="space-y-4 border-t border-white/5 px-4 py-3.5">
-                {/* Análisis automático: lo crítico, arriba y sin que el coach lo busque */}
-                <Vigilar
-                  q={q}
-                  goal={client.goal_type}
-                  extras={i === 0 ? {
-                    daysLogged: data.days_logged ?? null,
-                    daysTotal: data.period?.days_total ?? 14,
-                    sleep: avg?.sleep_hours ?? null,
-                    satiety: avg?.satiety_1_10 ?? null,
-                  } : undefined}
-                />
+                {/* El análisis de la ÚLTIMA revisión ya está fijo arriba de la
+                    pestaña; dentro del acordeón solo se repite para las antiguas. */}
+                {i > 0 && <Vigilar q={q} goal={client.goal_type} />}
 
                 <section>
                   <MiniTitle>Medidas · antes → después</MiniTitle>
@@ -257,25 +280,42 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
                   </div>
                 </section>
 
-                {q.feelings && (
-                  <section>
-                    <MiniTitle>Sensaciones (1 = muy mal · 5 = excelente)</MiniTitle>
-                    <div className="flex flex-wrap gap-1.5">
-                      {Object.entries(q.feelings).map(([k, v]) => (
-                        <FeelingChip key={k} name={k} value={Number(v)} />
-                      ))}
-                    </div>
-                  </section>
-                )}
+                {q.feelings && (() => {
+                  // Solo las sensaciones BAJAS (≤3) aportan a la asesoría; las
+                  // buenas se resumen en un único chip para no llenar de verde.
+                  const entries = Object.entries(q.feelings);
+                  const low = entries.filter(([, v]) => Number(v) <= 3);
+                  const okCount = entries.length - low.length;
+                  return (
+                    <section>
+                      <MiniTitle>Sensaciones (1 = muy mal · 5 = excelente)</MiniTitle>
+                      <div className="flex flex-wrap gap-1.5">
+                        {low.map(([k, v]) => <FeelingChip key={k} name={k} value={Number(v)} />)}
+                        {okCount > 0 && (
+                          <span className="rounded-full px-2 py-0.5 text-xs font-medium"
+                            style={{ background: "color-mix(in srgb, #2E7D46 12%, transparent)", color: "#2E7D46" }}>
+                            {low.length ? `Resto en 4-5 ✓ (${okCount})` : `Todas en 4-5 ✓ (${okCount})`}
+                          </span>
+                        )}
+                      </div>
+                    </section>
+                  );
+                })()}
 
                 {(q.changes || q.hardest || q.next_goal || q.questions) && (
                   <section>
                     <MiniTitle>En palabras del cliente</MiniTitle>
                     <div className="grid gap-2 sm:grid-cols-2">
+                      {/* Las DUDAS exigen respuesta en la asesoría: primero y a
+                          ancho completo. */}
+                      {q.questions && (
+                        <div className="sm:col-span-2">
+                          <TextCard label="Dudas para ti" text={q.questions} highlight />
+                        </div>
+                      )}
                       <TextCard label="Cambios que nota" text={q.changes} />
                       <TextCard label="Lo que más le cuesta" text={q.hardest} />
                       <TextCard label="Su objetivo" text={q.next_goal} />
-                      <TextCard label="Dudas para ti" text={q.questions} highlight />
                     </div>
                   </section>
                 )}
@@ -440,6 +480,16 @@ function FeelingChip({ name, value }: { name: string; value: number }) {
 }
 
 function TextCard({ label, text, highlight }: { label: string; text: string | null; highlight?: boolean }) {
+  // Un texto muy largo se recorta a 4 líneas con "Ver más": no estira el
+  // acordeón entero. El botón solo aparece si de verdad hay recorte (se mide
+  // el desbordamiento real, no la longitud del texto).
+  const [expanded, setExpanded] = useState(false);
+  const [clipped, setClipped] = useState(false);
+  const pRef = useRef<HTMLParagraphElement | null>(null);
+  useEffect(() => {
+    const el = pRef.current;
+    if (el && !expanded) setClipped(el.scrollHeight > el.clientHeight + 1);
+  }, [text, expanded]);
   if (!text) return null;
   return (
     <div
@@ -451,7 +501,13 @@ function TextCard({ label, text, highlight }: { label: string; text: string | nu
       <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: highlight ? "#9A6B15" : "#7A7060" }}>
         {label}
       </p>
-      <p className="mt-1 text-sm leading-relaxed text-zinc-200">{text}</p>
+      <p ref={pRef} className={`mt-1 text-sm leading-relaxed text-zinc-200${expanded ? "" : " line-clamp-4"}`}>{text}</p>
+      {(clipped || expanded) && (
+        <button onClick={() => setExpanded((e) => !e)}
+          className="mt-1 text-xs font-medium text-zinc-500 hover:text-zinc-300">
+          {expanded ? "Mostrar menos" : "Ver más"}
+        </button>
+      )}
     </div>
   );
 }
@@ -459,6 +515,18 @@ function TextCard({ label, text, highlight }: { label: string; text: string | nu
 /** Peso/sueño/agua con un decimal como mucho (evita 83.60000000000001). */
 function fmt1(v: number | null | undefined): string | number {
   return v == null ? "—" : Math.round(v * 10) / 10;
+}
+
+/** Tarjeta de media del período: la señal que decide, encima de la tabla. */
+function AvgCard({ label, value, unit }: { label: string; value: string | number; unit?: string }) {
+  return (
+    <div className="card p-3 text-center">
+      <div className="text-base font-bold text-zinc-100">
+        {value}{unit && value !== "—" ? <span className="text-xs font-medium text-zinc-500"> {unit}</span> : null}
+      </div>
+      <div className="text-[11px] text-zinc-500">{label}</div>
+    </div>
+  );
 }
 
 const ADHERENCE_LABEL: Record<string, string> = { yes: "sí", partial: "parcial", no: "no" };

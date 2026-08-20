@@ -138,19 +138,23 @@ const NOTE_SECTIONS: { label: string; color: string; get: (c: ClientOut) => stri
 ];
 
 function ClinicalNotesCard({ client }: { client: ClientOut }) {
-  // Mismo clasificador que Puntos importantes: solo lo relevante, lo crítico
-  // resaltado. Coherencia total entre Resumen y Planificación.
+  // Mismo clasificador que Puntos importantes: DOS niveles — lo crítico (rojo)
+  // siempre desplegado; lo meramente informativo plegado tras "+N notas".
+  // Coherencia total entre Resumen y Planificación.
   const sections = NOTE_SECTIONS
-    .map((s) => ({
-      ...s,
-      items: toBullets(s.get(client) ?? "").filter((l) => isRelevantClinical(l)),
-    }))
-    .filter((s) => s.items.length > 0);
+    .map((s) => {
+      const items = toBullets(s.get(client) ?? "").filter((l) => isRelevantClinical(l));
+      return {
+        ...s,
+        critical: items.filter((l) => isCriticalLine(l)),
+        info: items.filter((l) => !isCriticalLine(l)),
+      };
+    })
+    .filter((s) => s.critical.length + s.info.length > 0);
   if (!sections.length) return null;
   return (
     <div className="card p-5">
-      <h3 className="mb-1 text-sm font-semibold text-zinc-200">Notas clínicas</h3>
-      <p className="mb-3 text-xs text-zinc-500">Solo lo relevante para el plan; el resto queda en la anamnesis.</p>
+      <h3 className="mb-3 text-sm font-semibold text-zinc-200">Notas clínicas</h3>
       <div className="space-y-3 text-sm">
         {sections.map((s) => (
           <div
@@ -164,11 +168,27 @@ function ClinicalNotesCard({ client }: { client: ClientOut }) {
             >
               {s.label}
             </p>
-            <ul className="list-disc space-y-0.5 pl-5 text-zinc-300">
-              {s.items.map((it, i) => (
-                <li key={i} className={isCriticalLine(it) ? "font-medium" : ""} style={isCriticalLine(it) ? { color: s.color } : undefined}>{it}</li>
-              ))}
-            </ul>
+            {s.critical.length > 0 && (
+              <ul className="list-disc space-y-0.5 pl-5 text-zinc-300">
+                {s.critical.map((it, i) => (
+                  <li key={i} className="font-medium" style={{ color: s.color }}>{it}</li>
+                ))}
+              </ul>
+            )}
+            {s.info.length > 0 && (s.critical.length === 0 ? (
+              <ul className="list-disc space-y-0.5 pl-5 text-zinc-300">
+                {s.info.map((it, i) => <li key={i}>{it}</li>)}
+              </ul>
+            ) : (
+              <details className="mt-1">
+                <summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-zinc-300">
+                  +{s.info.length} nota{s.info.length === 1 ? "" : "s"} informativa{s.info.length === 1 ? "" : "s"}
+                </summary>
+                <ul className="mt-1 list-disc space-y-0.5 pl-5 text-zinc-400">
+                  {s.info.map((it, i) => <li key={i}>{it}</li>)}
+                </ul>
+              </details>
+            ))}
           </div>
         ))}
       </div>

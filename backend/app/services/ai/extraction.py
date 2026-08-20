@@ -111,51 +111,52 @@ class AnamnesisExtraction(BaseModel):
     injuries_notes: str | None = Field(
         None,
         description=(
-            "PDF 'Historial de lesiones y movilidad': resume TODAS las lesiones/"
-            "molestias con zona, lado, si está resuelto y qué movimientos evitar. "
-            "Crítico para la seguridad del entrenamiento."
+            "PDF 'Historial de lesiones y movilidad': TODAS las lesiones, sin "
+            "recorte (seguridad). Una línea densa por lesión: '- [zona, lado] · "
+            "[activa/resuelta] · evitar: [movimientos]'. Máx ~20 palabras/línea."
         ),
     )
     medical_notes: str | None = Field(
         None,
         description=(
             "PDF 'Historia clínica' + 'Salud digestiva y hormonal' + 'Salud "
-            "femenina': patologías, antecedentes familiares, cirugías, "
-            "intolerancias, tabaco/alcohol/otras sustancias, analítica reciente, "
-            "salud digestiva (deposiciones, Bristol, síntomas) y, si aplica, "
-            "ciclo menstrual/embarazos/menopausia. Resume lo relevante."
+            "femenina'. Cada línea prefijada por tema ('- Clínica: …', "
+            "'- Digestivo: …', '- Salud femenina: …', '- Hábitos tóxicos: …', "
+            "'- Analítica: …'). Patologías/cirugías/intolerancias SIN recorte; "
+            "lo informativo breve. Negaciones agrupadas en una sola línea."
         ),
     )
     medication_notes: str | None = Field(
         None,
         description=(
-            "PDF 'Medicación actual' + 'Anticonceptivos hormonales': nombre, "
-            "dosis y frecuencia. null si no toma nada."
+            "PDF 'Medicación actual' + 'Anticonceptivos hormonales', sin "
+            "recorte: '- Nombre — dosis — frecuencia'. null si no toma nada."
         ),
     )
     current_supplements: str | None = Field(
         None,
         description=(
-            "PDF 'Suplementación': suplementos actuales con dosis y momento del "
-            "día. null si no toma nada."
+            "PDF 'Suplementación': '- Nombre — dosis — momento', una línea por "
+            "suplemento, máximo 6. null si no toma nada."
         ),
     )
     sport_history: str | None = Field(
         None,
         description=(
-            "PDF 'Experiencia con pesas' + 'Otros deportes': años entrenando, "
-            "nivel/técnica de los básicos, métodos/rutinas seguidas, y otros "
-            "deportes recreativos con su frecuencia semanal."
+            "PDF 'Experiencia con pesas' + 'Otros deportes'. MÁXIMO 4 viñetas "
+            "cortas: años/nivel con los básicos, métodos que funcionaron o "
+            "fallaron, otros deportes con frecuencia, matiz técnico a vigilar."
         ),
     )
     lifestyle_notes: str | None = Field(
         None,
         description=(
-            "PDF 'Motivo y objetivos' (corto/largo plazo, qué funcionó o no, "
-            "motivación), 'Logística y entorno alimentario', 'Comida emocional', "
-            "'Hidratación', 'Tu trabajo y tu día a día', 'Sueño y recuperación', "
-            "'Estrés y energía' y la auto-evaluación final. Resume hábitos, "
-            "sueño, estrés, conducta alimentaria, logística y contexto."
+            "PDF 'Motivo y objetivos', 'Logística', 'Comida emocional', "
+            "'Hidratación', 'Trabajo', 'Sueño', 'Estrés' y auto-evaluación. "
+            "MÁXIMO 6 viñetas prefijadas por tema empezando por '- Motivo: …' "
+            "('- Trabajo: …', '- Sueño: …', '- Estrés: …', '- Conducta "
+            "alimentaria: …'…), 1-2 líneas por tema, ordenadas por impacto en "
+            "la adherencia. Temas sin nada relevante se omiten."
         ),
     )
 
@@ -194,9 +195,10 @@ class AnamnesisExtraction(BaseModel):
     deep_analysis: str | None = Field(
         None,
         description=(
-            "Síntesis ejecutiva (4-8 frases) con lo MÁS relevante para "
-            "personalizar el plan: cruza objetivo, lesiones, hábitos, sueño, "
-            "estrés, conducta alimentaria y qué ha funcionado o no en el pasado."
+            "Síntesis en 3-5 puntos ('- …') ordenados de más a menos "
+            "importante, con SOLO lo que cambia decisiones del plan: cruza "
+            "objetivo, lesiones, hábitos, sueño, estrés, conducta alimentaria "
+            "y qué ha funcionado o no en el pasado. Sin relleno."
         ),
     )
 
@@ -210,12 +212,13 @@ REGLA DE ORO: si un dato no aparece, está en blanco o pone "no aplica", déjalo
 sería grave. El coach revisará todo antes de generar el plan. MAPEAR o INFERIR un valor \
 a partir de lo que el cliente escribió NO es inventar; es obligatorio.
 
-LECTURA EXHAUSTIVA: la anamnesis es la BASE de toda la asesoría (plan, seguimiento y \
-revisiones parten de ella). Lee el documento ENTERO, frase a frase, incluidos márgenes, \
-anotaciones a mano, respuestas fuera de su casilla y comentarios sueltos: cada dato debe \
-acabar en su campo o en el resumen de su sección. No des ninguna sección por vacía sin \
-haberla leído completa; si el cliente escribió algo ambiguo o contradictorio, recógelo \
-tal cual en la nota de la sección (el coach decide), nunca lo omitas.
+LECTURA EXHAUSTIVA, ESCRITURA SELECTIVA: la anamnesis es la BASE de toda la asesoría. \
+Lee el documento ENTERO, frase a frase, incluidos márgenes, anotaciones a mano, respuestas \
+fuera de su casilla y comentarios sueltos. Pero ESCRIBE selectivo: a las notas va lo que \
+tiene señal para dieta, entrenamiento o adherencia — no cada casilla del PDF. \
+EXCEPCIÓN SIN RECORTE (seguridad): lesiones, patologías, alergias/intolerancias y \
+medicación se recogen SIEMPRE al completo. Y si el cliente escribió algo ambiguo o \
+contradictorio, recógelo tal cual en la nota de su sección (el coach decide), nunca lo omitas.
 
 CAMPOS ESTRUCTURADOS OBLIGATORIOS — recórrelos UNO A UNO y rellénalos SIEMPRE que el dato \
 aparezca en CUALQUIER parte del documento. NO dejes en null un campo cuyo dato esté presente:
@@ -249,24 +252,49 @@ banco, jaula, gomas, máquinas…). Si entrena en gimnasio, deja la lista vacía
 clínica" (alergias/intolerancias alimentarias). Listas de alimentos concretos.
 
 RESÚMENES POR SECCIÓN — FORMATO EN PUNTOS: cada campo es una lista de líneas cortas (una \
-por dato), empezando CADA línea con "- ". Nada de párrafos largos. Fiel al PDF, en español:
-  · injuries_notes ← "Historial de lesiones y movilidad": cada lesión marcada con zona, lado, \
-si está resuelta y qué movimientos dan molestia. Crítico para la seguridad.
+por dato), empezando CADA línea con "- ". Nada de párrafos largos. Fiel al PDF, en español.
+CALIDAD SOBRE CANTIDAD (el coach los lee de un vistazo antes de la asesoría):
+  · ORDEN: dentro de cada sección, PRIMERO lo que condiciona el plan (lesiones activas, \
+patologías, alergias, medicación con efecto en dieta/entreno), después lo informativo.
+  · SIN PAJA: las negaciones y valores sin señal se AGRUPAN en UNA sola línea al final \
+("- Sin cirugías, sin medicación, analítica normal"), nunca una línea por cada "no". \
+Los ceros sin relevancia clínica (p. ej. "Embarazos: 0") se omiten.
+  · SIN DUPLICADOS: cada dato va a UNA sola sección (la más específica); no repitas la \
+misma información en dos campos.
+  · Línea corta = dato + matiz imprescindible. Nada de frases de relleno ni obviedades.
+Lo CLÍNICO Y DE SEGURIDAD (lesiones, patologías, alergias, medicación) se conserva SIEMPRE \
+al completo aunque sea largo: ahí la fidelidad manda sobre la brevedad.
+  · injuries_notes ← "Historial de lesiones y movilidad": TODAS las lesiones, sin recorte \
+(seguridad). Una línea densa por lesión: "- [zona y lado] · [activa/resuelta, desde cuándo] · \
+evitar: [movimientos]". Máximo ~20 palabras por línea.
   · medical_notes ← "Historia clínica" + "Salud digestiva y hormonal" + "Salud femenina (si \
 aplica)": patologías, antecedentes familiares, cirugías, intolerancias, tabaco/alcohol/otras \
 sustancias, analítica reciente; deposiciones/Bristol/síntomas digestivos; y ciclo menstrual/\
-embarazos/menopausia si aplica.
-  · medication_notes ← "Medicación actual" + "Anticonceptivos hormonales": nombre, dosis, frecuencia.
-  · current_supplements ← "Suplementación": suplementos actuales con dosis y momento del día.
-  · sport_history ← "Experiencia con pesas" + "Otros deportes": años entrenando, comodidad con \
-la técnica de los básicos, métodos/rutinas previas, y otros deportes recreativos y su frecuencia.
+embarazos/menopausia si aplica. PREFIJA cada línea con su tema para que se lea por bloques: \
+"- Clínica: …", "- Digestivo: …", "- Salud femenina: …", "- Hábitos tóxicos: …", "- Analítica: …".
+  · medication_notes ← "Medicación actual" + "Anticonceptivos hormonales", SIN recorte. \
+Formato: "- Nombre — dosis — frecuencia" (+ efecto relevante para dieta/entreno si lo hay). \
+Sin frases introductorias.
+  · current_supplements ← "Suplementación": "- Nombre — dosis — momento", una línea por \
+suplemento, máximo 6; sin valoraciones.
+  · sport_history ← "Experiencia con pesas" + "Otros deportes". MÁXIMO 4 viñetas: años y \
+nivel real con los básicos; qué métodos funcionaron o fallaron; otros deportes actuales con \
+frecuencia (condicionan la recuperación); matiz técnico a vigilar si lo hay. \
+Líneas cortas tipo "- Pesas: 2 años, técnica básica cómoda" / "- Fútbol: 1 vez/semana".
   · lifestyle_notes ← "Motivo y objetivos" (corto/largo plazo, qué funcionó o no, motivación/\
 confianza), "Logística y entorno alimentario", "Comida emocional", "Hidratación", "Tu trabajo \
-y tu día a día", "Sueño y recuperación", "Estrés y energía" y la auto-evaluación final.
+y tu día a día", "Sueño y recuperación", "Estrés y energía" y la auto-evaluación final. \
+PREFIJA cada línea con su tema, EMPEZANDO SIEMPRE por el motivo (es lo primero que lee el \
+coach): "- Motivo: …", "- Trabajo: …", "- Sueño: …", "- Estrés: …", "- Conducta alimentaria: …", \
+"- Logística: …", "- Hidratación: …". MÁXIMO 6 viñetas en total, ordenadas por impacto en la \
+adherencia; máximo 1-2 líneas por tema; los temas sin nada relevante se omiten.
 
 SÍNTESIS:
-  · deep_analysis: 4-8 frases con lo MÁS relevante para personalizar el plan, cruzando objetivo, \
-lesiones, hábitos, sueño, estrés y conducta alimentaria. Concreto y accionable.
+  · deep_analysis: 3-5 líneas en puntos ("- …"), ORDENADAS de más a menos importante, máximo \
+~20 palabras por punto. Un punto = UNA decisión de plan (qué respetar, qué priorizar, qué \
+vigilar), no un tema: cruza objetivo, lesiones, hábitos, sueño, estrés y conducta alimentaria \
+como material, sin obligación de cubrirlos todos. Sin repetir lo que ya está en los campos \
+estructurados ni relleno motivacional.
 
 Devuelve SOLO un objeto JSON válido que cumpla el esquema. Sin texto adicional."""
 
