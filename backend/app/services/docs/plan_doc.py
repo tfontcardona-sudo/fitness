@@ -367,11 +367,16 @@ def generate_plan_doc(
     _cabecera = ("PLAN DE DIETA Y ENTRENAMIENTO" if (include_nutrition and include_training)
                  else "PLAN NUTRICIONAL" if include_nutrition
                  else "PLAN DE ENTRENAMIENTO")
+    # Cabecera con el MES del plan y la fecha de generación: el cliente acumula
+    # varios PDF y sin esto no sabía cuál era el vigente. Pie desde la MARCA
+    # (antes iba el nombre del coach hardcodeado: cambiar la marca dejaba el
+    # documento desincronizado con el resto de comunicaciones).
+    _pie = brand.name + (f" · {brand.tagline}" if brand.tagline else "")
     setup_reference_pages(
         doc, logo_path=str(ASSETS / "dq_logo.png"),
         right_title=f"{_cabecera} | {client_name}",
-        right_sub=str(_date.today().year),
-        footer_text="David Quiceno · Dietista & Entrenador Personal",
+        right_sub=f"Mes {month_index} · {_date.today().strftime('%d/%m/%Y')}",
+        footer_text=_pie,
     )
 
     if include_nutrition:
@@ -571,6 +576,7 @@ def generate_plan_doc(
 
     if not include_training or not training:
         _education_section(doc, education, include_training=False)
+        _contact_section(doc, brand)
         buf = io.BytesIO()
         doc.save(buf)
         return buf.getvalue()
@@ -640,10 +646,24 @@ def generate_plan_doc(
         info_box(doc, [training["deload_instructions"]])
 
     _education_section(doc, education, include_training=True)
+    _contact_section(doc, brand)
 
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()
+
+
+def _contact_section(doc: Document, brand: DocBrand) -> None:
+    """Cierre profesional del documento: cómo resolver dudas y dónde seguir el
+    día a día. Antes el PDF terminaba en seco tras la suplementación/FAQ."""
+    lineas: list = []
+    if brand.contact_email:
+        lineas.append(("Escríbeme", brand.contact_email))
+    lineas.append(("Tu portal", "registra tu día a día (peso, comidas y entrenos) "
+                   "desde el enlace de tu portal — es lo que me permite ajustarte "
+                   "el plan en cada revisión."))
+    section_bar(doc, "Cualquier duda, aquí me tienes", BLUE)
+    info_box(doc, lineas, fill=CREAM, label_color=WINE, cant_split=True)
 
 
 def _education_section(doc: Document, education: dict | None, *, include_training: bool) -> None:
@@ -745,7 +765,6 @@ def _weekly_section(doc: Document, brand: DocBrand, diet_mode: str | None,
     meals = nutrition.get("meals", [])
     if not meals:
         return
-    section_bar(doc, "Ejemplo de dieta semanal", WINE)
 
     headers = ["Toma"] + DAYS
     rows: list[list[str]] = []
@@ -781,7 +800,12 @@ def _weekly_section(doc: Document, brand: DocBrand, diet_mode: str | None,
                     cells.append("")
             rows.append([m.get("name", f"Comida {m.get('slot')}")] + cells)
 
+    # Sin contenido no se imprime NADA (ni la barra): una rejilla de celdas en
+    # blanco bajo "Ejemplo de dieta semanal" lee como un error del sistema en
+    # un documento pagado. Mismo criterio que las tarjetas (_tarjeta).
+    rows = [r for r in rows if any(c.strip() for c in r[1:])]
     if rows:
+        section_bar(doc, "Ejemplo de dieta semanal", WINE)
         # 8 columnas estrechas: fuente 8pt para que los nombres de plato no
         # desborden, y paginación con cabecera repetida (keep_together=False)
         # por si hay muchas tomas.

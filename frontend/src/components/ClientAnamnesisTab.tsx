@@ -74,7 +74,12 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
   }
 
   async function readWithAI() {
-    if (reading) return;
+    if (reading || !pdfName) return;
+    // Con la ficha ya rellenada, releer PISA campos y gasta créditos: se avisa.
+    if (client.goal_type &&
+        !window.confirm("La IA sobrescribirá los campos de la ficha con lo que lea del PDF y gastará créditos. ¿Seguir?")) {
+      return;
+    }
     setReading(true);
     try {
       const res = await api.readAnamnesis(client.id);
@@ -100,7 +105,19 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
             <p className="text-xs text-zinc-500">Lee el PDF subido y rellena estos campos automáticamente.</p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Aviso de borrador SIEMPRE visible (también al volver a "Ver ficha"):
+              los cambios del formulario siguen vivos hasta guardarlos. */}
+          {dirty && (
+            <>
+              <span className="text-xs font-medium" style={{ color: "#9A6B15" }}>
+                Cambios sin guardar
+              </span>
+              <button onClick={save} disabled={busy} className="btn btn-primary">
+                {busy ? <Spinner /> : <Save size={15} />} Guardar cambios
+              </button>
+            </>
+          )}
           {pdfName && (
             <button onClick={openPdf} className="btn btn-ghost" title={pdfName}>
               <FileText size={15} /> Ver PDF
@@ -110,7 +127,12 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
             {editMode ? <Eye size={15} /> : <Pencil size={15} />}
             {editMode ? "Ver ficha" : "Editar datos"}
           </button>
-          <button onClick={readWithAI} disabled={reading} className="btn btn-primary">
+          <button
+            onClick={readWithAI}
+            disabled={reading || !pdfName}
+            title={!pdfName ? "Sube antes el PDF de la anamnesis" : undefined}
+            className="btn btn-primary"
+          >
             <Sparkles size={15} /> {reading ? "Leyendo PDF…" : "Leer con IA"}
           </button>
         </div>

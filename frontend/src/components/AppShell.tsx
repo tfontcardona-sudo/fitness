@@ -173,6 +173,9 @@ export default function AppShell() {
               key={to}
               to={to}
               end={end}
+              // Contraído solo se ve el icono: el title dice a dónde lleva.
+              title={collapsed ? label : undefined}
+              aria-label={label}
               className={({ isActive }) =>
                 `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
                   isActive ? "text-zinc-100" : "text-zinc-500 hover:text-zinc-200"
@@ -190,6 +193,7 @@ export default function AppShell() {
                     basta para saber que hay cobros sin ver. */}
                 {to === "/pagos" && collapsed && pagosSinLeer > 0 && (
                   <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full"
+                        title={`${pagosSinLeer} cobro${pagosSinLeer === 1 ? "" : "s"} sin ver`}
                         style={{ background: "#C2453A" }} />
                 )}
               </span>

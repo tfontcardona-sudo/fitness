@@ -90,7 +90,7 @@ def test_prompt_lleva_cliente_franja_y_dia():
     calls = []
 
     class FakeAI:
-        def _raw_call(self, *, model, system, user):
+        def _raw_call(self, *, model, system, user, **_kw):
             calls.append({"system": system, "user": user})
             return "  \"¿Cómo llevas la semana, Ana?\"  "
 
@@ -209,7 +209,7 @@ def test_textos_del_dia_se_cachean_y_reescribir_regenera():
         def __init__(self):
             self.calls = 0
 
-        def _raw_call(self, *, model, system, user, temperature=None):
+        def _raw_call(self, *, model, system, user, temperature=None, **_kw):
             self.calls += 1
             return f"Mensaje nº {self.calls}"
 

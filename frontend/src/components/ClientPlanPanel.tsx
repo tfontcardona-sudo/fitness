@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Mail, Pencil, PlayCircle, Save, X, Flag, Copy, Archive, FileText } from "lucide-react";
+import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Mail, Pencil, PlayCircle, Save, X, Flag, Copy, Archive, FileText, FileUp } from "lucide-react";
 import { api, getToken } from "../lib/api";
 import { manualUpdateMessage, openWhatsApp, planAndFeedbackMessage, planMessage, waPhone, waUrl } from "../lib/whatsapp";
 import { pkg } from "../lib/packages";
@@ -401,6 +401,61 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
 
   const downloadPdf = () => downloadDocument("pdf");
 
+  // ---- Ida y VUELTA del Word editable: subir el .docx editado, ver los
+  // cambios detectados y aplicarlos por el MISMO camino que el editor web.
+  const [importPreview, setImportPreview] = useState<{
+    changes: string[]; warnings: string[]; base_rev: number;
+    nutrition_json: any; training_json: any;
+  } | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [applyingImport, setApplyingImport] = useState(false);
+
+  async function onWordPicked(file: File | null | undefined) {
+    if (!file || !plan || importing) return;
+    setImporting(true);
+    try {
+      const r = await api.importPlanWord(plan.id, file);
+      if (!r.has_changes && !r.warnings.length) {
+        toast.push("No he detectado ningún cambio en ese Word respecto al plan actual");
+      } else {
+        setImportPreview(r);
+      }
+    } catch (e: any) {
+      toast.push(e?.message ?? "No se pudo leer el Word", "error");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function applyImport() {
+    if (!plan || !importPreview || applyingImport) return;
+    setApplyingImport(true);
+    try {
+      const patch: any = { base_rev: importPreview.base_rev };
+      if (importPreview.nutrition_json) patch.nutrition_json = importPreview.nutrition_json;
+      if (importPreview.training_json) patch.training_json = importPreview.training_json;
+      const r = await api.updatePlan(plan.id, patch);
+      setPlan(normalize({
+        ...plan,
+        nutrition_json: r.nutrition_json ?? importPreview.nutrition_json ?? plan.nutrition,
+        training_json: r.training_json ?? importPreview.training_json ?? plan.training,
+      }));
+      setImportPreview(null);
+      setNeedsDownload(true); // el documento cambió: toca re-descargar el PDF
+      toast.push("Cambios del Word aplicados al plan");
+    } catch (e: any) {
+      const msg = String(e?.message ?? "");
+      toast.push(
+        msg.includes("409") || msg.toLowerCase().includes("versión")
+          ? "El plan cambió mientras editabas el Word: revisa y vuelve a subirlo"
+          : (msg || "No se pudieron aplicar los cambios"),
+        "error",
+      );
+    } finally {
+      setApplyingImport(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="card flex items-center justify-center gap-2 p-8 text-sm text-zinc-500">
@@ -693,6 +748,22 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
             >
               <FileText size={15} /> Word editable
             </button>
+            <label
+              className="btn btn-ghost cursor-pointer"
+              title="Sube el Word que editaste: el sistema lee tus cambios y te los enseña antes de aplicarlos al plan"
+            >
+              {importing ? <Spinner /> : <FileUp size={15} />} Subir Word editado
+              <input
+                type="file"
+                accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                className="hidden"
+                disabled={importing}
+                onChange={(e) => {
+                  onWordPicked(e.target.files?.[0]);
+                  e.target.value = ""; // permite volver a subir el mismo archivo
+                }}
+              />
+            </label>
             {plan.status === "published" && byEmail && (
               <button onClick={sendPlanByEmail} className="btn btn-primary col-span-2 sm:col-span-1">
                 <Mail size={15} /> Enviar plan por email
@@ -775,6 +846,62 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                 ))}
               </ul>
             )}
+          </div>
+        )}
+
+        {/* Vista previa de la IMPORTACIÓN del Word editado: el coach ve qué
+            detectó el sistema y confirma antes de aplicar (mismo camino que el
+            editor: sanitizado, reconcile, historial y rev). */}
+        {importPreview && (
+          <div className="mt-3 rounded-lg border p-3" style={{ borderColor: "var(--brand-accent)" }}>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm font-semibold">
+                Cambios detectados en tu Word · {importPreview.changes.length}
+              </span>
+              <button onClick={() => setImportPreview(null)} className="btn btn-ghost !px-2 !py-1">
+                <X size={14} />
+              </button>
+            </div>
+            {importPreview.changes.length > 0 ? (
+              <ul className="mb-2 space-y-1">
+                {importPreview.changes.map((c, i) => (
+                  <li key={i} className="flex items-start gap-2 text-xs text-zinc-300">
+                    <Pencil size={12} className="mt-0.5 shrink-0" style={{ color: "var(--brand-accent)" }} />
+                    {c}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mb-2 text-xs text-zinc-500">
+                Sin cambios aplicables (mira los avisos de abajo).
+              </p>
+            )}
+            {importPreview.warnings.length > 0 && (
+              <div className="mb-2 rounded-md border border-amber-700/50 bg-amber-900/20 p-2">
+                {importPreview.warnings.map((w, i) => (
+                  <p key={i} className="flex items-start gap-2 text-xs text-amber-300">
+                    <AlertTriangle size={12} className="mt-0.5 shrink-0" /> {w}
+                  </p>
+                ))}
+              </div>
+            )}
+            <p className="mb-2 text-[11px] text-zinc-500">
+              Se importan los datos estructurados (kcal y macros, horas y nombres de las
+              tomas, ejercicios con sus series/RIR/descansos/textos, progresión, suplementos,
+              deload y pasos). Las recetas del banco de comidas se editan en el editor web.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setImportPreview(null)} className="btn btn-ghost !py-1.5 text-xs">
+                Descartar
+              </button>
+              <button
+                onClick={applyImport}
+                disabled={applyingImport || importPreview.changes.length === 0}
+                className="btn btn-primary !py-1.5 text-xs"
+              >
+                {applyingImport ? <Spinner /> : <Save size={13} />} Aplicar {importPreview.changes.length} cambio{importPreview.changes.length === 1 ? "" : "s"}
+              </button>
+            </div>
           </div>
         )}
 

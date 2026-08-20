@@ -82,7 +82,7 @@ def test_make_ai_reviewer_usa_ia_mock():
     from app.schemas.ai import ReviewerOutput
 
     class FakeAI:
-        def generate_json(self, *, model, system, user, schema, temperature=None):
+        def generate_json(self, *, model, system, user, schema, temperature=None, **_kw):
             return ReviewerOutput(veredicto="aprobado", puntuacion_rubrica=88, hallazgos=[])
 
     reviewer = make_ai_reviewer(FakeAI(), plan_text="PLAN", anamnesis_text="ANAM")

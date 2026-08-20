@@ -165,7 +165,8 @@ class AIClient:
             raise
 
     def _raw_call(self, *, model: str, system: "str | list", user: str,
-                  temperature: float | None = None) -> str:
+                  temperature: float | None = None,
+                  max_tokens: int | None = None) -> str:
         """Una llamada cruda al modelo. Sobrescribible en tests.
 
         `temperature` fija el determinismo: 0 en extracción/revisión (§14) donde la
@@ -174,7 +175,9 @@ class AIClient:
         try:
             kwargs = {
                 "model": model,
-                "max_tokens": MAX_TOKENS,
+                # Techo POR LLAMADA (no se factura lo no generado; esto solo
+                # limita el daño de una respuesta desbocada en la parte cara).
+                "max_tokens": max_tokens or MAX_TOKENS,
                 "system": self._system_payload(system),
                 "messages": [{"role": "user", "content": user}],
             }
@@ -275,7 +278,7 @@ class AIClient:
 
     def generate_json(
         self, *, model: str, system: "str | list", user: str, schema: type[T],
-        temperature: float | None = None,
+        temperature: float | None = None, max_tokens: int | None = None,
     ) -> T:
         """Genera, parsea y valida. Reintenta UNA vez con el error inyectado."""
         last_error: str | None = None
@@ -283,7 +286,7 @@ class AIClient:
 
         for attempt in range(2):
             raw = self._raw_call(model=model, system=system, user=attempt_user,
-                                 temperature=temperature)
+                                 temperature=temperature, max_tokens=max_tokens)
             try:
                 data = json.loads(_extract_json(raw))
             except json.JSONDecodeError as exc:

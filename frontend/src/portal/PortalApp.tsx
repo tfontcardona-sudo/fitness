@@ -229,7 +229,15 @@ export default function PortalApp({ token }: { token: string }) {
                     </div>
                   );
                 })()}
-                <p className="mt-0.5 text-[10px] opacity-50">días restantes</p>
+                {/* Concordancia y momento clave: "1 día restante" (no "1 días")
+                    y, a 0, la llamada a la acción de la quincena. */}
+                <p className="mt-0.5 text-[10px] opacity-50">
+                  {Math.max(0, state.period.days_left) === 0
+                    ? "¡toca revisión!"
+                    : Math.max(0, state.period.days_left) === 1
+                      ? "día restante"
+                      : "días restantes"}
+                </p>
               </div>
             )}
             <PushToggle api={apiClient} />

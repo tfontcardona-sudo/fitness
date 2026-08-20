@@ -11,6 +11,22 @@ export function localToday(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+/** Número en formato es-ES (coma decimal, punto de miles), máx. 1 decimal:
+ *  82.5 → "82,5" · 2150 → "2.150". Evita colas de coma flotante en pantalla
+ *  ("0.30000000000000004"). */
+export function fmt1(n: number): string {
+  return n.toLocaleString("es-ES", { maximumFractionDigits: 1 });
+}
+
+/** Fecha corta legible "14 ago" (es-ES, sin el punto de la abreviatura del
+ *  mes). Acepta "YYYY-MM-DD" o un ISO completo; si no se puede interpretar,
+ *  devuelve el texto tal cual. */
+export function shortDate(iso: string): string {
+  const d = new Date(iso + (iso.length === 10 ? "T00:00:00" : ""));
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("es-ES", { day: "numeric", month: "short" }).replace(/\./g, "");
+}
+
 /** Skeleton de carga: la interfaz nunca parece congelada ni "salta" al cargar. */
 export function Loading() {
   return (

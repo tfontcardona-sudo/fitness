@@ -30,7 +30,7 @@ class ScriptedClient(AIClient):
         self._responses = list(responses)
         self.calls: list[dict] = []
 
-    def _raw_call(self, *, model, system, user, temperature=None):
+    def _raw_call(self, *, model, system, user, temperature=None, **_kw):
         self.calls.append({"model": model, "system": system, "user": user,
                            "temperature": temperature})
         return self._responses.pop(0)

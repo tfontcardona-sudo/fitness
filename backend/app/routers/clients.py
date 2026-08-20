@@ -1982,6 +1982,26 @@ def goal_review_analysis(client_id: int, db: Session = Depends(get_db)) -> dict:
     # Opciones de objetivo razonables según el estado (excluye el actual)
     options = [g for g in _GOAL_LABEL if g != client.goal_type]
 
+    # CACHÉ por contenido (ahorro de créditos): cada clic del botón pagaba una
+    # llamada aunque los datos no hubieran cambiado. El análisis se guarda como
+    # sidecar con el hash del resumen: mismos datos → mismo texto, 0 créditos.
+    import hashlib as _hashlib
+
+    _clave = _hashlib.sha1(
+        json.dumps(resumen, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()[:16]
+    _cache_file = None
+    try:
+        from app.services.storage import client_dir
+
+        _cache_file = client_dir(client_id, "documents") / "_goal_review.json"
+        if _cache_file.exists():
+            _cacheado = json.loads(_cache_file.read_text(encoding="utf-8"))
+            if _cacheado.get("key") == _clave and _cacheado.get("text"):
+                return {"text": _cacheado["text"], "cached": True}
+    except Exception:  # noqa: BLE001 — la caché nunca rompe el botón
+        _cache_file = None
+
     text: str | None = None
     try:
         from app.services.ai.client import AIClient
@@ -1989,6 +2009,7 @@ def goal_review_analysis(client_id: int, db: Session = Depends(get_db)) -> dict:
         ai = AIClient()
         text = ai._raw_call(
             model=settings.model_light,
+            max_tokens=1200,  # 200-300 palabras: techo anti-desbocadas
             system=(
                 "Eres el asistente de un equipo de asesoramiento fitness de élite. "
                 "Escribes en castellano, tono PROFESIONAL, serio y cercano, sin emojis "
@@ -2032,6 +2053,14 @@ def goal_review_analysis(client_id: int, db: Session = Depends(get_db)) -> dict:
                         f"frente a seguir con {goal_label}." for g in options[:3])
             + "\n\nVeredicto\n" + _goal_verdict_fallback(h, goal_label, adh_media)
         )
+
+    if _cache_file is not None and text:
+        try:
+            _cache_file.write_text(
+                json.dumps({"key": _clave, "text": text}, ensure_ascii=False),
+                encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            pass
 
     return {"text": text, "summary": resumen, "options": options}
 

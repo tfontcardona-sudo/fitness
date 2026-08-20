@@ -285,6 +285,16 @@ export const api = {
       "POST", `/clients/${clientId}/adapt-plan`),
   publishPlan: (planId: number) =>
     request<{ status: string }>("POST", `/plans/${planId}/publish`),
+  /** Ida y vuelta del Word editable: sube el .docx editado y devuelve los
+   *  cambios detectados + los JSON candidatos (NO aplica nada todavía). */
+  importPlanWord: (planId: number, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return request<{
+      changes: string[]; warnings: string[]; has_changes: boolean;
+      base_rev: number; nutrition_json: any; training_json: any;
+    }>("POST", `/plans/${planId}/import-word`, fd);
+  },
   updatePlan: (planId: number, patch: { nutrition_json?: any; training_json?: any; education_json?: any; base_rev?: number }) =>
     request<{ id: number; status: string; nutrition_json: any; training_json: any; education_json: any; guardrail_flags: string[] | null; month_index: number; version: number }>(
       "PATCH", `/plans/${planId}`, patch),

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import type { DietAdherence, PortalBrand } from "../types";
+import type { DietAdherence, Macros, PortalBrand } from "../types";
 import { usePortalToast } from "./PortalToast";
-import { Loading, localToday, useDecimalField } from "./PortalUi";
+import { fmt1, Loading, localToday, useDecimalField } from "./PortalUi";
 import { PortalError } from "./portalApi";
 import type { portalApi } from "./portalApi";
 
@@ -59,6 +59,24 @@ export function PortalDiary({ api, brand, periodStatus = null, businessToday = n
   const [loadError, setLoadError] = useState(false);
   const [loadTry, setLoadTry] = useState(0);
   const saveTimer = useRef<number | null>(null);
+  // Estado VIVO del autosave para el pie ("Guardando…" / "Guardado ✓ HH:MM"):
+  // el toast queda solo para errores — guardar cada pocos segundos no puede
+  // ser una lluvia de avisos.
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
+  // Objetivo nutricional del día (solo lectura, si el paquete lleva dieta).
+  const [target, setTarget] = useState<{ kcal: number; macros: Macros } | null>(null);
+
+  // Tira compacta con el objetivo del día: sale del plan publicado. Se carga
+  // junto al fetch inicial, sin spinner propio; si falla, simplemente no se
+  // muestra (el diario funciona igual).
+  useEffect(() => {
+    if (!hasNutrition) return;
+    api.plan().then((p) => {
+      const n = p.nutrition;
+      if (n && n.target_kcal != null && n.macros) setTarget({ kcal: n.target_kcal, macros: n.macros });
+    }).catch(() => { /* sin tira: el objetivo es un extra, no bloquea nada */ });
+  }, [api, hasNutrition]);
 
   useEffect(() => {
     setLoadError(false);
@@ -102,14 +120,16 @@ export function PortalDiary({ api, brand, periodStatus = null, businessToday = n
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     // Solo campos del diario: NO mandamos workout_sets para no borrar las
     // series registradas en la pestaña "Entreno" (upsert parcial en backend).
+    setSaveState("saving");
     api
       .saveDiary({ log_date: today, ...data })
-      .then(() => toast.push("Guardado"))
+      .then(() => { setSavedAt(new Date()); setSaveState("saved"); })
       .catch((e) => {
         // RE-ENCOLA lo no guardado: el siguiente flush (o el de salida de la
         // app) lo reintenta — antes el dato pendiente se descartaba y solo
         // otro tecleo volvía a enviarlo.
         pendingRef.current = pendingRef.current ?? data;
+        setSaveState("idle");
         toast.push(
           e instanceof PortalError ? e.message : "No se pudo guardar el último cambio — revisa tu conexión",
         );
@@ -174,6 +194,13 @@ export function PortalDiary({ api, brand, periodStatus = null, businessToday = n
       )}
       <div>
         <h2 className="text-lg font-semibold">Mi día</h2>
+        {/* Objetivo del día (solo lectura): el cliente no tiene que rebuscar
+            sus números en el PDF para saber a qué apunta hoy. */}
+        {hasNutrition && target && (
+          <p className="mt-0.5 text-xs font-medium tabular-nums" style={{ color: brand.color_secondary }}>
+            {fmt1(target.kcal)} kcal · P {fmt1(target.macros.protein_g)} g · C {fmt1(target.macros.carbs_g)} g · G {fmt1(target.macros.fat_g)} g
+          </p>
+        )}
         <p className="mt-0.5 text-xs opacity-60">Un minuto al día: peso, sueño y cómo te ha ido. Se guarda solo.</p>
       </div>
 
@@ -211,7 +238,10 @@ export function PortalDiary({ api, brand, periodStatus = null, businessToday = n
           {ADHERENCE.map((a) => (
             <button
               key={a.value}
+              type="button"
               onClick={() => update({ diet_adherence: a.value })}
+              aria-label={`¿Seguiste la dieta?: ${a.label}`}
+              aria-pressed={form.diet_adherence === a.value}
               className="flex flex-1 flex-col items-center gap-1 rounded-xl border py-3 text-sm"
               style={
                 form.diet_adherence === a.value
@@ -219,7 +249,7 @@ export function PortalDiary({ api, brand, periodStatus = null, businessToday = n
                   : { borderColor: "rgba(128,128,128,0.2)" }
               }
             >
-              <span className="text-lg">{a.emoji}</span>
+              <span className="text-lg" aria-hidden="true">{a.emoji}</span>
               {a.label}
             </button>
           ))}
@@ -242,7 +272,15 @@ export function PortalDiary({ api, brand, periodStatus = null, businessToday = n
         />
       </Field>
 
-      {!readOnly && <p className="pb-2 text-center text-xs opacity-40">Se guarda automáticamente</p>}
+      {!readOnly && (
+        <p className="pb-2 text-center text-xs opacity-40" aria-live="polite">
+          {saveState === "saving"
+            ? "Guardando…"
+            : saveState === "saved" && savedAt
+              ? `Guardado ✓ ${savedAt.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}`
+              : "Se guarda automáticamente"}
+        </p>
+      )}
     </div>
   );
 }
@@ -323,7 +361,10 @@ function ScaleField({
           return (
             <button
               key={n}
+              type="button"
               onClick={() => onChange(n)}
+              aria-label={`${label}: ${n} de 5`}
+              aria-pressed={active}
               className="flex flex-1 items-center justify-center rounded-xl border py-2.5 text-xl transition-transform"
               style={
                 active
@@ -331,7 +372,7 @@ function ScaleField({
                   : { borderColor: "rgba(128,128,128,0.2)" }
               }
             >
-              {emoji}
+              <span aria-hidden="true">{emoji}</span>
             </button>
           );
         })}

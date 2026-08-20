@@ -201,9 +201,9 @@ def reminder_no_logs(brand: Brand, first_name: str, portal_url: str, days_left: 
     subject = f"Un recordatorio rápido de tu seguimiento · {brand.name}"
     que = "tu peso, entrenos y adherencia" if has_training else "tu peso y adherencia"
     body = (
-        f"<p>Hola {first_name}, hemos visto que llevas unos días sin registrar tu "
+        f"<p>Hola {first_name}, he visto que llevas unos días sin registrar tu "
         f"seguimiento. Quedan <strong>{days_left} días</strong> para cerrar este "
-        f"período.</p><p>Registrar {que} nos permite ajustar "
+        f"período.</p><p>Registrar {que} me permite ajustar "
         "tu plan con precisión. ¡Solo te lleva un minuto al día!</p>"
     )
     return subject, _shell(brand, "¿Cómo va tu seguimiento?", body, portal_url, "Registrar ahora")
@@ -216,11 +216,11 @@ def onboarding_reminder(brand: Brand, first_name: str, anamnesis_url: str,
     first_name = _esc(first_name)
     subject = f"Tu plan te está esperando · {brand.name}"
     body = (
-        f"<p>Hola {first_name}, hace unos días empezaste tu alta y aún nos falta "
+        f"<p>Hola {first_name}, hace unos días empezaste tu alta y aún me falta "
         "tu <strong>anamnesis</strong> (el cuestionario inicial). Sin ella no "
-        "podemos preparar tu plan a medida.</p>"
-        "<p>Son dos pasos y puedes hacerlos desde el móvil: descarga el PDF, "
-        "rellénalo con calma y súbelo en el mismo enlace.</p>"
+        "puedo preparar tu plan a medida.</p>"
+        "<p>Puedes rellenarla desde el móvil en unos minutos, directamente en "
+        "el enlace (y si lo prefieres, en la misma página tienes el PDF).</p>"
     )
     return subject, _shell(brand, "Falta un paso para empezar", body,
                            anamnesis_url, "Completar mi anamnesis")
@@ -345,7 +345,8 @@ def plan_manual_update(brand: Brand, first_name: str, items: list[str],
     return subject, _shell(brand, "Planificación ajustada", body, portal_url, "Abrir mi portal")
 
 
-def feedback_delivery(brand: Brand, first_name: str, content: dict) -> tuple[str, str]:
+def feedback_delivery(brand: Brand, first_name: str, content: dict,
+                      portal_url: str | None = None) -> tuple[str, str]:
     """Entrega del feedback quincenal por EMAIL (paquetes Start/Full): el informe
     completo (análisis, cambios, respuestas y objetivos) va en el propio correo."""
     first_name = _esc(first_name)
@@ -372,7 +373,8 @@ def feedback_delivery(brand: Brand, first_name: str, content: dict) -> tuple[str
     if content.get("closing_message"):
         parts.append(f"<p style='font-style:italic;color:#555'>{_esc_ml(content['closing_message'])}</p>")
 
-    return subject, _shell(brand, "Tu progreso, en detalle", "".join(parts))
+    return subject, _shell(brand, "Tu progreso, en detalle", "".join(parts),
+                           portal_url, "Ver mi progreso" if portal_url else None)
 
 
 def test_email(brand: Brand) -> tuple[str, str]:

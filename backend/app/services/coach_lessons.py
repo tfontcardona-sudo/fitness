@@ -148,7 +148,7 @@ def distill_lessons(db: Session, ai=None) -> dict:
     )
     user = f"CORRECCIONES DEL COACH (agrupadas por tipo):\n{corpus}"
     out = ai.generate_json(model=settings.model_light, system=system, user=user,
-                           schema=LessonsOutput, temperature=0)
+                           schema=LessonsOutput, temperature=0, max_tokens=800)
 
     # Filtro determinista de seguridad: fuera lecciones con cifras de kcal/g
     # (por si el modelo se salta la regla) y tope de longitud.

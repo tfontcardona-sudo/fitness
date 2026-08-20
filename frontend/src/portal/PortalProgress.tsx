@@ -12,6 +12,7 @@ import {
 import { CameraOff, Dumbbell, FileText, LineChart, Ruler, Sparkles } from "lucide-react";
 import type { FeedbackDocOut, PortalBrand, PortalProgress as Progress } from "../types";
 import { portalApi, PortalError } from "./portalApi";
+import { fmt1 } from "./PortalUi";
 
 type Api = ReturnType<typeof portalApi>;
 
@@ -79,13 +80,13 @@ export function PortalProgress({ api, brand, hasTraining = true, token }: { api:
         <Stat
           accent={accent2}
           label="Peso ahora"
-          value={w.current_kg != null ? `${round1(w.current_kg)} kg` : "—"}
+          value={w.current_kg != null ? `${fmt1(w.current_kg)} kg` : "—"}
           sub={deltaLabel(w.delta_kg)}
         />
         <Stat
           accent={accent2}
           label="Objetivo"
-          value={w.goal_kg != null ? `${round1(w.goal_kg)} kg` : "—"}
+          value={w.goal_kg != null ? `${fmt1(w.goal_kg)} kg` : "—"}
           sub={toGoalLabel(w.current_kg, w.goal_kg)}
         />
         {hasTraining && bestLift && (
@@ -133,7 +134,7 @@ export function PortalProgress({ api, brand, hasTraining = true, token }: { api:
           {w.weekly_rate_kg != null && Math.abs(w.weekly_rate_kg) >= 0.01 && (
             <p className="mt-1 text-center text-xs opacity-60">
               Ritmo: {w.weekly_rate_kg < 0 ? "−" : "+"}
-              {Math.abs(w.weekly_rate_kg)} kg por semana
+              {fmt1(Math.abs(w.weekly_rate_kg))} kg por semana
             </p>
           )}
         </section>
@@ -147,7 +148,7 @@ export function PortalProgress({ api, brand, hasTraining = true, token }: { api:
             {data.strength.map((s) => (
               <div key={s.exercise} className="flex items-center justify-between gap-2 text-sm">
                 <span className="min-w-0 flex-1 truncate">{s.exercise}</span>
-                <span className="tabular-nums opacity-60">{round1(s.first_e1rm)} → {round1(s.best_e1rm)} kg</span>
+                <span className="tabular-nums opacity-60">{fmt1(s.first_e1rm)} → {fmt1(s.best_e1rm)} kg</span>
                 <span className="rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums"
                   style={{ background: "color-mix(in srgb, var(--p-accent) 16%, transparent)", color: "var(--p-accent)" }}>
                   +{s.gain_pct}%
@@ -325,9 +326,19 @@ function shortDate(iso: string): string {
   return d.toLocaleDateString("es-ES", { day: "2-digit", month: "short" });
 }
 function deltaLabel(delta: number | null): string | undefined {
-  if (delta == null || delta === 0) return "desde que empezaste";
+  // Sin dato o sin cambio, frases completas (antes quedaba el fragmento
+  // suelto "desde que empezaste" colgando bajo el peso).
+  if (delta == null) return "Tu primer registro";
+  if (delta === 0) return "Igual que al empezar";
   const s = delta < 0 ? "−" : "+";
-  return `${s}${Math.abs(round1(delta))} kg desde el inicio`;
+  let txt = `${s}${fmt1(Math.abs(round1(delta)))} kg desde el inicio`;
+  // Hitos intermedios: la única celebración era el objetivo final. Un umbral
+  // cruzado (1/3/5 kg, perder o ganar según el plan) merece su momento — es
+  // lo que sostiene la motivación entre revisiones.
+  const abs = Math.abs(delta);
+  const hito = abs >= 5 ? 5 : abs >= 3 ? 3 : abs >= 1 ? 1 : 0;
+  if (hito > 0) txt += ` · 🎉 ¡Ya son ${hito} kg!`;
+  return txt;
 }
 function toGoalLabel(current: number | null, goal: number | null): string | undefined {
   if (current == null || goal == null) return undefined;
@@ -345,7 +356,7 @@ function adherenceMean(rows: { diet_0_10: number | null; training_0_10: number |
   return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10;
 }
 function cell(v: number | null, unit = ""): string {
-  return v == null ? "—" : `${round1(v)}${unit ? " " + unit : ""}`;
+  return v == null ? "—" : `${fmt1(v)}${unit ? " " + unit : ""}`;
 }
 function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;

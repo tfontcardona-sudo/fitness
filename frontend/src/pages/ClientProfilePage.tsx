@@ -18,7 +18,7 @@ import { ClientPlanPanel } from "../components/ClientPlanPanel";
 import { ClientFeedbackTab } from "../components/ClientFeedbackTab";
 import { ClientHistoryTab } from "../components/ClientHistoryTab";
 import { ClientTrackingTab } from "../components/ClientTrackingTab";
-import { ageFrom, GOAL_LABEL, LEVEL_LABEL, PLACE_LABEL } from "../lib/format";
+import { ageFrom, formatDate, GOAL_LABEL, LEVEL_LABEL, PLACE_LABEL, relativeDays } from "../lib/format";
 import { BILLING_PERIODS, PACKAGES, PACKAGE_ORDER, billingLabel, pkg } from "../lib/packages";
 
 type Tab = "resumen" | "anamnesis" | "planificacion" | "seguimiento" | "feedback" | "historial";
@@ -29,7 +29,7 @@ export default function ClientProfilePage() {
   const toast = useToast();
   const navigate = useNavigate();
   const [client, setClient] = useState<ClientOut | null>(null);
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const initialTab = (["resumen", "anamnesis", "planificacion", "seguimiento", "feedback", "historial"] as Tab[])
     .includes(searchParams.get("tab") as Tab) ? (searchParams.get("tab") as Tab) : "resumen";
   const [tab, setTab] = useState<Tab>(initialTab);
@@ -62,6 +62,10 @@ export default function ClientProfilePage() {
     if (tab === "anamnesis") setAnamnesisDirty(false);
     if (tab === "planificacion") setPlanEditing(false);
     setTab(next);
+    // La URL refleja la pestaña activa: recargar o compartir el enlace vuelve a
+    // la misma pestaña. `replace` para no llenar el historial con cada clic
+    // (el efecto URL→tab no entra en bucle: su changeTab corta si next === tab).
+    setSearchParams({ tab: next }, { replace: true });
   }
 
   // Cerrar/recargar la pestaña del navegador con un borrador abierto: el aviso
@@ -294,6 +298,12 @@ export default function ClientProfilePage() {
               <Row label="Dieta" value={planDiet ?? "—"}
                 faint={planDiet == null ? "se llena al generar la planificación" : undefined}
                 onGo={() => changeTab("planificacion")} />
+              {/* Antigüedad del cliente: cuánto lleva en la asesoría, de un vistazo. */}
+              <Row label="Cliente desde" value={formatDate(client.created_at)}
+                faint={relativeDays(client.created_at)} />
+              {client.payment_status === "paid" && client.paid_at && (
+                <Row label="Último pago" value={formatDate(client.paid_at)} />
+              )}
             </dl>
           </div>
 

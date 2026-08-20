@@ -20,6 +20,7 @@ from docx.shared import Inches, Pt, RGBColor
 
 from app.services.docs import charts
 from app.services.docs.word_base import (
+    setup_branded_pages,
     DocBrand,
     add_bullets,
     add_cards_row,
@@ -55,13 +56,22 @@ def generate_feedback_doc(
     next_objectives: list[str],
     closing_message: str,
     plan_adjustments: list[dict] | None = None,
+    period_label: str | None = None,
+    goal_label: str | None = None,
 ) -> bytes:
     doc = init_document(brand)
     accent = brand.color_primary
 
+    # Cabecera + pie + número de página en las páginas interiores: un informe
+    # de 6-8 páginas sin numerar leía como un borrador (el plan ya los lleva).
+    setup_branded_pages(doc, banner_path=None, footer_text=brand.name)
+
+    # Portada con las FECHAS del período ("Del 1 al 14 de agosto") y el
+    # objetivo REAL del cliente: "Período 7" no le dice nada.
     add_cover(doc, brand, client_name,
-              subtitle=f"Informe de progreso · Período {period_index}",
-              goal="Tu evolución en datos")
+              subtitle=(f"Informe de progreso · {period_label}" if period_label
+                        else f"Informe de progreso · Período {period_index}"),
+              goal=goal_label or "Tu evolución en datos")
 
     # 1) Resumen del período en datos
     add_section_heading(doc, brand, "Tu período en datos")
@@ -181,7 +191,12 @@ def _add_photo_pair(doc: Document, before_path: str, after_path: str) -> None:
 
 
 def _fmt_delta(value: float | None, unit: str) -> str:
+    """Delta con coma decimal (es-ES) y 1 decimal: "+1,4 kg". Dos decimales de
+    peso corporal transmiten una exactitud falsa, y el punto era la única
+    notación anglosajona del informe."""
     if value is None:
         return "—"
+    if abs(value) < 0.05:
+        return "Sin cambios"
     sign = "+" if value > 0 else ""
-    return f"{sign}{value} {unit}"
+    return f"{sign}{value:.1f} {unit}".replace(".", ",")

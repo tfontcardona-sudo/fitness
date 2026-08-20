@@ -285,7 +285,8 @@ def build_reminder_payload(pending: dict, brand_name: str, portal_url: str) -> d
     if len(parts) == 1:
         body = f"Te falta {parts[0]}. Un minuto y listo 💪"
     else:
-        body = "Te falta: " + ", ".join(parts[:-1]) + " y " + parts[-1] + "."
+        body = ("Te falta: " + ", ".join(parts[:-1]) + " y " + parts[-1]
+                + ". Un minuto y listo 💪")
 
     return {
         "title": brand_name or "Tu seguimiento",
@@ -298,12 +299,18 @@ def build_reminder_payload(pending: dict, brand_name: str, portal_url: str) -> d
 
 # -------------------------------------------------- push "plan publicado" ----
 
-def build_plan_published_payload(brand_name: str, portal_url: str, *, republished: bool) -> dict:
-    """Payload de la notificación al cliente cuando su plan queda publicado."""
+def build_plan_published_payload(brand_name: str, portal_url: str, *, republished: bool,
+                                 first_name: str | None = None,
+                                 month_index: int | None = None) -> dict:
+    """Payload de la notificación al cliente cuando su plan queda publicado.
+    Con nombre y mes: "Mario, tu plan del mes 3 ya está listo" se distingue de
+    una alerta automática cualquiera (los push al coach ya personalizaban)."""
+    quien = f"{first_name}, tu" if first_name else "Tu"
+    mes = f" del mes {month_index}" if month_index else ""
     body = (
-        "Tu planificación se ha actualizado tras tu revisión. Ábrela en tu portal."
+        f"{quien} planificación{mes} se ha actualizado tras tu revisión. Ábrela en tu portal."
         if republished
-        else "Tu planificación ya está lista. Ábrela en tu portal para empezar."
+        else f"{quien} plan{mes} ya está listo. Ábrelo en tu portal para empezar."
     )
     return {
         "title": brand_name or "Tu planificación",
@@ -321,9 +328,43 @@ def notify_plan_published(db: Session, client: Client, *, republished: bool = Fa
         return 0
     brand = portal_svc.brand_payload(db)
     base = settings.public_base_url.rstrip("/")
+    nombre = (client.full_name or "").split()[0] if client.full_name else None
+    mes = None
+    try:
+        from app.models import Plan as _Plan
+        from sqlalchemy import select as _select
+
+        vigente = db.scalar(
+            _select(_Plan).where(_Plan.client_id == client.id,
+                                 _Plan.status == "published")
+            .order_by(_Plan.id.desc()).limit(1))
+        mes = vigente.month_index if vigente else None
+    except Exception:  # noqa: BLE001
+        mes = None
     payload = build_plan_published_payload(
-        brand.get("name", ""), f"{base}/p/{client.portal_token}", republished=republished
+        brand.get("name", ""), f"{base}/p/{client.portal_token}",
+        republished=republished, first_name=nombre, month_index=mes,
     )
+    return send_to_client(db, client, payload)
+
+
+def notify_feedback_ready(db: Session, client: Client) -> int:
+    """Avisa al cliente (push) de que su INFORME de progreso quincenal está
+    listo en el portal. Es el momento de mayor valor percibido del ciclo y
+    dependía solo del email (auditoría de calidad). No hace commit."""
+    if not push_configured():
+        return 0
+    brand = portal_svc.brand_payload(db)
+    base = settings.public_base_url.rstrip("/")
+    nombre = (client.full_name or "").split()[0] if client.full_name else None
+    quien = f"{nombre}, tu" if nombre else "Tu"
+    payload = {
+        "title": brand.get("name", "Tu asesoría"),
+        "body": f"{quien} informe de progreso ya está listo: mira tu evolución y los cambios de tu plan.",
+        "count": 1,
+        "url": f"{base}/p/{client.portal_token}?tab=progreso",
+        "tag": "dq-feedback",
+    }
     return send_to_client(db, client, payload)
 
 

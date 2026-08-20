@@ -123,8 +123,6 @@ adherencia de la revisión quincenal). Cubre dieta Y entrenamiento cuando proced
 - answers: responde a las dudas del cliente si las dejó; si no, déjalo en null.
 - next_objectives: 2-4 objetivos claros y medibles para las próximas 2 semanas.
 - closing_message: 1-2 frases de cierre motivadoras.
-- ai_photo_analysis: DÉJALO SIEMPRE EN NULL. No ves las fotos del cliente: no \
-describas jamás su aspecto físico ni "lo que se aprecia" en ellas.
 
 Devuelve SOLO un objeto JSON válido conforme al esquema. Sin texto adicional."""
 
@@ -142,10 +140,13 @@ usa solo las áreas "Dieta", "Cardio/NEAT" o "Hábitos" (NUNCA "Entrenamiento").
 
 
 def _user_prompt(payload: dict) -> str:
+    # JSON COMPACTO a propósito (auditoría de costes): el payload lleva una
+    # entrada por día del período y el `indent=2` inflaba la entrada un 20-30%
+    # sin aportar nada al modelo.
     return (
         "Redacta el feedback del período con estos DATOS YA CALCULADOS por el backend "
         "(no recalcules). Devuelve el JSON del esquema.\n\n"
-        + json.dumps(payload, ensure_ascii=False, indent=2)
+        + json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     )
 
 
@@ -154,11 +155,15 @@ def generate_feedback_analysis(payload: dict, ai, nutrition_only: bool = False) 
 
     nutrition_only=True (paquete Start): el feedback no menciona entrenamiento."""
     out = ai.generate_json(
-        model=settings.model_heavy,
+        # Configurable (MODEL_FEEDBACK): esta llamada solo REDACTA — los
+        # números vienen calculados — así que admite un modelo más barato
+        # sin tocar la seguridad. Vacío = el pesado de siempre.
+        model=(settings.model_feedback or settings.model_heavy),
         system=_SYSTEM + (_NUTRITION_ONLY_NOTE if nutrition_only else ""),
         user=_user_prompt(payload),
         schema=FeedbackAIOutput,
         temperature=0,  # §14: la lectura de la revisión quincenal es determinista
+        max_tokens=4000,  # informe ≈1.500 tokens: techo holgado anti-desbocadas
     )
     # Saneo defensivo: este texto va verbatim al PDF y a WhatsApp.
     out.natural_analysis = _clean_text(out.natural_analysis) or ""

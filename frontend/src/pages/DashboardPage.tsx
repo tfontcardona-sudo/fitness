@@ -93,6 +93,22 @@ function nextAction(c: ClientOut): Accion | null {
   return null; // activo y al día
 }
 
+/** "Hoy"/"Mañana" si la videollamada cae en esos días (hora local); null si no. */
+function agendaDayTag(iso: string): "Hoy" | "Mañana" | null {
+  const d = new Date(iso);
+  const hoy = new Date();
+  const manana = new Date();
+  manana.setDate(hoy.getDate() + 1);
+  const mismoDia = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  if (mismoDia(d, hoy)) return "Hoy";
+  if (mismoDia(d, manana)) return "Mañana";
+  return null;
+}
+
+const agendaHora = (iso: string) =>
+  new Date(iso).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+
 export default function DashboardPage() {
   const [clients, setClients] = useState<ClientOut[] | null>(null);
   const [alerts, setAlerts] = useState<CoachAlert[]>([]);
@@ -351,33 +367,48 @@ export default function DashboardPage() {
         <section className="mt-8">
           <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-zinc-200">
             <span aria-hidden className="h-3.5 w-1 rounded-full" style={{ background: "#0EA5E9" }} />
-            <Video size={15} style={{ color: "#0EA5E9" }} /> Videollamadas agendadas
+            <Video size={15} style={{ color: "#0EA5E9" }} /> Videollamadas agendadas · {agenda.length}
           </h2>
           <div className="card p-2">
             <ul className="divide-y" style={{ borderColor: "var(--line)" }}>
-              {agenda.map((v) => (
-                <li key={v.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
-                  <Link to={`/clientes/${v.client_id}?tab=feedback`}
-                    className="flex min-w-0 items-center gap-2.5 hover:opacity-80">
-                    <Avatar name={v.client_name} size={30} />
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium text-zinc-200">{v.client_name}</span>
-                      <span className="block truncate text-xs capitalize text-zinc-500">
-                        {v.when_label}{v.duration_min ? ` · ${v.duration_min} min` : ""}
-                        {v.is_past ? " · pendiente de confirmar" : ""}
+              {agenda.map((v) => {
+                // "Hoy · 17:00" / "Mañana · 17:00" destacados; el resto conserva
+                // el when_label largo. Las de HOY llevan la fila resaltada.
+                const tag = agendaDayTag(v.scheduled_at);
+                const esHoy = tag === "Hoy";
+                return (
+                  <li key={v.id} className="flex items-center justify-between gap-3 rounded-lg px-3 py-2.5"
+                    style={esHoy ? {
+                      background: "color-mix(in srgb, #0EA5E9 8%, transparent)",
+                      boxShadow: "inset 3px 0 0 #0EA5E9",
+                    } : undefined}>
+                    <Link to={`/clientes/${v.client_id}?tab=feedback`}
+                      className="flex min-w-0 items-center gap-2.5 hover:opacity-80">
+                      <Avatar name={v.client_name} size={30} />
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium text-zinc-200">{v.client_name}</span>
+                        <span className="block truncate text-xs capitalize text-zinc-500">
+                          {tag ? (
+                            <span className="font-semibold" style={{ color: "#0EA5E9" }}>
+                              {tag} · {agendaHora(v.scheduled_at)}
+                            </span>
+                          ) : v.when_label}
+                          {v.duration_min ? ` · ${v.duration_min} min` : ""}
+                          {v.is_past ? " · pendiente de confirmar" : ""}
+                        </span>
                       </span>
-                    </span>
-                  </Link>
-                  {v.meet_url && (
-                    <a href={v.meet_url} target="_blank" rel="noopener noreferrer"
-                      title="Unirme a Google Meet" aria-label="Unirme a Google Meet"
-                      className="tap flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
-                      style={{ background: "color-mix(in srgb, #0EA5E9 14%, transparent)", color: "#0EA5E9" }}>
-                      <Video size={17} />
-                    </a>
-                  )}
-                </li>
-              ))}
+                    </Link>
+                    {v.meet_url && (
+                      <a href={v.meet_url} target="_blank" rel="noopener noreferrer"
+                        title="Unirme a Google Meet" aria-label="Unirme a Google Meet"
+                        className="tap flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+                        style={{ background: "color-mix(in srgb, #0EA5E9 14%, transparent)", color: "#0EA5E9" }}>
+                        <Video size={17} />
+                      </a>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </div>
         </section>
@@ -418,7 +449,10 @@ export default function DashboardPage() {
                     </span>
                     <span className="flex items-center gap-3">
                       <StatusBadge status={c.status} />
-                      <span className="w-20 text-right text-xs text-zinc-600">{relativeDays(c.updated_at)}</span>
+                      <span className="w-20 text-right text-xs text-zinc-600"
+                        title="Última modificación de la ficha (no es la última vez que el cliente registró)">
+                        {relativeDays(c.updated_at)}
+                      </span>
                     </span>
                   </Link>
                 </li>

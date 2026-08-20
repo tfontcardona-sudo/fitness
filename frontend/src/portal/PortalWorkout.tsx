@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Trash2, Play, Check, Sparkles, CalendarRange, X } from "lucide-react";
 import type { PlanChanges, PortalBrand, TodaySession, TrainingWeek } from "../types";
 import { usePortalToast } from "./PortalToast";
-import { Loading, localToday, useDecimalField } from "./PortalUi";
+import { fmt1, Loading, localToday, shortDate, useDecimalField } from "./PortalUi";
 import { InlineVideo, isEmbeddable } from "./InlineVideo";
 import { useDismiss } from "../lib/useDismiss";
 import { PortalError } from "./portalApi";
@@ -59,6 +59,11 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
   const saveTimer = useRef<number | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [loadTry, setLoadTry] = useState(0);
+  // Estado VIVO del autosave para el pie ("Guardando…" / "Guardado ✓ HH:MM"):
+  // el toast queda solo para errores — cada serie tecleada no puede disparar
+  // un aviso.
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
 
   // Al cambiar de sesión, el vídeo abierto deja de tener contexto: se cierra.
   useEffect(() => setOpenVideoId(null), [selectedIdx]);
@@ -128,12 +133,14 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
         }
       });
     });
+    setSaveState("saving");
     api.saveDiary({ log_date: today, workout_sets })
-      .then(() => toast.push("Entreno guardado"))
+      .then(() => { setSavedAt(new Date()); setSaveState("saved"); })
       .catch((e) => {
         // RE-ENCOLA lo no guardado para que el siguiente flush lo reintente
         // (antes el pendiente se descartaba y solo otro tecleo re-enviaba).
         pendingRef.current = pendingRef.current ?? data;
+        setSaveState("idle");
         toast.push(
           e instanceof PortalError ? e.message : "No se pudo guardar el último cambio — revisa tu conexión",
         );
@@ -224,11 +231,23 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
     if (readOnly) return;
     setSets((s) => {
       const filtered = (s[exId] ?? []).filter((_, i) => i !== idx);
-      // Nunca dejar el ejercicio SIN filas (no hay botón de "añadir serie"): al
-      // borrar la última se deja una fila vacía, así el registro sigue siendo
-      // posible y no queda un ejercicio irrecuperable en la sesión.
+      // Nunca dejar el ejercicio SIN filas: al borrar la última se deja una
+      // fila vacía, así el registro sigue siendo posible y no queda un
+      // ejercicio irrecuperable en la sesión.
       const rows = filtered.length ? filtered : [{ weight_kg: null, reps: null }];
       const next = { ...s, [exId]: rows };
+      flush(next);
+      return next;
+    });
+  }
+  // Serie extra (el cliente hace más de las prescritas): fila vacía al final,
+  // con el mismo tope de 20 que las filas objetivo.
+  function addSet(exId: number) {
+    if (readOnly) return;
+    setSets((s) => {
+      const rows = s[exId] ?? [];
+      if (rows.length >= 20) return s;
+      const next = { ...s, [exId]: [...rows, { weight_kg: null, reps: null }] };
       flush(next);
       return next;
     });
@@ -396,6 +415,7 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
             const doneCount = rows.filter((r) => r.weight_kg != null && r.reps != null).length;
             const embeddable = isEmbeddable(ex.video_url);
             const videoOpen = embeddable && openVideoId === ex.exercise_id;
+            const hintKg = ex.week_weight_hint_kg ?? ex.start_weight_hint_kg;
             return (
               <div key={ex.exercise_id} className="portal-card p-4">
                 {/* Zona del vídeo: nombre + botón + reproductor. Un toque FUERA de
@@ -456,8 +476,8 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
                       </div>
                       <p className="text-xs opacity-60">
                         Objetivo: {ex.sets} × {ex.rep_range} · RIR {ex.rir}
-                        {(ex.week_weight_hint_kg ?? ex.start_weight_hint_kg)
-                          ? ` · ~${ex.week_weight_hint_kg ?? ex.start_weight_hint_kg} kg${
+                        {hintKg
+                          ? ` · ~${fmt1(hintKg)} kg${
                               week && ex.week_weight_hint_kg != null && ex.week_weight_hint_kg !== ex.start_weight_hint_kg
                                 ? ` (sem ${week.week})` : ""
                             }`
@@ -466,7 +486,7 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
                       </p>
                       {records[String(ex.exercise_id)] && (
                         <p className="text-[11px] font-medium" style={{ color: brand.color_secondary }}>
-                          🏆 Tu récord: {records[String(ex.exercise_id)].weight_kg} kg × {records[String(ex.exercise_id)].reps}
+                          🏆 Tu récord: {fmt1(records[String(ex.exercise_id)].weight_kg)} kg × {records[String(ex.exercise_id)].reps}
                         </p>
                       )}
                     </div>
@@ -497,12 +517,24 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
                       <div key={i} className="grid grid-cols-[28px_1fr_1fr_40px] items-center gap-2">
                         <span className="text-center text-xs font-semibold tabular-nums" style={{ color: done ? brand.color_primary : undefined, opacity: done ? 1 : 0.5 }}>{i + 1}</span>
                         {/* Rangos espejo del backend (WorkoutSetIn): 0-600 kg, 0-100 reps */}
-                        <SetInput value={r.weight_kg} min={0} max={600} placeholder={(ex.week_weight_hint_kg ?? ex.start_weight_hint_kg) ? String(ex.week_weight_hint_kg ?? ex.start_weight_hint_kg) : "—"} accent={brand.color_secondary} onChange={(v) => setRow(ex.exercise_id, i, { weight_kg: v })} />
+                        <SetInput value={r.weight_kg} min={0} max={600} placeholder={hintKg ? String(hintKg) : "—"} accent={brand.color_secondary} onChange={(v) => setRow(ex.exercise_id, i, { weight_kg: v })} />
                         <SetInput value={r.reps} min={0} max={100} integer placeholder="—" accent={brand.color_secondary} onChange={(v) => setRow(ex.exercise_id, i, { reps: v })} />
                         <button onClick={() => removeSet(ex.exercise_id, i)} aria-label={`Borrar serie ${i + 1}`} className="flex h-11 w-11 items-center justify-center justify-self-center rounded-lg opacity-40 hover:opacity-100"><Trash2 size={15} /></button>
                       </div>
                     );
                   })}
+                  {/* Serie extra (ha hecho más de las prescritas): discreto,
+                      tope de 20 filas — espejo del que fija las filas objetivo. */}
+                  {!readOnly && rows.length < 20 && (
+                    <button
+                      type="button"
+                      onClick={() => addSet(ex.exercise_id)}
+                      className="px-1 py-1 text-xs font-medium opacity-50 hover:opacity-90"
+                      style={{ color: brand.color_secondary }}
+                    >
+                      + Añadir serie
+                    </button>
+                  )}
                 </div>
                 {history[String(ex.exercise_id)]?.length ? (
                   // Azul: el historial es consulta de datos, no acción
@@ -532,7 +564,13 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
           )}
         </>
       )}
-      <p className="pb-2 text-center text-xs opacity-40">Se guarda automáticamente</p>
+      <p className="pb-2 text-center text-xs opacity-40" aria-live="polite">
+        {saveState === "saving"
+          ? "Guardando…"
+          : saveState === "saved" && savedAt
+            ? `Guardado ✓ ${savedAt.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}`
+            : "Se guarda automáticamente"}
+      </p>
 
       {/* Temporizador de DESCANSO: píldora flotante sobre la barra de pestañas.
           Arranca sola al completar una serie con el descanso prescrito; se
@@ -601,7 +639,7 @@ function ExHistory({ sessions, accent }: { sessions: HistSession[]; accent: stri
         <div className="mt-1.5 space-y-1">
           {sessions.map((s) => (
             <div key={s.date} className="flex justify-between opacity-60">
-              <span>{s.date}</span>
+              <span>{shortDate(s.date)}</span>
               <span>{s.sets.map(fmt).join(" · ")}</span>
             </div>
           ))}
