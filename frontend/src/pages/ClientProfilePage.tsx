@@ -469,7 +469,7 @@ export default function ClientProfilePage() {
           <div key={`${client.id}-${tab}`} className="tab-panel">
             {tab === "resumen" && <ClientSummaryTab client={client} />}
             {tab === "anamnesis" && <ClientAnamnesisTab client={client} onSaved={reload} onDirtyChange={setAnamnesisDirty} />}
-            {tab === "planificacion" && <ClientPlanPanel client={client} onClientChanged={reload} onEditingChange={setPlanEditing} />}
+            {tab === "planificacion" && <ClientPlanPanel client={client} onClientChanged={reload} onEditingChange={setPlanEditing} onGoTab={(t) => changeTab(t as Tab)} />}
             {tab === "seguimiento" && <ClientTrackingTab client={client} />}
             {tab === "feedback" && <ClientFeedbackTab client={client} onClientChanged={reload} onGoPlan={() => changeTab("planificacion")} />}
             {tab === "historial" && <ClientHistoryTab client={client} />}

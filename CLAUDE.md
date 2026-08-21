@@ -442,6 +442,41 @@ cd backend && python -m pytest tests/ -q
 
 ## 9. Trabajo pendiente / próximos pasos
 
+0000000000. ✅ **DETALLE RESUMIDO Y CLIC QUE LLEVA A LA ACCIÓN (agosto 2026).**
+   El dueño: "la agrupación y los desplegables están muy bien… pero cuando se
+   despliega quiero que esté MÁS resumido, y que el título casi no haga falta
+   abrirlo. Y que al pulsar un aviso te redirija donde tienes que actuar".
+   Suite (505) + tsc + build + `check:avisos` (14 comprobaciones) en verde.
+   - **`resumirDetalle`**: al fusionar N revisores el detalle son N párrafos que
+     repiten lo mismo. Se parte en frases, se tiran las VALORACIONES sin dato
+     ("…la dieta sola es insuficiente"), se deduplica por PARECIDO (Jaccard ≥
+     0.6 sobre palabras significativas — la firma exacta no reconocía "La
+     anamnesis declara lesiones en X" vs "la anamnesis indica lesiones en X") y
+     se conserva la versión con MÁS datos. 168 palabras → 65 en 3 viñetas.
+     ⚠️ NUNCA se descarta en silencio: si sobran, añade "… y N más", y el
+     TEXTO COMPLETO queda siempre en un desplegable (podría ser el alérgeno).
+     ⚠️ Una valoración CON cifras no es relleno ("aporta 12 g … insuficiente
+     para sus 90 kg"): `esRelleno` exige que además no tenga ningún dato.
+   - **Clic que lleva a la acción** (`Destino` + `irADestino`): la acción de
+     cada aviso es un botón. Nutrición/seguridad alimentaria → editor abierto
+     por su sección (`#editor-nutricion`); lesiones/entrenamiento → `#editor-entreno`;
+     salud/contexto → pestaña Anamnesis (`onGoTab`, que ya existía en
+     ClientProfilePage). Mapa EXPLÍCITO por destino: un ternario mandaba todo lo
+     no-nutrición al editor de entreno, incluso en clientes de SOLO NUTRICIÓN.
+     "Puntos importantes" también enlaza a Anamnesis.
+   - **Coherencia título↔acción**: tres avisos fusionados bajo "Sin plan de
+     entrenamiento" heredaban "Cambiar esos ejercicios" (no hay ejercicios que
+     cambiar). `accionYDestino` la recalcula sobre el título DEFINITIVO… pero
+     SOLO si el aviso se fusionó: una acción concreta de la IA ("Sustituir el
+     pan por tortitas de arroz") no se pisa con un genérico, ni se recorta (ya
+     viene acotada por contrato).
+   - Cazado por la revisión y cubierto con test: el filtro de relleno sin anclar
+     se comía frases con cifras; `resumirDetalle` perdía puntos en silencio; el
+     destino "generar" llevaba a una fila de botones sin generar; y la propia
+     comprobación de coherencia era VACUA (los dos avisos del caso no
+     compartían concepto, así que la rama de error era inalcanzable).
+
+
 000000000. ✅ **SÍNTESIS REAL DE LOS AVISOS (agosto 2026).** El dueño, sobre la
    captura del bloque ya agrupado: "se ve más ordenado, ok, pero aún así hay
    muchísima información… en una línea se podría decir lo mismo con dos

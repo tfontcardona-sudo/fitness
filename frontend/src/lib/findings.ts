@@ -28,7 +28,12 @@ export interface Aviso {
   concepto: string;
   /** Cuántos revisores señalaron lo mismo (1 = solo uno). */
   veces: number;
+  /** Dónde tiene que ir el coach para resolverlo (un clic, sin buscar). */
+  destino: Destino;
 }
+
+/** Sitios a los que puede llevar un aviso. */
+export type Destino = "nutricion" | "entreno" | "generar" | "anamnesis" | "plan";
 
 export type Categoria =
   | "Seguridad alimentaria"
@@ -183,26 +188,34 @@ function riqueza(texto: string): number {
   return (texto.match(/\d/g)?.length ?? 0) + (texto.match(/[(),]/g)?.length ?? 0);
 }
 
+/** La acción es una ETIQUETA, no una frase: se acota sin partir palabras. */
+function acortarAccion(texto: string, maxPalabras = 6): string {
+  const p = texto.trim().split(/\s+/);
+  return p.length <= maxPalabras ? texto.trim() : p.slice(0, maxPalabras).join(" ") + "…";
+}
+
 /** Convierte un hallazgo (nuevo o antiguo) en algo que se lee de un vistazo. */
 export function toAviso(f: RawFinding): Aviso {
   const detalle = (f.description ?? "").trim();
   const regla = REGLAS.find((r) => r.re.test(detalle) || r.re.test(f.title ?? ""));
   const especial = ESPECIALES.find((e) => e.re.test(detalle));
   const titulo = (f.title ?? "").trim() || especial?.titulo || primeraFrase(detalle);
-  const accion =
-    (f.action ?? "").trim() ||
+  const accionIA = (f.action ?? "").trim();
+  const derivada =
     (f.correccion_propuesta ?? "").trim().split(/\.\s/)[0] ||
     regla?.accion ||
     "Revisar el plan";
+  // Solo se acota lo DERIVADO de texto libre; la de la IA llega ya acotada.
+  const accion = accionIA || acortarAccion(derivada);
   return {
     severity: f.severity,
     titulo,
-    // La acción también se acota: es una etiqueta, no una frase.
-    accion: accion.split(/\s+/).slice(0, 6).join(" "),
+    accion,
     detalle,
     categoria: regla?.cat ?? "Otros",
     concepto: concepto(f.title ? `${f.title} ${detalle}` : detalle),
     veces: 1,
+    destino: "plan",
   };
 }
 
@@ -230,7 +243,36 @@ export function fusionar(avisos: Aviso[]): Aviso[] {
     }
     if (a.severity === "bloqueante") actual.severity = "bloqueante";
   }
-  return salida;
+  // El destino se calcula SIEMPRE (nadie más sabe a dónde lleva cada aviso).
+  // La acción solo se reescribe si el aviso se FUSIONÓ —ahí el título cambia y
+  // la heredada puede contradecirlo— o si no tenía acción propia: una acción
+  // concreta de la IA ("Sustituir el pan por tortitas") vale más que un genérico.
+  return salida.map((a) => {
+    const calc = accionYDestino(a);
+    const propia = a.veces === 1 && a.accion && a.accion !== "Revisar el plan";
+    return { ...a, destino: calc.destino, accion: propia ? a.accion : calc.accion };
+  });
+}
+
+/** Acción + destino coherentes con el título FINAL (tras fusionar).
+ *
+ *  Sin esto, tres avisos fusionados bajo "Sin plan de entrenamiento" heredaban
+ *  la acción del primero ("Cambiar esos ejercicios"), que contradecía el
+ *  título: si no hay plan, no hay ejercicios que cambiar. */
+function accionYDestino(a: Aviso): { accion: string; destino: Destino } {
+  const t = a.titulo.toLowerCase();
+  if (/sin plan de entrenamiento|entrenamiento ausente|no hay rutina/.test(t)) {
+    return { accion: "Generar el entrenamiento", destino: "generar" };
+  }
+  switch (a.categoria) {
+    case "Seguridad alimentaria": return { accion: "Corregir esa comida", destino: "nutricion" };
+    case "Nutrición":             return { accion: "Revisar la nutrición", destino: "nutricion" };
+    case "Lesiones":              return { accion: "Adaptar los ejercicios", destino: "entreno" };
+    case "Entrenamiento":         return { accion: a.accion || "Revisar el entrenamiento", destino: "entreno" };
+    case "Salud":                 return { accion: "Ver su anamnesis", destino: "anamnesis" };
+    case "Contexto del cliente":  return { accion: "Ver su anamnesis", destino: "anamnesis" };
+    default:                      return { accion: a.accion || "Revisar el plan", destino: "plan" };
+  }
 }
 
 /** Agrupa por categoría conservando el orden de importancia de REGLAS. */
@@ -320,4 +362,97 @@ export function resumenCorto(texto: string, maxPalabras = 10): string {
     frase = palabras.slice(0, maxPalabras).join(" ").replace(/(?:[\s,;:+]|\by\b)+$/i, "") + "…";
   }
   return frase;
+}
+
+// ------------------------------------------------- resumen del detalle ------
+
+/** Frases de VALORACIÓN sin dato: "…la dieta sola es insuficiente", "…el plan
+ *  es incompleto e irresponsable". Repiten que algo está mal, que es justo lo
+ *  que ya dice el color del aviso. */
+const SIN_DATO =
+  /^(?:sin|si no|de lo contrario|por (?:lo )?tanto|en consecuencia|esto (?:supone|implica))\b|(?:es|resulta) (?:insuficiente|incompleto|irresponsable|inadecuado|inaceptable|preocupante)|no se puede (?:verificar|comprobar|garantizar)/i;
+
+/** Una frase solo se descarta si ADEMÁS no aporta ningún dato: "…aporta 12 g de
+ *  proteína, insuficiente para sus 90 kg" es una valoración, pero lleva las
+ *  cifras que el coach necesita. */
+function esRelleno(frase: string): boolean {
+  return SIN_DATO.test(frase) && datos(frase) === 0;
+}
+
+/** Firma de una frase para detectar repeticiones entre revisores: sin acentos,
+ *  sin signos y sin palabras vacías, ordenada. Dos frases que dicen lo mismo
+ *  con otro orden o con sinónimos de relleno comparten firma. */
+const VACIAS = new Set([
+  "el", "la", "los", "las", "un", "una", "de", "del", "en", "y", "o", "a", "al",
+  "que", "se", "su", "sus", "con", "por", "para", "no", "es", "son", "esta",
+  "estas", "este", "estos", "pero", "cliente", "plan", "anamnesis", "declara",
+  "indica", "tiene", "hay",
+]);
+
+function firma(frase: string): string {
+  return frase
+    .toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !VACIAS.has(w))
+    .sort()
+    .join(" ");
+}
+
+/** Solape entre dos conjuntos de palabras (Jaccard): 1 = idénticos. */
+function parecido(a: Set<string>, b: Set<string>): number {
+  if (!a.size || !b.size) return 0;
+  let comunes = 0;
+  for (const w of a) if (b.has(w)) comunes++;
+  return comunes / (a.size + b.size - comunes);
+}
+
+/** ¿Cuánta información concreta aporta la frase? (cifras, listas, paréntesis) */
+function datos(frase: string): number {
+  return (frase.match(/\d/g)?.length ?? 0) + (frase.match(/[(),:]/g)?.length ?? 0);
+}
+
+/** Resume el detalle de un aviso ya fusionado.
+ *
+ *  Al fusionar N revisores el detalle son N párrafos que repiten lo mismo con
+ *  otras palabras. Aquí se parte en frases, se tiran las valoraciones sin dato,
+ *  se quitan las repeticiones (misma firma → se conserva la que MÁS datos trae)
+ *  y se devuelven como viñetas cortas. Nunca se inventa nada: solo se elige.
+ */
+export function resumirDetalle(detalle: string, maxFrases = 3): string[] {
+  const frases = (detalle ?? "")
+    .split(/(?<=[.;])\s+|\n+/)
+    .map((f) => f.trim().replace(/^[•\-*\s]+/, "").replace(/\s*[.;]\s*$/, ""))
+    .filter((f) => f.length > 12);
+
+  // Dedupe por PARECIDO, no por igualdad: dos revisores describen la misma
+  // lista de lesiones con una frase de entrada distinta y la firma exacta no
+  // los reconocía como repetición.
+  const candidatas: { frase: string; palabras: Set<string> }[] = [];
+  for (const f of frases) {
+    if (esRelleno(f)) continue;
+    const k = firma(f);
+    if (!k) continue;
+    const palabras = new Set(k.split(" "));
+    const gemela = candidatas.find((c) => parecido(c.palabras, palabras) >= 0.6);
+    if (!gemela) {
+      candidatas.push({ frase: f, palabras });
+    } else if (datos(f) > datos(gemela.frase)) {
+      // Se conserva la versión con MÁS datos concretos.
+      gemela.frase = f;
+      gemela.palabras = palabras;
+    }
+  }
+
+  // Si todo eran valoraciones, mejor la primera frase original que nada.
+  const salida = candidatas.map((c) => c.frase);
+  if (!salida.length) return frases.slice(0, 1);
+
+  // Las que más datos aportan, primero. NUNCA se descarta una en silencio
+  // (podría ser el alérgeno): si sobran, se avisa de cuántas quedan fuera.
+  const ordenadas = salida.sort((a, b) => datos(b) - datos(a));
+  return ordenadas.length > maxFrases
+    ? [...ordenadas.slice(0, maxFrases), `… y ${ordenadas.length - maxFrases} más`]
+    : ordenadas;
 }
