@@ -672,13 +672,15 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
                   // Indicación PERSONAL del coach (limitaciones/adaptación): destacada,
                   // no un consejo genérico — el cliente debe leerla antes de la serie.
                   <p
-                    className="mt-2 rounded-lg px-3 py-2 text-xs font-medium"
+                    className="portal-card--rail mt-2 rounded-lg px-3 py-2 text-xs"
                     style={{
                       background: `color-mix(in srgb, ${brand.color_primary} 10%, transparent)`,
-                      color: brand.color_primary,
-                    }}
+                      color: "var(--p-ink)",
+                      "--rail": brand.color_primary,
+                    } as React.CSSProperties}
                   >
-                    Indicación de tu coach: <span className="font-normal opacity-90">{ex.coach_notes}</span>
+                    <b style={{ color: "var(--p-accent-ink)" }}>Indicación de tu coach:</b>{" "}
+                    {ex.coach_notes}
                   </p>
                 )}
               </div>
