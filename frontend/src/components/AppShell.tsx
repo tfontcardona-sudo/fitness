@@ -14,6 +14,8 @@ import { useBrand } from "../hooks/useBrand";
 import { ALERTS_REFRESH_MS, api } from "../lib/api";
 import { useAppUpdate } from "../lib/appUpdate";
 import { AlertsBell } from "./AlertsBell";
+import { PinDock } from "./Pins";
+import { activarAcordeon } from "../lib/accordion";
 import { AiCreditButton } from "./AiCreditButton";
 
 const NAV = [
@@ -73,6 +75,8 @@ function useIsMobile(): boolean {
 }
 
 export default function AppShell() {
+  // Abrir un desplegable cierra el hermano abierto: la pantalla no se ensucia.
+  useEffect(activarAcordeon, []);
   const { user, logout } = useAuth();
   const { brand } = useBrand();
   const navigate = useNavigate();
@@ -103,6 +107,7 @@ export default function AppShell() {
         <main className="coach-mobile relative flex-1 overflow-y-auto pb-24" style={{ background: "var(--bg)" }}>
           {updateBanner}
           <AlertsBell />
+          <PinDock />
           <Outlet />
         </main>
         <nav
@@ -237,6 +242,8 @@ export default function AppShell() {
         {updateBanner}
         {/* Centro de alertas: preventivo, se autolimpia al resolver acciones */}
         <AlertsBell />
+        {/* Lo que ibas a arreglar: se borra solo al quedar resuelto */}
+        <PinDock />
         <Outlet />
       </main>
     </div>

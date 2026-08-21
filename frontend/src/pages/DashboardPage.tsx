@@ -19,6 +19,8 @@ import {
 import { ALERTS_REFRESH_MS, api, keepIfSame, REFRESH_MS } from "../lib/api";
 import type { ClientOut, CoachAlert, VideoCallAgendaItem } from "../types";
 import { PageLoader, SectionHeader, StatusBadge } from "../components/ui";
+import { hrefCliente } from "../lib/anchors";
+import { pin, pinId } from "../lib/pins";
 import { goalReviewDue, initials, relativeDays } from "../lib/format";
 import { WhatsAppRound } from "../components/WhatsAppRound";
 import { SalesKit } from "../components/SalesKit";
@@ -42,6 +44,12 @@ interface Accion {
   tone: string;              // color del indicador
   icon: typeof Sparkles;
   to?: string;               // destino explícito (si no es el perfil del cliente)
+  /** El aviso del backend que originó esta acción, si lo hubo. Lleva el ANCLA
+   *  del sitio exacto, la nota de cómo se arregla y la clave estable con la
+   *  que el recordatorio se borra solo. Las acciones derivadas del ESTADO del
+   *  cliente (nextAction) no tienen aviso: no se anclan, porque sin clave no
+   *  hay forma honesta de retirar el recordatorio. */
+  alert?: CoachAlert;
 }
 
 function nextAction(c: ClientOut): Accion | null {
@@ -161,7 +169,7 @@ export default function DashboardPage() {
         // El botón dice "Abrir Recursos" → lleva DE VERDAD a Recursos (donde
         // se sube el producto), no a la planificación del cliente.
         acciones.push({
-          client: cli, prio: 3, tone: "#28707C", icon: Package, category: "Falta recurso/producto",
+          client: cli, alert: al, prio: 3, tone: "#28707C", icon: Package, category: "Falta recurso/producto",
           title: "Suplemento sin producto",
           detail: al.message,
           cta: "Abrir Recursos", tab: "planificacion", to: "/recursos",
@@ -169,20 +177,20 @@ export default function DashboardPage() {
       } else if (al.kind === "change_request") {
         // El cliente escribió una petición/duda desde su portal: al coach.
         acciones.push({
-          client: cli, prio: 1, tone: "#C2453A", icon: HeartPulse, category: "Petición del cliente",
+          client: cli, alert: al, prio: 1, tone: "#C2453A", icon: HeartPulse, category: "Petición del cliente",
           title: "Duda desde su portal",
           detail: al.message,
           cta: al.action, tab: al.tab,
         });
       } else if (al.kind === "send_feedback") {
         acciones.push({
-          client: cli, prio: 1, tone: "#7B4FC9", icon: Send, category: "Revisión",
+          client: cli, alert: al, prio: 1, tone: "#7B4FC9", icon: Send, category: "Revisión",
           title: "Feedback generado · falta enviarlo",
           detail: al.message, cta: "Enviar feedback", tab: "feedback",
         });
       } else if (al.kind === "regenerate_goal") {
         acciones.push({
-          client: cli, prio: 1, tone: "#C96A1E", icon: Sparkles, category: "Objetivo",
+          client: cli, alert: al, prio: 1, tone: "#C96A1E", icon: Sparkles, category: "Objetivo",
           title: "Plan con objetivo anterior",
           detail: al.message, cta: al.action, tab: al.tab,
         });
@@ -190,7 +198,7 @@ export default function DashboardPage() {
         // Alergia/aversión añadida DESPUÉS de generar: el plan activo puede
         // seguir sirviendo ese alimento en portal y PDF.
         acciones.push({
-          client: cli, prio: al.kind === "plan_allergen_conflict" ? 1 : 3,
+          client: cli, alert: al, prio: al.kind === "plan_allergen_conflict" ? 1 : 3,
           tone: "#C2453A", icon: Sparkles, category: "Planificación",
           title: al.kind === "plan_allergen_conflict"
             ? "⚠ Alérgeno en el plan activo" : "Alimento no tolerado en plan",
@@ -200,7 +208,7 @@ export default function DashboardPage() {
         // Adaptar el plan a la última revisión: viene del backend (anclado al
         // período ANALIZADO), así que no se apaga por abrir una pestaña.
         acciones.push({
-          client: cli, prio: 2, tone: "#C96A1E", icon: Sparkles, category: "Adaptar",
+          client: cli, alert: al, prio: 2, tone: "#C96A1E", icon: Sparkles, category: "Adaptar",
           title: al.kind === "adapt_plan"
             ? "Plan sin adaptar a revisión"
             : "Borrador sin activar",
@@ -208,40 +216,40 @@ export default function DashboardPage() {
         });
       } else if (al.kind === "plan_stale_inputs") {
         acciones.push({
-          client: cli, prio: 2, tone: "#C96A1E", icon: Sparkles, category: "Planificación",
+          client: cli, alert: al, prio: 2, tone: "#C96A1E", icon: Sparkles, category: "Planificación",
           title: "Ficha cambiada tras generar",
           detail: al.message, cta: al.action, tab: al.tab,
         });
       } else if (al.kind === "client_inactive") {
         acciones.push({
-          client: cli, prio: 3, tone: "#7A7A7A", icon: Hourglass, category: "Inactivo",
+          client: cli, alert: al, prio: 3, tone: "#7A7A7A", icon: Hourglass, category: "Inactivo",
           title: "Cliente inactivo",
           detail: al.message, cta: al.action, tab: al.tab,
         });
       } else if (al.kind === "payment_pending") {
         acciones.push({
-          client: cli, prio: 3, tone: "#9A6B15", icon: CreditCard, category: "Pago",
+          client: cli, alert: al, prio: 3, tone: "#9A6B15", icon: CreditCard, category: "Pago",
           title: "Pago pendiente",
           detail: al.message, cta: al.action, tab: al.tab,
         });
       } else if (al.kind === "renewal_due") {
         // Renovación: el plan contratado se agota y nadie lo recordaba.
         acciones.push({
-          client: cli, prio: al.severity === "alta" ? 2 : 3, tone: "#9A6B15",
+          client: cli, alert: al, prio: al.severity === "alta" ? 2 : 3, tone: "#9A6B15",
           icon: CreditCard, category: "Pago",
           title: al.severity === "alta" ? "Plan vencido · sigue activo" : "Le toca renovar",
           detail: al.message, cta: al.action, tab: al.tab,
         });
       } else if (al.kind === "period_overdue") {
         acciones.push({
-          client: cli, prio: 4, tone: "#C2453A", icon: Hourglass,
+          client: cli, alert: al, prio: 4, tone: "#C2453A", icon: Hourglass,
           category: "Revisión",
           title: "Revisión vencida sin cerrar",
           detail: al.message, cta: al.action, tab: al.tab,
         });
       } else if (al.kind === "no_logs") {
         acciones.push({
-          client: cli, prio: 4, tone: "#C2453A", icon: HeartPulse, category: "Seguimiento",
+          client: cli, alert: al, prio: 4, tone: "#C2453A", icon: HeartPulse, category: "Seguimiento",
           title: "Sin registros varios días",
           detail: al.message, cta: al.action, tab: al.tab,
         });
@@ -249,7 +257,7 @@ export default function DashboardPage() {
         // Videollamada quincenal (Pro): propuesta → aceptar/modificar → agendada
         // → mañana → confirmar. El cliente propone; el coach acepta o modifica.
         acciones.push({
-          client: cli, prio: al.severity === "alta" ? 1 : 3, tone: "#0EA5E9", icon: Video,
+          client: cli, alert: al, prio: al.severity === "alta" ? 1 : 3, tone: "#0EA5E9", icon: Video,
           category: "Videollamada",
           title: al.kind === "video_call_proposed" ? "Propuesta de videollamada"
             : al.kind === "video_call_tomorrow" ? "Videollamada mañana"
@@ -449,9 +457,25 @@ export default function DashboardPage() {
 
 function ActionCard({ a, quiet }: { a: Accion; quiet?: boolean }) {
   const Icon = a.icon;
+  // Destino: el del aviso (con su ancla, para marcar el sitio al llegar) o,
+  // sin aviso, la pestaña de siempre.
+  const destino = a.alert
+    ? (a.alert.to || hrefCliente(a.alert.client_id, a.alert.tab, a.alert.target || undefined))
+    : (a.to ?? `/clientes/${a.client.id}?tab=${a.tab}`);
+  const anclar = () => {
+    const al = a.alert;
+    if (!al) return;
+    pin({
+      id: pinId("alerts", al.key), scope: "alerts", key: al.key,
+      clientId: al.client_id, clientName: al.client_name,
+      label: al.action, hint: al.fix || al.message,
+      href: destino, target: al.target || undefined, severity: al.severity,
+    });
+  };
   return (
     <Link
-      to={a.to ?? `/clientes/${a.client.id}?tab=${a.tab}`}
+      onClick={anclar}
+      to={destino}
       className="card card-hover flex flex-wrap items-center gap-x-4 gap-y-2.5 p-4 active:scale-[0.995]"
       style={quiet ? undefined : { borderLeft: `3px solid ${a.tone}` }}
     >

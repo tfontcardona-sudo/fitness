@@ -9,6 +9,8 @@ import {
   enableCoachPush,
   resyncCoachPushIfGranted,
 } from "../lib/coachPush";
+import { hrefCliente } from "../lib/anchors";
+import { pin, pinId, syncScope } from "../lib/pins";
 import { useDismiss } from "../lib/useDismiss";
 import { useToast } from "./ui";
 import type { CoachAlert } from "../types";
@@ -61,7 +63,14 @@ export function AlertsBell() {
 
   const load = useCallback(() => {
     // keepIfSame: no re-renderiza la campana cada 3 s si las alertas no cambian.
-    api.listAlerts().then((r) => setAlerts((prev) => keepIfSame(prev, r.alerts))).catch(() => {});
+    api.listAlerts().then((r) => {
+      setAlerts((prev) => keepIfSame(prev, r.alerts));
+      // Los recordatorios anclados heredan la verdad del backend: los que ya
+      // no están en esta lista es que están RESUELTOS y se borran solos. Solo
+      // se sincroniza si la petición fue bien (un fallo de red no puede
+      // barrer recordatorios vivos).
+      syncScope("alerts", r.alerts.map((a) => a.key).filter(Boolean));
+    }).catch(() => {});
   }, []);
 
   // Al montar, al navegar (una acción resuelta debe apagar su alerta al
@@ -79,11 +88,26 @@ export function AlertsBell() {
   const count = alerts?.length ?? 0;
   const high = alerts?.filter((a) => a.severity === "alta").length ?? 0;
 
-  // Navega a la pestaña exacta donde hay que actuar. La usan por igual el
-  // nombre del cliente, el mensaje y el botón de acción de cada alerta.
+  // Pulsar un aviso hace DOS cosas: lleva al sitio exacto (y lo marca al
+  // llegar, vía ?ir=) y deja un RECORDATORIO de lo que ibas a arreglar, para
+  // que el desvío de dos minutos no se lleve por delante la intención. El
+  // recordatorio se borra solo cuando el aviso desaparece.
   const go = useCallback((a: CoachAlert) => {
     setOpen(false);
-    navigate(`/clientes/${a.client_id}?tab=${a.tab}`);
+    const destino = a.to || hrefCliente(a.client_id, a.tab, a.target || undefined);
+    pin({
+      id: pinId("alerts", a.key),
+      scope: "alerts",
+      key: a.key,
+      clientId: a.client_id,
+      clientName: a.client_name,
+      label: a.action,
+      hint: a.fix || a.message,
+      href: destino,
+      target: a.target || undefined,
+      severity: a.severity,
+    });
+    navigate(destino);
   }, [navigate]);
 
   async function snooze(a: CoachAlert) {

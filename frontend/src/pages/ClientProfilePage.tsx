@@ -14,6 +14,8 @@ import { Avatar } from "./DashboardPage";
 import { ClientSummaryTab } from "../components/ClientSummaryTab";
 import { ClientAnamnesisTab } from "../components/ClientAnamnesisTab";
 import { ClientDocuments } from "../components/ClientDocuments";
+import { MarcadorDeAncla } from "../components/Pins";
+import { ancla } from "../lib/anchors";
 import { ClientPlanPanel } from "../components/ClientPlanPanel";
 import { ClientFeedbackTab } from "../components/ClientFeedbackTab";
 import { ClientHistoryTab } from "../components/ClientHistoryTab";
@@ -49,6 +51,11 @@ export default function ClientProfilePage() {
   // todos los retoques. Mismo guard que la anamnesis.
   const [planEditing, setPlanEditing] = useState(false);
 
+  // Ancla a marcar al llegar (?ir=nutricion.comida.2): la pone el aviso que se
+  // pulsó. Se conserva mientras el recordatorio siga vivo; al cambiar de
+  // pestaña a mano se suelta (ya no estás en el sitio que se te señaló).
+  const ir = searchParams.get("ir");
+
   function changeTab(next: Tab) {
     if (next === tab) return;
     if (tab === "anamnesis" && anamnesisDirty &&
@@ -65,6 +72,8 @@ export default function ClientProfilePage() {
     // La URL refleja la pestaña activa: recargar o compartir el enlace vuelve a
     // la misma pestaña. `replace` para no llenar el historial con cada clic
     // (el efecto URL→tab no entra en bucle: su changeTab corta si next === tab).
+    // Solo `tab`: al cambiar de pestaña a mano el ancla se suelta (si no, se
+    // quedaría intentando marcar un elemento de la pestaña anterior).
     setSearchParams({ tab: next }, { replace: true });
   }
 
@@ -226,6 +235,9 @@ export default function ClientProfilePage() {
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-6">
+      {/* Marca el elemento exacto del que hablaba el aviso y le pega la nota de
+          cómo se arregla. Si el problema se resuelve, la marca se va sola. */}
+      <MarcadorDeAncla clientId={clientId} target={ir} />
       <Link to="/clientes" className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-300">
         <ArrowLeft size={15} /> Clientes
       </Link>
@@ -354,6 +366,7 @@ export default function ClientProfilePage() {
               portal. Copia el enlace para mandárselo al cliente y que pague. */}
           {payUrl && client.payment_status !== "paid" && (
             <button
+              {...ancla("resumen.pago")}
               onClick={() => {
                 navigator.clipboard.writeText(payUrl).catch(() => {});
                 toast.push("Enlace de pago copiado — mándaselo al cliente");
@@ -374,13 +387,16 @@ export default function ClientProfilePage() {
               la ficha quedaba "Pago pendiente" para siempre, con la campana
               insistiendo y la carpeta "Falta pago" contaminada. */}
           {client.payment_status !== "paid" && (
-            <CobroManual client={client} onDone={reload} />
+            <div {...(payUrl ? {} : ancla("resumen.pago"))}>
+              <CobroManual client={client} onDone={reload} />
+            </div>
           )}
           {/* Reactivar a un cliente INACTIVO: la transición existía en la
               máquina de estados pero no tenía ningún botón (auditoría del
               ciclo) — el cliente quedaba en un limbo sin alertas ni ciclo. */}
           {client.status === "inactive" && (
             <button
+              {...ancla("resumen.estado")}
               onClick={async () => {
                 if (!window.confirm(`¿Reactivar a ${client.full_name}? Volverá a recibir recordatorios y su ciclo de seguimiento continuará.`)) return;
                 try {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ancla } from "../lib/anchors";
 import { ChevronDown, Eye, FileText, Pencil, Save, Sparkles } from "lucide-react";
 import { api, ApiError, getToken } from "../lib/api";
 import type { ClientOut } from "../types";
@@ -138,6 +139,7 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
           >
             <Sparkles size={15} /> {reading ? "Leyendo PDF…" : "Leer con IA"}
           </button>
+          <span {...ancla("anamnesis.revision")} aria-hidden className="sr-only" />
         </div>
       </div>
 
@@ -175,7 +177,7 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
         <Num label="Peso objetivo (kg)" value={current("goal_weight_kg") as number} onChange={(v) => set("goal_weight_kg", v as any)} />
       </Section>
 
-      <Section title="Objetivo y nivel">
+      <Section title="Objetivo y nivel" ancla="anamnesis.campo.goal_type">
         <Select label="Objetivo" value={(current("goal_type") as string) ?? ""} onChange={(v) => set("goal_type", (v || null) as any)}
           options={[["", "—"], ["fat_loss", "Pérdida de grasa"], ["muscle_gain", "Ganancia muscular"], ["recomp", "Recomposición"], ["maintenance", "Mantenimiento"], ["injury_recovery", "Recuperación de lesión"]]} />
         <Select label="Nivel" value={(current("level") as string) ?? ""} onChange={(v) => set("level", (v || null) as any)}
@@ -578,9 +580,13 @@ function MealsPlanner({ mealsPerDay, schedule, onChange }: {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children, ancla: nombreAncla }: {
+  title: string; children: React.ReactNode;
+  /** Ancla del apartado: un aviso puede señalarlo y quedará marcado. */
+  ancla?: string;
+}) {
   return (
-    <div className="card p-5">
+    <div className="card p-5" {...(nombreAncla ? ancla(nombreAncla) : {})}>
       <h4 className="mb-3 text-sm font-semibold text-zinc-200">{title}</h4>
       <div className="grid grid-cols-2 gap-3">{children}</div>
     </div>

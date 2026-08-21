@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { activarAcordeon } from "../lib/accordion";
 import { useSearchParams } from "react-router-dom";
 import { Bell, BellOff, CalendarCheck, Camera, Check, ChevronDown, Dumbbell, FileText, LineChart, Library, LogOut, NotebookPen, Share, Smartphone, Video, X } from "lucide-react";
 import { portalApi, portalSession, PortalError } from "./portalApi";
@@ -37,6 +38,8 @@ type Tab = "entreno" | "recursos" | "diario" | "progreso" | "cierre";
  * afectar al resto.
  */
 export default function PortalApp({ token }: { token: string }) {
+  // Abrir un desplegable cierra el hermano abierto (también en el portal).
+  useEffect(activarAcordeon, []);
   const apiClient = useMemo(() => portalApi(token), [token]);
   // Actualización EN CALIENTE de la app instalada: al volver del segundo plano
   // con una versión nueva desplegada se recarga sola; en uso activo, aviso

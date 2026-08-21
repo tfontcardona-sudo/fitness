@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { ancla } from "../lib/anchors";
 import { Sparkles, AlertTriangle, MessageSquare, MessageCircle, Mail, Video, Target, TrendingUp, BarChart3, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
 import { api, getToken } from "../lib/api";
 import { feedbackBody, feedbackMessage, openWhatsApp, videoCallModifyMessage, videoCallScheduledMessage, waPhone } from "../lib/whatsapp";
@@ -373,12 +374,14 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
               </div>
               <div className="flex gap-2" onClick={(e) => e.preventDefault()}>
                 {p.feedback_id && content && !sent && (
-                  <button onClick={() => deliverFeedback(p.feedback_id as number, content, false, p.period_index)} className="btn btn-primary">
+                  <button onClick={() => deliverFeedback(p.feedback_id as number, content, false, p.period_index)} className="btn btn-primary"
+                    {...ancla("feedback.enviar")}>
                     {byEmail ? <><Mail size={15} /> Enviar por email</> : <><MessageCircle size={15} /> Enviar por WhatsApp</>}
                   </button>
                 )}
                 {canGenerate && !p.feedback_id && (
-                  <button onClick={() => generate(p.id)} disabled={generating === p.id} className="btn btn-primary">
+                  <button onClick={() => generate(p.id)} disabled={generating === p.id} className="btn btn-primary"
+                    {...ancla("feedback.generar")}>
                     <Sparkles size={15} />
                     {generating === p.id ? "Generando…" : "Generar feedback"}
                   </button>
@@ -720,6 +723,7 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
 
   return (
     <div className="mt-3 rounded-lg p-3"
+      {...ancla(call ? `feedback.videollamada.${call.id}` : "feedback.videollamada")}
       style={{ background: `color-mix(in srgb, ${VC_COLOR} 7%, transparent)`, border: `1px solid color-mix(in srgb, ${VC_COLOR} 25%, transparent)` }}>
       <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide" style={{ color: VC_COLOR }}>
         <Video size={13} /> Videollamada quincenal

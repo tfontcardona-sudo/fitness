@@ -38,6 +38,7 @@ export function MemoDetails({
     <div className={className} style={style} data-open={open}>
       <button
         type="button"
+        data-desplegable-toggle
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         className={`flex w-full cursor-pointer items-center gap-2 text-left ${summaryClassName ?? ""}`}
