@@ -135,12 +135,25 @@ function nodo(tipo, hijos = []) {
   return el;
 }
 
-// Réplica de la regla de lib/accordion.ts: cerrar los HERMANOS abiertos.
+// Réplica de la regla de lib/accordion.ts: cerrar los HERMANOS abiertos,
+// viendo a través del envoltorio (<li>, <div>) que React pone por elemento.
+function miembroDeGrupo(el) {
+  const padre = el.parentElement;
+  if (!padre || !padre.parentElement) return el;
+  const propios = padre.children.filter((c) => c.tipo === "details").length;
+  return propios === 1 ? padre : el;
+}
+function cerrarUno(h) {
+  if (h.closest("[data-acordeon-libre]")) return;
+  if (h.tipo === "details") { if (h.open) h.open = false; return; }
+  for (const d of h.children) if (d.tipo === "details") cerrarUno(d);
+}
 function cerrarHermanos(el) {
   if (el.closest("[data-acordeon-libre]")) return;
-  for (const h of el.parentElement?.children ?? []) {
-    if (h === el || h.closest("[data-acordeon-libre]")) continue;
-    if (h.tipo === "details" && h.open) h.open = false;
+  const yo = miembroDeGrupo(el);
+  for (const h of yo.parentElement?.children ?? []) {
+    if (h === yo) continue;
+    cerrarUno(h);
   }
 }
 
@@ -169,6 +182,19 @@ t("un grupo marcado como libre se queda abierto", () => {
   a.open = true; b.open = true;
   cerrarHermanos(b);
   assert.equal(a.open, true, "el grupo libre debe permitir varios abiertos");
+});
+
+t("el acordeón ve a través del envoltorio de cada elemento de una lista", () => {
+  // Patrón de React: cada aviso va en su <li> con su <details> dentro. Como
+  // los hermanos son los <li>, comparando hermano a hermano no se cerraba
+  // nada y el bloque de avisos se quedaba con cinco desplegables abiertos.
+  const d1 = nodo("details"), d2 = nodo("details");
+  const li1 = nodo("li", [d1]), li2 = nodo("li", [d2]);
+  nodo("ul", [li1, li2]);
+  d1.open = true; d2.open = true;
+  cerrarHermanos(d2);
+  assert.equal(d1.open, false, "el desplegable del otro elemento debía cerrarse");
+  assert.equal(d2.open, true);
 });
 
 t("desplegables de padres distintos no se estorban", () => {

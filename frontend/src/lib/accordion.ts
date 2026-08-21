@@ -32,26 +32,49 @@ function exento(el: Element | null): boolean {
   return !!el?.closest(`[${NO_EXCLUSIVO}]`);
 }
 
-function hermanos(el: Element): Element[] {
+/**
+ * Quién hace de "miembro del grupo".
+ *
+ * En React lo normal es envolver cada elemento de una lista en su <li> o su
+ * <div>. Entonces los HERMANOS del desplegable son esos envoltorios, no otros
+ * desplegables, y comparar hermano a hermano no cerraba nada. Si el
+ * desplegable es el ÚNICO de su envoltorio, el que representa al grupo es el
+ * envoltorio. Un solo nivel: más sería empezar a cerrar media pantalla.
+ */
+function miembroDeGrupo(el: Element): Element {
   const padre = el.parentElement;
-  if (!padre) return [];
-  return Array.from(padre.children).filter((h) => h !== el);
+  if (!padre || !padre.parentElement) return el;
+  const propios = padre.querySelectorAll(":scope > details").length
+    + padre.querySelectorAll(":scope > [data-open]").length;
+  return propios === 1 ? padre : el;
+}
+
+function cerrarUno(h: Element): void {
+  if (exento(h)) return;
+  if (h instanceof HTMLDetailsElement) {
+    if (h.open) h.open = false;
+    return;
+  }
+  // Desplegable de estado ya abierto: se cierra pulsando SU toggle, que es
+  // quien conoce su estado de React (tocarle el DOM a mano no serviría).
+  if (h.getAttribute("data-open") === "true") {
+    const toggle = h.querySelector<HTMLElement>("[data-desplegable-toggle]");
+    if (toggle && !exento(toggle)) toggle.click();
+    return;
+  }
+  // Envoltorio: se cierra lo que lleve DENTRO, solo al primer nivel.
+  h.querySelectorAll<HTMLElement>(":scope > details, :scope > [data-open]")
+    .forEach((d) => cerrarUno(d));
 }
 
 function cerrarHermanos(el: Element): void {
   if (exento(el)) return;
-  for (const h of hermanos(el)) {
-    if (exento(h)) continue;
-    if (h instanceof HTMLDetailsElement) {
-      if (h.open) h.open = false;
-      continue;
-    }
-    // Desplegable de estado ya abierto: se cierra pulsando SU toggle, que es
-    // quien conoce su estado de React (tocarle el DOM a mano no serviría).
-    if (h.getAttribute("data-open") === "true") {
-      const toggle = h.querySelector<HTMLElement>("[data-desplegable-toggle]");
-      if (toggle && !exento(toggle)) toggle.click();
-    }
+  const yo = miembroDeGrupo(el);
+  const padre = yo.parentElement;
+  if (!padre) return;
+  for (const h of Array.from(padre.children)) {
+    if (h === yo) continue;
+    cerrarUno(h);
   }
 }
 
