@@ -15,7 +15,7 @@ import { ClientSummaryTab } from "../components/ClientSummaryTab";
 import { ClientAnamnesisTab } from "../components/ClientAnamnesisTab";
 import { ClientDocuments } from "../components/ClientDocuments";
 import { MarcadorDeAncla } from "../components/Pins";
-import { ancla } from "../lib/anchors";
+import { ancla, irYMarcar } from "../lib/anchors";
 import { ClientPlanPanel } from "../components/ClientPlanPanel";
 import { ClientFeedbackTab } from "../components/ClientFeedbackTab";
 import { ClientHistoryTab } from "../components/ClientHistoryTab";
@@ -245,18 +245,17 @@ export default function ClientProfilePage() {
       {/* Notificación: el cliente cerró su período → toca generar feedback.
           Se oculta en cuanto el feedback ya está generado. */}
       {client.status === "review_pending" && feedbackPending && (
-        <div
-          className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3.5"
+        <button
+          onClick={() => { changeTab("feedback"); void irYMarcar("feedback.generar"); }}
+          className="mt-4 flex w-full flex-wrap items-center justify-between gap-3 rounded-xl border p-3.5 text-left transition-transform active:scale-[0.995]"
           style={{ borderColor: "var(--brand-accent)", background: "color-mix(in srgb, var(--brand-accent) 10%, transparent)" }}
         >
-          <div className="flex items-center gap-2.5 text-sm text-zinc-200">
+          <span className="flex items-center gap-2.5 text-sm text-zinc-200">
             <BellRing size={18} style={{ color: "var(--brand-accent)" }} />
             <span><b>El cliente ha cerrado su período.</b> Revisa los datos y genera el feedback.</span>
-          </div>
-          <button onClick={() => changeTab("feedback")} className="btn btn-primary">
-            Ir a Feedback
-          </button>
-        </div>
+          </span>
+          <span className="btn btn-primary pointer-events-none">Ir a Feedback</span>
+        </button>
       )}
 
       {/* Rejilla con filas: en MÓVIL el orden es identidad → contenido →

@@ -156,6 +156,11 @@ export function PinDock() {
 
   const ir = useCallback((p: Pin) => {
     setAbierto(false);
+    // Si ya estás en esa misma dirección, React Router no cambia nada y el
+    // marcador no se entera: se vuelve a marcar a mano. Sin esto, pulsar un
+    // recordatorio estando ya en la pantalla no hacía absolutamente nada.
+    const aqui = window.location.pathname + window.location.search;
+    if (aqui === p.href && p.target) { void irYMarcar(p.target); return; }
     navigate(p.href);
   }, [navigate]);
 
