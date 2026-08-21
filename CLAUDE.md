@@ -442,6 +442,43 @@ cd backend && python -m pytest tests/ -q
 
 ## 9. Trabajo pendiente / próximos pasos
 
+000000000. ✅ **SÍNTESIS REAL DE LOS AVISOS (agosto 2026).** El dueño, sobre la
+   captura del bloque ya agrupado: "se ve más ordenado, ok, pero aún así hay
+   muchísima información… en una línea se podría decir lo mismo con dos
+   palabras, y no se diferencia bien visualmente entre bloque y bloque".
+   Suite (505) + tsc + build + `npm run check:avisos` en verde.
+   - **FUSIÓN por concepto** (`fusionar` en `lib/findings.ts`): OCHO revisores
+     señalaban la MISMA lesión en ocho líneas idénticas. Ahora se agrupan por
+     concepto (lesión, medicación, patología, TCA, cafeína, estrés, trabajo…),
+     se conserva el título con MÁS datos y se marca `×N` (nº de revisores). El
+     detalle de todos se concatena, no se pierde nada. 18 líneas → 11.
+   - **Títulos sin relleno**: fuera el sujeto ("El cliente tiene…", "El plan NO
+     aborda…") y los cierres vacíos ("…no abordado en el plan"), tope 5
+     palabras. ⚠️ La NEGACIÓN se conserva (`SUJETO_NEGADO` + `COPULA_NEGADA`):
+     quitarla dejaba "Adaptado a la lesión de rodilla", que afirma lo contrario.
+   - **Jerga traducida** (`traducirFlags`): `violation:opción slot 1 'A': fat_g
+     13 fuera de ±5% del objetivo 14` ×4 → "Grasas fuera de rango · 4 opciones".
+     ⚠️ `retenido:` NO se descarta (lo intenté y la revisión lo cazó): puede ser
+     el ÚNICO aviso rojo y sin él el bloque no se pintaba y nadie sabía que el
+     cliente no había recibido el plan → "Guardado como borrador · el cliente no
+     lo ve".
+   - **Recuento único**: el chip decía "19 a corregir" y el bloque "24 puntos"
+     (contaban cosas distintas). Ahora ambos usan `nRojoTotal`, que cuenta las
+     líneas que el coach VE (fusionadas + flags agrupados) y respeta el filtro
+     por color (si no, salía una caja roja vacía).
+   - **Separación visual**: cada categoría es su propia tarjeta con fondo, y
+     cada aviso lleva barra lateral de color. Antes era una lista continua.
+   - **Prosa guardada** (`resumenCorto`): las notas de la progresión semanal y
+     el deload muestran la PRIMERA FRASE ("Semana de referencia"), con el texto
+     completo en un desplegable — no en un `title`, que en móvil es inalcanzable.
+   - **Trampas evitadas** (todas cazadas por la revisión de código, todas con
+     regresión en `check:avisos`): `restricción` a secas en el concepto "lesión"
+     fusionaba un bloqueante de rodilla con una "restricción calórica" y HACÍA
+     DESAPARECER uno de los dos; `[\s,;:+y]+$` se comía la "y" final ("muy alto"
+     → "mu…"); y el contador de ámbar seguía en crudo mientras el bloque pintaba
+     fusionados.
+
+
 00000000. ✅ **AVISOS CON TÍTULO + ACCIÓN, Y "MENOS ES MÁS" DE VERDAD (agosto 2026).**
    El dueño, tras la ronda anterior: "has hecho que salga 'ver más', pero eso no
    basta: toda esa información se podría resumir en tres o cuatro palabras…
