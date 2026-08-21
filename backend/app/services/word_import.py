@@ -28,6 +28,7 @@ import io
 import re
 import unicodedata
 
+from docx.oxml.ns import qn
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -101,6 +102,28 @@ SIG_ENERGIA = ("calorias", "reparto de macros", "ajuste aplicado")
 SIG_TOMAS = ("hora", "toma", "estrategia")
 SIG_PROGRESION = ("semana", "enfoque", "carga", "rir", "notas")
 SIG_SESION = ("ejercicio", "series", "rir", "descanso", "clave tecnica")
+
+
+def _es_barra(par) -> bool:
+    """¿Este párrafo es una BARRA DE SECCIÓN del documento?
+
+    Se reconoce por el sombreado de párrafo, que es justo lo que la dibuja
+    (`word_base.section_bar`). Reconocerla por "tiene texto" hacía que
+    cualquier frase suelta bajo la barra la suplantara.
+    """
+    try:
+        if not par.text.strip():
+            return False
+        pPr = par._p.find(qn("w:pPr"))
+        if pPr is None:
+            return False
+        shd = pPr.find(qn("w:shd"))
+        if shd is None:
+            return False
+        fill = (shd.get(qn("w:fill")) or "").lower()
+        return bool(fill) and fill not in ("auto", "ffffff", "none")
+    except Exception:  # noqa: BLE001 — un docx raro nunca tumba la importación
+        return False
 
 
 def _exercise_maps(db: Session, training: dict | None):
@@ -180,9 +203,13 @@ def parse_word_edits(db: Session, plan: Plan, docx_bytes: bytes) -> dict:
 
     for kind, block in _iter_blocks(doc):
         if kind == "p":
-            t = block.text.strip()
-            if t:
-                ultima_barra = t
+            # SOLO las barras de sección cuentan. Antes valía cualquier párrafo
+            # con texto, así que la línea guía que se imprime bajo la barra
+            # ("Los pasos diarios pesan más que el cardio…") pasaba a ser la
+            # referencia y las cajas de Cardio y de la semana de descarga
+            # dejaban de importarse EN SILENCIO.
+            if _es_barra(block):
+                ultima_barra = block.text.strip()
             continue
 
         sig = _header_sig(block)
@@ -199,6 +226,12 @@ def parse_word_edits(db: Session, plan: Plan, docx_bytes: bytes) -> dict:
                            "protein_g": _num(m.group(2)), "fat_g": _num(m.group(3))}
             elif kcal:
                 energia = {"kcal": kcal}
+                if reparto.strip():
+                    avisos.append(
+                        "No he podido leer el reparto de macros del resumen "
+                        "energético: aplico solo las calorías. Escríbelo como "
+                        "«CH 000 g · P 000 g · G 000 g», en ese orden."
+                    )
             continue
 
         # ---- tabla de ESTRUCTURA DIARIA (tomas) ------------------------
@@ -317,10 +350,24 @@ def _aplicar_energia(energia: dict | None, nutrition: dict | None,
         return
     from app.services.nutrition_scale import rescale_nutrition
 
-    kcal = float(energia.get("kcal") or nutrition.get("target_kcal") or 0)
-    p = float(energia.get("protein_g") or (nutrition.get("macros") or {}).get("protein_g") or 0)
-    c = float(energia.get("carbs_g") or (nutrition.get("macros") or {}).get("carbs_g") or 0)
-    g = float(energia.get("fat_g") or (nutrition.get("macros") or {}).get("fat_g") or 0)
+    macros_actuales = nutrition.get("macros") or {}
+
+    def _valor(clave: str, respaldo) -> float:
+        """El 0 del Word MANDA. Con `or` se trataba como ausente y se reponía
+        el valor anterior: el coach ponía las grasas a 0 y el plan seguía con
+        las de antes, sin un solo aviso."""
+        leido = energia.get(clave)
+        if leido is None:
+            leido = respaldo
+        try:
+            return float(leido or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    kcal = _valor("kcal", nutrition.get("target_kcal"))
+    p = _valor("protein_g", macros_actuales.get("protein_g"))
+    c = _valor("carbs_g", macros_actuales.get("carbs_g"))
+    g = _valor("fat_g", macros_actuales.get("fat_g"))
     m0 = base_nutrition.get("macros") or {}
     cambia = (abs(kcal - float(base_nutrition.get("target_kcal") or 0)) > 0.5
               or abs(p - float(m0.get("protein_g") or 0)) > 0.5

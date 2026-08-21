@@ -231,14 +231,26 @@ def _dias_semana(n: int) -> str:
     return "1 día/semana" if n == 1 else f"{n} días/semana"
 
 
-def _indice_nutricion(nutrition: dict, include_training: bool) -> list[str]:
+def _indice_nutricion(nutrition: dict, include_training: bool,
+                      blocked: list[str] | None = None,
+                      diet_pattern: str | None = None) -> list[str]:
     """Qué secciones lleva DE VERDAD este documento (no un índice de plantilla
     que promete cosas que no están)."""
-    partes = ["Objetivos", "Tus cifras del día"]
+    partes = ["Objetivos"]
+    # Mismas condiciones EXACTAS que gobiernan el pintado: un índice que
+    # promete algo que luego no está es peor que no tener índice.
+    bl = blocked or []
+    razon = (nutrition.get("rationale") or "").strip()
+    if razon and not _food_blocked(razon, bl, diet_pattern):
+        partes.append("Por qué este enfoque")
+    partes.append("Tus cifras del día")
     if nutrition.get("meals"):
         partes.append("Estructura diaria")
     partes += ["Alimentos por grupos", "Tus comidas", "Dieta semanal"]
-    if nutrition.get("flexibility_rules") or nutrition.get("refeed_or_break"):
+    reglas = [r for r in (nutrition.get("flexibility_rules") or []) if str(r).strip()
+              and not _food_blocked(str(r), bl, diet_pattern)]
+    refeed = (nutrition.get("refeed_or_break") or "").strip()
+    if reglas or (refeed and not _food_blocked(refeed, bl, diet_pattern)):
         partes.append("Margen de maniobra")
     if nutrition.get("supplements"):
         partes.append("Suplementación")
@@ -356,8 +368,8 @@ def _ajuste_text(nutrition: dict, goal: str | None) -> str:
     target = nutrition.get("target_kcal") or 0
     if not tdee:
         return _goal_label(goal)
-    delta = round(target - tdee)
-    pct = round(abs(delta) / tdee * 100)
+    delta = _rhu(target - tdee)
+    pct = _rhu(abs(delta) / tdee * 100)
     # La etiqueta la manda el SIGNO del delta real, no el objetivo: si el objetivo
     # es "ganancia" pero las kcal quedaron por debajo del TDEE (tras editar o por
     # el suelo calórico), decir "Superávit +-150" sería falso y contradictorio.
@@ -460,7 +472,8 @@ def generate_plan_doc(
                meta=f"Mes {month_index} · {_goal_label(goal_type)}")
         macros = nutrition.get("macros", {})
 
-        _indice(doc, _indice_nutricion(nutrition, include_training))
+        _indice(doc, _indice_nutricion(nutrition, include_training,
+                                       blocked, diet_pattern))
 
         section_bar(doc, "Objetivos", WINE)
         info_box(doc, _objetivo_pairs(goal_type), fill=CREAM, label_color=WINE)
@@ -469,7 +482,10 @@ def generate_plan_doc(
         # se guarda en el plan y NUNCA llegaba al documento del cliente — que
         # recibía las cifras sin el criterio que las justifica.
         razon = (nutrition.get("rationale") or "").strip()
-        if razon:
+        # Si el argumentario nombra algo que el cliente NO puede comer, no se
+        # imprime: el resto del documento ya filtra sus alimentos y dejar esta
+        # caja fuera del filtro reabría el agujero del celíaco viendo pan.
+        if razon and not _food_blocked(razon, blocked, diet_pattern):
             section_bar(doc, "Por qué este enfoque", GOLD)
             info_box(doc, [razon], fill=CREAM, cant_split=True)
 
@@ -634,8 +650,11 @@ def generate_plan_doc(
         # MARGEN DE MANIOBRA: las reglas de flexibilidad y el refeed/descanso se
         # pautan en el plan y se quedaban dentro del sistema. Son justo lo que
         # evita que el cliente abandone el primer día que se sale del guion.
-        reglas = [r for r in (nutrition.get("flexibility_rules") or []) if str(r).strip()]
+        reglas = [r for r in (nutrition.get("flexibility_rules") or []) if str(r).strip()
+                  and not _food_blocked(str(r), blocked, diet_pattern)]
         refeed = (nutrition.get("refeed_or_break") or "").strip()
+        if refeed and _food_blocked(refeed, blocked, diet_pattern):
+            refeed = ""
         if reglas or refeed:
             section_bar(doc, "Tu margen de maniobra", GOLD)
             _nota(doc, "Un plan que no se puede seguir no sirve. Esto es lo que "

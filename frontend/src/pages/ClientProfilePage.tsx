@@ -366,7 +366,6 @@ export default function ClientProfilePage() {
               portal. Copia el enlace para mandárselo al cliente y que pague. */}
           {payUrl && client.payment_status !== "paid" && (
             <button
-              {...ancla("resumen.pago")}
               onClick={() => {
                 navigator.clipboard.writeText(payUrl).catch(() => {});
                 toast.push("Enlace de pago copiado — mándaselo al cliente");
@@ -386,11 +385,9 @@ export default function ClientProfilePage() {
           {/* Pago por OTRA VÍA (bizum, transferencia, efectivo): sin este botón
               la ficha quedaba "Pago pendiente" para siempre, con la campana
               insistiendo y la carpeta "Falta pago" contaminada. */}
-          {client.payment_status !== "paid" && (
-            <div {...(payUrl ? {} : ancla("resumen.pago"))}>
-              <CobroManual client={client} onDone={reload} />
-            </div>
-          )}
+          <div {...(payUrl && client.payment_status !== "paid" ? {} : ancla("resumen.pago"))}>
+            <CobroManual client={client} onDone={reload} />
+          </div>
           {/* Reactivar a un cliente INACTIVO: la transición existía en la
               máquina de estados pero no tenía ningún botón (auditoría del
               ciclo) — el cliente quedaba en un limbo sin alertas ni ciclo. */}
@@ -706,12 +703,19 @@ function Row({ label, value, faint, onGo }: {
  *  pagaba por otra vía. La fecha por defecto es hoy, pero se puede corregir:
  *  un cobro apuntado con retraso cuenta en el mes en que se cobró.
  */
+/** Fecha de HOY en horario LOCAL (YYYY-MM-DD). `toISOString()` da la de UTC:
+ *  en España, de madrugada, apuntaba al día —y a veces al mes— anterior. */
+function hoyLocal(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function CobroManual({ client, onDone }: { client: ClientOut; onDone: () => void }) {
   const toast = useToast();
   const [abierto, setAbierto] = useState(false);
   const [importe, setImporte] = useState("");
   const [metodo, setMetodo] = useState<"efectivo" | "transferencia" | "bizum" | "otro">("transferencia");
-  const [fecha, setFecha] = useState(() => new Date().toISOString().slice(0, 10));
+  const [fecha, setFecha] = useState(hoyLocal);
   const [guardando, setGuardando] = useState(false);
 
   // Coma o punto: en España se teclea "129,50".
@@ -742,7 +746,9 @@ function CobroManual({ client, onDone }: { client: ClientOut; onDone: () => void
         onClick={() => setAbierto(true)}
         className="w-full text-center text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
       >
-        ¿Te pagó por otra vía? Anotar el cobro
+        {client.payment_status === "paid"
+          ? "Anotar otro cobro (renovación, extra…)"
+          : "¿Te pagó por otra vía? Anotar el cobro"}
       </button>
     );
   }
@@ -772,7 +778,7 @@ function CobroManual({ client, onDone }: { client: ClientOut; onDone: () => void
       </div>
       <label className="mt-2 block">
         <span className="mb-1 block text-[11px] text-zinc-500">Fecha del cobro</span>
-        <input type="date" value={fecha} max={new Date().toISOString().slice(0, 10)}
+        <input type="date" value={fecha} max={hoyLocal()}
           onChange={(e) => setFecha(e.target.value)} className="input w-full" />
       </label>
       <div className="mt-3 flex justify-end gap-2">

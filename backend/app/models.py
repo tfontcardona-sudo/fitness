@@ -732,6 +732,10 @@ class Payment(Base):
     paid_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     # NULL = no leído (punto azul en el feed y badge de la barra).
     seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Sello del borrado RGPD: el dinero se conserva pero ya no apunta a nadie.
+    # Distingue este caso del HUÉRFANO de verdad (el que el coach debe
+    # investigar), que si no se quedaba avisando para siempre.
+    anonymized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
