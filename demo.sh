@@ -25,13 +25,36 @@ fi
 # ACTUALIZARSE PRIMERO: el doble clic debe traer la última versión del código.
 # Sin esto, el lanzador levantaba lo que hubiera en la carpeta aunque los
 # cambios llevaran semanas subidos (pasó: la web "no cambiaba nunca").
+#
+# Y si NO puede actualizar, PARA. Antes avisaba en amarillo y seguía, y eso
+# costó una tarde entera: `git pull --ff-only` se negaba (el .gitattributes
+# renormaliza los finales de línea y deja el árbol "sucio"), el script
+# reconstruía el Dockerfile ANTIGUO y el contenedor se quedaba en bucle con
+# "exec /code/entrypoint.sh: no such file or directory" — un error que no tiene
+# NADA que ver con la causa real, que era simplemente código viejo.
+#
+# Es `reset --hard` y no `pull` a propósito: esta carpeta es una INSTALACIÓN,
+# no un sitio donde programar. Lo único que importa aquí (.env, storage/) no
+# está versionado, así que el reset no lo toca.
 if command -v git >/dev/null 2>&1 && [ -d .git ]; then
-  echo "→ Buscando la última versión del código…"
-  if git pull --ff-only; then
-    echo "✓ Código al día"
-  else
-    echo "! No se pudo actualizar (¿sin conexión o cambios locales?): sigo con la versión de la carpeta"
+  echo "→ Trayendo la última versión del código…"
+  rama=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+  if [ -z "$rama" ] || [ "$rama" = "HEAD" ]; then
+    echo "✗ Esta carpeta no está en ninguna rama de git."
+    echo "  Arréglalo con:  git checkout claude/dqr-white-label-4ojp01"
+    exit 1
   fi
+  if ! git fetch origin "$rama"; then
+    echo "✗ No se pudo descargar el código (¿sin conexión?)."
+    echo "  Comprueba internet y vuelve a lanzarlo."
+    exit 1
+  fi
+  if ! git reset --hard "origin/$rama"; then
+    echo "✗ No se pudo poner la carpeta al día."
+    echo "  Paro aquí a propósito: seguir significaría levantar código viejo."
+    exit 1
+  fi
+  echo "✓ Código al día: $rama ($(git log -1 --format='%h %s'))"
 fi
 
 # En dev el servicio `web` es Vite (5173), no Caddy: sus 80 y 443 quedarían
@@ -75,11 +98,21 @@ done
 # Si no arranca, ENSEÑAR el motivo aquí mismo: mandar al usuario a buscar los
 # logs por su cuenta convertía cada fallo en una ronda de preguntas.
 if [ "$api_ok" -ne 1 ]; then
+  logs=$(docker compose -f docker-compose.yml -f docker-compose.dev.yml logs api --tail 40 --no-color 2>&1 || true)
   echo
   echo "✗ La API no arranca. Este es el motivo, tal cual:"
   echo "-----------------------------------------------------"
-  docker compose -f docker-compose.yml -f docker-compose.dev.yml logs api --tail 40 --no-color 2>&1 || true
+  echo "$logs"
   echo "-----------------------------------------------------"
+  # Traducir el error que más despista: esa ruta se dejó de usar, así que si
+  # aparece es que la imagen se construyó con un Dockerfile antiguo.
+  case "$logs" in
+    */code/entrypoint.sh*)
+      echo "→ Ese mensaje significa IMAGEN VIEJA: /code/entrypoint.sh ya no se usa."
+      echo "  Reconstrúyela desde cero:"
+      echo "  docker compose -f docker-compose.yml -f docker-compose.dev.yml build --no-cache api"
+      ;;
+  esac
   exit 1
 fi
 

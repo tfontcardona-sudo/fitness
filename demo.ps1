@@ -22,14 +22,39 @@ if (-not (Test-Path ".env")) {
 # ACTUALIZARSE PRIMERO: el doble clic debe traer la ultima version del codigo.
 # Sin esto, el lanzador levantaba lo que hubiera en la carpeta aunque los
 # cambios llevaran semanas subidos (paso: la web "no cambiaba nunca").
+#
+# Y si NO puede actualizar, PARA. Antes avisaba en amarillo y seguia, y eso
+# costo una tarde entera: `git pull --ff-only` se negaba (el .gitattributes
+# renormaliza los finales de linea y deja el arbol "sucio"), el script
+# reconstruia el Dockerfile ANTIGUO y el contenedor se quedaba en bucle con
+# "exec /code/entrypoint.sh: no such file or directory" — un error que no tiene
+# NADA que ver con la causa real, que era simplemente codigo viejo.
+#
+# Es `reset --hard` y no `pull` a proposito: esta carpeta es una INSTALACION,
+# no un sitio donde programar. Lo unico que importa aqui (.env, storage/) no
+# esta versionado, asi que el reset no lo toca.
 if ((Get-Command git -ErrorAction SilentlyContinue) -and (Test-Path ".git")) {
-  Write-Host "-> Buscando la ultima version del codigo..." -ForegroundColor Cyan
-  git pull --ff-only
-  if ($LASTEXITCODE -eq 0) {
-    Write-Host "OK Codigo al dia" -ForegroundColor Green
-  } else {
-    Write-Host "! No se pudo actualizar (¿sin conexion o cambios locales?): sigo con la version de la carpeta" -ForegroundColor Yellow
+  Write-Host "-> Trayendo la ultima version del codigo..." -ForegroundColor Cyan
+  $rama = (cmd /c "git rev-parse --abbrev-ref HEAD 2>nul").Trim()
+  if (-not $rama -or $rama -eq "HEAD") {
+    Write-Host "X Esta carpeta no esta en ninguna rama de git." -ForegroundColor Red
+    Write-Host "  Arreglalo con:  git checkout claude/dqr-white-label-4ojp01"
+    Read-Host "Pulsa Enter para salir"; exit 1
   }
+  cmd /c "git fetch origin $rama 2>&1"
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host "X No se pudo descargar el codigo (¿sin conexion?)." -ForegroundColor Red
+    Write-Host "  Comprueba internet y vuelve a lanzarlo."
+    Read-Host "Pulsa Enter para salir"; exit 1
+  }
+  cmd /c "git reset --hard origin/$rama 2>&1"
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host "X No se pudo poner la carpeta al dia." -ForegroundColor Red
+    Write-Host "  Paro aqui a proposito: seguir significaria levantar codigo viejo."
+    Read-Host "Pulsa Enter para salir"; exit 1
+  }
+  $commit = (cmd /c "git log -1 --format=%h %s").Trim()
+  Write-Host "OK Codigo al dia: $rama ($commit)" -ForegroundColor Green
 }
 
 # En dev el servicio `web` es Vite (5173), no Caddy: sus 80 y 443 quedarian
@@ -78,12 +103,21 @@ for ($i = 0; $i -lt 60; $i++) {
   } catch { Start-Sleep -Seconds 2 }
 }
 if (-not $ok) {
+  $logs = (cmd /c "docker compose -f docker-compose.yml -f docker-compose.dev.yml logs api --tail 40 --no-color 2>&1") -join "`n"
   Write-Host ""
   Write-Host "X La API no arranca. Este es el motivo, tal cual:" -ForegroundColor Red
   Write-Host "-----------------------------------------------------" -ForegroundColor DarkGray
-  cmd /c "docker compose -f docker-compose.yml -f docker-compose.dev.yml logs api --tail 40 --no-color 2>&1"
+  Write-Host $logs
   Write-Host "-----------------------------------------------------" -ForegroundColor DarkGray
-  Write-Host "Copia estas lineas (o hazles captura) para diagnosticar." -ForegroundColor Yellow
+  # Traducir el error que mas despista: esa ruta se dejo de usar, asi que si
+  # aparece es que la imagen se construyo con un Dockerfile antiguo.
+  if ($logs -match "/code/entrypoint\.sh") {
+    Write-Host "-> Ese mensaje significa IMAGEN VIEJA: /code/entrypoint.sh ya no se usa." -ForegroundColor Yellow
+    Write-Host "   Reconstruyela desde cero:"
+    Write-Host "   docker compose -f docker-compose.yml -f docker-compose.dev.yml build --no-cache api"
+  } else {
+    Write-Host "Copia estas lineas (o hazles captura) para diagnosticar." -ForegroundColor Yellow
+  }
   Read-Host "Enter para salir"; exit 1
 }
 
