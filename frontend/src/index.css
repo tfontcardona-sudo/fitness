@@ -504,13 +504,13 @@ a.portal-note:active{transform:translateY(1px)}
    Marca el elemento exacto que hay que cambiar. No parpadea y se va: se queda
    hasta que el problema se resuelve o el coach la cierra — una marca que
    desaparece sola deja al coach buscando otra vez dónde era. */
-.ancla-hit{position:relative;border-radius:12px;outline:2px solid var(--brand-accent);outline-offset:3px;background:color-mix(in srgb,var(--brand-accent) 7%,transparent);scroll-margin:120px}
-.ancla-hit::after{content:"";position:absolute;inset:-3px;border-radius:14px;pointer-events:none;animation:ancla-latido 1.6s ease-out 3}
-@keyframes ancla-latido{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--brand-accent) 34%,transparent)}100%{box-shadow:0 0 0 12px transparent}}
-@media (prefers-reduced-motion: reduce){.ancla-hit::after{animation:none}}
-/* En el portal la marca usa el acento del portal (el cliente no ve la marca de
-   problemas del coach, pero sí las guías de "esto es lo que falta"). */
-.portal-root .ancla-hit{outline-color:var(--p-accent);background:var(--p-accent-wash)}
+/* Lo único fijo del ancla: sitio para que el scroll no la pegue a la cabecera
+   y el color de marca. La MARCA en sí la enciende una hoja inyectada con el
+   selector exacto del elemento señalado (ver lib/anchors.ts): una clase no
+   sirve, React reescribe className en cada refresco y se la llevaba. */
+[data-ancla]{scroll-margin:120px;--ancla-color:var(--brand-accent)}
+.portal-root [data-ancla]{--ancla-color:var(--p-accent)}
+@keyframes ancla-latido{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--ancla-color) 34%,transparent)}100%{box-shadow:0 0 0 12px transparent}}
 
 /* ---- PANEL DEL COACH: apartados marcados, no una lista plana -------------
    Misma idea que en el portal: la jerarquía la dan la elevación y un raíl de

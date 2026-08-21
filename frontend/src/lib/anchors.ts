@@ -82,11 +82,40 @@ export function esperarAncla(nombre: string, msMax = 6000): Promise<HTMLElement 
   });
 }
 
+const ID_ESTILO = "ancla-marca";
+
 /**
- * Lleva al elemento y lo deja MARCADO. Devuelve una función para quitar la
- * marca. La marca no caduca sola: se quita cuando el problema se resuelve (el
- * pin desaparece) o cuando el coach la cierra — si parpadeara y se fuera, el
- * coach que mira otra pestaña un momento vuelve y ya no sabe dónde era.
+ * Marca el elemento con una REGLA CSS, no con una clase.
+ *
+ * Añadir la clase a mano no vale: el panel se refresca cada 3 s y React
+ * reescribe `className` en cada render, así que la marca desaparecía sola a
+ * los pocos segundos. Una regla `[data-ancla="…"]` en una hoja propia
+ * sobrevive a todos los renders, porque lo que casa es el atributo (que sí
+ * está en el JSX) y React nunca toca esta hoja.
+ */
+function marcarConCss(nombre: string): void {
+  let hoja = document.getElementById(ID_ESTILO) as HTMLStyleElement | null;
+  if (!hoja) {
+    hoja = document.createElement("style");
+    hoja.id = ID_ESTILO;
+    document.head.appendChild(hoja);
+  }
+  const valor = nombre.replace(/["\\]/g, "\\$&");
+  const sel = `[${ATRIBUTO}="${valor}"]`;
+  hoja.textContent = [
+    `${sel}{position:relative;border-radius:12px;`,
+    `outline:2px solid var(--ancla-color);outline-offset:3px;`,
+    `background-color:color-mix(in srgb,var(--ancla-color) 8%,transparent)}`,
+    `${sel}::after{content:"";position:absolute;inset:-3px;border-radius:14px;`,
+    `pointer-events:none;animation:ancla-latido 1.6s ease-out 3}`,
+  ].join("");
+}
+
+/**
+ * Lleva al elemento y lo deja MARCADO. La marca no caduca sola: se quita
+ * cuando el problema se resuelve (el recordatorio desaparece) o cuando el
+ * coach la cierra — si parpadeara y se fuera, quien mira otra pestaña un
+ * momento vuelve y ya no sabe dónde era.
  */
 export async function irYMarcar(nombre: string, msMax = 6000): Promise<HTMLElement | null> {
   const el = await esperarAncla(nombre, msMax);
@@ -96,18 +125,13 @@ export async function irYMarcar(nombre: string, msMax = 6000): Promise<HTMLEleme
   // caiga donde toca (si no, centra sobre la posición plegada).
   await new Promise((r) => requestAnimationFrame(() => r(null)));
   el.scrollIntoView({ behavior: "smooth", block: "center" });
-  el.classList.add("ancla-hit");
+  marcarConCss(nombre);
   return el;
 }
 
-export function desmarcar(nombre: string): void {
-  const el = buscarAncla(nombre);
-  el?.classList.remove("ancla-hit");
-}
-
 export function desmarcarTodo(): void {
-  document.querySelectorAll<HTMLElement>(".ancla-hit")
-    .forEach((el) => el.classList.remove("ancla-hit"));
+  const hoja = document.getElementById(ID_ESTILO);
+  if (hoja) hoja.textContent = "";
 }
 
 /** Enlace del panel a un punto exacto: /clientes/7?tab=planificacion&ir=… */
