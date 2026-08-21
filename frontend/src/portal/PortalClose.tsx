@@ -182,7 +182,7 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
         <div className="flex h-16 w-16 items-center justify-center rounded-full" style={{ background: `${brand.color_primary}2a` }}>
           <Check size={32} style={{ color: brand.color_primary }} />
         </div>
-        <p className="mt-4 text-lg font-semibold">¡Revisión enviada!</p>
+        <p className="mt-4 p-title">¡Revisión enviada!</p>
         <p className="mt-1 max-w-xs text-sm opacity-60">Recibirás informe y plan nuevo</p>
       </div>
     );
@@ -197,7 +197,7 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
         <div className="flex h-16 w-16 items-center justify-center rounded-full" style={{ background: `${brand.color_primary}2a` }}>
           <Check size={32} style={{ color: brand.color_primary }} />
         </div>
-        <p className="mt-4 text-lg font-semibold">Revisión enviada</p>
+        <p className="mt-4 p-title">Revisión enviada</p>
         <p className="mt-1 max-w-xs text-sm opacity-60">
           Analizando · recibirás informe y plan
         </p>
@@ -210,11 +210,11 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
   if (!canClose) {
     return (
       <div className="flex flex-col items-center py-16 text-center">
-        <div className="portal-neon-blue flex h-24 w-24 items-center justify-center rounded-full border-2"
+        <div className="portal-ring-blue flex h-24 w-24 items-center justify-center rounded-full border-2"
           style={{ borderColor: brand.color_secondary, color: brand.color_secondary }}>
           <span className="text-4xl font-bold">{daysLeft != null && daysLeft > 0 ? daysLeft : "—"}</span>
         </div>
-        <p className="mt-4 text-lg font-semibold">Revisión quincenal</p>
+        <p className="mt-4 p-title">Revisión quincenal</p>
         <p className="mt-1 max-w-xs text-sm opacity-70">
           {daysLeft != null && daysLeft > 0
             ? `Disponible en ${daysLeft} día${daysLeft === 1 ? "" : "s"}`
@@ -232,7 +232,7 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold">Revisión quincenal</h2>
+        <h2 className="p-title">Revisión quincenal</h2>
         <p className="mt-0.5 text-xs opacity-60">Se va guardando sola.</p>
       </div>
 

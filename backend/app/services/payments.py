@@ -1,4 +1,7 @@
-"""Libro de caja de Stripe: anotar, consultar y sincronizar los movimientos.
+"""Libro de caja de la asesoría: anotar, consultar y sincronizar movimientos.
+
+Incluye los cobros de Stripe y los que el coach registra a mano (efectivo,
+transferencia, Bizum): el total del mes tiene que contar TODO el dinero.
 
 El coach necesita ver EN LA WEB quién pagó, cuánto y cuándo, y enterarse de cada
 cobro como en la app del banco. Este módulo es la única puerta a la tabla
@@ -25,7 +28,7 @@ Reglas del dinero (aprendidas de la auditoría):
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
@@ -41,7 +44,8 @@ _log = logging.getLogger("app.payments")
 # "subscription"/"canceled": la BAJA de la suscripción de la oferta — no mueve
 # dinero (importe 0, fuera de los totales) pero es un hecho de Stripe que el
 # coach debe ver en el feed, no solo en un push que se esfuma.
-KINDS = ("checkout", "invoice", "refund", "subscription")
+# "manual": cobro fuera de Stripe que anota el coach (efectivo, transferencia…).
+KINDS = ("checkout", "invoice", "refund", "subscription", "manual")
 STATUSES = ("paid", "failed", "refunded", "canceled")
 
 # Tope del histórico que trae la sincronización manual con Stripe.
@@ -364,13 +368,19 @@ def monthly_series(db: Session, *, months: int = 6) -> list[dict]:
 
 def list_payments(db: Session, *, limit: int = 50, offset: int = 0,
                   status: str | None = None,
-                  client_id: int | None = None) -> tuple[list[Payment], int]:
-    """Página del feed (más reciente primero) + total que cumple el filtro."""
+                  client_id: int | None = None,
+                  orphan: bool = False) -> tuple[list[Payment], int]:
+    """Página del feed (más reciente primero) + total que cumple el filtro.
+
+    orphan=True: solo los cobros SIN ficha. El resumen avisaba de cuántos hay y
+    no había forma de llegar a ellos desde la web."""
     filtros = []
     if status in STATUSES:
         filtros.append(Payment.status == status)
     if client_id:
         filtros.append(Payment.client_id == client_id)
+    if orphan:
+        filtros.append(Payment.client_id.is_(None))
     total = int(db.scalar(select(func.count(Payment.id)).where(*filtros)) or 0)
     filas = list(db.scalars(
         select(Payment).where(*filtros)
@@ -614,3 +624,66 @@ def sync_from_stripe(db: Session, *, days: int = SYNC_DEFAULT_DAYS) -> dict:
     # rango pedido y el caller/UI no debe darlo por completo en silencio.
     return {"created": creados, "scanned": revisados, "errors": errores,
             "partial": revisados >= SYNC_MAX_OBJECTS}
+
+
+# ------------------------------------------------- cobros FUERA de Stripe ----
+
+# Cómo pagó el cliente cuando no fue por Stripe. Se guarda en `description`
+# para que el feed diga de un vistazo de dónde viene el dinero.
+METODOS_MANUALES = {
+    "efectivo": "Efectivo",
+    "transferencia": "Transferencia",
+    "bizum": "Bizum",
+    "otro": "Otro método",
+}
+
+
+def record_manual_payment(
+    db: Session,
+    *,
+    client: Client,
+    amount_cents: int,
+    method: str = "otro",
+    paid_on: date | None = None,
+    note: str | None = None,
+) -> Payment | None:
+    """Anota un cobro que NO pasó por Stripe (efectivo, transferencia, Bizum).
+
+    El libro de caja tiene que contar TODO el dinero de la asesoría, no solo lo
+    que entra por la pasarela: si no, el total del mes miente. Se guarda como un
+    movimiento normal (`livemode=True`, `status="paid"`) para que sume en el
+    resumen y salga en el feed y en el CSV exactamente igual que un cobro de
+    Stripe, distinguido por `kind="manual"`.
+
+    El id sintético lleva la fecha y el cliente: dos cobros del mismo cliente el
+    mismo día son dos movimientos distintos (puede pasar), pero reenviar el
+    mismo formulario dos veces por un doble clic NO duplica el ingreso, porque
+    el UNIQUE(objeto, estado) lo bloquea dentro del mismo segundo.
+    """
+    cuando = paid_on or datetime.now(timezone.utc).astimezone(_tz()).date()
+    momento = datetime.now(timezone.utc)
+    etiqueta = METODOS_MANUALES.get(method, METODOS_MANUALES["otro"])
+    descripcion = f"{etiqueta} · registrado por el coach"
+    if note:
+        descripcion = f"{descripcion} — {note.strip()[:80]}"
+    return record_payment(
+        db,
+        object_id=f"manual_{client.id}_{cuando.isoformat()}_{int(momento.timestamp())}",
+        kind="manual",
+        status="paid",
+        amount_cents=int(amount_cents),
+        client=client,
+        customer_name=client.full_name,
+        customer_email=client.email,
+        tier=getattr(client, "package_tier", None),
+        billing_period=getattr(client, "billing_period", None),
+        description=descripcion,
+        # Fecha del COBRO (la que dice el coach), no la de registro: el mes al
+        # que pertenece el ingreso es aquel en que se cobró. Si es HOY se usa la
+        # hora actual para que salga arriba del feed nada más anotarlo; en una
+        # fecha pasada, el mediodía (evita saltos de día por zona horaria).
+        paid_at=(momento if cuando == datetime.now(timezone.utc).astimezone(_tz()).date()
+                 else datetime.combine(cuando, time(12, 0), tzinfo=timezone.utc)),
+        # Lo apunta el coach: ya se ha enterado, no tiene que salir sin leer.
+        seen=True,
+    )

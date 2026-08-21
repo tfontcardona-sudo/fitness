@@ -802,7 +802,8 @@ class PeriodCreateIn(BaseModel):
 # ------------------------------------------------------------- pagos ----
 # Libro de caja de Stripe (tabla `payments`): quién pagó, cuánto y cuándo.
 # Espejo en frontend/src/types.ts (regla A.1.5).
-PaymentKind = Literal["checkout", "invoice", "refund", "subscription"]
+# "manual": cobro fuera de Stripe anotado por el coach (efectivo, transferencia…).
+PaymentKind = Literal["checkout", "invoice", "refund", "subscription", "manual"]
 PaymentMovementStatus = Literal["paid", "failed", "refunded", "canceled"]
 
 
@@ -859,3 +860,18 @@ class PaymentsSeenIn(BaseModel):
     """Marcar como leídos: los indicados o TODOS si no se manda nada."""
 
     ids: list[int] | None = None
+
+
+class ManualPaymentIn(BaseModel):
+    """Cobro FUERA de Stripe que anota el coach (efectivo, transferencia…).
+
+    El importe va en EUROS con decimales (lo que el coach teclea); el libro lo
+    guarda en céntimos. `paid_on` es la fecha del COBRO, no la del registro: si
+    el coach lo apunta con retraso, el ingreso cuenta en el mes que tocaba.
+    """
+
+    client_id: int
+    amount_eur: float = Field(gt=0, le=100000, description="Importe cobrado, en euros")
+    method: Literal["efectivo", "transferencia", "bizum", "otro"] = "otro"
+    paid_on: date | None = None
+    note: str | None = Field(default=None, max_length=120)

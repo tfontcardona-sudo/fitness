@@ -41,7 +41,7 @@ export function PortalResources({ api, brand, hasTraining = true }: { api: Api; 
   if (error) {
     return (
       <div className="space-y-5">
-        <h2 className="text-lg font-semibold">Recursos</h2>
+        <h2 className="p-title">Recursos</h2>
         <div className="portal-card p-4 text-sm opacity-70">
           No se pudieron cargar · reintenta
         </div>
@@ -59,7 +59,7 @@ export function PortalResources({ api, brand, hasTraining = true }: { api: Api; 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold">Recursos</h2>
+        <h2 className="p-title">Recursos</h2>
       </div>
 
       {isEmpty && (
@@ -129,7 +129,7 @@ export function PortalResources({ api, brand, hasTraining = true }: { api: Api; 
                   <div className="flex flex-1 flex-col p-2.5">
                     <p className="line-clamp-2 text-xs font-semibold leading-snug">{v.title}</p>
                     {v.muscle && (
-                      <span className="mt-1 text-[10px] uppercase tracking-wide opacity-50">
+                      <span className="mt-1 p-eyebrow">
                         {v.muscle}
                       </span>
                     )}
@@ -232,7 +232,7 @@ function ProductCard({ product: p, accent }: { product: ResourceProduct; accent:
     >
       <Thumb src={p.image_url} ratio="square" accent={accent} fallbackIcon={cat.icon} />
       <div className="flex flex-1 flex-col p-2.5">
-        <div className="flex items-center gap-1 text-[10px] uppercase tracking-wide opacity-50">
+        <div className="flex items-center gap-1 p-eyebrow">
           <cat.icon size={11} />
           {cat.label}
           {p.in_plan && (

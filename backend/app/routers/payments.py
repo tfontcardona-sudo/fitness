@@ -10,6 +10,9 @@ cabecera con los ingresos del mes.
   POST /api/payments/seen       sella lo leído (todos o los indicados)
   POST /api/payments/sync       repesca de Stripe lo que falte (histórico y
                                 cobros cuyo webhook se perdió)
+  POST /api/payments/manual     cobro FUERA de Stripe (efectivo, transferencia,
+                                Bizum): suma en el total del mes igual que uno
+                                de la pasarela
 
 GOTCHA: sin `from __future__ import annotations` (gotcha §5.1 — rompe la
 resolución de tipos de FastAPI/Pydantic en los routers).
@@ -23,6 +26,7 @@ from app.db import get_db
 from app.deps import get_current_user
 from app.models import Client
 from app.schemas.entities import (
+    ManualPaymentIn,
     PaymentOut,
     PaymentsListOut,
     PaymentsSeenIn,
@@ -65,10 +69,12 @@ def list_payments(
     offset: int = Query(default=0, ge=0),
     status_filter: str | None = Query(default=None, alias="status"),
     client_id: int | None = Query(default=None),
+    orphan: bool = Query(default=False),
     db: Session = Depends(get_db),
 ) -> PaymentsListOut:
     filas, total = pay_svc.list_payments(
-        db, limit=limit, offset=offset, status=status_filter, client_id=client_id)
+        db, limit=limit, offset=offset, status=status_filter, client_id=client_id,
+        orphan=orphan)
     # Nombres en UNA consulta (nada de N+1 recorriendo el feed cliente a cliente).
     ids = {p.client_id for p in filas if p.client_id}
     nombres = dict(db.execute(
@@ -171,3 +177,34 @@ def sync_payments(days: int = Query(default=pay_svc.SYNC_DEFAULT_DAYS, ge=1, le=
         return pay_svc.sync_from_stripe(db, days=days)
     except StripeError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+
+@router.post("/manual", response_model=PaymentOut, status_code=status.HTTP_201_CREATED)
+def manual_payment(body: ManualPaymentIn, db: Session = Depends(get_db)) -> PaymentOut:
+    """Anota un cobro que NO pasó por Stripe y actualiza la ficha del cliente.
+
+    Sin esto el libro de caja solo contaba la pasarela y el total del mes mentía
+    en cuanto el cliente pagaba en efectivo o por transferencia.
+    """
+    client = db.get(Client, body.client_id)
+    if client is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Cliente no encontrado")
+
+    pago = pay_svc.record_manual_payment(
+        db, client=client,
+        amount_cents=int(round(body.amount_eur * 100)),
+        method=body.method, paid_on=body.paid_on, note=body.note,
+    )
+    if pago is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Ese cobro ya estaba anotado")
+
+    # La ficha queda al día: el ciclo de renovación cuenta desde ESTE cobro.
+    client.payment_status = "paid"
+    if client.paid_at is None or pago.paid_at > client.paid_at:
+        client.paid_at = pago.paid_at
+    # Un cobro nuevo reabre la ventana del recordatorio de renovación.
+    if hasattr(client, "renewal_reminder_sent_at"):
+        client.renewal_reminder_sent_at = None
+    db.commit()
+    db.refresh(pago)
+    return _to_out(pago, {client.id: client.full_name})

@@ -429,12 +429,13 @@ export const api = {
 
   // --- créditos IA (Anthropic) ---
   // --- pagos (libro de caja de Stripe) ---
-  listPayments: (params: { limit?: number; offset?: number; status?: string; client_id?: number } = {}) => {
+  listPayments: (params: { limit?: number; offset?: number; status?: string; client_id?: number; orphan?: boolean } = {}) => {
     const q = new URLSearchParams();
     if (params.limit) q.set("limit", String(params.limit));
     if (params.offset) q.set("offset", String(params.offset));
     if (params.status) q.set("status", params.status);
     if (params.client_id) q.set("client_id", String(params.client_id));
+    if (params.orphan) q.set("orphan", "true");
     const qs = q.toString();
     return request<PaymentsListOut>("GET", `/payments${qs ? `?${qs}` : ""}`);
   },
@@ -450,6 +451,14 @@ export const api = {
   syncPayments: (days?: number) =>
     request<{ created: number; scanned: number; errors: string[] }>(
       "POST", `/payments/sync${days ? `?days=${days}` : ""}`),
+
+  /** Cobro FUERA de Stripe (efectivo, transferencia, Bizum) con su importe:
+   *  sin él, el total del mes solo contaba la pasarela. */
+  registrarCobroManual: (body: {
+    client_id: number; amount_eur: number;
+    method: "efectivo" | "transferencia" | "bizum" | "otro";
+    paid_on?: string; note?: string;
+  }) => request<{ id: number; amount_cents: number }>("POST", "/payments/manual", body),
 
   /** Lecciones aprendidas de las ediciones del coach (aprendizaje continuo). */
   learningLessons: () =>

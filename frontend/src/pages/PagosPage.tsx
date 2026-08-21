@@ -63,7 +63,14 @@ const hora = (iso: string) =>
 /** Inicial para el círculo del movimiento (como el avatar de la app del banco). */
 const inicial = (nombre: string) => (nombre.trim()[0] || "?").toUpperCase();
 
-type Filtro = "todos" | "paid" | "failed" | "refunded";
+type Filtro = "todos" | "paid" | "failed" | "refunded" | "orphan";
+
+/** Traduce el filtro de la pantalla a los parámetros del backend. */
+function filtroApi(f: Filtro): { status?: string; orphan?: boolean } {
+  if (f === "todos") return {};
+  if (f === "orphan") return { orphan: true };
+  return { status: f };
+}
 
 const FILTROS: { id: Filtro; label: string }[] = [
   { id: "todos", label: "Todos" },
@@ -99,9 +106,9 @@ export default function PagosPage() {
   const cargar = useCallback(
     (opts: { silencioso?: boolean } = {}) => {
       if (!opts.silencioso) setCargando(true);
-      const status = filtro === "todos" ? undefined : filtro;
+      const { status, orphan } = filtroApi(filtro);
       return Promise.all([
-        api.listPayments({ limit: PAGE, status }),
+        api.listPayments({ limit: PAGE, status, orphan }),
         api.paymentsSummary(),
       ])
         .then(([lista, sum]) => {
@@ -171,8 +178,8 @@ export default function PagosPage() {
     if (!items) return;
     setCargando(true);
     try {
-      const status = filtro === "todos" ? undefined : filtro;
-      const mas = await api.listPayments({ limit: PAGE, offset: items.length, status });
+      const { status, orphan } = filtroApi(filtro);
+      const mas = await api.listPayments({ limit: PAGE, offset: items.length, status, orphan });
       // Si entró un cobro nuevo entre la primera página y esta, el offset se
       // desplaza y Stripe devuelve una fila repetida: se descarta por id (si no,
       // React pintaría dos veces el mismo movimiento con la misma key).
@@ -388,8 +395,9 @@ export default function PagosPage() {
           )}
           {(resumen?.orphan_count ?? 0) > 0 && (
             <Chip tone="#9A6B15" icon={AlertTriangle}
-              title="Cobros sin cliente · revísalos">
-              {resumen!.orphan_count} pago{resumen!.orphan_count === 1 ? "" : "s"} sin ficha asociada
+              title="Ver solo los cobros sin ficha"
+              onClick={() => { setFiltro("orphan"); setItems(null); }}>
+              {resumen!.orphan_count} sin ficha
             </Chip>
           )}
           {(resumen?.test_count ?? 0) > 0 && (
@@ -406,7 +414,8 @@ export default function PagosPage() {
       {/* Filtros + marcar leído */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div className="inline-flex rounded-xl border p-1" style={{ borderColor: "var(--line-strong)" }}>
-          {FILTROS.map((f) => (
+          {[...FILTROS, ...(((resumen?.orphan_count ?? 0) > 0 || filtro === "orphan")
+              ? [{ id: "orphan" as Filtro, label: "Sin ficha" }] : [])].map((f) => (
             <button
               key={f.id}
               onClick={() => {

@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { ALERTS_REFRESH_MS, api, keepIfSame, REFRESH_MS } from "../lib/api";
 import type { ClientOut, CoachAlert, VideoCallAgendaItem } from "../types";
-import { PageLoader, StatusBadge } from "../components/ui";
+import { PageLoader, SectionHeader, StatusBadge } from "../components/ui";
 import { goalReviewDue, initials, relativeDays } from "../lib/format";
 import { WhatsAppRound } from "../components/WhatsAppRound";
 import { SalesKit } from "../components/SalesKit";
@@ -310,15 +310,9 @@ export default function DashboardPage() {
 
       {/* QUÉ TOCA HACER — el corazón del panel (naranja: acción) */}
       <section className="mt-7">
-        <div className="mb-3 flex items-baseline justify-between">
-          <h2 className="flex items-center gap-1.5 text-sm font-semibold text-zinc-200">
-            <span aria-hidden className="h-3.5 w-1 rounded-full" style={{ background: "var(--brand-accent)" }} />
-            Qué toca hacer
-          </h2>
-          <span className="text-xs text-zinc-500">
-            {urgentes.length === 0 ? "nada pendiente" : `${urgentes.length} ${urgentes.length === 1 ? "acción" : "acciones"}`}
-          </span>
-        </div>
+        <SectionHeader title="Qué toca hacer" count={urgentes.length || undefined}
+          right={urgentes.length === 0
+            ? <span className="text-xs text-zinc-500">nada pendiente</span> : undefined} />
 
         {urgentes.length === 0 ? (
           <div className="card flex items-center justify-center gap-2.5 p-10 text-sm text-zinc-500">
@@ -359,10 +353,8 @@ export default function DashboardPage() {
       {/* AGENDA DE VIDEOLLAMADAS — las agendadas (con Meet), hasta realizarlas */}
       {agenda.length > 0 && (
         <section className="mt-8">
-          <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-zinc-200">
-            <span aria-hidden className="h-3.5 w-1 rounded-full" style={{ background: "#0EA5E9" }} />
-            <Video size={15} style={{ color: "#0EA5E9" }} /> Videollamadas agendadas · {agenda.length}
-          </h2>
+          <SectionHeader title="Videollamadas agendadas" tone="#0EA5E9" icon={Video}
+            count={agenda.length} />
           <div className="card p-2">
             <ul className="divide-y" style={{ borderColor: "var(--line)" }}>
               {agenda.map((v) => {
@@ -411,10 +403,8 @@ export default function DashboardPage() {
       {/* EN ESPERA — informativo, sin urgencia (azul: información) */}
       {enEspera.length > 0 && (
         <section className="mt-8">
-          <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-zinc-200">
-            <span aria-hidden className="h-3.5 w-1 rounded-full" style={{ background: "var(--brand-accent-2)" }} />
-            En espera del cliente · recuérdaselo
-          </h2>
+          <SectionHeader title="En espera del cliente" tone="var(--brand-accent-2)"
+            count={enEspera.length} />
           <div className="space-y-2">
             {enEspera.map((a) => (
               <ActionCard key={`${a.client.id}-${a.category}-${a.title}`} a={a} quiet />
@@ -426,9 +416,7 @@ export default function DashboardPage() {
       {/* AL DÍA — compacto */}
       {alDia.length > 0 && (
         <section className="mt-8">
-          <h2 className="mb-3 text-sm font-semibold text-zinc-200">
-            Al día <span className="ml-1 text-xs font-normal text-zinc-500">{alDia.length}</span>
-          </h2>
+          <SectionHeader title="Al día" tone="#1B7F4D" count={alDia.length} />
           <div className="card p-2">
             <ul className="divide-y" style={{ borderColor: "var(--line)" }}>
               {alDia.map((c) => (

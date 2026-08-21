@@ -788,7 +788,8 @@ export interface WhatsAppRoundOut {
 }
 
 /** --- Pagos (libro de caja de Stripe) — espejo de schemas/entities.py --- */
-export type PaymentKind = "checkout" | "invoice" | "refund" | "subscription";
+/** "manual": cobro fuera de Stripe anotado por el coach (efectivo, transferencia…). */
+export type PaymentKind = "checkout" | "invoice" | "refund" | "subscription" | "manual";
 export type PaymentMovementStatus = "paid" | "failed" | "refunded" | "canceled";
 
 export interface PaymentOut {

@@ -799,3 +799,33 @@ def test_checkout_ajeno_no_crea_ficha(monkeypatch):
         assert len(pagos) == 1 and pagos[0].client_id is None  # pero se VE
     finally:
         db.close()
+
+
+def test_filtro_sin_ficha_lleva_a_los_cobros_huerfanos(http):
+    """El resumen contaba los pagos sin ficha y no había forma de llegar a ellos
+    desde la web: el chip ya aplica un filtro real contra el backend."""
+    from app.db import SessionLocal
+    from app.services import payments as pay_svc
+
+    obj = f"cs_huerfano_{uuid.uuid4().hex[:10]}"
+    db = SessionLocal()
+    try:
+        pay_svc.record_payment(
+            db, object_id=obj, kind="checkout", status="paid", amount_cents=9900,
+            customer_name="Sin Ficha", customer_email="huerfano@x.com",
+            paid_at=datetime.now(timezone.utc), livemode=True, client=None,
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    r = http.get("/api/payments?orphan=true&limit=50", headers=_auth())
+    assert r.status_code == 200, r.text
+    items = r.json()["items"]
+    assert items, "el filtro no devolvió ningún huérfano"
+    assert all(p["client_id"] is None for p in items)
+    assert any(p["stripe_object_id"] == obj for p in items)
+
+    # Sin el filtro, el mismo movimiento sigue en el feed general.
+    r2 = http.get("/api/payments?limit=50", headers=_auth())
+    assert any(p["stripe_object_id"] == obj for p in r2.json()["items"])

@@ -374,21 +374,7 @@ export default function ClientProfilePage() {
               la ficha quedaba "Pago pendiente" para siempre, con la campana
               insistiendo y la carpeta "Falta pago" contaminada. */}
           {client.payment_status !== "paid" && (
-            <button
-              onClick={async () => {
-                if (!window.confirm(`¿Marcar a ${client.full_name} como pagado? Úsalo solo si te ha pagado por otra vía (bizum, transferencia, efectivo).`)) return;
-                try {
-                  await api.updateClient(client.id, { payment_status: "paid" } as any);
-                  toast.push("Marcado como pagado");
-                  reload();
-                } catch (e: any) {
-                  toast.push(e?.message ?? "No se pudo marcar", "error");
-                }
-              }}
-              className="w-full text-center text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
-            >
-              ¿Te pagó por otra vía? Marcar como pagado
-            </button>
+            <CobroManual client={client} onDone={reload} />
           )}
           {/* Reactivar a un cliente INACTIVO: la transición existía en la
               máquina de estados pero no tenía ningún botón (auditoría del
@@ -416,7 +402,9 @@ export default function ClientProfilePage() {
             móvil; columna izquierda-abajo en escritorio) */}
         <aside className="order-last min-w-0 space-y-3 lg:order-none lg:col-start-1 lg:row-start-2">
           {/* Anamnesis: enviar enlace + subir PDF rellenado */}
-          <ClientDocuments client={client} onUploaded={reload} portalUrl={portalUrl} anamnesisUrl={anamnesisUrl} />
+          <ClientDocuments client={client} onUploaded={reload}
+            onGoAnamnesis={() => changeTab("anamnesis")}
+            portalUrl={portalUrl} anamnesisUrl={anamnesisUrl} />
           <button
             onClick={() => setConfirmRegen(true)}
             className="w-full text-center text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
@@ -691,6 +679,93 @@ function Row({ label, value, faint, onGo }: {
       title={`Ir a ${label.toLowerCase()}`}
     >
       {body}
+    </div>
+  );
+}
+
+/** Cobro FUERA de Stripe (efectivo, transferencia, Bizum).
+ *
+ *  Pide el IMPORTE además de marcar la ficha: sin la cifra, el libro de caja
+ *  solo contaba la pasarela y el total del mes mentía en cuanto el cliente
+ *  pagaba por otra vía. La fecha por defecto es hoy, pero se puede corregir:
+ *  un cobro apuntado con retraso cuenta en el mes en que se cobró.
+ */
+function CobroManual({ client, onDone }: { client: ClientOut; onDone: () => void }) {
+  const toast = useToast();
+  const [abierto, setAbierto] = useState(false);
+  const [importe, setImporte] = useState("");
+  const [metodo, setMetodo] = useState<"efectivo" | "transferencia" | "bizum" | "otro">("transferencia");
+  const [fecha, setFecha] = useState(() => new Date().toISOString().slice(0, 10));
+  const [guardando, setGuardando] = useState(false);
+
+  // Coma o punto: en España se teclea "129,50".
+  const eur = Number((importe || "").replace(",", "."));
+  const valido = Number.isFinite(eur) && eur > 0;
+
+  async function registrar() {
+    if (!valido || guardando) return;
+    setGuardando(true);
+    try {
+      await api.registrarCobroManual({
+        client_id: client.id, amount_eur: eur, method: metodo, paid_on: fecha,
+      });
+      toast.push(`Cobro de ${eur.toLocaleString("es-ES", { minimumFractionDigits: 2 })} € anotado`);
+      setAbierto(false);
+      setImporte("");
+      onDone();
+    } catch (e: any) {
+      toast.push(e?.message ?? "No se pudo anotar el cobro", "error");
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  if (!abierto) {
+    return (
+      <button
+        onClick={() => setAbierto(true)}
+        className="w-full text-center text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
+      >
+        ¿Te pagó por otra vía? Anotar el cobro
+      </button>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border p-3" style={{ borderColor: "var(--line-strong)" }}>
+      <p className="mb-2 text-xs font-semibold text-zinc-200">Cobro fuera de Stripe</p>
+      <div className="flex gap-2">
+        <label className="flex-1">
+          <span className="mb-1 block text-[11px] text-zinc-500">Importe (€)</span>
+          <input
+            type="text" inputMode="decimal" autoFocus value={importe}
+            onChange={(e) => setImporte(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") registrar(); }}
+            placeholder="129,00" className="input w-full"
+          />
+        </label>
+        <label className="flex-1">
+          <span className="mb-1 block text-[11px] text-zinc-500">Cómo</span>
+          <select value={metodo} onChange={(e) => setMetodo(e.target.value as typeof metodo)} className="input w-full">
+            <option value="transferencia">Transferencia</option>
+            <option value="efectivo">Efectivo</option>
+            <option value="bizum">Bizum</option>
+            <option value="otro">Otro</option>
+          </select>
+        </label>
+      </div>
+      <label className="mt-2 block">
+        <span className="mb-1 block text-[11px] text-zinc-500">Fecha del cobro</span>
+        <input type="date" value={fecha} max={new Date().toISOString().slice(0, 10)}
+          onChange={(e) => setFecha(e.target.value)} className="input w-full" />
+      </label>
+      <div className="mt-3 flex justify-end gap-2">
+        <button onClick={() => setAbierto(false)} className="btn btn-ghost !py-1.5 text-xs">Cancelar</button>
+        <button onClick={registrar} disabled={!valido || guardando} className="btn btn-primary !py-1.5 text-xs">
+          {guardando ? "Anotando…" : "Anotar cobro"}
+        </button>
+      </div>
+      <p className="mt-2 text-[11px] text-zinc-500">Suma en el total del mes, junto a los cobros de Stripe.</p>
     </div>
   );
 }

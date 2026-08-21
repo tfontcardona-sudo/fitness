@@ -107,7 +107,7 @@ export default function PortalApp({ token }: { token: string }) {
     // tocar la sesión guardada.
     return (
       <Centered>
-        <p className="text-lg font-semibold">No se pudo conectar</p>
+        <p className="p-title">No se pudo conectar</p>
         <p className="mt-1 text-sm opacity-70">Revisa tu conexión.</p>
         <button
           onClick={reload}
@@ -126,7 +126,7 @@ export default function PortalApp({ token }: { token: string }) {
     const savedIsStale = portalSession.token() === token;
     return (
       <Centered>
-        <p className="text-lg font-semibold">Enlace no válido</p>
+        <p className="p-title">Enlace no válido</p>
         <p className="mt-1 text-sm opacity-70">
           Caducado. {savedIsStale ? "Vuelve a entrar." : "Pide otro a tu coach."}
         </p>
@@ -179,16 +179,16 @@ export default function PortalApp({ token }: { token: string }) {
     <PortalToastProvider light={light}>
       <div className={`portal-root ${light ? "" : "portal-dark"} mx-auto flex min-h-screen max-w-md flex-col`}>
         {/* Cabecera con marca */}
-        <header className="relative z-[1] flex items-center justify-between gap-2 px-5 pb-2 pt-6">
+        <header className="portal-header relative z-[1] flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-3">
             <img src="/dq-logo.png" alt="" className="h-9 w-auto shrink-0 rounded-lg shadow-sm" />
             <div className="min-w-0">
-              <p className="truncate text-[10px] uppercase tracking-widest opacity-50">{state.brand.name}</p>
-              <h1 className="truncate text-xl font-semibold">Hola, {state.first_name}</h1>
+              <p className="p-eyebrow truncate">{state.brand.name}</p>
+              <h1 className="p-title truncate">Hola, {state.first_name}</h1>
               {/* Racha 🔥: días seguidos con el diario al día. A partir de 2
                   (un solo día no es racha); el cliente no quiere romperla. */}
               {(state.streak_days ?? 0) >= 2 && (
-                <p className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold"
+                <p className="p-micro mt-0.5 flex items-center gap-1"
                    style={{ color: state.brand.color_primary }}>
                   🔥 {state.streak_days} días
                 </p>
@@ -217,8 +217,7 @@ export default function PortalApp({ token }: { token: string }) {
                           stroke={state.brand.color_secondary}
                           strokeDasharray={C}
                           strokeDashoffset={C * (1 - hecho / total)}
-                          style={{ transition: "stroke-dashoffset 0.8s cubic-bezier(0.16,1,0.3,1)",
-                                   filter: `drop-shadow(0 0 4px ${state.brand.color_secondary}66)` }} />
+                          style={{ transition: "stroke-dashoffset 0.8s cubic-bezier(0.16,1,0.3,1)" }} />
                       </svg>
                       <span className="absolute inset-0 flex items-center justify-center text-base font-bold"
                         style={{ color: state.brand.color_secondary }}>
@@ -229,7 +228,7 @@ export default function PortalApp({ token }: { token: string }) {
                 })()}
                 {/* Concordancia y momento clave: "1 día restante" (no "1 días")
                     y, a 0, la llamada a la acción de la quincena. */}
-                <p className="mt-0.5 text-[10px] opacity-50">
+                <p className="p-micro mt-1">
                   {Math.max(0, state.period.days_left) === 0
                     ? "¡toca revisión!"
                     : Math.max(0, state.period.days_left) === 1
@@ -251,18 +250,19 @@ export default function PortalApp({ token }: { token: string }) {
           </div>
         </header>
 
-        <main className="relative z-[1] flex-1 px-5 pb-28 pt-2">
+        <main className="portal-main relative z-[1] flex-1">
           {/* Onboarding sin anamnesis: antes el cliente entraba a un portal
               con pestañas vacías y NINGÚN camino hacia el cuestionario
               (auditoría del ciclo). El enlace usa su mismo token. */}
           {state.needs_anamnesis && (
             <a href={`/anamnesis/${token}`}
-              className="mb-3 block rounded-2xl border p-4 text-sm font-medium shadow-sm transition-transform active:scale-[0.99]"
-              style={{ borderColor: state.brand.color_primary, background: `${state.brand.color_primary}14` }}>
-              <span className="font-bold" style={{ color: state.brand.color_primary }}>
-                Completa tu anamnesis →
+              className="portal-note portal-note--action">
+              <span className="min-w-0">
+                <span className="p-head block" style={{ color: state.brand.color_primary }}>
+                  Completa tu anamnesis →
+                </span>
+                <span className="p-sub mt-0.5 block">6 pasos · unos minutos</span>
               </span>
-              <span className="mt-1 block opacity-75">6 pasos · unos minutos</span>
             </a>
           )}
           {/* SU PLAN, siempre a mano: la dieta y las pautas viven en el PDF y
@@ -271,14 +271,13 @@ export default function PortalApp({ token }: { token: string }) {
               con su mismo token. */}
           {state.has_plan && (
             <a href={`/api/p/${token}/plan.pdf`} target="_blank" rel="noreferrer"
-              className="mb-3 flex items-center gap-3 rounded-2xl border p-4 text-sm shadow-sm transition-transform active:scale-[0.99]"
-              style={{ borderColor: state.brand.color_secondary, background: `${state.brand.color_secondary}12` }}>
-              <FileText size={20} style={{ color: state.brand.color_secondary }} className="shrink-0" />
+              className="portal-note portal-note--info items-center">
+              <FileText size={18} style={{ color: state.brand.color_secondary }} />
               <span className="min-w-0">
-                <span className="block font-bold" style={{ color: state.brand.color_secondary }}>
+                <span className="p-head block" style={{ color: state.brand.color_secondary }}>
                   Ver mi plan (PDF)
                 </span>
-                <span className="mt-0.5 block text-[13px] opacity-70">
+                <span className="p-sub mt-0.5 block">
                   {isStart ? "Dieta · pautas" : "Dieta · rutina · pautas"}
                 </span>
               </span>
@@ -326,20 +325,20 @@ export default function PortalApp({ token }: { token: string }) {
         {update.ready && (
           <button
             onClick={update.apply}
-            className="animate-rise fixed inset-x-0 z-50 mx-auto mb-2 flex w-fit items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold shadow-lg"
+            className="animate-rise fixed inset-x-0 z-50 mx-auto mb-2 flex w-fit items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold"
             style={{
               bottom: "calc(4.5rem + env(safe-area-inset-bottom))",
               background: state.brand.color_primary,
-              color: "#fff",
+              color: "var(--p-on-accent)",
+              boxShadow: "var(--p-e-3)",
             }}
           >
             ✨ Actualizado · toca para recargar
           </button>
         )}
 
-        {/* Navegación inferior: 3 pestañas, relieve + neón */}
-        <nav className="portal-nav fixed inset-x-0 bottom-0 z-40 mx-auto flex max-w-md justify-around px-2 py-2"
-          style={{ backdropFilter: "blur(12px)" }}>
+        {/* Navegación inferior: cristal, indicador fino y píldora lavada */}
+        <nav className="portal-nav fixed inset-x-0 bottom-0 z-40 mx-auto flex max-w-md justify-around px-2 py-2">
           {visibleTabs.map(({ id, label, icon: Icon }) => {
             const active = effTab === id;
             const alert = id === "cierre" && canClose;  // "!" el día que ya se puede rellenar

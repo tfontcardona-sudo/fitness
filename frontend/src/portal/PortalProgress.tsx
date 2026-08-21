@@ -64,7 +64,7 @@ export function PortalProgress({ api, brand, hasTraining = true, token }: { api:
     return (
       <div className="portal-card p-6 text-center">
         <Sparkles size={26} className="mx-auto mb-2" style={{ color: accent }} />
-        <p className="text-base font-semibold">Aquí verás cómo avanzas</p>
+        <p className="p-head">Aquí verás cómo avanzas</p>
         <p className="mx-auto mt-1 max-w-xs text-sm opacity-70">
           Registra tu peso en Diario
         </p>
@@ -222,7 +222,7 @@ export function PortalProgress({ api, brand, hasTraining = true, token }: { api:
 function Stat({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent: string }) {
   return (
     <div className="portal-card p-3">
-      <p className="text-[11px] uppercase tracking-wide opacity-55">{label}</p>
+      <p className="p-eyebrow">{label}</p>
       <p className="mt-0.5 text-xl font-bold tabular-nums" style={{ color: accent }}>{value}</p>
       {sub && <p className="mt-0.5 text-xs opacity-60">{sub}</p>}
     </div>
