@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import uuid
 from pathlib import Path
 
@@ -34,10 +35,17 @@ def _db_url() -> str | None:
 pytestmark = pytest.mark.skipif(not _db_url(), reason="Requiere PostgreSQL")
 
 
+# Alembic no trae `__main__.py`, así que `python -m alembic` no arranca; y un
+# `alembic` a secas dependería del PATH, que no tiene por qué ser el mismo
+# intérprete con el que corre pytest (pasó: la suite verde con el venv activado
+# y roja llamando a venv/bin/python directamente). Se entra por la API pública.
+_ARRANQUE = "import sys; from alembic.config import main; main(argv=sys.argv[1:])"
+
+
 def _alembic(url: str, *args: str) -> subprocess.CompletedProcess:
     entorno = {**os.environ, "DATABASE_URL": url}
     return subprocess.run(
-        ["python", "-m", "alembic", *args],
+        [sys.executable, "-c", _ARRANQUE, *args],
         cwd=BACKEND, env=entorno, capture_output=True, text=True,
     )
 

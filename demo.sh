@@ -73,13 +73,22 @@ fi
 echo "→ Sembrando los 4 clientes de demo…"
 docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T api python scripts/demo_seed.py
 
+# Decir las credenciales EXACTAS, comprobadas contra la base de datos. Antes
+# esta línea decía "usuario y contraseña del .env" y quien no abría el fichero
+# se quedaba adivinando delante de un "credenciales incorrectas".
+# El script sale con 1 si las credenciales NO entran, y ese caso es justo el
+# que hay que enseñar: se captura la salida pase lo que pase.
+login_msg=$(docker compose -f docker-compose.yml -f docker-compose.dev.yml \
+  exec -T api python scripts/check_login.py 2>&1 | tr -d '\r') || true
+[ -n "$login_msg" ] || login_msg="(no se pudo comprobar: mira ADMIN_1_USER y ADMIN_1_PASS en el .env)"
+
 cat <<FIN
 
 ════════════════════════════════════════════════════════
   DEMO LISTA
   Panel del coach:    http://localhost:5173
   Página de planes:   http://localhost:5173/planes
-  Login del panel:    (usuario y contraseña del .env)
+  Login del panel:    $login_msg
   Enlaces del portal: arriba, impresos por el script
   Guión de la demo:   DEMO.md
   Reiniciar la demo:  ./demo.sh (se puede re-ejecutar siempre)

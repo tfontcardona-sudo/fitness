@@ -74,12 +74,18 @@ if (-not $ok) {
 Write-Host "-> Sembrando los 4 clientes de demo..." -ForegroundColor Cyan
 docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T api python scripts/demo_seed.py
 
+# Decir las credenciales EXACTAS, comprobadas contra la base de datos. Antes
+# esta linea decia "usuario y contraseña del .env" y quien no abria el fichero
+# se quedaba adivinando delante de un "credenciales incorrectas".
+$login = (cmd /c "docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T api python scripts/check_login.py 2>&1") -join " "
+if (-not $login) { $login = "(no se pudo comprobar: mira ADMIN_1_USER y ADMIN_1_PASS en el .env)" }
+
 Write-Host ""
 Write-Host "=====================================================" -ForegroundColor Yellow
 Write-Host "  DEMO LISTA" -ForegroundColor Yellow
 Write-Host "  Panel del coach:    http://localhost:5173"
 Write-Host "  Página de planes:   http://localhost:5173/planes"
-Write-Host "  Login del panel:    (usuario y contraseña del .env)"
+Write-Host "  Login del panel:    $login"
 Write-Host "  Enlaces del portal: arriba, impresos por el script"
 Write-Host "  Guión de la demo:   DEMO.md"
 Write-Host "  Reiniciar la demo:  re-ejecuta este script"
