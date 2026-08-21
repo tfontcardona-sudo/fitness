@@ -142,7 +142,7 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
         pendingRef.current = pendingRef.current ?? data;
         setSaveState("idle");
         toast.push(
-          e instanceof PortalError ? e.message : "No se pudo guardar el último cambio — revisa tu conexión",
+          e instanceof PortalError ? e.message : "Sin guardar · revisa tu conexión",
         );
       });
   };
@@ -176,7 +176,7 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
           if (restTimer.current) window.clearInterval(restTimer.current);
           restTimer.current = null;
           try { navigator.vibrate?.([200, 100, 200]); } catch { /* sin soporte */ }
-          toast.push("💪 Descanso terminado — a por la siguiente serie");
+          toast.push("💪 Descanso terminado · siguiente serie");
           return null;
         }
         return { ...r, left: r.left - 1 };
@@ -203,7 +203,7 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
       const rec = records[String(exId)];
       if (rec && e1 > rec.e1rm_kg + 0.01) {
         try { navigator.vibrate?.([100, 60, 100, 60, 250]); } catch { /* sin soporte */ }
-        toast.push(`🎉 ¡Récord personal en ${ex?.name ?? "este ejercicio"}! ${w} kg × ${reps}`);
+        toast.push(`🎉 Récord en ${ex?.name ?? "este ejercicio"}: ${w} kg × ${reps}`);
         setRecords((r) => ({
           ...r,
           [String(exId)]: { e1rm_kg: e1, weight_kg: w, reps, date: today },
@@ -279,7 +279,7 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
             <p className="text-sm font-semibold">Se está creando tu planificación</p>
           </div>
           <p className="mt-1.5 text-xs leading-relaxed opacity-70">
-            Te avisaremos en cuanto esté listo.
+            Te avisamos al estar listo
           </p>
         </div>
       </div>
@@ -296,7 +296,7 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
       {readOnly && (
         <div className="portal-card border-l-4 p-3.5 text-sm" style={{ borderLeftColor: brand.color_primary }}>
           <p className="font-semibold">Revisión enviada — registro en pausa</p>
-          <p className="mt-1 text-xs opacity-70">Se reabre cuando tu coach te envíe el feedback.</p>
+          <p className="mt-1 text-xs opacity-70">Se reabre con tu feedback</p>
         </div>
       )}
 
@@ -330,7 +330,7 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
           )}
           {week.load_factor !== 1 && (
             <p className="mt-1 text-[11px] opacity-50">
-              Los pesos sugeridos de tus ejercicios ya están ajustados a esta semana.
+              Pesos ya ajustados a esta semana
             </p>
           )}
         </div>
@@ -615,7 +615,7 @@ function SetInput({ value, placeholder, accent, onChange, min = 0, max, integer 
         caretColor: accent,
         ...(invalid ? { color: "#C2453A" } : {}),
       }}
-      title={invalid ? "Valor no válido: no se guarda" : undefined}
+      title={invalid ? "No válido · no se guarda" : undefined}
     />
   );
 }

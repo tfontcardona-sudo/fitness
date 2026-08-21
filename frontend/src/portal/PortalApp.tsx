@@ -128,7 +128,7 @@ export default function PortalApp({ token }: { token: string }) {
       <Centered>
         <p className="text-lg font-semibold">Enlace no válido</p>
         <p className="mt-1 text-sm opacity-70">
-          Este enlace no funciona o ha caducado. {savedIsStale ? "Vuelve a iniciar sesión." : "Pide a tu coach uno nuevo."}
+          Caducado. {savedIsStale ? "Vuelve a entrar." : "Pide otro a tu coach."}
         </p>
         <button
           onClick={() => { portalSession.clear(); window.location.href = "/portal"; }}
@@ -260,9 +260,9 @@ export default function PortalApp({ token }: { token: string }) {
               className="mb-3 block rounded-2xl border p-4 text-sm font-medium shadow-sm transition-transform active:scale-[0.99]"
               style={{ borderColor: state.brand.color_primary, background: `${state.brand.color_primary}14` }}>
               <span className="font-bold" style={{ color: state.brand.color_primary }}>
-                Te falta un paso: completa tu anamnesis →
+                Completa tu anamnesis →
               </span>
-              <span className="mt-1 block opacity-75">6 pasos · unos minutos desde el móvil</span>
+              <span className="mt-1 block opacity-75">6 pasos · unos minutos</span>
             </a>
           )}
           {/* SU PLAN, siempre a mano: la dieta y las pautas viven en el PDF y
@@ -409,9 +409,9 @@ function VideoCallBanner({ api, accent, refreshKey = 0 }: { api: ReturnType<type
     try {
       const r = await api.proposeVideoCall(`${date}T${time}`);
       setVc(r);
-      toast.push("Propuesta enviada. Tu coach la confirmará.");
+      toast.push("Enviada · tu coach confirmará");
     } catch (e: any) {
-      toast.push(e?.message ?? "No se pudo enviar la propuesta");
+      toast.push(e?.message ?? "No se pudo enviar");
     } finally {
       setBusy(false);
     }
@@ -424,7 +424,7 @@ function VideoCallBanner({ api, accent, refreshKey = 0 }: { api: ReturnType<type
       const r = await api.rescheduleVideoCall(`${date}T${time}`);
       setVc(r);
       setShowResched(false);
-      toast.push("Reprogramación enviada. Tu coach confirmará la nueva hora.");
+      toast.push("Reprogramada · pendiente de confirmar");
     } catch (e: any) {
       toast.push(e?.message ?? "No se pudo reprogramar");
     } finally {
@@ -437,7 +437,7 @@ function VideoCallBanner({ api, accent, refreshKey = 0 }: { api: ReturnType<type
     return (
       <div className="mb-4 rounded-2xl p-4" style={box}>
         {header}
-        <p className="mt-1 text-sm font-semibold">Tu coach ha confirmado tu videollamada</p>
+        <p className="mt-1 text-sm font-semibold">Confirmada por tu coach</p>
         <p className="mt-0.5 text-sm font-medium capitalize">{vc.call.when_label}</p>
         {vc.call.duration_min ? <p className="text-[11px] opacity-50">{vc.call.duration_min} min</p> : null}
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -484,7 +484,7 @@ function VideoCallBanner({ api, accent, refreshKey = 0 }: { api: ReturnType<type
     return (
       <div className="mb-4 rounded-2xl p-4" style={box}>
         {header}
-        <p className="mt-1 text-sm">Elige el día y la hora que mejor te vengan:</p>
+        <p className="mt-1 text-sm">Elige día y hora</p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <input type="date" className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: `color-mix(in srgb, ${accent} 35%, transparent)`, background: "transparent" }}
             value={date} min={portalLocalToday()} onChange={(e) => setDate(e.target.value)} />
@@ -528,7 +528,7 @@ function VideoCallBanner({ api, accent, refreshKey = 0 }: { api: ReturnType<type
     return (
       <div className="mb-4 rounded-2xl p-4" style={box}>
         {header}
-        <p className="mt-1 text-sm">Tu coach te escribirá por WhatsApp para fijar la hora.</p>
+        <p className="mt-1 text-sm">Te escribirá por WhatsApp</p>
       </div>
     );
   }
@@ -565,7 +565,7 @@ function PushToggle({ api }: { api: ReturnType<typeof portalApi> }) {
         toast.push("Notificaciones desactivadas");
       } else {
         if (needsInstallFirst()) {
-          toast.push("En iPhone: añade primero el portal a tu pantalla de inicio y actívalas desde la app");
+          toast.push("iPhone: añádelo a inicio primero");
           return;
         }
         await turnPushOn(api);
@@ -585,7 +585,7 @@ function PushToggle({ api }: { api: ReturnType<typeof portalApi> }) {
       onClick={toggle}
       disabled={busy}
       aria-label={on ? "Desactivar notificaciones" : "Activar notificaciones"}
-      title={on ? "Notificaciones activadas — toca para desactivarlas" : "Notificaciones desactivadas — toca para activarlas"}
+      title={on ? "Activadas · toca para apagar" : "Desactivadas · toca para activar"}
       className="tap -m-1 rounded-lg p-1 hover:opacity-80"
       style={{ opacity: on ? 0.85 : 0.4 }}
     >
@@ -617,7 +617,7 @@ function PhotosReminder({ api, accent, onConfirmed }: {
       toast.push("¡Gracias! Fotos confirmadas 📸");
       onConfirmed();
     } catch {
-      toast.push("No se pudo confirmar, inténtalo de nuevo");
+      toast.push("No se pudo confirmar");
       setBusy(false);
     }
   };
@@ -627,7 +627,7 @@ function PhotosReminder({ api, accent, onConfirmed }: {
       <div className="flex items-start gap-2.5">
         <span className="mt-0.5 shrink-0" style={{ color: accent }}><Camera size={18} /></span>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold">¿Ya enviaste tus fotos de progreso a tu coach?</p>
+          <p className="text-sm font-semibold">¿Ya enviaste tus fotos?</p>
           <p className="mt-0.5 text-[11px] opacity-60">Frontal · lateral · espalda</p>
           <div className="mt-2.5 flex flex-wrap gap-2">
             <button
@@ -639,7 +639,7 @@ function PhotosReminder({ api, accent, onConfirmed }: {
               <span className="inline-flex items-center gap-1"><Check size={13} /> Sí, ya las envié</span>
             </button>
             <button
-              onClick={() => { setSnoozed(true); toast.push("Te lo recordaré cada 3 h hasta que las envíes"); }}
+              onClick={() => { setSnoozed(true); toast.push("Te aviso cada 3 h"); }}
               disabled={busy}
               className="tap min-h-[36px] rounded-xl px-3 py-1.5 text-xs font-medium opacity-60 hover:opacity-90"
             >
@@ -741,7 +741,7 @@ function WelcomeSetup({ api, token, accent, secondary }: {
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold">Configura tu portal (1 min)</span>
           <span className="block text-[11px] opacity-60">
-            Ponlo como app en tu móvil y activa tus avisos
+            App en el móvil + avisos
           </span>
         </span>
         <ChevronDown size={16} className="shrink-0 opacity-50" />
@@ -750,10 +750,10 @@ function WelcomeSetup({ api, token, accent, secondary }: {
         {/* Paso 1 — instalar como app (instrucciones según el móvil) */}
         <Step n={1} done={installed}>
           <p className="flex items-center gap-1.5 text-xs font-semibold">
-            <Smartphone size={13} /> Pon el portal en tu pantalla de inicio
+            <Smartphone size={13} /> Añadir a pantalla de inicio
           </p>
           {installed ? (
-            <p className="mt-0.5 text-[11px] opacity-60">¡Hecho! Ya lo tienes como app.</p>
+            <p className="mt-0.5 text-[11px] opacity-60">Hecho · ya es app</p>
           ) : isIOS ? (
             <p className="mt-0.5 text-[11px] leading-relaxed opacity-70">
               Safari → <span className="font-semibold">Compartir</span>{" "}
@@ -773,10 +773,10 @@ function WelcomeSetup({ api, token, accent, secondary }: {
         <Step n={2} done={granted}>
           <p className="text-xs font-semibold">Activa tus recordatorios</p>
           {granted ? (
-            <p className="mt-0.5 text-[11px] opacity-60">¡Hecho! Te avisaré si te falta algo.</p>
+            <p className="mt-0.5 text-[11px] opacity-60">Hecho · te avisaré</p>
           ) : installFirst ? (
             <p className="mt-0.5 text-[11px] opacity-70">
-              Primero haz el paso 1; después abre la app y activa aquí los avisos.
+              Haz antes el paso 1
             </p>
           ) : (
             <>
@@ -799,7 +799,7 @@ function WelcomeSetup({ api, token, accent, secondary }: {
           >
             <p className="text-[11px] font-semibold">¿Seguro que quieres ocultarlo?</p>
             <p className="mt-0.5 text-[11px] opacity-60">
-              Este aviso no volverá a aparecer, ni aunque te falte algún paso.
+              No volverá a aparecer
             </p>
             <div className="mt-2 flex gap-2">
               <button

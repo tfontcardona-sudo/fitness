@@ -442,6 +442,46 @@ cd backend && python -m pytest tests/ -q
 
 ## 9. Trabajo pendiente / próximos pasos
 
+00000000. ✅ **AVISOS CON TÍTULO + ACCIÓN, Y "MENOS ES MÁS" DE VERDAD (agosto 2026).**
+   El dueño, tras la ronda anterior: "has hecho que salga 'ver más', pero eso no
+   basta: toda esa información se podría resumir en tres o cuatro palabras…
+   ¿quién me quiere decir esa información? Que especifique bien POR QUÉ sale esa
+   alerta en rojo para que el coach sepa QUÉ DEBE HACER". Tenía razón: la ronda
+   anterior COMPRIMIÓ (clamp) en vez de REDUCIR. Suite (505) + tsc + build +
+   `npm run check:avisos` en verde.
+   - **Avisos del plan = título corto → acción** (`lib/findings.ts` + `AvisosBlock`):
+     los hallazgos que la IA escribió ANTES de acotar su contrato son párrafos de
+     40-60 palabras YA GUARDADOS en el plan; acortar el prompt no los arregla.
+     `toAviso()` deriva de forma determinista TÍTULO (primera frase, sin las
+     coletillas obvias tipo "…en el plan", máx. 7 palabras), CATEGORÍA (reglas
+     por palabra clave, con seguridad alimentaria y lesiones primero) y ACCIÓN
+     ("Corregir esa comida", "Adaptar los ejercicios"…). El bloque rojo pasa de
+     12 párrafos a 6 grupos con etiquetas de 4-6 palabras; el texto íntegro queda
+     como detalle a un clic. Regresión: `npm run check:avisos`.
+   - **La cabecera explica el POR QUÉ**: "▲ Retenido · N puntos a corregir antes
+     de enviarlo" (o "…en el plan activo" si ya está publicado), en vez de un
+     chip "ICP 0" que no significaba nada para el coach. El ICP pasa al title.
+   - **Contrato nuevo de los revisores** (`ReviewFindingOut`/`ReviewFinding`):
+     `titulo` (3-6 palabras) y `accion` (verbo en infinitivo, 3-6 palabras)
+     además de la descripción. ⚠️ Ojo: `plan_review.summarize()` NO los
+     serializaba y la función entera moría en el backend (la revisión de código
+     lo cazó) — si añades un campo al hallazgo, añádelo también AHÍ.
+   - **267 reescrituras telegráficas** aplicadas en panel, editores, portal y
+     páginas (226 automáticas por sustitución literal + el resto a mano):
+     toasts, confirmaciones, ayudas de campo, avisos de descuadre y tooltips.
+     Regla: el texto dice el ESTADO, el botón dice la ACCIÓN. Las cifras y los
+     datos de seguridad se conservan íntegros.
+   - **Correcciones de seguridad de la revisión**: "Sin lesiones declaradas ✓"
+     aparecía también con la anamnesis VACÍA (convertía "no hay datos" en un
+     visto bueno) → ahora "Anamnesis pendiente" si la ficha no está rellenada;
+     `NEG_LIMITACION` marcaba en rojo hábitos normales ("No consume alcohol") →
+     acotado a verbos de limitación real y sometido a los filtros de valor nulo.
+   - **De la ronda de seguridad anterior**: copiar `.env.example` tal cual daba
+     secretos PÚBLICOS que pasaban el control por ser largos (ahora cualquier
+     valor que empiece por "cambia-esto" es bloqueante), y la CSP `img-src`
+     bloqueaba las imágenes de producto por URL pegada (función anunciada).
+
+
 0000000. ✅ **TEXTO AL MÍNIMO: telegráfico, por bloques y solo lo necesario
    (agosto 2026).** El dueño, sobre capturas del móvil: "una información que en
    4 palabras se podría transmitir igual que en 30… tiene que ser práctico,

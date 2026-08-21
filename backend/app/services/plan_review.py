@@ -94,9 +94,16 @@ def summarize(panel: rp.PanelResult, *, iterations: int, escalated: bool) -> dic
         # Revisores IA que no llegaron a ejecutarse (API caída): el coach ve
         # que la revisión está DEGRADADA en vez de creerla completa.
         "degraded_reviewers": list(getattr(panel, "degraded_reviewers", []) or []),
+        # `title`/`action` son lo que el coach ve de un vistazo en el panel; sin
+        # serializarlos aquí, el contrato nuevo de los revisores moría en el
+        # backend. `correccion_propuesta` viaja con su nombre completo porque el
+        # frontend lo usa como acción de reserva en hallazgos antiguos.
         "findings": [{
             "severity": f.severity, "description": f.description,
-            "donde": f.donde_en_el_plan, "correccion": f.correccion_propuesta,
+            "title": f.title, "action": f.action,
+            "donde": f.donde_en_el_plan,
+            "correccion": f.correccion_propuesta,
+            "correccion_propuesta": f.correccion_propuesta,
         } for f in panel.findings[:20]],
         "prompt_version": _prompt_version(),
     }

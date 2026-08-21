@@ -23,7 +23,7 @@ export default function LoginPage() {
       setError(
         e instanceof ApiError && e.status === 401
           ? "Usuario o contraseña incorrectos."
-          : "No se pudo conectar. Inténtalo de nuevo.",
+          : "Sin conexión · reintenta",
       );
       setBusy(false);
     }

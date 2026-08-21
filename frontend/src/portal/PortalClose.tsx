@@ -114,28 +114,28 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
   // servidor (brazo 90 cm pasaba aquí y reventaba allí con error críptico).
   const rangeError = (() => {
     const w = num(weight);
-    if (weight !== "" && !(Number.isFinite(w) && w > 30 && w < 300)) return "Revisa el peso final (kg reales, 30-300)";
+    if (weight !== "" && !(Number.isFinite(w) && w > 30 && w < 300)) return "Peso final: 30-300 kg";
     const per = (v: string, name: string, lo: number, hi: number) => {
       const n = num(v);
       return v !== "" && !(Number.isFinite(n) && n > lo && n < hi)
-        ? `Revisa ${name} (${lo}-${hi} cm)` : null;
+        ? `${name}: ${lo}-${hi} cm` : null;
     };
-    const perErr = per(waist, "la cintura", 30, 250) ?? per(hip, "la cadera", 30, 250)
-      ?? per(arm, "el brazo", 10, 80) ?? per(thigh, "el muslo", 20, 120);
+    const perErr = per(waist, "Cintura", 30, 250) ?? per(hip, "Cadera", 30, 250)
+      ?? per(arm, "Brazo", 10, 80) ?? per(thigh, "Muslo", 20, 120);
     if (perErr) return perErr;
     const adh = (v: string, name: string) => {
       const n = num(v);
       // ENTERO 0-10: el backend lo exige (422 si llega "7,5") — mejor avisar
       // aquí que perder el envío de la revisión (auditoría crítica).
       return v !== "" && !(Number.isFinite(n) && Number.isInteger(n) && n >= 0 && n <= 10)
-        ? `Revisa ${name} (0-10, sin decimales)` : null;
+        ? `${name}: 0-10 sin decimales` : null;
     };
-    const adhErr = (hasNutrition ? adh(adhDiet, "la adherencia a la dieta") : null)
-      ?? (hasTraining ? adh(adhTrain, "la adherencia al entreno") : null);
+    const adhErr = (hasNutrition ? adh(adhDiet, "Adherencia dieta") : null)
+      ?? (hasTraining ? adh(adhTrain, "Adherencia entreno") : null);
     if (adhErr) return adhErr;
     const fm = num(freeMeals);
     if (freeMeals !== "" && !(Number.isFinite(fm) && Number.isInteger(fm) && fm >= 0 && fm <= 50))
-      return "Revisa las comidas libres (0-50, sin decimales)";
+      return "Comidas libres: 0-50 entero";
     return null;
   })();
   // La dieta solo se exige si el plan la INCLUYE: al cliente de solo entreno
@@ -183,7 +183,7 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
           <Check size={32} style={{ color: brand.color_primary }} />
         </div>
         <p className="mt-4 text-lg font-semibold">¡Revisión enviada!</p>
-        <p className="mt-1 max-w-xs text-sm opacity-60">Recibirás tu informe y tu plan nuevo.</p>
+        <p className="mt-1 max-w-xs text-sm opacity-60">Recibirás informe y plan nuevo</p>
       </div>
     );
   }
@@ -199,7 +199,7 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
         </div>
         <p className="mt-4 text-lg font-semibold">Revisión enviada</p>
         <p className="mt-1 max-w-xs text-sm opacity-60">
-          Tu coach está analizando tus datos. Te avisará con tu informe y el plan actualizado.
+          Analizando · recibirás informe y plan
         </p>
       </div>
     );
@@ -218,7 +218,7 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
         <p className="mt-1 max-w-xs text-sm opacity-70">
           {daysLeft != null && daysLeft > 0
             ? `Disponible en ${daysLeft} día${daysLeft === 1 ? "" : "s"}`
-            : "Se desbloquea al completar tus 2 semanas"}
+            : "Disponible al día 14"}
         </p>
         {fechaCae && (
           <p className="mt-1 text-sm font-semibold" style={{ color: brand.color_secondary }}>
@@ -254,7 +254,7 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
       </Section>
 
       {/* 2 · Sensaciones */}
-      <Section n={2} title="¿Cómo te has sentido estas 2 semanas?">
+      <Section n={2} title="¿Cómo te has sentido?">
         <p className="mb-2 text-xs opacity-50">1 = muy mal · 5 = excelente</p>
         <div className="space-y-3">
           {FEELINGS.map((f) => (
@@ -293,7 +293,7 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
         </div>
         {hasTraining && hasNutrition && (
           <div className="mt-3">
-            <NumField label="Comidas libres o saltadas (nº aprox.)" value={freeMeals} onChange={setFreeMeals} min={0} max={50} />
+            <NumField label="Comidas libres o saltadas" value={freeMeals} onChange={setFreeMeals} min={0} max={50} />
           </div>
         )}
       </Section>
@@ -302,21 +302,21 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
       <Section n={4} title="¿Algún cambio importante?">
         <textarea className="min-h-[64px] w-full rounded-xl border bg-transparent p-3 text-sm" style={{ borderColor: "rgba(128,128,128,0.2)" }}
           value={changes} onChange={(e) => setChanges(e.target.value)}
-          placeholder="Lesiones, dolores, cambios de horario, viajes, estrés, sueño irregular…" />
+          placeholder="Lesiones · dolores · viajes · estrés · sueño" />
       </Section>
 
       {/* 5 · Qué cuesta */}
       <Section n={5} title="¿Qué te está costando más?">
         <textarea className="min-h-[64px] w-full rounded-xl border bg-transparent p-3 text-sm" style={{ borderColor: "rgba(128,128,128,0.2)" }}
           value={hardest} onChange={(e) => setHardest(e.target.value)}
-          placeholder={hasTraining ? "Comidas difíciles, ejercicios que no te convencen, momentos complicados…" : "Comidas difíciles, antojos, momentos complicados…"} />
+          placeholder={hasTraining ? "Comidas · ejercicios · momentos difíciles" : "Comidas · antojos · momentos difíciles"} />
       </Section>
 
       {/* 6 · Objetivo */}
-      <Section n={6} title="Tu objetivo para las próximas 2 semanas">
+      <Section n={6} title="Tu objetivo · próximas 2 semanas">
         <textarea className="min-h-[56px] w-full rounded-xl border bg-transparent p-3 text-sm" style={{ borderColor: "rgba(128,128,128,0.2)" }}
           value={nextGoal} onChange={(e) => setNextGoal(e.target.value)}
-          placeholder={hasTraining ? 'Algo concreto: "bajar 0,5 kg", "dormir 7 h", "mejorar técnica de sentadilla"…' : 'Algo concreto: "bajar 0,5 kg", "dormir 7 h", "comer más verdura cada día"…'} />
+          placeholder={hasTraining ? 'Ej.: "bajar 0,5 kg" · "mejorar sentadilla"' : 'Ej.: "bajar 0,5 kg" · "dormir 7 h"'} />
       </Section>
 
       {/* 7 · Fotos — banner informativo en azul de marca; icono y canal según
@@ -328,7 +328,7 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
             : <Mail size={18} style={{ color: brand.color_secondary }} className="mt-0.5 shrink-0" />}
           <p className="opacity-80">
             3 fotos por <b>{directContact ? "WhatsApp" : "email"}</b>: frontal · lateral · espalda
-            <span className="mt-0.5 block opacity-70">Fondo neutro · buena luz · sin filtros · mismo sitio que la última vez</span>
+            <span className="mt-0.5 block opacity-70">Fondo neutro · sin filtros · mismo sitio</span>
           </p>
         </div>
       </Section>
@@ -348,7 +348,7 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
       ) : (
         <div className="space-y-2">
           <p className="text-center text-xs opacity-70">
-            No podrás editarla y tu diario queda en pausa.
+            Sin edición · diario en pausa
           </p>
           <div className="flex gap-2">
             <button onClick={() => setConfirmSend(false)} className="w-1/3 rounded-xl border py-3 text-sm" style={{ borderColor: "rgba(128,128,128,0.3)" }}>
@@ -367,12 +367,12 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
             // Decir QUÉ falta, no un genérico: con 7 secciones el bloqueo era
             // invisible (una sensación sin puntuar dejaba el botón gris mudo).
             const faltan: string[] = [];
-            if (!(num(weight) > 30)) faltan.push("tu peso final");
+            if (!(num(weight) > 30)) faltan.push("peso final");
             const sinPuntuar = FEELINGS.filter((f) => !(feelings[f.key] > 0)).length;
             if (sinPuntuar > 0) faltan.push(sinPuntuar === 1 ? "1 sensación por puntuar" : `${sinPuntuar} sensaciones por puntuar`);
-            if (hasNutrition && adhDiet === "") faltan.push("la adherencia a la dieta");
-            if (hasTraining && adhTrain === "") faltan.push("la adherencia al entreno");
-            return faltan.length ? `Falta: ${faltan.join(" · ")}` : "Completa el peso, las sensaciones y la adherencia.";
+            if (hasNutrition && adhDiet === "") faltan.push("adherencia dieta");
+            if (hasTraining && adhTrain === "") faltan.push("adherencia entreno");
+            return faltan.length ? `Falta: ${faltan.join(" · ")}` : "Falta: peso · sensaciones · adherencia";
           })()}
         </p>
       )}

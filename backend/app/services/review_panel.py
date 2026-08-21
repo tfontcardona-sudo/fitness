@@ -34,6 +34,10 @@ from app.services.safety_gate import red_flags, traffic_light
 class ReviewFinding:
     severity: str            # bloqueante | mayor | menor
     description: str
+    # Lo que el coach ve de un vistazo: el problema en 3-6 palabras y QUÉ HACER.
+    # Vacíos en hallazgos antiguos (el frontend los deriva de `description`).
+    title: str = ""
+    action: str = ""
     cita_anamnesis: str = ""
     donde_en_el_plan: str = ""
     correccion_propuesta: str = ""
@@ -104,15 +108,21 @@ def reviewer_prompt(role: dict, plan_text: str, anamnesis_text: str,
         "con EXACTAMENTE estas claves: \"veredicto\" "
         "(aprobado|aprobado_con_reservas|rechazado), \"puntuacion_rubrica\" "
         "(entero 0-100) y \"hallazgos\" (lista; cada hallazgo con \"severidad\" "
-        "(bloqueante|mayor|menor), \"descripcion\", \"cita_anamnesis\", "
-        "\"donde_en_el_plan\" y \"correccion_propuesta\"). No inventes datos "
-        "que no estén en la anamnesis.\n"
-        "FORMATO DE CADA CAMPO (el coach los lee en la pantalla del móvil): "
-        "\"descripcion\" = el problema EN SECO, MÁXIMO 20 palabras, sin justificar "
-        "ni razonar en voz alta; \"cita_anamnesis\" = la cita literal MÁS CORTA que "
-        "lo demuestra (máx. 12 palabras); \"donde_en_el_plan\" = la ubicación, no una "
-        "explicación (máx. 8 palabras); \"correccion_propuesta\" = la acción concreta, "
-        "máx. 15 palabras. MÁXIMO 6 hallazgos: los que más importen.\n\n"
+        "(bloqueante|mayor|menor), \"titulo\", \"accion\", \"descripcion\", "
+        "\"cita_anamnesis\", \"donde_en_el_plan\" y \"correccion_propuesta\"). "
+        "No inventes datos que no estén en la anamnesis.\n"
+        "FORMATO (el coach lo lee en el móvil; TITULO y ACCION es lo único que ve "
+        "de un vistazo, el resto va plegado):\n"
+        "· \"titulo\": el problema en 3-6 PALABRAS, con el dato concreto. "
+        "Ej.: \"Gluten en la toma 1\", \"8 zonas lesionadas sin adaptar\". "
+        "Sin frases ni verbos conjugados largos.\n"
+        "· \"accion\": lo que el coach debe HACER, 3-6 palabras, empezando por un "
+        "verbo en infinitivo. Ej.: \"Cambiar esa comida\", \"Regenerar el entreno\".\n"
+        "· \"descripcion\": el detalle, MÁXIMO 20 palabras, sin razonar en voz alta.\n"
+        "· \"cita_anamnesis\": la cita literal MÁS CORTA (máx. 12 palabras).\n"
+        "· \"donde_en_el_plan\": la ubicación, no una explicación (máx. 8 palabras).\n"
+        "· \"correccion_propuesta\": el cómo, máx. 15 palabras.\n"
+        "MÁXIMO 6 hallazgos: los que más importen.\n\n"
         f"=== ANAMNESIS ===\n{anamnesis_text}\n\n=== PLAN ===\n{plan_text}{extra}"
     )
 
@@ -355,15 +365,21 @@ def make_ai_reviewer(
         "con EXACTAMENTE estas claves: \"veredicto\" "
         "(aprobado|aprobado_con_reservas|rechazado), \"puntuacion_rubrica\" "
         "(entero 0-100) y \"hallazgos\" (lista; cada hallazgo con \"severidad\" "
-        "(bloqueante|mayor|menor), \"descripcion\", \"cita_anamnesis\", "
-        "\"donde_en_el_plan\" y \"correccion_propuesta\"). No inventes datos "
-        "que no estén en la anamnesis.\n"
-        "FORMATO DE CADA CAMPO (el coach los lee en la pantalla del móvil): "
-        "\"descripcion\" = el problema EN SECO, MÁXIMO 20 palabras, sin justificar "
-        "ni razonar en voz alta; \"cita_anamnesis\" = la cita literal MÁS CORTA que "
-        "lo demuestra (máx. 12 palabras); \"donde_en_el_plan\" = la ubicación, no una "
-        "explicación (máx. 8 palabras); \"correccion_propuesta\" = la acción concreta, "
-        "máx. 15 palabras. MÁXIMO 6 hallazgos: los que más importen."
+        "(bloqueante|mayor|menor), \"titulo\", \"accion\", \"descripcion\", "
+        "\"cita_anamnesis\", \"donde_en_el_plan\" y \"correccion_propuesta\"). "
+        "No inventes datos que no estén en la anamnesis.\n"
+        "FORMATO (el coach lo lee en el móvil; TITULO y ACCION es lo único que ve "
+        "de un vistazo, el resto va plegado):\n"
+        "· \"titulo\": el problema en 3-6 PALABRAS, con el dato concreto. "
+        "Ej.: \"Gluten en la toma 1\", \"8 zonas lesionadas sin adaptar\". "
+        "Sin frases ni verbos conjugados largos.\n"
+        "· \"accion\": lo que el coach debe HACER, 3-6 palabras, empezando por un "
+        "verbo en infinitivo. Ej.: \"Cambiar esa comida\", \"Regenerar el entreno\".\n"
+        "· \"descripcion\": el detalle, MÁXIMO 20 palabras, sin razonar en voz alta.\n"
+        "· \"cita_anamnesis\": la cita literal MÁS CORTA (máx. 12 palabras).\n"
+        "· \"donde_en_el_plan\": la ubicación, no una explicación (máx. 8 palabras).\n"
+        "· \"correccion_propuesta\": el cómo, máx. 15 palabras.\n"
+        "MÁXIMO 6 hallazgos: los que más importen."
     )
     system_blocks = [
         {"type": "text",
@@ -383,6 +399,7 @@ def make_ai_reviewer(
         )
         hallazgos = [ReviewFinding(
             severity=h.severidad, description=h.descripcion,
+            title=(h.titulo or "").strip(), action=(h.accion or "").strip(),
             cita_anamnesis=h.cita_anamnesis or "", donde_en_el_plan=h.donde_en_el_plan or "",
             correccion_propuesta=h.correccion_propuesta or "",
         ) for h in out.hallazgos]

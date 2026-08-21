@@ -287,6 +287,8 @@ function AnamnesisView({ client }: { client: ClientOut }) {
       ? "Lo decide el equipo (reparto óptimo para su objetivo)"
       : `${client.meals_per_day} al día`;
   const allergies = client.food_allergies ?? [];
+  // Sin anamnesis, "sin lesiones" NO es un visto bueno: es que no hay datos.
+  const fichaRellenada = Boolean(client.goal_type || client.height_cm || client.start_weight_kg);
   const pattern = client.diet_pattern ? DIET_PATTERN_LABEL[client.diet_pattern] ?? client.diet_pattern : null;
   return (
     <div className="space-y-3">
@@ -311,9 +313,9 @@ function AnamnesisView({ client }: { client: ClientOut }) {
       <div className="grid gap-3 sm:grid-cols-2">
         {/* 1ª fila: SEGURIDAD (lo crítico nunca se pliega ni baja). */}
         <VNotes color={V_COLORS.lesiones} title="Lesiones y movilidad" text={client.injuries_notes}
-          emptyLabel="Sin lesiones declaradas ✓" />
+          emptyLabel={fichaRellenada ? "Sin lesiones declaradas ✓" : "Anamnesis pendiente"} />
         <VNotes color={V_COLORS.clinica} title="Historia clínica y salud" text={client.medical_notes}
-          emptyLabel="Sin patologías declaradas ✓" />
+          emptyLabel={fichaRellenada ? "Sin patologías declaradas ✓" : "Anamnesis pendiente"} />
 
         {/* 2ª fila: quién es + su entrenamiento. */}
         <VCard color={V_COLORS.cuerpo} title="Perfil y objetivo" rows={pairs([

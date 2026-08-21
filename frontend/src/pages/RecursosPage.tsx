@@ -91,7 +91,7 @@ function LearningManager() {
       if (r.skipped) {
         toast.push(r.skipped);
       } else {
-        toast.push("Lecciones actualizadas con tus últimas correcciones");
+        toast.push("Lecciones actualizadas con tus correcciones");
       }
       const d = await api.learningLessons();
       setData(d);
@@ -108,10 +108,10 @@ function LearningManager() {
       <div className="card p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold text-zinc-100">Lo que el sistema ha aprendido de ti</h2>
+            <h2 className="text-base font-semibold text-zinc-100">Lo aprendido de tus correcciones</h2>
             <p className="mt-1 text-sm text-zinc-500">
-              {data.total_edits} correcciones registradas → lecciones aplicadas a cada plan nuevo.
-              Las cifras siempre las calcula el sistema, nunca la IA.
+              {data.total_edits} correcciones → lecciones aplicadas
+              Cifras del sistema, nunca IA
             </p>
           </div>
           <button onClick={refrescar} disabled={refrescando} className="btn btn-ghost">
@@ -187,8 +187,8 @@ function LinksPageManager() {
   useEffect(() => {
     const p = new URLSearchParams(window.location.search).get("google");
     if (!p) return;
-    if (p === "connected") toast.push("Google conectado: ya puedes agendar videollamadas con Meet");
-    else if (p === "error") toast.push("No se pudo conectar con Google, inténtalo de nuevo", "error");
+    if (p === "connected") toast.push("Google conectado · Meet listo");
+    else if (p === "error") toast.push("Google no conectado · reintenta", "error");
     window.history.replaceState({}, "", window.location.pathname);
     loadGoogle();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -200,7 +200,7 @@ function LinksPageManager() {
       const { authorize_url } = await api.googleStart();
       window.location.href = authorize_url;  // redirige al consentimiento de Google
     } catch (e) {
-      toast.push(e instanceof ApiError ? e.message : "No se pudo iniciar la conexión con Google", "error");
+      toast.push(e instanceof ApiError ? e.message : "Google no responde · reintenta", "error");
       setGoogleBusy(false);
     }
   }
@@ -277,7 +277,7 @@ function LinksPageManager() {
       {/* El enlace público para el perfil de Instagram */}
       <div className="card p-5">
         <h3 className="text-sm font-semibold text-zinc-200">Tu enlace para Instagram</h3>
-        <p className="mt-1 text-sm text-zinc-500">Pégala en la bio de Instagram.</p>
+        <p className="mt-1 text-sm text-zinc-500">Para la bio de Instagram</p>
         <div className="mt-3 flex items-center gap-2">
           <code className="flex-1 truncate rounded-lg border px-3 py-2 text-sm"
             style={{ borderColor: "var(--line-strong)" }}>{publicUrl}</code>
@@ -285,7 +285,7 @@ function LinksPageManager() {
             className="btn btn-primary shrink-0"
             onClick={() => {
               navigator.clipboard.writeText(publicUrl).catch(() => {});
-              toast.push("Enlace copiado — pégalo en tu perfil de Instagram");
+              toast.push("Enlace copiado · pégalo en Instagram");
             }}
           >
             Copiar
@@ -333,7 +333,7 @@ function LinksPageManager() {
       {/* Afiliación ESN */}
       <div className="card p-5">
         <h3 className="text-sm font-semibold text-zinc-200">Tienda ESN (afiliación)</h3>
-        <p className="mt-1 text-sm text-zinc-500">Vacío = la landing solo muestra «Trabaja conmigo».</p>
+        <p className="mt-1 text-sm text-zinc-500">Vacío = solo «Trabaja conmigo»</p>
         <div className="mt-3 space-y-3">
           <div>
             <label className="label">Enlace de la tienda</label>
@@ -359,12 +359,12 @@ function LinksPageManager() {
 
         {/* Conexión con Google Calendar / Meet: agendar con 1 clic */}
         <p className="mt-1 text-sm text-zinc-500">
-          Conectar Google = evento + <b>Meet</b> + invitación al cliente + recordatorios, en 1 clic.
+          Google: evento, <b>Meet</b>, invitación y recordatorios
         </p>
         {google && !google.enabled && (
           <p className="mt-3 rounded-lg p-2.5 text-xs text-zinc-400"
             style={{ background: "var(--surface-raised)" }}>
-            Google Meet no activado (opcional) → usa el <b>enlace de reservas</b> de abajo.
+            Meet no activado → usa <b>enlace de reservas</b>
           </p>
         )}
         {google?.enabled && (
@@ -390,7 +390,7 @@ function LinksPageManager() {
         <div className="mt-5 border-t border-white/5 pt-4">
           <label className="label">Enlace de reservas (alternativa)</label>
           <p className="mb-1 text-xs text-zinc-500">
-            Calendly, citas de Google… se incluye en el WhatsApp de la videollamada.
+            Calendly, Google… va en el WhatsApp
           </p>
           <input className="input" placeholder="https://calendar.app.google/…" value={meetUrl}
             onChange={(e) => setMeetUrl(e.target.value)} />
@@ -474,7 +474,7 @@ function ProductsManager() {
   async function save() {
     if (!draft) return;
     if (!draft.title.trim() || !draft.url.trim()) {
-      toast.push("El título y el enlace son obligatorios", "error");
+      toast.push("Faltan título y enlace", "error");
       return;
     }
     setSaving(true);
@@ -507,7 +507,7 @@ function ProductsManager() {
           setDraft({ ...draft, id: saved.id });
           load();
           toast.push(
-            `Producto guardado, pero la imagen no se pudo subir${e instanceof ApiError ? `: ${e.message}` : ""}`,
+            `Producto guardado · imagen no subida${e instanceof ApiError ? `: ${e.message}` : ""}`,
             "error",
           );
           return;
@@ -623,7 +623,7 @@ function ProductsManager() {
       {products.length === 0 && !draft ? (
         <EmptyState
           title="Aún no hay productos"
-          hint="Añade suplementos o material que recomiendas; tus clientes los verán en la sección Recursos de su portal."
+          hint="Suplementos y material para su portal"
           action={
             <button className="btn btn-primary" onClick={startNew}>
               <Plus size={16} /> Nuevo producto
@@ -715,7 +715,7 @@ function ProductsManager() {
       <ConfirmDialog
         open={toDelete !== null}
         title="Eliminar producto"
-        body={<>¿Seguro que quieres eliminar <strong>{toDelete?.title}</strong>? Dejará de verse en el portal.</>}
+        body={<>Eliminar <strong>{toDelete?.title}</strong> del portal</>}
         confirmLabel="Eliminar"
         destructive
         onConfirm={confirmDelete}
@@ -773,7 +773,7 @@ function ProductEditor({
     try {
       const meta = await api.scrapeProduct(url);
       if (!meta.title && !meta.description && !meta.image_url) {
-        if (!auto) toast.push("La página no trae datos legibles: rellénalo a mano", "error");
+        if (!auto) toast.push("Página ilegible · rellénalo a mano", "error");
         return;
       }
       // Merge sobre el borrador VIGENTE (update funcional): lo que el coach
@@ -791,9 +791,9 @@ function ProductEditor({
             : (meta.image_url ?? prev.image_url),
         };
       });
-      toast.push("Datos del producto rellenados desde el enlace");
+      toast.push("Rellenado desde el enlace");
     } catch (e) {
-      if (!auto) toast.push(e instanceof ApiError ? e.message : "No se pudo leer la página del producto", "error");
+      if (!auto) toast.push(e instanceof ApiError ? e.message : "No se pudo leer la página", "error");
     } finally {
       setScraping(false);
     }
@@ -900,21 +900,18 @@ function ProductEditor({
                 className="btn btn-ghost shrink-0 !px-3 !py-2 text-xs"
                 disabled={scraping || !/^https?:\/\//i.test(draft.url.trim())}
                 onClick={() => fillFromUrl(false)}
-                title="Lee la página del producto y rellena título, descripción e imagen"
+                title="Rellena título, descripción e imagen"
               >
                 {scraping ? <Spinner /> : <Sparkles size={13} />} Rellenar desde el enlace
               </button>
             </div>
             <p className="mt-1 text-[11px] text-zinc-500">
-              Pega el enlace del producto y el resto de campos se rellenan solos.
+              Pega el enlace · se rellena solo
             </p>
           </div>
           <p className="rounded-lg border px-3 py-2 text-[11px] text-zinc-500"
             style={{ borderColor: "var(--line-strong)" }}>
-            El <strong>código de descuento es ÚNICO y global</strong>: se configura una
-            sola vez en la pestaña <strong>Página de enlaces</strong> y se aplica solo
-            a todos los productos (portal del cliente y landing de Instagram).
-            Cambiarlo allí lo cambia en todas partes.
+            Código único y global: <strong>Página de enlaces</strong>
           </p>
           <div>
             <span className="label">…o URL de imagen externa (opcional)</span>
@@ -927,8 +924,8 @@ function ProductEditor({
             />
             <p className="mt-1 text-[11px] text-zinc-500">
               {hasUpload
-                ? "Tienes una imagen subida (tiene prioridad). Quítala para usar una URL externa."
-                : "Si subes una imagen, tendrá prioridad sobre la URL externa."}
+                ? "Imagen subida manda · quítala primero"
+                : "La imagen subida tiene prioridad"}
             </p>
           </div>
         </div>
@@ -1004,9 +1001,7 @@ function ExerciseVideosManager() {
       )}
       <VideoCoverCard />
       <p className="text-sm text-zinc-500">
-        Sube el <strong>vídeo de cada ejercicio</strong> (archivo MP4/MOV/WebM…) o pega un enlace
-        (YouTube…). En el portal, el cliente verá los vídeos de los ejercicios de{" "}
-        <strong>su</strong> rutina, todos con la portada de arriba.{" "}
+        <strong>Vídeo por ejercicio</strong>: MP4/MOV/WebM o enlace de YouTube.{" "}
         <span className="text-zinc-400">{configured} con vídeo/imagen.</span>
       </p>
 
@@ -1078,7 +1073,7 @@ function VideoCoverCard() {
       <div className="min-w-0 flex-1">
         <h3 className="text-sm font-semibold text-zinc-200">Portada de los vídeos</h3>
         <p className="mt-0.5 text-xs text-zinc-500">
-          Una sola imagen como miniatura de TODOS los vídeos de ejercicios (JPG/PNG, máx. 5 MB).
+          Miniatura de todos los vídeos · JPG/PNG, máx. 5 MB
         </p>
       </div>
       <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
