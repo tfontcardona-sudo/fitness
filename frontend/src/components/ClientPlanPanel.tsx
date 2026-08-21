@@ -8,7 +8,7 @@ import { GOAL_LABEL, goalDays, goalReviewDue, planMonthLabel } from "../lib/form
 import { deficitLabel, macroPct, MACRO_TOTAL_TOLERANCE } from "../lib/nutritionTargets";
 import { isCriticalLine } from "../lib/clinical";
 import { ExpandableArea, ProseClamp, Spinner, useToast } from "./ui";
-import { agrupar, toAviso } from "../lib/findings";
+import { agrupar, resumenCorto, toAviso, traducirFlags } from "../lib/findings";
 import { MemoDetails } from "./MemoDetails";
 import { ClientPlanEditor } from "./ClientPlanEditor";
 import type { ClientOut, GoalType } from "../types";
@@ -601,6 +601,21 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
     nut.applied_adjustments ?? null;
   const alreadyAdapted = review != null && appliedBlock?.period_index === review.period_index;
 
+  // UN SOLO recuento de puntos a corregir, compartido por el chip de estado y
+  // el bloque de avisos: son las líneas que el coach VE (avisos ya fusionados
+  // entre revisores + avisos del guardarraíl ya traducidos y agrupados).
+  const nRojoTotal = (() => {
+    // Mismo filtro por color que el bloque: sin él salía una caja roja vacía
+    // con la cabecera "Retenido · 1 punto a corregir".
+    const c = plan?.review?.color;
+    const bloq = (c === "rojo" || c === "ambar")
+      ? (plan?.review?.findings ?? []).filter((f) => f.severity === "bloqueante")
+      : [];
+    const flags = traducirFlags((plan?.guardrail_flags ?? [])
+      .filter((f) => f.startsWith("violation:") || f.startsWith("retenido")));
+    return agrupar(bloq.map(toAviso)).reduce((n, g) => n + g.items.length, 0) + flags.length;
+  })();
+
   return (
     <div className="space-y-4">
       {/* Cabecera con acciones */}
@@ -608,6 +623,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="flex flex-wrap items-center gap-2">
+              {/* Un solo recuento para el chip y para el bloque de avisos. */}
               <h3 className="text-base font-semibold text-zinc-100">
                 Planificación · {planMonthLabel(plan.published_at ?? plan.created_at)}
               </h3>
@@ -635,10 +651,10 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                   : c === "verde"
                     ? { background: "rgba(22,163,74,0.12)", color: "#15803D" }
                     : { background: "rgba(217,119,6,0.12)", color: "#B45309" };
-                const nBloq = (plan.review.findings ?? [])
-                  .filter((f) => f.severity === "bloqueante").length;
+                // MISMO recuento que el bloque de abajo (antes el chip contaba
+                // solo los hallazgos y el bloque hallazgos + flags: 19 vs 24).
                 const label = c === "rojo"
-                  ? (nBloq ? `${nBloq} a corregir` : "Revisar")
+                  ? (nRojoTotal ? `${nRojoTotal} a corregir` : "Revisar")
                   : c === "verde" ? "Revisión OK" : "Con avisos";
                 return (
                   <span className="rounded-full px-2 py-0.5 text-xs font-semibold"
@@ -662,12 +678,17 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                 // plan ya activado dejaría un estado falso en ámbar eterno.
                 .filter((f) => plan.status !== "published" || !f.startsWith("base sin IA"));
               const rojoFindings = findings.filter((f) => f.severity === "bloqueante");
-              const rojoFlags = flags.filter((f) => f.startsWith("violation:") || f.startsWith("retenido"));
+              // Jerga fuera: "violation:… fat_g … ±5%" → "Grasas fuera de rango".
+              const rojoFlags = traducirFlags(
+                flags.filter((f) => f.startsWith("violation:") || f.startsWith("retenido")));
               const ambarFindings = findings.filter((f) => f.severity !== "bloqueante");
-              const ambarFlags = flags.filter((f) => !f.startsWith("violation:") && !f.startsWith("retenido"));
+              const ambarFlags = traducirFlags(
+                flags.filter((f) => !f.startsWith("violation:") && !f.startsWith("retenido")));
               const degraded = plan.review?.degraded_reviewers?.length ?? 0;
-              const nAmbar = ambarFindings.length + ambarFlags.length + (degraded > 0 ? 1 : 0);
-              const nRojo = rojoFindings.length + rojoFlags.length;
+              const nAmbar = agrupar(ambarFindings.map(toAviso))
+                .reduce((n, g) => n + g.items.length, 0)
+                + ambarFlags.length + (degraded > 0 ? 1 : 0);
+              const nRojo = nRojoTotal;
               return (
                 <>
                   {nRojo > 0 && (
@@ -1350,11 +1371,19 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                     <span style={{ color: "var(--brand-accent-2)" }}>Sem {w.week}</span> · {w.intent}
                   </div>
                   <div className="text-zinc-500">Carga {w.load_pct}% · RIR {w.rir_target}</div>
-                  {w.volume_note && (
-                    <div className="mt-0.5 text-zinc-500">
-                      <ProseClamp text={w.volume_note} lines={2} />
-                    </div>
-                  )}
+                  {w.volume_note && (() => {
+                    const corto = resumenCorto(w.volume_note);
+                    // Con `title` a secas el resto era inalcanzable en móvil:
+                    // si hay más texto, se abre tocando.
+                    return corto === w.volume_note.replace(/\s*\.$/, "") ? (
+                      <div className="mt-0.5 text-zinc-500">{corto}</div>
+                    ) : (
+                      <details className="mt-0.5 text-zinc-500">
+                        <summary className="cursor-pointer">{corto}</summary>
+                        <p className="mt-1">{w.volume_note}</p>
+                      </details>
+                    );
+                  })()}
                 </div>
               ))}
             </div>
@@ -1443,8 +1472,8 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
         )}
         {tr.deload_instructions && (
           <div className="mt-3 text-xs text-zinc-400">
-            <b className="text-zinc-300">Descarga (deload)</b>
-            <ProseClamp text={tr.deload_instructions} lines={2} />
+            <b className="text-zinc-300">Descarga (deload)</b>{" "}
+            <ProseClamp text={tr.deload_instructions} lines={1} />
           </div>
         )}
       </div>
@@ -2011,20 +2040,32 @@ function AvisosBlock({ tono, cabecera, findings, flags, degraded = 0, plegado = 
 
       {abierto && (
         <div className="mt-1.5 space-y-2">
+          {/* Cada grupo, una TARJETA propia: sin separación real, los bloques
+              se leían como una lista continua imposible de escanear. */}
           {grupos.map((g) => (
-            <div key={g.categoria}>
-              <p className="text-[10px] font-bold uppercase tracking-wide opacity-60" style={{ color }}>
-                {g.categoria} · {g.items.length}
+            <div key={g.categoria} className="rounded-md p-2"
+              style={{ background: "var(--surface)" }}>
+              <p className="mb-1 text-[10px] font-bold uppercase tracking-wider"
+                style={{ color, opacity: 0.75 }}>
+                {g.categoria} <span className="opacity-60">· {g.items.length}</span>
               </p>
-              <ul className="mt-0.5 space-y-1">
+              <ul className="space-y-1.5">
                 {g.items.map((a, i) => (
-                  <li key={i}>
+                  <li key={i} className="border-l-2 pl-2"
+                    style={{ borderLeftColor: `color-mix(in srgb, ${color} 35%, transparent)` }}>
                     <details>
-                      <summary className="flex cursor-pointer flex-wrap items-baseline gap-x-1.5 text-xs">
-                        <span className="font-medium" style={{ color }}>{a.titulo}</span>
-                        <span className="text-zinc-500">→ {a.accion}</span>
+                      <summary className="cursor-pointer text-xs leading-snug">
+                        <span className="font-semibold" style={{ color }}>{a.titulo}</span>
+                        {a.veces > 1 && (
+                          <span className="ml-1 rounded px-1 text-[10px] font-bold"
+                            style={{ background: `color-mix(in srgb, ${color} 15%, transparent)`, color }}
+                            title={`${a.veces} revisores señalaron lo mismo`}>
+                            ×{a.veces}
+                          </span>
+                        )}
+                        <span className="ml-1 text-zinc-500">→ {a.accion}</span>
                       </summary>
-                      <p className="mt-0.5 pl-3 text-xs text-zinc-500">{a.detalle}</p>
+                      <p className="mt-1 whitespace-pre-line text-xs text-zinc-500">{a.detalle}</p>
                     </details>
                   </li>
                 ))}
