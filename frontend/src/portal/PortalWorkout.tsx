@@ -20,6 +20,52 @@ interface ExRecord { e1rm_kg: number; weight_kg: number; reps: number; date: str
  * hoy. Todo se guarda solo en el backend (workout_sets) y el coach lo ve al
  * instante. Las series se conservan aunque cambie de sesión o guarde el diario.
  */
+/* ---- Lo que tiene que sobrevivir a cambiar de pestaña -------------------
+   PortalApp remonta el contenido al cambiar de pestaña, así que cualquier
+   cosa viva en el estado de esta pantalla MUERE ahí. Estas dos cosas no
+   pueden morir: una serie que no llegó a guardarse y un descanso en marcha.
+   `sessionStorage`: sobreviven a la navegación pero no a cerrar la app días
+   después (un descanso de anteayer no tiene ningún sentido). */
+
+const K_PENDIENTE = "dqr.entreno.pendiente";
+const K_DESCANSO = "dqr.entreno.descanso";
+
+function _guardarPendiente(fecha: string, sets: unknown[]): void {
+  try {
+    sessionStorage.setItem(K_PENDIENTE, JSON.stringify({ fecha, sets, ts: Date.now() }));
+  } catch { /* sin almacenamiento: se pierde, como antes */ }
+}
+function _limpiarPendiente(): void {
+  try { sessionStorage.removeItem(K_PENDIENTE); } catch { /* nada que hacer */ }
+}
+function _leerPendiente(fecha: string): unknown[] | null {
+  try {
+    const raw = sessionStorage.getItem(K_PENDIENTE);
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    // Solo del MISMO día: reenviar las series de ayer pisaría las de hoy.
+    if (d?.fecha !== fecha || !Array.isArray(d.sets)) return null;
+    if (Date.now() - (d.ts ?? 0) > 24 * 3600 * 1000) return null;
+    return d.sets;
+  } catch { return null; }
+}
+
+function _guardarDescanso(d: { fin: number; total: number; exName: string }): void {
+  try { sessionStorage.setItem(K_DESCANSO, JSON.stringify(d)); } catch { /* ídem */ }
+}
+function _limpiarDescanso(): void {
+  try { sessionStorage.removeItem(K_DESCANSO); } catch { /* ídem */ }
+}
+function _leerDescanso(): { fin: number; total: number; exName: string } | null {
+  try {
+    const raw = sessionStorage.getItem(K_DESCANSO);
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    return typeof d?.fin === "number" && typeof d?.total === "number"
+      ? { fin: d.fin, total: d.total, exName: String(d.exName ?? "") } : null;
+  } catch { return null; }
+}
+
 export function PortalWorkout({ api, brand, periodStatus = null, businessToday = null,
   hasPeriod = true }: {
   api: Api; brand: PortalBrand; periodStatus?: string | null; businessToday?: string | null;
@@ -156,11 +202,15 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
     });
     setSaveState("saving");
     api.saveDiary({ log_date: today, workout_sets })
-      .then(() => { setSavedAt(new Date()); setSaveState("saved"); })
+      .then(() => { _limpiarPendiente(); setSavedAt(new Date()); setSaveState("saved"); })
       .catch((e) => {
         // RE-ENCOLA lo no guardado para que el siguiente flush lo reintente
         // (antes el pendiente se descartaba y solo otro tecleo re-enviaba).
         pendingRef.current = pendingRef.current ?? data;
+        // Y lo GUARDA fuera del componente: el volcado de última hora ocurre
+        // al desmontar (cambiar de pestaña), así que re-encolarlo en un ref ya
+        // muerto era perderlo. Aquí sobrevive al desmontaje y al cierre.
+        _guardarPendiente(today, workout_sets);
         setSaveState("idle");
         toast.push(
           e instanceof PortalError ? e.message : "Sin guardar · revisa tu conexión",
@@ -187,28 +237,53 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
     };
   }, []);
 
-  function startRest(sec: number, exName: string) {
+  function startRest(sec: number, exName: string, finAbsoluto?: number) {
     if (restTimer.current) window.clearInterval(restTimer.current);
-    setRest({ left: sec, total: sec, exName });
+    const fin = finAbsoluto ?? Date.now() + sec * 1000;
+    _guardarDescanso({ fin, total: sec, exName });
+    setRest({ left: Math.max(0, Math.round((fin - Date.now()) / 1000)), total: sec, exName });
     restTimer.current = window.setInterval(() => {
       setRest((r) => {
         if (!r) return r;
         if (r.left <= 1) {
           if (restTimer.current) window.clearInterval(restTimer.current);
           restTimer.current = null;
+          _limpiarDescanso();
           try { navigator.vibrate?.([200, 100, 200]); } catch { /* sin soporte */ }
           toast.push("💪 Descanso terminado · siguiente serie");
           return null;
         }
-        return { ...r, left: r.left - 1 };
+        // Por RELOJ, no por conteo: en segundo plano el navegador estrangula
+        // los intervalos y el descanso se quedaba corto o clavado.
+        return { ...r, left: Math.max(0, Math.round((fin - Date.now()) / 1000)) };
       });
     }, 1000);
   }
   function cancelRest() {
     if (restTimer.current) window.clearInterval(restTimer.current);
     restTimer.current = null;
+    _limpiarDescanso();
     setRest(null);
   }
+
+  // Cambiar de pestaña DESMONTA esta pantalla (PortalApp la remonta por `key`):
+  // lo que quedó sin guardar se reintenta y el descanso en marcha se retoma
+  // donde iba, en vez de morir los dos en silencio.
+  useEffect(() => {
+    const sinGuardar = _leerPendiente(today);
+    if (sinGuardar && sinGuardar.length) {
+      api.saveDiary({ log_date: today, workout_sets: sinGuardar as any })
+        .then(() => { _limpiarPendiente(); setSavedAt(new Date()); setSaveState("saved"); })
+        .catch(() => { /* sigue guardado: se reintenta al volver */ });
+    }
+    const guardado = _leerDescanso();
+    if (guardado && guardado.fin > Date.now() + 1000) {
+      startRest(guardado.total, guardado.exName, guardado.fin);
+    } else if (guardado) {
+      _limpiarDescanso();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => () => { if (restTimer.current) window.clearInterval(restTimer.current); }, []);
 
   // Serie COMPLETADA (transición a peso+reps rellenos): récord + descanso.
