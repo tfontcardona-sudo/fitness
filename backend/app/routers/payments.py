@@ -69,10 +69,12 @@ def list_payments(
     offset: int = Query(default=0, ge=0),
     status_filter: str | None = Query(default=None, alias="status"),
     client_id: int | None = Query(default=None),
+    orphan: bool = Query(default=False),
     db: Session = Depends(get_db),
 ) -> PaymentsListOut:
     filas, total = pay_svc.list_payments(
-        db, limit=limit, offset=offset, status=status_filter, client_id=client_id)
+        db, limit=limit, offset=offset, status=status_filter, client_id=client_id,
+        orphan=orphan)
     # Nombres en UNA consulta (nada de N+1 recorriendo el feed cliente a cliente).
     ids = {p.client_id for p in filas if p.client_id}
     nombres = dict(db.execute(

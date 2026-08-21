@@ -429,12 +429,13 @@ export const api = {
 
   // --- créditos IA (Anthropic) ---
   // --- pagos (libro de caja de Stripe) ---
-  listPayments: (params: { limit?: number; offset?: number; status?: string; client_id?: number } = {}) => {
+  listPayments: (params: { limit?: number; offset?: number; status?: string; client_id?: number; orphan?: boolean } = {}) => {
     const q = new URLSearchParams();
     if (params.limit) q.set("limit", String(params.limit));
     if (params.offset) q.set("offset", String(params.offset));
     if (params.status) q.set("status", params.status);
     if (params.client_id) q.set("client_id", String(params.client_id));
+    if (params.orphan) q.set("orphan", "true");
     const qs = q.toString();
     return request<PaymentsListOut>("GET", `/payments${qs ? `?${qs}` : ""}`);
   },

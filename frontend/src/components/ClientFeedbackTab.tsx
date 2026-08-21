@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Sparkles, AlertTriangle, MessageSquare, MessageCircle, Mail, Video, Target, TrendingUp, BarChart3, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
 import { api, getToken } from "../lib/api";
 import { feedbackBody, feedbackMessage, openWhatsApp, videoCallModifyMessage, videoCallScheduledMessage, waPhone } from "../lib/whatsapp";
@@ -678,7 +679,10 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
 
   const notConnectedNote = !googleConnected ? (
     <p className="text-[11px]" style={{ color: "#9A6B15" }}>
-      Conecta Google en <b>Recursos → Página de enlaces</b> para agendar con Meet.
+      Sin Google no hay Meet.{" "}
+      <Link to="/recursos?tab=enlaces" className="font-semibold underline underline-offset-2">
+        Conectar Google →
+      </Link>
     </p>
   ) : null;
 
@@ -696,7 +700,7 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
         <button
           className="btn btn-primary !px-3 !py-1.5 text-xs"
           disabled={!gDate || !gTime || busy || !googleConnected || gDatePast}
-          title={!googleConnected ? "Conecta Google en Recursos"
+          title={!googleConnected ? "Conecta Google en Recursos → Página de enlaces"
             : !gDate || !gTime ? "Elige el día y la hora"
             : gDatePast ? "Fecha pasada · elige otra" : undefined}
           onClick={() => run(

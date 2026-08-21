@@ -368,13 +368,19 @@ def monthly_series(db: Session, *, months: int = 6) -> list[dict]:
 
 def list_payments(db: Session, *, limit: int = 50, offset: int = 0,
                   status: str | None = None,
-                  client_id: int | None = None) -> tuple[list[Payment], int]:
-    """Página del feed (más reciente primero) + total que cumple el filtro."""
+                  client_id: int | None = None,
+                  orphan: bool = False) -> tuple[list[Payment], int]:
+    """Página del feed (más reciente primero) + total que cumple el filtro.
+
+    orphan=True: solo los cobros SIN ficha. El resumen avisaba de cuántos hay y
+    no había forma de llegar a ellos desde la web."""
     filtros = []
     if status in STATUSES:
         filtros.append(Payment.status == status)
     if client_id:
         filtros.append(Payment.client_id == client_id)
+    if orphan:
+        filtros.append(Payment.client_id.is_(None))
     total = int(db.scalar(select(func.count(Payment.id)).where(*filtros)) or 0)
     filas = list(db.scalars(
         select(Payment).where(*filtros)

@@ -402,7 +402,9 @@ export default function ClientProfilePage() {
             móvil; columna izquierda-abajo en escritorio) */}
         <aside className="order-last min-w-0 space-y-3 lg:order-none lg:col-start-1 lg:row-start-2">
           {/* Anamnesis: enviar enlace + subir PDF rellenado */}
-          <ClientDocuments client={client} onUploaded={reload} portalUrl={portalUrl} anamnesisUrl={anamnesisUrl} />
+          <ClientDocuments client={client} onUploaded={reload}
+            onGoAnamnesis={() => changeTab("anamnesis")}
+            portalUrl={portalUrl} anamnesisUrl={anamnesisUrl} />
           <button
             onClick={() => setConfirmRegen(true)}
             className="w-full text-center text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"

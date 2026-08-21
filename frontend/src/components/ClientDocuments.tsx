@@ -16,9 +16,12 @@ interface DocItem {
  * cuando este la devuelve rellenada, la sube aquí para conservarla asociada a su
  * ficha. Luego pasa los datos clave a la pestaña "Anamnesis" editable.
  */
-export function ClientDocuments({ client, onUploaded, portalUrl, anamnesisUrl }: {
+export function ClientDocuments({ client, onUploaded, onGoAnamnesis, portalUrl, anamnesisUrl }: {
   client: ClientOut;
   onUploaded?: () => void;
+  /** Llevar a la pestaña Anamnesis: el aviso de "revisa los datos" no dice
+   *  dónde están, lleva hasta ellos. */
+  onGoAnamnesis?: () => void;
   portalUrl?: string | null;
   anamnesisUrl?: string | null;
 }) {
@@ -61,9 +64,11 @@ export function ClientDocuments({ client, onUploaded, portalUrl, anamnesisUrl }:
     try {
       const res = await api.uploadClientDocument(client.id, file);
       if (res.read_ok) {
-        toast.push("Anamnesis subida y leída con IA. Revisa los datos.");
+        toast.push("Anamnesis leída · revísala", "ok",
+                   onGoAnamnesis ? { label: "Revisar", onClick: onGoAnamnesis } : undefined);
       } else {
-        toast.push("Anamnesis subida. Pulsa 'Leer con IA' en la pestaña Anamnesis.");
+        toast.push("Anamnesis subida · falta leerla", "ok",
+                   onGoAnamnesis ? { label: "Leer con IA", onClick: onGoAnamnesis } : undefined);
       }
       // Acceso al portal: se envía automáticamente la primera vez que se
       // registra la anamnesis. Informamos del resultado en todos los casos.

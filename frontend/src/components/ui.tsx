@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { AlertTriangle, Check, Loader2, X } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { ClientStatus } from "../types";
 import { STATUS_LABEL, STATUS_TONE } from "../lib/format";
 import { useDismiss, useModalFocus } from "../lib/useDismiss";
@@ -67,8 +68,13 @@ export function EmptyState({
 
 /* ---------------------------------------------------------------- Toast ---- */
 
-type Toast = { id: number; message: string; tone: "ok" | "error" };
-type ToastCtx = { push: (message: string, tone?: "ok" | "error") => void };
+/** Acción opcional del aviso: si el mensaje habla de OTRO sitio, el aviso
+ *  lleva ahí de un clic en vez de decirle al coach dónde buscarlo. */
+type ToastAction = { label: string; onClick: () => void };
+type Toast = { id: number; message: string; tone: "ok" | "error"; action?: ToastAction };
+type ToastCtx = {
+  push: (message: string, tone?: "ok" | "error", action?: ToastAction) => void;
+};
 
 const ToastContext = createContext<ToastCtx | null>(null);
 
@@ -81,10 +87,13 @@ export function useToast(): ToastCtx {
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const push = useCallback((message: string, tone: "ok" | "error" = "ok") => {
+  const push = useCallback((message: string, tone: "ok" | "error" = "ok",
+                           action?: ToastAction) => {
     const id = Date.now() + Math.random();
-    setToasts((t) => [...t, { id, message, tone }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4000);
+    setToasts((t) => [...t, { id, message, tone, action }]);
+    // Con acción dura más: hay que darle tiempo a leerla y pulsarla.
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)),
+               action ? 8000 : 4000);
   }, []);
 
   return (
@@ -116,10 +125,56 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               )}
             </span>
             <span className="text-zinc-100">{t.message}</span>
+            {t.action && (
+              <button
+                onClick={() => {
+                  t.action?.onClick();
+                  setToasts((x) => x.filter((y) => y.id !== t.id));
+                }}
+                className="pointer-events-auto shrink-0 text-sm font-semibold hover:opacity-80"
+                style={{ color: "var(--brand-accent)" }}
+              >
+                {t.action.label} →
+              </button>
+            )}
           </div>
         ))}
       </div>
     </ToastContext.Provider>
+  );
+}
+
+/* ------------------------------------------------------- SectionHeader ---- */
+
+/**
+ * Cabecera de un apartado del panel: raíl de color, título y contador. Una
+ * sola pieza para que TODOS los apartados se marquen igual — antes cada
+ * pantalla se inventaba su cabecera y el panel se leía como una lista plana.
+ */
+export function SectionHeader({
+  title, tone = "var(--brand-accent)", count, right, icon: Icon,
+}: {
+  title: string;
+  tone?: string;
+  count?: number | string;
+  right?: ReactNode;
+  icon?: LucideIcon;
+}) {
+  return (
+    <div className="mb-3 flex items-center justify-between gap-3">
+      <h2 className="flex items-center gap-2 text-sm font-semibold text-zinc-200">
+        <span aria-hidden className="h-4 w-1 rounded-full" style={{ background: tone }} />
+        {Icon && <Icon size={15} style={{ color: tone }} />}
+        {title}
+        {count != null && count !== "" && (
+          <span className="rounded-full px-1.5 py-0.5 text-[11px] font-bold tabular-nums"
+            style={{ background: `color-mix(in srgb, ${tone} 12%, transparent)`, color: tone }}>
+            {count}
+          </span>
+        )}
+      </h2>
+      {right}
+    </div>
   );
 }
 

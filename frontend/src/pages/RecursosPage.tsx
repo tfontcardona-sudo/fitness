@@ -35,9 +35,23 @@ import { ConfirmDialog, EmptyState, PageLoader, Spinner, useToast } from "../com
 export default function RecursosPage() {
   // Al volver del OAuth de Google (/recursos?google=…) abrimos directamente la
   // pestaña "Página de enlaces", donde está el bloque de conexión con Google.
-  const [tab, setTab] = useState<"productos" | "videos" | "enlaces" | "aprendizaje">(
-    () => (new URLSearchParams(window.location.search).has("google") ? "enlaces" : "productos"),
-  );
+  // La pestaña viaja en la URL: sobrevive a recargar y, sobre todo, permite
+  // ENLAZARLA desde donde se la menciona ("conecta Google en Recursos" lleva
+  // directo al bloque de Google, no a buscarlo).
+  type RTab = "productos" | "videos" | "enlaces" | "aprendizaje";
+  const TABS_VALIDAS: RTab[] = ["productos", "videos", "enlaces", "aprendizaje"];
+  const [tab, setTabState] = useState<RTab>(() => {
+    const q = new URLSearchParams(window.location.search);
+    const t = q.get("tab") as RTab | null;
+    if (t && TABS_VALIDAS.includes(t)) return t;
+    return q.has("google") ? "enlaces" : "productos";
+  });
+  const setTab = (t: RTab) => {
+    setTabState(t);
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", t);
+    window.history.replaceState(null, "", url);
+  };
   return (
     <div className="mx-auto max-w-4xl px-4 py-6 md:px-8 md:py-8">
       <header className="mb-6">
