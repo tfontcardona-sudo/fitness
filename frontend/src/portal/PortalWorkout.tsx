@@ -20,12 +20,18 @@ interface ExRecord { e1rm_kg: number; weight_kg: number; reps: number; date: str
  * hoy. Todo se guarda solo en el backend (workout_sets) y el coach lo ve al
  * instante. Las series se conservan aunque cambie de sesión o guarde el diario.
  */
-export function PortalWorkout({ api, brand, periodStatus = null, businessToday = null }: {
+export function PortalWorkout({ api, brand, periodStatus = null, businessToday = null,
+  hasPeriod = true }: {
   api: Api; brand: PortalBrand; periodStatus?: string | null; businessToday?: string | null;
+  /** ¿Hay período de seguimiento? Sin él, el backend rechaza el guardado. */
+  hasPeriod?: boolean;
 }) {
   // Con la revisión ya ENVIADA (período cerrado) el backend rechaza el
   // guardado: mejor avisar y no dejar teclear datos que no se guardarían.
-  const readOnly = periodStatus != null && periodStatus !== "open";
+  // MISMO guardarraíl que el Diario: sin período abierto el backend rechaza
+  // el guardado, así que dejar la pantalla editable hacía que el cliente
+  // apuntara una sesión entera para nada.
+  const readOnly = (periodStatus != null && periodStatus !== "open") || !hasPeriod;
   const toast = usePortalToast();
   // Fecha CONGELADA al montar (ver PortalDiary): pasada la medianoche, un
   // re-render no debe refetchear el día nuevo pisando lo tecleado. Manda la
@@ -47,6 +53,12 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
   // Temporizador de DESCANSO entre series: arranca al completar una serie
   // (peso + reps) con el rest_sec prescrito para ese ejercicio.
   const [rest, setRest] = useState<{ left: number; total: number; exName: string } | null>(null);
+  // Cierre APLAZADO de la serie (ver setRow): último valor y su temporizador.
+  const pendientes = useRef<Record<number, SetRow>>({});
+  const cierres = useRef<Record<number, number>>({});
+  useEffect(() => () => {
+    for (const t of Object.values(cierres.current)) window.clearTimeout(t);
+  }, []);
   const restTimer = useRef<number | null>(null);
   // Vídeo abierto EN la propia pantalla (uno como mucho: abrir otro cierra el
   // anterior, y cerrar el que está abierto devuelve al cliente a su rutina).
@@ -222,19 +234,39 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
     if (ex?.rest_sec) startRest(ex.rest_sec, ex.name);
   }
 
+  /** ¿Serie HECHA? Con carga hacen falta kg y reps; en los ejercicios de peso
+   *  corporal (flexiones, dominadas, plancha) no hay kg que apuntar y con la
+   *  regla anterior no contaban nunca: ni descanso, ni récord, ni "Anterior".
+   *  Se reconocen porque el plan no les pauta ningún peso de referencia. */
+  function _completa(fila: SetRow, exId: number): boolean {
+    if (fila.reps == null) return false;
+    if (fila.weight_kg != null) return true;
+    const ex = selected?.exercises.find((e) => e.exercise_id === exId);
+    return (ex?.week_weight_hint_kg ?? ex?.start_weight_hint_kg) == null;
+  }
+
   function setRow(exId: number, idx: number, patch: Partial<SetRow>) {
     if (readOnly) return;
     const prevRow = sets[exId]?.[idx];
     const nuevoRow = { ...(prevRow ?? { weight_kg: null, reps: null }), ...patch };
-    const transicion = prevRow != null
-      && !(prevRow.weight_kg != null && prevRow.reps != null)
-      && nuevoRow.weight_kg != null && nuevoRow.reps != null;
+    const transicion = prevRow != null && !_completa(prevRow, exId)
+      && _completa(nuevoRow, exId);
     setSets((s) => {
       const next = { ...s, [exId]: s[exId].map((r, i) => (i === idx ? { ...r, ...patch } : r)) };
       flush(next);
       return next;
     });
-    if (transicion) serieCompletada(exId, nuevoRow);
+    // El campo emite en CADA pulsación: tecleando "12" reps, la transición
+    // salta con el "1" y arrancaba el descanso (y celebraba un récord falso)
+    // a mitad de escribir. Se espera a que el cliente deje de teclear.
+    if (transicion) {
+      window.clearTimeout(cierres.current[exId]);
+      cierres.current[exId] = window.setTimeout(() => {
+        const fila = pendientes.current[exId];
+        if (fila && _completa(fila, exId)) serieCompletada(exId, fila);
+      }, 1100);
+    }
+    pendientes.current[exId] = nuevoRow;
   }
   // (No hay añadir ni borrar series: las filas las fija el plan del coach —
   //  `ex.sets`. El cliente registra lo que hizo, no reescribe la pauta.)
@@ -259,7 +291,7 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
         <div>
           <h2 className="p-title">Tu entreno</h2>
         </div>
-        <div className="portal-card border-l-4 p-4" style={{ borderLeftColor: brand.color_primary }}>
+        <div className="portal-card portal-card--rail p-4" style={{ "--rail": brand.color_primary } as React.CSSProperties}>
           <div className="flex items-center gap-2">
             <Sparkles size={18} style={{ color: brand.color_primary }} />
             <p className="text-sm font-semibold">Se está creando tu planificación</p>
@@ -278,11 +310,21 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
         <h2 className="p-title">Registrar entreno</h2>
       </div>
 
-      {/* Revisión enviada: el registro queda en pausa hasta el nuevo período */}
       {readOnly && (
-        <div className="portal-card border-l-4 p-3.5 text-sm" style={{ borderLeftColor: brand.color_primary }}>
-          <p className="font-semibold">Revisión enviada — registro en pausa</p>
-          <p className="mt-1 text-xs opacity-70">Se reabre con tu feedback</p>
+        <div className="portal-card portal-card--rail p-3.5 text-sm" style={{ "--rail": brand.color_primary } as React.CSSProperties}>
+          {hasPeriod ? (
+            <>
+              <p className="font-semibold">Revisión enviada — registro en pausa</p>
+              <p className="mt-1 text-xs opacity-70">Se reabre con tu feedback</p>
+            </>
+          ) : (
+            <>
+              <p className="font-semibold">Tu seguimiento aún no ha empezado</p>
+              <p className="mt-1 text-xs opacity-70">
+                Puedes ver la rutina; al arrancar podrás registrar tus series
+              </p>
+            </>
+          )}
         </div>
       )}
 
@@ -290,7 +332,7 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
           sugeridos de abajo ya vienen ajustados a esta semana. */}
       {week && (
         <div
-          className="portal-card overflow-hidden border-l-4 p-3.5"
+          className="portal-card portal-card--rail overflow-hidden p-3.5"
           style={{ borderLeftColor: brand.color_secondary }}
         >
           <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
@@ -589,7 +631,7 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
       {rest && (
         <div
           className="fixed bottom-20 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full px-4 py-2.5 shadow-lg"
-          style={{ background: brand.color_primary, color: "#fff" }}
+          style={{ background: brand.color_primary, color: "var(--p-on-accent)" }}
           role="timer"
           aria-label={`Descanso: ${rest.left} segundos`}
         >

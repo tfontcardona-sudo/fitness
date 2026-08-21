@@ -105,7 +105,7 @@ export default function PortalLogin() {
         <button
           type="submit" disabled={busy}
           className="portal-btn3d flex w-full items-center justify-center gap-2 py-3 text-sm font-semibold"
-          style={{ background: "var(--p-accent)", color: "#fff" }}
+          style={{ background: "var(--p-accent)", color: "var(--p-on-accent)" }}
         >
           <LogIn size={16} /> {busy ? "Entrando…" : "Entrar"}
         </button>
