@@ -53,7 +53,6 @@ export default function PortalLogin() {
       <div className="mb-6 flex flex-col items-center text-center">
         <img src="/dq-logo.png" alt="" className="mb-3 h-12 w-auto rounded-xl shadow-sm" />
         <h1 className="text-2xl font-semibold">Entra a tu portal</h1>
-        <p className="mt-1 text-sm opacity-60">Usa el email y la contraseña que te enviamos por correo.</p>
       </div>
 
       <form onSubmit={submit} className="portal-card space-y-4 p-5">
@@ -112,9 +111,7 @@ export default function PortalLogin() {
         </button>
       </form>
 
-      <p className="mt-5 text-center text-xs opacity-50">
-        ¿No tienes tus datos? Pídeselos a tu coach y te reenviará el acceso.
-      </p>
+      <p className="mt-5 text-center text-xs opacity-50">¿Sin acceso? Pídeselo a tu coach.</p>
     </div>
   );
 }

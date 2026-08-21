@@ -442,6 +442,79 @@ cd backend && python -m pytest tests/ -q
 
 ## 9. Trabajo pendiente / próximos pasos
 
+0000000. ✅ **TEXTO AL MÍNIMO: telegráfico, por bloques y solo lo necesario
+   (agosto 2026).** El dueño, sobre capturas del móvil: "una información que en
+   4 palabras se podría transmitir igual que en 30… tiene que ser práctico,
+   rápido y sencillo". Barrido de 5 auditores + verificación adversarial sobre
+   TODO el sistema (portal, panel, prompts, documentos, emails/push/alertas):
+   148 hallazgos. Suite (505) + tsc + build en verde.
+   - ⚠️ **HALLAZGO RAÍZ — el schema NO viaja al modelo**: `AIClient.generate_json`
+     solo envía `system` y `user`; el schema únicamente hace `model_validate`.
+     Todo tope escrito en `Field(description=…)` era **una orden a la nada**. Los
+     topes viven ahora en los PROMPTS (`prompts.py`, `generator.py`); las
+     descriptions se mantienen como documentación con un aviso en la cabecera de
+     `schemas/ai.py` para que nadie repita el error.
+   - **DOS REGISTROS en SYSTEM_BASE**: el prompt base ordenaba "frases COMPLETAS
+     y bien construidas" para TODO — era literalmente la orden de escribir prosa.
+     Ahora: TELEGRÁFICO por defecto (palabras clave y cifras con "·", sin
+     explicar ni motivar) y EXPLICATIVO solo en rationale/split_rationale/
+     educativo. Topes duros por campo en los dos prompts del núcleo y en los dos
+     del educativo: volume_note 12 palabras, deload_instructions 20,
+     progression_rule 12, technique_cue/biomech_cue 10, warmup 15, cooldown 12,
+     cardio notes 12, rationale 2 frases, flexibility_rules 3-5 × 12 palabras,
+     refeed_or_break 15, evidence_note 10, píldoras EXACTAMENTE 3 × 40 palabras,
+     faq 3 × 35. Hallazgos del panel §9: descripción 20 palabras, cita 12,
+     ubicación 8, corrección 15, máx. 6 hallazgos (eran muros de texto rojo).
+   - **SEGURIDAD (coordinado con los topes)**: `_clinical_block` ordenaba
+     "explica el motivo en technique_cue/biomech_cue", campos ahora capados a 10
+     palabras → contradicción viva sobre información clínica. Resuelto: la nota
+     de seguridad va la PRIMERA en technique_cue con EXCEPCIÓN declarada (14
+     palabras). Fuera también las dos órdenes del USER prompt que mandaban
+     volcar teoría en esos campos.
+   - **Fallos visuales de las capturas**: tarjetas de macros con `grid-cols-4`
+     en móvil (~80 px/tarjeta) se solapaban ("32%Carbohid."), ahora 2×2 + cifra
+     `whitespace-nowrap`; badge "N a vigilar" partido en dos líneas → flex con
+     `shrink-0`; línea de déficit que repetía el objetivo de la tarjeta de arriba.
+   - **Recorte con medida REAL** (`ProseClamp` en ui.tsx, `TextCard`,
+     `PortalClamp`): los planes YA generados llevan los párrafos largos
+     guardados, así que el recorte vive también en la vista. El botón "ver más"
+     solo aparece si hay desbordamiento real, medido con **ResizeObserver** (una
+     medición única daba 0 dentro de un `<details>` cerrado → texto cortado sin
+     forma de abrirlo).
+   - **Portal (móvil)**: 30+ recortes — cabeceras de pantalla que repetían los
+     rótulos de debajo, "Se guarda solo" duplicado con el pie vivo, el mismo
+     aviso de pausa redactado de 3 formas en 3 pantallas, protocolo de fotos en
+     viñetas, instalación PWA en formato ruta ("Safari → Compartir → Añadir"),
+     login, recursos y cuestionario. **3 contradicciones corregidas**: el banner
+     decía "Son 2 pasos" y son 6; el subtítulo de la Revisión pedía "rellénala
+     al terminar tus 2 semanas" en un bloque que solo aparece cuando YA
+     terminaron; Progreso decía "Sube fotos" cuando las fotos se ENVÍAN por
+     WhatsApp/email. Y un punto doble ("…en tu plan..") por un "." fuera del join.
+   - **Panel**: `EmptyState.hint` pasa a OPCIONAL (obligarlo era el origen de
+     media docena de frases de relleno); Dashboard sin los 5 subtítulos que
+     repetían su propio botón (la causa del riesgo sube al título para no
+     perderla); Clientes, Recursos, SalesKit, AlertsBell y Créditos IA
+     telegrafiados.
+   - **Emails/push/alertas**: pie de los 16 emails sin la coletilla de marca;
+     cuerpos que empezaban repitiendo su titular; `onboarding_pay_anamnesis`
+     además estaba DESACTUALIZADO (mandaba descargar el PDF cuando la vía
+     oficial es el formulario digital). Push con el QUÉ en el título ("Pendiente
+     hoy", "Tu plan del mes 3") y cuerpo de palabras clave — el móvil corta a
+     ~40 caracteres y las frases largas no se leían. Alertas: el mensaje dice el
+     ESTADO, el botón dice la ACCIÓN (antes lo repetían); en las de alérgenos se
+     conserva íntegro el dato de seguridad y se corta solo la instrucción final.
+   - **Documentos del cliente**: fuera la sección "Notas del ajuste" (duplicaba
+     la celda "Ajuste aplicado" y la tabla de comidas, y pintaba una caja VACÍA
+     sin datos); "El plato saludable" de 5 párrafos a 4 líneas; ideas rápidas
+     agrupadas manteniendo UNA por línea (el filtro de alérgenos descarta la
+     línea entera: agruparlas habría escondido ideas seguras); fuera la trivia
+     del cacahuete.
+   - **Clasificador clínico**: "No tolera la lactosa" / "No puede flexionar la
+     rodilla" se clasificaban como negación irrelevante y se plegaban. Nueva
+     excepción `NEG_LIMITACION`: una negación que describe una LIMITACIÓN real
+     cuenta como crítica.
+
+
 000000. ✅ **INFORMACIÓN DEL CLIENTE: menos, mejor y ordenada (agosto 2026).**
    Queja del dueño: "demasiada información mal estructurada, un texto enorme con
    puntos, no se sabe dónde mirar". Inventario UX por 5 auditores (workflow) +

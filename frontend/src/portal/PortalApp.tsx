@@ -108,9 +108,7 @@ export default function PortalApp({ token }: { token: string }) {
     return (
       <Centered>
         <p className="text-lg font-semibold">No se pudo conectar</p>
-        <p className="mt-1 text-sm opacity-70">
-          Revisa tu conexión e inténtalo de nuevo en unos segundos.
-        </p>
+        <p className="mt-1 text-sm opacity-70">Revisa tu conexión.</p>
         <button
           onClick={reload}
           className="portal-btn3d mt-4 rounded-xl px-4 py-2 text-sm font-semibold"
@@ -192,7 +190,7 @@ export default function PortalApp({ token }: { token: string }) {
               {(state.streak_days ?? 0) >= 2 && (
                 <p className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold"
                    style={{ color: state.brand.color_primary }}>
-                  🔥 {state.streak_days} días seguidos al día
+                  🔥 {state.streak_days} días
                 </p>
               )}
             </div>
@@ -264,10 +262,7 @@ export default function PortalApp({ token }: { token: string }) {
               <span className="font-bold" style={{ color: state.brand.color_primary }}>
                 Te falta un paso: completa tu anamnesis →
               </span>
-              <span className="mt-1 block opacity-75">
-                Con ese cuestionario preparamos tu plan a medida. Son 2 pasos y
-                puedes hacerlo desde el móvil.
-              </span>
+              <span className="mt-1 block opacity-75">6 pasos · unos minutos desde el móvil</span>
             </a>
           )}
           {/* SU PLAN, siempre a mano: la dieta y las pautas viven en el PDF y
@@ -284,8 +279,7 @@ export default function PortalApp({ token }: { token: string }) {
                   Ver mi plan (PDF)
                 </span>
                 <span className="mt-0.5 block text-[13px] opacity-70">
-                  {isStart ? "Tu dieta y tus pautas, siempre a mano."
-                    : "Tu dieta, tu rutina y tus pautas, siempre a mano."}
+                  {isStart ? "Dieta · pautas" : "Dieta · rutina · pautas"}
                 </span>
               </span>
             </a>
@@ -297,7 +291,7 @@ export default function PortalApp({ token }: { token: string }) {
             <PhotosReminder api={apiClient} accent={state.brand.color_primary} onConfirmed={reload} />
           )}
           <WelcomeSetup api={apiClient} token={token} accent={state.brand.color_primary}
-            secondary={state.brand.color_secondary} hasTraining={!isStart} />
+            secondary={state.brand.color_secondary} />
           {/* key={effTab+fecha}: transición suave al cambiar de pestaña Y
               remontaje si cambia la FECHA DE NEGOCIO — una PWA resucitada días
               después registraba en el día viejo, pisándolo en silencio
@@ -339,7 +333,7 @@ export default function PortalApp({ token }: { token: string }) {
               color: "#fff",
             }}
           >
-            ✨ Portal actualizado — toca para recargar
+            ✨ Actualizado · toca para recargar
           </button>
         )}
 
@@ -464,7 +458,6 @@ function VideoCallBanner({ api, accent, refreshKey = 0 }: { api: ReturnType<type
         </div>
         {showResched && (
           <div className="mt-3">
-            <p className="text-xs opacity-70">Propón una nueva fecha y hora; tu coach la confirmará.</p>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <input type="date" className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: `color-mix(in srgb, ${accent} 35%, transparent)`, background: "transparent" }}
                 value={date} min={portalLocalToday()} onChange={(e) => setDate(e.target.value)} />
@@ -491,7 +484,7 @@ function VideoCallBanner({ api, accent, refreshKey = 0 }: { api: ReturnType<type
     return (
       <div className="mb-4 rounded-2xl p-4" style={box}>
         {header}
-        <p className="mt-1 text-sm">Agenda tu videollamada de revisión con tu coach: elige el día y la hora que mejor te vengan.</p>
+        <p className="mt-1 text-sm">Elige el día y la hora que mejor te vengan:</p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <input type="date" className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: `color-mix(in srgb, ${accent} 35%, transparent)`, background: "transparent" }}
             value={date} min={portalLocalToday()} onChange={(e) => setDate(e.target.value)} />
@@ -513,8 +506,7 @@ function VideoCallBanner({ api, accent, refreshKey = 0 }: { api: ReturnType<type
       <div className="mb-4 rounded-2xl p-4" style={box}>
         {header}
         <p className="mt-1 text-sm">
-          Has propuesto: <b className="capitalize">{vc.call?.when_label}</b>. Tu coach lo confirmará
-          en breve; te avisaremos con el enlace.
+          Propuesto: <b className="capitalize">{vc.call?.when_label}</b> · pendiente de confirmar
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <input type="date" className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: `color-mix(in srgb, ${accent} 35%, transparent)`, background: "transparent" }}
@@ -536,7 +528,7 @@ function VideoCallBanner({ api, accent, refreshKey = 0 }: { api: ReturnType<type
     return (
       <div className="mb-4 rounded-2xl p-4" style={box}>
         {header}
-        <p className="mt-1 text-sm">Tu coach se pondrá en contacto contigo por WhatsApp para acordar el día y la hora de tu videollamada.</p>
+        <p className="mt-1 text-sm">Tu coach te escribirá por WhatsApp para fijar la hora.</p>
       </div>
     );
   }
@@ -636,9 +628,7 @@ function PhotosReminder({ api, accent, onConfirmed }: {
         <span className="mt-0.5 shrink-0" style={{ color: accent }}><Camera size={18} /></span>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold">¿Ya enviaste tus fotos de progreso a tu coach?</p>
-          <p className="mt-0.5 text-[11px] opacity-60">
-            3 fotos (frontal, lateral y espalda), mismo sitio y luz que la vez anterior.
-          </p>
+          <p className="mt-0.5 text-[11px] opacity-60">Frontal · lateral · espalda</p>
           <div className="mt-2.5 flex flex-wrap gap-2">
             <button
               onClick={confirm}
@@ -674,8 +664,8 @@ const PUSH_DISMISSED_KEY = "portal_push_dismissed";
  *  2) activar las notificaciones/recordatorios.
  * Desaparece al pulsar "Listo" o solo cuando ambos pasos están hechos.
  */
-function WelcomeSetup({ api, token, accent, secondary, hasTraining = true }: {
-  api: ReturnType<typeof portalApi>; token: string; accent: string; secondary: string; hasTraining?: boolean;
+function WelcomeSetup({ api, token, accent, secondary }: {
+  api: ReturnType<typeof portalApi>; token: string; accent: string; secondary: string;
 }) {
   const toast = usePortalToast();
   // Clave POR CLIENTE (token): en un móvil compartido, que un cliente lo
@@ -766,9 +756,9 @@ function WelcomeSetup({ api, token, accent, secondary, hasTraining = true }: {
             <p className="mt-0.5 text-[11px] opacity-60">¡Hecho! Ya lo tienes como app.</p>
           ) : isIOS ? (
             <p className="mt-0.5 text-[11px] leading-relaxed opacity-70">
-              En Safari: toca <span className="font-semibold">Compartir</span>{" "}
-              <Share size={11} className="inline" /> y elige{" "}
-              <span className="font-semibold">"Añadir a pantalla de inicio"</span>.
+              Safari → <span className="font-semibold">Compartir</span>{" "}
+              <Share size={11} className="inline" /> →{" "}
+              <span className="font-semibold">Añadir a pantalla de inicio</span>
             </p>
           ) : (
             <p className="mt-0.5 text-[11px] leading-relaxed opacity-70">
@@ -790,9 +780,6 @@ function WelcomeSetup({ api, token, accent, secondary, hasTraining = true }: {
             </p>
           ) : (
             <>
-              <p className="mt-0.5 text-[11px] opacity-70">
-                Un aviso si queda {hasTraining ? "el diario, el entreno o la revisión" : "el diario o la revisión"} sin rellenar.
-              </p>
               <button
                 onClick={activate}
                 disabled={busy}

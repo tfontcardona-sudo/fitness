@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { BadgeEuro, Check, Copy, MessageCircle, Send } from "lucide-react";
+import { BadgeEuro, Check, Copy, Send } from "lucide-react";
 import { api } from "../lib/api";
 import { OFFER_FIRST_EUR, OFFER_MONTHLY_EUR, PACKAGES, PACKAGE_ORDER, billingLabel } from "../lib/packages";
 import { openWhatsApp, waPhone } from "../lib/whatsapp";
@@ -175,12 +175,6 @@ export function SalesKit() {
 
       {open && (
         <div className="mt-3 space-y-3">
-          <p className="text-xs" style={{ color: "var(--text-faint)" }}>
-            Te escriben desde la página de planes (ahí no hay precios): elige qué
-            responder. El enlace de pago abre Stripe con el importe correcto y, al
-            pagar, el sistema crea la ficha del cliente y le envía automáticamente
-            el acceso y la anamnesis.
-          </p>
 
           {error && (
             <div className="flex items-center justify-between gap-3 rounded-xl border p-3 text-sm"
@@ -278,11 +272,6 @@ export function SalesKit() {
                       <Send size={13} /> Abrir WhatsApp
                     </button>
                   </div>
-                  <p className="flex items-center gap-1.5 text-[11px]" style={{ color: "var(--text-faint)" }}>
-                    <MessageCircle size={12} />
-                    Lo normal: el interesado ya te ha escrito — pulsa Copiar y pégalo
-                    en su chat. El teléfono solo hace falta para abrir un chat nuevo.
-                  </p>
                 </>
               )}
             </>

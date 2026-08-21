@@ -270,27 +270,24 @@ def pending_for_client(db: Session, client: Client, today: date,
 
 def build_reminder_payload(pending: dict, brand_name: str, portal_url: str) -> dict:
     """Payload JSON que consume el service worker (sw.js)."""
+    # Palabras clave separadas por "·": el móvil corta el cuerpo a ~40-50
+    # caracteres, así que una frase larga no llegaba a leerse entera.
     parts: list[str] = []
     if pending.get("workout"):
-        parts.append("registrar el entreno de hoy")
+        parts.append("entreno")
     if pending.get("diary"):
-        parts.append("el diario de hoy")
+        parts.append("diario")
     if pending.get("quincenal"):
-        parts.append("la revisión quincenal")
+        parts.append("revisión quincenal")
     if pending.get("videocall"):
-        parts.append("agendar tu videollamada de revisión")
+        parts.append("agendar videollamada")
     if pending.get("photos"):
-        parts.append("confirmar el envío de tus fotos de progreso")
-
-    if len(parts) == 1:
-        body = f"Te falta {parts[0]}. Un minuto y listo 💪"
-    else:
-        body = ("Te falta: " + ", ".join(parts[:-1]) + " y " + parts[-1]
-                + ". Un minuto y listo 💪")
+        parts.append("fotos")
 
     return {
-        "title": brand_name or "Tu seguimiento",
-        "body": body,
+        # El título dice QUÉ (el sistema operativo ya muestra la marca encima).
+        "title": "Pendiente hoy",
+        "body": " · ".join(parts).capitalize() or (brand_name or "Tu seguimiento"),
         "count": pending.get("count", 0),
         "url": portal_url,
         "tag": "dq-seguimiento",  # misma tag → la nueva sustituye a la anterior
@@ -305,15 +302,14 @@ def build_plan_published_payload(brand_name: str, portal_url: str, *, republishe
     """Payload de la notificación al cliente cuando su plan queda publicado.
     Con nombre y mes: "Mario, tu plan del mes 3 ya está listo" se distingue de
     una alerta automática cualquiera (los push al coach ya personalizaban)."""
-    quien = f"{first_name}, tu" if first_name else "Tu"
     mes = f" del mes {month_index}" if month_index else ""
     body = (
-        f"{quien} planificación{mes} se ha actualizado tras tu revisión. Ábrela en tu portal."
-        if republished
-        else f"{quien} plan{mes} ya está listo. Ábrelo en tu portal para empezar."
+        "Actualizado tras tu revisión" if republished
+        else (f"Ya está listo, {first_name}" if first_name else "Ya está listo")
     )
     return {
-        "title": brand_name or "Tu planificación",
+        # El QUÉ va en el título (el sistema ya muestra la marca encima).
+        "title": f"Tu plan{mes}",
         "body": body,
         "count": 1,
         "url": portal_url,
@@ -354,13 +350,12 @@ def notify_feedback_ready(db: Session, client: Client) -> int:
     dependía solo del email (auditoría de calidad). No hace commit."""
     if not push_configured():
         return 0
-    brand = portal_svc.brand_payload(db)
     base = settings.public_base_url.rstrip("/")
     nombre = (client.full_name or "").split()[0] if client.full_name else None
-    quien = f"{nombre}, tu" if nombre else "Tu"
     payload = {
-        "title": brand.get("name", "Tu asesoría"),
-        "body": f"{quien} informe de progreso ya está listo: mira tu evolución y los cambios de tu plan.",
+        "title": "Tu informe de progreso",
+        "body": (f"{nombre}: evolución y cambios del plan" if nombre
+                 else "Evolución y cambios del plan"),
         "count": 1,
         "url": f"{base}/p/{client.portal_token}?tab=progreso",
         "tag": "dq-feedback",
@@ -374,10 +369,9 @@ def notify_video_call_scheduled(db: Session, client: Client, when_label: str,
     Abre el enlace de Meet al tocar la notificación. Silencioso sin push/devices."""
     if not push_configured():
         return 0
-    brand = portal_svc.brand_payload(db)
     payload = {
-        "title": brand.get("name", "Tu asesoría"),
-        "body": f"Tu coach ha confirmado tu videollamada: {when_label}. Enlace de Meet listo, toca para verlo.",
+        "title": "Videollamada confirmada",
+        "body": f"{when_label} · Meet listo",
         "count": 1,
         "url": meet_url,
         "tag": "dq-videollamada",

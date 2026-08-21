@@ -49,15 +49,17 @@ export function EmptyState({
   action,
 }: {
   title: string;
-  hint: string;
+  // OPCIONAL: obligarlo forzaba a cada pantalla a inventarse una frase de
+  // relleno bajo un título que ya lo decía todo.
+  hint?: string;
   action?: ReactNode;
 }) {
   // Un estado vacío es una invitación a actuar (skill): título + siguiente paso.
   return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed py-16 text-center"
+    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed py-12 text-center"
       style={{ borderColor: "var(--line-strong)" }}>
       <p className="text-sm font-medium text-zinc-200">{title}</p>
-      <p className="mt-1 max-w-xs text-sm text-zinc-500">{hint}</p>
+      {hint && <p className="mt-1 max-w-xs text-sm text-zinc-500">{hint}</p>}
       {action && <div className="mt-5">{action}</div>}
     </div>
   );
@@ -250,5 +252,63 @@ export function ExpandableArea({
         </div>
       )}
     </label>
+  );
+}
+
+/** Prosa larga de la IA recortada a `lines` líneas con "ver más".
+ *
+ *  Los planes YA generados llevan párrafos largos guardados (los topes nuevos
+ *  del prompt solo afectan a lo que se genere a partir de ahora), así que el
+ *  recorte vive también en la vista. El botón solo aparece si de verdad hay
+ *  texto oculto: se mide el desbordamiento real, nunca por nº de caracteres.
+ */
+export function ProseClamp({
+  text, lines = 2, className, moreLabel = "ver más",
+}: { text: string; lines?: number; className?: string; moreLabel?: string }) {
+  const [open, setOpen] = useState(false);
+  const [clipped, setClipped] = useState(false);
+  const ref = useRef<HTMLParagraphElement | null>(null);
+
+  // La medida se repite con ResizeObserver: dentro de un <details> CERRADO el
+  // elemento mide 0 y una medición única concluía "no hay recorte", dejando el
+  // texto cortado sin botón para desplegarlo.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const medir = () => {
+      if (el.clientHeight > 0) setClipped(el.scrollHeight > el.clientHeight + 1);
+    };
+    medir();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(medir);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [text, open, lines]);
+
+  if (!text) return null;
+  return (
+    <>
+      <p
+        ref={ref}
+        className={className}
+        style={open ? undefined : {
+          display: "-webkit-box",
+          WebkitBoxOrient: "vertical",
+          WebkitLineClamp: lines,
+          overflow: "hidden",
+        }}
+      >
+        {text}
+      </p>
+      {(clipped || open) && (
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="mt-0.5 text-xs font-medium text-zinc-500 hover:text-zinc-300"
+        >
+          {open ? "ver menos" : moreLabel}
+        </button>
+      )}
+    </>
   );
 }

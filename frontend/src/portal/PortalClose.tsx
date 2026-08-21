@@ -183,9 +183,7 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
           <Check size={32} style={{ color: brand.color_primary }} />
         </div>
         <p className="mt-4 text-lg font-semibold">¡Revisión enviada!</p>
-        <p className="mt-1 max-w-xs text-sm opacity-60">
-          Tu coach analizará tus datos y te enviará el informe con el plan actualizado.
-        </p>
+        <p className="mt-1 max-w-xs text-sm opacity-60">Recibirás tu informe y tu plan nuevo.</p>
       </div>
     );
   }
@@ -219,8 +217,8 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
         <p className="mt-4 text-lg font-semibold">Revisión quincenal</p>
         <p className="mt-1 max-w-xs text-sm opacity-70">
           {daysLeft != null && daysLeft > 0
-            ? `Podrás rellenarla en ${daysLeft} día${daysLeft === 1 ? "" : "s"}.`
-            : "Se desbloquea al completar tus 2 semanas."}
+            ? `Disponible en ${daysLeft} día${daysLeft === 1 ? "" : "s"}`
+            : "Se desbloquea al completar tus 2 semanas"}
         </p>
         {fechaCae && (
           <p className="mt-1 text-sm font-semibold" style={{ color: brand.color_secondary }}>
@@ -235,14 +233,12 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
     <div className="space-y-6">
       <div>
         <h2 className="text-lg font-semibold">Revisión quincenal</h2>
-        <p className="mt-0.5 text-xs opacity-60">
-          Rellénala al terminar tus 2 semanas. Prepara tu próximo plan — lo que escribas se guarda en tu móvil.
-        </p>
+        <p className="mt-0.5 text-xs opacity-60">Se va guardando sola.</p>
       </div>
 
       {/* 1 · Medidas */}
       <Section n={1} title="Medidas corporales">
-        <p className="mb-2 text-xs opacity-50">Mide por la mañana en ayunas, cinta blanda sin apretar.</p>
+        <p className="mb-2 text-xs opacity-50">En ayunas · cinta sin apretar</p>
         <Field label="Peso (kg)" required>
           <input type="text" inputMode="decimal"
             className="w-full rounded-xl border bg-transparent p-3 text-lg font-semibold"
@@ -331,8 +327,8 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
             ? <MessageCircle size={18} style={{ color: brand.color_secondary }} className="mt-0.5 shrink-0" />
             : <Mail size={18} style={{ color: brand.color_secondary }} className="mt-0.5 shrink-0" />}
           <p className="opacity-80">
-            Envía 3 fotos (<b>frontal</b>, <b>lateral</b> y <b>espalda</b>) a tu coach por <b>{directContact ? "WhatsApp" : "email"}</b>.
-            Fondo neutro, buena luz, misma hora y lugar que la vez anterior, sin filtros.
+            3 fotos por <b>{directContact ? "WhatsApp" : "email"}</b>: frontal · lateral · espalda
+            <span className="mt-0.5 block opacity-70">Fondo neutro · buena luz · sin filtros · mismo sitio que la última vez</span>
           </p>
         </div>
       </Section>
@@ -352,8 +348,7 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
       ) : (
         <div className="space-y-2">
           <p className="text-center text-xs opacity-70">
-            ¿Enviar ya tu revisión? Después no podrás editarla y tu diario queda
-            en pausa hasta que tu coach abra el nuevo período.
+            No podrás editarla y tu diario queda en pausa.
           </p>
           <div className="flex gap-2">
             <button onClick={() => setConfirmSend(false)} className="w-1/3 rounded-xl border py-3 text-sm" style={{ borderColor: "rgba(128,128,128,0.3)" }}>

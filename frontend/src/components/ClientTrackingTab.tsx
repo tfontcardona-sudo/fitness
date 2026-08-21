@@ -486,9 +486,19 @@ function TextCard({ label, text, highlight }: { label: string; text: string | nu
   const [expanded, setExpanded] = useState(false);
   const [clipped, setClipped] = useState(false);
   const pRef = useRef<HTMLParagraphElement | null>(null);
+  // Igual que ProseClamp: dentro del acordeón de revisiones antiguas (cerrado)
+  // el elemento mide 0, así que la medida se repite con ResizeObserver.
   useEffect(() => {
     const el = pRef.current;
-    if (el && !expanded) setClipped(el.scrollHeight > el.clientHeight + 1);
+    if (!el) return;
+    const medir = () => {
+      if (el.clientHeight > 0) setClipped(el.scrollHeight > el.clientHeight + 1);
+    };
+    medir();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(medir);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [text, expanded]);
   if (!text) return null;
   return (

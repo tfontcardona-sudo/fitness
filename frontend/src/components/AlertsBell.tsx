@@ -46,11 +46,11 @@ export function AlertsBell() {
       if (pushOn) {
         await disableCoachPush();
         setPushOn(false);
-        toast.push("Notificaciones al móvil desactivadas en este dispositivo");
+        toast.push("Avisos desactivados en este dispositivo");
       } else {
         await enableCoachPush();
         setPushOn(true);
-        toast.push("Activado: recibirás en este dispositivo el resumen de pendientes cada 3 h");
+        toast.push("Avisos activados en este dispositivo · cada 3 h");
       }
     } catch (e) {
       toast.push(e instanceof Error ? e.message : "No se pudo cambiar", "error");
@@ -125,14 +125,16 @@ export function AlertsBell() {
         >
           <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: "var(--line)" }}>
             <span className="text-sm font-semibold text-zinc-100">Alertas</span>
-            <span className="text-xs text-zinc-500">
-              {count === 0 ? "todo al día" : `${count} pendiente${count === 1 ? "" : "s"}`}
-            </span>
+            {count > 0 && (
+              <span className="text-xs text-zinc-500">
+                {count} pendiente{count === 1 ? "" : "s"}
+              </span>
+            )}
           </div>
           <div className="max-h-[60vh] overflow-y-auto">
             {count === 0 ? (
               <div className="flex items-center justify-center gap-2 px-4 py-8 text-sm text-zinc-500">
-                <Check size={16} style={{ color: "var(--brand-accent)" }} /> Nada pendiente con tus clientes.
+                <Check size={16} style={{ color: "var(--brand-accent)" }} /> Todo al día
               </div>
             ) : (
               // AGRUPADAS por ámbito: primero el total (cabecera) y aquí cada

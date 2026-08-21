@@ -183,9 +183,9 @@ export function AiCreditButton({ collapsed }: { collapsed: boolean }) {
               </div>
             </div>
           ) : (
-            <div style={{ color: "var(--text-faint)" }}>
-              Anthropic no publica el saldo por API. Apunta con el lápiz lo que te
-              queda en la consola y aquí verás el disponible en vivo.
+            <div style={{ color: "var(--text-faint)" }}
+                 title="Anthropic no publica el saldo por API">
+              Apunta tu saldo (✎) para ver el disponible.
             </div>
           )}
 
@@ -199,7 +199,7 @@ export function AiCreditButton({ collapsed }: { collapsed: boolean }) {
               <Row label="Coste medio por plan" value={fmtSmall(credit.avg_cost_per_plan_usd)} />
             )}
             {remaining !== null && (
-              <Row label="Gastado desde que lo apuntaste" value={fmtSmall(spent)} />
+              <Row label="Desde el apunte" value={fmtSmall(spent)} />
             )}
             {fmtWhen(credit.last_call_at) && (
               <Row label="Última llamada" value={fmtWhen(credit.last_call_at)!} />

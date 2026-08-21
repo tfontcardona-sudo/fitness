@@ -65,17 +65,20 @@ def test_build_reminder_payload() -> None:
         {"diary": True, "workout": False, "quincenal": False, "count": 1},
         "DQ", "https://x/p/abc",
     )
-    assert one["title"] == "DQ"
+    # TELEGRÁFICO: el título dice el QUÉ (el sistema ya muestra la marca encima)
+    # y el cuerpo son palabras clave separadas por "·" — el móvil corta el
+    # cuerpo a ~40-50 caracteres y una frase larga no llegaba a leerse.
+    assert one["title"] == "Pendiente hoy"
     assert one["count"] == 1
     assert one["url"] == "https://x/p/abc"
-    assert "el diario de hoy" in one["body"]
+    assert one["body"] == "Diario"
 
     three = push_svc.build_reminder_payload(
         {"diary": True, "workout": True, "quincenal": True, "count": 3}, "DQ", "u"
     )
     assert three["count"] == 3
-    assert "entreno" in three["body"] and "diario" in three["body"]
-    assert "y la revisión quincenal" in three["body"]
+    assert three["body"] == "Entreno · diario · revisión quincenal"
+    assert len(three["body"]) < 60  # entra sin cortarse en la notificación
 
 
 def test_push_configured(monkeypatch) -> None:

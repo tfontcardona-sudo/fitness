@@ -63,8 +63,9 @@ def _shell(brand: Brand, title: str, body_html: str, cta_url: str | None = None,
             f'{cta_label}</a></td></tr></table>'
         )
     footer_contact = (
-        f'<br>¿Dudas? Escríbenos a <a href="mailto:{brand.contact_email}" '
-        f'style="color:{brand.color_primary}">{brand.contact_email}</a>.'
+        f'<p style="font-size:13px;color:#8a8a94;margin-top:24px">¿Dudas? '
+        f'<a href="mailto:{brand.contact_email}" '
+        f'style="color:{brand.color_primary}">{brand.contact_email}</a></p>'
         if brand.contact_email else ""
     )
     return f"""\
@@ -80,9 +81,7 @@ def _shell(brand: Brand, title: str, body_html: str, cta_url: str | None = None,
 <h1 style="font-size:19px;margin:12px 0 4px;color:#1a1a24">{title}</h1>
 {body_html}
 {cta}
-<p style="font-size:13px;color:#8a8a94;margin-top:24px">
-Este mensaje es parte de tu asesoría personalizada con {brand.name}.{footer_contact}
-</p>
+{footer_contact}
 </td></tr></table></td></tr></table></body></html>"""
 
 
@@ -93,8 +92,6 @@ def portal_access(brand: Brand, first_name: str, login_url: str,
     """Email de bienvenida con el acceso personal al portal (usuario y clave)."""
     from html import escape
     first_name, username, password = escape(first_name), escape(username), escape(password)
-    registras = "tus entrenamientos, tu diario y tu revisión quincenal" if has_training else "tu diario y tu revisión quincenal"
-    progreso = "peso, fuerza, medidas y fotos" if has_training else "peso, medidas y fotos"
     subject = f"Tu acceso personal a tu portal · {brand.name}"
     box = (
         f'<table role="presentation" cellpadding="0" cellspacing="0" width="100%" '
@@ -107,10 +104,7 @@ def portal_access(brand: Brand, first_name: str, login_url: str,
         f'</td></tr></table>'
     )
     body = (
-        f"<p>Hola {first_name}, ¡bienvenido/a! Ya tienes tu <strong>portal personal</strong>, "
-        f"el sitio donde vas a llevar tu día a día con {brand.name}.</p>"
-        f"<p>Desde el portal registras {registras}, y ves <strong>tu progreso</strong> "
-        f"({progreso}). Es tuyo y es privado: entra con estos datos.</p>"
+        f"<p>Hola {first_name}, este es tu acceso:</p>"
         f"{box}"
         f"<p style=\"font-size:13px;color:#8a8a94\">Al entrar puedes marcar "
         f"<em>«Recordarme»</em> para no tener que escribirlos cada vez. Guarda este correo "
@@ -150,26 +144,22 @@ def onboarding_pay_anamnesis(brand: Brand, first_name: str, plan_label: str,
     if include_pay:
         body = (
             f"<p>Hola {first_name}, ¡bienvenido/a! Para empezar tu asesoría con "
-            f"{brand.name} necesito dos cosas:</p>"
-            f"<p><strong>1) Realiza el pago de tu plan {plan_label}:</strong></p>"
+            f"{brand.name}, dos pasos:</p>"
+            f"<p><strong>1 &middot; Paga tu plan {plan_label}</strong></p>"
             f"{pay_btn}"
-            f"<p><strong>2) Descarga tu cuestionario inicial (anamnesis), rellénalo "
-            f"y súbelo desde este enlace:</strong></p>"
+            f"<p><strong>2 &middot; Rellena tu anamnesis</strong> &mdash; unos minutos "
+            f"desde el móvil.</p>"
             f"{anamnesis_btn}"
         )
     else:
         body = (
-            f"<p>Hola {first_name}, ¡tu pago del plan {plan_label} está confirmado! "
-            f"Solo queda una cosa para poder preparar tu planificación:</p>"
-            f"<p><strong>Descarga tu cuestionario inicial (anamnesis), rellénalo "
-            f"y súbelo desde este enlace:</strong></p>"
+            f"<p>Hola {first_name}, tu pago del plan {plan_label} está confirmado. "
+            f"Solo falta tu <strong>anamnesis</strong> &mdash; unos minutos desde el móvil:</p>"
             f"{anamnesis_btn}"
         )
     body += (
-        f"<p>En esa página puedes descargar el PDF editable, rellenarlo con calma "
-        f"desde el móvil o el ordenador y subirlo cuando lo tengas.</p>"
-        f'<p style="background:#fff7e6;border-radius:10px;padding:12px 14px;font-weight:700">'
-        f"IMPORTANTE: RELLENA Y ENVÍAME TU ANAMNESIS COMPLETA PARA QUE PUEDA PREPARARTE EL PLAN.</p>"
+        f'<p style="font-size:13px;color:#8a8a94">Sin la anamnesis completa no puedo '
+        f"prepararte el plan.</p>"
     )
     return subject, _shell(brand, "Empecemos" if include_pay else "Pago recibido", body)
 
@@ -180,8 +170,8 @@ def plan_published(brand: Brand, first_name: str, portal_url: str, is_new_month:
     if is_new_month:
         subject = f"Tu nuevo plan del mes ya está listo · {brand.name}"
         intro = (
-            f"Hola {first_name}, hemos preparado tu plan para el nuevo mes a partir de "
-            "tus resultados y tu feedback. Encontrarás los ajustes en tu portal."
+            f"Hola {first_name}, tu plan del mes nuevo ya está listo, "
+            "ajustado a tus resultados."
         )
     else:
         que = ("de nutrición y entrenamiento" if (has_training and has_nutrition)
@@ -201,10 +191,8 @@ def reminder_no_logs(brand: Brand, first_name: str, portal_url: str, days_left: 
     subject = f"Un recordatorio rápido de tu seguimiento · {brand.name}"
     que = "tu peso, entrenos y adherencia" if has_training else "tu peso y adherencia"
     body = (
-        f"<p>Hola {first_name}, he visto que llevas unos días sin registrar tu "
-        f"seguimiento. Quedan <strong>{days_left} días</strong> para cerrar este "
-        f"período.</p><p>Registrar {que} me permite ajustar "
-        "tu plan con precisión. ¡Solo te lleva un minuto al día!</p>"
+        f"<p>Hola {first_name}, llevas unos días sin registrar {que}. "
+        f"Quedan <strong>{days_left} días</strong> para cerrar la quincena.</p>"
     )
     return subject, _shell(brand, "¿Cómo va tu seguimiento?", body, portal_url, "Registrar ahora")
 
@@ -216,9 +204,8 @@ def onboarding_reminder(brand: Brand, first_name: str, anamnesis_url: str,
     first_name = _esc(first_name)
     subject = f"Tu plan te está esperando · {brand.name}"
     body = (
-        f"<p>Hola {first_name}, hace unos días empezaste tu alta y aún me falta "
-        "tu <strong>anamnesis</strong> (el cuestionario inicial). Sin ella no "
-        "puedo preparar tu plan a medida.</p>"
+        f"<p>Hola {first_name}, aún me falta tu <strong>anamnesis</strong>. "
+        "Sin ella no puedo prepararte el plan.</p>"
         "<p>Puedes rellenarla desde el móvil en unos minutos, directamente en "
         "el enlace (y si lo prefieres, en la misma página tienes el PDF).</p>"
     )
@@ -230,10 +217,8 @@ def closing_due(brand: Brand, first_name: str, portal_url: str, period_index: in
     first_name = _esc(first_name)
     subject = f"Es momento de cerrar tu período · {brand.name}"
     body = (
-        f"<p>Hola {first_name}, tu período actual ha llegado a su fin. Para preparar "
-        "tu siguiente fase necesitamos que completes el <strong>cierre</strong>: peso "
-        "final, medidas opcionales, alguna foto y cómo te ha ido.</p>"
-        "<p>Con esa información ajustaremos tu plan para que sigas progresando.</p>"
+        f"<p>Hola {first_name}, toca cerrar tu quincena: peso final, medidas "
+        "(opcional), fotos y cómo te ha ido.</p>"
     )
     return subject, _shell(brand, "Cierra tu período", body, f"{portal_url}?tab=cierre", "Completar cierre")
 
