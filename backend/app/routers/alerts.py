@@ -81,8 +81,7 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
         # radar (auditoría del ciclo): estado sin salida y sin aviso. Una única
         # alerta persistente para decidir: reactivar o archivar de verdad.
         out.append(_alert(client, "client_inactive", "media",
-                          "Cliente inactivo (30 días sin actividad): reactívalo "
-                          "desde su perfil o acuerda con él el cierre.",
+                          "Inactivo · 30 días sin actividad",
                           "resumen", "Revisar cliente"))
         return out
 
@@ -135,11 +134,10 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
             # (sello de consentimiento): mismos datos, sin PDF que leer.
             por_formulario = getattr(client, "consent_signed_at", None) is not None
             if has_doc or por_formulario:
-                extra = ("" if client.goal_type else
-                         " (la IA no pudo extraer todos los campos: revísalos a mano)")
+                extra = "" if client.goal_type else " · ⚠ IA incompleta, revisa a mano"
                 origen = " (formulario del portal)" if (por_formulario and not has_doc) else ""
                 out.append(_alert(client, "create_plan", "alta",
-                                  f"Anamnesis recibida{origen}{extra}: revísala y genera la planificación.",
+                                  f"Anamnesis recibida{origen}{extra}",
                                   "anamnesis", "Revisar anamnesis"))
             else:
                 days_wait = ((today - client.created_at.date()).days
@@ -158,7 +156,7 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
         # resumen de métricas y las fotos del cierre). Antes llevaba a
         # Seguimiento, donde esa acción no existe (auditoría de calidad).
         out.append(_alert(client, "generate_feedback", "alta",
-                          f"Revisión #{last_period.period_index} recibida: revisa los datos y genera el feedback.",
+                          f"Revisión #{last_period.period_index} recibida",
                           "feedback", "Generar feedback"))
 
     # --- Feedback generado pero sin enviar / plan sin adaptar ---------------
@@ -257,8 +255,7 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
         extracto = (open_crs[0].message or "").strip()
         if len(extracto) > 140:
             extracto = extracto[:137] + "…"
-        prefix = (f"Tiene {len(open_crs)} peticiones sin responder. Última: "
-                  if len(open_crs) > 1 else "Te ha escrito desde su portal: ")
+        prefix = f"{len(open_crs)} peticiones · última: " if len(open_crs) > 1 else ""
         out.append(_alert(
             client, "change_request", "alta",
             f"{prefix}«{extracto}»",
@@ -281,9 +278,7 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
             listado = ", ".join(missing[:4]) + ("…" if len(missing) > 4 else "")
             out.append(_alert(
                 client, "missing_products", "media",
-                f"Suplementos de su plan sin producto en Recursos: {listado}. "
-                "Súbelos en Recursos → Productos para que le salgan en su portal "
-                "con tu código.",
+                f"Sin producto en Recursos: {listado}",
                 "planificacion", "Ver planificación"))
 
     # --- Videollamada quincenal (Pro) ---------------------------------------
@@ -308,8 +303,7 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
             if vc is None:
                 out.append(_alert(
                     client, "video_call_wait", "media",
-                    f"Revisión #{last_review.period_index}: esperando que el cliente proponga "
-                    "la videollamada (o agéndala tú a mano).",
+                    f"Revisión #{last_review.period_index} · esperando su propuesta de videollamada",
                     "feedback", "Agendar videollamada"))
 
     # TODAS las videollamadas vivas — de cualquier revisión y aunque el cliente
@@ -390,8 +384,7 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
             s, t, f = hit_allergy
             out.append(_alert(
                 client, "plan_allergen_conflict", "alta",
-                f"⚠ Su plan activo contiene un ALÉRGENO de su ficha: «{t}» "
-                f"(toma {s}, contiene {f}). Edita esa comida o regenera el plan.",
+                f"⚠ ALÉRGENO en el plan activo: «{t}» (toma {s}, contiene {f})",
                 "planificacion", "Corregir planificación"))
         elif hit_pattern:
             s, t, f = hit_pattern
@@ -435,10 +428,8 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
         if diffs:
             out.append(_alert(
                 client, "plan_stale_inputs", "media",
-                "La ficha cambió tras generar el plan (" + ", ".join(diffs[:4]) +
-                "): las kcal/entreno del plan activo salen de los datos viejos — "
-                "valora regenerar o adaptar.",
-                "planificacion", "Revisar planificación"))
+                "Ficha cambiada tras generar: " + ", ".join(diffs[:4]),
+                "planificacion", "Regenerar o adaptar"))
 
     # --- 45 días en la misma etapa de objetivo ------------------------------
     if client.goal_started_on is not None:

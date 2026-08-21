@@ -279,9 +279,7 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
             <p className="text-sm font-semibold">Se está creando tu planificación</p>
           </div>
           <p className="mt-1.5 text-xs leading-relaxed opacity-70">
-            Tu coach está preparando tu plan de entrenamiento personalizado. En cuanto
-            esté listo, aquí podrás registrar tus entrenamientos. Te avisaremos con una
-            notificación en cuanto lo publique.
+            Te avisaremos en cuanto esté listo.
           </p>
         </div>
       </div>
@@ -292,17 +290,13 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
     <div className="space-y-5">
       <div>
         <h2 className="text-lg font-semibold">Registrar entreno</h2>
-        <p className="mt-0.5 text-xs opacity-60">Elige la sesión que has hecho y anota tus series. Se guarda solo.</p>
       </div>
 
       {/* Revisión enviada: el registro queda en pausa hasta el nuevo período */}
       {readOnly && (
         <div className="portal-card border-l-4 p-3.5 text-sm" style={{ borderLeftColor: brand.color_primary }}>
           <p className="font-semibold">Revisión enviada — registro en pausa</p>
-          <p className="mt-1 text-xs opacity-70">
-            Tu coach está preparando tu feedback. En cuanto te lo envíe se abrirá tu
-            siguiente período y podrás volver a registrar aquí.
-          </p>
+          <p className="mt-1 text-xs opacity-70">Se reabre cuando tu coach te envíe el feedback.</p>
         </div>
       )}
 
@@ -328,7 +322,12 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
               Carga {week.load_pct}%{week.rir_target ? ` · RIR ${week.rir_target}` : ""}
             </span>
           </div>
-          <p className="mt-1.5 text-xs opacity-70">{week.why}</p>
+          {week.why && (
+            <details className="mt-1.5">
+              <summary className="cursor-pointer text-[11px] opacity-60">por qué</summary>
+              <p className="mt-1 text-xs opacity-70">{week.why}</p>
+            </details>
+          )}
           {week.load_factor !== 1 && (
             <p className="mt-1 text-[11px] opacity-50">
               Los pesos sugeridos de tus ejercicios ya están ajustados a esta semana.
@@ -372,10 +371,9 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
             ))}
             <p className="pt-0.5 text-[11px] opacity-50">
               {[
-                planChanges.items.some((it) => /diet|nutri/i.test(it.area)) && "Los cambios de dieta ya están en tu PDF actualizado",
-                planChanges.items.some((it) => /entren/i.test(it.area)) && "los de entreno, aplicados en tus sesiones de aquí abajo",
-              ].filter(Boolean).join("; ") || "Tu coach los ha dejado anotados en tu plan."}
-              .
+                planChanges.items.some((it) => /diet|nutri/i.test(it.area)) && "Dieta → tu PDF",
+                planChanges.items.some((it) => /entren/i.test(it.area)) && "Entreno → tus sesiones",
+              ].filter(Boolean).join(" · ") || "Anotados en tu plan."}
             </p>
           </div>
         </details>
@@ -500,9 +498,6 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
                   {videoOpen && ex.video_url && (
                     <div className="mt-3">
                       <InlineVideo url={ex.video_url} title={ex.name} />
-                      <p className="mt-1.5 text-center text-[11px] opacity-45">
-                        Toca el vídeo para pausarlo · toca fuera para cerrarlo
-                      </p>
                     </div>
                   )}
                 </div>

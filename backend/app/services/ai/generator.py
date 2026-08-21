@@ -275,8 +275,10 @@ def _clinical_block(ctx: ClientContext) -> str:
         "el plan de dieta Y de entrenamiento DEBE adaptarse a esto sin excepción):\n"
         f"{ctx.clinical_notes}\n"
         "REGLAS DURAS: (1) NO incluyas ejercicios que carguen una zona lesionada o "
-        "con molestias; sustitúyelos por alternativas seguras del mismo patrón y "
-        "explica el motivo en technique_cue/biomech_cue. (2) La dieta debe EXCLUIR "
+        "con molestias; sustitúyelos por alternativas seguras del mismo patrón. "
+        "En esos ejercicios, la nota de seguridad va la PRIMERA en technique_cue "
+        "(«Por tu hombro: recorrido corto» — EXCEPCIÓN al tope, hasta 14 palabras). "
+        "(2) La dieta debe EXCLUIR "
         "por completo cualquier alimento con alergia o intolerancia declarada y "
         "tener en cuenta patologías (p. ej. tiroides, digestivas) y la medicación. "
         "(3) Si algo limita el volumen o la intensidad, refléjalo en la progresión.\n"
@@ -335,16 +337,25 @@ cada objeto son OBLIGATORIOS salvo los marcados como (null si no aplica). No omi
   (100 → 102.5 → 105) con deload real (60-70, volumen −40/50%); pérdida de grasa → misma onda
   conservando intensidad ALTA para retener masa (el volumen puede bajar algo en el déficit);
   recuperación de lesión → progresión suave (100 → 102.5 máx.), RIR alto (3-4) y deload
-  temprano; mantenimiento → onda moderada. En volume_note explica QUÉ debe hacer esa semana y
-  con qué intención (el cliente lo lee en su portal).
+  temprano; mantenimiento → onda moderada.
+  volume_note: TELEGRÁFICO, MÁX 12 palabras, palabras clave y cifras separadas por " · "
+  ("Series ÷2 · carga −30% · lejos del fallo"). NO expliques la intención ni motives:
+  para eso está `intent`, que es UNA palabra.
   sessions[] (day, name, warmup, exercises[], cooldown),
   cardio{{daily_steps, sessions[] (cada uno: type "liss"|"hiit", minutes, times_per_week, notes)}},
   deload_instructions.
   Cada ejercicio: exercise_id (de la biblioteca), sets, rep_range, rir, tempo, rest_sec,
   start_weight_hint_kg, progression_rule, technique_cue, biomech_cue.
 
+  LONGITUD DE CADA CAMPO DE TEXTO (techo DURO — el coach y el cliente lo leen en el móvil):
+  · deload_instructions: TELEGRÁFICO, MÁX 20 palabras con las cifras
+    ("Semana 4: series ÷2 · carga −30-35% · RIR 3-4 · sin récords"). NO expliques qué es un deload.
+  · progression_rule: MÁX 12 palabras con la cifra ("Completas 4×8 a RIR 2 → +2,5 kg").
+  · technique_cue: orden accionable, MÁX 10 palabras. biomech_cue: el porqué, MÁX 10 palabras.
+  · warmup: MÁX 15 palabras separadas por " · ". cooldown: MÁX 12. notes de cardio: MÁX 12.
+
 ENTRENAMIENTO BASADO EN EVIDENCIA (hipertrofia y biomecánica; aplica estos
-principios y explícalos en split_rationale, technique_cue y biomech_cue):
+principios al DISEÑAR — no los expliques en los campos de texto, que son cortos):
 - VOLUMEN por grupo muscular: ~10-20 series semanales efectivas como rango
   productivo (Schoenfeld/Krieger); ajusta según nivel (principiante hacia el
   límite bajo, avanzado más alto) y capacidad de recuperación del cliente.
@@ -356,7 +367,7 @@ principios y explícalos en split_rationale, technique_cue y biomech_cue):
 - SELECCIÓN por BIOMECÁNICA y ROM: cubre cada músculo en posiciones de
   estiramiento (evidencia reciente favorece el trabajo en elongación) y
   distintos vectores/curvas de resistencia; elige ejercicios cuyo perfil de
-  fuerza case con la función del músculo. Justifícalo en biomech_cue.
+  fuerza case con la función del músculo.
 - SOBRECARGA PROGRESIVA: progression_rule concreta (añadir reps dentro del
   rango y luego carga; doble progresión). technique_cue con el punto clave de
   ejecución seguro y eficaz.
@@ -371,12 +382,12 @@ RESTRICCIÓN DE DURACIÓN: la duración de cada sesión se estima como (total de
 declaró un máximo de {ctx.session_max_min} min/sesión, así que NO pongas más de {max_sets} series \
 por sesión (sumando TODOS los ejercicios de esa sesión).
 
-DIETA RAZONADA POR EVIDENCIA: en rationale explica el porqué (déficit/superávit
-sobre el TDEE según objetivo, proteína alta para preservar/ganar masa, reparto
-de macros) en 2-3 frases CORTAS y directas, sin tecnicismos innecesarios ni
-relleno — el dato y su conclusión, sin repetirlo con otras palabras.
-En flexibility_rules: cada regla en UNA frase corta y accionable (qué hacer,
-sin explicar el porqué salvo que sea imprescindible para cumplirla bien).
+DIETA RAZONADA POR EVIDENCIA: en rationale explica el porqué del ENFOQUE en MÁXIMO
+2 frases (~35 palabras). NO repitas kcal, macros ni porcentajes: ya salen en su tabla.
+En flexibility_rules: 3-5 reglas, MÁXIMO 12 palabras cada una, empezando por el verbo
+("Cambia una comida por otra del mismo grupo"). Sin explicar el porqué.
+refeed_or_break: una línea de MÁX 15 palabras, o null si no aplica.
+Supplement.evidence_note: MÁX 10 palabras.
 
 Respeta TODOS los guardrails. La suma de los targets de slot debe acercarse al target_kcal."""
 
@@ -423,13 +434,22 @@ son OBLIGATORIOS salvo los marcados como (null si no aplica). No omitas NINGUNO:
 - "training": split_name, split_rationale,
   weekly_progression[] (EXACTAMENTE 4 objetos para las semanas 1,2,3,4; cada uno con los 5
   campos: week (1-4), intent (Base|Progresión|Pico|Deload), load_pct (número), rir_target,
-  volume_note). En volume_note explica QUÉ debe hacer esa semana y con qué intención
-  (el cliente lo lee en su portal).
+  volume_note).
+  volume_note: TELEGRÁFICO, MÁX 12 palabras, palabras clave y cifras separadas por " · "
+  ("Series ÷2 · carga −30% · lejos del fallo"). NO expliques la intención ni motives:
+  para eso está `intent`, que es UNA palabra.
   sessions[] (day, name, warmup, exercises[], cooldown),
   cardio{{daily_steps, sessions[] (cada uno: type "liss"|"hiit", minutes, times_per_week, notes)}},
   deload_instructions.
   Cada ejercicio: exercise_id (de la biblioteca), sets, rep_range, rir, tempo, rest_sec,
   start_weight_hint_kg, progression_rule, technique_cue, biomech_cue.
+
+  LONGITUD DE CADA CAMPO DE TEXTO (techo DURO — el coach y el cliente lo leen en el móvil):
+  · deload_instructions: TELEGRÁFICO, MÁX 20 palabras con las cifras
+    ("Semana 4: series ÷2 · carga −30-35% · RIR 3-4 · sin récords"). NO expliques qué es un deload.
+  · progression_rule: MÁX 12 palabras con la cifra ("Completas 4×8 a RIR 2 → +2,5 kg").
+  · technique_cue: orden accionable, MÁX 10 palabras. biomech_cue: el porqué, MÁX 10 palabras.
+  · warmup: MÁX 15 palabras separadas por " · ". cooldown: MÁX 12. notes de cardio: MÁX 12.
 """
 
 
@@ -457,12 +477,12 @@ OBLIGATORIOS salvo los marcados como (null si no aplica). No omitas NINGUNO:
   supplements[] (cada uno con los 4 campos: name, dose, timing, evidence_note),
   flexibility_rules[] (strings), refeed_or_break (null si no aplica).
 
-DIETA RAZONADA POR EVIDENCIA: en rationale explica el porqué (déficit/superávit
-sobre el TDEE según objetivo, proteína alta para preservar/ganar masa, reparto
-de macros) en 2-3 frases CORTAS y directas, sin tecnicismos innecesarios ni
-relleno — el dato y su conclusión, sin repetirlo con otras palabras.
-En flexibility_rules: cada regla en UNA frase corta y accionable (qué hacer,
-sin explicar el porqué salvo que sea imprescindible para cumplirla bien).
+DIETA RAZONADA POR EVIDENCIA: en rationale explica el porqué del ENFOQUE en MÁXIMO
+2 frases (~35 palabras). NO repitas kcal, macros ni porcentajes: ya salen en su tabla.
+En flexibility_rules: 3-5 reglas, MÁXIMO 12 palabras cada una, empezando por el verbo
+("Cambia una comida por otra del mismo grupo"). Sin explicar el porqué.
+refeed_or_break: una línea de MÁX 15 palabras, o null si no aplica.
+Supplement.evidence_note: MÁX 10 palabras.
 
 Respeta TODOS los guardrails de nutrición. La suma de los targets de slot debe
 acercarse al target_kcal."""
@@ -565,12 +585,17 @@ def _education_user_prompt(core: PlanCoreOutput) -> str:
     return f"""Genera el CONTENIDO EDUCATIVO del plan.
 
 Split del cliente: {core.training.split_name}.
-JSON: {{"pills":[{{"topic":...,"for_client":...}} (3–5 píldoras)],
+JSON: {{"pills":[{{"topic":...,"for_client":...}} (EXACTAMENTE 3)],
 "biomech_by_pattern":[{{"pattern":...,"cues":[...],"why":...}}],
 "faq":[{{"q":...,"a":...}}]}}.
 Patrones sugeridos para biomech_by_pattern: {patterns}.
 Temas de píldoras a rotar: sobrecarga progresiva, RIR, tempo, volumen, proteína,
-balance energético, sueño y recuperación, NEAT, hidratación, deload."""
+balance energético, sueño y recuperación, NEAT, hidratación, deload.
+LONGITUD (el cliente lo lee en el PDF de CADA mes — techo DURO):
+· pills: EXACTAMENTE 3. Cada `for_client`: MÁX 40 palabras, aplicado a SU plan
+  (nada de teoría genérica que valga para cualquiera).
+· biomech_by_pattern: `cues` en MÁX 8 palabras cada uno; `why` en MÁX 20 palabras.
+· faq: 3 preguntas como máximo, respuesta de MÁX 35 palabras."""
 
 
 def _education_user_prompt_training(training: TrainingCore) -> str:
@@ -586,12 +611,18 @@ Este cliente NO tiene plan de dieta: no incluyas píldoras ni FAQ sobre
 alimentación, macros o calorías.
 
 Split del cliente: {training.split_name}.
-JSON: {{"pills":[{{"topic":...,"for_client":...}} (3–5 píldoras)],
+JSON: {{"pills":[{{"topic":...,"for_client":...}} (EXACTAMENTE 3)],
 "biomech_by_pattern":[{{"pattern":...,"cues":[...],"why":...}}],
 "faq":[{{"q":...,"a":...}}]}}.
 Patrones sugeridos para biomech_by_pattern: {patterns}.
 Temas de píldoras a rotar: sobrecarga progresiva, RIR, tempo, volumen, técnica,
-sueño y recuperación, NEAT, hidratación, deload, gestión de la fatiga."""
+sueño y recuperación, NEAT, hidratación, deload, gestión de la fatiga.
+
+LONGITUD (el cliente lo lee en el PDF de CADA mes — techo DURO):
+· pills: EXACTAMENTE 3. Cada `for_client`: MÁX 40 palabras, aplicado a SU plan
+  (nada de teoría genérica que valga para cualquiera).
+· biomech_by_pattern: `cues` en MÁX 8 palabras cada uno; `why` en MÁX 20 palabras.
+· faq: 3 preguntas como máximo, respuesta de MÁX 35 palabras."""
 
 
 def _education_with_cache(ai: AIClient, *, split_name: str, variant: str,

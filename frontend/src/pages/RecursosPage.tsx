@@ -42,9 +42,6 @@ export default function RecursosPage() {
     <div className="mx-auto max-w-4xl px-4 py-6 md:px-8 md:py-8">
       <header className="mb-6">
         <h1 className="text-xl font-semibold text-zinc-100">Recursos del portal</h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          Productos recomendados y vídeos de los ejercicios que verán tus clientes en su portal.
-        </p>
       </header>
 
       <div className="mb-6 inline-flex rounded-xl border p-1" style={{ borderColor: "var(--line-strong)" }}>
@@ -113,9 +110,8 @@ function LearningManager() {
           <div>
             <h2 className="text-base font-semibold text-zinc-100">Lo que el sistema ha aprendido de ti</h2>
             <p className="mt-1 text-sm text-zinc-500">
-              Cada corrección que haces a un plan generado se registra ({data.total_edits} hasta ahora).
-              El sistema las destila en lecciones y las aplica en cada plan nuevo — sin tocar nunca
-              los números, que siempre los calcula el sistema.
+              {data.total_edits} correcciones registradas → lecciones aplicadas a cada plan nuevo.
+              Las cifras siempre las calcula el sistema, nunca la IA.
             </p>
           </div>
           <button onClick={refrescar} disabled={refrescando} className="btn btn-ghost">
@@ -124,9 +120,9 @@ function LearningManager() {
         </div>
         {data.lessons.length === 0 ? (
           <p className="mt-4 rounded-xl border p-4 text-sm text-zinc-400" style={{ borderColor: "var(--line-strong)" }}>
-            Aún no hay lecciones. {data.total_edits < data.min_edits
-              ? `Se necesitan al menos ${data.min_edits} correcciones tuyas a planes generados (llevas ${data.total_edits}).`
-              : "Pulsa «Regenerar ahora» para destilarlas de tus correcciones."}
+            {data.total_edits < data.min_edits
+              ? `Sin lecciones · ${data.total_edits}/${data.min_edits} correcciones`
+              : "Sin lecciones · pulsa «Regenerar ahora»"}
           </p>
         ) : (
           <ul className="mt-4 space-y-2">
@@ -281,10 +277,7 @@ function LinksPageManager() {
       {/* El enlace público para el perfil de Instagram */}
       <div className="card p-5">
         <h3 className="text-sm font-semibold text-zinc-200">Tu enlace para Instagram</h3>
-        <p className="mt-1 text-sm text-zinc-500">
-          Pon esta dirección en el perfil de Instagram. El cliente verá tu foto,
-          el botón "Trabaja conmigo" (planes con pago) y la tienda ESN con tu código.
-        </p>
+        <p className="mt-1 text-sm text-zinc-500">Pégala en la bio de Instagram.</p>
         <div className="mt-3 flex items-center gap-2">
           <code className="flex-1 truncate rounded-lg border px-3 py-2 text-sm"
             style={{ borderColor: "var(--line-strong)" }}>{publicUrl}</code>
@@ -306,9 +299,7 @@ function LinksPageManager() {
       {/* Foto de fondo */}
       <div className="card p-5">
         <h3 className="text-sm font-semibold text-zinc-200">Foto de fondo</h3>
-        <p className="mt-1 text-sm text-zinc-500">
-          Una foto tuya en vertical (como fondo de pantalla). JPG/PNG, máx. 5 MB.
-        </p>
+        <p className="mt-1 text-sm text-zinc-500">Vertical · JPG/PNG · máx. 5 MB</p>
         {api.mediaUrl(brand.links_photo_path) && (
           <img src={api.mediaUrl(brand.links_photo_path)!} alt="Foto de fondo actual"
             className="mt-3 h-40 w-28 rounded-xl border object-cover"
@@ -325,9 +316,7 @@ function LinksPageManager() {
       {/* Segunda foto: fondo de la página de PLANES (a donde va "Trabaja conmigo") */}
       <div className="card p-5">
         <h3 className="text-sm font-semibold text-zinc-200">Foto de fondo de los planes</h3>
-        <p className="mt-1 text-sm text-zinc-500">
-          Segunda foto, para la página de contratación de planes (/planes). JPG/PNG, máx. 5 MB.
-        </p>
+        <p className="mt-1 text-sm text-zinc-500">Para /planes · JPG/PNG · máx. 5 MB</p>
         {api.mediaUrl(brand.plans_photo_path) && (
           <img src={api.mediaUrl(brand.plans_photo_path)!} alt="Foto de los planes actual"
             className="mt-3 h-28 w-44 rounded-xl border object-cover"
@@ -344,10 +333,7 @@ function LinksPageManager() {
       {/* Afiliación ESN */}
       <div className="card p-5">
         <h3 className="text-sm font-semibold text-zinc-200">Tienda ESN (afiliación)</h3>
-        <p className="mt-1 text-sm text-zinc-500">
-          Enlace al catálogo de ESN y tu código de descuento. Si los dejas vacíos,
-          la landing solo muestra "Trabaja conmigo".
-        </p>
+        <p className="mt-1 text-sm text-zinc-500">Vacío = la landing solo muestra «Trabaja conmigo».</p>
         <div className="mt-3 space-y-3">
           <div>
             <label className="label">Enlace de la tienda</label>
@@ -373,16 +359,12 @@ function LinksPageManager() {
 
         {/* Conexión con Google Calendar / Meet: agendar con 1 clic */}
         <p className="mt-1 text-sm text-zinc-500">
-          Conecta tu cuenta de Google para agendar la videollamada quincenal con enlace
-          de <b>Meet</b> en 1 clic: se crea el evento en tu calendario, se invita al
-          cliente por email y ambos recibís recordatorios automáticos.
+          Conectar Google = evento + <b>Meet</b> + invitación al cliente + recordatorios, en 1 clic.
         </p>
         {google && !google.enabled && (
           <p className="mt-3 rounded-lg p-2.5 text-xs text-zinc-400"
             style={{ background: "var(--surface-raised)" }}>
-            La conexión automática con Google Meet (opcional) no está activada. No
-            hace falta: usa el <b>enlace de reservas</b> de aquí abajo y el cliente
-            elige día y hora por WhatsApp.
+            Google Meet no activado (opcional) → usa el <b>enlace de reservas</b> de abajo.
           </p>
         )}
         {google?.enabled && (
@@ -408,9 +390,7 @@ function LinksPageManager() {
         <div className="mt-5 border-t border-white/5 pt-4">
           <label className="label">Enlace de reservas (alternativa)</label>
           <p className="mb-1 text-xs text-zinc-500">
-            Si prefieres no conectar Google, tu enlace de reservas (página de citas de
-            Google, Calendly…) se incluye en el WhatsApp de la videollamada para que el
-            cliente elija día y hora él mismo.
+            Calendly, citas de Google… se incluye en el WhatsApp de la videollamada.
           </p>
           <input className="input" placeholder="https://calendar.app.google/…" value={meetUrl}
             onChange={(e) => setMeetUrl(e.target.value)} />

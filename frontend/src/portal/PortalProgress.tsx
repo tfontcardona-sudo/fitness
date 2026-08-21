@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -66,8 +66,7 @@ export function PortalProgress({ api, brand, hasTraining = true, token }: { api:
         <Sparkles size={26} className="mx-auto mb-2" style={{ color: accent }} />
         <p className="text-base font-semibold">Aquí verás cómo avanzas</p>
         <p className="mx-auto mt-1 max-w-xs text-sm opacity-70">
-          En cuanto registres tu <b>peso</b> en el Diario y subas tus <b>fotos</b> en la revisión
-          quincenal, esta pantalla te mostrará tu evolución.
+          Registra tu peso en el Diario y aquí verás tu evolución.
         </p>
       </div>
     );
@@ -156,7 +155,6 @@ export function PortalProgress({ api, brand, hasTraining = true, token }: { api:
               </div>
             ))}
           </div>
-          <p className="mt-2 text-xs opacity-55">Estimación de tu fuerza máxima (1RM) según lo que registras en Entreno.</p>
         </section>
       )}
 
@@ -190,7 +188,7 @@ export function PortalProgress({ api, brand, hasTraining = true, token }: { api:
               </tbody>
             </table>
           </div>
-          <p className="mt-2 text-xs opacity-55">Medidas en cm. Bajar de cintura suele indicar pérdida de grasa aunque el peso se mueva poco.</p>
+          <p className="mt-2 text-xs opacity-55">Medidas en cm.</p>
         </section>
       )}
 
@@ -207,7 +205,7 @@ export function PortalProgress({ api, brand, hasTraining = true, token }: { api:
             <>
               <PhotoColumn api={api} title="Tus fotos" date={data.photos.first_date} photos={data.photos.first} wide />
               <p className="mt-2 flex items-center gap-1.5 text-xs opacity-60">
-                <CameraOff size={13} /> Sube fotos en tu próxima revisión quincenal para verte "antes / ahora".
+                <CameraOff size={13} /> Envía fotos en tu próxima revisión para verte "antes / ahora".
               </p>
             </>
           )}
@@ -256,7 +254,7 @@ function Revisiones({ api, accent, token }: { api: Api; accent: string; token: s
                 {d.sent_at ? new Date(d.sent_at).toLocaleDateString("es-ES",
                   { day: "numeric", month: "long" }) : ""}
               </p>
-              {analisis && <p className="mt-1 text-sm leading-relaxed">{analisis}</p>}
+              {analisis && <PortalClamp text={analisis} lines={3} />}
               {cambios.length > 0 && (
                 <ul className="mt-2 space-y-1">
                   {cambios.map((b, j) => (
@@ -363,4 +361,44 @@ function truncate(s: string, n: number): string {
 }
 function kindLabel(kind: string): string {
   return { front: "frontal", side: "perfil", back: "espalda", detail: "detalle" }[kind] ?? kind;
+}
+
+/** Prosa larga del coach recortada a `lines` líneas con "Leer todo". */
+function PortalClamp({ text, lines = 3 }: { text: string; lines?: number }) {
+  const [open, setOpen] = useState(false);
+  const [clipped, setClipped] = useState(false);
+  const ref = useRef<HTMLParagraphElement | null>(null);
+  // "Leer todo" solo si de verdad hay texto oculto (medida real, no por nº de
+  // caracteres): si no, era un botón muerto en el informe del cliente.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const medir = () => {
+      if (el.clientHeight > 0) setClipped(el.scrollHeight > el.clientHeight + 1);
+    };
+    medir();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(medir);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [text, open, lines]);
+  return (
+    <>
+      <p
+        ref={ref}
+        className="mt-1 text-sm leading-relaxed"
+        style={open ? undefined : {
+          display: "-webkit-box", WebkitBoxOrient: "vertical",
+          WebkitLineClamp: lines, overflow: "hidden",
+        }}
+      >
+        {text}
+      </p>
+      {(clipped || open) && (
+        <button onClick={() => setOpen((o) => !o)} className="mt-0.5 text-xs font-medium opacity-60">
+          {open ? "Ver menos" : "Leer todo"}
+        </button>
+      )}
+    </>
+  );
 }

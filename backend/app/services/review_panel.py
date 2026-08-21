@@ -106,7 +106,13 @@ def reviewer_prompt(role: dict, plan_text: str, anamnesis_text: str,
         "(entero 0-100) y \"hallazgos\" (lista; cada hallazgo con \"severidad\" "
         "(bloqueante|mayor|menor), \"descripcion\", \"cita_anamnesis\", "
         "\"donde_en_el_plan\" y \"correccion_propuesta\"). No inventes datos "
-        "que no estén en la anamnesis.\n\n"
+        "que no estén en la anamnesis.\n"
+        "FORMATO DE CADA CAMPO (el coach los lee en la pantalla del móvil): "
+        "\"descripcion\" = el problema EN SECO, MÁXIMO 20 palabras, sin justificar "
+        "ni razonar en voz alta; \"cita_anamnesis\" = la cita literal MÁS CORTA que "
+        "lo demuestra (máx. 12 palabras); \"donde_en_el_plan\" = la ubicación, no una "
+        "explicación (máx. 8 palabras); \"correccion_propuesta\" = la acción concreta, "
+        "máx. 15 palabras. MÁXIMO 6 hallazgos: los que más importen.\n\n"
         f"=== ANAMNESIS ===\n{anamnesis_text}\n\n=== PLAN ===\n{plan_text}{extra}"
     )
 
@@ -351,7 +357,13 @@ def make_ai_reviewer(
         "(entero 0-100) y \"hallazgos\" (lista; cada hallazgo con \"severidad\" "
         "(bloqueante|mayor|menor), \"descripcion\", \"cita_anamnesis\", "
         "\"donde_en_el_plan\" y \"correccion_propuesta\"). No inventes datos "
-        "que no estén en la anamnesis."
+        "que no estén en la anamnesis.\n"
+        "FORMATO DE CADA CAMPO (el coach los lee en la pantalla del móvil): "
+        "\"descripcion\" = el problema EN SECO, MÁXIMO 20 palabras, sin justificar "
+        "ni razonar en voz alta; \"cita_anamnesis\" = la cita literal MÁS CORTA que "
+        "lo demuestra (máx. 12 palabras); \"donde_en_el_plan\" = la ubicación, no una "
+        "explicación (máx. 8 palabras); \"correccion_propuesta\" = la acción concreta, "
+        "máx. 15 palabras. MÁXIMO 6 hallazgos: los que más importen."
     )
     system_blocks = [
         {"type": "text",

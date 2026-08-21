@@ -60,22 +60,13 @@ export function PortalResources({ api, brand, hasTraining = true }: { api: Api; 
     <div className="space-y-6">
       <div>
         <h2 className="text-lg font-semibold">Recursos</h2>
-        <p className="mt-0.5 text-xs opacity-60">
-          {hasTraining
-            ? "Vídeos de tus ejercicios y productos recomendados por tu coach."
-            : "Productos recomendados por tu coach."}
-        </p>
       </div>
 
       {isEmpty && (
         <Empty
           icon={hasTraining ? PlayCircle : ShoppingBag}
           title="Aún no hay recursos"
-          hint={
-            hasTraining
-              ? "Cuando tu coach añada vídeos de tus ejercicios o productos recomendados, aparecerán aquí."
-              : "Cuando tu coach añada productos recomendados, aparecerán aquí."
-          }
+          hint="Tu coach aún no ha añadido ninguno."
         />
       )}
 
@@ -190,10 +181,6 @@ export function PortalResources({ api, brand, hasTraining = true }: { api: Api; 
                 </div>
               </section>
             )}
-            <p className="text-[11px] opacity-40">
-              Recomendaciones de tu coach. Al abrir un producto tu código de
-              descuento se copia solo, para pegarlo al pagar.
-            </p>
           </>
         );
       })()}

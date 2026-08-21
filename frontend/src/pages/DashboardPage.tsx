@@ -36,7 +36,7 @@ interface Accion {
   prio: number;              // 1 = lo más urgente
   category: string;          // etiqueta de la categoría (chip de color)
   title: string;             // qué ha pasado
-  detail: string;            // qué hay que hacer
+  detail?: string;           // contexto extra (solo si aporta algo al título)
   cta: string;               // texto del botón
   tab: string;               // pestaña destino del perfil
   tone: string;              // color del indicador
@@ -49,14 +49,12 @@ function nextAction(c: ClientOut): Accion | null {
     return {
       client: c, prio: 1, tone: "#7B4FC9", icon: ClipboardCheck, category: "Revisión",
       title: `Revisión quincenal #${c.review_period_index ?? c.pending_review_period ?? ""} subida`,
-      detail: "El cliente ha cerrado sus 2 semanas: revisa los datos y genera su feedback.",
       cta: "Generar feedback", tab: "feedback",
     };
   if (c.status === "at_risk")
     return {
       client: c, prio: 1, tone: "#C2453A", icon: HeartPulse, category: "Riesgo",
-      title: "Adherencia baja",
-      detail: "Lleva días sin registrar o con adherencia baja: revisa su seguimiento y contáctalo.",
+      title: "Sin registros o adherencia baja",
       cta: "Ver seguimiento", tab: "seguimiento",
     };
   // (La tarjeta "Adaptar planificación" YA NO se deriva de pending_review: ese
@@ -70,14 +68,12 @@ function nextAction(c: ClientOut): Accion | null {
       // prio 4 = "En espera del cliente": el coach solo puede recordárselo.
       client: c, prio: 4, tone: "#6366F1", icon: ClipboardList, category: "Falta anamnesis",
       title: "Cliente nuevo · falta su anamnesis",
-      detail: "Reenvíale el enlace si hace falta y, cuando llegue el PDF, léelo con la IA.",
       cta: "Abrir anamnesis", tab: "anamnesis",
     };
   if (c.status === "onboarding")
     return {
       client: c, prio: 3, tone: "#E8833A", icon: CalendarPlus, category: "Falta planificación",
       title: "Anamnesis lista · falta su planificación",
-      detail: "Revisa los datos y genera su primera planificación con la IA.",
       cta: "Crear planificación", tab: "planificacion",
     };
   // 45 días en la misma etapa de objetivo → valorar cambio (posponible)
@@ -86,7 +82,6 @@ function nextAction(c: ClientOut): Accion | null {
     return {
       client: c, prio: 3, tone: "#2E5E8C", icon: Flag, category: "Objetivo",
       title: `${dueDays} días con el mismo objetivo`,
-      detail: "Genera el análisis de la etapa y valora con el cliente si toca cambiar de objetivo.",
       cta: "Valorar objetivo", tab: "planificacion",
     };
   // ("awaiting_feedback" eliminado: estado muerto que nada asignaba — auditoría.)
@@ -309,8 +304,7 @@ export default function DashboardPage() {
 
       {loadFailed && (
         <div className="card mt-4 p-3 text-sm text-zinc-300">
-          No se pudo actualizar el panel (¿sin conexión?). Lo que ves puede estar
-          incompleto; se reintenta solo cada pocos segundos.
+          Sin conexión · datos incompletos, reintentando…
         </div>
       )}
 
@@ -329,7 +323,7 @@ export default function DashboardPage() {
         {urgentes.length === 0 ? (
           <div className="card flex items-center justify-center gap-2.5 p-10 text-sm text-zinc-500">
             <CheckCircle2 size={18} style={{ color: "var(--brand-accent)" }} />
-            Todo al día. Ninguna acción pendiente con tus clientes.
+            Todo al día
           </div>
         ) : (
           // AGRUPADO por tipo de acción (como las carpetas de Clientes): cada
@@ -491,7 +485,7 @@ function ActionCard({ a, quiet }: { a: Accion; quiet?: boolean }) {
           <span className="mx-1.5 text-zinc-600">·</span>
           {a.title}
         </p>
-        <p className="mt-0.5 text-xs text-zinc-500">{a.detail}</p>
+        {a.detail && <p className="mt-0.5 text-xs text-zinc-500">{a.detail}</p>}
       </div>
       {/* En el móvil el botón ocupa toda la fila: pulsación fácil con el pulgar */}
       <span className={`${quiet ? "btn btn-ghost" : "btn btn-primary"} pointer-events-none w-full justify-center px-3.5 py-2 text-xs sm:w-auto`}>

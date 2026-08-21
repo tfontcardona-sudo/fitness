@@ -76,37 +76,29 @@ FOOD_GROUPS = {
     "LÍPIDOS": [
         ("", ["Aguacate", "aceite de oliva", "aceitunas"]),
         ("Frutos secos", ["almendras", "anacardos", "nueces", "avellanas", "castañas",
-                          "pistachos", "cacahuete*"]),
+                          "pistachos", "cacahuete"]),
         ("Semillas", ["chía", "calabaza", "lino", "girasol", "sésamo"]),
     ],
 }
-FOOD_GROUP_FOOTNOTE = {"LÍPIDOS": "*El cacahuete es una legumbre."}
+FOOD_GROUP_FOOTNOTE: dict[str, str] = {}  # (sin trivia: no cambia ninguna decisión)
 FOOD_GROUP_COLORS = [FG_GREEN, FG_YELLOW, FG_WINE, FG_ORANGE]
 
 PLATO_TEXT = [
-    "El plato saludable es una herramienta muy útil para crear platos equilibrados de forma "
-    "rápida y sencilla. Para que tus platos sean equilibrados debes añadir siempre:",
-    "• Vegetales y frutas: la mayor parte del plato (la mitad) debe estar cubierta de "
-    "vegetales — ¡cuanta más variedad, mejor! La fruta de postre es siempre una buena opción.",
-    "• Granos integrales (hidratos de carbono): un cuarto del plato debe estar compuesto por "
-    "granos integrales, féculas y tubérculos.",
-    "• Proteína: otro cuarto del plato debe estar compuesto por alimentos ricos en proteína "
-    "animal y/o vegetal. Es importante limitar el consumo de carne roja y procesada.",
-    "Bebida: el agua es la bebida por excelencia. Acompaña el plato con grasas saludables "
-    "como aceite de oliva virgen extra, aguacate o frutos secos.",
+    "• ½ plato: verdura y fruta (cuanta más variedad, mejor).",
+    "• ¼ plato: integrales, féculas y tubérculos.",
+    "• ¼ plato: proteína — limita carne roja y procesada.",
+    "• Grasa: AOVE, aguacate o frutos secos. Bebida: agua.",
 ]
 
 IDEAS_RAPIDAS = [
+    # Una idea por línea: el filtro de alérgenos descarta la LÍNEA entera, así
+    # que agruparlas escondería ideas seguras. La viñeta la pone el renderizador.
     "Pan integral con queso cottage y aguacate.",
-    "Pan integral con queso cottage y pavo, jamón o huevo.",
-    "Pan integral con crema de cacahuete, rodajas de plátano, canela y semillas de sésamo.",
-    "Pan integral con aguacate y jamón o huevo.",
-    "Pan integral con hummus y rodajas de tomate.",
-    "Pan integral con queso fresco y huevo.",
-    "Pan integral con aguacate y plátano.",
-    "Yogur con copos de avena (o cornflakes sin azúcar) y fruta o frutos secos.",
-    "Tortitas de arroz con crema de cacahuete 100% y rodajas de plátano.",
-    "Bowl de queso fresco batido 0% con frutos rojos y canela.",
+    "Pan integral con pavo, jamón o huevo.",
+    "Pan integral con crema de cacahuete y plátano.",
+    "Pan integral con hummus y tomate.",
+    "Yogur o queso batido 0% con avena y fruta.",
+    "Tortitas de arroz con crema de cacahuete y plátano.",
 ]
 
 SALSAS_TEXT = [
@@ -274,25 +266,6 @@ def _ajuste_text(nutrition: dict, goal: str | None) -> str:
     return f"Déficit {delta} kcal ({pct}%)"
 
 
-def _concise_notas(nutrition: dict, goal: str | None, meals: list[dict]) -> list[str]:
-    """NOTAS DEL AJUSTE concisas y computadas (como el ejemplo), NO el rationale
-    verboso de la IA."""
-    tdee = round(nutrition.get("tdee_kcal") or 0)
-    target = round(nutrition.get("target_kcal") or 0)
-    out: list = []
-    if tdee and target:
-        delta = target - tdee
-        word = ("Subida progresiva." if delta > 0
-                else "Mantenimiento." if delta == 0
-                else "Bajada progresiva.")
-        out.append(("Calorías totales",
-                    f"{delta:+d} kcal sobre el TDEE estimado (≈ {tdee} → {target} kcal). {word}"))
-    if meals:
-        toma = ", ".join(f"{m.get('name','')} ({m.get('time','')})".strip()
-                         for m in meals if m.get("name"))
-        if toma:
-            out.append(("Estructura", f"{toma}."))
-    return out or [nutrition.get("rationale", "")]
 
 
 def _ingredients_str(opt: dict) -> str:
@@ -399,8 +372,6 @@ def generate_plan_doc(
         )
 
         meals = nutrition.get("meals", [])
-        section_bar(doc, "Notas del ajuste", BLUE)
-        info_box(doc, _concise_notas(nutrition, goal_type, meals))
 
         # Cambios aplicados en la última adaptación (revisión quincenal): el cliente
         # ve QUÉ cambió, DÓNDE y POR QUÉ directamente en su PDF.

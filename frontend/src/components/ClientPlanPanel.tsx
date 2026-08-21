@@ -7,7 +7,7 @@ import { CANONICAL_MEALS, mealKeysFromNames } from "../lib/meals";
 import { GOAL_LABEL, goalDays, goalReviewDue, planMonthLabel } from "../lib/format";
 import { deficitLabel, macroPct, MACRO_TOTAL_TOLERANCE } from "../lib/nutritionTargets";
 import { isCriticalLine } from "../lib/clinical";
-import { ExpandableArea, Spinner, useToast } from "./ui";
+import { ExpandableArea, ProseClamp, Spinner, useToast } from "./ui";
 import { MemoDetails } from "./MemoDetails";
 import { ClientPlanEditor } from "./ClientPlanEditor";
 import type { ClientOut, GoalType } from "../types";
@@ -667,7 +667,9 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                 <>
                   {(rojoFindings.length > 0 || rojoFlags.length > 0) && (
                     <ul className="mt-1.5 space-y-0.5 text-xs text-red-700">
-                      {rojoFindings.map((f, i) => <li key={`f${i}`}>• {f.description}</li>)}
+                      {rojoFindings.map((f, i) => (
+                        <li key={`f${i}`}><ProseClamp text={f.description} lines={2} /></li>
+                      ))}
                       {rojoFlags.map((f, i) => <li key={`g${i}`}>• {f}</li>)}
                     </ul>
                   )}
@@ -677,7 +679,9 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                         Avisos de la revisión automática · {nAmbar}
                       </summary>
                       <ul className="mt-0.5 space-y-0.5 text-xs text-amber-700">
-                        {ambarFindings.map((f, i) => <li key={`f${i}`}>• {f.description}</li>)}
+                        {ambarFindings.map((f, i) => (
+                          <li key={`f${i}`}><ProseClamp text={f.description} lines={2} /></li>
+                        ))}
                         {ambarFlags.map((f, i) => <li key={`g${i}`}>• {f}</li>)}
                         {degraded > 0 && (
                           <li>• La revisión automática quedó incompleta ({degraded} revisor{degraded === 1 ? "" : "es"} sin ejecutar): repasa el plan con más atención.</li>
@@ -1218,11 +1222,10 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
             >
               {deficitLabel(nut.tdee_kcal, nut.target_kcal ?? 0)}
             </span>
-            <span className="text-zinc-500">sobre tu gasto (TDEE {Math.round(nut.tdee_kcal)} kcal)</span>
-            {client.goal_type && <span className="text-zinc-500">· {GOAL_LABEL[client.goal_type]}</span>}
+            <span className="text-zinc-500">TDEE {Math.round(nut.tdee_kcal)} kcal</span>
           </div>
         ) : null}
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <Stat label="Calorías" value={`${Math.round(nut.target_kcal ?? 0)}`} />
           <Stat label="Proteína" value={`${Math.round(macros.protein_g ?? 0)} g`} sub={(nut.target_kcal ?? 0) > 0 ? `${mp.protein}%` : undefined} />
           <Stat label="Carbohid." value={`${Math.round(macros.carbs_g ?? 0)} g`} sub={(nut.target_kcal ?? 0) > 0 ? `${mp.carbs}%` : undefined} />
@@ -1326,7 +1329,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
         {tr.split_rationale && (
           <details className="mb-3 text-sm">
             <summary className="cursor-pointer font-medium text-zinc-400 hover:text-zinc-200">Sobre esta estructura</summary>
-            <p className="mt-2 text-zinc-400">{tr.split_rationale}</p>
+            <div className="mt-2 text-zinc-400"><ProseClamp text={tr.split_rationale} lines={2} /></div>
           </details>
         )}
 
@@ -1344,7 +1347,11 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                     <span style={{ color: "var(--brand-accent-2)" }}>Sem {w.week}</span> · {w.intent}
                   </div>
                   <div className="text-zinc-500">Carga {w.load_pct}% · RIR {w.rir_target}</div>
-                  {w.volume_note && <div className="mt-0.5 text-zinc-500">{w.volume_note}</div>}
+                  {w.volume_note && (
+                    <div className="mt-0.5 text-zinc-500">
+                      <ProseClamp text={w.volume_note} lines={2} />
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -1432,7 +1439,10 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
           </div>
         )}
         {tr.deload_instructions && (
-          <p className="mt-3 text-xs text-zinc-400"><b className="text-zinc-300">Descarga (deload):</b> {tr.deload_instructions}</p>
+          <div className="mt-3 text-xs text-zinc-400">
+            <b className="text-zinc-300">Descarga (deload)</b>
+            <ProseClamp text={tr.deload_instructions} lines={2} />
+          </div>
         )}
       </div>
       )}
@@ -1593,10 +1603,13 @@ function ImportantPointsCard({ client }: { client: ClientOut }) {
                 borderLeftColor: nCrit > 0 ? RED : "transparent",
               }}
               summary={
-                <span className="text-xs font-semibold text-zinc-300">
-                  {b.label}
+                <span className="flex flex-1 items-center gap-2 text-xs font-semibold text-zinc-300">
+                  <span className="min-w-0 flex-1">{b.label}</span>
                   {nCrit > 0 && (
-                    <span className="ml-2 rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white" style={{ background: RED }}>
+                    <span
+                      className="shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white"
+                      style={{ background: RED }}
+                    >
                       {nCrit} a vigilar
                     </span>
                   )}
@@ -1973,8 +1986,8 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
         border: "1px solid var(--line)",
       }}
     >
-      <div className="text-lg font-bold tabular-nums" style={{ color: "var(--brand-accent)" }}>{value}</div>
-      <div className="mt-0.5 flex items-center justify-center gap-1.5 text-xs text-zinc-500">
+      <div className="whitespace-nowrap text-lg font-bold tabular-nums" style={{ color: "var(--brand-accent)" }}>{value}</div>
+      <div className="mt-0.5 flex flex-wrap items-center justify-center gap-x-1.5 text-xs text-zinc-500">
         <span>{label}</span>
         {sub && (
           <span className="rounded px-1 font-semibold tabular-nums" style={{ background: "color-mix(in srgb, var(--brand-accent-2) 12%, transparent)", color: "var(--brand-accent-2)" }}>

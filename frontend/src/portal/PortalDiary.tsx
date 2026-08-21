@@ -176,18 +176,12 @@ export function PortalDiary({ api, brand, periodStatus = null, businessToday = n
           {hasPeriod ? (
             <>
               <p className="font-semibold">Revisión enviada — diario en pausa</p>
-              <p className="mt-1 text-xs opacity-70">
-                Tu coach está preparando tu feedback. Con el nuevo período volverás a
-                registrar tu día a día aquí.
-              </p>
+              <p className="mt-1 text-xs opacity-70">Se reabre cuando tu coach te envíe el feedback.</p>
             </>
           ) : (
             <>
               <p className="font-semibold">Tu seguimiento está a punto de empezar</p>
-              <p className="mt-1 text-xs opacity-70">
-                En cuanto tu coach active tu planificación podrás registrar aquí tu
-                día a día. Te avisaremos con una notificación.
-              </p>
+              <p className="mt-1 text-xs opacity-70">Te avisaremos al activarse.</p>
             </>
           )}
         </div>
@@ -201,7 +195,6 @@ export function PortalDiary({ api, brand, periodStatus = null, businessToday = n
             {fmt1(target.kcal)} kcal · P {fmt1(target.macros.protein_g)} g · C {fmt1(target.macros.carbs_g)} g · G {fmt1(target.macros.fat_g)} g
           </p>
         )}
-        <p className="mt-0.5 text-xs opacity-60">Un minuto al día: peso, sueño y cómo te ha ido. Se guarda solo.</p>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -332,7 +325,7 @@ function NumberCard({
       </div>
       {invalid && (
         <span className="mt-1 block text-[11px] font-medium" style={{ color: "#C2453A" }}>
-          Valor no válido{min != null && max != null ? ` (entre ${min} y ${max})` : ""} — no se guarda
+          {min != null && max != null ? `Entre ${min} y ${max}` : "Valor no válido"}
         </span>
       )}
     </label>

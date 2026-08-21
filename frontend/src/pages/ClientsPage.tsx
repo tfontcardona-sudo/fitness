@@ -158,11 +158,7 @@ export default function ClientsPage() {
           ) : (
             <EmptyState
               title={filter === "all" ? "Sin clientes que mostrar" : "Nada en esta carpeta"}
-              hint={
-                filter === "all"
-                  ? "Da de alta tu primer cliente para generarle el enlace de anamnesis."
-                  : "Cuando un cliente esté en este punto del ciclo aparecerá aquí."
-              }
+              hint={filter === "all" ? "Empieza por tu primer cliente." : undefined}
               action={
                 filter === "all" ? (
                   <button className="btn btn-primary" onClick={() => setShowNew(true)}>
@@ -514,8 +510,7 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
             <div className="shrink-0 p-6 pb-3">
               <h3 className="text-base font-semibold text-zinc-100">Nuevo cliente</h3>
               <p className="mt-1 text-sm text-zinc-500">
-                Al crearlo se le enviará por email su acceso al portal (usuario, contraseña
-                y enlace). Solo necesitas nombre y email; el teléfono es para WhatsApp.
+                Al crear: email automático con su acceso al portal.
               </p>
             </div>
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-1">
@@ -574,11 +569,6 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
               </div>
               <div>
                 <label className="label">Nivel del cliente</label>
-                <p className="text-xs text-zinc-500">
-                  Decide quién hace su planificación: a principiante e intermedio
-                  se la genera la IA; al avanzado se la preparas tú sobre una base
-                  ya calculada (sin gastar créditos).
-                </p>
                 <div className="mt-1.5 grid grid-cols-3 gap-2">
                   {([
                     ["beginner", "Principiante", "la IA genera su plan"],
@@ -612,9 +602,7 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
               </div>
               <div>
                 <label className="label">Duración</label>
-                <p className="text-xs text-zinc-500">
-                  Cómo contrata el plan: decide el precio que pagará en su enlace de pago.
-                </p>
+                <p className="text-xs text-zinc-500">Fija el precio de su enlace de pago.</p>
                 <div className="mt-1.5 grid grid-cols-3 gap-2">
                   {BILLING_PERIODS.map((b) => {
                     const sel = period === b.value;
@@ -654,8 +642,7 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
                     Oferta: primer mes 1 €
                   </span>
                   <span className="mt-0.5 block text-xs text-zinc-500">
-                    Después {OFFER_MONTHLY_EUR} €/mes en suscripción: Stripe renueva el
-                    cobro automáticamente. Solo plan Full; al elegirla se marca Full.
+                    Luego {OFFER_MONTHLY_EUR} €/mes · suscripción Stripe · solo Full
                   </span>
                 </button>
               </div>
@@ -684,8 +671,7 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
               style={{ borderColor: "var(--brand-accent)", background: "color-mix(in srgb, var(--brand-accent) 8%, transparent)" }}>
               <p className="text-sm font-semibold text-zinc-100">Enviar pago + anamnesis</p>
               <p className="mt-0.5 text-xs text-zinc-500">
-                Un solo mensaje con el enlace de pago de su plan ({pkg(created.client.package_tier).short})
-                y el de la anamnesis, con la instrucción de devolverla rellena.
+                Un mensaje: pago ({pkg(created.client.package_tier).short}) + anamnesis.
               </p>
               <button onClick={sendOnboarding} disabled={sendingOnb} className="btn btn-primary mt-2 w-full justify-center">
                 {pkg(created.client.package_tier).delivery === "whatsapp"
@@ -707,9 +693,7 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
                 por WhatsApp además del correo automático. Es el enlace de la web,
                 donde el cliente primero rellena la anamnesis y luego hace el
                 seguimiento y ve su planificación. */}
-            <p className="mt-4 text-xs text-zinc-500">
-              Enlace del portal del cliente (para enviarlo también por WhatsApp, opcional):
-            </p>
+            <p className="mt-4 text-xs text-zinc-500">Enlace del portal (opcional)</p>
             <div className="mt-1.5 flex items-center gap-2 rounded-xl border p-3" style={{ borderColor: "var(--line-strong)" }}>
               <code className="flex-1 truncate text-xs text-zinc-300">{created.links.portal_url}</code>
               <button className="btn btn-ghost px-2.5 py-1.5" aria-label="Copiar enlace" onClick={() => copy(created.links.portal_url)}>
@@ -741,12 +725,12 @@ function PortalAccessResult({
   const color = ok ? "var(--brand-accent)" : "#C2453A";
   const Icon = ok ? CheckCircle2 : AlertTriangle;
   const text = ok
-    ? `Acceso al portal enviado a ${email}: usuario, contraseña y enlace.`
+    ? `Acceso enviado a ${email}`
     : status === "disabled"
-    ? "El envío de correos está desactivado en el servidor. Pulsa 'Enviar correo de nuevo' para ver la contraseña y dársela tú."
+    ? "Emails desactivados → pulsa 'Enviar correo de nuevo' y dicta la contraseña"
     : status === "no_email"
-    ? "El cliente no tiene email, así que no se pudo enviar el acceso."
-    : "El acceso se generó pero el email no salió. Reenvíalo o revisa la configuración de correo.";
+    ? "Sin email: no se pudo enviar"
+    : "El email no salió → reenviar";
   return (
     <div
       className="flex items-start gap-2 rounded-xl border p-3"

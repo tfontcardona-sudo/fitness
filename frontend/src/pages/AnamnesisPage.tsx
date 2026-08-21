@@ -380,20 +380,14 @@ export default function AnamnesisPage() {
           <img src="/dq-logo.png" alt="" className="h-12 w-auto rounded-xl shadow-sm" />
           <h1 className="mt-3 text-2xl font-bold">Tu cuestionario inicial</h1>
           {!hecho && !tokenBad && (
-            <p className="mt-1 max-w-md text-sm opacity-70">
-              Con esto preparamos tu plan 100 % a medida. Son 6 pasos cortos:
-              puedes hacerlo desde el móvil en unos minutos.
-            </p>
+            <p className="mt-1 max-w-md text-sm opacity-70">6 pasos · unos minutos</p>
           )}
         </header>
 
         {tokenBad ? (
           <div style={card} className="text-center">
             <h2 className="text-lg font-bold">Este enlace no es válido</h2>
-            <p className="mt-2 text-sm opacity-75">
-              Puede que esté incompleto o haya caducado. Escribe a tu coach y te
-              enviará uno nuevo al momento.
-            </p>
+            <p className="mt-2 text-sm opacity-75">Pide uno nuevo a tu coach.</p>
           </div>
         ) : hecho ? (
           <div className="space-y-4">
@@ -401,9 +395,8 @@ export default function AnamnesisPage() {
               <CheckCircle2 size={40} className="mx-auto" style={{ color: "#2E7D46" }} />
               <h2 className="mt-3 text-lg font-bold">¡Anamnesis recibida!</h2>
               <p className="mt-2 text-sm opacity-75">
-                Ya la tenemos. Revisa tu correo (también la carpeta de spam): te
-                hemos enviado el acceso a tu portal. Tu coach preparará tu plan
-                con esta información y te avisará en cuanto esté listo.
+                Te hemos enviado el acceso a tu portal por email (mira también el spam).
+                Tu coach prepara tu plan.
               </p>
             </div>
             {pdfState !== "done" && fotosSubidas < 4 && (
@@ -413,8 +406,7 @@ export default function AnamnesisPage() {
                   Fotos iniciales (opcional, máximo 4)
                 </p>
                 <p className="mt-1 text-sm opacity-70">
-                  Frontal, perfil y espalda con ropa ajustada: son tu punto de
-                  partida para comparar el progreso. Solo las ve tu coach.
+                  Frontal · perfil · espalda, con ropa ajustada. Solo las ve tu coach.
                 </p>
                 <input ref={fotosRef} type="file" accept="image/*" multiple className="hidden"
                   onChange={(e) => subirFotos(e.target.files)} />
@@ -583,8 +575,7 @@ export default function AnamnesisPage() {
               {paso === 3 && (<>
                 <p className="text-base font-bold">Tu salud</p>
                 <p className="text-sm opacity-70">
-                  Cuéntanoslo todo aunque parezca poco importante: el plan se
-                  adapta a ti y tu seguridad va primero.
+                  Cuéntalo todo, aunque parezca poco importante: tu seguridad va primero.
                 </p>
                 <div>
                   {label("Lesiones o molestias", true)}
@@ -741,9 +732,6 @@ export default function AnamnesisPage() {
               </div>
             </details>
 
-            <p className="text-center text-xs opacity-50">
-              Tus datos se usan solo para preparar y seguir tu asesoría.
-            </p>
           </div>
         )}
       </div>

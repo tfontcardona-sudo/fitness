@@ -17,6 +17,12 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 # ============================================================ llamada ① ====
 
 
+# ⚠️ Las `description` de estos Field son DOCUMENTACIÓN para quien lee el código:
+# NO llegan al modelo. `AIClient.generate_json` solo envía `system` y `user`; el
+# schema se usa exclusivamente para `model_validate`. Todo tope de longitud que
+# deba cumplir la IA hay que escribirlo TAMBIÉN en el prompt (prompts.py /
+# generator.py), que es lo único que viaja.
+
 class Macros(BaseModel):
     protein_g: float = Field(ge=0)
     carbs_g: float = Field(ge=0)
@@ -41,18 +47,30 @@ class Supplement(BaseModel):
     name: str
     dose: str
     timing: str
-    evidence_note: str = ""  # nota informativa; opcional para no tumbar el plan si la IA la omite
+    # nota informativa; opcional para no tumbar el plan si la IA la omite
+    evidence_note: str = Field(
+        default="", description="MÁXIMO 10 palabras. Ej.: 'Evidencia sólida en fuerza'."
+    )
 
 
 class NutritionCore(BaseModel):
     tdee_kcal: float = Field(gt=0)
     target_kcal: float = Field(gt=0)
-    rationale: str
+    rationale: str = Field(
+        description=(
+            "POR QUÉ de este enfoque, MÁXIMO 2 frases cortas (~35 palabras). "
+            "Directo y sin relleno: no repitas las cifras que ya salen en la tabla "
+            "ni añadas frases motivacionales."
+        )
+    )
     macros: Macros
     meals: list[MealSlotDef] = Field(min_length=1)
     supplements: list[Supplement] = Field(default_factory=list)
     flexibility_rules: list[str] = Field(default_factory=list)
-    refeed_or_break: str | None = None
+    refeed_or_break: str | None = Field(
+        default=None,
+        description="Una sola línea telegráfica (~15 palabras). null si no aplica.",
+    )
 
     @model_validator(mode="after")
     def slots_unicos_y_ordenados(self) -> "NutritionCore":
@@ -66,10 +84,16 @@ class NutritionCore(BaseModel):
 
 class WeeklyProgressionWeek(BaseModel):
     week: int = Field(ge=1, le=4)
-    intent: str  # Base | Progresión | Pico | Deload
+    intent: str = Field(description="UNA palabra: Base | Progresión | Pico | Deload")
     load_pct: float = Field(gt=0)
     rir_target: str
-    volume_note: str
+    volume_note: str = Field(
+        description=(
+            "TELEGRÁFICO: MÁXIMO 12 palabras, sin frases completas. "
+            "Ej.: 'Series ÷2 · carga −30% · lejos del fallo'. "
+            "Nada de explicar el porqué ni de motivar: solo la instrucción."
+        )
+    )
 
 
 class PlannedExercise(BaseModel):
@@ -80,9 +104,18 @@ class PlannedExercise(BaseModel):
     tempo: str | None = None
     rest_sec: int = Field(ge=15, le=600)
     start_weight_hint_kg: float | None = Field(default=None, ge=0)
-    progression_rule: str
-    technique_cue: str
-    biomech_cue: str
+    progression_rule: str = Field(
+        description=(
+            "Regla de subida en MÁXIMO 12 palabras, con la cifra. "
+            "Ej.: 'Completas 4×8 a RIR 2 → +2,5 kg'."
+        )
+    )
+    technique_cue: str = Field(
+        description="Una orden accionable de MÁXIMO 10 palabras. Ej.: 'Codos a 45°, baja controlado'."
+    )
+    biomech_cue: str = Field(
+        description="El porqué en MÁXIMO 10 palabras. Ej.: 'Protege el hombro y aísla el pectoral'."
+    )
     # Indicaciones PERSONALIZADAS del coach para ESTE cliente (capacidades,
     # limitaciones, adaptación del ejercicio). Las escribe el coach en el editor;
     # el cliente las ve destacadas en su portal y en el PDF.
@@ -92,16 +125,18 @@ class PlannedExercise(BaseModel):
 class TrainingSession(BaseModel):
     day: str  # "Lunes"…
     name: str  # "Upper A"
-    warmup: str
+    warmup: str = Field(
+        description="MÁXIMO 15 palabras separadas por '·'. Ej.: '5 min bici · movilidad hombro · 2 series ligeras'."
+    )
     exercises: list[PlannedExercise] = Field(min_length=1)
-    cooldown: str
+    cooldown: str = Field(description="MÁXIMO 12 palabras, separadas por '·'.")
 
 
 class CardioSession(BaseModel):
     type: Literal["liss", "hiit"]
     minutes: int = Field(ge=5, le=120)
     times_per_week: int = Field(ge=1, le=7)
-    notes: str | None = None
+    notes: str | None = Field(default=None, description="MÁXIMO 12 palabras. null si no aporta.")
 
 
 class CardioPlan(BaseModel):
@@ -111,11 +146,19 @@ class CardioPlan(BaseModel):
 
 class TrainingCore(BaseModel):
     split_name: str
-    split_rationale: str
+    split_rationale: str = Field(
+        description="POR QUÉ esta división, en UNA frase de máximo 20 palabras."
+    )
     weekly_progression: list[WeeklyProgressionWeek]
     sessions: list[TrainingSession] = Field(min_length=1)
     cardio: CardioPlan
-    deload_instructions: str
+    deload_instructions: str = Field(
+        description=(
+            "TELEGRÁFICO: MÁXIMO 20 palabras con las cifras concretas. "
+            "Ej.: 'Semana 4: series ÷2 · carga −30-35% · RIR 3-4 · sin récords'. "
+            "NO expliques para qué sirve un deload ni motives."
+        )
+    )
 
     @field_validator("weekly_progression")
     @classmethod

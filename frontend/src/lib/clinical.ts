@@ -14,6 +14,13 @@ const BULLET = /^[\s\-•*·]+/;
 // Empieza por una negación → no es un problema ("Sin lesión de hombro…").
 const NEG_START = /^(no|sin|ning[uú]n[oa]?|nunca|jam[aá]s|ausencia)\b/i;
 
+// …SALVO cuando la negación describe una LIMITACIÓN real del cliente:
+// "No tolera la lactosa", "No puede flexionar la rodilla", "No debe cargar
+// axialmente". Sin esta excepción quedaban clasificadas como irrelevantes y se
+// plegaban, que es justo lo contrario de lo que necesita el coach.
+const NEG_LIMITACION =
+  /^(no)\s+(tolera|toleraba?|puede|podr[ií]a|debe|deber[ií]a|soporta|aguanta|consume|come|ingiere|digiere|permite|logra|consigue)\b/i;
+
 // Palabra que denota un problema REAL a respetar en dieta o entrenamiento.
 // (NO incluye "suplement": la suplementación habitual —creatina, omega-3— no
 //  es un riesgo; sale en el resumen pero sin marcarse en rojo.)
@@ -44,8 +51,10 @@ const REASSURING = /\b(regular|normal|correct[oa]|adecuad[oa]|estable|sin (probl
 export function isCriticalLine(line: string): boolean {
   const core = line.replace(BULLET, "").trim();
   if (!core) return false;
-  // Una negación al inicio SIEMPRE gana ("Sin roturas fibrilares…").
-  if (NEG_START.test(core)) return false;
+  // Una negación al inicio gana ("Sin roturas fibrilares…"), EXCEPTO si describe
+  // una limitación real ("No tolera la lactosa").
+  if (NEG_START.test(core) && !NEG_LIMITACION.test(core)) return false;
+  if (NEG_LIMITACION.test(core)) return true;
   if (!CRITICAL.test(core)) return false;
   // Tiene palabra crítica pero el valor es nulo o tranquilizador.
   if (isNullValue(core)) return false;
@@ -61,7 +70,7 @@ export function isRelevantClinical(line: string): boolean {
   const core = line.replace(BULLET, "").trim();
   if (!core) return false;
   if (isCriticalLine(core)) return true;
-  if (NEG_START.test(core)) return false;
+  if (NEG_START.test(core) && !NEG_LIMITACION.test(core)) return false;
   if (isNullValue(core)) return false;
   // Frases puramente tranquilizadoras sin dato ("Ciclo regular", "Menopausia: no")
   if (REASSURING.test(core) && core.split(/\s+/).length <= 4) return false;
