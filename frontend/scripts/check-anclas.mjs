@@ -179,5 +179,33 @@ t("desplegables de padres distintos no se estorban", () => {
   assert.equal(a.open, true, "cerró uno de otra sección");
 });
 
+/* -------------------------- el backend y la web hablan del mismo sitio --- */
+// Si alguien añade un aviso con destino y olvida poner el `data-ancla` en la
+// pantalla, el aviso llevaría a la pestaña y no marcaría nada. Esto lo caza.
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
+
+function listar(dir) {
+  const out = [];
+  for (const e of readdirSync(dir)) {
+    const p = join(dir, e);
+    if (statSync(p).isDirectory()) out.push(...listar(p));
+    else if (p.endsWith(".tsx") || p.endsWith(".ts")) out.push(p);
+  }
+  return out;
+}
+
+t("cada destino del backend tiene su ancla en la web", () => {
+  const alerts = readFileSync("../backend/app/routers/alerts.py", "utf8");
+  const mapa = alerts.slice(alerts.indexOf("_DESTINO: dict"), alerts.indexOf("def _alert("));
+  const declarados = [...new Set([...mapa.matchAll(/"([a-z][a-z_.]*\.[a-z_.]+)"/g)].map((m) => m[1]))];
+  assert.ok(declarados.length >= 10, `se leyeron muy pocos destinos: ${declarados.length}`);
+
+  const fuente = listar("src").map((f) => readFileSync(f, "utf8")).join("\n");
+  const huerfanos = declarados.filter((d) => !fuente.includes(`"${d}"`) && !fuente.includes(`\`${d}\``));
+  assert.deepEqual(huerfanos, [],
+    `estos avisos dicen a dónde ir pero ahí no hay nada que marcar: ${huerfanos.join(", ")}`);
+});
+
 for (const nombre of ok) console.log(`✓ ${nombre}`);
 console.log(`\nAnclas OK · ${ok.length} comprobaciones`);
