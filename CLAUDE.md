@@ -442,6 +442,63 @@ cd backend && python -m pytest tests/ -q
 
 ## 9. Trabajo pendiente / próximos pasos
 
+00000000000. ✅ **RONDA PREMIUM (agosto 2026): portal, PDF, cobros manuales y
+   panel.** El dueño, sobre una captura del Entreno del portal: descanso por
+   ejercicio, ver lo que movió la vez anterior, **series NO editables** (la
+   rutina la pauta el coach), tono premium serio "para gente que paga por un
+   buen coach", renovación 5 días antes, importe de los cobros de fuera de
+   Stripe, PDF más argumentado y clics inteligentes en todo. 514 tests + tsc +
+   build + `check:avisos` en verde.
+   - **PORTAL · ENTRENO** (`PortalWorkout.tsx`): fuera `addSet`/`removeSet` — las
+     filas SOLO salen de `ex.sets`; si el coach sube las series a mitad de
+     quincena se completan las que faltan (nunca se recortan: borraría lo
+     registrado). Columna **"Anterior"** delante de los campos con el peso × reps
+     de ESA serie en la sesión previa, alineada por NÚMERO de serie (por
+     posición se corría una fila si la 1 quedó en blanco); el endpoint ya
+     excluía el día de hoy. Botón **"Descansar Ns"** por ejercicio con su
+     `rest_sec`. Calentamiento/vuelta a la calma en tarjeta con cejilla, pauta
+     del día en cifras destacadas y clave técnica con icono + etiqueta.
+   - **PORTAL · SISTEMA VISUAL** (`index.css` `.portal-root`): tinta AA
+     (`--p-ink`/`-soft`/`-mute`) — la jerarquía deja de darla la OPACIDAD, que
+     dejaba texto en 2,6:1; elevación `--p-e-1..4`, radios, espaciado y escala
+     tipográfica de 7 escalones (`.p-display`…`.p-eyebrow`); fuera el neón
+     (badge/píldora/`portal-ring-blue` con contorno de contacto, botón primario
+     plano con `--p-on-accent`); nav de cristal con indicador de 2 px; **un solo
+     anillo de foco** (el naranja se redefinía encima del azul y desaparecía
+     justo sobre el botón primario, también naranja); **`.portal-note`** como
+     única pieza de aviso (color por significado); ritmo vertical en
+     `.portal-header`/`.portal-main`; esqueleto con brillo.
+     ⚠️ `.portal-note` es `flex` y GANA a la utilidad `block` (va después en la
+     hoja): mete los textos dentro de UN solo hijo o saldrán en línea.
+   - **COBROS**: `RENEWAL_WARN_DAYS = 5` (`services/renewals.py`);
+     **`record_manual_payment`** + `POST /api/payments/manual` (efectivo,
+     transferencia, Bizum, otro) con `kind="manual"` en `KINDS` y en el Literal
+     `PaymentKind` — sin eso `record_payment` lo degradaba a "checkout"; el
+     formulario `CobroManual` sustituye al botón "Marcar como pagado" y los
+     ingresos de fuera de Stripe SUMAN en el total del mes. Filtro **`orphan`**
+     en `GET /api/payments`: los cobros sin ficha se contaban y no había forma
+     de llegar a ellos (chip que aplica el filtro + botón "Sin ficha" solo si
+     hay alguno).
+   - **PDF DEL PLAN** (`docs/plan_doc.py`): el **`rationale`** (porqué del
+     enfoque) y el **margen de maniobra** (`flexibility_rules` +
+     `refeed_or_break`) se pautaban y NUNCA llegaban al cliente → tienen su
+     sección; **"De dónde sale tu cifra"** (gasto → ajuste → objetivo); reparto
+     de macros con su peso en kcal (porcentajes sobre Atwater, el tercero por
+     resta → suman 100); mapa del documento y línea de contexto bajo el título;
+     `_nota()` guía bajo cada barra de sección; cifras en es-ES ("2.200 kcal"),
+     "Déficit de 450 kcal" sin doble signo, "1 día/semana".
+     ⚠️ **NO toques las cabeceras de las 4 tablas de datos**: `word_import.py`
+     las reconoce por firma (`SIG_ENERGIA`/`SIG_TOMAS`/`SIG_PROGRESION`/
+     `SIG_SESION`). El separador de millar sí lo entiende (`_num`).
+   - **PANEL DEL COACH**: `SectionHeader` (raíl de color + título + contador) —
+     una sola forma de marcar un apartado; `.card--flat/--raised/--rail` y
+     `.well` para el subgrupo dentro de una tarjeta; **clics inteligentes**: los
+     avisos admiten acción (subir la anamnesis lleva a su pestaña de un clic),
+     "Conecta Google en Recursos" es enlace real y la pestaña de Recursos vive
+     en la URL (`?tab=`) para poder enlazarla.
+   - Tests nuevos: `tests/test_cobro_manual.py` (4), `tests/test_plan_doc_detalle.py`
+     (4), filtro de huérfanos en `tests/test_payments.py`.
+
 0000000000. ✅ **DETALLE RESUMIDO Y CLIC QUE LLEVA A LA ACCIÓN (agosto 2026).**
    El dueño: "la agrupación y los desplegables están muy bien… pero cuando se
    despliega quiero que esté MÁS resumido, y que el título casi no haga falta
