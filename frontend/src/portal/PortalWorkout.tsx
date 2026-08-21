@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Trash2, Play, Check, Sparkles, CalendarRange, X } from "lucide-react";
+import { Play, Check, Lightbulb, Sparkles, CalendarRange, Timer, X } from "lucide-react";
 import type { PlanChanges, PortalBrand, TodaySession, TrainingWeek } from "../types";
 import { usePortalToast } from "./PortalToast";
 import { fmt1, Loading, localToday, shortDate, useDecimalField } from "./PortalUi";
@@ -227,31 +227,8 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
     });
     if (transicion) serieCompletada(exId, nuevoRow);
   }
-  function removeSet(exId: number, idx: number) {
-    if (readOnly) return;
-    setSets((s) => {
-      const filtered = (s[exId] ?? []).filter((_, i) => i !== idx);
-      // Nunca dejar el ejercicio SIN filas: al borrar la última se deja una
-      // fila vacía, así el registro sigue siendo posible y no queda un
-      // ejercicio irrecuperable en la sesión.
-      const rows = filtered.length ? filtered : [{ weight_kg: null, reps: null }];
-      const next = { ...s, [exId]: rows };
-      flush(next);
-      return next;
-    });
-  }
-  // Serie extra (el cliente hace más de las prescritas): fila vacía al final,
-  // con el mismo tope de 20 que las filas objetivo.
-  function addSet(exId: number) {
-    if (readOnly) return;
-    setSets((s) => {
-      const rows = s[exId] ?? [];
-      if (rows.length >= 20) return s;
-      const next = { ...s, [exId]: [...rows, { weight_kg: null, reps: null }] };
-      flush(next);
-      return next;
-    });
-  }
+  // (No hay añadir ni borrar series: las filas las fija el plan del coach —
+  //  `ex.sets`. El cliente registra lo que hizo, no reescribe la pauta.)
 
   if (loadError && sessions === null) {
     return (
@@ -407,13 +384,21 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
 
       {selected && (
         <>
-          {selected.warmup && <p className="text-xs opacity-60">Calentamiento: {selected.warmup}</p>}
+          {selected.warmup && (
+            <div className="portal-card mt-1 p-4">
+              <p className="text-[10px] font-semibold uppercase tracking-wider opacity-45">Calentamiento</p>
+              <p className="mt-1 text-xs leading-relaxed opacity-70">{selected.warmup}</p>
+            </div>
+          )}
           {selected.exercises.map((ex) => {
             const rows = sets[ex.exercise_id] ?? [];
             const doneCount = rows.filter((r) => r.weight_kg != null && r.reps != null).length;
             const embeddable = isEmbeddable(ex.video_url);
             const videoOpen = embeddable && openVideoId === ex.exercise_id;
             const hintKg = ex.week_weight_hint_kg ?? ex.start_weight_hint_kg;
+            // Sesión ANTERIOR de este ejercicio: la referencia que el cliente
+            // necesita para elegir el peso de hoy.
+            const previa = history[String(ex.exercise_id)]?.[0];
             return (
               <div key={ex.exercise_id} className="portal-card p-4">
                 {/* Zona del vídeo: nombre + botón + reproductor. Un toque FUERA de
@@ -472,19 +457,23 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
                           </a>
                         ))}
                       </div>
-                      <p className="text-xs opacity-60">
-                        Objetivo: {ex.sets} × {ex.rep_range} · RIR {ex.rir}
-                        {hintKg
-                          ? ` · ~${fmt1(hintKg)} kg${
-                              week && ex.week_weight_hint_kg != null && ex.week_weight_hint_kg !== ex.start_weight_hint_kg
-                                ? ` (sem ${week.week})` : ""
-                            }`
-                          : ""}
-                        {ex.rest_sec ? ` · descanso ${ex.rest_sec}s` : ""}
+                      {/* Pauta del día: cifras destacadas y etiquetas discretas.
+                          Antes era una frase corrida donde todo pesaba igual. */}
+                      <p className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs opacity-70">
+                        <span className="font-semibold tabular-nums">{ex.sets} × {ex.rep_range}</span>
+                        <span className="opacity-60">RIR {ex.rir}</span>
+                        {hintKg ? (
+                          <span className="opacity-60">
+                            ~{fmt1(hintKg)} kg
+                            {week && ex.week_weight_hint_kg != null && ex.week_weight_hint_kg !== ex.start_weight_hint_kg
+                              ? ` · sem ${week.week}` : ""}
+                          </span>
+                        ) : null}
+                        {ex.rest_sec ? <span className="opacity-60">{ex.rest_sec}s descanso</span> : null}
                       </p>
                       {records[String(ex.exercise_id)] && (
                         <p className="text-[11px] font-medium" style={{ color: brand.color_secondary }}>
-                          🏆 Tu récord: {fmt1(records[String(ex.exercise_id)].weight_kg)} kg × {records[String(ex.exercise_id)].reps}
+                          Tu récord · {fmt1(records[String(ex.exercise_id)].weight_kg)} kg × {records[String(ex.exercise_id)].reps}
                         </p>
                       )}
                     </div>
@@ -503,39 +492,56 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
                 </div>
 
                 <div className="mt-3 space-y-1.5">
-                  <div className="grid grid-cols-[28px_1fr_1fr_40px] items-center gap-2 px-1 text-[10px] uppercase tracking-wide opacity-40">
-                    <span>Set</span><span>Peso (kg)</span><span>Reps</span><span></span>
+                  {/* "Anterior" delante de los campos: el cliente ve qué movió la
+                      última vez en ESA serie ANTES de apuntar, que es cuando le
+                      sirve para decidir el peso. */}
+                  <div className="grid grid-cols-[24px_minmax(64px,0.9fr)_1fr_1fr] items-center gap-2 px-1 text-[10px] font-semibold uppercase tracking-wider opacity-45">
+                    <span>#</span><span>Anterior</span><span>Peso (kg)</span><span>Reps</span>
                   </div>
                   {rows.map((r, i) => {
                     const done = r.weight_kg != null && r.reps != null;
+                    const prev = previa?.sets?.[i];
+                    const prevTxt = prev && prev.weight_kg != null
+                      ? `${fmt1(prev.weight_kg)}${prev.reps != null ? ` × ${prev.reps}` : ""}`
+                      : "—";
                     return (
-                      <div key={i} className="grid grid-cols-[28px_1fr_1fr_40px] items-center gap-2">
-                        <span className="text-center text-xs font-semibold tabular-nums" style={{ color: done ? brand.color_primary : undefined, opacity: done ? 1 : 0.5 }}>{i + 1}</span>
+                      <div key={i} className="grid grid-cols-[24px_minmax(64px,0.9fr)_1fr_1fr] items-center gap-2">
+                        <span className="text-center text-xs font-semibold tabular-nums" style={{ color: done ? brand.color_primary : undefined, opacity: done ? 1 : 0.45 }}>{i + 1}</span>
+                        <span className="truncate text-xs tabular-nums opacity-55" title={previa ? `Sesión del ${shortDate(previa.date)}` : undefined}>
+                          {prevTxt}
+                        </span>
                         {/* Rangos espejo del backend (WorkoutSetIn): 0-600 kg, 0-100 reps */}
                         <SetInput value={r.weight_kg} min={0} max={600} placeholder={hintKg ? String(hintKg) : "—"} accent={brand.color_secondary} onChange={(v) => setRow(ex.exercise_id, i, { weight_kg: v })} />
                         <SetInput value={r.reps} min={0} max={100} integer placeholder="—" accent={brand.color_secondary} onChange={(v) => setRow(ex.exercise_id, i, { reps: v })} />
-                        <button onClick={() => removeSet(ex.exercise_id, i)} aria-label={`Borrar serie ${i + 1}`} className="flex h-11 w-11 items-center justify-center justify-self-center rounded-lg opacity-40 hover:opacity-100"><Trash2 size={15} /></button>
                       </div>
                     );
                   })}
-                  {/* Serie extra (ha hecho más de las prescritas): discreto,
-                      tope de 20 filas — espejo del que fija las filas objetivo. */}
-                  {!readOnly && rows.length < 20 && (
+                  {/* Descanso a demanda: además de arrancar solo al completar una
+                      serie, el cliente puede lanzarlo cuando quiera. */}
+                  {!readOnly && ex.rest_sec ? (
                     <button
                       type="button"
-                      onClick={() => addSet(ex.exercise_id)}
-                      className="px-1 py-1 text-xs font-medium opacity-50 hover:opacity-90"
-                      style={{ color: brand.color_secondary }}
+                      onClick={() => startRest(ex.rest_sec as number, ex.name)}
+                      className="mt-1 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold"
+                      style={{
+                        background: `color-mix(in srgb, ${brand.color_secondary} 10%, transparent)`,
+                        color: brand.color_secondary,
+                      }}
                     >
-                      + Añadir serie
+                      <Timer size={13} /> Descansar {ex.rest_sec}s
                     </button>
-                  )}
+                  ) : null}
                 </div>
                 {history[String(ex.exercise_id)]?.length ? (
                   // Azul: el historial es consulta de datos, no acción
                   <ExHistory sessions={history[String(ex.exercise_id)]} accent={brand.color_secondary} />
                 ) : null}
-                {ex.technique_cue && <p className="mt-2 text-xs opacity-50">💡 {ex.technique_cue}</p>}
+                {ex.technique_cue && (
+                  <p className="mt-2.5 flex items-start gap-1.5 text-xs leading-relaxed opacity-60">
+                    <Lightbulb size={13} className="mt-px shrink-0" style={{ color: brand.color_secondary }} />
+                    <span><span className="font-semibold">Técnica.</span> {ex.technique_cue}</span>
+                  </p>
+                )}
                 {ex.coach_notes && (
                   // Indicación PERSONAL del coach (limitaciones/adaptación): destacada,
                   // no un consejo genérico — el cliente debe leerla antes de la serie.
@@ -553,8 +559,9 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
             );
           })}
           {selected.cooldown && (
-            <div className="portal-card p-4 text-xs opacity-60">
-              Vuelta a la calma: {selected.cooldown}
+            <div className="portal-card p-4">
+              <p className="text-[10px] font-semibold uppercase tracking-wider opacity-45">Vuelta a la calma</p>
+              <p className="mt-1 text-xs leading-relaxed opacity-70">{selected.cooldown}</p>
             </div>
           )}
         </>
@@ -568,8 +575,8 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
       </p>
 
       {/* Temporizador de DESCANSO: píldora flotante sobre la barra de pestañas.
-          Arranca sola al completar una serie con el descanso prescrito; se
-          puede saltar con la X. Vibra al terminar (si el móvil lo permite). */}
+          Arranca sola al completar una serie —o a mano con "Descansar"— con el
+          descanso prescrito. Se salta con la X y vibra al terminar. */}
       {rest && (
         <div
           className="fixed bottom-20 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full px-4 py-2.5 shadow-lg"
@@ -627,8 +634,10 @@ function ExHistory({ sessions, accent }: { sessions: HistSession[]; accent: stri
   return (
     <div className="mt-2 border-t pt-2 text-xs" style={{ borderColor: "rgba(128,128,128,0.15)" }}>
       <button onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex min-h-[44px] w-full items-center justify-between opacity-70">
-        <span className="truncate">Última vez: {last.sets.map(fmt).join(" · ")}</span>
-        <span className="ml-2 shrink-0" style={{ color: accent }}>{open ? "▾" : "▸"} historial</span>
+        <span className="truncate">Historial · {sessions.length} sesion{sessions.length === 1 ? "" : "es"}</span>
+        <span className="ml-2 shrink-0 tabular-nums" style={{ color: accent }}>
+          {shortDate(last.date)} {open ? "▾" : "▸"}
+        </span>
       </button>
       {open && (
         <div className="mt-1.5 space-y-1">

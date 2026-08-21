@@ -240,7 +240,7 @@ def _maintain_client(db: Session, client: Client, today: date,
                              kind=kind, client=client)
                 summary["reminders"] += 1
 
-    # 1e) RENOVACIÓN al cliente: su plan de pago único vence en ≤7 días (o ya
+    # 1e) RENOVACIÓN al cliente: su plan de pago único vence en ≤5 días (o ya
     # venció). UNA vez por ciclo pagado: el sello renewal_reminder_sent_at se
     # compara contra paid_at — un pago nuevo re-arma el aviso del ciclo
     # siguiente. El CTA es su enlace estable de pago, que en ventana de

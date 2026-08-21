@@ -11,7 +11,7 @@ La oferta (suscripción de Stripe) queda fuera a propósito: se cobra sola.
 from datetime import date, timedelta
 
 BILLING_DAYS = {"1m": 30, "3m": 90, "6m": 180}
-RENEWAL_WARN_DAYS = 7
+RENEWAL_WARN_DAYS = 5  # el dueño avisa al cliente 5 días antes
 
 
 def renewal_window(client, today: date) -> tuple[date, int] | None:
@@ -31,6 +31,6 @@ def renewal_window(client, today: date) -> tuple[date, int] | None:
 
 
 def is_due(client, today: date) -> bool:
-    """True si el ciclo vence en ≤7 días o ya venció (toca renovar)."""
+    """True si el ciclo vence en ≤5 días o ya venció (toca renovar)."""
     w = renewal_window(client, today)
     return w is not None and w[1] <= RENEWAL_WARN_DAYS

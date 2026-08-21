@@ -451,6 +451,14 @@ export const api = {
     request<{ created: number; scanned: number; errors: string[] }>(
       "POST", `/payments/sync${days ? `?days=${days}` : ""}`),
 
+  /** Cobro FUERA de Stripe (efectivo, transferencia, Bizum) con su importe:
+   *  sin él, el total del mes solo contaba la pasarela. */
+  registrarCobroManual: (body: {
+    client_id: number; amount_eur: number;
+    method: "efectivo" | "transferencia" | "bizum" | "otro";
+    paid_on?: string; note?: string;
+  }) => request<{ id: number; amount_cents: number }>("POST", "/payments/manual", body),
+
   /** Lecciones aprendidas de las ediciones del coach (aprendizaje continuo). */
   learningLessons: () =>
     request<{ lessons: string[]; updated_at: string | null; source_edits: number;
