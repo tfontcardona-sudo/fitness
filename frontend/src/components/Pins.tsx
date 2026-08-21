@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { ChevronDown, Pin as PinIcon, X } from "lucide-react";
 import { desmarcarTodo, irYMarcar } from "../lib/anchors";
+import { useDismiss } from "../lib/useDismiss";
 import { getPins, subscribePins, unpin, type Pin } from "../lib/pins";
 
 /* ------------------------------------------------------------------ hook --- */
@@ -24,6 +25,12 @@ export function usePins(): Pin[] {
  */
 function NotaDeAncla({ pin, el, onClose }: { pin: Pin; el: HTMLElement; onClose: () => void }) {
   const [caja, setCaja] = useState<DOMRect | null>(null);
+
+  useEffect(() => {
+    const alTeclear = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", alTeclear);
+    return () => document.removeEventListener("keydown", alTeclear);
+  }, [onClose]);
 
   useLayoutEffect(() => {
     const medir = () => setCaja(el.getBoundingClientRect());
@@ -103,7 +110,13 @@ export function MarcadorDeAncla({ clientId, target }: { clientId: number; target
     let vivo = true;
     setEl(null);
     if (!target || cerrado.current === target) return;
-    irYMarcar(target).then((encontrado) => { if (vivo) setEl(encontrado); });
+    irYMarcar(target).then((encontrado) => {
+      // La búsqueda puede tardar segundos (los datos llegan por red): si para
+      // entonces ya cambiaste de ancla o saliste, la marca que acaba de
+      // encenderse se apaga — si no, se quedaba pegada en la pantalla nueva.
+      if (vivo) setEl(encontrado);
+      else desmarcarTodo();
+    });
     return () => {
       vivo = false;
       desmarcarTodo();
@@ -136,6 +149,10 @@ export function PinDock() {
   const pins = usePins();
   const [abierto, setAbierto] = useState(false);
   const navigate = useNavigate();
+  // Mismas reglas de cierre que el resto de la web: Escape, clic fuera y el
+  // foco de vuelta a donde estaba.
+  const caja = useRef<HTMLDivElement>(null);
+  useDismiss(caja, () => setAbierto(false), abierto);
 
   const ir = useCallback((p: Pin) => {
     setAbierto(false);
@@ -146,7 +163,8 @@ export function PinDock() {
   if (!pins.length) return null;
 
   return (
-    <div className="fixed bottom-4 left-4 z-40 max-sm:bottom-[calc(4.75rem+env(safe-area-inset-bottom))] print:hidden">
+    <div ref={caja}
+      className="fixed bottom-4 left-4 z-40 max-sm:bottom-[calc(4.75rem+env(safe-area-inset-bottom))] print:hidden">
       {abierto && (
         <div className="card animate-rise mb-2 w-[320px] max-w-[calc(100vw-2rem)] overflow-hidden">
           <div className="flex items-center justify-between border-b px-3 py-2"
