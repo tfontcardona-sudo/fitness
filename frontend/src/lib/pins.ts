@@ -82,6 +82,17 @@ export function subscribePins(fn: Escucha): () => void {
   return () => { escuchas.delete(fn); };
 }
 
+// Dos pestañas abiertas del panel: lo que se arregla en una desaparece en la
+// otra. Sin esto, la segunda pestaña seguía enseñando recordatorios muertos
+// hasta recargarla.
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (e) => {
+    if (e.key !== CLAVE) return;
+    pins = cargar();
+    for (const fn of escuchas) fn(pins);
+  });
+}
+
 export function getPins(): Pin[] {
   return pins;
 }

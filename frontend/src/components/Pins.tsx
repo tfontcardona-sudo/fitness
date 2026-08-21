@@ -123,10 +123,16 @@ export function MarcadorDeAncla({ clientId, target }: { clientId: number; target
     };
   }, [target, clientId]);
 
-  // El problema se resolvió mientras mirabas: fuera la marca, sin ceremonia.
+  // El problema se RESOLVIÓ mientras mirabas: fuera la marca, sin ceremonia.
+  // Solo si llegó a haber recordatorio: un enlace pegado a mano (con ?ir= pero
+  // sin recordatorio) debe poder señalar el sitio igual, y con esta regla mal
+  // puesta la marca se encendía y se apagaba en el mismo instante.
+  const huboPin = useRef(false);
+  useEffect(() => { if (pin) huboPin.current = true; }, [pin]);
   useEffect(() => {
-    if (target && !pin) { desmarcarTodo(); setEl(null); }
+    if (target && !pin && huboPin.current) { desmarcarTodo(); setEl(null); }
   }, [target, pin]);
+  useEffect(() => { huboPin.current = false; }, [target]);
 
   if (!el || !pin) return null;
   return (
