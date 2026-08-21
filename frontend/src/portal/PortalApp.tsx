@@ -228,7 +228,7 @@ export default function PortalApp({ token }: { token: string }) {
                 })()}
                 {/* Concordancia y momento clave: "1 día restante" (no "1 días")
                     y, a 0, la llamada a la acción de la quincena. */}
-                <p className="p-eyebrow mt-1 tracking-normal">
+                <p className="p-micro mt-1">
                   {Math.max(0, state.period.days_left) === 0
                     ? "¡toca revisión!"
                     : Math.max(0, state.period.days_left) === 1
@@ -256,11 +256,13 @@ export default function PortalApp({ token }: { token: string }) {
               (auditoría del ciclo). El enlace usa su mismo token. */}
           {state.needs_anamnesis && (
             <a href={`/anamnesis/${token}`}
-              className="portal-note portal-note--action block">
-              <span className="p-head block" style={{ color: state.brand.color_primary }}>
-                Completa tu anamnesis →
+              className="portal-note portal-note--action">
+              <span className="min-w-0">
+                <span className="p-head block" style={{ color: state.brand.color_primary }}>
+                  Completa tu anamnesis →
+                </span>
+                <span className="p-sub mt-0.5 block">6 pasos · unos minutos</span>
               </span>
-              <span className="p-sub mt-0.5 block">6 pasos · unos minutos</span>
             </a>
           )}
           {/* SU PLAN, siempre a mano: la dieta y las pautas viven en el PDF y

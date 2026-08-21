@@ -99,15 +99,24 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
   const selected = sessions?.[selectedIdx] ?? null;
 
   // Garantiza filas objetivo para los ejercicios de la sesión elegida (sin pisar
-  // lo ya registrado en otras sesiones del mismo día).
+  // lo ya registrado en otras sesiones del mismo día). Como el cliente ya no
+  // puede añadir series, las filas SOLO pueden venir de aquí: si el coach sube
+  // las series a mitad de quincena, se completan las que falten. Nunca se
+  // recortan (eso borraría lo ya registrado).
   useEffect(() => {
     if (!selected) return;
     setSets((s) => {
       let changed = false;
       const next = { ...s };
       for (const ex of selected.exercises) {
-        if (!next[ex.exercise_id] || next[ex.exercise_id].length === 0) {
-          next[ex.exercise_id] = Array.from({ length: Math.max(1, Math.min(20, ex.sets || 3)) }, () => ({ weight_kg: null, reps: null }));
+        const objetivo = Math.max(1, Math.min(20, ex.sets || 3));
+        const filas = next[ex.exercise_id] ?? [];
+        if (filas.length < objetivo) {
+          next[ex.exercise_id] = [
+            ...filas,
+            ...Array.from({ length: objetivo - filas.length },
+                          () => ({ weight_kg: null, reps: null })),
+          ];
           changed = true;
         }
       }
@@ -500,7 +509,7 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
                   </div>
                   {rows.map((r, i) => {
                     const done = r.weight_kg != null && r.reps != null;
-                    const prev = previa?.sets?.[i];
+                    const prev = previa?.sets?.find((ps) => ps.set === i + 1);
                     const prevTxt = prev && prev.weight_kg != null
                       ? `${fmt1(prev.weight_kg)}${prev.reps != null ? ` × ${prev.reps}` : ""}`
                       : "—";

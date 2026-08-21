@@ -241,7 +241,7 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
         <p className="mb-2 text-xs opacity-50">En ayunas · cinta sin apretar</p>
         <Field label="Peso (kg)" required>
           <input type="text" inputMode="decimal"
-            className="w-full rounded-xl border bg-transparent p-3 p-title"
+            className="w-full rounded-xl border bg-transparent p-3 text-lg font-semibold"
             style={{ borderColor: "rgba(128,128,128,0.2)" }}
             value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="—" />
         </Field>
@@ -414,7 +414,7 @@ function Perimeter({ label, value, onChange }: { label: string; value: string; o
     <label className="portal-card block p-3">
       <span className="block text-xs opacity-50">{label} (cm)</span>
       <input type="text" inputMode="decimal"
-        className="mt-1 w-full bg-transparent p-title outline-none"
+        className="mt-1 w-full bg-transparent text-lg font-semibold outline-none"
         style={{ caretColor: "var(--p-accent-2)" }}
         value={value} onChange={(e) => onChange(e.target.value)} placeholder="—" />
     </label>
@@ -431,7 +431,7 @@ function NumField({ label, value, onChange, min, max, required }: {
     <label className="portal-card block p-3">
       <span className="block text-xs opacity-50">{label} {required && <span style={{ color: "#C2453A" }}>*</span>}</span>
       <input type="text" inputMode="numeric"
-        className="mt-1 w-full bg-transparent p-title outline-none"
+        className="mt-1 w-full bg-transparent text-lg font-semibold outline-none"
         style={{ caretColor: "var(--p-accent-2)" }}
         value={value} onChange={(e) => onChange(e.target.value)} placeholder="—" />
     </label>
