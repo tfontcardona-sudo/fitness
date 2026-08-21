@@ -161,9 +161,18 @@ class Settings(BaseSettings):
     # Valores por defecto que viven en el repositorio (público): usarlos en
     # producción permitiría FALSIFICAR sesiones y tokens. Nunca deben llegar al
     # servidor sin sustituir.
+    # Valores PÚBLICOS: los del código Y los marcadores de .env.example. Copiar
+    # el ejemplo tal cual daba secretos conocidos por cualquiera que vea el repo
+    # y, por ser largos, pasaban el control de longitud sin un solo aviso.
     _INSECURE_DEFAULTS = {
-        "jwt_secret": "dev-insecure-jwt-secret",
-        "portal_token_secret": "dev-insecure-portal-secret",
+        "jwt_secret": (
+            "dev-insecure-jwt-secret",
+            "cambia-esto-por-una-cadena-larga-aleatoria-de-32-o-mas",
+        ),
+        "portal_token_secret": (
+            "dev-insecure-portal-secret",
+            "cambia-esto-por-otra-cadena-larga-aleatoria-distinta",
+        ),
     }
 
     def insecure_secrets(self) -> list[str]:
@@ -181,9 +190,12 @@ class Settings(BaseSettings):
 
     def _secret_problems(self, *, blocking_only: bool) -> list[str]:
         problemas: list[str] = []
-        for campo, inseguro in self._INSECURE_DEFAULTS.items():
+        for campo, publicos in self._INSECURE_DEFAULTS.items():
             valor = getattr(self, campo, "") or ""
-            if valor == inseguro:
+            # Cualquier variante del marcador cuenta: "cambia-esto…" en
+            # cualquier forma es un secreto que está publicado en el repo.
+            es_publico = valor in publicos or valor.lower().startswith("cambia-esto")
+            if es_publico:
                 problemas.append(f"{campo.upper()} sigue con el valor de ejemplo del repo")
             elif not blocking_only and len(valor) < 32:
                 problemas.append(f"{campo.upper()} es demasiado corto (<32 caracteres)")

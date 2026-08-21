@@ -118,7 +118,7 @@ export function ClientPlanEditor({
       toast.push(`Ejercicio «${created.canonical_name}» creado`);
       return created.id;
     } catch (e: any) {
-      toast.push(e?.message ?? "No se pudo crear el ejercicio", "error");
+      toast.push(e?.message ?? "Ejercicio no creado", "error");
       return null;
     }
   }
@@ -355,7 +355,7 @@ export function ClientPlanEditor({
   function toggleMeal(key: string) {
     const has = mealKeys.includes(key);
     if (has && mealKeys.length <= 2) {
-      toast.push("El día necesita al menos 2 comidas", "error");
+      toast.push("Mínimo 2 comidas al día", "error");
       return;
     }
     // La reestructuración reparte los TOTALES actuales entre las tomas y los
@@ -364,7 +364,7 @@ export function ClientPlanEditor({
     // una sola comida). Primero cuadrar, después reestructurar.
     const { coherent: okC, safe: okS } = checkTotals(draft.nutrition);
     if (!okC || !okS) {
-      toast.push("Cuadra antes las calorías y macros (mira el aviso) y luego cambia las comidas", "error");
+      toast.push("Cuadra kcal y macros primero", "error");
       return;
     }
     blurActive();
@@ -480,14 +480,14 @@ export function ClientPlanEditor({
         <div className="flex items-center gap-2">
           {nutritionBlocked && (
             <span className="hidden text-xs text-[#9A6B15] sm:inline">
-              {kcalInvalid ? "Pon las calorías objetivo para guardar" : "Los números no cuadran: mira el aviso de Nutrición"}
+              {kcalInvalid ? "Faltan calorías objetivo" : "Descuadre en Nutrición"}
             </span>
           )}
           <button onClick={cancel} className="btn btn-ghost"><X size={15} /> Cancelar</button>
           <button onClick={save} disabled={saving || nutritionBlocked} className="btn btn-primary"
             title={nutritionBlocked
               ? (kcalInvalid ? "Introduce las calorías objetivo"
-                 : "Calorías y macros no cuadran: corrige el descuadre (aviso en Nutrición) para guardar")
+                 : "Descuadre kcal/macros: corrígelo para guardar")
               : undefined}>
             {saving ? <Spinner /> : <Save size={15} />} Guardar cambios
           </button>
@@ -529,7 +529,7 @@ export function ClientPlanEditor({
         {/* Cálculo aplicado: déficit/superávit sobre el TDEE, editable en 5% */}
         {tdee ? (
           <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 text-xs" style={{ background: "var(--surface-raised)" }}>
-            <span className="text-zinc-500">Cálculo sobre tu gasto (TDEE {Math.round(tdee)} kcal):</span>
+            <span className="text-zinc-500">Sobre su TDEE {Math.round(tdee)} kcal:</span>
             <b className="text-zinc-200">{deficitLabel(tdee, nut.target_kcal ?? 0)}</b>
             <select
               value={deficitSelectValue(tdee, nut.target_kcal ?? 0)}
@@ -590,7 +590,7 @@ export function ClientPlanEditor({
             <span
               className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold"
               style={{ background: "color-mix(in srgb, var(--brand-accent-2) 12%, transparent)", color: "var(--brand-accent-2)" }}
-              title={`Calorías objetivo (${Math.round(nut.target_kcal)}) sobre tu gasto (TDEE ${Math.round(tdee)} kcal)`}
+              title={`Objetivo ${Math.round(nut.target_kcal)} kcal · TDEE ${Math.round(tdee)}`}
             >
               {deficitLabel(tdee, nut.target_kcal ?? 0)} sobre el TDEE
             </span>
@@ -598,8 +598,8 @@ export function ClientPlanEditor({
           {(nut.target_kcal ?? 0) > 0 && (
             <button onClick={cuadrar} className="btn btn-ghost px-2 py-1 text-xs"
               title={goal && weight
-                ? "Rehace el reparto de macros a estas calorías según el objetivo del cliente"
-                : "Rellena con carbohidratos hasta cuadrar las calorías objetivo"}>
+                ? "Reparto óptimo para su objetivo"
+                : "Carbohidratos hasta cuadrar"}>
               {goal && weight ? "Cuadrar por objetivo" : "Cuadrar a 100%"}
             </button>
           )}
@@ -632,12 +632,12 @@ export function ClientPlanEditor({
                     </p>
                     <div className="mt-2 flex flex-wrap gap-2">
                       <button onClick={cuadrarConCarbohidratos} className="btn btn-ghost px-2 py-1 text-xs"
-                        title="Los carbohidratos absorben la diferencia; tu proteína y tus grasas se respetan tal cual">
+                        title="Carbos absorben la diferencia">
                         Cuadrar con carbohidratos
                       </button>
                       {goal && weight && (
                         <button onClick={cuadrar} className="btn btn-ghost px-2 py-1 text-xs"
-                          title="Rehace el reparto completo según el objetivo del cliente">
+                          title="Reparto completo por objetivo">
                           Cuadrar por objetivo
                         </button>
                       )}
@@ -676,7 +676,7 @@ export function ClientPlanEditor({
                     <div className="mt-2 flex flex-wrap gap-2">
                       {goal && weight && (
                         <button onClick={cuadrar} className="btn btn-ghost px-2 py-1 text-xs"
-                          title="Rehace el reparto completo a valores seguros según el objetivo del cliente">
+                          title="Reparto seguro por objetivo">
                           Cuadrar por objetivo
                         </button>
                       )}
@@ -770,7 +770,7 @@ export function ClientPlanEditor({
         {/* Sin trim/filter en vivo: filtrar mientras se teclea se COMÍA el
             Enter (la línea vacía desaparecía y la regla nueva se pegaba a la
             anterior). Las líneas vacías se limpian al GUARDAR. */}
-        <Area label="Reglas de flexibilidad (una por línea)" value={(nut.flexibility_rules ?? []).join("\n")}
+        <Area label="Flexibilidad (una por línea)" value={(nut.flexibility_rules ?? []).join("\n")}
           onChange={(v) => mutate((d) => (d.nutrition.flexibility_rules = v.split("\n")))} />
 
         <div ref={focusRefs.supplements} style={flashStyle("supplements")} className="rounded-lg">
@@ -897,7 +897,7 @@ export function ClientPlanEditor({
                 <Text label="Progresión" value={ex.progression_rule ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].progression_rule = v))} />
                 <Text label="Cue técnica" value={ex.technique_cue ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].technique_cue = v))} />
                 <Area
-                  label="Indicaciones personalizadas (capacidades, limitaciones, adaptación)"
+                  label="Indicaciones personalizadas"
                   value={ex.coach_notes ?? ""}
                   onChange={(v) => mutate((d) => (d.training.sessions[si].exercises[ei].coach_notes = v.trim() ? v : null))}
                 />
@@ -917,7 +917,7 @@ export function ClientPlanEditor({
                     exercise_id: activeLibrary[0]?.id ?? 1,
                     sets: 3, rep_range: "8-12", rir: "2", tempo: null, rest_sec: 90,
                     start_weight_hint_kg: null,
-                    progression_rule: "Añade repeticiones hasta el tope del rango y sube peso",
+                    progression_rule: "Sube reps; al tope, peso",
                     technique_cue: "", biomech_cue: "", coach_notes: null,
                   });
                 })
@@ -938,7 +938,7 @@ export function ClientPlanEditor({
       )}
 
       <p className="text-xs text-zinc-500">
-        El banco de comidas no se edita aquí; para cambiar un ejercicio por otro usa el "swap" de la biblioteca.
+        Banco de comidas: no editable
       </p>
     </div>
   );
@@ -1015,7 +1015,7 @@ function MacroField({ label, gramValue, pct, onGram, onPct, max, pctDisabled }: 
         <div className="relative w-[74px] shrink-0">
           <NumberInput value={Number.isFinite(pct) ? pct : null} max={100} step={0.1} onChange={onPct}
             disabled={pctDisabled}
-            title={pctDisabled ? "Pon primero las calorías objetivo: el % se calcula sobre ellas" : undefined}
+            title={pctDisabled ? "Pon primero las calorías objetivo" : undefined}
             className="input w-full px-2 pr-5 text-center disabled:opacity-40"
             ariaLabel={`${label} en porcentaje`} />
           <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-xs text-zinc-500">%</span>
@@ -1243,7 +1243,7 @@ function ExerciseSelect({ library, lookup, value, fallbackName, onChange, onCrea
                   className="block w-full rounded-md px-3 py-1.5 text-left text-xs font-semibold hover:bg-zinc-500/10"
                   style={{ color: "var(--brand-accent-2)" }}
                 >
-                  ＋ Crear «{createName}» como ejercicio nuevo
+                  ＋ Crear «{createName}»
                 </button>
               ) : (
                 <div>

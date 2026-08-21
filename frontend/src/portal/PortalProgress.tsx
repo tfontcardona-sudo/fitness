@@ -66,7 +66,7 @@ export function PortalProgress({ api, brand, hasTraining = true, token }: { api:
         <Sparkles size={26} className="mx-auto mb-2" style={{ color: accent }} />
         <p className="text-base font-semibold">Aquí verás cómo avanzas</p>
         <p className="mx-auto mt-1 max-w-xs text-sm opacity-70">
-          Registra tu peso en el Diario y aquí verás tu evolución.
+          Registra tu peso en Diario
         </p>
       </div>
     );
@@ -133,7 +133,7 @@ export function PortalProgress({ api, brand, hasTraining = true, token }: { api:
           {w.weekly_rate_kg != null && Math.abs(w.weekly_rate_kg) >= 0.01 && (
             <p className="mt-1 text-center text-xs opacity-60">
               Ritmo: {w.weekly_rate_kg < 0 ? "−" : "+"}
-              {fmt1(Math.abs(w.weekly_rate_kg))} kg por semana
+              {fmt1(Math.abs(w.weekly_rate_kg))} kg/semana
             </p>
           )}
         </section>
@@ -205,7 +205,7 @@ export function PortalProgress({ api, brand, hasTraining = true, token }: { api:
             <>
               <PhotoColumn api={api} title="Tus fotos" date={data.photos.first_date} photos={data.photos.first} wide />
               <p className="mt-2 flex items-center gap-1.5 text-xs opacity-60">
-                <CameraOff size={13} /> Envía fotos en tu próxima revisión para verte "antes / ahora".
+                <CameraOff size={13} /> Envía fotos la próxima revisión
               </p>
             </>
           )}
@@ -268,7 +268,7 @@ function Revisiones({ api, accent, token }: { api: Api; accent: string; token: s
               <a href={`/api/p/${token}/feedback/${d.id}.pdf`} target="_blank" rel="noreferrer"
                 className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold"
                 style={{ color: accent }}>
-                <FileText size={14} /> Ver el informe completo
+                <FileText size={14} /> Ver informe completo
               </a>
             </div>
           );

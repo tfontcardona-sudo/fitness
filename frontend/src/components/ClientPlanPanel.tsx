@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Sparkles, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Mail, MoreHorizontal, Pencil, PlayCircle, Save, X, Flag, Copy, Archive, FileText, FileUp } from "lucide-react";
+import { Sparkles, ChevronRight, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Mail, MoreHorizontal, Pencil, PlayCircle, Save, X, Flag, Copy, Archive, FileText, FileUp } from "lucide-react";
 import { api, getToken } from "../lib/api";
 import { manualUpdateMessage, openWhatsApp, planAndFeedbackMessage, planMessage, waPhone, waUrl } from "../lib/whatsapp";
 import { pkg } from "../lib/packages";
@@ -8,6 +8,7 @@ import { GOAL_LABEL, goalDays, goalReviewDue, planMonthLabel } from "../lib/form
 import { deficitLabel, macroPct, MACRO_TOTAL_TOLERANCE } from "../lib/nutritionTargets";
 import { isCriticalLine } from "../lib/clinical";
 import { ExpandableArea, ProseClamp, Spinner, useToast } from "./ui";
+import { agrupar, toAviso } from "../lib/findings";
 import { MemoDetails } from "./MemoDetails";
 import { ClientPlanEditor } from "./ClientPlanEditor";
 import type { ClientOut, GoalType } from "../types";
@@ -16,7 +17,7 @@ interface PlanReview {
   color?: "verde" | "ambar" | "rojo" | null;
   icp?: number | null;
   escalated?: boolean;
-  findings?: { severity: string; description: string }[];
+  findings?: { severity: string; description: string; title?: string; action?: string; correccion_propuesta?: string }[];
   // Revisores IA caídos (no_ejecutado): la revisión está DEGRADADA y el coach
   // debe saberlo (antes moría en el JSON sin llegar a la interfaz).
   degraded_reviewers?: string[];
@@ -196,10 +197,10 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
       // El enlace genera el PDF al abrirse → el cliente recibe la versión
       // vigente: el aviso de re-descarga queda resuelto.
       setNeedsDownload(false);
-      toast.push("WhatsApp abierto con el enlace del plan — dale a enviar");
+      toast.push("WhatsApp abierto con el plan");
     } catch {
       if (win) win.close();
-      toast.push("No se pudo obtener el enlace del plan", "error");
+      toast.push("Sin enlace del plan", "error");
     }
   }
 
@@ -219,7 +220,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
       const url = waUrl(phone, planAndFeedbackMessage(client.full_name, fb.content, pdfUrl, adaptedIdx));
       if (win) win.location.href = url; else openWhatsApp(phone, planAndFeedbackMessage(client.full_name, fb.content, pdfUrl, adaptedIdx));
       setNeedsDownload(false); // el enlace enviado sirve la versión vigente
-      toast.push("WhatsApp abierto con el plan y el feedback — dale a enviar");
+      toast.push("WhatsApp: plan y feedback");
       if (!fb.sent) {
         // Solo se marca enviado si el backend LO REGISTRÓ: antes el catch mudo
         // dejaba la UI en "enviado" con el ciclo sin avanzar (auditoría).
@@ -228,7 +229,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
           setFb({ ...fb, sent: true });
           onClientChanged?.();
         } catch {
-          toast.push("WhatsApp abierto, pero el envío NO quedó registrado — reinténtalo desde Feedback", "error");
+          toast.push("Envío sin registrar", "error");
         }
       }
     } catch {
@@ -247,12 +248,12 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
         setNeedsDownload(false); // el cliente ya tiene la versión vigente
         toast.push(r.attached_pdf ? "Plan enviado por email (PDF adjunto)" : "Plan enviado por email");
       } else if (r.email_status === "disabled") {
-        toast.push("El email está desactivado para este cliente: no se envió", "error");
+        toast.push("Email desactivado: no se envió", "error");
       } else {
-        toast.push("No se pudo enviar el email al cliente", "error");
+        toast.push("Email no enviado", "error");
       }
     } catch {
-      toast.push("No se pudo enviar el plan por email", "error");
+      toast.push("Fallo al enviar por email", "error");
     }
   }
 
@@ -293,7 +294,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
     // Cliente avanzado: la IA es la vía EXCEPCIONAL y además auto-activa — se
     // confirma siempre para que el gasto y el envío no pillen por sorpresa.
     if (client.level === "advanced" &&
-        !window.confirm("Vas a generar con IA (gasta créditos) y el plan quedará ACTIVO y visible para el cliente al terminar. ¿Seguir?")) {
+        !window.confirm("¿Generar? Gasta créditos · queda ACTIVO")) {
       return;
     }
     setGenerating(true);
@@ -305,7 +306,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
       setPeriods(await api.listPeriods(client.id).catch(() => periods));
       setNeedsDownload(false); // versión nueva: el aviso de re-descarga ya no aplica
       onClientChanged?.(); // resincroniza sidebar (Dieta), badges y carpetas
-      toast.push(`Planificación generada y ACTIVA — revísala y envíasela por ${byEmail ? "email" : "WhatsApp"}`);
+      toast.push(`Plan generado y ACTIVO`);
     } catch (e: any) {
       const detail = e?.detail ?? e?.data?.detail;
       if (detail?.missing) setMissing(detail.missing);
@@ -327,7 +328,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
       setPeriods(await api.listPeriods(client.id).catch(() => periods));
       setNeedsDownload(false); // versión nueva activa: el aviso de la edición anterior caduca
       onClientChanged?.(); // resincroniza sidebar (Dieta) y estados
-      toast.push(`Plan adaptado y ACTIVO (v${r.version}): portal y PDF ya muestran la versión nueva.`);
+      toast.push(`Adaptado y ACTIVO · v${r.version}`);
     } catch (e: any) {
       const detail = e?.detail ?? e?.data?.detail;
       toast.push([detail?.message ?? e?.message ?? "No se pudo adaptar el plan", detail?.error].filter(Boolean).join(" — "), "error");
@@ -349,7 +350,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
       setPlan(normalize(p));
       setEditing(true); // directo al editor: la base ya está masticada
       onClientChanged?.();
-      toast.push("Base preparada SIN gastar créditos — termínala en el editor y pulsa Activar");
+      toast.push("Base lista · 0 créditos");
     } catch (e: any) {
       const detail = e?.detail ?? e?.data?.detail;
       if (detail?.missing) setMissing(detail.missing);
@@ -370,7 +371,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
       setPlan({ ...plan, status: "published" });
       setPeriods(await api.listPeriods(client.id).catch(() => periods));
       onClientChanged?.(); // el sidebar (Dieta) pasa a mostrar este plan
-      toast.push("Planificación activada: el portal y el PDF ya muestran esta versión");
+      toast.push("Activa · la ve el cliente");
     } catch {
       toast.push("No se pudo activar", "error");
     } finally {
@@ -416,12 +417,12 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
     try {
       const r = await api.importPlanWord(plan.id, file);
       if (!r.has_changes && !r.warnings.length) {
-        toast.push("No he detectado ningún cambio en ese Word respecto al plan actual");
+        toast.push("Ese Word no trae cambios");
       } else {
         setImportPreview(r);
       }
     } catch (e: any) {
-      toast.push(e?.message ?? "No se pudo leer el Word", "error");
+      toast.push(e?.message ?? "Word ilegible o ajeno", "error");
     } finally {
       setImporting(false);
     }
@@ -442,12 +443,12 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
       }));
       setImportPreview(null);
       setNeedsDownload(true); // el documento cambió: toca re-descargar el PDF
-      toast.push("Cambios del Word aplicados al plan");
+      toast.push("Word aplicado al plan");
     } catch (e: any) {
       const msg = String(e?.message ?? "");
       toast.push(
         msg.includes("409") || msg.toLowerCase().includes("versión")
-          ? "El plan cambió mientras editabas el Word: revisa y vuelve a subirlo"
+          ? "El plan cambió mientras editabas"
           : (msg || "No se pudieron aplicar los cambios"),
         "error",
       );
@@ -476,8 +477,8 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
             <h3 className="text-base font-semibold text-zinc-100">Planificación mensual</h3>
             <p className="mt-1 text-sm text-zinc-400">
               {client.level === "advanced"
-                ? "Cliente avanzado: su planificación la montas tú sobre una base que el sistema deja preparada sin IA. Nada llega al cliente hasta que la actives."
-                : `Genera el plan de ${hasTraining ? "dieta y entrenamiento" : "dieta"} con IA a partir de los datos de la anamnesis. Queda ACTIVO al momento: revísalo, edítalo si quieres y envíaselo por ${byEmail ? "email" : "WhatsApp"}.`}
+                ? "La montas tú, sin IA"
+                : `Genera con IA · queda ACTIVO`}
             </p>
 
             {missing && (
@@ -486,7 +487,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                   <AlertTriangle size={15} /> Faltan datos en la anamnesis
                 </div>
                 <p className="mt-1 text-xs text-zinc-400">
-                  Completa estos campos en la pestaña <b>Anamnesis</b> antes de generar:
+                  Bloquean la generación del plan
                 </p>
                 <ul className="mt-2 flex flex-wrap gap-1.5">
                   {missing.map((m) => (
@@ -505,7 +506,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                     ni un crédito, y no se activa hasta que el coach lo diga. */}
                 <button onClick={() => void scaffold()} disabled={generating} className="btn btn-primary mt-4">
                   <Sparkles size={16} />
-                  {generating ? "Preparando la base…" : "Preparar plan base (sin IA · 0 créditos)"}
+                  {generating ? "Preparando la base…" : "Preparar base · 0 créditos"}
                 </button>
                 <p className="mt-2 text-xs text-zinc-500">
                   Cliente avanzado: la planificación la montas tú. El sistema te deja
@@ -515,7 +516,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                 </p>
                 <button onClick={() => generate()} disabled={generating}
                   className="btn btn-ghost mt-2 text-xs">
-                  Prefiero generarla con IA (gasta créditos y queda ACTIVA al momento)
+                  Generar con IA · gasta créditos
                 </button>
               </>
             ) : (
@@ -527,8 +528,8 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
             {generating && (
               <p className="mt-2 text-xs text-zinc-500">
                 {scaffolding
-                  ? "Preparando la base determinista (sin IA)…"
-                  : "La IA está creando el plan (núcleo, comidas y contenido educativo). No cierres la página."}
+                  ? "Preparando base sin IA…"
+                  : "Creando el plan · 1-2 min"}
               </p>
             )}
           </div>
@@ -566,7 +567,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
             // El PDF descargado antes ya NO refleja esta edición: avisar hasta
             // que el coach lo vuelva a descargar (o lo reenvíe por WhatsApp).
             setNeedsDownload(true);
-            toast.push("Cambios guardados — envíale la actualización al cliente");
+            toast.push("Guardado · sin enviar al cliente");
           } else {
             toast.push("Sin cambios que guardar");
           }
@@ -621,7 +622,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                 }
               >
                 {plan.status === "published"
-                  ? "● Activa · la ve el cliente"
+                  ? "● Activa para el cliente"
                   : plan.guardrail_flags?.some((f) => f.startsWith("base sin IA"))
                     ? "Base del coach — sin activar"
                     : "Borrador antiguo"} · v{plan.version}
@@ -634,15 +635,18 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                   : c === "verde"
                     ? { background: "rgba(22,163,74,0.12)", color: "#15803D" }
                     : { background: "rgba(217,119,6,0.12)", color: "#B45309" };
-                const label = c === "rojo" ? "Revisar" : c === "verde" ? "Panel OK" : "Ámbar";
-                const icp = typeof plan.review.icp === "number" ? ` · ICP ${Math.round(plan.review.icp)}` : "";
+                const nBloq = (plan.review.findings ?? [])
+                  .filter((f) => f.severity === "bloqueante").length;
+                const label = c === "rojo"
+                  ? (nBloq ? `${nBloq} a corregir` : "Revisar")
+                  : c === "verde" ? "Revisión OK" : "Con avisos";
                 return (
                   <span className="rounded-full px-2 py-0.5 text-xs font-semibold"
                     style={style}
-                    title={c === "rojo"
-                      ? "El panel de supervisión detectó puntos a revisar antes de enviar"
-                      : "Confianza del panel de supervisión (ICP 0-100)"}>
-                    {c === "rojo" ? "▲ " : "● "}{label}{icp}
+                    title={typeof plan.review.icp === "number"
+                      ? `Confianza de la revisión automática: ${Math.round(plan.review.icp)}/100`
+                      : undefined}>
+                    {c === "rojo" ? "▲ " : "● "}{label}
                   </span>
                 );
               })()}
@@ -663,31 +667,30 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
               const ambarFlags = flags.filter((f) => !f.startsWith("violation:") && !f.startsWith("retenido"));
               const degraded = plan.review?.degraded_reviewers?.length ?? 0;
               const nAmbar = ambarFindings.length + ambarFlags.length + (degraded > 0 ? 1 : 0);
+              const nRojo = rojoFindings.length + rojoFlags.length;
               return (
                 <>
-                  {(rojoFindings.length > 0 || rojoFlags.length > 0) && (
-                    <ul className="mt-1.5 space-y-0.5 text-xs text-red-700">
-                      {rojoFindings.map((f, i) => (
-                        <li key={`f${i}`}><ProseClamp text={f.description} lines={2} /></li>
-                      ))}
-                      {rojoFlags.map((f, i) => <li key={`g${i}`}>• {f}</li>)}
-                    </ul>
+                  {nRojo > 0 && (
+                    <AvisosBlock
+                      tono="rojo"
+                      // El coach necesita saber POR QUÉ está en rojo y qué pasa
+                      // si no lo toca: antes solo veía párrafos sin contexto.
+                      cabecera={plan.status === "published"
+                        ? `${nRojo} punto${nRojo === 1 ? "" : "s"} a corregir en el plan activo`
+                        : `Retenido · ${nRojo} punto${nRojo === 1 ? "" : "s"} a corregir antes de enviarlo`}
+                      findings={rojoFindings}
+                      flags={rojoFlags}
+                    />
                   )}
                   {nAmbar > 0 && (
-                    <details className="mt-1">
-                      <summary className="cursor-pointer text-xs font-medium text-amber-700">
-                        Avisos de la revisión automática · {nAmbar}
-                      </summary>
-                      <ul className="mt-0.5 space-y-0.5 text-xs text-amber-700">
-                        {ambarFindings.map((f, i) => (
-                          <li key={`f${i}`}><ProseClamp text={f.description} lines={2} /></li>
-                        ))}
-                        {ambarFlags.map((f, i) => <li key={`g${i}`}>• {f}</li>)}
-                        {degraded > 0 && (
-                          <li>• La revisión automática quedó incompleta ({degraded} revisor{degraded === 1 ? "" : "es"} sin ejecutar): repasa el plan con más atención.</li>
-                        )}
-                      </ul>
-                    </details>
+                    <AvisosBlock
+                      tono="ambar"
+                      cabecera={`${nAmbar} aviso${nAmbar === 1 ? "" : "s"} · no bloquean el envío`}
+                      findings={ambarFindings}
+                      flags={ambarFlags}
+                      degraded={degraded}
+                      plegado
+                    />
                   )}
                 </>
               );
@@ -702,14 +705,14 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                 const origen = adj?.period_index != null
                   ? `Adaptada a la revisión quincenal #${adj.period_index}`
                   : esBase
-                    ? "Preparada por el sistema (sin IA) y terminada por el coach"
-                    : "Generada con IA a partir de su anamnesis";
+                    ? "Base sin IA, rematada por ti"
+                    : "Generada con IA · anamnesis";
                 return (
                   <>
                     Mes {plan.month_index} de asesoría · {origen}
                     {manual > 0 && (
                       <span className="font-medium" style={{ color: "var(--brand-accent)" }}>
-                        {" "}· con {manual} cambio{manual === 1 ? "" : "s"} manual{manual === 1 ? "" : "es"} sin enviar
+                        {" "}· {manual} cambios sin enviar
                       </span>
                     )}
                   </>
@@ -749,7 +752,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                     api.planHistory(plan.id).then(setHist).catch(() => setHist([]));
                   }}
                   className="btn btn-ghost w-full justify-start"
-                  title="Versiones anteriores del plan: restaura cualquiera si una edición salió mal"
+                  title="Restaurar una versión anterior"
                 >
                   <Archive size={15} /> Historial de versiones
                 </button>
@@ -759,13 +762,13 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                     downloadDocument("docx");
                   }}
                   className="btn btn-ghost w-full justify-start"
-                  title="Word editable: modifica cualquier apartado del documento antes de enviarlo"
+                  title="Editar el plan en Word"
                 >
                   <FileText size={15} /> Word editable
                 </button>
                 <label
                   className="btn btn-ghost w-full cursor-pointer justify-start"
-                  title="Sube el Word que editaste: el sistema lee tus cambios y te los enseña antes de aplicarlos al plan"
+                  title="Revisar cambios antes de aplicarlos"
                 >
                   {importing ? <Spinner /> : <FileUp size={15} />} Subir Word editado
                   <input
@@ -842,14 +845,14 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                     <button
                       disabled={reverting !== null}
                       onClick={async () => {
-                        if (!window.confirm("¿Restaurar esta versión del plan? La versión actual se guarda en el historial antes de restaurar.")) return;
+                        if (!window.confirm("¿Restaurar? La actual se guarda")) return;
                         setReverting(v.index);
                         try {
                           const p = await api.revertPlan(plan.id, v.index);
                           setPlan(normalize(p));
                           setNeedsDownload(true);
                           setHistOpen(false);
-                          toast.push("Versión restaurada — recuerda reenviar la actualización al cliente");
+                          toast.push("Versión restaurada");
                         } catch (e: any) {
                           toast.push(e?.message || "No se pudo restaurar la versión", "error");
                         } finally {
@@ -874,7 +877,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
           <div className="mt-3 rounded-lg border p-3" style={{ borderColor: "var(--brand-accent)" }}>
             <div className="mb-2 flex items-center justify-between">
               <span className="text-sm font-semibold">
-                Cambios detectados en tu Word · {importPreview.changes.length}
+                Cambios en tu Word · {importPreview.changes.length}
               </span>
               <button onClick={() => setImportPreview(null)} className="btn btn-ghost !px-2 !py-1">
                 <X size={14} />
@@ -893,7 +896,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
               </ul>
             ) : (
               <p className="mb-2 text-xs text-zinc-500">
-                Sin cambios aplicables (mira los avisos de abajo).
+                Sin cambios aplicables
               </p>
             )}
             {importPreview.warnings.length > 0 && (
@@ -940,7 +943,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
             {currentPeriod ? (
               <span
                 className="flex flex-wrap items-center gap-2 text-xs text-zinc-400"
-                title="El período de 14 días se renueva solo tras cada feedback"
+                title="14 días · se renueva solo"
               >
                 Seguimiento activo · {currentPeriod.starts_on} → {currentPeriod.ends_on}
                 <span className="rounded-full px-2 py-0.5 font-semibold" style={{ background: "color-mix(in srgb, var(--brand-accent-2) 15%, transparent)", color: "var(--brand-accent-2)" }}>
@@ -984,7 +987,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
         const sendWa = async () => {
           const phone = waPhone(client.phone);
           if (!phone) {
-            toast.push("Añade el teléfono del cliente para enviarlo por WhatsApp", "error");
+            toast.push("Sin teléfono en la ficha", "error");
             return;
           }
           const win = window.open("", "_blank"); // anti-bloqueo de popups en iOS
@@ -996,7 +999,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
             await api.ackManualChanges(plan.id);
             setNeedsDownload(false);
             refreshPlans();
-            toast.push("WhatsApp abierto con los cambios explicados — dale a enviar");
+            toast.push("WhatsApp abierto con los cambios");
           } catch {
             win?.close();
             toast.push("No se pudo preparar el envío", "error");
@@ -1008,11 +1011,11 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
           try {
             const r = await api.sendPlanUpdateEmail(plan.id);
             if (r.sent) {
-              toast.push("Email enviado con los cambios explicados y el PDF al día");
+              toast.push("Email enviado · PDF al día");
               setNeedsDownload(false);
               refreshPlans();
             } else {
-              toast.push("El email no salió (revisa la configuración de correo)", "error");
+              toast.push("Email no enviado", "error");
             }
           } catch (e: any) {
             toast.push(e?.message ?? "No se pudo enviar", "error");
@@ -1031,7 +1034,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
               <AlertTriangle size={16} className="mt-0.5 shrink-0" style={{ color: "var(--brand-accent)" }} />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-zinc-100">
-                  Planificación modificada a mano — envíasela actualizada
+                  Cambios manuales sin enviar
                 </p>
                 <ul className="mt-1.5 space-y-0.5 text-xs text-zinc-400">
                   {manualItems.slice(0, 6).map((it, i) => <li key={i}>· {it}</li>)}
@@ -1051,7 +1054,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                   </button>
                   <button
                     onClick={() => {
-                      if (window.confirm("¿Descartar el aviso sin avisar al cliente? Los cambios seguirán en su plan, pero este resumen no podrá recuperarse.")) dismiss();
+                      if (window.confirm("¿Descartar sin avisar al cliente?")) dismiss();
                     }}
                     className="ml-auto text-xs text-zinc-500 underline-offset-2 hover:underline">
                     Descartar aviso
@@ -1073,7 +1076,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
           <div className="flex items-start gap-2">
             <AlertTriangle size={16} className="mt-0.5 shrink-0" style={{ color: "var(--brand-accent)" }} />
             <p className="text-sm text-zinc-300">
-              El PDF descargado no incluye tu última edición.
+              PDF antiguo sin tu edición
             </p>
           </div>
           <button onClick={downloadPdf} className="btn btn-primary shrink-0">
@@ -1104,7 +1107,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
       {review?.plan_adjustments?.length && !alreadyAdapted ? (
         <details open name="plan-secciones" className="card p-5" style={{ borderColor: "color-mix(in srgb, var(--brand-accent) 55%, transparent)" }}>
           <summary className="cursor-pointer text-sm font-semibold text-zinc-100">
-            Cambios propuestos por la revisión #{review.period_index}
+            Propuestas · revisión #{review.period_index}
             <span className="ml-2 text-xs font-normal text-zinc-500">
               {review.plan_adjustments.length} ajustes · {hasTraining ? "dieta y entrenamiento" : "dieta"}
             </span>
@@ -1116,7 +1119,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
           </div>
           <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t pt-3" style={{ borderColor: "var(--line)" }}>
             <p className="text-xs text-zinc-500">
-              Adaptar activa la versión nueva al momento (portal y PDF).
+              Adaptar activa la versión nueva
             </p>
             <button onClick={adapt} disabled={generating} className="btn btn-primary">
               {generating ? "Adaptando…" : `Adaptar a la revisión #${review.period_index}`}
@@ -1233,7 +1236,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
         </div>
         {mpTotalOff && (
           <p className="mt-1.5 text-xs" style={{ color: "#9A6B15" }}>
-            Los macros suman {mp.total}% de las calorías objetivo — al editar, usa "Cuadrar a 100%".
+            Macros suman {mp.total}%, no 100%
           </p>
         )}
         {nut.tdee_kcal != null && (
@@ -1507,7 +1510,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                 {/* Por qué se adaptó o cambió esta versión */}
                 {(p.whyChanged?.length || p.whyLabel) && (
                   <div className="border-t px-3 py-3 text-xs" style={{ borderColor: "var(--line)" }}>
-                    <div className="mb-1 font-semibold uppercase tracking-wide text-zinc-500">Por qué se hizo / cambió</div>
+                    <div className="mb-1 font-semibold uppercase tracking-wide text-zinc-500">Por qué cambió</div>
                     {p.whyLabel && <p className="text-zinc-400">{p.whyLabel}</p>}
                     {(p.whyChanged ?? []).map((w: { change: string; reason: string }, i: number) => (
                       <p key={i} className="mt-1 text-zinc-400">
@@ -1549,7 +1552,7 @@ function archivedPlans(all: any[], currentId: number): any[] {
         : rationale
           ? rationale.split("\n")[0].slice(0, 180)
           : p.generated_by === "ai"
-            ? "Plan generado con IA a partir de la anamnesis."
+            ? "Generado con IA · anamnesis"
             : null;
       return {
         ...p,
@@ -1579,7 +1582,7 @@ function ImportantPointsCard({ client }: { client: ClientOut }) {
   add("Medicación", client.medication_notes);
   add("Alergias e intolerancias", client.food_allergies);
   add("Alimentos que evita", client.food_dislikes);
-  add("Objetivo y contexto en sus palabras", client.lifestyle_notes);
+  add("Objetivo en sus palabras", client.lifestyle_notes);
   if (!blocks.length) return null;
   const RED = "#B3261E";
   const hasTraining = pkg(client.package_tier).hasTraining;
@@ -1587,7 +1590,7 @@ function ImportantPointsCard({ client }: { client: ClientOut }) {
     <div className="card p-5">
       <SectionTitle icon={AlertTriangle} title="Puntos importantes del cliente" />
       <p className="mb-2 text-xs text-zinc-500">
-        De su anamnesis: lo que hay que respetar en {hasTraining ? "dieta y entrenamiento" : "dieta"}.
+        Respetar en {hasTraining ? "dieta y entreno" : "dieta"}
       </p>
       <div className="space-y-2">
         {blocks.map((b) => {
@@ -1737,10 +1740,10 @@ function MealStructureCard({
         {tooFew ? (
           <span className="text-xs text-zinc-500">Selecciona al menos 2 comidas.</span>
         ) : !changed ? (
-          <span className="text-xs text-zinc-500">Esta es la estructura del plan actual.</span>
+          <span className="text-xs text-zinc-500">Estructura actual del plan</span>
         ) : (
           <span className="text-xs" style={{ color: "var(--brand-accent-2)" }}>
-            Regenerar volverá a crear el plan con estas {orderedKeys.length} tomas.
+            Rehará el plan · {orderedKeys.length} tomas
           </span>
         )}
       </div>
@@ -1760,7 +1763,6 @@ function GoalStageCard({ client, currentMonth, onClientChanged, onRegenerated }:
   const toast = useToast();
   const info = pkg(client.package_tier);
   const hasTraining = info.hasTraining;
-  const byEmail = info.delivery === "email";
   const days = goalDays(client);
   const due = goalReviewDue(client);
   const [analysis, setAnalysis] = useState<string | null>(null);
@@ -1785,7 +1787,7 @@ function GoalStageCard({ client, currentMonth, onClientChanged, onRegenerated }:
   async function keepGoal() {
     try {
       await api.snoozeGoalReview(client.id);
-      toast.push("Objetivo mantenido: se volverá a valorar en 45 días");
+      toast.push("Mantenido · revisión en 45 días");
       onClientChanged?.();
     } catch {
       toast.push("No se pudo posponer", "error");
@@ -1797,18 +1799,18 @@ function GoalStageCard({ client, currentMonth, onClientChanged, onRegenerated }:
     setChanging(true);
     try {
       await api.changeGoal(client.id, { goal_type: newGoal });
-      toast.push(`Objetivo cambiado a ${GOAL_LABEL[newGoal as GoalType]}. Generando la planificación nueva…`);
+      toast.push(`Objetivo ${GOAL_LABEL[newGoal as GoalType]} · generando plan…`);
       onClientChanged?.();
       if (client.level === "advanced") {
         // Avanzado: el objetivo nuevo rehace la BASE sin IA (0 créditos) y
         // queda en borrador — el coach la termina y la activa.
         await api.scaffoldPlan(client.id, currentMonth + 1);
         await onRegenerated();
-        toast.push("Base del mes nuevo preparada SIN IA para el objetivo nuevo — termínala en el editor y actívala.");
+        toast.push("Base del objetivo nuevo lista");
       } else {
         await api.generatePlan(client.id, currentMonth + 1);
         await onRegenerated();
-        toast.push(`Planificación nueva generada y ACTIVA para el objetivo nuevo — envíasela por ${byEmail ? "email" : "WhatsApp"}.`);
+        toast.push(`Plan del objetivo nuevo ACTIVO`);
       }
       setConfirming(false);
       setNewGoal("");
@@ -1844,8 +1846,8 @@ function GoalStageCard({ client, currentMonth, onClientChanged, onRegenerated }:
       <div className="mt-3 space-y-3">
         <p className="text-xs text-zinc-500">
           {due != null
-            ? `Lleva ${due} días con este objetivo. Genera el análisis de la etapa para valorar con el cliente si toca cambiarlo, o mantenlo 45 días más.`
-            : "Cambia aquí el objetivo si el cliente lo pide o la etapa lo aconseja: el análisis resume lo conseguido y las opciones."}
+            ? `${due} días con este objetivo`
+            : "Cambio de objetivo cuando toque"}
         </p>
 
         {analysis === null ? (
@@ -1972,6 +1974,75 @@ function SectionTitle({ icon: Icon, title, accent, onEdit }: {
         <Icon size={15} style={{ color: c }} />
       </span>
       <h4 className="text-sm font-semibold text-zinc-200">{title}</h4>
+    </div>
+  );
+}
+
+/** Avisos del plan agrupados por tema, cada uno como "TÍTULO CORTO → acción".
+ *
+ *  Sustituye al muro de párrafos rojos: el coach ve de un vistazo cuántos hay,
+ *  de qué tipo son y qué tiene que hacer con cada uno. El texto completo del
+ *  hallazgo queda como detalle, a un clic. */
+function AvisosBlock({ tono, cabecera, findings, flags, degraded = 0, plegado = false }: {
+  tono: "rojo" | "ambar";
+  cabecera: string;
+  findings: { severity: string; description: string; title?: string; action?: string; correccion_propuesta?: string }[];
+  flags: string[];
+  degraded?: number;
+  plegado?: boolean;
+}) {
+  const [abierto, setAbierto] = useState(!plegado);
+  const color = tono === "rojo" ? "#B91C1C" : "#B45309";
+  const grupos = agrupar(findings.map(toAviso));
+
+  return (
+    <div className="mt-2 rounded-lg border-l-2 px-3 py-2"
+      style={{ borderLeftColor: color, background: `color-mix(in srgb, ${color} 6%, transparent)` }}>
+      <button
+        type="button"
+        onClick={() => setAbierto((o) => !o)}
+        className="flex w-full items-center gap-1.5 text-left text-xs font-semibold"
+        style={{ color }}
+      >
+        <ChevronRight size={13} className="shrink-0 transition-transform"
+          style={{ transform: abierto ? "rotate(90deg)" : "none" }} />
+        {tono === "rojo" ? "▲ " : ""}{cabecera}
+      </button>
+
+      {abierto && (
+        <div className="mt-1.5 space-y-2">
+          {grupos.map((g) => (
+            <div key={g.categoria}>
+              <p className="text-[10px] font-bold uppercase tracking-wide opacity-60" style={{ color }}>
+                {g.categoria} · {g.items.length}
+              </p>
+              <ul className="mt-0.5 space-y-1">
+                {g.items.map((a, i) => (
+                  <li key={i}>
+                    <details>
+                      <summary className="flex cursor-pointer flex-wrap items-baseline gap-x-1.5 text-xs">
+                        <span className="font-medium" style={{ color }}>{a.titulo}</span>
+                        <span className="text-zinc-500">→ {a.accion}</span>
+                      </summary>
+                      <p className="mt-0.5 pl-3 text-xs text-zinc-500">{a.detalle}</p>
+                    </details>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+          {flags.length > 0 && (
+            <ul className="space-y-0.5 text-xs" style={{ color }}>
+              {flags.map((f, i) => <li key={i}>• {f}</li>)}
+            </ul>
+          )}
+          {degraded > 0 && (
+            <p className="text-xs" style={{ color }}>
+              Revisión incompleta ({degraded} sin ejecutar) → repásalo tú
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

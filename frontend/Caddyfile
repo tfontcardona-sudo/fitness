@@ -25,7 +25,7 @@
 		# fuentes de Google y los reproductores de vídeo de los ejercicios
 		# (YouTube-nocookie y Vimeo van EN iframe DENTRO de la web; que la web no
 		# pueda ser enmarcada lo controla frame-ancestors, aparte de frame-src).
-		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: blob: https://img.youtube.com https://i.ytimg.com; font-src 'self' https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self'; connect-src 'self'; frame-src https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com; media-src 'self' blob:; form-action 'self'"
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: blob: https:; font-src 'self' https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self'; connect-src 'self'; frame-src https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com; media-src 'self' blob:; form-action 'self'"
 		# No anunciar qué servidor corre por debajo (menos pistas a un atacante).
 		-Server
 		-X-Powered-By

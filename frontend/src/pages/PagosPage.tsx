@@ -213,7 +213,7 @@ export default function PagosPage() {
       a.remove();
       URL.revokeObjectURL(url);
     } catch {
-      toast.push("No se pudo exportar el libro de pagos", "error");
+      toast.push("No se pudo exportar", "error");
     } finally {
       setExportando(false);
     }
@@ -237,7 +237,7 @@ export default function PagosPage() {
       if (r.created > 0) {
         toast.push(`${r.created} movimiento${r.created === 1 ? "" : "s"} recuperado${r.created === 1 ? "" : "s"} de Stripe`);
       } else {
-        toast.push("Todo al día: no faltaba ningún cobro por registrar");
+        toast.push("Sin cobros pendientes de registrar");
       }
       if (r.errors?.length) {
         toast.push(`Stripe no devolvió todo: ${r.errors[0]}`, "error");
@@ -290,7 +290,7 @@ export default function PagosPage() {
             onClick={exportarCsv}
             disabled={exportando}
             className="btn btn-ghost"
-            title="Descarga el libro de pagos completo en CSV (para la gestoría)"
+            title="CSV completo para la gestoría"
           >
             {exportando ? <Spinner /> : <Download size={15} />} Exportar
           </button>
@@ -298,7 +298,7 @@ export default function PagosPage() {
             onClick={sincronizar}
             disabled={sincronizando}
             className="btn btn-ghost"
-            title="Trae de Stripe los cobros que falten (histórico o webhooks perdidos)"
+            title="Recupera cobros perdidos de Stripe"
           >
             {sincronizando ? <Spinner /> : <RefreshCw size={15} />} Sincronizar
           </button>
@@ -307,7 +307,7 @@ export default function PagosPage() {
 
       {falloCarga && (
         <div className="card mb-4 flex items-center justify-between gap-3 p-4">
-          <span className="text-sm text-zinc-300">No se pudieron cargar los pagos.</span>
+          <span className="text-sm text-zinc-300">No se pudieron cargar</span>
           <button onClick={() => cargar()} className="btn btn-ghost">Reintentar</button>
         </div>
       )}
@@ -388,7 +388,7 @@ export default function PagosPage() {
           )}
           {(resumen?.orphan_count ?? 0) > 0 && (
             <Chip tone="#9A6B15" icon={AlertTriangle}
-              title="Cobros que llegaron sin cliente asociado: revísalos en el feed">
+              title="Cobros sin cliente · revísalos">
               {resumen!.orphan_count} pago{resumen!.orphan_count === 1 ? "" : "s"} sin ficha asociada
             </Chip>
           )}
@@ -436,8 +436,8 @@ export default function PagosPage() {
           title="Todavía no hay movimientos"
           hint={
             resumen?.stripe_enabled
-              ? "Cuando un cliente pague aparecerá aquí al instante. Si ya has cobrado antes, pulsa «Sincronizar» para traer el histórico de Stripe."
-              : "Configura Stripe en el servidor para registrar los cobros."
+              ? "Sincroniza para traer el histórico"
+              : "Configura Stripe en el servidor"
           }
         />
       ) : (

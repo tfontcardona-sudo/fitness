@@ -42,7 +42,7 @@ export default function PortalLogin() {
       else portalSession.clear();
       nav(`/p/${token}`, { replace: true });
     } catch (err) {
-      setError(err instanceof PortalError ? err.message : "No se pudo entrar. Inténtalo de nuevo.");
+      setError(err instanceof PortalError ? err.message : "No se pudo entrar");
       setBusy(false);
     }
   }

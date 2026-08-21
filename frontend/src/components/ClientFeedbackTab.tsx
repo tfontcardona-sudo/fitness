@@ -90,7 +90,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
   function shareMeetWhatsApp(call: VideoCallOut) {
     const phone = waPhone(client.phone);
     if (!phone) {
-      toast.push("Añade el teléfono del cliente en su ficha para avisarle", "error");
+      toast.push("Falta su teléfono", "error");
       return;
     }
     openWhatsApp(phone, videoCallScheduledMessage(client.full_name, _whenLabel(call), call.meet_url ?? ""));
@@ -104,7 +104,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
     try {
       await api.modifyVideoCall(client.id, call.id);
       loadCalls();
-      toast.push("Acuerda el día por WhatsApp y luego agéndala a mano aquí");
+      toast.push("Acuerda el día por WhatsApp");
     } catch (e: any) {
       toast.push(e?.message ?? "No se pudo modificar", "error");
     }
@@ -144,7 +144,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
     setGenerating(periodId);
     try {
       await api.generateFeedback(periodId);
-      toast.push(`Feedback generado. Revísalo y envíalo por ${byEmail ? "email" : "WhatsApp"}.`);
+      toast.push(`Feedback listo`);
       load();
       onClientChanged?.(); // el aviso "Ir a Feedback" del perfil desaparece
     } catch (e: any) {
@@ -171,7 +171,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
       load();
       onClientChanged?.();
     } catch (e: any) {
-      toast.push(e?.message ?? "No se pudo cerrar la revisión", "error");
+      toast.push(e?.message ?? "Revisión no cerrada", "error");
     } finally {
       setClosing(null);
     }
@@ -196,12 +196,12 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
         // email falló, decir "enviado" sin más dejaba al cliente sin informe
         // y a nadie enterado (auditoría del ciclo).
         if (r.email_status === "sent") {
-          toast.push(alreadySent ? "Feedback reenviado por email" : "Feedback enviado por email al cliente");
+          toast.push(alreadySent ? "Feedback reenviado por email" : "Feedback enviado por email");
         } else {
           toast.push(
             r.email_status === "disabled"
-              ? "El ciclo ha avanzado pero los EMAILS ESTÁN DESACTIVADOS: envíaselo por WhatsApp"
-              : "El ciclo ha avanzado pero el EMAIL FALLÓ: reenvíalo o mándalo por WhatsApp",
+              ? "Emails desactivados · ciclo avanzado"
+              : "Email fallido · ciclo avanzado",
             "error",
           );
         }
@@ -214,17 +214,17 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
     }
     const phone = waPhone(client.phone);
     if (!phone) {
-      toast.push("Añade el teléfono del cliente en su ficha para enviarlo por WhatsApp", "error");
+      toast.push("Falta su teléfono", "error");
       return;
     }
     openWhatsApp(phone, feedbackMessage(client.full_name, content, periodIndex));
     if (alreadySent) {
-      toast.push("WhatsApp abierto con el feedback — dale a enviar");
+      toast.push("WhatsApp abierto");
       return;
     }
     try {
       await api.sendFeedback(feedbackId);
-      toast.push("WhatsApp abierto con el feedback listo — dale a enviar");
+      toast.push("WhatsApp abierto");
       load();
       onClientChanged?.();
     } catch {
@@ -291,7 +291,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
           {/* Lleva a Planificación: allí se ven los cambios propuestos y su
               porqué ANTES de adaptar (ya no se adapta a ciegas desde aquí). */}
           <button onClick={() => onGoPlan?.()} className="btn btn-primary">
-            <Sparkles size={14} /> Revisar cambios y adaptar la planificación
+            <Sparkles size={14} /> Revisar y adaptar el plan
           </button>
         </div>
       )}
@@ -388,7 +388,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
             {p.status === "open" && (
               <div className="mt-3 rounded-lg p-2.5 text-xs" style={{ background: "rgba(154,107,21,0.09)", color: "#9A6B15" }}>
                 <div className="flex items-center gap-2">
-                  <AlertTriangle size={14} /> El período aún está abierto: el cliente debe cerrarlo antes de generar el feedback.
+                  <AlertTriangle size={14} /> Período abierto: falta su cierre
                 </div>
                 {/* Vencido y sin enviar: el ciclo se bloqueaba esperándole para
                     siempre. El coach puede cerrarlo él y seguir (auditoría). */}
@@ -398,7 +398,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                     disabled={closing === p.id}
                     className="btn btn-ghost mt-2 text-xs"
                   >
-                    {closing === p.id ? "Cerrando…" : "Ya venció · cerrarla yo y seguir"}
+                    {closing === p.id ? "Cerrando…" : "Venció · cerrarla yo"}
                   </button>
                 )}
               </div>
@@ -437,7 +437,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                 Se muestra SIEMPRE, ya cargado — sin botones que pulsar. */}
             {!m && loadingMetrics === p.id && (
               <p className="mt-4 flex items-center gap-2 border-t pt-4 text-xs text-zinc-500" style={{ borderColor: "var(--line)" }}>
-                <Spinner /> Calculando el resumen de las 2 semanas…
+                <Spinner /> Calculando resumen…
               </p>
             )}
             {m && (
@@ -470,7 +470,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                       const up = withDelta.filter((s: any) => s.delta_kg > 0).length;
                       return withDelta.length > 0 ? (
                         <p className="mb-1.5 text-xs text-zinc-400">
-                          {up} de {withDelta.length} ejercicios mejoran esta quincena.
+                          {up}/{withDelta.length} ejercicios mejoran
                         </p>
                       ) : null;
                     })()}
@@ -490,7 +490,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                   </div>
                 )}
                 {info.hasTraining && (!m.strength || m.strength.length === 0) && (
-                  <p className="mt-2 text-xs text-zinc-500">Sin series registradas aún para calcular la fuerza.</p>
+                  <p className="mt-2 text-xs text-zinc-500">Fuerza: sin series registradas</p>
                 )}
               </div>
             )}
@@ -598,7 +598,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                 {content.closing_message && (
                   <details>
                     <summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-zinc-300">
-                      Mensaje de cierre que recibirá el cliente
+                      Mensaje de cierre al cliente
                     </summary>
                     <p className="mt-1 text-sm italic text-zinc-400">{content.closing_message}</p>
                   </details>
@@ -646,7 +646,7 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
       toast.push(okMsg);
       onChanged();
     } catch (e: any) {
-      toast.push(e?.message ?? "No se pudo actualizar la videollamada", "error");
+      toast.push(e?.message ?? "Videollamada no actualizada", "error");
     } finally {
       setBusy(false);
     }
@@ -696,9 +696,9 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
         <button
           className="btn btn-primary !px-3 !py-1.5 text-xs"
           disabled={!gDate || !gTime || busy || !googleConnected || gDatePast}
-          title={!googleConnected ? "Conecta Google en Recursos para agendar con Meet"
+          title={!googleConnected ? "Conecta Google en Recursos"
             : !gDate || !gTime ? "Elige el día y la hora"
-            : gDatePast ? "La fecha ya pasó: elige un día futuro" : undefined}
+            : gDatePast ? "Fecha pasada · elige otra" : undefined}
           onClick={() => run(
             () => api.scheduleVideoCallMeet(clientId, periodIndex, `${gDate}T${gTime}`, gDur),
             "Videollamada agendada en Meet y enlace enviado al cliente",
@@ -813,7 +813,7 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
               disabled={busy}
               onClick={() => run(
                 () => api.videoCallReschedule(clientId, call.id),
-                "Evento cancelado en Google: acuerda una nueva fecha y agéndala a mano",
+                "Evento cancelado en Google",
               )}
             >
               <X size={13} /> No, reagendar
@@ -824,7 +824,7 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
 
       {call?.status === "done" && (
         <p className="mt-1.5 text-xs" style={{ color: "#2E7D46" }}>
-          Realizada. La siguiente tocará con la próxima revisión quincenal.
+          Realizada · próxima revisión quincenal
         </p>
       )}
     </div>
@@ -934,12 +934,12 @@ function FeedbackEditor({ docId, content, sentAt, onCancel, onSaved }: {
         </p>
       )}
       <FbArea label="Análisis" value={d.natural_analysis} onChange={(v) => set("natural_analysis", v)} rows={4} />
-      <FbArea label="Cambios en el plan (uno por línea)" value={d.changes_bullets} onChange={(v) => set("changes_bullets", v)} />
+      <FbArea label="Cambios (uno por línea)" value={d.changes_bullets} onChange={(v) => set("changes_bullets", v)} />
       <FbArea label="Respuesta a sus dudas" value={d.answers} onChange={(v) => set("answers", v)} />
-      <FbArea label="Objetivos próximas 2 semanas (uno por línea)" value={d.next_objectives} onChange={(v) => set("next_objectives", v)} />
+      <FbArea label="Objetivos (uno por línea)" value={d.next_objectives} onChange={(v) => set("next_objectives", v)} />
       <FbArea label="Mensaje de cierre" value={d.closing_message} onChange={(v) => set("closing_message", v)} rows={2} />
       <FbArea
-        label="Ajustes propuestos a la planificación (uno por línea — se aplican al pulsar «Adaptar»)"
+        label="Ajustes al plan (uno por línea)"
         value={d.plan_adjustments} onChange={(v) => set("plan_adjustments", v)} />
     </div>
   );
@@ -988,7 +988,7 @@ function StrengthRow({ s }: { s: any }) {
           </>
         )}
         {s.avg_reps != null && <> · {s.avg_reps} reps de media</>}
-        {s.delta_kg == null && <> · primera revisión con datos de este ejercicio</>}
+        {s.delta_kg == null && <> · primera vez con datos</>}
       </div>
     </li>
   );
@@ -1092,7 +1092,7 @@ function PeriodPhotos({ clientId, periodId }: { clientId: number; periodId: numb
       </div>
       {total > photos.length && (
         <p className="mt-1 text-[11px] text-zinc-500">
-          Mostrando {photos.length} de {total}; el resto, en la ficha de fotos del cliente.
+          {photos.length} de {total} · resto en su ficha
         </p>
       )}
     </div>

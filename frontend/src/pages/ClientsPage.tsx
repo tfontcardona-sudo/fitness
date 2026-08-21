@@ -148,7 +148,7 @@ export default function ClientsPage() {
             // (con la cartera llena parecía que se habían borrado todos).
             <EmptyState
               title={`Ningún cliente coincide con «${q.trim()}»`}
-              hint="Prueba con otro nombre o email."
+              hint="Prueba otro nombre o email"
               action={
                 <button className="btn btn-ghost" onClick={() => setQ("")}>
                   Limpiar búsqueda
@@ -247,7 +247,7 @@ function CycleBadges({ c }: { c: ClientOut }) {
         <span
           className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
           style={{ background: "color-mix(in srgb, var(--brand-accent-2) 14%, transparent)", color: "var(--brand-accent-2)" }}
-          title={`${due} días con el mismo objetivo: valora si toca cambiarlo`}
+          title={`${due} días · valorar cambio de objetivo`}
         >
           <Flag size={10} /> Objetivo · {due} d
         </span>
@@ -423,13 +423,13 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
       setAccessStatus(r.status as ClientCreatedOut["portal_access"]);
       if (r.status === "sent") {
         setPassword(null);
-        toast.push("Correo de acceso enviado al cliente por email.");
+        toast.push("Acceso enviado por email");
       } else if (r.password) {
         setPassword(r.password);
         toast.push(
           r.status === "disabled"
-            ? "Envío de correos desactivado: usa la contraseña para dársela tú."
-            : "El email no salió: usa la contraseña para dársela tú.",
+            ? "Emails desactivados · dicta la contraseña"
+            : "Email fallido · dicta la contraseña",
           "error",
         );
       } else {
@@ -453,11 +453,11 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
     if (!created) return;
     const digits = waPhone(created.client.phone ?? phone);
     if (!digits) {
-      toast.push("Añade el teléfono del cliente para enviarlo por WhatsApp", "error");
+      toast.push("Falta el teléfono del cliente", "error");
       return;
     }
     openWhatsApp(digits, portalAccessMessage(created.client.full_name, created.links.portal_url));
-    toast.push("WhatsApp abierto con el acceso al portal — dale a enviar");
+    toast.push("WhatsApp abierto · pulsa enviar");
   }
 
   const [sendingOnb, setSendingOnb] = useState(false);
@@ -475,14 +475,14 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
       openWhatsApp(digits, onboardingMessage(
         created.client.full_name, info.label, payUrl,
         `${window.location.origin}/anamnesis/${created.links.portal_token}`));
-      toast.push("WhatsApp abierto con el pago y la anamnesis — dale a enviar");
+      toast.push("WhatsApp abierto · pulsa enviar");
       return;
     }
     setSendingOnb(true);
     try {
       const r = await api.sendOnboarding(created.client.id);
       if (r.status === "sent") toast.push("Enviado por email: pago + anamnesis");
-      else if (r.status === "disabled") toast.push("El email está desactivado: no se envió", "error");
+      else if (r.status === "disabled") toast.push("Emails desactivados · no enviado", "error");
       else toast.push("No se pudo enviar el email", "error");
     } catch {
       toast.push("No se pudo enviar", "error");
@@ -510,7 +510,7 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
             <div className="shrink-0 p-6 pb-3">
               <h3 className="text-base font-semibold text-zinc-100">Nuevo cliente</h3>
               <p className="mt-1 text-sm text-zinc-500">
-                Al crear: email automático con su acceso al portal.
+                Recibirá su acceso por email
               </p>
             </div>
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-1">
@@ -573,7 +573,7 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
                   {([
                     ["beginner", "Principiante", "la IA genera su plan"],
                     ["intermediate", "Intermedio", "la IA genera su plan"],
-                    ["advanced", "Avanzado", "plan del coach, base sin IA"],
+                    ["advanced", "Avanzado", "plan del coach, sin IA"],
                   ] as const).map(([value, label, hint]) => {
                     const sel = level === value;
                     return (
@@ -602,7 +602,7 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
               </div>
               <div>
                 <label className="label">Duración</label>
-                <p className="text-xs text-zinc-500">Fija el precio de su enlace de pago.</p>
+                <p className="text-xs text-zinc-500">Fija el precio del pago</p>
                 <div className="mt-1.5 grid grid-cols-3 gap-2">
                   {BILLING_PERIODS.map((b) => {
                     const sel = period === b.value;
@@ -727,9 +727,9 @@ function PortalAccessResult({
   const text = ok
     ? `Acceso enviado a ${email}`
     : status === "disabled"
-    ? "Emails desactivados → pulsa 'Enviar correo de nuevo' y dicta la contraseña"
+    ? "Emails desactivados · dicta la contraseña"
     : status === "no_email"
-    ? "Sin email: no se pudo enviar"
+    ? "Sin email · no enviado"
     : "El email no salió → reenviar";
   return (
     <div

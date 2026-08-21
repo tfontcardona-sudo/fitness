@@ -131,7 +131,7 @@ export function PortalDiary({ api, brand, periodStatus = null, businessToday = n
         pendingRef.current = pendingRef.current ?? data;
         setSaveState("idle");
         toast.push(
-          e instanceof PortalError ? e.message : "No se pudo guardar el último cambio — revisa tu conexión",
+          e instanceof PortalError ? e.message : "Sin guardar · revisa tu conexión",
         );
       });
   };
@@ -176,11 +176,11 @@ export function PortalDiary({ api, brand, periodStatus = null, businessToday = n
           {hasPeriod ? (
             <>
               <p className="font-semibold">Revisión enviada — diario en pausa</p>
-              <p className="mt-1 text-xs opacity-70">Se reabre cuando tu coach te envíe el feedback.</p>
+              <p className="mt-1 text-xs opacity-70">Se reabre con tu feedback</p>
             </>
           ) : (
             <>
-              <p className="font-semibold">Tu seguimiento está a punto de empezar</p>
+              <p className="font-semibold">Seguimiento aún no activo</p>
               <p className="mt-1 text-xs opacity-70">Te avisaremos al activarse.</p>
             </>
           )}

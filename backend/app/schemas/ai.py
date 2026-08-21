@@ -325,9 +325,18 @@ class EducationOutput(BaseModel):
 
 # ---------------------------------- panel de supervisión (hardening §9) ----
 class ReviewFindingOut(BaseModel):
-    """Hallazgo de un revisor del panel."""
+    """Hallazgo de un revisor del panel.
+
+    `titulo` y `accion` son lo ÚNICO que el coach ve de un vistazo: el resto es
+    detalle plegado. Por eso son obligatoriamente cortos (el contrato de
+    longitud viaja en el prompt, que es lo único que llega al modelo).
+    """
 
     severidad: Literal["bloqueante", "mayor", "menor"]
+    # Con default "": un revisor antiguo o un fallo de formato no tumba el panel;
+    # el frontend deriva el título del `descripcion` si viene vacío.
+    titulo: str = ""
+    accion: str = ""
     descripcion: str
     cita_anamnesis: str = ""
     donde_en_el_plan: str = ""

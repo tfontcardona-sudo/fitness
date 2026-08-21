@@ -48,7 +48,7 @@ function nextAction(c: ClientOut): Accion | null {
   if (c.status === "review_pending")
     return {
       client: c, prio: 1, tone: "#7B4FC9", icon: ClipboardCheck, category: "Revisión",
-      title: `Revisión quincenal #${c.review_period_index ?? c.pending_review_period ?? ""} subida`,
+      title: `Revisión #${c.review_period_index ?? c.pending_review_period ?? ""} cerrada`,
       cta: "Generar feedback", tab: "feedback",
     };
   if (c.status === "at_risk")
@@ -162,7 +162,7 @@ export default function DashboardPage() {
         // se sube el producto), no a la planificación del cliente.
         acciones.push({
           client: cli, prio: 3, tone: "#28707C", icon: Package, category: "Falta recurso/producto",
-          title: "Suplemento del plan sin producto en Recursos",
+          title: "Suplemento sin producto",
           detail: al.message,
           cta: "Abrir Recursos", tab: "planificacion", to: "/recursos",
         });
@@ -170,7 +170,7 @@ export default function DashboardPage() {
         // El cliente escribió una petición/duda desde su portal: al coach.
         acciones.push({
           client: cli, prio: 1, tone: "#C2453A", icon: HeartPulse, category: "Petición del cliente",
-          title: "Petición o duda desde el portal",
+          title: "Duda desde su portal",
           detail: al.message,
           cta: al.action, tab: al.tab,
         });
@@ -183,7 +183,7 @@ export default function DashboardPage() {
       } else if (al.kind === "regenerate_goal") {
         acciones.push({
           client: cli, prio: 1, tone: "#C96A1E", icon: Sparkles, category: "Objetivo",
-          title: "Plan activo con el objetivo anterior",
+          title: "Plan con objetivo anterior",
           detail: al.message, cta: al.action, tab: al.tab,
         });
       } else if (al.kind === "plan_allergen_conflict" || al.kind === "plan_dislike_conflict") {
@@ -193,7 +193,7 @@ export default function DashboardPage() {
           client: cli, prio: al.kind === "plan_allergen_conflict" ? 1 : 3,
           tone: "#C2453A", icon: Sparkles, category: "Planificación",
           title: al.kind === "plan_allergen_conflict"
-            ? "⚠ Alérgeno en el plan activo" : "Alimento no tolerado en el plan",
+            ? "⚠ Alérgeno en el plan activo" : "Alimento no tolerado en plan",
           detail: al.message, cta: al.action, tab: al.tab,
         });
       } else if (al.kind === "adapt_plan" || al.kind === "publish_plan") {
@@ -202,14 +202,14 @@ export default function DashboardPage() {
         acciones.push({
           client: cli, prio: 2, tone: "#C96A1E", icon: Sparkles, category: "Adaptar",
           title: al.kind === "adapt_plan"
-            ? "Planificación sin adaptar a su revisión"
-            : "Planificación en borrador sin activar",
+            ? "Plan sin adaptar a revisión"
+            : "Borrador sin activar",
           detail: al.message, cta: al.action, tab: al.tab,
         });
       } else if (al.kind === "plan_stale_inputs") {
         acciones.push({
           client: cli, prio: 2, tone: "#C96A1E", icon: Sparkles, category: "Planificación",
-          title: "Ficha cambiada tras generar el plan",
+          title: "Ficha cambiada tras generar",
           detail: al.message, cta: al.action, tab: al.tab,
         });
       } else if (al.kind === "client_inactive") {
@@ -236,7 +236,7 @@ export default function DashboardPage() {
         acciones.push({
           client: cli, prio: 4, tone: "#C2453A", icon: Hourglass,
           category: "Revisión",
-          title: "Revisión vencida · el cliente no la ha cerrado",
+          title: "Revisión vencida sin cerrar",
           detail: al.message, cta: al.action, tab: al.tab,
         });
       } else if (al.kind === "no_logs") {
@@ -444,7 +444,7 @@ export default function DashboardPage() {
                     <span className="flex items-center gap-3">
                       <StatusBadge status={c.status} />
                       <span className="w-20 text-right text-xs text-zinc-600"
-                        title="Última modificación de la ficha (no es la última vez que el cliente registró)">
+                        title="Ficha editada · no es actividad">
                         {relativeDays(c.updated_at)}
                       </span>
                     </span>

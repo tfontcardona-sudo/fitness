@@ -43,7 +43,7 @@ export function PortalResources({ api, brand, hasTraining = true }: { api: Api; 
       <div className="space-y-5">
         <h2 className="text-lg font-semibold">Recursos</h2>
         <div className="portal-card p-4 text-sm opacity-70">
-          No se pudieron cargar los recursos. Inténtalo de nuevo en un momento.
+          No se pudieron cargar · reintenta
         </div>
       </div>
     );
@@ -66,7 +66,7 @@ export function PortalResources({ api, brand, hasTraining = true }: { api: Api; 
         <Empty
           icon={hasTraining ? PlayCircle : ShoppingBag}
           title="Aún no hay recursos"
-          hint="Tu coach aún no ha añadido ninguno."
+          hint="Los añade tu coach"
         />
       )}
 
@@ -207,11 +207,11 @@ function ProductCard({ product: p, accent }: { product: ResourceProduct; accent:
     try {
       await navigator.clipboard.writeText(p.discount_code);
       setCopied(true);
-      toast.push(`Código ${p.discount_code} copiado — pégalo al pagar`);
+      toast.push(`${p.discount_code} copiado · pégalo al pagar`);
       window.setTimeout(() => setCopied(false), 2500);
     } catch {
       // Sin permiso de portapapeles (raro): el código está visible igualmente.
-      toast.push(`Usa el código ${p.discount_code} al pagar`);
+      toast.push(`Usa ${p.discount_code} al pagar`);
     }
   }
 
@@ -261,7 +261,7 @@ function ProductCard({ product: p, accent }: { product: ResourceProduct; accent:
             style={{ background: `color-mix(in srgb, ${accent} 12%, transparent)` }}
           >
             <span className="min-w-0">
-              <span className="block text-[9px] uppercase tracking-wide opacity-60">Tu código de descuento</span>
+              <span className="block text-[9px] uppercase tracking-wide opacity-60">Código de descuento</span>
               <span className="block truncate text-[11px] font-bold tracking-wide" style={{ color: accent }}>
                 {p.discount_code}
               </span>

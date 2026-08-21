@@ -19,7 +19,7 @@ const NEG_START = /^(no|sin|ning[uú]n[oa]?|nunca|jam[aá]s|ausencia)\b/i;
 // axialmente". Sin esta excepción quedaban clasificadas como irrelevantes y se
 // plegaban, que es justo lo contrario de lo que necesita el coach.
 const NEG_LIMITACION =
-  /^(no)\s+(tolera|toleraba?|puede|podr[ií]a|debe|deber[ií]a|soporta|aguanta|consume|come|ingiere|digiere|permite|logra|consigue)\b/i;
+  /^(no)\s+(tolera|toleraba?|puede|podr[ií]a|debe|deber[ií]a|soporta|aguanta|digiere)\b/i;
 
 // Palabra que denota un problema REAL a respetar en dieta o entrenamiento.
 // (NO incluye "suplement": la suplementación habitual —creatina, omega-3— no
@@ -54,8 +54,10 @@ export function isCriticalLine(line: string): boolean {
   // Una negación al inicio gana ("Sin roturas fibrilares…"), EXCEPTO si describe
   // una limitación real ("No tolera la lactosa").
   if (NEG_START.test(core) && !NEG_LIMITACION.test(core)) return false;
-  if (NEG_LIMITACION.test(core)) return true;
-  if (!CRITICAL.test(core)) return false;
+  // Una limitación negada ("No tolera la lactosa") sí es crítica, pero sigue
+  // pasando por los filtros de valor nulo y de descriptor tranquilizador.
+  const limitacion = NEG_LIMITACION.test(core);
+  if (!limitacion && !CRITICAL.test(core)) return false;
   // Tiene palabra crítica pero el valor es nulo o tranquilizador.
   if (isNullValue(core)) return false;
   // Lesión/molestia YA RESUELTA no es crítica (pero "no resuelta" sí lo es).
