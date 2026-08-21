@@ -15,7 +15,7 @@ from app import branding
 from app.config import settings
 from app.db import SessionLocal
 from app.models import BrandConfig, Exercise, Food, User
-from app.security import hash_password
+from app.security import hash_password, verify_password
 from app.seeds.exercises_data import EXERCISES
 from app.seeds.foods_data import FOODS
 from app.seeds.home_exercises_data import HOME_EXERCISES
@@ -111,20 +111,32 @@ def seed_coach_contact(db) -> bool:
 
 
 def seed_admins(db) -> int:
-    created = 0
+    """Crea o PONE AL DÍA los administradores del panel a partir del .env.
+
+    El .env es la fuente de verdad de estas credenciales (es un sistema de un
+    solo coach: quien controla el .env controla la instalación). Antes solo se
+    creaban si no existían, así que cambiar ADMIN_1_PASS no tenía NINGÚN
+    efecto: el hash antiguo seguía en la base de datos y el coach se quedaba
+    fuera con un "credenciales incorrectas" que no había forma de explicar.
+    Ahora, si la contraseña del .env no coincide con la guardada, se actualiza.
+
+    Devuelve cuántos usuarios se han creado o corregido."""
+    tocados = 0
     for username, password in (
         (settings.admin_1_user, settings.admin_1_pass),
         (settings.admin_2_user, settings.admin_2_pass),
     ):
         if not username or not password:
             continue
-        exists = db.scalar(select(func.count()).where(User.username == username))
-        if exists:
-            continue
-        db.add(User(username=username, password_hash=hash_password(password)))
-        created += 1
+        user = db.scalar(select(User).where(User.username == username))
+        if user is None:
+            db.add(User(username=username, password_hash=hash_password(password)))
+            tocados += 1
+        elif not verify_password(password, user.password_hash):
+            user.password_hash = hash_password(password)
+            tocados += 1
     db.commit()
-    return created
+    return tocados
 
 
 def main() -> None:
@@ -149,7 +161,7 @@ def main() -> None:
             f"rutinas del pool nuevas: {n_tpl} · "
             f"brand: {'creada' if brand else 'ya existía'} · "
             f"teléfono del coach: {'rellenado' if contacto else 'ya estaba'} · "
-            f"admins creados: {n_admins}"
+            f"admins al día: {n_admins}"
         )
     finally:
         db.close()

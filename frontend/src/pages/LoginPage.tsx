@@ -20,11 +20,15 @@ export default function LoginPage() {
     try {
       await login(username, password);
     } catch (e) {
-      // El error no se disculpa y es concreto (skill): credenciales o caída.
+      // El error no se disculpa y es CONCRETO: decir "no se pudo conectar"
+      // cuando en realidad son demasiados intentos (429) manda a revisar la red
+      // a quien solo tiene que esperar un minuto.
+      const status = e instanceof ApiError ? e.status : 0;
       setError(
-        e instanceof ApiError && e.status === 401
-          ? "Usuario o contraseña incorrectos."
-          : "No se pudo conectar. Inténtalo de nuevo.",
+        status === 401 ? "Usuario o contraseña incorrectos."
+          : status === 429 ? "Demasiados intentos seguidos. Espera un minuto y vuelve a probar."
+          : status >= 500 ? "El servidor ha fallado al comprobar tus datos. Inténtalo de nuevo en unos segundos."
+          : "No se pudo conectar con el servidor. ¿Está arrancado el sistema?",
       );
       setBusy(false);
     }
