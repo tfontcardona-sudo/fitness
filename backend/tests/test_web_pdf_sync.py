@@ -151,8 +151,8 @@ def test_editar_kcal_propaga_a_macros_comidas_banco_y_documento(client, auth, pl
     w = client.get(f"/api/plans/{plan_id}/document?format=docx", headers=auth)
     assert w.status_code == 200 and w.content[:2] == b"PK"
     text = _docx_text(w.content)
-    assert "2500" in text                      # kcal nuevas en el resumen
-    assert "2000" not in text.replace("≈ 2000", "2000") or "2500" in text
+    assert "2.500" in text                     # kcal nuevas en el resumen (es-ES)
+    assert "2.000" not in text
     assert str(m["carbs_g"]) in text           # macros nuevos en el resumen
     assert carbs_item.split(" =")[0] in text   # equivalencia reescalada en su tarjeta
     grams_avena = str(grams["Copos de avena"])

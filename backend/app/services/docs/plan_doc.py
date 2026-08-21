@@ -33,7 +33,9 @@ from app.services.docs.word_base import (
     setup_reference_pages,
     _hex,
     _keep_lines,
+    _keep_with_next,
 )
+from app.services.metrics import _rhu
 
 ASSETS = Path(__file__).resolve().parent.parent.parent / "assets" / "plan"
 
@@ -176,7 +178,97 @@ def _objetivo_pairs(goal: str | None) -> list[tuple[str, str]]:
     return [("Antropométrico", anthro), ("Nutricional", nutri)]
 
 
-def _title(doc: Document, text: str, sub: str | None = None) -> None:
+def _n(x) -> str:
+    """Entero en formato es-ES ("2.150 kcal", no "2150"). El importador del
+    Word vuelve a leerlo sin problema: `_num` quita el punto de millar."""
+    try:
+        return f"{_rhu(float(x)):,}".replace(",", ".")
+    except (TypeError, ValueError):
+        return "—"
+
+
+def _nota(doc: Document, texto: str) -> None:
+    """Línea guía bajo una barra de sección: qué es esto y cómo se usa. Es lo
+    que convierte una tabla en una instrucción — el cliente leía cifras sin
+    saber qué hacer con ellas."""
+    par = doc.add_paragraph()
+    pf = par.paragraph_format
+    pf.space_before = Pt(4)
+    pf.space_after = Pt(2)
+    run = par.add_run(texto)
+    run.font.size = Pt(9)
+    run.font.italic = True
+    run.font.color.rgb = _hex("#6B6B76")
+    _keep_with_next(par)
+
+
+def _indice(doc: Document, secciones: list[str]) -> None:
+    """Mapa del documento en la primera página: el cliente sabe de un vistazo
+    qué tiene delante y deja de leerlo de cabo a rabo para encontrar una cosa."""
+    if not secciones:
+        return
+    section_bar(doc, "En este documento", BLUE)
+    info_box(doc, [" · ".join(secciones)], fill=CREAM, cant_split=True)
+
+
+def _macro_lines(macros: dict, kcal: float) -> list[str]:
+    """Celda del reparto: gramos arriba y su peso en kcal debajo. El reparto
+    deja de ser tres cifras sueltas y se lee como lo que es."""
+    ch = float(macros.get("carbs_g") or 0)
+    pr = float(macros.get("protein_g") or 0)
+    gr = float(macros.get("fat_g") or 0)
+    linea = f"CH {_rhu(ch)} g · P {_rhu(pr)} g · G {_rhu(gr)} g"
+    total = 4 * ch + 4 * pr + 9 * gr
+    if total <= 0:
+        return [linea]
+    p_ch = _rhu(4 * ch / total * 100)
+    p_pr = _rhu(4 * pr / total * 100)
+    p_gr = max(0, 100 - p_ch - p_pr)
+    return [linea, f"{p_ch}% · {p_pr}% · {p_gr}% de tus calorías"]
+
+
+def _dias_semana(n: int) -> str:
+    return "1 día/semana" if n == 1 else f"{n} días/semana"
+
+
+def _indice_nutricion(nutrition: dict, include_training: bool) -> list[str]:
+    """Qué secciones lleva DE VERDAD este documento (no un índice de plantilla
+    que promete cosas que no están)."""
+    partes = ["Objetivos", "Tus cifras del día"]
+    if nutrition.get("meals"):
+        partes.append("Estructura diaria")
+    partes += ["Alimentos por grupos", "Tus comidas", "Dieta semanal"]
+    if nutrition.get("flexibility_rules") or nutrition.get("refeed_or_break"):
+        partes.append("Margen de maniobra")
+    if nutrition.get("supplements"):
+        partes.append("Suplementación")
+    if include_training:
+        partes.append("Entrenamiento")
+    return partes
+
+
+def _origen_calorias(doc: Document, nutrition: dict) -> None:
+    """De dónde salen las calorías: gasto estimado → ajuste → objetivo. Sin
+    esto la cifra parece arbitraria; con esto el cliente entiende que es SUYA.
+    Solo imprime números ya calculados por el backend: aquí no se calcula nada
+    (la única operación es la resta que ya hace `_ajuste_text`)."""
+    tdee = nutrition.get("tdee_kcal") or 0
+    target = nutrition.get("target_kcal") or 0
+    if not tdee or not target:
+        return
+    delta = _rhu(float(target) - float(tdee))
+    ajuste = ("no aplicamos ajuste" if delta == 0
+              else f"le sumamos {_n(delta)} kcal" if delta > 0
+              else f"le restamos {_n(-delta)} kcal")
+    info_box(doc, [
+        ("De dónde sale tu cifra",
+         f"tu gasto diario estimado es de ≈ {_n(tdee)} kcal; para tu objetivo "
+         f"{ajuste}, y así llegamos a las {_n(target)} kcal de arriba."),
+    ], fill=CREAM, label_color=WINE, cant_split=True)
+
+
+def _title(doc: Document, text: str, sub: str | None = None,
+           meta: str | None = None) -> None:
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p.paragraph_format.space_before = Pt(0)
@@ -191,6 +283,16 @@ def _title(doc: Document, text: str, sub: str | None = None) -> None:
         rs.font.size = Pt(16)
         rs.font.bold = True
         rs.font.color.rgb = _hex("#1A1A1A")
+    if meta:
+        # De qué mes es este documento y para qué objetivo: el cliente acumula
+        # PDF y necesita saber cuál mira sin abrir la cabecera.
+        pm = doc.add_paragraph()
+        pm.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        pm.paragraph_format.space_after = Pt(2)
+        rm = pm.add_run(meta.upper())
+        rm.font.size = Pt(8.5)
+        rm.font.bold = True
+        rm.font.color.rgb = _hex(BLUE)
 
 
 def _norm(s: str) -> str:
@@ -260,10 +362,10 @@ def _ajuste_text(nutrition: dict, goal: str | None) -> str:
     # es "ganancia" pero las kcal quedaron por debajo del TDEE (tras editar o por
     # el suelo calórico), decir "Superávit +-150" sería falso y contradictorio.
     if delta > 0:
-        return f"Superávit +{delta} kcal ({pct}%)"
+        return f"Superávit de {_n(delta)} kcal ({pct}%)"
     if delta == 0:
-        return "Mantenimiento ±0 kcal"
-    return f"Déficit {delta} kcal ({pct}%)"
+        return "Mantenimiento · sin ajuste"
+    return f"Déficit de {_n(-delta)} kcal ({pct}%)"
 
 
 
@@ -354,22 +456,35 @@ def generate_plan_doc(
 
     if include_nutrition:
         # ======================= NUTRICIÓN =======================
-        _title(doc, "PLAN NUTRICIONAL", client_name)
+        _title(doc, "PLAN NUTRICIONAL", client_name,
+               meta=f"Mes {month_index} · {_goal_label(goal_type)}")
         macros = nutrition.get("macros", {})
+
+        _indice(doc, _indice_nutricion(nutrition, include_training))
 
         section_bar(doc, "Objetivos", WINE)
         info_box(doc, _objetivo_pairs(goal_type), fill=CREAM, label_color=WINE)
 
+        # POR QUÉ este enfoque: lo escribe el coach (o la IA bajo su revisión),
+        # se guarda en el plan y NUNCA llegaba al documento del cliente — que
+        # recibía las cifras sin el criterio que las justifica.
+        razon = (nutrition.get("rationale") or "").strip()
+        if razon:
+            section_bar(doc, "Por qué este enfoque", GOLD)
+            info_box(doc, [razon], fill=CREAM, cant_split=True)
+
         section_bar(doc, "Resumen energético diario", BLUE)
+        _nota(doc, "Estas son tus cifras del día. Los gramos de cada toma ya salen "
+                   "de aquí: si cumples las tomas, el día cuadra solo.")
         clean_table(
             doc, ["Calorías", "Reparto de macros", "Ajuste aplicado"],
-            [[f"≈ {round(nutrition.get('target_kcal', 0))} kcal",
-              f"CH {round(macros.get('carbs_g', 0))} g · P {round(macros.get('protein_g', 0))} g · "
-              f"G {round(macros.get('fat_g', 0))} g",
+            [[f"≈ {_n(nutrition.get('target_kcal', 0))} kcal",
+              _macro_lines(macros, nutrition.get("target_kcal", 0)),
               _ajuste_text(nutrition, goal_type)]],
             brand, header_color=WINE, header_text_color="FFFFFF",
             col_widths=[2400, 4226, 2400],
         )
+        _origen_calorias(doc, nutrition)
 
         meals = nutrition.get("meals", [])
 
@@ -393,6 +508,8 @@ def generate_plan_doc(
 
         if meals:
             section_bar(doc, "Estructura diaria", GOLD)
+            _nota(doc, "Tu reparto del día. Las horas son orientativas: respeta el "
+                       "número de tomas y su contenido, no el reloj.")
             rows = [[m.get("time", ""), m.get("name", f"Comida {m.get('slot')}"),
                      _estrategia(m.get("name", ""))] for m in meals]
             clean_table(doc, ["Hora", "Toma", "Estrategia"], rows, brand,
@@ -404,6 +521,8 @@ def generate_plan_doc(
         # que la fila debe poder partirse (cant_split_rows=False) y la tabla paginar
         # repitiendo la cabecera (keep_together=False) para no recortar alimentos.
         section_bar(doc, "Alimentos por grupos", WINE)
+        _nota(doc, "Tu despensa: de aquí sale todo lo que comes. Ya está filtrada "
+                   "con tus alergias, aversiones y tu patrón de alimentación.")
         names = list(FOOD_GROUPS.keys())
         clean_table(
             doc, names, [[_food_group_lines(n, blocked, diet_pattern) for n in names]],
@@ -413,6 +532,7 @@ def generate_plan_doc(
 
         # El plato saludable (plantilla + foto)
         section_bar(doc, "El plato saludable", BLUE)
+        _nota(doc, "La regla para el día que comes fuera y no puedes pesar nada.")
         # La foto del plato va DENTRO de la caja y la caja entera es indivisible
         # (cant_split): si no cabe, la tarjeta completa salta a la página siguiente
         # con su barra — la foto nunca queda sola en un fragmento de caja.
@@ -511,6 +631,20 @@ def generate_plan_doc(
         # Ejemplo de dieta semanal
         _weekly_section(doc, brand, diet_mode, nutrition, bank)
 
+        # MARGEN DE MANIOBRA: las reglas de flexibilidad y el refeed/descanso se
+        # pautan en el plan y se quedaban dentro del sistema. Son justo lo que
+        # evita que el cliente abandone el primer día que se sale del guion.
+        reglas = [r for r in (nutrition.get("flexibility_rules") or []) if str(r).strip()]
+        refeed = (nutrition.get("refeed_or_break") or "").strip()
+        if reglas or refeed:
+            section_bar(doc, "Tu margen de maniobra", GOLD)
+            _nota(doc, "Un plan que no se puede seguir no sirve. Esto es lo que "
+                       "puedes mover sin salirte del objetivo.")
+            lineas: list = [f"• {r}" for r in reglas]
+            if refeed:
+                lineas.append(("Recarga o descanso", refeed))
+            info_box(doc, lineas, fill=CREAM, label_color=WINE, cant_split=True)
+
         # Tarjetas informativas de cierre: contenido FIJO y acotado (menos de media
         # página cada una) → cada tarjeta viaja ENTERA a la página siguiente si no
         # cabe. Regla del diseño de referencia: un título abre una tarjeta nueva y
@@ -555,16 +689,19 @@ def generate_plan_doc(
     # ======================= ENTRENAMIENTO =======================
     if include_nutrition:
         doc.add_page_break()
-    _title(doc, "PLAN DE ENTRENAMIENTO", client_name)
+    _title(doc, "PLAN DE ENTRENAMIENTO", client_name,
+           meta=f"Mes {month_index} · {_goal_label(goal_type)}")
 
     section_bar(doc, f"Estructura · {training.get('split_name','')}", BLUE)
     info_box(doc, [
-        (f"{len(training.get('sessions', []))} días/semana", training.get("split_rationale", "")),
+        (_dias_semana(len(training.get("sessions", []))), training.get("split_rationale", "")),
     ])
 
     prog = training.get("weekly_progression", [])
     if prog:
         section_bar(doc, "Progresión semanal", WINE)
+        _nota(doc, "El mes no se entrena igual las cuatro semanas: la carga sube y "
+                   "el RIR baja. Esta tabla manda sobre la sensación del día.")
         rows = [[f"Sem {w.get('week')}", w.get("intent", ""), f"{w.get('load_pct','')}%",
                  f"RIR {w.get('rir_target','')}", w.get("volume_note", "")] for w in prog]
         clean_table(doc, ["Semana", "Enfoque", "Carga", "RIR", "Notas"], rows, brand,
@@ -605,7 +742,10 @@ def generate_plan_doc(
     cardio = training.get("cardio") or {}
     if cardio.get("daily_steps") or cardio.get("sessions"):
         section_bar(doc, "Cardio y NEAT", BLUE)
-        items = [("Pasos diarios objetivo", str(cardio.get("daily_steps", "—")))]
+        _nota(doc, "Los pasos diarios pesan más que el cardio: son la mayor parte "
+                   "de lo que gastas fuera del gimnasio.")
+        items = [("Pasos diarios objetivo",
+                  f"{_n(cardio['daily_steps'])} pasos" if cardio.get("daily_steps") else "—")]
         for cs in cardio.get("sessions", []):
             items.append((cs.get("type", "").upper(),
                           f"{cs.get('minutes','')} min × {cs.get('times_per_week','')}/sem"
@@ -614,6 +754,8 @@ def generate_plan_doc(
 
     if training.get("deload_instructions"):
         section_bar(doc, "Semana de descarga (deload)", BLUE)
+        _nota(doc, "No es perder una semana: es lo que permite que la siguiente "
+                   "vuelvas más fuerte.")
         info_box(doc, [training["deload_instructions"]])
 
     _education_section(doc, education, include_training=True)
