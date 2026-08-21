@@ -8,7 +8,8 @@ import { GOAL_LABEL, goalDays, goalReviewDue, planMonthLabel } from "../lib/form
 import { deficitLabel, macroPct, MACRO_TOTAL_TOLERANCE } from "../lib/nutritionTargets";
 import { isCriticalLine } from "../lib/clinical";
 import { ExpandableArea, ProseClamp, Spinner, useToast } from "./ui";
-import { agrupar, resumenCorto, toAviso, traducirFlags } from "../lib/findings";
+import type { Destino } from "../lib/findings";
+import { agrupar, resumirDetalle, resumenCorto, toAviso, traducirFlags } from "../lib/findings";
 import { MemoDetails } from "./MemoDetails";
 import { ClientPlanEditor } from "./ClientPlanEditor";
 import type { ClientOut, GoalType } from "../types";
@@ -70,11 +71,13 @@ function normalize(p: any): PlanData {
  * la info del plan (nutrición, entrenamiento, puntos del cliente, suplementos)
  * y queda ACTIVO al generarse/adaptarse/editarse — sin paso de publicar.
  */
-export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
+export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGoTab }: {
   client: ClientOut; onClientChanged?: () => void;
   // Avisa al perfil de que el EDITOR está abierto (guard de "cambios sin
   // guardar" al cambiar de pestaña o cerrar el navegador).
   onEditingChange?: (editing: boolean) => void;
+  /** Saltar a otra pestaña del perfil (los avisos llevan a donde se actúa). */
+  onGoTab?: (tab: string) => void;
 }) {
   const toast = useToast();
   // Paquete del cliente: Start es solo nutrición (sin entreno) y la entrega va
@@ -601,6 +604,25 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
     nut.applied_adjustments ?? null;
   const alreadyAdapted = review != null && appliedBlock?.period_index === review.period_index;
 
+  /** Un clic en el aviso lleva a donde se resuelve: el editor abierto por la
+   *  sección correcta, la pestaña Anamnesis, o el botón de generar. */
+  function irADestino(destino: Destino) {
+    if (destino === "anamnesis") { onGoTab?.("anamnesis"); return; }
+    setEditing(true);
+    // Mapa EXPLÍCITO: un ternario mandaba todo lo que no fuese nutrición al
+    // editor de entrenamiento, incluso en un cliente de solo nutrición.
+    // "generar" (falta el entrenamiento) también aterriza en esa sección: es
+    // donde se completa; llevar a la fila de botones era un callejón sin salida.
+    const id =
+      destino === "nutricion" ? "editor-nutricion"
+      : (destino === "entreno" || destino === "generar") && hasTraining ? "editor-entreno"
+      : hasTraining ? "editor-entreno" : "editor-nutricion";
+    // El editor se monta tras el re-render: el salto a su sección va después.
+    setTimeout(() => {
+      document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 120);
+  }
+
   // UN SOLO recuento de puntos a corregir, compartido por el chip de estado y
   // el bloque de avisos: son las líneas que el coach VE (avisos ya fusionados
   // entre revisores + avisos del guardarraíl ya traducidos y agrupados).
@@ -701,6 +723,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                         : `Retenido · ${nRojo} punto${nRojo === 1 ? "" : "s"} a corregir antes de enviarlo`}
                       findings={rojoFindings}
                       flags={rojoFlags}
+                      onIr={irADestino}
                     />
                   )}
                   {nAmbar > 0 && (
@@ -709,6 +732,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
                       cabecera={`${nAmbar} aviso${nAmbar === 1 ? "" : "s"} · no bloquean el envío`}
                       findings={ambarFindings}
                       flags={ambarFlags}
+                      onIr={irADestino}
                       degraded={degraded}
                       plegado
                     />
@@ -743,7 +767,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
           </div>
           {/* Acciones: en móvil ocupan todo el ancho (2 columnas) sin cortarse;
               en escritorio van en fila. */}
-          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
+          <div id="plan-acciones" className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
             <button onClick={() => setEditing(true)} className="btn btn-ghost">
               <Pencil size={15} /> Editar
             </button>
@@ -1480,7 +1504,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange }: {
       )}
 
       {/* PUNTOS IMPORTANTES del cliente (anamnesis): lo que condiciona el plan */}
-      <ImportantPointsCard client={client} />
+      <ImportantPointsCard client={client} onGoTab={onGoTab} />
 
       {/* Suplementación */}
       {Array.isArray(nut.supplements) && nut.supplements.length > 0 && (
@@ -1600,7 +1624,7 @@ function archivedPlans(all: any[], currentId: number): any[] {
  *  lesiones, salud, medicación, alergias, aversiones y objetivo en sus palabras.
  *  Lo crítico se resalta EN ROJO para que no se pase por alto (clasificador
  *  compartido en lib/clinical — mismas reglas que las Notas clínicas). */
-function ImportantPointsCard({ client }: { client: ClientOut }) {
+function ImportantPointsCard({ client, onGoTab }: { client: ClientOut; onGoTab?: (tab: string) => void }) {
   const blocks: { label: string; lines: string[] }[] = [];
   const add = (label: string, v: string | string[] | null | undefined) => {
     const text = Array.isArray(v) ? v.filter(Boolean).join(", ") : (v ?? "").trim();
@@ -1618,9 +1642,17 @@ function ImportantPointsCard({ client }: { client: ClientOut }) {
   return (
     <div className="card p-5">
       <SectionTitle icon={AlertTriangle} title="Puntos importantes del cliente" />
-      <p className="mb-2 text-xs text-zinc-500">
-        Respetar en {hasTraining ? "dieta y entreno" : "dieta"}
-      </p>
+      <div className="mb-2 flex flex-wrap items-baseline gap-x-2 text-xs">
+        <span className="text-zinc-500">Respetar en {hasTraining ? "dieta y entreno" : "dieta"}</span>
+        {/* Un clic para ir a corregirlo: salen de la anamnesis y hasta ahora
+            había que buscar la pestaña a mano. */}
+        {onGoTab && (
+          <button type="button" onClick={() => onGoTab("anamnesis")}
+            className="font-medium text-zinc-500 underline decoration-dotted underline-offset-2 hover:text-zinc-300">
+            → Editar en Anamnesis
+          </button>
+        )}
+      </div>
       <div className="space-y-2">
         {blocks.map((b) => {
           const nCrit = b.lines.filter(isCriticalLine).length;
@@ -2012,9 +2044,10 @@ function SectionTitle({ icon: Icon, title, accent, onEdit }: {
  *  Sustituye al muro de párrafos rojos: el coach ve de un vistazo cuántos hay,
  *  de qué tipo son y qué tiene que hacer con cada uno. El texto completo del
  *  hallazgo queda como detalle, a un clic. */
-function AvisosBlock({ tono, cabecera, findings, flags, degraded = 0, plegado = false }: {
+function AvisosBlock({ tono, cabecera, findings, flags, onIr, degraded = 0, plegado = false }: {
   tono: "rojo" | "ambar";
   cabecera: string;
+  onIr: (destino: Destino) => void;
   findings: { severity: string; description: string; title?: string; action?: string; correccion_propuesta?: string }[];
   flags: string[];
   degraded?: number;
@@ -2063,9 +2096,26 @@ function AvisosBlock({ tono, cabecera, findings, flags, degraded = 0, plegado = 
                             ×{a.veces}
                           </span>
                         )}
-                        <span className="ml-1 text-zinc-500">→ {a.accion}</span>
+                        {/* La acción LLEVA al sitio: un clic y estás donde se
+                            arregla, sin buscar la pestaña ni el botón. */}
+                        <button
+                          type="button"
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onIr(a.destino); }}
+                          className="ml-1 font-medium text-zinc-500 underline decoration-dotted underline-offset-2 hover:text-zinc-300"
+                        >
+                          → {a.accion}
+                        </button>
                       </summary>
-                      <p className="mt-1 whitespace-pre-line text-xs text-zinc-500">{a.detalle}</p>
+                      {/* Detalle YA RESUMIDO: al fusionar varios revisores el
+                          texto repetía lo mismo tres veces. */}
+                      <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-zinc-500">
+                        {resumirDetalle(a.detalle).map((f, j) => <li key={j}>{f}</li>)}
+                      </ul>
+                      {/* El resumen elige; el original SIEMPRE queda accesible. */}
+                      <details className="mt-1 pl-4">
+                        <summary className="cursor-pointer text-[11px] text-zinc-500">texto completo</summary>
+                        <p className="mt-1 whitespace-pre-line text-[11px] text-zinc-500">{a.detalle}</p>
+                      </details>
                     </details>
                   </li>
                 ))}

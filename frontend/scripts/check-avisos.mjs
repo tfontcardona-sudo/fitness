@@ -119,5 +119,86 @@ if (corto !== "Semana de referencia") {
   console.log(`✓ nota de ${nota.split(/\s+/).length} palabras → "${corto}"`);
 }
 
+// --- DETALLE: al fusionar, los revisores repiten lo mismo con otras palabras.
+const DETALLE = [
+  "El plan NO aborda explícitamente las múltiples lesiones y contraindicaciones del cliente. La anamnesis declara lesiones en: rodilla (cirugía), hombro derecho (pinzamiento), lumbar (intercostales), cadera (afecta marcha). Sin un plan adaptado a estas contraindicaciones, la dieta sola es insuficiente.",
+  "El plan NO aborda las múltiples lesiones/contraindicaciones declaradas en la anamnesis. La anamnesis indica lesiones en rodilla (cirugía), hombro derecho (pinzamiento), lumbar (intercostales), cadera (afecta lumbares). Sin plan adaptado, el plan es incompleto e irresponsable.",
+].join("\n\n");
+const puntos = mod.resumirDetalle(DETALLE).filter((f) => !/^… y \d+ más$/.test(f));
+const palabrasAntes = DETALLE.split(/\s+/).length;
+const palabrasDespues = puntos.join(" ").split(/\s+/).length;
+if (puntos.length > 3 || palabrasDespues > palabrasAntes * 0.6) {
+  fallos++;
+  console.error(`✗ el detalle no se resumió: ${puntos.length} puntos, ${palabrasDespues}/${palabrasAntes} palabras`);
+} else if (!puntos.some((p) => /rodilla/.test(p))) {
+  fallos++; console.error("✗ al resumir el detalle se perdió el dato clínico (rodilla)");
+} else {
+  console.log(`✓ detalle ${palabrasAntes} → ${palabrasDespues} palabras en ${puntos.length} puntos, con las lesiones intactas`);
+}
+
+// --- DESTINO: cada aviso sabe A DÓNDE lleva, y no se contradice con su título.
+const DESTINOS = [
+  ["Gluten en la toma 1 de la dieta", "nutricion"],
+  ["Lesión de rodilla no contemplada en los ejercicios", "entreno"],
+  ["Plan de entrenamiento completamente ausente", "generar"],
+  ["El cliente tiene TOC diagnosticado", "anamnesis"],
+];
+for (const [desc, esperado] of DESTINOS) {
+  const [a] = mod.fusionar([mod.toAviso({ severity: "bloqueante", description: desc })]);
+  if (a.destino !== esperado) {
+    fallos++; console.error(`✗ "${a.titulo}" lleva a "${a.destino}" y debería ir a "${esperado}"`);
+  }
+}
+// Sin plan de entrenamiento NO puede pedir "cambiar ejercicios": no los hay.
+// Se comprueba sobre el aviso REAL (mismo concepto → se fusionan de verdad).
+const fusionRiesgo = mod.fusionar([
+  mod.toAviso({ severity: "bloqueante", description: "El cliente detesta sentadillas libres, pero no hay rutina de entrenamiento adjunta." }),
+  mod.toAviso({ severity: "bloqueante", description: "Plan de entrenamiento completamente ausente en la revisión." }),
+]);
+const sinPlan = fusionRiesgo.find((x) => /sin plan de entrenamiento/i.test(x.titulo));
+if (!sinPlan) {
+  fallos++; console.error(`✗ no se generó el aviso "Sin plan de entrenamiento": ${JSON.stringify(fusionRiesgo.map((x) => x.titulo))}`);
+} else if (/cambiar/i.test(sinPlan.accion)) {
+  fallos++; console.error(`✗ título y acción se contradicen: "${sinPlan.titulo}" → "${sinPlan.accion}"`);
+} else {
+  console.log(`✓ destinos correctos y coherencia: "${sinPlan.titulo}" → "${sinPlan.accion}"`);
+}
+
+// Una acción CONCRETA de la IA no se pisa con un genérico.
+const [propia] = mod.fusionar([mod.toAviso({
+  severity: "mayor",
+  description: "La toma 1 lleva pan con gluten.",
+  action: "Sustituir el pan por tortitas de arroz",
+})]);
+if (propia.accion !== "Sustituir el pan por tortitas de arroz") {
+  fallos++; console.error(`✗ se pisó la acción de la IA: "${propia.accion}"`);
+} else {
+  console.log("✓ la acción concreta de la IA se respeta");
+}
+
+// Nada se descarta en silencio: si el resumen no cabe, lo dice.
+const largo = [
+  "La toma 1 lleva pan con gluten (declarado).",
+  "La toma 2 incluye nueces, alérgeno declarado por el cliente.",
+  "La toma 3 aporta 12 g de proteína frente a los 30 g del objetivo.",
+  "La toma 4 se sale del reparto en 80 kcal.",
+  "El menú semanal repite pescado 5 días.",
+].join(" ");
+const r5 = mod.resumirDetalle(largo);
+const textoR5 = r5.join(" ");
+if (!/y \d+ más/.test(textoR5) && r5.length < 5) {
+  fallos++; console.error(`✗ se descartaron puntos sin avisar: ${JSON.stringify(r5)}`);
+} else {
+  console.log("✓ el resumen avisa de lo que deja fuera");
+}
+
+// Una valoración CON cifras no se tira: lleva el dato que el coach necesita.
+const conCifras = mod.resumirDetalle("La toma 2 aporta 12 g de proteína, que es insuficiente para sus 90 kg.");
+if (!conCifras.some((f) => /12 g/.test(f))) {
+  fallos++; console.error(`✗ se perdió una frase con cifras: ${JSON.stringify(conCifras)}`);
+} else {
+  console.log("✓ las frases con cifras sobreviven al filtro de relleno");
+}
+
 if (fallos) { console.error(`\n${fallos} fallo(s)`); process.exit(1); }
 console.log("\nAvisos OK");

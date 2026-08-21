@@ -496,7 +496,7 @@ export function ClientPlanEditor({
 
       {/* Nutrición */}
       {only !== "training" && (
-      <div ref={focusRefs.nutrition} className="card p-5" style={flashStyle("nutrition")}>
+      <div id="editor-nutricion" ref={focusRefs.nutrition} className="card p-5" style={flashStyle("nutrition")}>
         <Title icon={Utensils} text="Nutrición" />
 
         {/* Recomendación por OBJETIVO (evidencia actual) con un clic */}
@@ -789,7 +789,7 @@ export function ClientPlanEditor({
 
       {/* Entrenamiento */}
       {only !== "nutrition" && (
-      <div ref={focusRefs.training} className="card p-5" style={flashStyle("training")}>
+      <div id="editor-entreno" ref={focusRefs.training} className="card p-5" style={flashStyle("training")}>
         <Title icon={Dumbbell} text="Entrenamiento" />
         <Text label="Nombre del split" value={tr.split_name ?? ""} onChange={(v) => mutate((d) => (d.training.split_name = v))} />
         <Area label="Justificación del split" value={tr.split_rationale ?? ""} onChange={(v) => mutate((d) => (d.training.split_rationale = v))} />
