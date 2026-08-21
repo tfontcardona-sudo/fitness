@@ -54,10 +54,21 @@ echo "→ Levantando la demo (la primera vez tarda unos minutos)…"
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 
 echo "→ Esperando a la API…"
+api_ok=0
 for i in $(seq 1 60); do
-  if curl -sf http://localhost:8000/api/docs >/dev/null 2>&1; then break; fi
+  if curl -sf http://localhost:8000/api/docs >/dev/null 2>&1; then api_ok=1; break; fi
   sleep 2
 done
+# Si no arranca, ENSEÑAR el motivo aquí mismo: mandar al usuario a buscar los
+# logs por su cuenta convertía cada fallo en una ronda de preguntas.
+if [ "$api_ok" -ne 1 ]; then
+  echo
+  echo "✗ La API no arranca. Este es el motivo, tal cual:"
+  echo "-----------------------------------------------------"
+  docker compose -f docker-compose.yml -f docker-compose.dev.yml logs api --tail 40 --no-color 2>&1 || true
+  echo "-----------------------------------------------------"
+  exit 1
+fi
 
 echo "→ Sembrando los 4 clientes de demo…"
 docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T api python scripts/demo_seed.py

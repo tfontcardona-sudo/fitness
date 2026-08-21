@@ -61,7 +61,15 @@ for ($i = 0; $i -lt 60; $i++) {
     $ok = $true; break
   } catch { Start-Sleep -Seconds 2 }
 }
-if (-not $ok) { Write-Host "X La API no arranca; mira: docker compose logs api" -ForegroundColor Red; Read-Host "Enter para salir"; exit 1 }
+if (-not $ok) {
+  Write-Host ""
+  Write-Host "X La API no arranca. Este es el motivo, tal cual:" -ForegroundColor Red
+  Write-Host "-----------------------------------------------------" -ForegroundColor DarkGray
+  cmd /c "docker compose -f docker-compose.yml -f docker-compose.dev.yml logs api --tail 40 --no-color 2>&1"
+  Write-Host "-----------------------------------------------------" -ForegroundColor DarkGray
+  Write-Host "Copia estas lineas (o hazles captura) para diagnosticar." -ForegroundColor Yellow
+  Read-Host "Enter para salir"; exit 1
+}
 
 Write-Host "-> Sembrando los 4 clientes de demo..." -ForegroundColor Cyan
 docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T api python scripts/demo_seed.py
