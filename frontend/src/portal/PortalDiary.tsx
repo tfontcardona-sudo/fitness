@@ -187,7 +187,7 @@ export function PortalDiary({ api, brand, periodStatus = null, businessToday = n
         </div>
       )}
       <div>
-        <h2 className="text-lg font-semibold">Mi día</h2>
+        <h2 className="p-title">Mi día</h2>
         {/* Objetivo del día (solo lectura): el cliente no tiene que rebuscar
             sus números en el PDF para saber a qué apunta hoy. */}
         {hasNutrition && target && (

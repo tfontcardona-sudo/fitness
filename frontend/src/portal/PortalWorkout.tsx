@@ -248,7 +248,7 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
     return (
       <div className="space-y-5">
         <div>
-          <h2 className="text-lg font-semibold">Tu entreno</h2>
+          <h2 className="p-title">Tu entreno</h2>
         </div>
         <div className="portal-card border-l-4 p-4" style={{ borderLeftColor: brand.color_primary }}>
           <div className="flex items-center gap-2">
@@ -266,7 +266,7 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-lg font-semibold">Registrar entreno</h2>
+        <h2 className="p-title">Registrar entreno</h2>
       </div>
 
       {/* Revisión enviada: el registro queda en pausa hasta el nuevo período */}

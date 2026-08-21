@@ -284,8 +284,6 @@ button, [role="button"], summary, a {
 .portal-root {
   --p-cream: #f6f1e7;
   --p-cream-2: #efe7d8;
-  --p-ink: #26211a;          /* texto cálido oscuro */
-  --p-ink-soft: #6e6455;
   --p-accent: var(--brand-accent, #e8833a);   /* naranja: acción */
   --p-accent-2: var(--brand-accent-2, #2e5e8c); /* azul: estructura */
   --p-line: rgba(38, 33, 26, 0.12);
@@ -297,8 +295,27 @@ button, [role="button"], summary, a {
   --p-card-bottom: var(--p-cream-2);
   --p-card-inset: rgba(255, 255, 255, 0.7);
   --p-card-shadow: rgba(38, 33, 26, 0.07);
-  --p-nav-idle: #9c9284;
   --p-nav-shadow: rgba(38, 33, 26, 0.08);
+  /* --- Sistema premium: tinta con contraste AA, elevación en capas, radios
+     y espaciado. El acento se usa con avaricia; la jerarquía la dan la tinta
+     y la elevación, NUNCA la opacidad (rompía el contraste). --- */
+  --p-nav-idle: #736a5d;  /* 4,7:1 — antes #9c9284 = 2,65:1 */
+  --p-ink: #221d17; --p-ink-soft: #5c5347; --p-ink-mute: #736a5d;
+  --p-on-accent: #24150a; --p-accent-ink: #a8541a; --p-accent-2-ink: #2e5e8c;
+  --p-accent-wash: rgba(232,131,58,.12); --p-accent-2-wash: rgba(46,94,140,.10);
+  --p-line-strong: rgba(38,33,26,.20);
+  --p-surface: linear-gradient(180deg,#fffdfa 0%,#fbf7f0 100%);
+  --p-nav-bg: rgba(253,250,245,.86);
+  --p-focus: #2e5e8c; --p-focus-halo: rgba(46,94,140,.16);
+  --p-ok:#2e7d46; --p-warn:#9a6414; --p-danger:#b3352b;
+  --p-hair: inset 0 1px 0 rgba(255,255,255,.72);
+  --p-e-1: 0 1px 1px rgba(38,33,26,.04), 0 1px 2px rgba(38,33,26,.05);
+  --p-e-2: 0 1px 2px rgba(38,33,26,.05), 0 4px 10px -2px rgba(38,33,26,.07);
+  --p-e-3: 0 2px 4px rgba(38,33,26,.05), 0 10px 24px -6px rgba(38,33,26,.10);
+  --p-e-4: 0 4px 8px rgba(38,33,26,.06), 0 20px 44px -12px rgba(38,33,26,.16);
+  --p-r-xs:6px; --p-r-sm:8px; --p-r-md:12px; --p-r-lg:16px; --p-r-xl:20px;
+  --p-s-1:4px; --p-s-2:8px; --p-s-3:12px; --p-s-4:16px; --p-s-5:20px; --p-s-6:24px; --p-s-8:32px;
+  --p-pad-page:20px; --p-gap-card:12px; --p-gap-section:28px;
   background:
     radial-gradient(120% 55% at 50% -8%, var(--p-glow-top), transparent 60%),
     radial-gradient(120% 55% at 50% 108%, var(--p-glow-bottom), transparent 60%),
@@ -318,17 +335,42 @@ button, [role="button"], summary, a {
   --p-card-bottom: #101823;
   --p-card-inset: rgba(255, 255, 255, 0.05);
   --p-card-shadow: rgba(0, 0, 0, 0.45);
-  --p-nav-idle: #8a93a3;
   --p-nav-shadow: rgba(0, 0, 0, 0.5);
+  --p-ink:#ece9e2; --p-ink-soft:#9aa2ad; --p-ink-mute:#848d9c; --p-nav-idle:#848d9c;
+  --p-on-accent:#24150a; --p-accent-ink:#f0a163; --p-accent-2-ink:#8fbdea;
+  --p-accent-wash: rgba(240,161,99,.14); --p-accent-2-wash: rgba(143,189,234,.12);
+  --p-line-strong: rgba(234,231,224,.20);
+  --p-surface: linear-gradient(180deg,#18222f 0%,#131c28 100%);
+  --p-nav-bg: rgba(16,24,35,.86); --p-focus:#8fbdea; --p-focus-halo: rgba(143,189,234,.18);
+  --p-ok:#58b476; --p-warn:#d8a45a; --p-danger:#e5766b;
+  --p-hair: inset 0 1px 0 rgba(255,255,255,.06);
+  --p-e-1: 0 1px 2px rgba(0,0,0,.40);
+  --p-e-2: 0 1px 2px rgba(0,0,0,.40), 0 4px 12px -2px rgba(0,0,0,.50);
+  --p-e-3: 0 2px 6px rgba(0,0,0,.45), 0 12px 28px -8px rgba(0,0,0,.60);
+  --p-e-4: 0 4px 10px rgba(0,0,0,.50), 0 24px 56px -16px rgba(0,0,0,.70);
 }
-/* textura sutil de papel (puntos claros en oscuro) */
-.portal-root::before {
-  content: "";
-  position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: 0.5;
-  background-image: radial-gradient(var(--p-dots) 1px, transparent 1px);
-  background-size: 22px 22px;
-}
-.portal-root .opacity-60, .portal-root .opacity-50, .portal-root .opacity-40 { color: var(--p-ink-soft); }
+/* Fondo con profundidad real: velo de luz arriba y asiento sutil abajo. La
+   trama de puntos hacía muaré con el texto en pantallas 2x/3x. */
+.portal-root::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;background:radial-gradient(120% 44% at 50% -10%,rgba(255,255,255,.55),transparent 62%),linear-gradient(180deg,transparent 45%,rgba(38,33,26,.035) 100%)}
+.portal-root.portal-dark::before{background:radial-gradient(120% 44% at 50% -10%,rgba(255,255,255,.05),transparent 62%),linear-gradient(180deg,transparent 45%,rgba(0,0,0,.28) 100%)}
+
+/* La jerarquía la da la TINTA, no la opacidad: `opacity-40` sobre crema deja
+   texto en 2,6:1 (ilegible al sol y fuera de AA). La utilidad sigue viva en
+   div/svg (esqueletos, spinners y :disabled), que no son texto. */
+.portal-root :is(p,span,label,h1,h2,h3,h4,li,td,th,summary,small,b,strong):is(.opacity-80,.opacity-75,.opacity-70,.opacity-60,.opacity-55):not(:disabled):not([disabled]) { opacity:1; color: var(--p-ink-soft); }
+.portal-root :is(p,span,label,h1,h2,h3,h4,li,td,th,summary,small,b,strong):is(.opacity-50,.opacity-45,.opacity-40):not(:disabled):not([disabled]) { opacity:1; color: var(--p-ink-mute); }
+
+/* Escala tipográfica del portal: 7 escalones, pesos que la web SÍ carga
+   (Inter 400/500/600/700 — un 800 lo falsifica el navegador). */
+.p-display{font-size:26px;line-height:1.15;font-weight:600;letter-spacing:-.021em;color:var(--p-ink)}
+.p-title{font-size:19px;line-height:1.26;font-weight:600;letter-spacing:-.015em;color:var(--p-ink)}
+.p-head{font-size:15.5px;line-height:1.35;font-weight:600;letter-spacing:-.008em;color:var(--p-ink)}
+.p-body{font-size:15px;line-height:1.55;font-weight:400;color:var(--p-ink)}
+.p-sub{font-size:13.5px;line-height:1.5;color:var(--p-ink-soft)}
+.p-micro{font-size:12px;line-height:1.35;font-weight:500;color:var(--p-ink-mute)}
+.p-eyebrow{font-size:10.5px;line-height:1;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--p-ink-mute)}
+.p-metric{font-size:30px;line-height:1;font-weight:600;letter-spacing:-.03em;font-variant-numeric:tabular-nums;color:var(--p-ink)}
+.p-metric-u{font-size:13px;font-weight:500;color:var(--p-ink-mute)}
 
 /* iOS hace zoom involuntario al enfocar campos con fuente <16px:
    en el portal TODOS los campos van a 16px. */
@@ -348,62 +390,44 @@ button, [role="button"], summary, a {
   }
 }
 
-/* Botón 3D con relieve y halo naranja de marca */
-.portal-btn3d {
-  position: relative;
-  border-radius: 14px;
-  background: linear-gradient(180deg, var(--p-accent) 0%, #c76a22 100%);
-  color: #fff; font-weight: 700; border: none;
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.35) inset,
-    0 -2px 0 rgba(0, 0, 0, 0.28) inset,
-    0 6px 16px rgba(232, 131, 58, 0.38),
-    0 0 0 1px rgba(232, 131, 58, 0.4),
-    0 0 18px rgba(232, 131, 58, 0.22);
-  transition: transform 0.12s ease, box-shadow 0.2s ease, filter 0.2s ease;
-}
-.portal-btn3d:hover { filter: brightness(1.06); }
-.portal-btn3d:active {
-  transform: translateY(2px);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.2) inset, 0 2px 6px rgba(232, 131, 58, 0.3);
-}
-.portal-btn3d:disabled { filter: grayscale(0.4) opacity(0.55); }
+/* Botón primario: color plano + filo de luz + UNA sombra de contacto. Las
+   cinco sombras naranjas de antes eran un halo de neón; y el texto va en
+   --p-on-accent (no #fff: sobre naranja daba 2,2:1). */
+.portal-btn3d{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding-inline:20px;border:none;border-radius:var(--p-r-md);font-size:15px;font-weight:600;line-height:1;background:var(--p-accent);color:var(--p-on-accent);box-shadow:inset 0 1px 0 rgba(255,255,255,.28),0 1px 2px rgba(38,33,26,.16),0 2px 6px -1px color-mix(in srgb,var(--p-accent) 34%,transparent);transition:background-color .16s,box-shadow .16s,transform .10s}
+@media (hover:hover){.portal-btn3d:hover{background:color-mix(in srgb,var(--p-accent) 88%,#fff)}}
+.portal-btn3d:active{transform:translateY(1px);background:color-mix(in srgb,var(--p-accent) 88%,#000)}
+.portal-btn3d:disabled{background:var(--p-line-strong);color:var(--p-ink-mute);box-shadow:none;cursor:not-allowed}
+.portal-btn-ghost{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding-inline:16px;border:none;border-radius:var(--p-r-md);font-size:14px;font-weight:600;background:transparent;color:var(--p-ink);box-shadow:inset 0 0 0 1px var(--p-line-strong)}
 
 /* Tarjeta con relieve suave (blanca sobre crema, azul noche en oscuro) */
-.portal-card {
-  background: linear-gradient(180deg, var(--p-card-top), var(--p-card-bottom));
-  border: 1px solid var(--p-line);
-  border-radius: 16px;
-  box-shadow: 0 1px 0 var(--p-card-inset) inset, 0 6px 18px var(--p-card-shadow);
-}
-/* Halos de detalle (marca) */
-.portal-neon-accent { box-shadow: 0 0 0 1px rgba(232, 131, 58, 0.55), 0 0 12px rgba(232, 131, 58, 0.5), 0 0 26px rgba(232, 131, 58, 0.25); }
-.portal-neon-blue { box-shadow: 0 0 0 1px rgba(46, 94, 140, 0.55), 0 0 12px rgba(46, 94, 140, 0.5), 0 0 26px rgba(46, 94, 140, 0.25); }
+/* Elevación en 4 peldaños. SIN padding en la clase: ~30 usos ya traen el
+   suyo y meterlo aquí los rompería a todos. */
+.portal-card{background:var(--p-surface);border:1px solid var(--p-line);border-radius:var(--p-r-lg);box-shadow:var(--p-hair),var(--p-e-2)}
+.portal-card--flat{box-shadow:var(--p-hair),var(--p-e-1)}
+.portal-card--hero{border-radius:var(--p-r-xl);box-shadow:var(--p-hair),var(--p-e-3)}
+.portal-card--tap{transition:box-shadow .18s ease,border-color .18s ease,transform .10s ease}
+@media (hover:hover){.portal-card--tap:hover{box-shadow:var(--p-hair),var(--p-e-3);border-color:var(--p-line-strong)}}
+.portal-card--tap:active{transform:translateY(1px);box-shadow:var(--p-hair),var(--p-e-1)}
+/* Aro de detalle: profundidad, no LUZ. Los halos de neón leían a app gratuita;
+   un contorno fino + elevación es lo que hace premium a una interfaz. */
+.portal-ring-blue{border-color:color-mix(in srgb,var(--p-accent-2) 42%,transparent)!important;box-shadow:var(--p-hair),0 0 0 1px color-mix(in srgb,var(--p-accent-2) 18%,transparent),var(--p-e-2)}
 
-/* Nav inferior con relieve. padding-bottom respeta la safe area (barra
-   inferior del iPhone / notch): la nav nunca queda medio tapada. */
-.portal-nav {
-  background: linear-gradient(180deg, var(--p-card-top), var(--p-card-bottom)) !important;
-  border-top: 1px solid var(--p-line) !important;
-  box-shadow: 0 -4px 18px var(--p-nav-shadow);
-  padding-bottom: calc(0.5rem + env(safe-area-inset-bottom)) !important;
-}
-.portal-nav .nav-active {
-  color: var(--p-accent);
-  text-shadow: 0 0 10px rgba(232, 131, 58, 0.35);
-}
-.portal-nav .nav-active .nav-ico {
-  border-radius: 10px;
-  box-shadow: 0 0 0 1px rgba(232, 131, 58, 0.35), 0 0 14px rgba(232, 131, 58, 0.35);
-}
+/* Nav inferior: cristal translúcido, indicador de 2 px y píldora lavada en la
+   pestaña activa. El padding-bottom SIGUE sosteniendo la safe area del iPhone. */
+.portal-nav{background:var(--p-nav-bg)!important;-webkit-backdrop-filter:saturate(180%) blur(18px);backdrop-filter:saturate(180%) blur(18px);border-top:1px solid var(--p-line)!important;box-shadow:0 -1px 0 var(--p-hair),var(--p-e-3);padding-bottom:calc(.5rem + env(safe-area-inset-bottom))!important}
+.portal-nav .nav-ico{display:flex;align-items:center;justify-content:center;width:34px;height:30px;border-radius:9px;box-shadow:none;transition:background-color .22s,color .22s}
+.portal-nav .nav-active{color:var(--p-ink);text-shadow:none}
+.portal-nav .nav-active .nav-ico{background:var(--p-accent-wash);color:var(--p-accent-ink);box-shadow:none}
+.portal-nav .nav-active::before{content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);width:18px;height:2px;border-radius:999px;background:var(--p-accent)}
+
 /* Badge "!" en pestaña */
 .portal-tab-badge {
   position: absolute; top: -2px; right: 50%; transform: translateX(16px);
   min-width: 16px; height: 16px; padding: 0 4px;
   display: flex; align-items: center; justify-content: center;
-  background: var(--p-accent); color: #fff;
-  border-radius: 999px; font-size: 10px; font-weight: 800; line-height: 1;
-  box-shadow: 0 0 10px rgba(232, 131, 58, 0.6);
+  background: var(--p-accent); color: var(--p-on-accent);
+  border-radius: 999px; font-size: 10px; font-weight: 700; line-height: 1;
+  box-shadow: 0 0 0 2px var(--p-nav-bg), var(--p-e-1);
 }
 @keyframes portal-badge-pop { 0% { transform: translateX(16px) scale(0); } 60% { transform: translateX(16px) scale(1.25); } 100% { transform: translateX(16px) scale(1); } }
 .portal-tab-badge { animation: portal-badge-pop 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
@@ -413,10 +437,39 @@ button, [role="button"], summary, a {
 .portal-today-pill {
   position: absolute; top: -7px; right: -6px;
   padding: 2px 6px; border-radius: 999px;
-  font-size: 9px; font-weight: 800; letter-spacing: 0.06em; line-height: 1.2;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.06em; line-height: 1.2;
   color: #fff; background: var(--p-accent-2);
-  box-shadow: 0 0 0 1px rgba(46, 94, 140, 0.4), 0 0 10px rgba(46, 94, 140, 0.55);
+  box-shadow: var(--p-e-1);
 }
+
+/* Esqueleto de carga con brillo: dice "está llegando", no "está roto". */
+.portal-skel{position:relative;overflow:hidden;background:color-mix(in srgb,var(--p-ink) 7%,transparent)}
+.portal-skel::after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--p-ink) 4%,transparent),transparent);animation:portal-shimmer 1.4s ease-in-out infinite}
+@keyframes portal-shimmer{100%{transform:translateX(100%)}}
+
+/* Aviso del portal: UNA sola pieza para todos los mensajes (antes cada
+   pantalla se inventaba su borde y su fondo con estilos en línea). El color
+   lo pone el significado, nunca el capricho: azul dato · verde bien ·
+   ámbar atención · rojo bloqueo · naranja acción a hacer. */
+.portal-note{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border-radius:var(--p-r-md);border:1px solid;font-size:13.5px;line-height:1.5;background:var(--p-surface);border-color:var(--p-line);color:var(--p-ink);box-shadow:var(--p-e-1)}
+.portal-note > svg{flex:0 0 auto;margin-top:1px}
+.portal-note b,.portal-note strong{font-weight:600}
+.portal-note--info{border-color:color-mix(in srgb,var(--p-accent-2) 34%,transparent);background:var(--p-accent-2-wash)}
+.portal-note--ok{border-color:color-mix(in srgb,var(--p-ok) 34%,transparent);background:color-mix(in srgb,var(--p-ok) 9%,transparent)}
+.portal-note--warn{border-color:color-mix(in srgb,var(--p-warn) 38%,transparent);background:color-mix(in srgb,var(--p-warn) 10%,transparent)}
+.portal-note--danger{border-color:color-mix(in srgb,var(--p-danger) 38%,transparent);background:color-mix(in srgb,var(--p-danger) 9%,transparent)}
+.portal-note--action{border-color:color-mix(in srgb,var(--p-accent) 40%,transparent);background:var(--p-accent-wash)}
+a.portal-note{text-decoration:none;transition:box-shadow .18s ease,transform .10s ease}
+@media (hover:hover){a.portal-note:hover{box-shadow:var(--p-e-2)}}
+a.portal-note:active{transform:translateY(1px)}
+
+/* Ritmo vertical del portal: un solo sitio decide el aire de la cabecera, del
+   cuerpo y entre bloques. Antes cada pantalla elegía su margen y las
+   distancias no se parecían entre sí. */
+.portal-header{padding:24px var(--p-pad-page) 10px}
+.portal-main{padding:6px var(--p-pad-page) 112px}
+.portal-main > * + *{margin-top:var(--p-gap-card)}
+.portal-section + .portal-section{margin-top:var(--p-gap-section)}
 
 /* ============== PULIDO PREMIUM (mismo diseño, más detalle) ==============
    Micro-detalles de calidad percibida. Nada cambia de identidad: misma
@@ -438,13 +491,9 @@ button, [role="button"], summary, a {
 .animate-rise > *:nth-child(5) { animation-delay: 0.16s; }
 .animate-rise > *:nth-child(n+6) { animation-delay: 0.19s; }
 
-/* Foco visible con la marca (teclado y accesibilidad): un anillo suave en vez
-   del outline azul del navegador, coherente en portal y panel. */
-:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--brand-accent, #e8833a) 70%, transparent);
-  outline-offset: 2px;
-  border-radius: 6px;
-}
+/* Foco: UNO solo en toda la app (el azul de arriba). Un anillo naranja
+   desaparecía justo sobre el botón primario, que también es naranja. */
+.portal-root :focus-visible { outline-color: var(--p-focus); box-shadow: 0 0 0 4px var(--p-focus-halo); }
 
 /* Selección de texto con el tono de marca (detalle pequeño, se nota). */
 ::selection {

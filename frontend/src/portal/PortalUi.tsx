@@ -30,14 +30,14 @@ export function shortDate(iso: string): string {
 /** Skeleton de carga: la interfaz nunca parece congelada ni "salta" al cargar. */
 export function Loading() {
   return (
-    <div className="animate-pulse space-y-4" aria-hidden="true">
-      <div className="h-5 w-40 rounded-lg" style={{ background: "var(--p-line)" }} />
+    <div className="space-y-3" aria-hidden="true">
+      <div className="portal-skel h-5 w-40 rounded-lg" />
       <div className="flex gap-2">
-        <div className="h-14 w-28 rounded-xl" style={{ background: "var(--p-line)" }} />
-        <div className="h-14 w-28 rounded-xl" style={{ background: "var(--p-line)" }} />
+        <div className="portal-skel h-14 w-28 rounded-xl" />
+        <div className="portal-skel h-14 w-28 rounded-xl" />
       </div>
-      <div className="portal-card h-44 opacity-60" />
-      <div className="portal-card h-44 opacity-40" />
+      <div className="portal-skel h-44 rounded-2xl" />
+      <div className="portal-skel h-44 rounded-2xl" />
     </div>
   );
 }
@@ -48,8 +48,8 @@ export function Empty({ icon: Icon, title, hint }: { icon: LucideIcon; title: st
       <div className="portal-card flex h-14 w-14 items-center justify-center rounded-2xl">
         <Icon size={24} className="opacity-40" />
       </div>
-      <p className="mt-4 text-base font-semibold">{title}</p>
-      <p className="mt-1 max-w-xs text-sm opacity-60">{hint}</p>
+      <p className="mt-4 p-head">{title}</p>
+      <p className="p-sub mt-1 max-w-xs">{hint}</p>
     </div>
   );
 }

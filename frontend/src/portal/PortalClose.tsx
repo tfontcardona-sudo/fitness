@@ -182,7 +182,7 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
         <div className="flex h-16 w-16 items-center justify-center rounded-full" style={{ background: `${brand.color_primary}2a` }}>
           <Check size={32} style={{ color: brand.color_primary }} />
         </div>
-        <p className="mt-4 text-lg font-semibold">¡Revisión enviada!</p>
+        <p className="mt-4 p-title">¡Revisión enviada!</p>
         <p className="mt-1 max-w-xs text-sm opacity-60">Recibirás informe y plan nuevo</p>
       </div>
     );
@@ -197,7 +197,7 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
         <div className="flex h-16 w-16 items-center justify-center rounded-full" style={{ background: `${brand.color_primary}2a` }}>
           <Check size={32} style={{ color: brand.color_primary }} />
         </div>
-        <p className="mt-4 text-lg font-semibold">Revisión enviada</p>
+        <p className="mt-4 p-title">Revisión enviada</p>
         <p className="mt-1 max-w-xs text-sm opacity-60">
           Analizando · recibirás informe y plan
         </p>
@@ -210,11 +210,11 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
   if (!canClose) {
     return (
       <div className="flex flex-col items-center py-16 text-center">
-        <div className="portal-neon-blue flex h-24 w-24 items-center justify-center rounded-full border-2"
+        <div className="portal-ring-blue flex h-24 w-24 items-center justify-center rounded-full border-2"
           style={{ borderColor: brand.color_secondary, color: brand.color_secondary }}>
           <span className="text-4xl font-bold">{daysLeft != null && daysLeft > 0 ? daysLeft : "—"}</span>
         </div>
-        <p className="mt-4 text-lg font-semibold">Revisión quincenal</p>
+        <p className="mt-4 p-title">Revisión quincenal</p>
         <p className="mt-1 max-w-xs text-sm opacity-70">
           {daysLeft != null && daysLeft > 0
             ? `Disponible en ${daysLeft} día${daysLeft === 1 ? "" : "s"}`
@@ -232,7 +232,7 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold">Revisión quincenal</h2>
+        <h2 className="p-title">Revisión quincenal</h2>
         <p className="mt-0.5 text-xs opacity-60">Se va guardando sola.</p>
       </div>
 
@@ -241,7 +241,7 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
         <p className="mb-2 text-xs opacity-50">En ayunas · cinta sin apretar</p>
         <Field label="Peso (kg)" required>
           <input type="text" inputMode="decimal"
-            className="w-full rounded-xl border bg-transparent p-3 text-lg font-semibold"
+            className="w-full rounded-xl border bg-transparent p-3 p-title"
             style={{ borderColor: "rgba(128,128,128,0.2)" }}
             value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="—" />
         </Field>
@@ -414,7 +414,7 @@ function Perimeter({ label, value, onChange }: { label: string; value: string; o
     <label className="portal-card block p-3">
       <span className="block text-xs opacity-50">{label} (cm)</span>
       <input type="text" inputMode="decimal"
-        className="mt-1 w-full bg-transparent text-lg font-semibold outline-none"
+        className="mt-1 w-full bg-transparent p-title outline-none"
         style={{ caretColor: "var(--p-accent-2)" }}
         value={value} onChange={(e) => onChange(e.target.value)} placeholder="—" />
     </label>
@@ -431,7 +431,7 @@ function NumField({ label, value, onChange, min, max, required }: {
     <label className="portal-card block p-3">
       <span className="block text-xs opacity-50">{label} {required && <span style={{ color: "#C2453A" }}>*</span>}</span>
       <input type="text" inputMode="numeric"
-        className="mt-1 w-full bg-transparent text-lg font-semibold outline-none"
+        className="mt-1 w-full bg-transparent p-title outline-none"
         style={{ caretColor: "var(--p-accent-2)" }}
         value={value} onChange={(e) => onChange(e.target.value)} placeholder="—" />
     </label>
