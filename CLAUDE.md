@@ -442,6 +442,87 @@ cd backend && python -m pytest tests/ -q
 
 ## 9. Trabajo pendiente / próximos pasos
 
+000000000000. ✅ **RECORDATORIOS ANCLADOS + ACORDEÓN GLOBAL + AUDITORÍA
+   (agosto 2026).** El dueño: "pulsas el aviso, te lleva al sitio exacto, te lo
+   MARCA, y te deja un recordatorio de lo que ibas a cambiar; cuando lo
+   cambias, el recordatorio se va SOLO". Y: "en todos los desplegables, abrir
+   uno cierra el que estaba abierto". Suite + tsc + build + `check:avisos` +
+   `check:anclas` en verde.
+   - **Cada aviso sabe DÓNDE y CÓMO** (`alerts._DESTINO` + `_alert(...,
+     target=, fix=, to=)`): `target` es un ANCLA (la misma cadena la lleva el
+     elemento en el DOM como `data-ancla`), `fix` es la nota que se enseña
+     pegada a la marca, y `key` identifica el PROBLEMA de forma estable. Los
+     avisos con dato concreto pasan su ancla en la llamada
+     (`nutricion.comida.{slot}`, `feedback.videollamada.{id}`).
+   - **`lib/anchors.ts`**: `esperarAncla` (los datos llegan por red),
+     `abrirContenedores` (abre `<details>` Y desplegables de estado por su
+     `[data-desplegable-toggle]`), `irYMarcar`. ⚠️ **La marca se enciende con
+     una REGLA CSS inyectada**, no con una clase: el panel se refresca cada 3 s
+     y React reescribe `className` en cada render — con una clase la marca se
+     borraba sola a los pocos segundos.
+   - **`lib/pins.ts`**: un recordatorio NO se "completa", se DESVANECE. Cada
+     fuente publica sus problemas vivos con `syncScope(ámbito, claves)` y todo
+     recordatorio suyo que ya no aparece se borra. Si la fuente NO pudo cargar
+     no sincroniza (un fallo de red nunca barre uno vivo). Ámbitos: `alerts`
+     (lo publica `AlertsBell` en cada carga buena) y `plan:{clientId}` (lo
+     publica `ClientPlanPanel`; por CLIENTE, no por plan: al regenerar cambia
+     el id y los de la versión anterior no se retirarían nunca). Sincroniza
+     entre pestañas por el evento `storage`.
+   - **`components/Pins.tsx`**: `PinDock` (píldora abajo a la izquierda con lo
+     que queda por arreglar), `MarcadorDeAncla` (lee `?ir=`, centra, marca y
+     pega la nota) y `usePins`. La nota va en un portal al body posicionada por
+     la caja del elemento: meterla dentro rompería maquetaciones ajenas y React
+     la barrería al siguiente render.
+   - **Las comidas de cada toma vuelven al panel, PLEGADAS** (`BancoDeComidas`):
+     no ocupan pantalla (esa decisión se mantiene) pero existen — "hay lentejas
+     en la toma 2" ya tiene dónde mirarse. Solo lectura: el banco se cambia
+     regenerando o por el Word. **Pendiente valorado**: editar una opción
+     suelta del banco desde la web.
+   - **`lib/accordion.ts`**: acordeón global en UN sitio para panel y portal.
+     Cubre `<details>` nativos y los de estado (`data-open` +
+     `[data-desplegable-toggle]`), y **ve a través del envoltorio** que React
+     pone por elemento de lista (si el desplegable es el ÚNICO de su
+     contenedor, el que representa al grupo es el contenedor). `libre()` exime
+     a un grupo. No entra en bucle: solo reacciona a la apertura.
+   - **`npm run check:anclas`** (16 comprobaciones): auto-borrado, aislamiento
+     entre ámbitos, almacenamiento roto, reglas del acordeón, y sobre todo que
+     **cada destino declarado en el backend tenga su `data-ancla` en la web**.
+   - **AUDITORÍA de las rondas recientes** (6 auditores + refutación
+     adversarial). Confirmados y corregidos:
+     · **Regresión propia**: la línea guía bajo cada barra del Word suplantaba
+       a la barra en el importador y las cajas de *Cardio* y *deload* dejaban
+       de importarse EN SILENCIO. `word_import._es_barra` reconoce la barra por
+       su SOMBREADO, no por "último párrafo con texto". ⚠️ Si añades prosa
+       entre una barra y su caja, esto es lo que la sostiene.
+     · Word: un macro a **0** se leía como ausente y se reponía el valor viejo;
+       si el reparto no se puede leer ahora se AVISA; el argumentario y las
+       reglas de flexibilidad pasan por el filtro de alérgenos; el índice
+       promete exactamente lo que se imprime; `_rhu` en el % de ajuste.
+     · Cobros: el cobro a mano se **duplicaba con un doble clic** (el id
+       llevaba el segundo actual) y **desaparecía en cuanto el cliente estaba
+       pagado** — el estado de una RENOVACIÓN en efectivo; fecha futura
+       rechazada; fecha por defecto LOCAL (era UTC); un fallo de BD se
+       comunicaba como "ya estaba anotado"; el filtro `orphan` usa el criterio
+       del contador y el borrado RGPD deja de contarse como huérfano
+       (`payments.anonymized_at`, mig. **0039**).
+     · Portal: **`animate-rise` con `both` dejaba un transform permanente** y
+       un transform crea bloque contenedor — la píldora del descanso
+       (`position:fixed`) caía al final del contenido. Ahora `backwards`.
+       ⚠️ No vuelvas a poner `both` en una clase que envuelve contenido.
+     · Portal: la serie se daba por hecha con el **primer dígito** de las reps
+       (el campo emite en cada pulsación); los ejercicios de **peso corporal**
+       no contaban nunca; Entreno se podía teclear **sin período abierto**; lo
+       no guardado y el descanso en marcha **sobreviven al cambio de pestaña**
+       (`sessionStorage`; PortalApp remonta por `key`); la cuenta atrás va por
+       RELOJ, no por conteo.
+     · Portal/CSS: el atajo `border` de `.portal-card` anulaba `border-l-4`
+       (raíles que nunca se pintaban → `.portal-card--rail`); las pantallas de
+       error vivían **fuera de `.portal-root`** y sus botones salían sin
+       ningún token; `#fff` sobre naranja en cuatro sitios; el anillo de foco
+       redondeaba EL ELEMENTO; el hover iluminaba botones deshabilitados; los
+       botones compactos salían a 48 px (medidas movidas a `:where()`); la
+       regla de tinta no cubría contenedores.
+
 00000000000. ✅ **RONDA PREMIUM (agosto 2026): portal, PDF, cobros manuales y
    panel.** El dueño, sobre una captura del Entreno del portal: descanso por
    ejercicio, ver lo que movió la vez anterior, **series NO editables** (la
