@@ -1,0 +1,17 @@
+# Lo que NO tiene que viajar al daemon de Docker en cada build.
+#
+# Sin este fichero el contexto del frontend son ~186 MB, y 184 son node_modules:
+# se suben enteros en cada `up --build` y encima el `COPY . .` los vuelca ENCIMA
+# de los que `npm install` acaba de instalar dentro de la imagen. En un PC con
+# Windows eso significa mezclar binarios de win32 con los de Linux; sobreviven
+# de milagro porque COPY fusiona en vez de reemplazar. Fuera: el contexto baja a
+# ~2 MB y la caché de capas deja de invalidarse cada vez que cambia un paquete.
+node_modules
+dist
+.vite
+*.tsbuildinfo
+
+.git
+.gitignore
+.DS_Store
+*.log

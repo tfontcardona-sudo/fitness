@@ -32,6 +32,14 @@ if ((Get-Command git -ErrorAction SilentlyContinue) -and (Test-Path ".git")) {
   }
 }
 
+# En dev el servicio `web` es Vite (5173), no Caddy: sus 80 y 443 quedarian
+# publicados para nada y en Windows el 80 suele estar cogido (IIS, Skype, otro
+# proyecto). Si no puede reservarlos, el contenedor no arranca — pero la API si,
+# asi que el lanzador daba la demo por lista y localhost:5173 no abria.
+# Apartados a puertos altos; en produccion siguen siendo 80 y 443.
+$env:HTTP_PORT = "8380"
+$env:HTTPS_PORT = "8343"
+
 # Apaga ESTE proyecto si estaba (a medias o entero): re-ejecutar = reiniciar.
 # Sin esto, el chequeo de puertos de abajo se tropezaba con NUESTROS propios
 # contenedores y el script abortaba culpando a otro proyecto.
@@ -41,7 +49,7 @@ cmd /c "docker compose -f docker-compose.yml -f docker-compose.dev.yml down --re
 
 # Si DQR (u otro proyecto) esta arrancado en este PC, usa los mismos puertos:
 # hay que pararlo primero (los proyectos estan AISLADOS, pero no caben a la vez).
-foreach ($port in 5173, 8000, 5432, 8025) {
+foreach ($port in 5173, 8000, 5432, 8025, 8380, 8343) {
   $busy = Test-NetConnection -ComputerName localhost -Port $port -InformationLevel Quiet -WarningAction SilentlyContinue
   if ($busy) {
     Write-Host "X El puerto $port ya esta en uso. ¿Tienes DQR u otro proyecto arrancado?" -ForegroundColor Red
@@ -51,7 +59,15 @@ foreach ($port in 5173, 8000, 5432, 8025) {
 }
 
 Write-Host "-> Levantando la demo (la primera vez tarda unos minutos)..." -ForegroundColor Cyan
+# El codigo de salida IMPORTA: si un contenedor no puede reservar su puerto,
+# compose falla pero los que si arrancaron siguen en pie. Sin esta comprobacion,
+# la API respondia, el script decia "DEMO LISTA" y la web no abria.
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+if ($LASTEXITCODE -ne 0) {
+  Write-Host ""
+  Write-Host "X Docker no ha podido levantar la demo (el motivo va justo arriba)." -ForegroundColor Red
+  Read-Host "Pulsa Enter para salir"; exit 1
+}
 
 Write-Host "-> Esperando a la API..." -ForegroundColor Cyan
 $ok = $false
@@ -73,6 +89,29 @@ if (-not $ok) {
 
 Write-Host "-> Sembrando los 4 clientes de demo..." -ForegroundColor Cyan
 docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T api python scripts/demo_seed.py
+
+# ESPERAR TAMBIEN A LA WEB. El lanzador solo miraba la API, asi que cualquier
+# problema del contenedor `web` acababa en un "DEMO LISTA" con localhost:5173
+# sin abrir — el peor final posible: parece que todo fue bien. Va despues del
+# seed a proposito: en dev el contenedor hace `npm install` y la primera vez
+# tarda varios minutos; darle ese margen extra evita falsos negativos.
+Write-Host "-> Esperando al panel (la primera vez instala dependencias, tarda)..." -ForegroundColor Cyan
+$webOk = $false
+for ($i = 0; $i -lt 150; $i++) {
+  try {
+    Invoke-WebRequest -Uri "http://localhost:5173" -UseBasicParsing -TimeoutSec 2 | Out-Null
+    $webOk = $true; break
+  } catch { Start-Sleep -Seconds 2 }
+}
+if (-not $webOk) {
+  Write-Host ""
+  Write-Host "X El panel no responde en http://localhost:5173. Este es el motivo:" -ForegroundColor Red
+  Write-Host "-----------------------------------------------------" -ForegroundColor DarkGray
+  cmd /c "docker compose -f docker-compose.yml -f docker-compose.dev.yml logs web --tail 40 --no-color 2>&1"
+  Write-Host "-----------------------------------------------------" -ForegroundColor DarkGray
+  Write-Host "Copia estas lineas (o hazles captura) para diagnosticar." -ForegroundColor Yellow
+  Read-Host "Enter para salir"; exit 1
+}
 
 # Decir las credenciales EXACTAS, comprobadas contra la base de datos. Antes
 # esta linea decia "usuario y contraseña del .env" y quien no abria el fichero

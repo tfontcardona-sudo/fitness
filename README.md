@@ -30,6 +30,10 @@ En desarrollo los emails se envían a **Mailpit** (no hace falta SMTP real). El
 automáticamente en cada arranque.
 
 **Acceso del coach:** usuario/contraseña de `ADMIN_1_USER`/`ADMIN_1_PASS` del `.env`.
+El `.env` es la fuente de verdad: si cambias ahí la contraseña, el seed del
+arranque la actualiza en la base de datos (antes no lo hacía y el coach se
+quedaba fuera con un 401 inexplicable). Para ver con qué se entra ahora mismo:
+`docker compose exec api python scripts/check_login.py`.
 
 ## Despliegue en VPS (Hetzner u otro)
 

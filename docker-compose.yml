@@ -41,9 +41,18 @@ services:
     restart: unless-stopped
     environment:
       DOMAIN: ${DOMAIN:-}
+    # 80 y 443 son los de Caddy EN PRODUCCIÓN, y ahí no se tocan (sin las
+    # variables puestas, salen exactamente 80 y 443 como siempre). Se pueden
+    # mover porque en DESARROLLO este servicio no es Caddy: docker-compose.dev
+    # lo sustituye por el servidor de Vite, que escucha en 5173 y deja el 80 y
+    # el 443 publicados para nada. En Windows el 80 suele estar cogido (IIS,
+    # Skype, otro proyecto), el contenedor no llegaba a arrancar y la API sí:
+    # el lanzador decía "DEMO LISTA" y localhost:5173 no abría. El lanzador los
+    # aparta a puertos altos; compose no permite QUITAR entradas de una lista
+    # desde un override, solo añadirlas, y por eso se parametrizan aquí.
     ports:
-      - "80:80"
-      - "443:443"
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
     volumes:
       - caddy_data:/data
       - caddy_config:/config

@@ -20,10 +20,16 @@ git clone -b claude/dqr-white-label-4ojp01 <repo> professional && cd professiona
 ```
 
 El script lo hace TODO: crea el `.env` de demo (panel: `professional` /
-`Professional-Demo-2026`), levanta Docker, espera a la API, siembra los 4
-clientes y te imprime los enlaces (panel http://localhost:5173, planes y los
-portales de cada cliente con el puerto correcto). Re-ejecutarlo reinicia la
-demo. Para IA en vivo, añade `ANTHROPIC_API_KEY` al `.env` y re-lanza.
+`Professional-Demo-2026`), levanta Docker, espera a la API **y al panel**,
+siembra los 4 clientes y te imprime los enlaces (panel http://localhost:5173,
+planes y los portales de cada cliente con el puerto correcto). Re-ejecutarlo
+reinicia la demo. Para IA en vivo, añade `ANTHROPIC_API_KEY` al `.env` y
+re-lanza.
+
+En el cuadro final imprime **el usuario y la contraseña exactos** con los que
+se entra al panel, comprobados contra la base de datos. Si tu `.env` ya existía
+con otras credenciales, esas son las que valen: el `.env` manda y el arranque
+pone al día el admin con lo que ponga ahí.
 
 ### Opción B — VPS con subdominio temporal (demo remota, portal en SU móvil)
 

@@ -1,0 +1,18 @@
+# Lo que NO tiene que viajar al daemon de Docker en cada build.
+#
+# `storage/` es el grueso (~14 MB de ficheros de pruebas locales) y además no
+# pinta nada dentro de la imagen: el almacén de verdad es el volumen montado en
+# /storage. El resto son artefactos regenerables que solo sirven para invalidar
+# la caché de capas.
+storage
+
+__pycache__
+*.pyc
+.pytest_cache
+.venv
+venv
+
+.git
+.gitignore
+.DS_Store
+*.log
