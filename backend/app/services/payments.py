@@ -27,6 +27,7 @@ Reglas del dinero (aprendidas de la auditoría):
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -297,7 +298,7 @@ def summary(db: Session) -> dict:
     huerfanos = int(db.scalar(
         select(func.count(Payment.id)).where(
             Payment.client_id.is_(None), Payment.status == "paid",
-            Payment.livemode.is_(True))
+            Payment.livemode.is_(True), Payment.anonymized_at.is_(None))
     ) or 0)
     # Comisiones de Stripe del mes (solo cobros con fee consultado): permiten
     # enseñar el NETO real que llega al banco, no solo el bruto cobrado.
@@ -380,7 +381,12 @@ def list_payments(db: Session, *, limit: int = 50, offset: int = 0,
     if client_id:
         filtros.append(Payment.client_id == client_id)
     if orphan:
-        filtros.append(Payment.client_id.is_(None))
+        # MISMO criterio que el contador del resumen: si no, el chip decía "3
+        # sin ficha" y la lista enseñaba 12 (incluyendo pruebas, devoluciones y
+        # cobros ya anonimizados por RGPD).
+        filtros += [Payment.client_id.is_(None), Payment.status == "paid",
+                    Payment.livemode.is_(True),
+                    Payment.anonymized_at.is_(None)]
     total = int(db.scalar(select(func.count(Payment.id)).where(*filtros)) or 0)
     filas = list(db.scalars(
         select(Payment).where(*filtros)
@@ -445,10 +451,15 @@ def anonymize_client(db: Session, client_id: int) -> int:
     dinero) pero deja de apuntar a la persona — sin ficha, sin nombre y sin
     email. Devuelve cuántas filas se anonimizaron."""
     filas = list(db.scalars(select(Payment).where(Payment.client_id == client_id)))
+    ahora = datetime.now(timezone.utc)
     for f in filas:
         f.client_id = None
         f.customer_name = None
         f.customer_email = None
+        # Sellado: un cobro anonimizado NO es un "cobro sin ficha" que el coach
+        # deba investigar — antes el aviso de huérfanos se quedaba encendido
+        # para siempre tras un borrado RGPD, sin nada que hacer al respecto.
+        f.anonymized_at = ahora
     return len(filas)
 
 
@@ -638,6 +649,33 @@ METODOS_MANUALES = {
 }
 
 
+def hoy_local() -> date:
+    """Fecha de NEGOCIO (zona del coach). Con la de UTC, de madrugada el cobro
+    se anotaba en el día —y a veces en el mes— anterior."""
+    return datetime.now(timezone.utc).astimezone(_tz()).date()
+
+
+def existe_cobro_manual(db: Session, *, client_id: int, paid_on: date,
+                        amount_cents: int, method: str, note: str | None) -> bool:
+    """¿Ya está anotado ESTE cobro? (mismo cliente, día, importe, método y
+    nota). Sirve para distinguir el doble clic de un fallo de la base."""
+    obj = _id_cobro_manual(client_id, paid_on, int(amount_cents), method, note)
+    return db.scalar(
+        select(func.count(Payment.id)).where(
+            Payment.stripe_object_id == obj, Payment.status == "paid")
+    ) not in (0, None)
+
+
+def _id_cobro_manual(client_id: int, cuando: date, importe: int,
+                     metodo: str, nota: str | None) -> str:
+    """Identidad del cobro a mano: mismo cliente, día, importe, método y nota =
+    el mismo cobro. Sin instante: si no, el doble clic duplicaba el dinero."""
+    firma = hashlib.sha1(
+        f"{(nota or '').strip().lower()}".encode("utf-8")
+    ).hexdigest()[:8]
+    return f"manual_{client_id}_{cuando.isoformat()}_{importe}_{metodo}_{firma}"
+
+
 def record_manual_payment(
     db: Session,
     *,
@@ -655,10 +693,12 @@ def record_manual_payment(
     resumen y salga en el feed y en el CSV exactamente igual que un cobro de
     Stripe, distinguido por `kind="manual"`.
 
-    El id sintético lleva la fecha y el cliente: dos cobros del mismo cliente el
-    mismo día son dos movimientos distintos (puede pasar), pero reenviar el
-    mismo formulario dos veces por un doble clic NO duplica el ingreso, porque
-    el UNIQUE(objeto, estado) lo bloquea dentro del mismo segundo.
+    El id sintético identifica el COBRO, no el instante: cliente, día, importe,
+    método y nota. Así un doble clic (o volver atrás y reenviar) no duplica el
+    ingreso — antes el id llevaba el segundo actual y solo protegía si los dos
+    envíos caían dentro del mismo segundo, que es justo lo que no pasa con un
+    doble clic humano. Si de verdad hay dos cobros iguales el mismo día, basta
+    con anotarlos con notas distintas.
     """
     cuando = paid_on or datetime.now(timezone.utc).astimezone(_tz()).date()
     momento = datetime.now(timezone.utc)
@@ -668,7 +708,7 @@ def record_manual_payment(
         descripcion = f"{descripcion} — {note.strip()[:80]}"
     return record_payment(
         db,
-        object_id=f"manual_{client.id}_{cuando.isoformat()}_{int(momento.timestamp())}",
+        object_id=_id_cobro_manual(client.id, cuando, int(amount_cents), method, note),
         kind="manual",
         status="paid",
         amount_cents=int(amount_cents),

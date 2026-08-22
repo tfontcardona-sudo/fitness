@@ -172,7 +172,7 @@ export function PortalDiary({ api, brand, periodStatus = null, businessToday = n
   return (
     <div className="space-y-5">
       {readOnly && (
-        <div className="portal-card border-l-4 p-3.5 text-sm" style={{ borderLeftColor: brand.color_primary }}>
+        <div className="portal-card portal-card--rail p-3.5 text-sm" style={{ "--rail": brand.color_primary } as React.CSSProperties}>
           {hasPeriod ? (
             <>
               <p className="font-semibold">Revisión enviada — diario en pausa</p>

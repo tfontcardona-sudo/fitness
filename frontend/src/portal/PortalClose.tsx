@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ancla, irYMarcar } from "../lib/anchors";
 import { Check, Mail, MessageCircle } from "lucide-react";
 import type { PortalBrand } from "../types";
 import { usePortalToast } from "./PortalToast";
@@ -239,7 +240,7 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
       {/* 1 · Medidas */}
       <Section n={1} title="Medidas corporales">
         <p className="mb-2 text-xs opacity-50">En ayunas · cinta sin apretar</p>
-        <Field label="Peso (kg)" required>
+        <Field label="Peso (kg)" required ancla="cierre.peso">
           <input type="text" inputMode="decimal"
             className="w-full rounded-xl border bg-transparent p-3 text-lg font-semibold"
             style={{ borderColor: "rgba(128,128,128,0.2)" }}
@@ -254,7 +255,7 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
       </Section>
 
       {/* 2 · Sensaciones */}
-      <Section n={2} title="¿Cómo te has sentido?">
+      <Section n={2} title="¿Cómo te has sentido?" ancla="cierre.sensaciones">
         <p className="mb-2 text-xs opacity-50">1 = muy mal · 5 = excelente</p>
         <div className="space-y-3">
           {FEELINGS.map((f) => (
@@ -283,10 +284,10 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
       <Section n={3} title="Adherencia al plan">
         <div className="grid grid-cols-2 gap-3">
           {hasNutrition && (
-            <NumField label="Dieta (0-10)" value={adhDiet} onChange={setAdhDiet} min={0} max={10} required />
+            <NumField label="Dieta (0-10)" value={adhDiet} onChange={setAdhDiet} min={0} max={10} required ancla="cierre.adherencia.dieta" />
           )}
           {hasTraining ? (
-            <NumField label="Entreno (0-10)" value={adhTrain} onChange={setAdhTrain} min={0} max={10} required />
+            <NumField label="Entreno (0-10)" value={adhTrain} onChange={setAdhTrain} min={0} max={10} required ancla="cierre.adherencia.entreno" />
           ) : (
             <NumField label="Comidas libres (nº aprox.)" value={freeMeals} onChange={setFreeMeals} min={0} max={50} />
           )}
@@ -366,13 +367,33 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
           {rangeError ?? (() => {
             // Decir QUÉ falta, no un genérico: con 7 secciones el bloqueo era
             // invisible (una sensación sin puntuar dejaba el botón gris mudo).
-            const faltan: string[] = [];
-            if (!(num(weight) > 30)) faltan.push("peso final");
+            // Cada cosa que falta se PULSA y te lleva al campo, marcado.
+            // Decirle al cliente "falta la adherencia" y que la busque entre
+            // seis secciones es la mitad del trabajo.
+            const faltan: { texto: string; ancla: string }[] = [];
+            if (!(num(weight) > 30)) faltan.push({ texto: "peso final", ancla: "cierre.peso" });
             const sinPuntuar = FEELINGS.filter((f) => !(feelings[f.key] > 0)).length;
-            if (sinPuntuar > 0) faltan.push(sinPuntuar === 1 ? "1 sensación por puntuar" : `${sinPuntuar} sensaciones por puntuar`);
-            if (hasNutrition && adhDiet === "") faltan.push("adherencia dieta");
-            if (hasTraining && adhTrain === "") faltan.push("adherencia entreno");
-            return faltan.length ? `Falta: ${faltan.join(" · ")}` : "Falta: peso · sensaciones · adherencia";
+            if (sinPuntuar > 0) faltan.push({
+              texto: sinPuntuar === 1 ? "1 sensación" : `${sinPuntuar} sensaciones`,
+              ancla: "cierre.sensaciones",
+            });
+            if (hasNutrition && adhDiet === "") faltan.push({ texto: "adherencia dieta", ancla: "cierre.adherencia.dieta" });
+            if (hasTraining && adhTrain === "") faltan.push({ texto: "adherencia entreno", ancla: "cierre.adherencia.entreno" });
+            if (!faltan.length) return <>Falta: peso · sensaciones · adherencia</>;
+            return (
+              <>
+                Falta:{" "}
+                {faltan.map((f, i) => (
+                  <span key={f.ancla}>
+                    {i > 0 && " · "}
+                    <button type="button" onClick={() => void irYMarcar(f.ancla)}
+                      className="underline decoration-dotted underline-offset-2">
+                      {f.texto}
+                    </button>
+                  </span>
+                ))}
+              </>
+            );
           })()}
         </p>
       )}
@@ -380,9 +401,11 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
   );
 }
 
-function Section({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+function Section({ n, title, children, ancla: nombreAncla }: {
+  n: number; title: string; children: React.ReactNode; ancla?: string;
+}) {
   return (
-    <div>
+    <div {...(nombreAncla ? ancla(nombreAncla) : {})}>
       <p className="mb-2 flex items-center gap-2 text-sm font-semibold">
         {/* Número de sección en azul de marca: guía la estructura del formulario */}
         <span
@@ -398,9 +421,11 @@ function Section({ n, title, children }: { n: number; title: string; children: R
   );
 }
 
-function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+function Field({ label, required, children, ancla: nombreAncla }: {
+  label: string; required?: boolean; children: React.ReactNode; ancla?: string;
+}) {
   return (
-    <div>
+    <div {...(nombreAncla ? ancla(nombreAncla) : {})}>
       <p className="mb-2 text-sm font-medium opacity-80">
         {label} {required && <span style={{ color: "#C2453A" }}>*</span>}
       </p>
@@ -421,14 +446,15 @@ function Perimeter({ label, value, onChange }: { label: string; value: string; o
   );
 }
 
-function NumField({ label, value, onChange, min, max, required }: {
-  label: string; value: string; onChange: (v: string) => void; min: number; max: number; required?: boolean;
+function NumField({ label, value, onChange, min, max, required, ancla: nombreAncla }: {
+  label: string; value: string; onChange: (v: string) => void; min: number; max: number;
+  required?: boolean; ancla?: string;
 }) {
   // min/max informan la etiqueta y el rango se valida en `rangeError` (mismo
   // rango que el backend); el input es text para que la coma no vacíe el valor.
   void min; void max;
   return (
-    <label className="portal-card block p-3">
+    <label className="portal-card block p-3" {...(nombreAncla ? ancla(nombreAncla) : {})}>
       <span className="block text-xs opacity-50">{label} {required && <span style={{ color: "#C2453A" }}>*</span>}</span>
       <input type="text" inputMode="numeric"
         className="mt-1 w-full bg-transparent text-lg font-semibold outline-none"

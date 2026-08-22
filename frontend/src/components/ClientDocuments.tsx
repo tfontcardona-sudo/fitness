@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { copiarConAviso } from "../lib/clipboard";
 import { CheckCircle2, Download, FileText, MessageCircle, Send, Upload } from "lucide-react";
 import { api, getToken } from "../lib/api";
 import { useToast } from "./ui";
@@ -171,8 +172,8 @@ export function ClientDocuments({ client, onUploaded, onGoAnamnesis, portalUrl, 
       toast.push("WhatsApp abierto con su cuestionario — dale a enviar");
       return;
     }
-    navigator.clipboard.writeText(url).catch(() => {});
-    toast.push("Enlace del cuestionario copiado (el cliente no tiene teléfono en su ficha)");
+    void copiarConAviso(url, toast,
+      "Enlace del cuestionario copiado (el cliente no tiene teléfono en su ficha)");
   }
 
   function openDoc(name: string) {

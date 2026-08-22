@@ -127,7 +127,8 @@ def export_csv(db: Session = Depends(get_db)):
     estados = {"paid": "Cobrado", "failed": "Fallido", "refunded": "Devolución",
                "canceled": "Baja"}
     tipos = {"checkout": "Pago único", "invoice": "Suscripción",
-             "refund": "Devolución", "subscription": "Suscripción"}
+             "refund": "Devolución", "subscription": "Suscripción",
+             "manual": "Cobro a mano"}
     for pago, nombre in filas:
         local = pago.paid_at.astimezone(tz) if pago.paid_at else None
         importe = pago.amount_cents / 100
@@ -190,13 +191,34 @@ def manual_payment(body: ManualPaymentIn, db: Session = Depends(get_db)) -> Paym
     if client is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Cliente no encontrado")
 
+    # Fecha futura: el cobro desaparecería del mes y congelaría la renovación.
+    hoy = pay_svc.hoy_local()
+    if body.paid_on and body.paid_on > hoy:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Esa fecha aún no ha llegado: anota el cobro el día que lo recibas.")
+
+    importe = int(round(body.amount_eur * 100))
+    ya_estaba = pay_svc.existe_cobro_manual(
+        db, client_id=client.id, paid_on=body.paid_on or hoy,
+        amount_cents=importe, method=body.method, note=body.note)
+    if ya_estaba:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Ya hay un cobro igual de este cliente ese día (mismo importe y "
+            "método). Si de verdad son dos, añádele una nota que los distinga.")
+
     pago = pay_svc.record_manual_payment(
-        db, client=client,
-        amount_cents=int(round(body.amount_eur * 100)),
+        db, client=client, amount_cents=importe,
         method=body.method, paid_on=body.paid_on, note=body.note,
     )
     if pago is None:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Ese cobro ya estaba anotado")
+        # Aquí ya NO puede ser un duplicado (se comprobó arriba): es un fallo
+        # real de la base de datos y decir "ya estaba anotado" haría que el
+        # coach diera por bueno un cobro que no se guardó.
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "No se pudo anotar el cobro. Vuelve a intentarlo.")
 
     # La ficha queda al día: el ciclo de renovación cuenta desde ESTE cobro.
     client.payment_status = "paid"

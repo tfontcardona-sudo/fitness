@@ -226,3 +226,35 @@ def test_import_word_sin_cambios_no_inventa_nada(client, auth, setup):
     )
     assert r.status_code == 200, r.text
     assert r.json()["changes"] == []
+
+
+def test_la_linea_guia_no_suplanta_a_la_barra_de_seccion():
+    """Regresión: al imprimir una línea guía bajo cada barra, las cajas de
+    Cardio y de la semana de descarga dejaban de importarse EN SILENCIO — la
+    frase de la guía pasaba a ser la 'última barra' y ya no casaba."""
+    from docx import Document
+
+    from app.services.docs.word_base import DocBrand
+    from app.services.docs.plan_doc import generate_plan_doc
+    from app.services.word_import import _es_barra, _iter_blocks
+
+    brand = DocBrand(name="DQR", color_primary="#8B1A2B", color_secondary="#4A7BA8",
+                     font_family="Calibri")
+    data = generate_plan_doc(
+        brand=brand, client_name="Mario", month_index=1, goal_type="fat_loss",
+        diet_mode="flexible",
+        nutrition={"tdee_kcal": 2500, "target_kcal": 2200,
+                   "macros": {"carbs_g": 200, "protein_g": 170, "fat_g": 70},
+                   "meals": [{"slot": 1, "name": "Desayuno", "time": "08:00"}],
+                   "meal_bank": {"mode": "flexible", "slots": []}},
+        training={"split_name": "Full", "sessions": [],
+                  "cardio": {"daily_steps": 9000, "sessions": []},
+                  "deload_instructions": "Semana 4: mitad de series."},
+        education={}, include_training=True, include_nutrition=True,
+    )
+    doc = Document(io.BytesIO(data))
+    barras = [b.text.strip() for k, b in _iter_blocks(doc) if k == "p" and _es_barra(b)]
+    assert "CARDIO Y NEAT" in barras, barras
+    assert "SEMANA DE DESCARGA (DELOAD)" in barras, barras
+    # Y la línea guía NO se cuela como barra.
+    assert not any("pasos diarios pesan" in b.lower() for b in barras)

@@ -301,6 +301,9 @@ export interface ClientOut {
   diet_mode: DietMode | null;
   diet_pattern?: string | null;
   reference_weight_kg?: number | null;
+  /** ¿Toca renovar ya? Lo decide el backend (`renewals.is_due`), no el panel:
+   *  una segunda fórmula aquí se desincronizaría de la alerta y del email. */
+  renewal_due?: boolean;
   strict_free_meal_enabled: boolean;
   status: ClientStatus;
   auto_pilot: boolean;
@@ -762,6 +765,15 @@ export interface CoachAlert {
   message: string;
   tab: string;
   action: string;
+  /** Identidad ESTABLE del problema: por ella se ancla el recordatorio y por
+   *  ella se borra solo cuando el problema deja de existir. */
+  key: string;
+  /** Ancla del elemento exacto que hay que cambiar (lib/anchors.ts). */
+  target?: string | null;
+  /** Cómo se arregla, en una línea: se enseña pegado a la marca. */
+  fix?: string | null;
+  /** Destino fuera de la ficha del cliente (p. ej. "/recursos?tab=productos"). */
+  to?: string | null;
 }
 
 /** Ronda diaria de seguimiento por WhatsApp (pool de 100 mensajes). */

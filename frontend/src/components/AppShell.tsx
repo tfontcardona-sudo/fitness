@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSinConexion } from "../lib/offline";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -14,6 +15,8 @@ import { useBrand } from "../hooks/useBrand";
 import { ALERTS_REFRESH_MS, api } from "../lib/api";
 import { useAppUpdate } from "../lib/appUpdate";
 import { AlertsBell } from "./AlertsBell";
+import { PinDock } from "./Pins";
+import { activarAcordeon } from "../lib/accordion";
 import { AiCreditButton } from "./AiCreditButton";
 
 const NAV = [
@@ -72,7 +75,22 @@ function useIsMobile(): boolean {
   return mobile;
 }
 
+/** Sin conexión: el coach guardaba la anamnesis y solo veía un toast que se
+ *  iba a los cuatro segundos. Avisa, no bloquea. */
+function BandaSinConexion() {
+  return (
+    <div role="status"
+      className="fixed inset-x-0 top-0 z-50 py-1.5 text-center text-xs font-semibold text-white"
+      style={{ background: "#C2453A" }}>
+      Sin conexión · lo que guardes ahora no llegará
+    </div>
+  );
+}
+
 export default function AppShell() {
+  // Abrir un desplegable cierra el hermano abierto: la pantalla no se ensucia.
+  useEffect(activarAcordeon, []);
+  const sinConexion = useSinConexion();
   const { user, logout } = useAuth();
   const { brand } = useBrand();
   const navigate = useNavigate();
@@ -103,6 +121,9 @@ export default function AppShell() {
         <main className="coach-mobile relative flex-1 overflow-y-auto pb-24" style={{ background: "var(--bg)" }}>
           {updateBanner}
           <AlertsBell />
+        {sinConexion && <BandaSinConexion />}
+          {sinConexion && <BandaSinConexion />}
+          <PinDock />
           <Outlet />
         </main>
         <nav
@@ -237,6 +258,9 @@ export default function AppShell() {
         {updateBanner}
         {/* Centro de alertas: preventivo, se autolimpia al resolver acciones */}
         <AlertsBell />
+        {sinConexion && <BandaSinConexion />}
+        {/* Lo que ibas a arreglar: se borra solo al quedar resuelto */}
+        <PinDock />
         <Outlet />
       </main>
     </div>

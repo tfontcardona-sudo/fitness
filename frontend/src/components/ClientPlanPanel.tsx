@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
 import { Sparkles, ChevronRight, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Mail, MoreHorizontal, Pencil, PlayCircle, Save, X, Flag, Copy, Archive, FileText, FileUp } from "lucide-react";
+import { grupo } from "../lib/accordion";
+import { ancla, hrefCliente } from "../lib/anchors";
+import { copiarConAviso } from "../lib/clipboard";
+import { pin, pinId, syncScope } from "../lib/pins";
 import { api, getToken } from "../lib/api";
 import { manualUpdateMessage, openWhatsApp, planAndFeedbackMessage, planMessage, waPhone, waUrl } from "../lib/whatsapp";
 import { pkg } from "../lib/packages";
@@ -523,7 +527,8 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                 </button>
               </>
             ) : (
-              <button onClick={() => generate()} disabled={generating} className="btn btn-primary mt-4">
+              <button onClick={() => generate()} disabled={generating} className="btn btn-primary mt-4"
+                {...ancla("plan.generar")}>
                 <Sparkles size={16} />
                 {generating ? "Generando… (puede tardar 1-2 min)" : "Generar planificación"}
               </button>
@@ -605,8 +610,32 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
   const alreadyAdapted = review != null && appliedBlock?.period_index === review.period_index;
 
   /** Un clic en el aviso lleva a donde se resuelve: el editor abierto por la
-   *  sección correcta, la pestaña Anamnesis, o el botón de generar. */
-  function irADestino(destino: Destino) {
+   *  sección correcta, la pestaña Anamnesis, o el botón de generar. Y deja un
+   *  RECORDATORIO de lo que ibas a arreglar, que se borra solo cuando el aviso
+   *  desaparece del plan. */
+  function irADestino(destino: Destino, aviso?: { titulo: string; accion: string; detalle?: string }) {
+    // El recordatorio guarda el MISMO destino al que se va: antes nacía sin
+    // ancla (al volver por el dock no marcaba nada) y con el enlace a
+    // Planificación aunque el hallazgo mandara a la Anamnesis.
+    const pestana = destino === "anamnesis" ? "anamnesis" : "planificacion";
+    const anclaDestino = destino === "anamnesis" ? "anamnesis.revision"
+      : destino === "nutricion" ? "nutricion.macros"
+      : destino === "entreno" ? "entreno.sesiones"
+      : "plan.acciones";
+    if (aviso) {
+      pin({
+        id: pinId(ambitoPlan, clavePlan(destino, aviso.titulo)),
+        scope: ambitoPlan,
+        key: clavePlan(destino, aviso.titulo),
+        clientId: client.id,
+        clientName: client.full_name,
+        label: aviso.titulo,
+        hint: aviso.accion,
+        href: hrefCliente(client.id, pestana, anclaDestino),
+        target: anclaDestino,
+        severity: "alta",
+      });
+    }
     if (destino === "anamnesis") { onGoTab?.("anamnesis"); return; }
     setEditing(true);
     // Mapa EXPLÍCITO: un ternario mandaba todo lo que no fuese nutrición al
@@ -626,6 +655,11 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
   // UN SOLO recuento de puntos a corregir, compartido por el chip de estado y
   // el bloque de avisos: son las líneas que el coach VE (avisos ya fusionados
   // entre revisores + avisos del guardarraíl ya traducidos y agrupados).
+  // Ámbito de los recordatorios nacidos de los avisos del PLAN. Se ancla al
+  // CLIENTE, no a la versión: al regenerar cambia el id del plan y los
+  // recordatorios de la versión anterior no se retirarían nunca.
+  const ambitoPlan = `plan:${client.id}`;
+
   const nRojoTotal = (() => {
     // Mismo filtro por color que el bloque: sin él salía una caja roja vacía
     // con la cabecera "Retenido · 1 punto a corregir".
@@ -638,8 +672,78 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
     return agrupar(bloq.map(toAviso)).reduce((n, g) => n + g.items.length, 0) + flags.length;
   })();
 
+  // Los avisos VIVOS de este plan, ahora mismo. Todo recordatorio de este
+  // ámbito que ya no esté aquí es que se arregló: se borra solo.
+  const avisosVivos = (() => {
+    const c = plan?.review?.color;
+    const fs = (c === "rojo" || c === "ambar") ? (plan?.review?.findings ?? []) : [];
+    return agrupar(fs.map(toAviso))
+      .flatMap((g) => g.items)
+      .map((a) => clavePlan(a.destino, a.titulo));
+  })();
+  const avisosFirma = avisosVivos.join("|");
+  useEffect(() => {
+    // Solo con el plan cargado: sin plan no se puede afirmar que no haya avisos.
+    if (plan) syncScope(ambitoPlan, avisosFirma ? avisosFirma.split("|") : []);
+  }, [plan, ambitoPlan, avisosFirma]);
+
+  // Adaptación que quedó RETENIDA por los guardarraíles: es más nueva que el
+  // plan que se está enseñando y sigue sin activar.
+  const retenido = allPlans.find(
+    (p) => p.status === "draft" && (p.id ?? 0) > (plan?.id ?? 0));
+  const motivosRetencion = retenido
+    ? traducirFlags((retenido.guardrail_flags ?? [])
+        .filter((f: string) => f.startsWith("violation:") || f.startsWith("retenido")))
+    : [];
+
+  async function activarRetenido() {
+    if (!retenido || publishing) return;
+    setPublishing(true);
+    try {
+      await api.publishPlan(retenido.id);
+      const ps = await api.listPlans(client.id).catch(() => allPlans);
+      setAllPlans(ps);
+      const v = vigente(ps);
+      if (v) setPlan(normalize(v));
+      onClientChanged?.();
+      toast.push("Activa · la ve el cliente");
+    } catch {
+      toast.push("No se pudo activar", "error");
+    } finally {
+      setPublishing(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
+      {retenido && (
+        <div className="card p-4" {...ancla("plan.activar")}
+          style={{ borderColor: "color-mix(in srgb, #C2453A 45%, transparent)" }}>
+          <p className="text-sm font-semibold" style={{ color: "#B91C1C" }}>
+            ▲ Adaptación v{retenido.version} retenida · el cliente sigue con la anterior
+          </p>
+          {motivosRetencion.length > 0 && (
+            <ul className="mt-2 space-y-1">
+              {motivosRetencion.slice(0, 6).map((m, i) => (
+                <li key={i} className="text-xs text-zinc-400">· {m}</li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-2 text-xs text-zinc-500">
+            Los guardarraíles la pararon: revísala y corrige lo señalado, o
+            actívala si estás de acuerdo tal cual.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button onClick={() => setPlan(normalize(retenido))} className="btn btn-ghost text-xs">
+              Ver este borrador
+            </button>
+            <button onClick={activarRetenido} disabled={publishing} className="btn btn-primary text-xs">
+              {publishing ? "Activando…" : "Activar de todas formas"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Cabecera con acciones */}
       <div className="card p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -767,7 +871,8 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
           </div>
           {/* Acciones: en móvil ocupan todo el ancho (2 columnas) sin cortarse;
               en escritorio van en fila. */}
-          <div id="plan-acciones" className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
+          <div id="plan-acciones" {...ancla("plan.acciones")}
+            className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
             <button onClick={() => setEditing(true)} className="btn btn-ghost">
               <Pencil size={15} /> Editar
             </button>
@@ -776,7 +881,12 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
             </button>
             {/* Las acciones poco frecuentes viven en un menú: la botonera pasa
                 de 6-7 botones del mismo peso a 3-4 (lo frecuente destaca). */}
-            <details className="relative">
+            <details className="relative"
+              onKeyDown={(e) => {
+                if (e.key !== "Escape") return;
+                e.currentTarget.removeAttribute("open");
+                e.stopPropagation();
+              }}>
               <summary className="btn btn-ghost w-full cursor-pointer list-none sm:w-auto">
                 <MoreHorizontal size={15} /> Más
               </summary>
@@ -846,7 +956,8 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
               </button>
             )}
             {plan.status !== "published" && (
-              <button onClick={activateLegacy} disabled={publishing} className="btn btn-primary col-span-2 sm:col-span-1">
+              <button onClick={activateLegacy} disabled={publishing} className="btn btn-primary col-span-2 sm:col-span-1"
+                {...ancla("plan.activar")}>
                 <Send size={15} /> {publishing ? "Activando…" : "Activar"}
               </button>
             )}
@@ -1150,7 +1261,8 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
       {/* Cambios PROPUESTOS por la última revisión quincenal: se ven ANTES de
           adaptar (qué cambia y por qué, dieta y entreno) y el botón va dentro. */}
       {review?.plan_adjustments?.length && !alreadyAdapted ? (
-        <details open name="plan-secciones" className="card p-5" style={{ borderColor: "color-mix(in srgb, var(--brand-accent) 55%, transparent)" }}>
+        <details open name="plan-secciones" className="card p-5" {...ancla("plan.adaptar")}
+          style={{ borderColor: "color-mix(in srgb, var(--brand-accent) 55%, transparent)" }}>
           <summary className="cursor-pointer text-sm font-semibold text-zinc-100">
             Propuestas · revisión #{review.period_index}
             <span className="ml-2 text-xs font-normal text-zinc-500">
@@ -1259,7 +1371,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
       {/* Nutrición (los planes Train no la incluyen: sin tarjeta de ceros) */}
       {hasNutrition && (
       <div className="card p-5">
-        <SectionTitle icon={Utensils} title="Nutrición"
+        <SectionTitle icon={Utensils} title="Nutrición" ancla="nutricion.macros"
           onEdit={() => { setEditFocus("nutrition"); setEditing(true); }} />
         {/* Cálculo aplicado, directo: déficit/superávit sobre el TDEE */}
         {nut.tdee_kcal ? (
@@ -1365,14 +1477,18 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
       </div>
       )}
 
-      {/* El BANCO DE COMIDAS ya no se muestra aquí (el coach no lo necesita en
-          pantalla): va completo en el PDF que recibe el cliente. */}
+      {/* El BANCO DE COMIDAS no ocupa pantalla por defecto (va completo en el
+          PDF del cliente), pero SÍ existe plegado: cuando un aviso señala una
+          toma concreta ("hay lentejas en la toma 2"), el desplegable se abre
+          solo y esa toma queda marcada. Sin eso, el coach leía el problema y
+          no tenía dónde verlo. */}
+      {hasNutrition && <BancoDeComidas nut={nut} />}
 
       {/* Entrenamiento — azul de marca (como sus chips de ajustes).
           El paquete Start es solo nutrición: no se muestra el entrenamiento. */}
       {hasTraining && (
       <div className="card p-5">
-        <SectionTitle icon={Dumbbell} title={`Entrenamiento${tr.split_name ? ` · ${tr.split_name}` : ""}`} accent="var(--brand-accent-2)"
+        <SectionTitle icon={Dumbbell} title={`Entrenamiento${tr.split_name ? ` · ${tr.split_name}` : ""}`} accent="var(--brand-accent-2)" ancla="entreno.sesiones"
           onEdit={() => { setEditFocus("training"); setEditing(true); }} />
         {tr.split_rationale && (
           <details className="mb-3 text-sm">
@@ -1509,7 +1625,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
       {/* Suplementación */}
       {Array.isArray(nut.supplements) && nut.supplements.length > 0 && (
         <div className="card p-5">
-          <SectionTitle icon={Pill} title="Suplementación"
+          <SectionTitle icon={Pill} title="Suplementación" ancla="plan.suplementos"
             onEdit={() => { setEditFocus("supplements"); setEditing(true); }} />
           <div className="space-y-1.5">
             {nut.supplements.map((s: any, i: number) => (
@@ -1889,6 +2005,7 @@ function GoalStageCard({ client, currentMonth, onClientChanged, onRegenerated }:
       open={due != null}
       name="plan-secciones"
       className="card p-5"
+      {...ancla("plan.objetivo")}
       style={due != null ? { borderColor: "color-mix(in srgb, var(--brand-accent) 55%, transparent)" } : undefined}
     >
       <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 text-sm font-semibold text-zinc-100">
@@ -1919,7 +2036,7 @@ function GoalStageCard({ client, currentMonth, onClientChanged, onRegenerated }:
           <div className="rounded-lg border p-3" style={{ borderColor: "color-mix(in srgb, var(--brand-accent-2) 25%, transparent)", background: "color-mix(in srgb, var(--brand-accent-2) 5%, transparent)" }}>
             <p className="whitespace-pre-line text-sm text-zinc-300">{analysis}</p>
             <button
-              onClick={() => { navigator.clipboard.writeText(analysis).catch(() => {}); toast.push("Análisis copiado"); }}
+              onClick={() => void copiarConAviso(analysis, toast, "Análisis copiado")}
               className="mt-2 flex items-center gap-1 text-xs font-medium hover:opacity-80"
               style={{ color: "var(--brand-accent-2)" }}
             >
@@ -2010,14 +2127,98 @@ function AdjustmentRow({ area, main, secondary, reason }: {
   );
 }
 
-function SectionTitle({ icon: Icon, title, accent, onEdit }: {
+/**
+ * Las comidas de cada toma, PLEGADAS.
+ *
+ * El coach no las necesita en pantalla el 99% del tiempo (van completas en el
+ * PDF del cliente), así que por defecto ocupan una línea. Pero tienen que
+ * EXISTIR: cuando un aviso dice "hay lentejas en la toma 2 y es alérgica", el
+ * desplegable se abre solo y esa toma queda marcada — antes el coach leía el
+ * problema y no tenía dónde mirarlo.
+ *
+ * Solo lectura: el banco se cambia regenerando o subiendo el Word editado.
+ */
+function BancoDeComidas({ nut }: { nut: any }) {
+  const bank = nut?.meal_bank;
+  const nombres = new Map<number, string>(
+    (Array.isArray(nut?.meals) ? nut.meals : [])
+      .map((m: any) => [m?.slot, m?.time ? `${m.name} · ${m.time}` : m?.name]),
+  );
+
+  // Las dos formas del banco se aplanan a lo mismo: toma → líneas de texto.
+  const porToma = new Map<number, string[]>();
+  if (bank?.mode === "strict" && Array.isArray(bank.days)) {
+    for (const d of bank.days) {
+      for (const m of d?.meals ?? []) {
+        if (m?.slot == null) continue;
+        const t = (m.dish?.title ?? "").trim();
+        if (!t) continue;
+        const lista = porToma.get(m.slot) ?? [];
+        lista.push(`${String(d?.day ?? "").slice(0, 3)}: ${t}`);
+        porToma.set(m.slot, lista);
+      }
+    }
+  } else if (Array.isArray(bank?.slots)) {
+    for (const sb of bank.slots) {
+      if (sb?.slot == null) continue;
+      const lista: string[] = [];
+      for (const opt of sb.options ?? []) {
+        const t = (opt?.title ?? "").trim();
+        if (t) lista.push(t);
+      }
+      for (const g of sb.equivalences?.groups ?? []) {
+        const t = (g?.label ?? g?.name ?? "").trim();
+        if (t) lista.push(t);
+      }
+      if (lista.length) porToma.set(sb.slot, lista);
+    }
+  }
+  if (!porToma.size) return null;
+
+  const tomas = [...porToma.keys()].sort((a, b) => a - b);
+  const total = [...porToma.values()].reduce((n, l) => n + l.length, 0);
+
+  return (
+    <details name="plan-secciones" className="card p-5">
+      <summary className="cursor-pointer text-sm font-semibold text-zinc-100">
+        Comidas de cada toma
+        <span className="ml-2 text-xs font-normal text-zinc-500">
+          {tomas.length} tomas · {total} opciones · solo lectura
+        </span>
+      </summary>
+      <div className="mt-3 space-y-2">
+        {tomas.map((slot) => (
+          <div key={slot} {...ancla(`nutricion.comida.${slot}`)}
+            className="well px-3 py-2.5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+              {nombres.get(slot) ?? `Toma ${slot}`}
+            </p>
+            <ul className="mt-1 space-y-0.5">
+              {porToma.get(slot)!.map((t, i) => (
+                <li key={i} className="text-xs text-zinc-400">· {t}</li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 text-xs text-zinc-500">
+        Para cambiarlas: regenera el plan, o descarga el Word, edítalo y súbelo.
+      </p>
+    </details>
+  );
+}
+
+function SectionTitle({ icon: Icon, title, accent, onEdit, ancla: nombreAncla }: {
   icon: typeof Utensils; title: string; accent?: string;
   /** Edición POR BLOQUE: abre el editor enfocado y resaltado en esta sección. */
   onEdit?: () => void;
+  /** Ancla del apartado: un aviso puede señalarlo y quedará marcado. */
+  ancla?: string;
 }) {
   const c = accent ?? "var(--brand-accent)";
   return (
-    <div className="mb-3 flex items-center gap-2.5">
+    <div className="mb-3 flex items-center gap-2.5"
+      {...(nombreAncla ? ancla(nombreAncla) : {})}>
       {onEdit && (
         <button
           onClick={onEdit}
@@ -2044,10 +2245,17 @@ function SectionTitle({ icon: Icon, title, accent, onEdit }: {
  *  Sustituye al muro de párrafos rojos: el coach ve de un vistazo cuántos hay,
  *  de qué tipo son y qué tiene que hacer con cada uno. El texto completo del
  *  hallazgo queda como detalle, a un clic. */
+/** Identidad estable de un aviso del plan: destino + título normalizado. No
+ *  hay id en el backend, pero el par destino/título sí sobrevive a que el
+ *  revisor reformule el detalle. */
+function clavePlan(destino: string, titulo: string): string {
+  return `${destino}|${titulo.toLowerCase().replace(/\s+/g, " ").trim()}`;
+}
+
 function AvisosBlock({ tono, cabecera, findings, flags, onIr, degraded = 0, plegado = false }: {
   tono: "rojo" | "ambar";
   cabecera: string;
-  onIr: (destino: Destino) => void;
+  onIr: (destino: Destino, aviso?: { titulo: string; accion: string }) => void;
   findings: { severity: string; description: string; title?: string; action?: string; correccion_propuesta?: string }[];
   flags: string[];
   degraded?: number;
@@ -2086,7 +2294,7 @@ function AvisosBlock({ tono, cabecera, findings, flags, onIr, degraded = 0, pleg
                 {g.items.map((a, i) => (
                   <li key={i} className="border-l-2 pl-2"
                     style={{ borderLeftColor: `color-mix(in srgb, ${color} 35%, transparent)` }}>
-                    <details>
+                    <details {...grupo("avisos-del-plan")}>
                       <summary className="cursor-pointer text-xs leading-snug">
                         <span className="font-semibold" style={{ color }}>{a.titulo}</span>
                         {a.veces > 1 && (
@@ -2100,7 +2308,10 @@ function AvisosBlock({ tono, cabecera, findings, flags, onIr, degraded = 0, pleg
                             arregla, sin buscar la pestaña ni el botón. */}
                         <button
                           type="button"
-                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onIr(a.destino); }}
+                          onClick={(e) => {
+                            e.preventDefault(); e.stopPropagation();
+                            onIr(a.destino, { titulo: a.titulo, accion: a.accion });
+                          }}
                           className="ml-1 font-medium text-zinc-500 underline decoration-dotted underline-offset-2 hover:text-zinc-300"
                         >
                           → {a.accion}

@@ -209,8 +209,11 @@ function Kpi({
   signed?: boolean;
   lowerBetter?: boolean;
 }) {
+  // Coma decimal: el número crudo daba "82.5 kg" y "-3.4 kg" en una web
+  // íntegramente en español.
   const display =
-    value == null ? "—" : `${signed && value > 0 ? "+" : ""}${value} ${unit}`;
+    value == null ? "—"
+      : `${signed && value > 0 ? "+" : ""}${value.toLocaleString("es-ES", { maximumFractionDigits: 1 })} ${unit}`;
   const improving = value != null && (lowerBetter ? value < 0 : value > 0);
   const tone = signed && value != null && value !== 0 ? (improving ? "#E8833A" : "#9A6B15") : undefined;
   return (

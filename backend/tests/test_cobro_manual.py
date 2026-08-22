@@ -124,3 +124,49 @@ def test_renovacion_avisa_con_cinco_dias(client, auth):
     # Hace 20 días → quedan 10: todavía no molesta al cliente.
     c.paid_at = datetime(2026, 8, 1, tzinfo=timezone.utc)
     assert renewals.is_due(c, hoy) is False
+
+
+def test_el_doble_clic_no_duplica_el_cobro(client, auth):
+    """El id llevaba el segundo actual, así que solo protegía si los dos envíos
+    caían dentro del MISMO segundo — justo lo que no pasa con un doble clic."""
+    cid = _nuevo_cliente(client, auth)
+    cuerpo = {"client_id": cid, "amount_eur": 129.0, "method": "bizum"}
+    r1 = client.post("/api/payments/manual", json=cuerpo, headers=auth)
+    assert r1.status_code == 201, r1.text
+    r2 = client.post("/api/payments/manual", json=cuerpo, headers=auth)
+    assert r2.status_code == 409, "el segundo envío duplicó el ingreso"
+    assert "nota" in r2.json()["detail"].lower(), "el 409 no dice cómo distinguirlos"
+
+    # Con una nota distinta SÍ son dos cobros (pueden serlo de verdad).
+    r3 = client.post("/api/payments/manual",
+                     json={**cuerpo, "note": "segunda mensualidad"}, headers=auth)
+    assert r3.status_code == 201, r3.text
+
+
+def test_no_se_puede_anotar_un_cobro_del_futuro(client, auth):
+    """Con una fecha futura el cobro desaparecía del mes y congelaba el ciclo
+    de renovación."""
+    from datetime import date, timedelta
+
+    cid = _nuevo_cliente(client, auth)
+    manana = (date.today() + timedelta(days=2)).isoformat()
+    r = client.post("/api/payments/manual",
+                    json={"client_id": cid, "amount_eur": 50.0, "method": "efectivo",
+                          "paid_on": manana},
+                    headers=auth)
+    assert r.status_code == 400, r.text
+
+
+def test_la_renovacion_pagada_en_mano_tambien_se_puede_anotar(client, auth):
+    """El formulario solo salía si el cliente estaba «pendiente», que es justo
+    lo que un cliente ya pagado NO es: no había forma de anotar su renovación."""
+    cid = _nuevo_cliente(client, auth)
+    r1 = client.post("/api/payments/manual",
+                     json={"client_id": cid, "amount_eur": 129.0, "method": "efectivo"},
+                     headers=auth)
+    assert r1.status_code == 201
+    # Ya está "paid"; el segundo cobro (otro importe) debe entrar igual.
+    r2 = client.post("/api/payments/manual",
+                     json={"client_id": cid, "amount_eur": 99.0, "method": "efectivo"},
+                     headers=auth)
+    assert r2.status_code == 201, r2.text

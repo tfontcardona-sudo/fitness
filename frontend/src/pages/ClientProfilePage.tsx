@@ -14,6 +14,9 @@ import { Avatar } from "./DashboardPage";
 import { ClientSummaryTab } from "../components/ClientSummaryTab";
 import { ClientAnamnesisTab } from "../components/ClientAnamnesisTab";
 import { ClientDocuments } from "../components/ClientDocuments";
+import { MarcadorDeAncla } from "../components/Pins";
+import { ancla, irYMarcar } from "../lib/anchors";
+import { copiarConAviso } from "../lib/clipboard";
 import { ClientPlanPanel } from "../components/ClientPlanPanel";
 import { ClientFeedbackTab } from "../components/ClientFeedbackTab";
 import { ClientHistoryTab } from "../components/ClientHistoryTab";
@@ -49,22 +52,40 @@ export default function ClientProfilePage() {
   // todos los retoques. Mismo guard que la anamnesis.
   const [planEditing, setPlanEditing] = useState(false);
 
-  function changeTab(next: Tab) {
-    if (next === tab) return;
+  // Ancla a marcar al llegar (?ir=nutricion.comida.2): la pone el aviso que se
+  // pulsó. Se conserva mientras el recordatorio siga vivo; al cambiar de
+  // pestaña a mano se suelta (ya no estás en el sitio que se te señaló).
+  const ir = searchParams.get("ir");
+
+  /** Aplica la pestaña, con sus guardas de borrador sin guardar, SIN tocar la
+   *  URL. Devuelve si el cambio se aceptó. */
+  function aplicarTab(next: Tab): boolean {
+    if (next === tab) return false;
     if (tab === "anamnesis" && anamnesisDirty &&
         !window.confirm("Tienes cambios sin guardar en la anamnesis. ¿Descartarlos?")) {
-      return;
+      return false;
     }
     if (tab === "planificacion" && planEditing &&
         !window.confirm("Tienes el editor del plan abierto con cambios sin guardar. ¿Descartarlos?")) {
-      return;
+      return false;
     }
     if (tab === "anamnesis") setAnamnesisDirty(false);
     if (tab === "planificacion") setPlanEditing(false);
     setTab(next);
-    // La URL refleja la pestaña activa: recargar o compartir el enlace vuelve a
-    // la misma pestaña. `replace` para no llenar el historial con cada clic
-    // (el efecto URL→tab no entra en bucle: su changeTab corta si next === tab).
+    return true;
+  }
+
+  /** Clic MANUAL en una pestaña. Además de aplicarla reescribe la URL, y ahí
+   *  SÍ se suelta el ancla: ya no estás en el sitio que se te señaló.
+   *
+   *  Esto NO lo puede usar el efecto que sigue a la URL: al reescribirla
+   *  borraba el `?ir=` en el mismo instante, así que pulsar un aviso estando
+   *  YA dentro de la ficha del cliente cambiaba de pestaña sin marcar nada
+   *  — el camino más común de todos. */
+  function changeTab(next: Tab) {
+    if (!aplicarTab(next)) return;
+    // La URL refleja la pestaña activa: recargar o compartir el enlace vuelve
+    // a la misma pestaña. `replace` para no llenar el historial.
     setSearchParams({ tab: next }, { replace: true });
   }
 
@@ -118,7 +139,9 @@ export default function ClientProfilePage() {
   useEffect(() => {
     const t = searchParams.get("tab") as Tab | null;
     const valid: Tab[] = ["resumen", "anamnesis", "planificacion", "seguimiento", "feedback", "historial"];
-    if (t && valid.includes(t)) changeTab(t);
+    // `aplicarTab`, NO `changeTab`: reescribir la URL aquí borraría el `?ir=`
+    // del aviso que acaba de traernos.
+    if (t && valid.includes(t)) aplicarTab(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
@@ -179,9 +202,8 @@ export default function ClientProfilePage() {
 
   function openPortal() {
     if (!portalUrl) return;
-    navigator.clipboard.writeText(portalUrl).catch(() => {});
     window.open(portalUrl, "_blank", "noopener");
-    toast.push("Enlace del portal copiado y abierto");
+    void copiarConAviso(portalUrl, toast, "Enlace del portal copiado y abierto");
   }
 
   async function regenerate() {
@@ -226,6 +248,9 @@ export default function ClientProfilePage() {
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-6">
+      {/* Marca el elemento exacto del que hablaba el aviso y le pega la nota de
+          cómo se arregla. Si el problema se resuelve, la marca se va sola. */}
+      <MarcadorDeAncla clientId={clientId} target={ir} />
       <Link to="/clientes" className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-300">
         <ArrowLeft size={15} /> Clientes
       </Link>
@@ -233,18 +258,17 @@ export default function ClientProfilePage() {
       {/* Notificación: el cliente cerró su período → toca generar feedback.
           Se oculta en cuanto el feedback ya está generado. */}
       {client.status === "review_pending" && feedbackPending && (
-        <div
-          className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3.5"
+        <button
+          onClick={() => { changeTab("feedback"); void irYMarcar("feedback.generar"); }}
+          className="mt-4 flex w-full flex-wrap items-center justify-between gap-3 rounded-xl border p-3.5 text-left transition-transform active:scale-[0.995]"
           style={{ borderColor: "var(--brand-accent)", background: "color-mix(in srgb, var(--brand-accent) 10%, transparent)" }}
         >
-          <div className="flex items-center gap-2.5 text-sm text-zinc-200">
+          <span className="flex items-center gap-2.5 text-sm text-zinc-200">
             <BellRing size={18} style={{ color: "var(--brand-accent)" }} />
             <span><b>El cliente ha cerrado su período.</b> Revisa los datos y genera el feedback.</span>
-          </div>
-          <button onClick={() => changeTab("feedback")} className="btn btn-primary">
-            Ir a Feedback
-          </button>
-        </div>
+          </span>
+          <span className="btn btn-primary pointer-events-none">Ir a Feedback</span>
+        </button>
       )}
 
       {/* Rejilla con filas: en MÓVIL el orden es identidad → contenido →
@@ -345,27 +369,34 @@ export default function ClientProfilePage() {
           >
             <MessageCircle size={22} className="shrink-0" />
             <span className="min-w-0">
-              <span className="block text-sm font-semibold">Escribirle por WhatsApp</span>
+              <span className="block text-sm font-semibold" {...ancla("anamnesis.enviar")}>
+                Escribirle por WhatsApp
+              </span>
               <span className="block text-xs opacity-80">abre su chat con el saludo puesto</span>
             </span>
           </button>
 
           {/* ENLACE DE PAGO (Stripe): color diferenciado (verde), debajo del
               portal. Copia el enlace para mandárselo al cliente y que pague. */}
-          {payUrl && client.payment_status !== "paid" && (
+          <div {...ancla("resumen.pago")} className="space-y-3">
+          {payUrl && (client.payment_status !== "paid" || client.renewal_due) && (
             <button
               onClick={() => {
-                navigator.clipboard.writeText(payUrl).catch(() => {});
-                toast.push("Enlace de pago copiado — mándaselo al cliente");
+                void copiarConAviso(payUrl, toast, client.payment_status === "paid"
+                  ? "Enlace de renovación copiado — mándaselo al cliente"
+                  : "Enlace de pago copiado — mándaselo al cliente");
               }}
               className="flex w-full items-center gap-3 rounded-xl border-2 px-4 py-3 text-left transition-transform active:scale-[0.98]"
               style={{ borderColor: "#2E7D46", color: "#2E7D46", background: "color-mix(in srgb, #2E7D46 7%, transparent)" }}
             >
               <CreditCard size={22} className="shrink-0" />
               <span className="min-w-0">
-                <span className="block text-sm font-semibold">Enlace de pago</span>
+                <span className="block text-sm font-semibold">
+                  {client.payment_status === "paid" ? "Enlace de renovación" : "Enlace de pago"}
+                </span>
                 <span className="block text-xs opacity-80">
-                  copiar y enviar al cliente — cobra su plan {billingLabel(client.billing_period).toLowerCase()}
+                  copiar y enviar al cliente — {client.payment_status === "paid" ? "renueva" : "cobra"}{" "}
+                  su plan {billingLabel(client.billing_period).toLowerCase()}
                 </span>
               </span>
             </button>
@@ -373,14 +404,14 @@ export default function ClientProfilePage() {
           {/* Pago por OTRA VÍA (bizum, transferencia, efectivo): sin este botón
               la ficha quedaba "Pago pendiente" para siempre, con la campana
               insistiendo y la carpeta "Falta pago" contaminada. */}
-          {client.payment_status !== "paid" && (
             <CobroManual client={client} onDone={reload} />
-          )}
+          </div>
           {/* Reactivar a un cliente INACTIVO: la transición existía en la
               máquina de estados pero no tenía ningún botón (auditoría del
               ciclo) — el cliente quedaba en un limbo sin alertas ni ciclo. */}
           {client.status === "inactive" && (
             <button
+              {...ancla("resumen.estado")}
               onClick={async () => {
                 if (!window.confirm(`¿Reactivar a ${client.full_name}? Volverá a recibir recordatorios y su ciclo de seguimiento continuará.`)) return;
                 try {
@@ -690,12 +721,19 @@ function Row({ label, value, faint, onGo }: {
  *  pagaba por otra vía. La fecha por defecto es hoy, pero se puede corregir:
  *  un cobro apuntado con retraso cuenta en el mes en que se cobró.
  */
+/** Fecha de HOY en horario LOCAL (YYYY-MM-DD). `toISOString()` da la de UTC:
+ *  en España, de madrugada, apuntaba al día —y a veces al mes— anterior. */
+function hoyLocal(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function CobroManual({ client, onDone }: { client: ClientOut; onDone: () => void }) {
   const toast = useToast();
   const [abierto, setAbierto] = useState(false);
   const [importe, setImporte] = useState("");
   const [metodo, setMetodo] = useState<"efectivo" | "transferencia" | "bizum" | "otro">("transferencia");
-  const [fecha, setFecha] = useState(() => new Date().toISOString().slice(0, 10));
+  const [fecha, setFecha] = useState(hoyLocal);
   const [guardando, setGuardando] = useState(false);
 
   // Coma o punto: en España se teclea "129,50".
@@ -726,7 +764,9 @@ function CobroManual({ client, onDone }: { client: ClientOut; onDone: () => void
         onClick={() => setAbierto(true)}
         className="w-full text-center text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
       >
-        ¿Te pagó por otra vía? Anotar el cobro
+        {client.payment_status === "paid"
+          ? "Anotar otro cobro (renovación, extra…)"
+          : "¿Te pagó por otra vía? Anotar el cobro"}
       </button>
     );
   }
@@ -756,7 +796,7 @@ function CobroManual({ client, onDone }: { client: ClientOut; onDone: () => void
       </div>
       <label className="mt-2 block">
         <span className="mb-1 block text-[11px] text-zinc-500">Fecha del cobro</span>
-        <input type="date" value={fecha} max={new Date().toISOString().slice(0, 10)}
+        <input type="date" value={fecha} max={hoyLocal()}
           onChange={(e) => setFecha(e.target.value)} className="input w-full" />
       </label>
       <div className="mt-3 flex justify-end gap-2">

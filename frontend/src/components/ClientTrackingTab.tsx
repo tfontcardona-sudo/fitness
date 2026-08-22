@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ancla } from "../lib/anchors";
 import { api, keepIfSame, REFRESH_MS } from "../lib/api";
 import { pkg } from "../lib/packages";
 import type { ClientOut } from "../types";
@@ -36,7 +37,7 @@ function ChangeRequestsCard({ clientId }: { clientId: number }) {
   }
 
   return (
-    <div className="card border border-amber-500/30 p-4">
+    <div className="card border border-amber-500/30 p-4" {...ancla("seguimiento.peticiones")}>
       <h4 className="text-sm font-semibold text-amber-300">
         Peticiones del cliente sin responder ({open.length})
       </h4>
@@ -127,9 +128,12 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
   return (
     <div className="space-y-4">
       <ChangeRequestsCard clientId={client.id} />
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between"
+        {...ancla("seguimiento.registros")}>
         <h3 className="text-sm font-semibold text-zinc-100">Seguimiento en tiempo real</h3>
-        <span className="text-xs text-zinc-500">se actualiza solo · período {p.index}</span>
+        <span className="text-xs text-zinc-500" {...ancla("seguimiento.periodo")}>
+          se actualiza solo · período {p.index}
+        </span>
       </div>
 
       <div className="card p-4">

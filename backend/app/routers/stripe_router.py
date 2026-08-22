@@ -133,7 +133,8 @@ def pay_link(request: Request, client: Client = Depends(get_client_by_token),
     # YA PAGADO: el botón del email de arranque vive para siempre — reabrirlo
     # tras pagar NO puede cobrar una segunda vez. Se le lleva a la página de
     # gracias en vez de a un checkout nuevo. EXCEPCIÓN: si su ciclo pagado está
-    # a ≤7 días de vencer (o ya venció), el MISMO enlace vuelve a abrir un
+    # a punto de vencer (la ventana la fija `renewals.RENEWAL_WARN_DAYS`, hoy
+    # 5 días) o ya venció, el MISMO enlace vuelve a abrir un
     # checkout — es el CTA del email de renovación al cliente.
     if client.payment_status == "paid":
         from app.services.portal import today_local

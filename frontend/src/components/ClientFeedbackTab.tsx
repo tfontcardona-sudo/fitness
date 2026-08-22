@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { libre } from "../lib/accordion";
+import { ancla } from "../lib/anchors";
 import { Sparkles, AlertTriangle, MessageSquare, MessageCircle, Mail, Video, Target, TrendingUp, BarChart3, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
 import { api, getToken } from "../lib/api";
 import { feedbackBody, feedbackMessage, openWhatsApp, videoCallModifyMessage, videoCallScheduledMessage, waPhone } from "../lib/whatsapp";
@@ -36,6 +38,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
   const [contents, setContents] = useState<Record<number, any>>({});
   const [generating, setGenerating] = useState<number | null>(null);
   const [closing, setClosing] = useState<number | null>(null);
+  const [enviando, setEnviando] = useState(false);
   const [editingFb, setEditingFb] = useState<number | null>(null);
   const [metrics, setMetrics] = useState<Record<number, any>>({});
   const [loadingMetrics, setLoadingMetrics] = useState<number | null>(null);
@@ -190,6 +193,18 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
    *  La primera vez marca el feedback como enviado (el ciclo avanza a "activo");
    *  se puede reenviar cuantas veces haga falta. */
   async function deliverFeedback(feedbackId: number, content: any, alreadySent: boolean, periodIndex = 0) {
+    // Con la web lenta el coach pulsa dos veces y el cliente recibe el informe
+    // por duplicado. El candado va aquí, no en cada botón.
+    if (enviando) return;
+    setEnviando(true);
+    try {
+      await _deliverFeedback(feedbackId, content, alreadySent, periodIndex);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  async function _deliverFeedback(feedbackId: number, content: any, alreadySent: boolean, periodIndex = 0) {
     if (byEmail) {
       try {
         const r = await api.sendFeedbackEmail(feedbackId);
@@ -270,6 +285,13 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
     .reduce((mx, p) => Math.max(mx, p.period_index), 0);
   const callForLastReview = calls.find((c) => c.period_index === lastReviewIdx) ?? null;
   const showVideoCall = directContact && lastReviewIdx > 0 && callForLastReview?.status !== "done";
+  // Videollamadas VIVAS de revisiones ANTERIORES. El backend avisa de ellas a
+  // propósito (una propuesta sin responder no puede esfumarse), pero el panel
+  // solo pintaba la de la última revisión: el coach recibía el aviso, pulsaba,
+  // y aterrizaba en una pantalla sin los botones para resolverla.
+  const huerfanas = calls.filter((c) =>
+    c.period_index !== lastReviewIdx
+    && (c.status === "proposed" || c.status === "pending_manual" || c.status === "scheduled"));
 
   return (
     <div className="space-y-4">
@@ -296,6 +318,23 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
           </button>
         </div>
       )}
+      {huerfanas.map((vc) => (
+        <div key={vc.id} className="card p-3.5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Videollamada pendiente de la revisión #{vc.period_index}
+          </p>
+          <VideoCallCycle
+            clientId={client.id}
+            periodIndex={vc.period_index}
+            call={vc}
+            googleConnected={googleConnected}
+            onModify={modifyVideoCall}
+            onShareMeet={shareMeetWhatsApp}
+            onChanged={loadCalls}
+          />
+        </div>
+      ))}
+
       {/* Videollamada quincenal (Pro). Si YA está agendada (nada que hacer),
           se colapsa a una línea; desplegada solo cuando pide acción del coach. */}
       {showVideoCall && (callForLastReview?.status === "scheduled" ? (
@@ -349,6 +388,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
           // plegados y cargan su resumen al abrirlos.
           <details
             key={p.id}
+            {...libre()}
             name="feedback-periodos"
             className="card p-5"
             open={isCurrent}
@@ -373,12 +413,15 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
               </div>
               <div className="flex gap-2" onClick={(e) => e.preventDefault()}>
                 {p.feedback_id && content && !sent && (
-                  <button onClick={() => deliverFeedback(p.feedback_id as number, content, false, p.period_index)} className="btn btn-primary">
+                  <button onClick={() => deliverFeedback(p.feedback_id as number, content, false, p.period_index)}
+                    disabled={enviando} className="btn btn-primary"
+                    {...ancla("feedback.enviar")}>
                     {byEmail ? <><Mail size={15} /> Enviar por email</> : <><MessageCircle size={15} /> Enviar por WhatsApp</>}
                   </button>
                 )}
                 {canGenerate && !p.feedback_id && (
-                  <button onClick={() => generate(p.id)} disabled={generating === p.id} className="btn btn-primary">
+                  <button onClick={() => generate(p.id)} disabled={generating === p.id} className="btn btn-primary"
+                    {...ancla("feedback.generar")}>
                     <Sparkles size={15} />
                     {generating === p.id ? "Generando…" : "Generar feedback"}
                   </button>
@@ -397,6 +440,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                   <button
                     onClick={() => closeByCoach(p.id, p.period_index)}
                     disabled={closing === p.id}
+                    {...ancla("feedback.cerrar")}
                     className="btn btn-ghost mt-2 text-xs"
                   >
                     {closing === p.id ? "Cerrando…" : "Venció · cerrarla yo"}
@@ -720,6 +764,7 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
 
   return (
     <div className="mt-3 rounded-lg p-3"
+      {...ancla(call ? `feedback.videollamada.${call.id}` : "feedback.videollamada")}
       style={{ background: `color-mix(in srgb, ${VC_COLOR} 7%, transparent)`, border: `1px solid color-mix(in srgb, ${VC_COLOR} 25%, transparent)` }}>
       <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide" style={{ color: VC_COLOR }}>
         <Video size={13} /> Videollamada quincenal
@@ -1036,7 +1081,8 @@ function PeriodPhotosFolded({ clientId, periodId }: { clientId: number; periodId
   }, [clientId, periodId]);
   if (!count) return null;
   return (
-    <details className="mt-2" onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+    <details className="mt-2" {...libre()}
+      onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
       <summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-zinc-300">
         Fotos del período ({count})
       </summary>

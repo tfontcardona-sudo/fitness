@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSinConexion } from "../lib/offline";
+import { activarAcordeon } from "../lib/accordion";
 import { useSearchParams } from "react-router-dom";
 import { Bell, BellOff, CalendarCheck, Camera, Check, ChevronDown, Dumbbell, FileText, LineChart, Library, LogOut, NotebookPen, Share, Smartphone, Video, X } from "lucide-react";
 import { portalApi, portalSession, PortalError } from "./portalApi";
@@ -37,11 +39,14 @@ type Tab = "entreno" | "recursos" | "diario" | "progreso" | "cierre";
  * afectar al resto.
  */
 export default function PortalApp({ token }: { token: string }) {
+  // Abrir un desplegable cierra el hermano abierto (también en el portal).
+  useEffect(activarAcordeon, []);
   const apiClient = useMemo(() => portalApi(token), [token]);
   // Actualización EN CALIENTE de la app instalada: al volver del segundo plano
   // con una versión nueva desplegada se recarga sola; en uso activo, aviso
   // discreto para tocar y actualizar. El cliente nunca reinstala nada.
   const update = useAppUpdate();
+  const sinConexion = useSinConexion();
   const [state, setState] = useState<PortalState | null>(null);
   // Sube en cada recarga del estado: los hijos con fetch propio (videollamada)
   // se refrescan a la vez que el resto del portal.
@@ -297,8 +302,9 @@ export default function PortalApp({ token }: { token: string }) {
               (auditoría crítica). El refetch del estado corre al volver del
               segundo plano (abajo); cada pestaña vuelca sus pendientes en
               visibilitychange antes del remontaje. */}
-          <div key={`${effTab}-${state.today ?? ""}`} className="animate-rise">
-            {effTab === "entreno" && <PortalWorkout api={apiClient} brand={state.brand} periodStatus={periodStatus} businessToday={state.today ?? null} />}
+          <div key={`${effTab}-${state.today ?? ""}`} className="animate-rise"
+            ref={(el) => { if (el) window.scrollTo({ top: 0 }); }}>
+            {effTab === "entreno" && <PortalWorkout api={apiClient} brand={state.brand} periodStatus={periodStatus} businessToday={state.today ?? null} hasPeriod={state.period != null || state.status === "review_pending"} />}
             {effTab === "recursos" && <PortalResources api={apiClient} brand={state.brand} hasTraining={!isStart} />}
             {effTab === "diario" && <PortalDiary api={apiClient} brand={state.brand} periodStatus={periodStatus} businessToday={state.today ?? null} hasPeriod={state.period != null || state.status === "review_pending"} hasNutrition={caps.hasNutrition} />}
             {effTab === "progreso" && <PortalProgress api={apiClient} brand={state.brand} hasTraining={!isStart} token={token} />}
@@ -320,7 +326,21 @@ export default function PortalApp({ token }: { token: string }) {
           </div>
         </main>
 
-        {/* Versión nueva desplegada con la app en uso: aviso discreto sobre la
+          {/* Sin conexión: el cliente seguía tecleando series creyendo que se
+            guardaban. Se avisa, pero NO se bloquea: puede seguir apuntando y
+            el autosave lo reintenta en cuanto vuelva la cobertura. */}
+        {sinConexion && (
+          <div role="status"
+            className="fixed inset-x-0 z-50 mx-auto w-fit max-w-[calc(100vw-2rem)] rounded-full px-4 py-2 text-xs font-semibold"
+            style={{
+              bottom: "calc(4.5rem + env(safe-area-inset-bottom))",
+              background: "var(--p-danger)", color: "#fff", boxShadow: "var(--p-e-3)",
+            }}>
+            Sin conexión · lo que apuntes se guardará al volver
+          </div>
+        )}
+
+      {/* Versión nueva desplegada con la app en uso: aviso discreto sobre la
             navegación — un toque y el portal queda al día, sin reinstalar. */}
         {update.ready && (
           <button
@@ -633,7 +653,7 @@ function PhotosReminder({ api, accent, onConfirmed }: {
               onClick={confirm}
               disabled={busy}
               className="portal-btn3d min-h-[36px] px-4 py-1.5 text-xs font-semibold"
-              style={{ background: accent, color: "#fff" }}
+              style={{ background: accent, color: "var(--p-on-accent)" }}
             >
               <span className="inline-flex items-center gap-1"><Check size={13} /> Sí, ya las envié</span>
             </button>
@@ -783,7 +803,7 @@ function WelcomeSetup({ api, token, accent, secondary }: {
                 onClick={activate}
                 disabled={busy}
                 className="portal-btn3d mt-1.5 min-h-[38px] px-4 py-1.5 text-xs font-semibold"
-                style={{ background: accent, color: "#fff" }}
+                style={{ background: accent, color: "var(--p-on-accent)" }}
               >
                 {busy ? "Activando…" : "Activar recordatorios"}
               </button>
@@ -837,8 +857,9 @@ function applyBrand(s: PortalState) {
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center px-8 text-center"
-      style={{ background: "#f6f1e7", color: "#26211a" }}>
+    // `portal-root`: sin él no existe ningún token --p-*, así que los botones
+    // de estas pantallas salían sin fondo, sin radio y sin sombra.
+    <div className="portal-root mx-auto flex min-h-screen max-w-md flex-col items-center justify-center px-8 text-center">
       {children}
     </div>
   );

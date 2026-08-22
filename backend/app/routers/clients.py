@@ -406,6 +406,10 @@ def get_client(client_id: int, db: Session = Depends(get_db)) -> ClientOut:
     from app.services.periods import reference_weight_kg
 
     out.reference_weight_kg = reference_weight_kg(db, client)
+    from app.services.portal import today_local
+    from app.services.renewals import is_due
+
+    out.renewal_due = is_due(client, today_local())
     return out
 
 

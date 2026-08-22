@@ -36,12 +36,88 @@ _GOAL_LABEL = {
 }
 
 
+# Dónde se arregla cada aviso y CÓMO. El `target` es un ANCLA: la misma cadena
+# la lleva el elemento en el DOM (`data-ancla`) y es lo que la web centra y
+# MARCA al llegar; `fix` es la nota corta que se enseña pegada a esa marca.
+# Un aviso sin entrada aquí sigue funcionando: lleva a su pestaña sin marcar
+# nada — mejor eso que un ancla inventada que no existe y deja al coach
+# mirando una pantalla sin nada señalado.
+_DESTINO: dict[str, tuple[str, str]] = {
+    "client_inactive": (
+        "resumen.estado",
+        "Reactívalo si sigue contigo, o archívalo para sacarlo del radar."),
+    "payment_pending": (
+        "resumen.pago",
+        "Mándale su enlace de pago, o anota aquí el cobro si te pagó en mano."),
+    "renewal_due": (
+        "resumen.pago",
+        "Su ciclo se acaba: ofrécele la renovación antes de que venza."),
+    "create_plan": (
+        "anamnesis.revision",
+        "Repasa los campos extraídos (la IA se equivoca con la letra a mano) "
+        "y genera la planificación."),
+    "publish_plan": (
+        "plan.activar",
+        "Repasa el borrador y actívalo: hasta entonces el cliente no lo ve."),
+    "generate_feedback": (
+        "feedback.generar",
+        "Genera el informe de la revisión con sus métricas y sus fotos."),
+    "send_feedback": (
+        "feedback.enviar",
+        "Envíaselo: mientras no lo mandes, el cliente no lo ve en su portal."),
+    "adapt_plan": (
+        "plan.adaptar",
+        "Adapta el plan a lo que salió en la revisión y actívalo."),
+    "no_logs": (
+        "seguimiento.registros",
+        "Escríbele: lleva días sin registrar y la revisión saldrá coja."),
+    "period_overdue": (
+        "feedback.cerrar",
+        "Reclámasela por WhatsApp; si no la manda, ciérrala tú aquí para no "
+        "dejar el ciclo bloqueado."),
+    "change_request": (
+        "seguimiento.peticiones",
+        "Léela, respóndele y márcala resuelta para que deje de avisar."),
+    "missing_products": (
+        "plan.suplementos",
+        "Súbelos en Recursos: si no, al cliente no le aparecen comprables."),
+    "regenerate_goal": (
+        "plan.objetivo",
+        "Aquí cambias de etapa y regeneras el plan con el objetivo nuevo."),
+    "plan_stale_inputs": (
+        "plan.acciones",
+        "Las cifras del plan salen de datos que ya cambiaste: regenera o adapta."),
+    "goal_review": (
+        "plan.objetivo",
+        "Aquí decides: mantener el objetivo (y se pospone el aviso) o "
+        "cambiar de etapa y regenerar el plan."),
+    "video_call_wait": (
+        "feedback.videollamada",
+        "Aún no ha propuesto hora: recuérdaselo."),
+}
+
+
 def _alert(client: Client, kind: str, severity: str, message: str, tab: str,
-           action: str) -> dict:
+           action: str, *, target: str | None = None, fix: str | None = None,
+           to: str | None = None) -> dict:
+    """Un aviso. Además del texto lleva a DÓNDE se arregla (`target`, el ancla
+    que la web marca al llegar) y CÓMO (`fix`, la nota pegada a la marca).
+
+    `key` identifica el PROBLEMA de forma estable: el panel ancla recordatorios
+    por esa clave y los borra solos cuando deja de aparecer entre los avisos
+    vivos. `to` es un destino FUERA de la ficha (p. ej. /recursos), para los
+    pocos avisos que se arreglan en otra pantalla.
+    """
+    por_defecto = _DESTINO.get(kind)
+    if por_defecto:
+        target = target or por_defecto[0]
+        fix = fix or por_defecto[1]
     return {
         "client_id": client.id, "client_name": client.full_name,
         "kind": kind, "severity": severity, "message": message,
         "tab": tab, "action": action,
+        "target": target, "fix": fix, "to": to,
+        "key": f"{client.id}:{kind}:{target or ''}",
     }
 
 
@@ -147,7 +223,10 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
                 out.append(_alert(client, "create_plan",
                                   "alta" if days_wait >= 7 else "media",
                                   f"Sin planificación: falta su anamnesis.{aging}",
-                                  "anamnesis", "Crear planificación"))
+                                  "anamnesis", "Reclamar la anamnesis",
+                                  target="anamnesis.enviar",
+                                  fix="Reenvíale el cuestionario por WhatsApp o "
+                                      "sube tú su PDF si te lo pasó por otra vía."))
         return out  # sin plan publicado, el resto del ciclo no aplica
 
     # --- Revisión quincenal recibida sin feedback ---------------------------
@@ -237,7 +316,7 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
                 client, "period_overdue", "alta" if overdue >= 5 else "media",
                 f"Su revisión quincenal venció hace {overdue} días y no la ha "
                 "enviado: recuérdaselo por WhatsApp.",
-                "seguimiento", "Reclamar la revisión"))
+                "feedback", "Cerrar la revisión"))
 
     # --- Petición de cambio del cliente sin atender (portal → coach) ---------
     # El cliente escribió una duda/petición desde su portal: el coach debe
@@ -279,7 +358,8 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
             out.append(_alert(
                 client, "missing_products", "media",
                 f"Sin producto en Recursos: {listado}",
-                "planificacion", "Ver planificación"))
+                "planificacion", "Subir a Recursos",
+                to="/recursos?tab=productos"))
 
     # --- Videollamada quincenal (Pro) ---------------------------------------
     # El cliente propone día/hora al enviar su revisión → el coach ACEPTA (crea el
@@ -318,23 +398,32 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
                 client, "video_call_proposed", "alta",
                 f"El cliente propuso videollamada: {format_when_es(vc.scheduled_at)}. "
                 "Acéptala o modifícala.",
-                "feedback", "Aceptar o modificar"))
+                "feedback", "Aceptar o modificar",
+                target=f"feedback.videollamada.{vc.id}",
+                fix="Acéptala y se crea el Meet con invitación, o modifícala "
+                    "para acordar otra hora por WhatsApp."))
         elif vc.status == "pending_manual":
             out.append(_alert(
                 client, "video_call_manual", "alta",
                 "Videollamada a agendar a mano (acordado por WhatsApp): escribe el día y la hora.",
-                "feedback", "Agendar día y hora"))
+                "feedback", "Agendar día y hora",
+                target=f"feedback.videollamada.{vc.id}",
+                fix="Escribe el día y la hora acordados y se crea el Meet."))
         elif vc.status == "scheduled" and vc.scheduled_for is not None:
             if vc.scheduled_for == today + timedelta(days=1):
                 out.append(_alert(
                     client, "video_call_tomorrow", "alta",
                     f"Videollamada MAÑANA ({vc.scheduled_for.strftime('%d/%m')}).",
-                    "feedback", "Ver videollamada"))
+                    "feedback", "Ver videollamada",
+                    target=f"feedback.videollamada.{vc.id}",
+                    fix="Prepara la revisión antes de la llamada."))
             elif vc.scheduled_for <= today:
                 out.append(_alert(
                     client, "video_call_confirm", "alta",
                     "¿Se realizó la videollamada? Confírmala, o reagéndala si no pudo ser.",
-                    "feedback", "Confirmar videollamada"))
+                    "feedback", "Confirmar videollamada",
+                    target=f"feedback.videollamada.{vc.id}",
+                    fix="Márcala como hecha, o reagéndala si no pudo ser."))
 
     # --- Objetivo cambiado sin regenerar el plan ----------------------------
     # Tras cambiar el objetivo, si la IA falló al regenerar, el cliente seguiría
@@ -385,21 +474,30 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
             out.append(_alert(
                 client, "plan_allergen_conflict", "alta",
                 f"⚠ ALÉRGENO en el plan activo: «{t}» (toma {s}, contiene {f})",
-                "planificacion", "Corregir planificación"))
+                "planificacion", "Corregir planificación",
+                target=f"nutricion.comida.{s}",
+                fix=f"Aquí está «{f}», que es alérgeno suyo. Cambia esta opción "
+                    f"por otra sin ese alimento, o regenera el plan."))
         elif hit_pattern:
             s, t, f = hit_pattern
             out.append(_alert(
                 client, "plan_allergen_conflict", "alta",
                 f"⚠ Su plan activo viola su patrón «{client.diet_pattern}»: "
                 f"«{t}» (toma {s}, contiene {f}). Corrige esa comida o regenera.",
-                "planificacion", "Corregir planificación"))
+                "planificacion", "Corregir planificación",
+                target=f"nutricion.comida.{s}",
+                fix=f"Aquí hay «{f}», que su patrón «{client.diet_pattern}» no "
+                    f"admite. Cambia esta opción, o regenera el plan."))
         elif hit_dislike:
             s, t, f = hit_dislike
             out.append(_alert(
                 client, "plan_dislike_conflict", "media",
                 f"Su plan activo incluye un alimento que ahora no tolera/odia: "
                 f"«{t}» (toma {s}, {f}). Valora cambiar esa opción.",
-                "planificacion", "Revisar planificación"))
+                "planificacion", "Revisar planificación",
+                target=f"nutricion.comida.{s}",
+                fix=f"Aquí está «{f}», que ahora no tolera. Cámbiale esta opción "
+                    f"por otra que sí le guste."))
 
     # --- Ficha cambiada tras generar (peso/altura/nivel/días/lugar/dieta) ----
     # El PATCH de la ficha era silencioso: la IA extraía mal la altura, el

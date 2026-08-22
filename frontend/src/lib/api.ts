@@ -89,6 +89,20 @@ export class ApiError extends Error {
   }
 }
 
+/** Nombre EN ESPAÑOL de los campos que más aparecen en un 422. Lo que llega de
+ *  Pydantic es el nombre técnico en inglés, y sin él el mensaje no dice ni de
+ *  qué casilla habla. */
+const CAMPOS_ES: Record<string, string> = {
+  full_name: "nombre", email: "email", phone: "teléfono",
+  height_cm: "altura", start_weight_kg: "peso inicial",
+  current_weight_kg: "peso actual", goal_weight_kg: "peso objetivo",
+  body_fat_pct: "grasa corporal", birth_date: "fecha de nacimiento",
+  training_days: "días de entreno", session_max_min: "minutos por sesión",
+  amount_eur: "importe", paid_on: "fecha del cobro", method: "método de cobro",
+  target_kcal: "calorías", protein_g: "proteína", carbs_g: "carbohidratos",
+  fat_g: "grasas", sets: "series", reps: "repeticiones", weight_kg: "peso",
+};
+
 async function request<T>(
   method: string,
   path: string,
@@ -123,7 +137,15 @@ async function request<T>(
       const data = await res.json();
       rawDetail = data.detail;
       if (typeof data.detail === "string") detail = data.detail;
-      else if (Array.isArray(data.detail)) detail = data.detail.map((d: any) => d.msg).join("; ");
+      else if (Array.isArray(data.detail)) {
+        detail = data.detail.map((d: any) => {
+          const campo = Array.isArray(d.loc)
+            ? d.loc.filter((x: any) => typeof x === "string" && x !== "body").pop()
+            : null;
+          const nombre = campo ? (CAMPOS_ES[campo] ?? campo.replace(/_/g, " ")) : null;
+          return nombre ? `${nombre}: ${d.msg}` : d.msg;
+        }).join("; ");
+      }
       else if (data.detail && typeof data.detail === "object") {
         // Los endpoints de IA devuelven {message, error} / {message, missing}:
         // sin esto, el coach veía "Error 502" en vez de "recarga crédito…".

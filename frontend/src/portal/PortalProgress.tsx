@@ -25,15 +25,29 @@ type Api = ReturnType<typeof portalApi>;
 export function PortalProgress({ api, brand, hasTraining = true, token }: { api: Api; brand: PortalBrand; hasTraining?: boolean; token: string }) {
   const [data, setData] = useState<Progress | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // Sin esto, el fetch solo se relanzaba si cambiaba `api`: al cliente que
+  // abre su progreso con mala cobertura le quedaba una tarjeta gris muerta.
+  const [intento, setIntento] = useState(0);
 
   useEffect(() => {
+    setErr(null);
     api
       .progress()
       .then(setData)
       .catch((e) => setErr(e instanceof PortalError ? e.message : "No se pudo cargar tu progreso"));
-  }, [api]);
+  }, [api, intento]);
 
-  if (err) return <div className="portal-card p-4 text-sm opacity-80">{err}</div>;
+  if (err) {
+    return (
+      <div className="portal-card p-4 text-center">
+        <p className="p-sub">{err}</p>
+        <button onClick={() => setIntento((n) => n + 1)}
+          className="portal-btn3d mt-3 !min-h-[40px] px-4 text-sm">
+          Reintentar
+        </button>
+      </div>
+    );
+  }
   if (!data) {
     return (
       <div className="flex justify-center py-16">

@@ -82,7 +82,8 @@ body::before {
 :focus-visible {
   outline: 2px solid var(--brand-accent-2);
   outline-offset: 2px;
-  border-radius: 4px;
+  /* Sin border-radius: aquí redondearía EL ELEMENTO (el anillo ya sigue su
+     radio propio) y deformaba las esquinas de todo lo enfocado. */
 }
 
 @layer components {
@@ -249,7 +250,11 @@ body::before {
   to { opacity: 1; transform: translateY(0); }
 }
 .animate-rise {
-  animation: rise 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+  /* `backwards`, NO `both`: con `both` el elemento conserva el último
+     fotograma (transform: translateY(0)), y un transform distinto de `none`
+     crea BLOQUE CONTENEDOR — la píldora del descanso, que es position:fixed,
+     dejaba de medirse contra la pantalla y caía al final del contenido. */
+  animation: rise 0.32s cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
 @keyframes pulse-dot {
@@ -357,8 +362,8 @@ button, [role="button"], summary, a {
 /* La jerarquía la da la TINTA, no la opacidad: `opacity-40` sobre crema deja
    texto en 2,6:1 (ilegible al sol y fuera de AA). La utilidad sigue viva en
    div/svg (esqueletos, spinners y :disabled), que no son texto. */
-.portal-root :is(p,span,label,h1,h2,h3,h4,li,td,th,summary,small,b,strong):is(.opacity-80,.opacity-75,.opacity-70,.opacity-60,.opacity-55):not(:disabled):not([disabled]) { opacity:1; color: var(--p-ink-soft); }
-.portal-root :is(p,span,label,h1,h2,h3,h4,li,td,th,summary,small,b,strong):is(.opacity-50,.opacity-45,.opacity-40):not(:disabled):not([disabled]) { opacity:1; color: var(--p-ink-mute); }
+.portal-root :is(p,span,label,h1,h2,h3,h4,li,td,th,tr,div,summary,small,b,strong):is(.opacity-80,.opacity-75,.opacity-70,.opacity-60,.opacity-55):not(:disabled):not([disabled]):not([aria-hidden="true"]):not(.portal-skel) { opacity:1; color: var(--p-ink-soft); }
+.portal-root :is(p,span,label,h1,h2,h3,h4,li,td,th,tr,div,summary,small,b,strong):is(.opacity-50,.opacity-45,.opacity-40):not(:disabled):not([disabled]):not([aria-hidden="true"]):not(.portal-skel) { opacity:1; color: var(--p-ink-mute); }
 
 /* Escala tipográfica del portal: 7 escalones, pesos que la web SÍ carga
    (Inter 400/500/600/700 — un 800 lo falsifica el navegador). */
@@ -385,7 +390,7 @@ button, [role="button"], summary, a {
   transform: scale(0.97);
 }
 @media (hover: hover) {
-  .portal-root button:not(.portal-btn3d):hover {
+  .portal-root button:not(.portal-btn3d):not(:disabled):hover {
     opacity: 0.85;
   }
 }
@@ -393,7 +398,8 @@ button, [role="button"], summary, a {
 /* Botón primario: color plano + filo de luz + UNA sombra de contacto. Las
    cinco sombras naranjas de antes eran un halo de neón; y el texto va en
    --p-on-accent (no #fff: sobre naranja daba 2,2:1). */
-.portal-btn3d{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding-inline:20px;border:none;border-radius:var(--p-r-md);font-size:15px;font-weight:600;line-height:1;background:var(--p-accent);color:var(--p-on-accent);box-shadow:inset 0 1px 0 rgba(255,255,255,.28),0 1px 2px rgba(38,33,26,.16),0 2px 6px -1px color-mix(in srgb,var(--p-accent) 34%,transparent);transition:background-color .16s,box-shadow .16s,transform .10s}
+:where(.portal-btn3d){min-height:48px;padding-inline:20px;font-size:15px}
+.portal-btn3d{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;border:none;border-radius:var(--p-r-md);font-weight:600;line-height:1;background:var(--p-accent);color:var(--p-on-accent);box-shadow:inset 0 1px 0 rgba(255,255,255,.28),0 1px 2px rgba(38,33,26,.16),0 2px 6px -1px color-mix(in srgb,var(--p-accent) 34%,transparent);transition:background-color .16s,box-shadow .16s,transform .10s}
 @media (hover:hover){.portal-btn3d:hover{background:color-mix(in srgb,var(--p-accent) 88%,#fff)}}
 .portal-btn3d:active{transform:translateY(1px);background:color-mix(in srgb,var(--p-accent) 88%,#000)}
 .portal-btn3d:disabled{background:var(--p-line-strong);color:var(--p-ink-mute);box-shadow:none;cursor:not-allowed}
@@ -404,6 +410,9 @@ button, [role="button"], summary, a {
    suyo y meterlo aquí los rompería a todos. */
 .portal-card{background:var(--p-surface);border:1px solid var(--p-line);border-radius:var(--p-r-lg);box-shadow:var(--p-hair),var(--p-e-2)}
 .portal-card--flat{box-shadow:var(--p-hair),var(--p-e-1)}
+/* Raíl de color: va como sombra interior, no como borde — el atajo `border`
+   de .portal-card reescribe border-left-width y anulaba `border-l-4`. */
+.portal-card--rail{box-shadow:inset 3px 0 0 var(--rail,var(--p-accent)),var(--p-hair),var(--p-e-2)}
 .portal-card--hero{border-radius:var(--p-r-xl);box-shadow:var(--p-hair),var(--p-e-3)}
 .portal-card--tap{transition:box-shadow .18s ease,border-color .18s ease,transform .10s ease}
 @media (hover:hover){.portal-card--tap:hover{box-shadow:var(--p-hair),var(--p-e-3);border-color:var(--p-line-strong)}}
@@ -451,7 +460,7 @@ button, [role="button"], summary, a {
    pantalla se inventaba su borde y su fondo con estilos en línea). El color
    lo pone el significado, nunca el capricho: azul dato · verde bien ·
    ámbar atención · rojo bloqueo · naranja acción a hacer. */
-.portal-note{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border-radius:var(--p-r-md);border:1px solid;font-size:13.5px;line-height:1.5;background:var(--p-surface);border-color:var(--p-line);color:var(--p-ink);box-shadow:var(--p-e-1)}
+.portal-note{display:flex;gap:10px;padding:12px 14px;border-radius:var(--p-r-md);border:1px solid;font-size:13.5px;line-height:1.5;background:var(--p-surface);border-color:var(--p-line);color:var(--p-ink);box-shadow:var(--p-e-1)}
 .portal-note > svg{flex:0 0 auto;margin-top:1px}
 .portal-note b,.portal-note strong{font-weight:600}
 .portal-note--info{border-color:color-mix(in srgb,var(--p-accent-2) 34%,transparent);background:var(--p-accent-2-wash)}
@@ -459,6 +468,7 @@ button, [role="button"], summary, a {
 .portal-note--warn{border-color:color-mix(in srgb,var(--p-warn) 38%,transparent);background:color-mix(in srgb,var(--p-warn) 10%,transparent)}
 .portal-note--danger{border-color:color-mix(in srgb,var(--p-danger) 38%,transparent);background:color-mix(in srgb,var(--p-danger) 9%,transparent)}
 .portal-note--action{border-color:color-mix(in srgb,var(--p-accent) 40%,transparent);background:var(--p-accent-wash)}
+:where(.portal-note){align-items:flex-start}
 a.portal-note{text-decoration:none;transition:box-shadow .18s ease,transform .10s ease}
 @media (hover:hover){a.portal-note:hover{box-shadow:var(--p-e-2)}}
 a.portal-note:active{transform:translateY(1px)}
@@ -482,14 +492,9 @@ a.portal-note:active{transform:translateY(1px)}
   font-variant-numeric: tabular-nums;
 }
 
-/* Entrada en cascada: los bloques de cada pantalla del portal aparecen con un
-   pelín de retardo escalonado (6 primeros), como las apps nativas premium. */
-.animate-rise > * { animation: rise 0.34s cubic-bezier(0.16, 1, 0.3, 1) both; }
-.animate-rise > *:nth-child(2) { animation-delay: 0.05s; }
-.animate-rise > *:nth-child(3) { animation-delay: 0.09s; }
-.animate-rise > *:nth-child(4) { animation-delay: 0.13s; }
-.animate-rise > *:nth-child(5) { animation-delay: 0.16s; }
-.animate-rise > *:nth-child(n+6) { animation-delay: 0.19s; }
+/* (El escalonado de hijos se retiró: en el portal `animate-rise` envuelve UN
+   solo hijo, así que nunca llegó a verse, y en el panel del coach sí se
+   colaba en listas donde no pintaba nada.) */
 
 /* Foco: UNO solo en toda la app (el azul de arriba). Un anillo naranja
    desaparecía justo sobre el botón primario, que también es naranja. */
@@ -499,6 +504,18 @@ a.portal-note:active{transform:translateY(1px)}
 ::selection {
   background: color-mix(in srgb, var(--brand-accent, #e8833a) 25%, transparent);
 }
+
+/* ---- ANCLA: "el problema está AQUÍ" ------------------------------------
+   Marca el elemento exacto que hay que cambiar. No parpadea y se va: se queda
+   hasta que el problema se resuelve o el coach la cierra — una marca que
+   desaparece sola deja al coach buscando otra vez dónde era. */
+/* Lo único fijo del ancla: sitio para que el scroll no la pegue a la cabecera
+   y el color de marca. La MARCA en sí la enciende una hoja inyectada con el
+   selector exacto del elemento señalado (ver lib/anchors.ts): una clase no
+   sirve, React reescribe className en cada refresco y se la llevaba. */
+[data-ancla]{scroll-margin:120px;--ancla-color:var(--brand-accent)}
+.portal-root [data-ancla]{--ancla-color:var(--p-accent)}
+@keyframes ancla-latido{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--ancla-color) 34%,transparent)}100%{box-shadow:0 0 0 12px transparent}}
 
 /* ---- PANEL DEL COACH: apartados marcados, no una lista plana -------------
    Misma idea que en el portal: la jerarquía la dan la elevación y un raíl de

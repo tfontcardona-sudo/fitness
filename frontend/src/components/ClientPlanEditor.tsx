@@ -868,9 +868,15 @@ export function ClientPlanEditor({
                       ) : null;
                     })()}
                     <button
-                      onClick={(e) => { e.preventDefault(); mutate((d) => d.training.sessions[si].exercises.splice(ei, 1)); }}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        // Diana de 19 px pegada a otras tres y sin vuelta
+                        // atrás: desde el móvil, un roce borraba el ejercicio.
+                        if (!window.confirm("¿Quitar este ejercicio de la sesión?")) return;
+                        mutate((d) => d.training.sessions[si].exercises.splice(ei, 1));
+                      }}
                       aria-label="Quitar ejercicio"
-                      className="p-0.5 text-zinc-500 hover:text-red-400"
+                      className="tap flex items-center justify-center text-zinc-500 hover:text-red-400"
                     >
                       <Trash2 size={14} />
                     </button>
