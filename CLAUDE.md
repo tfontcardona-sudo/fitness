@@ -484,7 +484,36 @@ cd backend && python -m pytest tests/ -q
      pone por elemento de lista (si el desplegable es el ÚNICO de su
      contenedor, el que representa al grupo es el contenedor). `libre()` exime
      a un grupo. No entra en bucle: solo reacciona a la apertura.
-   - **`npm run check:anclas`** (16 comprobaciones): auto-borrado, aislamiento
+   - **AUDITORÍA DEL ACORDEÓN — agrupar por la forma del DOM era el error.**
+     El primer intento deducía el grupo ("si el desplegable es el único de su
+     contenedor, el grupo es el contenedor") y salía IMPREDECIBLE: con dos
+     revisiones, abrir una cerraba solo a las otras; con UNA sola, cerraba
+     también la tabla de registros de al lado. Ahora la agrupación es
+     EXPLÍCITA: `grupo("nombre")` para las listas donde cada elemento va en su
+     envoltorio, `<details name>` donde ya lo hace el navegador, y hermanos
+     DIRECTOS en el resto. Sin promociones.
+     · `libre()` (que estaba exportada y sin usar) marca las superficies de
+       TRABAJO: la tarjeta del período —dentro vive el editor del feedback que
+       el coach está redactando, y se plegaba al abrir la línea de la
+       videollamada— y las fotos del período, que al plegarse ABORTABAN hasta
+       ocho descargas con JWT ya en curso.
+     · Los desplegables con memoria se cierran con un evento
+       (`EVENTO_CERRAR`), no pulsando su botón: pulsarlo persistía "cerrado"
+       en localStorage como si lo hubiera decidido el coach, y `defaultOpen`
+       dejaba de mandar para siempre. `EVENTO_ABRIR` es el camino inverso, el
+       que usa el ancla al llegar.
+   - **CALIDAD DE INTERFAZ** (inventario de 19 carencias, corregidas las
+     prioritarias): aviso de SIN CONEXIÓN en panel y portal (`lib/offline.ts`);
+     candado anti-doble-envío del informe al cliente; los 422 nombran el campo
+     en español (`CAMPOS_ES` en `lib/api.ts`); `lib/clipboard.ts` — "enlace
+     copiado" MENTÍA fuera de contexto seguro (entrar por la IP de la red
+     local) y el coach pegaba lo que tuviera de antes; botón de reintentar en
+     "Progreso" del portal y en la configuración de Recursos (se quedaban
+     girando para siempre si su petición fallaba); el rango de una serie
+     inválida se ve en el móvil (vivía en un `title`, o sea en nada); el
+     portal vuelve arriba al cambiar de pestaña; coma decimal en los KPI;
+     "Quitar ejercicio" a 44×44 y con confirmación; Escape en el menú "Más".
+   - **`npm run check:anclas`** (17 comprobaciones): auto-borrado, aislamiento
      entre ámbitos, almacenamiento roto, reglas del acordeón, y sobre todo que
      **cada destino declarado en el backend tenga su `data-ancla` en la web**.
    - **SEGUNDA AUDITORÍA — el fallo de fondo de las anclas**: varios avisos
