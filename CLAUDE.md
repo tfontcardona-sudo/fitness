@@ -487,6 +487,43 @@ cd backend && python -m pytest tests/ -q
    - **`npm run check:anclas`** (16 comprobaciones): auto-borrado, aislamiento
      entre ámbitos, almacenamiento roto, reglas del acordeón, y sobre todo que
      **cada destino declarado en el backend tenga su `data-ancla` en la web**.
+   - **SEGUNDA AUDITORÍA — el fallo de fondo de las anclas**: varios avisos
+     señalaban un punto que NO existe en el estado en que ese aviso salta.
+     ⚠️ Regla: **antes de dar un `target` a un aviso, comprueba en qué RAMA de
+     la interfaz se renderiza ese elemento y si esa rama es compatible con la
+     condición del aviso.** `npm run check:anclas` verifica que el ancla
+     exista en el código, no que sea alcanzable.
+     · **CRÍTICO**: al pulsar un aviso estando YA dentro de la ficha del
+       cliente, el efecto que sigue a la URL llamaba a `changeTab`, que
+       reescribía la URL y borraba el `?ir=` en el mismo instante → cambiaba
+       de pestaña sin marcar nada. Separado en `aplicarTab` (aplica, no toca
+       la URL) y `changeTab` (clic manual: además la reescribe y suelta el
+       ancla). El efecto usa `aplicarTab`.
+     · `plan.generar` solo existe en la vista "aún no hay plan", y
+       `regenerate_goal`/`plan_stale_inputs` exigen plan PUBLICADO → nuevas
+       anclas `plan.objetivo` (tarjeta de etapa) y `plan.acciones` (botonera).
+     · `goal_review` llevaba al campo de la ficha, que solo hace un PATCH (no
+       pospone el aviso ni regenera) y vive dentro del modo edición.
+     · `payment_pending`: el ancla estaba puesta AL REVÉS (solo existía si el
+       cliente YA había pagado). `renewal_due` marcaba "anotar otro cobro"
+       mientras el enlace de renovación estaba oculto por estar pagado → el
+       enlace se muestra en la ventana de renovación y quién decide si toca es
+       `ClientOut.renewal_due` (= `renewals.is_due`, una sola verdad).
+     · `period_overdue` prometía "ciérrala tú desde aquí" y llevaba a
+       Seguimiento, donde ese botón no está (está en Feedback).
+     · Las dos ramas de `create_plan` no son el mismo problema: la de "falta su
+       anamnesis" llevaba junto a un «Leer con IA» deshabilitado por no haber
+       PDF; ahora lleva a reclamarla.
+     · Las videollamadas de revisiones ANTERIORES se avisaban pero no se
+       pintaban: el coach aterrizaba sin botones para resolverlas.
+     · Un **borrador retenido** por los guardarraíles desaparecía del panel
+       (`vigente()` prefiere el publicado): sin botón de activar, sin sus
+       avisos y con el ciclo bloqueado. Banda propia con el motivo, "Ver este
+       borrador" y "Activar de todas formas".
+     · Si un ancla NO aparece, ahora se enseña igualmente qué hay que hacer
+       (`NotaSuelta`): perder el ancla ya no deja al coach sin la indicación.
+     · El acordeón no se promueve a `<main>`/`<section>`/`<form>`: iba a
+       buscar hermanos por secciones enteras.
    - **AUDITORÍA de las rondas recientes** (6 auditores + refutación
      adversarial). Confirmados y corregidos:
      · **Regresión propia**: la línea guía bajo cada barra del Word suplantaba
