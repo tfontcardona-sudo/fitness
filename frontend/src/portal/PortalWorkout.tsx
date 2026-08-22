@@ -741,17 +741,25 @@ function SetInput({ value, placeholder, accent, onChange, min = 0, max, integer 
   // servidor mientras el cliente la veía en pantalla. Fuera de rango no viaja.
   const { invalid, inputProps } = useDecimalField(value, onChange, { min, max, integer });
   return (
-    <input
-      {...inputProps}
-      placeholder={placeholder}
-      className="min-h-[44px] w-full rounded-xl border bg-transparent px-3 py-2 text-center text-sm font-semibold outline-none"
-      style={{
-        borderColor: invalid ? "#C2453A" : "rgba(128,128,128,0.22)",
-        caretColor: accent,
-        ...(invalid ? { color: "#C2453A" } : {}),
-      }}
-      title={invalid ? "No válido · no se guarda" : undefined}
-    />
+    <span className="block">
+      <input
+        {...inputProps}
+        placeholder={placeholder}
+        aria-invalid={invalid || undefined}
+        className="min-h-[44px] w-full rounded-xl border bg-transparent px-3 py-2 text-center text-sm font-semibold outline-none"
+        style={{
+          borderColor: invalid ? "#C2453A" : "rgba(128,128,128,0.22)",
+          caretColor: accent,
+          ...(invalid ? { color: "#C2453A" } : {}),
+        }}
+      />
+      {invalid && (
+        <span role="alert" className="mt-0.5 block text-center text-[10px] font-semibold"
+          style={{ color: "#C2453A" }}>
+          {integer ? `${min ?? 0}-${max ?? 100}, sin decimales` : `entre ${min ?? 0} y ${max ?? 600}`}
+        </span>
+      )}
+    </span>
   );
 }
 

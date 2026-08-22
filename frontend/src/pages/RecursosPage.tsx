@@ -166,6 +166,9 @@ function LearningManager() {
 function LinksPageManager() {
   const toast = useToast();
   const [brand, setBrand] = useState<import("../types").BrandConfigOut | null>(null);
+  // Sin esto la pantalla giraba para siempre si la marca no cargaba.
+  const [brandError, setBrandError] = useState(false);
+  const [brandTry, setBrandTry] = useState(0);
   const [storeUrl, setStoreUrl] = useState("");
   const [code, setCode] = useState("");
   const [meetUrl, setMeetUrl] = useState("");
@@ -184,6 +187,7 @@ function LinksPageManager() {
   }, []);
 
   useEffect(() => {
+    setBrandError(false);
     api.getBrand()
       .then((b) => {
         setBrand(b);
@@ -191,10 +195,13 @@ function LinksPageManager() {
         setCode(b.partner_discount_code ?? "");
         setMeetUrl(b.meet_url ?? "");
       })
-      .catch(() => toast.push("No se pudo cargar la configuración", "error"));
+      .catch(() => {
+        setBrandError(true);
+        toast.push("No se pudo cargar la configuración", "error");
+      });
     loadGoogle();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [brandTry]);
 
   // Al volver del consentimiento de Google (?google=connected|error): avisa,
   // limpia el parámetro de la URL y recarga el estado de la conexión.
@@ -284,7 +291,19 @@ function LinksPageManager() {
     }
   }
 
-  if (!brand) return <PageLoader />;
+  if (!brand) {
+    // Antes: `return <PageLoader />` a secas. Si la petición de la marca
+    // fallaba (microcorte, 502 tras un despliegue) el toast se iba a los 4 s
+    // y la pantalla se quedaba girando para siempre, sin salida.
+    return brandError ? (
+      <div className="card mx-auto mt-10 max-w-sm p-6 text-center">
+        <p className="text-sm text-zinc-300">No se pudo cargar tu configuración.</p>
+        <button onClick={() => setBrandTry((n) => n + 1)} className="btn btn-primary mt-3">
+          Reintentar
+        </button>
+      </div>
+    ) : <PageLoader />;
+  }
 
   return (
     <div className="max-w-2xl space-y-4">

@@ -302,7 +302,8 @@ export default function PortalApp({ token }: { token: string }) {
               (auditoría crítica). El refetch del estado corre al volver del
               segundo plano (abajo); cada pestaña vuelca sus pendientes en
               visibilitychange antes del remontaje. */}
-          <div key={`${effTab}-${state.today ?? ""}`} className="animate-rise">
+          <div key={`${effTab}-${state.today ?? ""}`} className="animate-rise"
+            ref={(el) => { if (el) window.scrollTo({ top: 0 }); }}>
             {effTab === "entreno" && <PortalWorkout api={apiClient} brand={state.brand} periodStatus={periodStatus} businessToday={state.today ?? null} hasPeriod={state.period != null || state.status === "review_pending"} />}
             {effTab === "recursos" && <PortalResources api={apiClient} brand={state.brand} hasTraining={!isStart} />}
             {effTab === "diario" && <PortalDiary api={apiClient} brand={state.brand} periodStatus={periodStatus} businessToday={state.today ?? null} hasPeriod={state.period != null || state.status === "review_pending"} hasNutrition={caps.hasNutrition} />}
