@@ -137,9 +137,11 @@ function nodo(tipo, hijos = []) {
 
 // Réplica de la regla de lib/accordion.ts: cerrar los HERMANOS abiertos,
 // viendo a través del envoltorio (<li>, <div>) que React pone por elemento.
+const NO_PROMOVER = new Set(["main", "body", "form", "nav", "header", "aside", "section"]);
 function miembroDeGrupo(el) {
   const padre = el.parentElement;
   if (!padre || !padre.parentElement) return el;
+  if (NO_PROMOVER.has(padre.tipo)) return el;
   const propios = padre.children.filter((c) => c.tipo === "details").length;
   return propios === 1 ? padre : el;
 }
@@ -195,6 +197,19 @@ t("el acordeón ve a través del envoltorio de cada elemento de una lista", () =
   cerrarHermanos(d2);
   assert.equal(d1.open, false, "el desplegable del otro elemento debía cerrarse");
   assert.equal(d2.open, true);
+});
+
+t("no se promueve a un contenedor grande (main, form, section…)", () => {
+  // Promover hasta ahí haría que abrir un desplegable fuese a buscar hermanos
+  // por secciones enteras de la pantalla.
+  const solo = nodo("details");
+  const main = nodo("main", [solo]);
+  const hermanaConDetails = nodo("details");
+  const otraSeccion = nodo("section", [hermanaConDetails]);
+  nodo("div", [main, otraSeccion]);
+  solo.open = true; hermanaConDetails.open = true;
+  cerrarHermanos(solo);
+  assert.equal(hermanaConDetails.open, true, "se coló en otra sección de la página");
 });
 
 t("desplegables de padres distintos no se estorban", () => {

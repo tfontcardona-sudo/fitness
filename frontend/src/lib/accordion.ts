@@ -41,9 +41,15 @@ function exento(el: Element | null): boolean {
  * desplegable es el ÚNICO de su envoltorio, el que representa al grupo es el
  * envoltorio. Un solo nivel: más sería empezar a cerrar media pantalla.
  */
+const NO_PROMOVER = new Set(["MAIN", "BODY", "FORM", "NAV", "HEADER", "ASIDE", "SECTION"]);
+
 function miembroDeGrupo(el: Element): Element {
   const padre = el.parentElement;
   if (!padre || !padre.parentElement) return el;
+  // Un contenedor GRANDE no es el envoltorio de un elemento de lista: promover
+  // hasta ahí haría que abrir un desplegable mirase secciones enteras de la
+  // pantalla en busca de hermanos que cerrar.
+  if (NO_PROMOVER.has(padre.tagName)) return el;
   const propios = padre.querySelectorAll(":scope > details").length
     + padre.querySelectorAll(":scope > [data-open]").length;
   return propios === 1 ? padre : el;
