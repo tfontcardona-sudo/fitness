@@ -685,8 +685,63 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
     if (plan) syncScope(ambitoPlan, avisosFirma ? avisosFirma.split("|") : []);
   }, [plan, ambitoPlan, avisosFirma]);
 
+  // Adaptación que quedó RETENIDA por los guardarraíles: es más nueva que el
+  // plan que se está enseñando y sigue sin activar.
+  const retenido = allPlans.find(
+    (p) => p.status === "draft" && (p.id ?? 0) > (plan?.id ?? 0));
+  const motivosRetencion = retenido
+    ? traducirFlags((retenido.guardrail_flags ?? [])
+        .filter((f: string) => f.startsWith("violation:") || f.startsWith("retenido")))
+    : [];
+
+  async function activarRetenido() {
+    if (!retenido || publishing) return;
+    setPublishing(true);
+    try {
+      await api.publishPlan(retenido.id);
+      const ps = await api.listPlans(client.id).catch(() => allPlans);
+      setAllPlans(ps);
+      const v = vigente(ps);
+      if (v) setPlan(normalize(v));
+      onClientChanged?.();
+      toast.push("Activa · la ve el cliente");
+    } catch {
+      toast.push("No se pudo activar", "error");
+    } finally {
+      setPublishing(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
+      {retenido && (
+        <div className="card p-4" {...ancla("plan.activar")}
+          style={{ borderColor: "color-mix(in srgb, #C2453A 45%, transparent)" }}>
+          <p className="text-sm font-semibold" style={{ color: "#B91C1C" }}>
+            ▲ Adaptación v{retenido.version} retenida · el cliente sigue con la anterior
+          </p>
+          {motivosRetencion.length > 0 && (
+            <ul className="mt-2 space-y-1">
+              {motivosRetencion.slice(0, 6).map((m, i) => (
+                <li key={i} className="text-xs text-zinc-400">· {m}</li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-2 text-xs text-zinc-500">
+            Los guardarraíles la pararon: revísala y corrige lo señalado, o
+            actívala si estás de acuerdo tal cual.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button onClick={() => setPlan(normalize(retenido))} className="btn btn-ghost text-xs">
+              Ver este borrador
+            </button>
+            <button onClick={activarRetenido} disabled={publishing} className="btn btn-primary text-xs">
+              {publishing ? "Activando…" : "Activar de todas formas"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Cabecera con acciones */}
       <div className="card p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
