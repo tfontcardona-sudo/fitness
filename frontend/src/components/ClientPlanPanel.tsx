@@ -881,7 +881,12 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
             </button>
             {/* Las acciones poco frecuentes viven en un menú: la botonera pasa
                 de 6-7 botones del mismo peso a 3-4 (lo frecuente destaca). */}
-            <details className="relative">
+            <details className="relative"
+              onKeyDown={(e) => {
+                if (e.key !== "Escape") return;
+                e.currentTarget.removeAttribute("open");
+                e.stopPropagation();
+              }}>
               <summary className="btn btn-ghost w-full cursor-pointer list-none sm:w-auto">
                 <MoreHorizontal size={15} /> Más
               </summary>
