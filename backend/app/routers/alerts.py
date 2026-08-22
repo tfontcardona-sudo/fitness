@@ -72,8 +72,9 @@ _DESTINO: dict[str, tuple[str, str]] = {
         "seguimiento.registros",
         "Escríbele: lleva días sin registrar y la revisión saldrá coja."),
     "period_overdue": (
-        "seguimiento.periodo",
-        "Reclámasela, o ciérrala tú desde aquí para no bloquear el ciclo."),
+        "feedback.cerrar",
+        "Reclámasela por WhatsApp; si no la manda, ciérrala tú aquí para no "
+        "dejar el ciclo bloqueado."),
     "change_request": (
         "seguimiento.peticiones",
         "Léela, respóndele y márcala resuelta para que deje de avisar."),
@@ -81,15 +82,15 @@ _DESTINO: dict[str, tuple[str, str]] = {
         "plan.suplementos",
         "Súbelos en Recursos: si no, al cliente no le aparecen comprables."),
     "regenerate_goal": (
-        "plan.generar",
-        "Regenera el plan con el objetivo nuevo."),
+        "plan.objetivo",
+        "Aquí cambias de etapa y regeneras el plan con el objetivo nuevo."),
     "plan_stale_inputs": (
-        "plan.generar",
+        "plan.acciones",
         "Las cifras del plan salen de datos que ya cambiaste: regenera o adapta."),
     "goal_review": (
-        "anamnesis.campo.goal_type",
-        "Decide si sigue el mismo objetivo o toca cambiar de etapa: el campo "
-        "es este. Si lo cambias, regenera después la planificación."),
+        "plan.objetivo",
+        "Aquí decides: mantener el objetivo (y se pospone el aviso) o "
+        "cambiar de etapa y regenerar el plan."),
     "video_call_wait": (
         "feedback.videollamada",
         "Aún no ha propuesto hora: recuérdaselo."),
@@ -222,7 +223,10 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
                 out.append(_alert(client, "create_plan",
                                   "alta" if days_wait >= 7 else "media",
                                   f"Sin planificación: falta su anamnesis.{aging}",
-                                  "anamnesis", "Crear planificación"))
+                                  "anamnesis", "Reclamar la anamnesis",
+                                  target="anamnesis.enviar",
+                                  fix="Reenvíale el cuestionario por WhatsApp o "
+                                      "sube tú su PDF si te lo pasó por otra vía."))
         return out  # sin plan publicado, el resto del ciclo no aplica
 
     # --- Revisión quincenal recibida sin feedback ---------------------------
@@ -312,7 +316,7 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
                 client, "period_overdue", "alta" if overdue >= 5 else "media",
                 f"Su revisión quincenal venció hace {overdue} días y no la ha "
                 "enviado: recuérdaselo por WhatsApp.",
-                "seguimiento", "Reclamar la revisión"))
+                "feedback", "Cerrar la revisión"))
 
     # --- Petición de cambio del cliente sin atender (portal → coach) ---------
     # El cliente escribió una duda/petición desde su portal: el coach debe
@@ -534,7 +538,7 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
             goal = _GOAL_LABEL.get(client.goal_type or "", client.goal_type or "—")
             out.append(_alert(client, "goal_review", "media",
                               f"Lleva {days_goal} días con el objetivo de {goal}: valora si toca cambiarlo.",
-                              "anamnesis", "Valorar objetivo"))
+                              "planificacion", "Valorar objetivo"))
 
     return out
 

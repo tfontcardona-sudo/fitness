@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Sparkles, ChevronRight, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Mail, MoreHorizontal, Pencil, PlayCircle, Save, X, Flag, Copy, Archive, FileText, FileUp } from "lucide-react";
-import { ancla } from "../lib/anchors";
+import { ancla, hrefCliente } from "../lib/anchors";
 import { pin, pinId, syncScope } from "../lib/pins";
 import { api, getToken } from "../lib/api";
 import { manualUpdateMessage, openWhatsApp, planAndFeedbackMessage, planMessage, waPhone, waUrl } from "../lib/whatsapp";
@@ -612,6 +612,14 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
    *  RECORDATORIO de lo que ibas a arreglar, que se borra solo cuando el aviso
    *  desaparece del plan. */
   function irADestino(destino: Destino, aviso?: { titulo: string; accion: string; detalle?: string }) {
+    // El recordatorio guarda el MISMO destino al que se va: antes nacía sin
+    // ancla (al volver por el dock no marcaba nada) y con el enlace a
+    // Planificación aunque el hallazgo mandara a la Anamnesis.
+    const pestana = destino === "anamnesis" ? "anamnesis" : "planificacion";
+    const anclaDestino = destino === "anamnesis" ? "anamnesis.revision"
+      : destino === "nutricion" ? "nutricion.macros"
+      : destino === "entreno" ? "entreno.sesiones"
+      : "plan.acciones";
     if (aviso) {
       pin({
         id: pinId(ambitoPlan, clavePlan(destino, aviso.titulo)),
@@ -621,7 +629,8 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
         clientName: client.full_name,
         label: aviso.titulo,
         hint: aviso.accion,
-        href: `/clientes/${client.id}?tab=planificacion`,
+        href: hrefCliente(client.id, pestana, anclaDestino),
+        target: anclaDestino,
         severity: "alta",
       });
     }
@@ -805,7 +814,8 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
           </div>
           {/* Acciones: en móvil ocupan todo el ancho (2 columnas) sin cortarse;
               en escritorio van en fila. */}
-          <div id="plan-acciones" className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
+          <div id="plan-acciones" {...ancla("plan.acciones")}
+            className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
             <button onClick={() => setEditing(true)} className="btn btn-ghost">
               <Pencil size={15} /> Editar
             </button>
@@ -1299,7 +1309,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
       {/* Nutrición (los planes Train no la incluyen: sin tarjeta de ceros) */}
       {hasNutrition && (
       <div className="card p-5">
-        <SectionTitle icon={Utensils} title="Nutrición"
+        <SectionTitle icon={Utensils} title="Nutrición" ancla="nutricion.macros"
           onEdit={() => { setEditFocus("nutrition"); setEditing(true); }} />
         {/* Cálculo aplicado, directo: déficit/superávit sobre el TDEE */}
         {nut.tdee_kcal ? (
@@ -1416,7 +1426,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
           El paquete Start es solo nutrición: no se muestra el entrenamiento. */}
       {hasTraining && (
       <div className="card p-5">
-        <SectionTitle icon={Dumbbell} title={`Entrenamiento${tr.split_name ? ` · ${tr.split_name}` : ""}`} accent="var(--brand-accent-2)"
+        <SectionTitle icon={Dumbbell} title={`Entrenamiento${tr.split_name ? ` · ${tr.split_name}` : ""}`} accent="var(--brand-accent-2)" ancla="entreno.sesiones"
           onEdit={() => { setEditFocus("training"); setEditing(true); }} />
         {tr.split_rationale && (
           <details className="mb-3 text-sm">
@@ -1933,6 +1943,7 @@ function GoalStageCard({ client, currentMonth, onClientChanged, onRegenerated }:
       open={due != null}
       name="plan-secciones"
       className="card p-5"
+      {...ancla("plan.objetivo")}
       style={due != null ? { borderColor: "color-mix(in srgb, var(--brand-accent) 55%, transparent)" } : undefined}
     >
       <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 text-sm font-semibold text-zinc-100">

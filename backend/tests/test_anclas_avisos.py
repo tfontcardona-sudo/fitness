@@ -80,8 +80,19 @@ def test_un_aviso_sin_destino_no_inventa_ninguno():
     assert a["key"] == "42:kind_que_no_existe:"
 
 
-def test_el_objetivo_se_valora_en_la_ficha_no_en_la_planificacion():
-    """El campo del objetivo vive en Anamnesis: llevar a Planificación dejaba
-    al coach en una pestaña donde ese campo no existe."""
+def test_el_objetivo_se_valora_donde_se_resuelve_de_verdad():
+    """Cambiar el campo en la ficha NO pospone el aviso ni regenera el plan
+    (solo enciende otro aviso), y ese campo vive dentro del modo edición, así
+    que el ancla ni siquiera existía al llegar. La decisión se toma en la
+    tarjeta de etapa de Planificación."""
     target, _ = al._DESTINO["goal_review"]
-    assert target.startswith("anamnesis."), target
+    assert target == "plan.objetivo", target
+
+
+def test_los_avisos_con_plan_publicado_no_apuntan_a_la_vista_sin_plan():
+    """`plan.generar` solo existe en la pantalla de "aún no hay plan", y estos
+    avisos exigen por definición un plan PUBLICADO: apuntar ahí era mandar al
+    coach a un ancla que no puede existir."""
+    for kind in ("regenerate_goal", "plan_stale_inputs", "goal_review"):
+        target, _ = al._DESTINO[kind]
+        assert target != "plan.generar", kind

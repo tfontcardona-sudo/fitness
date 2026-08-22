@@ -271,6 +271,13 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
     .reduce((mx, p) => Math.max(mx, p.period_index), 0);
   const callForLastReview = calls.find((c) => c.period_index === lastReviewIdx) ?? null;
   const showVideoCall = directContact && lastReviewIdx > 0 && callForLastReview?.status !== "done";
+  // Videollamadas VIVAS de revisiones ANTERIORES. El backend avisa de ellas a
+  // propósito (una propuesta sin responder no puede esfumarse), pero el panel
+  // solo pintaba la de la última revisión: el coach recibía el aviso, pulsaba,
+  // y aterrizaba en una pantalla sin los botones para resolverla.
+  const huerfanas = calls.filter((c) =>
+    c.period_index !== lastReviewIdx
+    && (c.status === "proposed" || c.status === "pending_manual" || c.status === "scheduled"));
 
   return (
     <div className="space-y-4">
@@ -297,6 +304,23 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
           </button>
         </div>
       )}
+      {huerfanas.map((vc) => (
+        <div key={vc.id} className="card p-3.5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Videollamada pendiente de la revisión #{vc.period_index}
+          </p>
+          <VideoCallCycle
+            clientId={client.id}
+            periodIndex={vc.period_index}
+            call={vc}
+            googleConnected={googleConnected}
+            onModify={modifyVideoCall}
+            onShareMeet={shareMeetWhatsApp}
+            onChanged={loadCalls}
+          />
+        </div>
+      ))}
+
       {/* Videollamada quincenal (Pro). Si YA está agendada (nada que hacer),
           se colapsa a una línea; desplegada solo cuando pide acción del coach. */}
       {showVideoCall && (callForLastReview?.status === "scheduled" ? (
@@ -400,6 +424,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                   <button
                     onClick={() => closeByCoach(p.id, p.period_index)}
                     disabled={closing === p.id}
+                    {...ancla("feedback.cerrar")}
                     className="btn btn-ghost mt-2 text-xs"
                   >
                     {closing === p.id ? "Cerrando…" : "Venció · cerrarla yo"}

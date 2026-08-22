@@ -56,24 +56,35 @@ export default function ClientProfilePage() {
   // pestaña a mano se suelta (ya no estás en el sitio que se te señaló).
   const ir = searchParams.get("ir");
 
-  function changeTab(next: Tab) {
-    if (next === tab) return;
+  /** Aplica la pestaña, con sus guardas de borrador sin guardar, SIN tocar la
+   *  URL. Devuelve si el cambio se aceptó. */
+  function aplicarTab(next: Tab): boolean {
+    if (next === tab) return false;
     if (tab === "anamnesis" && anamnesisDirty &&
         !window.confirm("Tienes cambios sin guardar en la anamnesis. ¿Descartarlos?")) {
-      return;
+      return false;
     }
     if (tab === "planificacion" && planEditing &&
         !window.confirm("Tienes el editor del plan abierto con cambios sin guardar. ¿Descartarlos?")) {
-      return;
+      return false;
     }
     if (tab === "anamnesis") setAnamnesisDirty(false);
     if (tab === "planificacion") setPlanEditing(false);
     setTab(next);
-    // La URL refleja la pestaña activa: recargar o compartir el enlace vuelve a
-    // la misma pestaña. `replace` para no llenar el historial con cada clic
-    // (el efecto URL→tab no entra en bucle: su changeTab corta si next === tab).
-    // Solo `tab`: al cambiar de pestaña a mano el ancla se suelta (si no, se
-    // quedaría intentando marcar un elemento de la pestaña anterior).
+    return true;
+  }
+
+  /** Clic MANUAL en una pestaña. Además de aplicarla reescribe la URL, y ahí
+   *  SÍ se suelta el ancla: ya no estás en el sitio que se te señaló.
+   *
+   *  Esto NO lo puede usar el efecto que sigue a la URL: al reescribirla
+   *  borraba el `?ir=` en el mismo instante, así que pulsar un aviso estando
+   *  YA dentro de la ficha del cliente cambiaba de pestaña sin marcar nada
+   *  — el camino más común de todos. */
+  function changeTab(next: Tab) {
+    if (!aplicarTab(next)) return;
+    // La URL refleja la pestaña activa: recargar o compartir el enlace vuelve
+    // a la misma pestaña. `replace` para no llenar el historial.
     setSearchParams({ tab: next }, { replace: true });
   }
 
@@ -127,7 +138,9 @@ export default function ClientProfilePage() {
   useEffect(() => {
     const t = searchParams.get("tab") as Tab | null;
     const valid: Tab[] = ["resumen", "anamnesis", "planificacion", "seguimiento", "feedback", "historial"];
-    if (t && valid.includes(t)) changeTab(t);
+    // `aplicarTab`, NO `changeTab`: reescribir la URL aquí borraría el `?ir=`
+    // del aviso que acaba de traernos.
+    if (t && valid.includes(t)) aplicarTab(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
@@ -356,27 +369,35 @@ export default function ClientProfilePage() {
           >
             <MessageCircle size={22} className="shrink-0" />
             <span className="min-w-0">
-              <span className="block text-sm font-semibold">Escribirle por WhatsApp</span>
+              <span className="block text-sm font-semibold" {...ancla("anamnesis.enviar")}>
+                Escribirle por WhatsApp
+              </span>
               <span className="block text-xs opacity-80">abre su chat con el saludo puesto</span>
             </span>
           </button>
 
           {/* ENLACE DE PAGO (Stripe): color diferenciado (verde), debajo del
               portal. Copia el enlace para mandárselo al cliente y que pague. */}
-          {payUrl && client.payment_status !== "paid" && (
+          <div {...ancla("resumen.pago")} className="space-y-3">
+          {payUrl && (client.payment_status !== "paid" || client.renewal_due) && (
             <button
               onClick={() => {
                 navigator.clipboard.writeText(payUrl).catch(() => {});
-                toast.push("Enlace de pago copiado — mándaselo al cliente");
+                toast.push(client.payment_status === "paid"
+                  ? "Enlace de renovación copiado — mándaselo al cliente"
+                  : "Enlace de pago copiado — mándaselo al cliente");
               }}
               className="flex w-full items-center gap-3 rounded-xl border-2 px-4 py-3 text-left transition-transform active:scale-[0.98]"
               style={{ borderColor: "#2E7D46", color: "#2E7D46", background: "color-mix(in srgb, #2E7D46 7%, transparent)" }}
             >
               <CreditCard size={22} className="shrink-0" />
               <span className="min-w-0">
-                <span className="block text-sm font-semibold">Enlace de pago</span>
+                <span className="block text-sm font-semibold">
+                  {client.payment_status === "paid" ? "Enlace de renovación" : "Enlace de pago"}
+                </span>
                 <span className="block text-xs opacity-80">
-                  copiar y enviar al cliente — cobra su plan {billingLabel(client.billing_period).toLowerCase()}
+                  copiar y enviar al cliente — {client.payment_status === "paid" ? "renueva" : "cobra"}{" "}
+                  su plan {billingLabel(client.billing_period).toLowerCase()}
                 </span>
               </span>
             </button>
@@ -384,7 +405,6 @@ export default function ClientProfilePage() {
           {/* Pago por OTRA VÍA (bizum, transferencia, efectivo): sin este botón
               la ficha quedaba "Pago pendiente" para siempre, con la campana
               insistiendo y la carpeta "Falta pago" contaminada. */}
-          <div {...(payUrl && client.payment_status !== "paid" ? {} : ancla("resumen.pago"))}>
             <CobroManual client={client} onDone={reload} />
           </div>
           {/* Reactivar a un cliente INACTIVO: la transición existía en la

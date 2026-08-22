@@ -94,6 +94,29 @@ function NotaDeAncla({ pin, el, onClose }: { pin: Pin; el: HTMLElement; onClose:
   );
 }
 
+/** Nota SIN elemento al que pegarse: el ancla no apareció, pero la
+ *  indicación de qué hay que hacer no se pierde. */
+function NotaSuelta({ pin, onClose }: { pin: Pin; onClose: () => void }) {
+  return createPortal(
+    <div role="status"
+      className="card animate-rise fixed left-1/2 top-4 z-[60] w-[320px] max-w-[calc(100vw-2rem)] -translate-x-1/2 p-3"
+      style={{ borderColor: "color-mix(in srgb, var(--brand-accent) 55%, transparent)", boxShadow: "var(--shadow-2)" }}>
+      <div className="flex items-start gap-2">
+        <PinIcon size={14} className="mt-0.5 shrink-0" style={{ color: "var(--brand-accent)" }} />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-zinc-100">{pin.label}</p>
+          {pin.hint && <p className="mt-1 text-xs text-zinc-400">{pin.hint}</p>}
+        </div>
+        <button onClick={onClose} aria-label="Cerrar el recordatorio"
+          className="tap -m-1 shrink-0 rounded-lg p-1 text-zinc-500 hover:text-zinc-200">
+          <X size={14} />
+        </button>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 /* --------------------------------------------------- marcar al llegar (?ir=) --- */
 
 /**
@@ -102,6 +125,7 @@ function NotaDeAncla({ pin, el, onClose }: { pin: Pin; el: HTMLElement; onClose:
  */
 export function MarcadorDeAncla({ clientId, target }: { clientId: number; target: string | null }) {
   const [el, setEl] = useState<HTMLElement | null>(null);
+  const [perdido, setPerdido] = useState(false);
   const pins = usePins();
   const pin = target ? pins.find((p) => p.clientId === clientId && p.target === target) : undefined;
   const cerrado = useRef<string | null>(null);
@@ -109,13 +133,15 @@ export function MarcadorDeAncla({ clientId, target }: { clientId: number; target
   useEffect(() => {
     let vivo = true;
     setEl(null);
+    setPerdido(false);
     if (!target || cerrado.current === target) return;
     irYMarcar(target).then((encontrado) => {
       // La búsqueda puede tardar segundos (los datos llegan por red): si para
       // entonces ya cambiaste de ancla o saliste, la marca que acaba de
       // encenderse se apaga — si no, se quedaba pegada en la pantalla nueva.
-      if (vivo) setEl(encontrado);
-      else desmarcarTodo();
+      if (!vivo) { desmarcarTodo(); return; }
+      setEl(encontrado);
+      setPerdido(encontrado === null);
     });
     return () => {
       vivo = false;
@@ -134,14 +160,14 @@ export function MarcadorDeAncla({ clientId, target }: { clientId: number; target
   }, [target, pin]);
   useEffect(() => { huboPin.current = false; }, [target]);
 
-  if (!el || !pin) return null;
-  return (
-    <NotaDeAncla
-      pin={pin}
-      el={el}
-      onClose={() => { cerrado.current = target; desmarcarTodo(); setEl(null); }}
-    />
-  );
+  if (!pin) return null;
+  const cerrar = () => { cerrado.current = target; desmarcarTodo(); setEl(null); setPerdido(false); };
+  // El ancla no apareció (pantalla que no la tiene, plan sin ese bloque, un
+  // destino que se quedó atrás al mover la interfaz): al menos se enseña QUÉ
+  // hay que hacer. Sin esto, un ancla que se pierde deja al coach en la
+  // pestaña correcta y sin la indicación, que es peor que no llevarlo.
+  if (!el) return perdido ? <NotaSuelta pin={pin} onClose={cerrar} /> : null;
+  return <NotaDeAncla pin={pin} el={el} onClose={cerrar} />;
 }
 
 /* ------------------------------------------------------------------ dock --- */

@@ -301,6 +301,9 @@ export interface ClientOut {
   diet_mode: DietMode | null;
   diet_pattern?: string | null;
   reference_weight_kg?: number | null;
+  /** ¿Toca renovar ya? Lo decide el backend (`renewals.is_due`), no el panel:
+   *  una segunda fórmula aquí se desincronizaría de la alerta y del email. */
+  renewal_due?: boolean;
   strict_free_meal_enabled: boolean;
   status: ClientStatus;
   auto_pilot: boolean;

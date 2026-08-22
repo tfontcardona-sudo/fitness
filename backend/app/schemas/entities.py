@@ -227,6 +227,11 @@ class ClientOut(BaseModel):
     # lo calcula el GET del cliente para que el editor valide topes con el
     # MISMO peso que usará el backend al guardar (auditoría de ediciones).
     reference_weight_kg: float | None = None
+    # ¿Toca renovar YA? Lo decide `services/renewals.is_due` (la MISMA verdad
+    # que la alerta, el email al cliente y el enlace de pago). El panel lo usa
+    # para volver a enseñar el enlace de cobro en la ventana de renovación:
+    # calcularlo en el frontend sería una segunda fórmula que se desincroniza.
+    renewal_due: bool = False
     strict_free_meal_enabled: bool
     status: ClientStatus
     auto_pilot: bool
