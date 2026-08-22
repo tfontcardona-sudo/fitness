@@ -1,87 +1,93 @@
 /**
- * ACORDEÓN GLOBAL — abrir uno cierra el hermano que estuviera abierto.
+ * ACORDEÓN GLOBAL — abrir uno cierra el que estaba abierto.
  *
- * Petición del dueño: "en todos los desplegables y combinaciones posibles, si
- * hay uno abierto y abres otro, que se cierre el anterior, para que no se
- * quede muy sucia la página".
+ * Petición del dueño: "en todos los desplegables, si hay uno abierto y abres
+ * otro, que se cierre el anterior, para que no se quede sucia la página".
  *
- * Se resuelve UNA vez en el DOM en lugar de desplegable por desplegable:
- * - `<details>` nativos: al abrirse uno, se cierran sus HERMANOS directos.
- *   (El atributo `name` de HTML hace esto solo en navegadores recientes; esto
- *   funciona en todos y además agrupa por contenedor, sin tener que bautizar
- *   cada grupo a mano.)
- * - Desplegables de estado (MemoDetails y compañía): se marcan con
- *   `data-open` y un botón `[data-desplegable-toggle]`; al abrirse uno, se
- *   pulsa el toggle de los hermanos abiertos para cerrarlos.
+ * La agrupación es EXPLÍCITA, nunca deducida de la forma del DOM. Un primer
+ * intento la infería ("si el desplegable es el único de su contenedor, el
+ * grupo es el contenedor") y salía impredecible: con dos revisiones abrir una
+ * cerraba solo a las otras, pero con UNA sola cerraba también la tabla de
+ * registros de al lado. La misma acción hacía cosas distintas según cuántos
+ * datos tuviera el cliente.
  *
- * Hermano = mismo elemento padre. Un desplegable ANIDADO dentro de otro no es
- * hermano, así que abrirlo no cierra al que lo contiene (si no, sería
- * imposible usarlos).
+ * Reglas, por orden:
+ *  1. `data-acordeon="grupo"` → exclusivo con todo lo que lleve ese mismo
+ *     grupo, esté donde esté. Es lo que hay que usar cuando cada elemento va
+ *     envuelto en su propio <li> o <div>.
+ *  2. `<details name="…">` → el navegador ya lo hace exclusivo por su cuenta;
+ *     aquí no se toca.
+ *  3. Sin nada declarado → exclusivo solo con sus HERMANOS DIRECTOS. Sin
+ *     promociones al contenedor de arriba.
+ *
+ * `libre()` deja fuera a un desplegable (y a todo lo que contenga): ni cierra
+ * ni se cierra. Es para superficies de TRABAJO, no de consulta — una tarjeta
+ * con un editor abierto o una descarga en curso no puede plegarse porque
+ * alguien abra otra cosa.
+ *
+ * Los desplegables de ESTADO (MemoDetails) se cierran con un evento
+ * `acordeon:cerrar`, no pulsando su botón: pulsarlo persistía en localStorage
+ * una decisión que el coach no había tomado.
  */
 
 const NO_EXCLUSIVO = "data-acordeon-libre";
+const GRUPO = "data-acordeon";
+export const EVENTO_CERRAR = "acordeon:cerrar";
+/** Lo pide el ancla al llegar: hay que ABRIR este bloque para poder marcar lo
+ *  que lleva dentro. Aquí sí es una decisión del coach (pulsó el aviso), así
+ *  que el desplegable puede recordarla. */
+export const EVENTO_ABRIR = "acordeon:abrir";
 
-/** Marca un desplegable (o un contenedor entero) como NO exclusivo: se queda
- *  abierto aunque se abra un hermano. Para las pocas listas donde comparar dos
- *  cosas a la vez es justo lo que se quiere. */
+/** Marca un desplegable (o un contenedor entero) como NO exclusivo. */
 export function libre(): Record<string, string> {
   return { [NO_EXCLUSIVO]: "true" };
+}
+
+/** Declara el grupo de un desplegable: todos los del mismo grupo son
+ *  mutuamente excluyentes aunque no sean hermanos en el DOM. */
+export function grupo(nombre: string): Record<string, string> {
+  return { [GRUPO]: nombre };
 }
 
 function exento(el: Element | null): boolean {
   return !!el?.closest(`[${NO_EXCLUSIVO}]`);
 }
 
-/**
- * Quién hace de "miembro del grupo".
- *
- * En React lo normal es envolver cada elemento de una lista en su <li> o su
- * <div>. Entonces los HERMANOS del desplegable son esos envoltorios, no otros
- * desplegables, y comparar hermano a hermano no cerraba nada. Si el
- * desplegable es el ÚNICO de su envoltorio, el que representa al grupo es el
- * envoltorio. Un solo nivel: más sería empezar a cerrar media pantalla.
- */
-const NO_PROMOVER = new Set(["MAIN", "BODY", "FORM", "NAV", "HEADER", "ASIDE", "SECTION"]);
-
-function miembroDeGrupo(el: Element): Element {
-  const padre = el.parentElement;
-  if (!padre || !padre.parentElement) return el;
-  // Un contenedor GRANDE no es el envoltorio de un elemento de lista: promover
-  // hasta ahí haría que abrir un desplegable mirase secciones enteras de la
-  // pantalla en busca de hermanos que cerrar.
-  if (NO_PROMOVER.has(padre.tagName)) return el;
-  const propios = padre.querySelectorAll(":scope > details").length
-    + padre.querySelectorAll(":scope > [data-open]").length;
-  return propios === 1 ? padre : el;
+function esDesplegable(el: Element): boolean {
+  return el instanceof HTMLDetailsElement || el.hasAttribute("data-open");
 }
 
-function cerrarUno(h: Element): void {
-  if (exento(h)) return;
-  if (h instanceof HTMLDetailsElement) {
-    if (h.open) h.open = false;
-    return;
-  }
-  // Desplegable de estado ya abierto: se cierra pulsando SU toggle, que es
-  // quien conoce su estado de React (tocarle el DOM a mano no serviría).
-  if (h.getAttribute("data-open") === "true") {
-    const toggle = h.querySelector<HTMLElement>("[data-desplegable-toggle]");
-    if (toggle && !exento(toggle)) toggle.click();
-    return;
-  }
-  // Envoltorio: se cierra lo que lleve DENTRO, solo al primer nivel.
-  h.querySelectorAll<HTMLElement>(":scope > details, :scope > [data-open]")
-    .forEach((d) => cerrarUno(d));
-}
-
-function cerrarHermanos(el: Element): void {
+/** Cierra un desplegable respetando su naturaleza. */
+function cerrar(el: Element): void {
   if (exento(el)) return;
-  const yo = miembroDeGrupo(el);
-  const padre = yo.parentElement;
-  if (!padre) return;
-  for (const h of Array.from(padre.children)) {
-    if (h === yo) continue;
-    cerrarUno(h);
+  if (el instanceof HTMLDetailsElement) {
+    if (el.open) el.open = false;
+    return;
   }
+  if (el.getAttribute("data-open") === "true") {
+    // Evento, NO clic en su botón: el clic hacía que el componente guardara
+    // "cerrado" en localStorage como si lo hubiera decidido el coach.
+    el.dispatchEvent(new CustomEvent(EVENTO_CERRAR, { bubbles: false }));
+  }
+}
+
+function companeros(el: Element): Element[] {
+  const nombreGrupo = el.getAttribute(GRUPO);
+  if (nombreGrupo) {
+    return Array.from(document.querySelectorAll(`[${GRUPO}="${CSS.escape(nombreGrupo)}"]`))
+      .filter((h) => h !== el);
+  }
+  // Sin grupo declarado: solo los hermanos directos, y solo los que tampoco
+  // declaran grupo (si lo declaran, mandan sus compañeros de grupo).
+  const padre = el.parentElement;
+  if (!padre) return [];
+  return Array.from(padre.children)
+    .filter((h) => h !== el && esDesplegable(h) && !h.hasAttribute(GRUPO));
+}
+
+function cerrarCompaneros(el: Element): void {
+  if (exento(el)) return;
+  for (const h of companeros(el)) cerrar(h);
 }
 
 let activo = false;
@@ -94,7 +100,7 @@ export function activarAcordeon(): () => void {
   // `toggle` NO burbujea: hay que escuchar en fase de captura.
   const alAlternar = (e: Event) => {
     const el = e.target;
-    if (el instanceof HTMLDetailsElement && el.open) cerrarHermanos(el);
+    if (el instanceof HTMLDetailsElement && el.open) cerrarCompaneros(el);
   };
   document.addEventListener("toggle", alAlternar, true);
 
@@ -103,7 +109,7 @@ export function activarAcordeon(): () => void {
     for (const c of cambios) {
       const el = c.target;
       if (el instanceof HTMLElement && el.getAttribute("data-open") === "true") {
-        cerrarHermanos(el);
+        cerrarCompaneros(el);
       }
     }
   });

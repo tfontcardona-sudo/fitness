@@ -22,6 +22,8 @@
  *   sirve marcar algo que está plegado.
  */
 
+import { EVENTO_ABRIR } from "./accordion";
+
 /** Atributo que hay que poner en el elemento marcable. */
 export const ATRIBUTO = "data-ancla";
 
@@ -48,8 +50,10 @@ export function abrirContenedores(el: HTMLElement): void {
     if (nodo instanceof HTMLDetailsElement) {
       if (!nodo.open) nodo.open = true;
     } else if (nodo.getAttribute("data-open") === "false") {
-      // Se pulsa SU toggle: es quien conoce el estado de React.
-      nodo.querySelector<HTMLElement>("[data-desplegable-toggle]")?.click();
+      // Se le PIDE que se abra: el componente conoce su estado de React, y
+      // esto sí es una decisión del coach (pulsó el aviso), así que puede
+      // recordarla.
+      nodo.dispatchEvent(new CustomEvent(EVENTO_ABRIR, { bubbles: false }));
     }
     nodo = nodo.parentElement;
   }

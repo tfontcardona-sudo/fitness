@@ -135,33 +135,38 @@ function nodo(tipo, hijos = []) {
   return el;
 }
 
-// Réplica de la regla de lib/accordion.ts: cerrar los HERMANOS abiertos,
-// viendo a través del envoltorio (<li>, <div>) que React pone por elemento.
-const NO_PROMOVER = new Set(["main", "body", "form", "nav", "header", "aside", "section"]);
-function miembroDeGrupo(el) {
-  const padre = el.parentElement;
-  if (!padre || !padre.parentElement) return el;
-  if (NO_PROMOVER.has(padre.tipo)) return el;
-  const propios = padre.children.filter((c) => c.tipo === "details").length;
-  return propios === 1 ? padre : el;
+// Réplica de la regla de lib/accordion.ts: la agrupación es EXPLÍCITA.
+//  1. data-acordeon="grupo" → exclusivo con todo lo del mismo grupo.
+//  2. sin nada → solo hermanos DIRECTOS (sin promociones al contenedor).
+//  3. data-acordeon-libre → ni cierra ni se cierra.
+const universo = [];
+function nodoG(tipo, hijos = [], attrs = {}) {
+  const el = nodo(tipo, hijos);
+  el.attrs = attrs;
+  universo.push(el);
+  for (const h of hijos) if (!universo.includes(h)) universo.push(h);
+  return el;
 }
-function cerrarUno(h) {
-  if (h.closest("[data-acordeon-libre]")) return;
-  if (h.tipo === "details") { if (h.open) h.open = false; return; }
-  for (const d of h.children) if (d.tipo === "details") cerrarUno(d);
+function companeros(el) {
+  const g = el.attrs["data-acordeon"];
+  if (g) return universo.filter((h) => h !== el && h.attrs["data-acordeon"] === g);
+  const padre = el.parentElement;
+  if (!padre) return [];
+  return padre.children.filter(
+    (h) => h !== el && (h.tipo === "details" || h.attrs["data-open"] != null)
+      && h.attrs["data-acordeon"] == null);
 }
 function cerrarHermanos(el) {
   if (el.closest("[data-acordeon-libre]")) return;
-  const yo = miembroDeGrupo(el);
-  for (const h of yo.parentElement?.children ?? []) {
-    if (h === yo) continue;
-    cerrarUno(h);
+  for (const h of companeros(el)) {
+    if (h.closest("[data-acordeon-libre]")) continue;
+    if (h.tipo === "details" && h.open) h.open = false;
   }
 }
 
-t("abrir un desplegable cierra al hermano abierto", () => {
-  const a = nodo("details"), b = nodo("details");
-  nodo("div", [a, b]);
+t("abrir un desplegable cierra al hermano directo abierto", () => {
+  const a = nodoG("details"), b = nodoG("details");
+  nodoG("div", [a, b]);
   a.open = true; b.open = true;
   cerrarHermanos(b);
   assert.equal(a.open, false, "el hermano debía cerrarse");
@@ -169,55 +174,59 @@ t("abrir un desplegable cierra al hermano abierto", () => {
 });
 
 t("un desplegable ANIDADO no cierra al que lo contiene", () => {
-  const dentro = nodo("details");
-  const fuera = nodo("details", [dentro]);
-  nodo("div", [fuera]);
+  const dentro = nodoG("details");
+  const fuera = nodoG("details", [dentro]);
+  nodoG("div", [fuera]);
   fuera.open = true; dentro.open = true;
   cerrarHermanos(dentro);
   assert.equal(fuera.open, true, "cerrar al padre haría imposible usarlo");
 });
 
-t("un grupo marcado como libre se queda abierto", () => {
-  const a = nodo("details"), b = nodo("details");
-  const caja = nodo("div", [a, b]);
-  caja.attrs["data-acordeon-libre"] = "true";
-  a.open = true; b.open = true;
-  cerrarHermanos(b);
-  assert.equal(a.open, true, "el grupo libre debe permitir varios abiertos");
-});
-
-t("el acordeón ve a través del envoltorio de cada elemento de una lista", () => {
-  // Patrón de React: cada aviso va en su <li> con su <details> dentro. Como
-  // los hermanos son los <li>, comparando hermano a hermano no se cerraba
-  // nada y el bloque de avisos se quedaba con cinco desplegables abiertos.
-  const d1 = nodo("details"), d2 = nodo("details");
-  const li1 = nodo("li", [d1]), li2 = nodo("li", [d2]);
-  nodo("ul", [li1, li2]);
+t("el grupo declarado agrupa aunque cada uno vaya en su propio envoltorio", () => {
+  // Patrón de React: cada aviso en su <li>. Sin grupo declarado no serían
+  // hermanos y no se cerrarían entre sí.
+  const d1 = nodoG("details", [], { "data-acordeon": "avisos" });
+  const d2 = nodoG("details", [], { "data-acordeon": "avisos" });
+  nodoG("ul", [nodoG("li", [d1]), nodoG("li", [d2])]);
   d1.open = true; d2.open = true;
   cerrarHermanos(d2);
-  assert.equal(d1.open, false, "el desplegable del otro elemento debía cerrarse");
-  assert.equal(d2.open, true);
+  assert.equal(d1.open, false, "los del mismo grupo deben ser exclusivos");
 });
 
-t("no se promueve a un contenedor grande (main, form, section…)", () => {
-  // Promover hasta ahí haría que abrir un desplegable fuese a buscar hermanos
-  // por secciones enteras de la pantalla.
-  const solo = nodo("details");
-  const main = nodo("main", [solo]);
-  const hermanaConDetails = nodo("details");
-  const otraSeccion = nodo("section", [hermanaConDetails]);
-  nodo("div", [main, otraSeccion]);
-  solo.open = true; hermanaConDetails.open = true;
-  cerrarHermanos(solo);
-  assert.equal(hermanaConDetails.open, true, "se coló en otra sección de la página");
+t("el grupo NO alcanza a los de otro grupo ni a los que no declaran ninguno", () => {
+  const mio = nodoG("details", [], { "data-acordeon": "avisos" });
+  const otro = nodoG("details", [], { "data-acordeon": "sesiones" });
+  const suelto = nodoG("details");
+  nodoG("div", [mio, otro, suelto]);
+  mio.open = true; otro.open = true; suelto.open = true;
+  cerrarHermanos(mio);
+  assert.equal(otro.open, true, "cerró uno de otro grupo");
+  assert.equal(suelto.open, true, "cerró uno que no declara grupo");
 });
 
-t("desplegables de padres distintos no se estorban", () => {
-  const a = nodo("details"), b = nodo("details");
-  nodo("div", [a]); nodo("div", [b]);
-  a.open = true; b.open = true;
-  cerrarHermanos(b);
-  assert.equal(a.open, true, "cerró uno de otra sección");
+t("una superficie de trabajo marcada libre ni cierra ni se cierra", () => {
+  // La tarjeta del período con el editor del feedback abierto no puede
+  // plegarse porque alguien abra la línea de la videollamada de al lado.
+  const trabajo = nodoG("details", [], { "data-acordeon-libre": "true" });
+  const consulta = nodoG("details");
+  nodoG("div", [trabajo, consulta]);
+  trabajo.open = true; consulta.open = true;
+  cerrarHermanos(consulta);
+  assert.equal(trabajo.open, true, "se plegó una superficie de trabajo");
+  cerrarHermanos(trabajo);
+  assert.equal(consulta.open, true, "una superficie libre tampoco debe cerrar a otros");
+});
+
+t("la agrupación NO depende de cuántos elementos tenga la lista", () => {
+  // El fallo del primer intento: con dos revisiones abrir una cerraba solo a
+  // las otras, pero con UNA sola cerraba también la tabla de al lado.
+  const unica = nodoG("details");
+  const lista = nodoG("div", [unica]);
+  const vecina = nodoG("details");
+  nodoG("div", [lista, vecina]);
+  unica.open = true; vecina.open = true;
+  cerrarHermanos(unica);
+  assert.equal(vecina.open, true, "se coló fuera de su lista por ser hija única");
 });
 
 /* -------------------------- el backend y la web hablan del mismo sitio --- */

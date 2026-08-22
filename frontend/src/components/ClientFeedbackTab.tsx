@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { libre } from "../lib/accordion";
 import { ancla } from "../lib/anchors";
 import { Sparkles, AlertTriangle, MessageSquare, MessageCircle, Mail, Video, Target, TrendingUp, BarChart3, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
 import { api, getToken } from "../lib/api";
@@ -374,6 +375,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
           // plegados y cargan su resumen al abrirlos.
           <details
             key={p.id}
+            {...libre()}
             name="feedback-periodos"
             className="card p-5"
             open={isCurrent}
@@ -1065,7 +1067,8 @@ function PeriodPhotosFolded({ clientId, periodId }: { clientId: number; periodId
   }, [clientId, periodId]);
   if (!count) return null;
   return (
-    <details className="mt-2" onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+    <details className="mt-2" {...libre()}
+      onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
       <summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-zinc-300">
         Fotos del período ({count})
       </summary>

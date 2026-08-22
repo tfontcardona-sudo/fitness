@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Sparkles, ChevronRight, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Mail, MoreHorizontal, Pencil, PlayCircle, Save, X, Flag, Copy, Archive, FileText, FileUp } from "lucide-react";
+import { grupo } from "../lib/accordion";
 import { ancla, hrefCliente } from "../lib/anchors";
 import { pin, pinId, syncScope } from "../lib/pins";
 import { api, getToken } from "../lib/api";
@@ -2287,7 +2288,7 @@ function AvisosBlock({ tono, cabecera, findings, flags, onIr, degraded = 0, pleg
                 {g.items.map((a, i) => (
                   <li key={i} className="border-l-2 pl-2"
                     style={{ borderLeftColor: `color-mix(in srgb, ${color} 35%, transparent)` }}>
-                    <details>
+                    <details {...grupo("avisos-del-plan")}>
                       <summary className="cursor-pointer text-xs leading-snug">
                         <span className="font-semibold" style={{ color }}>{a.titulo}</span>
                         {a.veces > 1 && (
