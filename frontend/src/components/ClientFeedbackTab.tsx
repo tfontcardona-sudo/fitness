@@ -38,6 +38,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
   const [contents, setContents] = useState<Record<number, any>>({});
   const [generating, setGenerating] = useState<number | null>(null);
   const [closing, setClosing] = useState<number | null>(null);
+  const [enviando, setEnviando] = useState(false);
   const [editingFb, setEditingFb] = useState<number | null>(null);
   const [metrics, setMetrics] = useState<Record<number, any>>({});
   const [loadingMetrics, setLoadingMetrics] = useState<number | null>(null);
@@ -192,6 +193,18 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
    *  La primera vez marca el feedback como enviado (el ciclo avanza a "activo");
    *  se puede reenviar cuantas veces haga falta. */
   async function deliverFeedback(feedbackId: number, content: any, alreadySent: boolean, periodIndex = 0) {
+    // Con la web lenta el coach pulsa dos veces y el cliente recibe el informe
+    // por duplicado. El candado va aquí, no en cada botón.
+    if (enviando) return;
+    setEnviando(true);
+    try {
+      await _deliverFeedback(feedbackId, content, alreadySent, periodIndex);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  async function _deliverFeedback(feedbackId: number, content: any, alreadySent: boolean, periodIndex = 0) {
     if (byEmail) {
       try {
         const r = await api.sendFeedbackEmail(feedbackId);
@@ -400,7 +413,8 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
               </div>
               <div className="flex gap-2" onClick={(e) => e.preventDefault()}>
                 {p.feedback_id && content && !sent && (
-                  <button onClick={() => deliverFeedback(p.feedback_id as number, content, false, p.period_index)} className="btn btn-primary"
+                  <button onClick={() => deliverFeedback(p.feedback_id as number, content, false, p.period_index)}
+                    disabled={enviando} className="btn btn-primary"
                     {...ancla("feedback.enviar")}>
                     {byEmail ? <><Mail size={15} /> Enviar por email</> : <><MessageCircle size={15} /> Enviar por WhatsApp</>}
                   </button>

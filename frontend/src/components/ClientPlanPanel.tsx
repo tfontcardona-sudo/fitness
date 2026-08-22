@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Sparkles, ChevronRight, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Mail, MoreHorizontal, Pencil, PlayCircle, Save, X, Flag, Copy, Archive, FileText, FileUp } from "lucide-react";
 import { grupo } from "../lib/accordion";
 import { ancla, hrefCliente } from "../lib/anchors";
+import { copiarConAviso } from "../lib/clipboard";
 import { pin, pinId, syncScope } from "../lib/pins";
 import { api, getToken } from "../lib/api";
 import { manualUpdateMessage, openWhatsApp, planAndFeedbackMessage, planMessage, waPhone, waUrl } from "../lib/whatsapp";
@@ -2030,7 +2031,7 @@ function GoalStageCard({ client, currentMonth, onClientChanged, onRegenerated }:
           <div className="rounded-lg border p-3" style={{ borderColor: "color-mix(in srgb, var(--brand-accent-2) 25%, transparent)", background: "color-mix(in srgb, var(--brand-accent-2) 5%, transparent)" }}>
             <p className="whitespace-pre-line text-sm text-zinc-300">{analysis}</p>
             <button
-              onClick={() => { navigator.clipboard.writeText(analysis).catch(() => {}); toast.push("Análisis copiado"); }}
+              onClick={() => void copiarConAviso(analysis, toast, "Análisis copiado")}
               className="mt-2 flex items-center gap-1 text-xs font-medium hover:opacity-80"
               style={{ color: "var(--brand-accent-2)" }}
             >

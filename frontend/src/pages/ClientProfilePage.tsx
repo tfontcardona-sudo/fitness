@@ -16,6 +16,7 @@ import { ClientAnamnesisTab } from "../components/ClientAnamnesisTab";
 import { ClientDocuments } from "../components/ClientDocuments";
 import { MarcadorDeAncla } from "../components/Pins";
 import { ancla, irYMarcar } from "../lib/anchors";
+import { copiarConAviso } from "../lib/clipboard";
 import { ClientPlanPanel } from "../components/ClientPlanPanel";
 import { ClientFeedbackTab } from "../components/ClientFeedbackTab";
 import { ClientHistoryTab } from "../components/ClientHistoryTab";
@@ -201,9 +202,8 @@ export default function ClientProfilePage() {
 
   function openPortal() {
     if (!portalUrl) return;
-    navigator.clipboard.writeText(portalUrl).catch(() => {});
     window.open(portalUrl, "_blank", "noopener");
-    toast.push("Enlace del portal copiado y abierto");
+    void copiarConAviso(portalUrl, toast, "Enlace del portal copiado y abierto");
   }
 
   async function regenerate() {
@@ -382,8 +382,7 @@ export default function ClientProfilePage() {
           {payUrl && (client.payment_status !== "paid" || client.renewal_due) && (
             <button
               onClick={() => {
-                navigator.clipboard.writeText(payUrl).catch(() => {});
-                toast.push(client.payment_status === "paid"
+                void copiarConAviso(payUrl, toast, client.payment_status === "paid"
                   ? "Enlace de renovación copiado — mándaselo al cliente"
                   : "Enlace de pago copiado — mándaselo al cliente");
               }}

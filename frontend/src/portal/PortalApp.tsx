@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSinConexion } from "../lib/offline";
 import { activarAcordeon } from "../lib/accordion";
 import { useSearchParams } from "react-router-dom";
 import { Bell, BellOff, CalendarCheck, Camera, Check, ChevronDown, Dumbbell, FileText, LineChart, Library, LogOut, NotebookPen, Share, Smartphone, Video, X } from "lucide-react";
@@ -45,6 +46,7 @@ export default function PortalApp({ token }: { token: string }) {
   // con una versión nueva desplegada se recarga sola; en uso activo, aviso
   // discreto para tocar y actualizar. El cliente nunca reinstala nada.
   const update = useAppUpdate();
+  const sinConexion = useSinConexion();
   const [state, setState] = useState<PortalState | null>(null);
   // Sube en cada recarga del estado: los hijos con fetch propio (videollamada)
   // se refrescan a la vez que el resto del portal.
@@ -323,7 +325,21 @@ export default function PortalApp({ token }: { token: string }) {
           </div>
         </main>
 
-        {/* Versión nueva desplegada con la app en uso: aviso discreto sobre la
+          {/* Sin conexión: el cliente seguía tecleando series creyendo que se
+            guardaban. Se avisa, pero NO se bloquea: puede seguir apuntando y
+            el autosave lo reintenta en cuanto vuelva la cobertura. */}
+        {sinConexion && (
+          <div role="status"
+            className="fixed inset-x-0 z-50 mx-auto w-fit max-w-[calc(100vw-2rem)] rounded-full px-4 py-2 text-xs font-semibold"
+            style={{
+              bottom: "calc(4.5rem + env(safe-area-inset-bottom))",
+              background: "var(--p-danger)", color: "#fff", boxShadow: "var(--p-e-3)",
+            }}>
+            Sin conexión · lo que apuntes se guardará al volver
+          </div>
+        )}
+
+      {/* Versión nueva desplegada con la app en uso: aviso discreto sobre la
             navegación — un toque y el portal queda al día, sin reinstalar. */}
         {update.ready && (
           <button
