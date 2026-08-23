@@ -358,7 +358,14 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
     setBiblioteca(false);
     try {
       const p = await api.applyFromLibrary(client.id, source);
-      setPlan(normalize(p));
+      // Con un plan ya activo, la copia entra como borrador y se anuncia en la
+      // banda de "sin activar": el cliente sigue viendo el actual. Sin plan,
+      // la copia pasa a ser lo que se enseña.
+      if (plan && plan.status === "published") {
+        setAllPlans(await api.listPlans(client.id).catch(() => allPlans));
+      } else {
+        setPlan(normalize(p));
+      }
       onClientChanged?.();
       if (p.warnings?.length) {
         toast.push(`Copia lista · ${p.warnings.length} aviso${p.warnings.length === 1 ? "" : "s"} a revisar`, "error");
@@ -783,11 +790,23 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
 
   return (
     <div className="space-y-4">
-      {retenido && (
+      {biblioteca && (
+        <SelectorDeBiblioteca
+          clienteId={client.id}
+          onElegir={aplicarDeBiblioteca}
+          onCerrar={() => setBiblioteca(false)}
+        />
+      )}
+      {retenido && (() => {
+        const esCopia = (retenido.guardrail_flags ?? [])
+          .some((f: string) => f.startsWith("copiado de"));
+        return (
         <div className="card p-4" {...ancla("plan.activar")}
-          style={{ borderColor: "color-mix(in srgb, #C2453A 45%, transparent)" }}>
-          <p className="text-sm font-semibold" style={{ color: "#B91C1C" }}>
-            ▲ Adaptación v{retenido.version} retenida · el cliente sigue con la anterior
+          style={{ borderColor: `color-mix(in srgb, ${esCopia ? "var(--brand-accent-2)" : "#C2453A"} 45%, transparent)` }}>
+          <p className="text-sm font-semibold" style={{ color: esCopia ? "var(--brand-accent-2)" : "#B91C1C" }}>
+            {esCopia
+              ? `Copia v${retenido.version} sin activar · el cliente sigue con la anterior`
+              : `▲ Adaptación v${retenido.version} retenida · el cliente sigue con la anterior`}
           </p>
           {motivosRetencion.length > 0 && (
             <ul className="mt-2 space-y-1">
@@ -797,8 +816,9 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
             </ul>
           )}
           <p className="mt-2 text-xs text-zinc-500">
-            Los guardarraíles la pararon: revísala y corrige lo señalado, o
-            actívala si estás de acuerdo tal cual.
+            {esCopia
+              ? "Adáptala a este cliente y actívala cuando esté lista."
+              : "Los guardarraíles la pararon: revísala y corrige lo señalado, o actívala si estás de acuerdo tal cual."}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <button onClick={() => setPlan(normalize(retenido))} className="btn btn-ghost text-xs">
@@ -809,7 +829,8 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
             </button>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Cabecera con acciones */}
       <div className="card p-5">
@@ -997,6 +1018,16 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                   title="Reutilizarlo como base para otros clientes (0 créditos)"
                 >
                   <Copy size={15} /> Guardar como modelo
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.currentTarget.closest("details")?.removeAttribute("open");
+                    setBiblioteca(true);
+                  }}
+                  className="btn btn-ghost w-full justify-start"
+                  title="Crea un borrador desde un modelo u otro cliente; el actual sigue activo hasta que actives el nuevo"
+                >
+                  <Archive size={15} /> Empezar desde otro plan
                 </button>
                 <button
                   onClick={(e) => {
