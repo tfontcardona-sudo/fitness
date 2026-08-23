@@ -373,7 +373,11 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
         toast.push("Copia lista · cifras recalculadas para este cliente");
       }
     } catch (e: any) {
-      toast.push(e?.detail ?? e?.message ?? "No se pudo copiar", "error");
+      const detail = e?.detail;
+      // Anamnesis incompleta: el MISMO recuadro accionable que "Generar", no
+      // un toast que se va a los cuatro segundos.
+      if (detail?.missing) setMissing(detail.missing);
+      else toast.push(detail?.message ?? detail ?? e?.message ?? "No se pudo copiar", "error");
     } finally {
       setGenerating(false);
     }

@@ -129,7 +129,9 @@ def apply_from_library(body: ApplyIn, db: Session = Depends(get_db)) -> dict:
             db, client, nutrition=nutrition, training=training,
             education=education, origen=origen)
     except PlanLibraryError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+        detalle = ({"message": str(exc), "missing": exc.missing}
+                   if exc.missing else str(exc))
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detalle) from exc
     db.commit()
     db.refresh(plan)
     return {

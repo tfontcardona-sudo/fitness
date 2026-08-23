@@ -32,7 +32,14 @@ from app.services.periods import current_month_index, reference_weight_kg
 
 
 class PlanLibraryError(Exception):
-    """Error accionable de la biblioteca (mensaje listo para el coach)."""
+    """Error accionable de la biblioteca (mensaje listo para el coach).
+
+    `missing` lleva los campos de anamnesis que faltan, si esa es la causa:
+    el panel los enseña con el MISMO recuadro accionable que "Generar"."""
+
+    def __init__(self, mensaje: str, missing: list[str] | None = None):
+        super().__init__(mensaje)
+        self.missing = missing or []
 
 
 # ------------------------------------------------------------- resumen ----
@@ -85,8 +92,8 @@ def _contrato_del_destino(db: Session, client: Client):
               if getattr(client, field, None) in (None, "", [])]
     if faltan:
         raise PlanLibraryError(
-            "Su anamnesis está incompleta para calcular sus cifras: falta "
-            + ", ".join(faltan) + "."
+            "Su anamnesis está incompleta para calcular sus cifras.",
+            missing=faltan,
         )
     weight = reference_weight_kg(db, client)
     if not weight:
