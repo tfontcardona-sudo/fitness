@@ -57,7 +57,16 @@ jobs:
               # Repo público: pull normal, sin credenciales.
               git pull origin main
             fi
+            # Zombis de un recreate interrumpido ("abc123_fitness-system-api-1"):
+            # docker compose renombra el contenedor viejo con ese prefijo antes
+            # de sustituirlo; si un despliegue se cortó ahí, el zombi se queda y
+            # BLOQUEA el rename del siguiente (deploy #13 falló por esto). Nunca
+            # son un servicio vivo — los servicios se llaman fitness-system-*-N.
+            docker ps -a --format '{{.Names}}' | grep -E '^[0-9a-f]{10,}_fitness-system-' | xargs -r docker rm -f || true
             docker compose up -d --build
             docker compose ps
+            # Las imágenes colgantes de cada rebuild se acumulan y acaban
+            # llenando el disco del VPS: fuera las que ya no usa nadie.
+            docker image prune -f
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
