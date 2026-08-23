@@ -834,7 +834,9 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                   ? "● Activa para el cliente"
                   : plan.guardrail_flags?.some((f) => f.startsWith("base sin IA"))
                     ? "Base del coach — sin activar"
-                    : "Borrador antiguo"} · v{plan.version}
+                    : plan.guardrail_flags?.some((f) => f.startsWith("copiado de"))
+                      ? "Copia — adáptala y actívala"
+                      : "Borrador antiguo"} · v{plan.version}
               </span>
               {/* §9: semáforo del panel de supervisión + ICP (confianza del plan). */}
               {plan.review?.color && (() => {
