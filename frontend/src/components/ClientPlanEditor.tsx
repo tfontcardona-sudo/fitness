@@ -816,6 +816,22 @@ export function ClientPlanEditor({
               </span>
               {s.name}
               <span className="text-xs font-normal text-zinc-500">{(s.exercises ?? []).length} ejercicios</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (draft.training.sessions.length <= 1) {
+                    toast.push("Es el único día del plan: edítalo en vez de quitarlo", "error");
+                    return;
+                  }
+                  if (!window.confirm(`¿Quitar «${s.day || `Sesión ${si + 1}`} · ${s.name ?? ""}» del plan? Ese día queda de descanso.`)) return;
+                  mutate((d) => d.training.sessions.splice(si, 1));
+                }}
+                className="tap ml-auto flex items-center gap-1 text-xs text-zinc-500 hover:text-red-400"
+                title="Ese día pasa a ser descanso"
+              >
+                <Trash2 size={13} /> Quitar día
+              </button>
             </summary>
             <div className="mt-2 grid grid-cols-2 gap-2">
               <Text label="Día" value={s.day ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].day = v))} />

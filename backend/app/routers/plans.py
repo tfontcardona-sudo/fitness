@@ -293,7 +293,9 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
     # BASE SIN IA del cliente avanzado (generated_by="scaffold") se edita en
     # varias tandas antes de estar lista; activarla al primer guardado enviaría
     # al cliente un plan a medio hacer. Esa se activa SOLO con el botón Activar.
-    if plan.status == "draft" and plan.generated_by != "scaffold":
+    # …ni la COPIA de la biblioteca ("library"): también se adapta en varias
+    # tandas (cambiar el alérgeno señalado, quitar días…) antes de estar lista.
+    if plan.status == "draft" and plan.generated_by not in ("scaffold", "library"):
         from app.services.plan_activation import activate_plan
 
         activate_plan(db, plan)

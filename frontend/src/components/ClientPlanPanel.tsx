@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Sparkles, ChevronRight, Download, Send, AlertTriangle, Dumbbell, Utensils, Pill, CalendarDays, MessageCircle, Mail, MoreHorizontal, Pencil, PlayCircle, Save, X, Flag, Copy, Archive, FileText, FileUp } from "lucide-react";
 import { grupo } from "../lib/accordion";
+import { useDismiss, useModalFocus } from "../lib/useDismiss";
 import { ancla, hrefCliente } from "../lib/anchors";
 import { copiarConAviso } from "../lib/clipboard";
 import { pin, pinId, syncScope } from "../lib/pins";
@@ -347,6 +348,30 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
   /** Plan BASE sin IA (cliente avanzado): borrador determinista con los números
    *  ya hechos, listo para que el coach lo remate en el editor. 0 créditos.
    *  NO se activa al editar: solo con el botón Activar. */
+  // Copiar desde la biblioteca (otro cliente o un modelo): 0 créditos. El
+  // backend recalcula las cifras del destino y devuelve los avisos de
+  // seguridad, que aquí se enseñan y quedan en los flags del borrador.
+  const [biblioteca, setBiblioteca] = useState(false);
+  async function aplicarDeBiblioteca(source: { plan_id?: number; template_id?: number }) {
+    if (generating) return;
+    setGenerating(true);
+    setBiblioteca(false);
+    try {
+      const p = await api.applyFromLibrary(client.id, source);
+      setPlan(normalize(p));
+      onClientChanged?.();
+      if (p.warnings?.length) {
+        toast.push(`Copia lista · ${p.warnings.length} aviso${p.warnings.length === 1 ? "" : "s"} a revisar`, "error");
+      } else {
+        toast.push("Copia lista · cifras recalculadas para este cliente");
+      }
+    } catch (e: any) {
+      toast.push(e?.detail ?? e?.message ?? "No se pudo copiar", "error");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
   async function scaffold(meals?: string[]) {
     if (generating) return;
     setGenerating(true);
@@ -506,32 +531,74 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
               </div>
             )}
 
-            {client.level === "advanced" ? (
-              <>
-                {/* Cliente AVANZADO: su plan lo hace el COACH. El sistema deja la
-                    base masticada (números, comidas, banco y sesiones) sin gastar
-                    ni un crédito, y no se activa hasta que el coach lo diga. */}
-                <button onClick={() => void scaffold()} disabled={generating} className="btn btn-primary mt-4">
-                  <Sparkles size={16} />
-                  {generating ? "Preparando la base…" : "Preparar base · 0 créditos"}
-                </button>
-                <p className="mt-2 text-xs text-zinc-500">
-                  Cliente avanzado: la planificación la montas tú. El sistema te deja
-                  hechos los números (kcal, macros, comidas con su objetivo, banco de
-                  comidas y sesiones con su biblioteca filtrada) y tú la terminas en el
-                  editor. No se envía nada al cliente hasta que pulses <b>Activar</b>.
-                </p>
-                <button onClick={() => generate()} disabled={generating}
-                  className="btn btn-ghost mt-2 text-xs">
-                  Generar con IA · gasta créditos
-                </button>
-              </>
-            ) : (
-              <button onClick={() => generate()} disabled={generating} className="btn btn-primary mt-4"
-                {...ancla("plan.generar")}>
-                <Sparkles size={16} />
-                {generating ? "Generando… (puede tardar 1-2 min)" : "Generar planificación"}
-              </button>
+            {/* TRES caminos, siempre los tres, con su coste a la vista.
+                Para el avanzado el orden cambia (su plan lo monta el coach),
+                pero las opciones son las mismas: la web ya no esconde el
+                "a mano" ni el "copiar" a nadie. */}
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              {(client.level === "advanced"
+                ? (["mano", "copiar", "ia"] as const)
+                : (["ia", "mano", "copiar"] as const)
+              ).map((camino, i) => {
+                const principal = i === 0;
+                const boton = principal ? "btn btn-primary w-full" : "btn btn-ghost w-full";
+                if (camino === "ia") {
+                  return (
+                    <div key={camino} className="well flex flex-col gap-2 p-3.5">
+                      <p className="text-sm font-semibold text-zinc-100">Con IA</p>
+                      <p className="flex-1 text-xs text-zinc-500">
+                        El sistema lo genera entero y queda activo. Gasta créditos.
+                      </p>
+                      <button onClick={() => generate()} disabled={generating}
+                        className={boton} {...ancla("plan.generar")}>
+                        <Sparkles size={15} />
+                        {generating && !scaffolding ? "Generando…" : "Generar"}
+                      </button>
+                    </div>
+                  );
+                }
+                if (camino === "mano") {
+                  return (
+                    <div key={camino} className="well flex flex-col gap-2 p-3.5">
+                      <p className="text-sm font-semibold text-zinc-100">A mano · 0 créditos</p>
+                      <p className="flex-1 text-xs text-zinc-500">
+                        El sistema deja los números, comidas y sesiones preparados;
+                        tú lo terminas en el editor o en Word y lo activas.
+                      </p>
+                      <button onClick={() => void scaffold()} disabled={generating}
+                        className={boton}>
+                        <Pencil size={15} />
+                        {scaffolding ? "Preparando…" : "Preparar base"}
+                      </button>
+                    </div>
+                  );
+                }
+                return (
+                  <div key={camino} className="well flex flex-col gap-2 p-3.5">
+                    <p className="text-sm font-semibold text-zinc-100">Desde otro plan · 0 créditos</p>
+                    <p className="flex-1 text-xs text-zinc-500">
+                      Copia un modelo guardado o el plan de otro cliente; las
+                      cifras se recalculan para este.
+                    </p>
+                    <button onClick={() => setBiblioteca(true)} disabled={generating}
+                      className={boton}>
+                      <Archive size={15} /> Elegir base
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-xs text-zinc-500">
+              Nada llega al cliente hasta que pulses <b>Activar</b> (salvo la
+              generación con IA, que activa sola). ¿Dieta hecha fuera? Prepara
+              la base, descárgala en Word, rellénala y súbela: se aplica sin IA.
+            </p>
+            {biblioteca && (
+              <SelectorDeBiblioteca
+                clienteId={client.id}
+                onElegir={aplicarDeBiblioteca}
+                onCerrar={() => setBiblioteca(false)}
+              />
             )}
             {generating && (
               <p className="mt-2 text-xs text-zinc-500">
@@ -910,6 +977,24 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                   title="Restaurar una versión anterior"
                 >
                   <Archive size={15} /> Historial de versiones
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.currentTarget.closest("details")?.removeAttribute("open");
+                    // El título lo pone el coach; sin datos del cliente salvo
+                    // que él quiera nombrarlo. Reutilizable desde "Elegir base"
+                    // de cualquier ficha, a 0 créditos.
+                    const titulo = window.prompt(
+                      "Nombre del modelo (p. ej. «Planificación base»):");
+                    if (!titulo?.trim()) return;
+                    api.saveTemplate(plan.id, titulo.trim())
+                      .then((t) => toast.push(`Modelo «${t.title}» guardado — en «Elegir base» de cualquier cliente`))
+                      .catch((err: any) => toast.push(err?.message ?? "No se pudo guardar", "error"));
+                  }}
+                  className="btn btn-ghost w-full justify-start"
+                  title="Reutilizarlo como base para otros clientes (0 créditos)"
+                >
+                  <Copy size={15} /> Guardar como modelo
                 </button>
                 <button
                   onClick={(e) => {
@@ -2245,6 +2330,114 @@ function SectionTitle({ icon: Icon, title, accent, onEdit, ancla: nombreAncla }:
  *  Sustituye al muro de párrafos rojos: el coach ve de un vistazo cuántos hay,
  *  de qué tipo son y qué tiene que hacer con cada uno. El texto completo del
  *  hallazgo queda como detalle, a un clic. */
+/**
+ * El selector de la biblioteca: los MODELOS guardados y el plan de cada
+ * cliente, cada uno con su resumen de una línea, para elegir sin abrir nada.
+ * Elegir crea un BORRADOR para este cliente con las cifras recalculadas.
+ */
+function SelectorDeBiblioteca({ clienteId, onElegir, onCerrar }: {
+  clienteId: number;
+  onElegir: (source: { plan_id?: number; template_id?: number }) => void;
+  onCerrar: () => void;
+}) {
+  const [lib, setLib] = useState<Awaited<ReturnType<typeof api.planLibrary>> | null>(null);
+  const [fallo, setFallo] = useState(false);
+  const [intento, setIntento] = useState(0);
+  const caja = useRef<HTMLDivElement>(null);
+  useDismiss(caja, onCerrar, true);
+  useModalFocus(caja, true);
+
+  useEffect(() => {
+    setFallo(false);
+    api.planLibrary().then(setLib).catch(() => setFallo(true));
+  }, [intento]);
+
+  const otros = (lib?.client_plans ?? []).filter((p) => p.client_id !== clienteId);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div ref={caja} role="dialog" aria-modal="true" aria-label="Elegir base"
+        className="card w-full max-w-lg p-5" style={{ background: "var(--surface-raised)" }}>
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="text-base font-semibold text-zinc-100">Elegir base</h3>
+            <p className="mt-0.5 text-xs text-zinc-500">
+              Se copia la estructura; kcal y macros se recalculan para este cliente.
+            </p>
+          </div>
+          <button onClick={onCerrar} aria-label="Cerrar" className="tap -m-1 p-1 text-zinc-500 hover:text-zinc-300">
+            <X size={16} />
+          </button>
+        </div>
+
+        {fallo ? (
+          <div className="mt-4 text-center">
+            <p className="text-sm text-zinc-400">No se pudo cargar la biblioteca.</p>
+            <button onClick={() => setIntento((n) => n + 1)} className="btn btn-ghost mt-2 text-xs">
+              Reintentar
+            </button>
+          </div>
+        ) : lib === null ? (
+          <div className="flex justify-center py-8"><Spinner /></div>
+        ) : (
+          <div className="mt-3 max-h-[55vh] space-y-4 overflow-y-auto">
+            <section>
+              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Modelos guardados · {lib.templates.length}
+              </p>
+              {lib.templates.length === 0 ? (
+                <p className="text-xs text-zinc-500">
+                  Aún no hay: abre el plan de un cliente → menú «Más» → «Guardar como modelo».
+                </p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {lib.templates.map((t) => (
+                    <li key={t.id}>
+                      <button onClick={() => onElegir({ template_id: t.id })}
+                        className="well w-full px-3 py-2.5 text-left transition-colors hover:bg-[var(--surface)]">
+                        <span className="block text-sm font-medium text-zinc-100">{t.title}</span>
+                        <span className="mt-0.5 block text-xs text-zinc-500">{t.summary ?? ""}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+            <section>
+              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Planes de tus clientes · {otros.length}
+              </p>
+              {otros.length === 0 ? (
+                <p className="text-xs text-zinc-500">Ningún otro cliente tiene plan todavía.</p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {otros.map((p) => (
+                    <li key={p.plan_id}>
+                      <button onClick={() => onElegir({ plan_id: p.plan_id })}
+                        className="well w-full px-3 py-2.5 text-left transition-colors hover:bg-[var(--surface)]">
+                        <span className="flex items-center gap-2 text-sm font-medium text-zinc-100">
+                          {p.client_name}
+                          {p.status !== "published" && (
+                            <span className="rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                              style={{ background: "rgba(38,33,26,0.08)", color: "#7A7060" }}>
+                              borrador
+                            </span>
+                          )}
+                        </span>
+                        <span className="mt-0.5 block text-xs text-zinc-500">{p.summary}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** Identidad estable de un aviso del plan: destino + título normalizado. No
  *  hay id en el backend, pero el par destino/título sí sobrevive a que el
  *  revisor reformule el detalle. */

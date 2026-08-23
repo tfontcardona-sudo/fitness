@@ -19,7 +19,8 @@ from app.ratelimit import client_key
 from app.db import engine
 from app.routers import (
     ai_credit, alerts, auth, brand, clients, coach_push, email, exercises,
-    google_oauth, learning, payments, plans, portal_public, public_site,
+    google_oauth, learning, payments, plan_library,
+    plans, portal_public, public_site,
     resources, stripe_router, whatsapp,
 )
 
@@ -221,6 +222,7 @@ app.include_router(exercises.router)
 app.include_router(brand.router)
 app.include_router(resources.router)
 app.include_router(plans.router)
+app.include_router(plan_library.router)
 app.include_router(alerts.router)
 app.include_router(ai_credit.router)
 app.include_router(payments.router)
