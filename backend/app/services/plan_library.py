@@ -256,6 +256,13 @@ def copiar_a_cliente(db: Session, client: Client, *, nutrition: dict | None,
             "diet_pattern": client.diet_pattern,
         }
 
+    # La mitad que FALTA se completa con la base del sistema (0 créditos):
+    # copiar un "sistema de entrenamiento" a un cliente con dieta contratada
+    # no puede dejarle la dieta vacía — y al revés igual.
+    nutrition, training, extra = _completar_mitad_faltante(
+        db, client, nutrition, training, et, mp)
+    avisos += extra
+
     avisos += _avisos_de_seguridad(nutrition, training, client, db)
 
     flags = [f"copiado de {origen} — revísalo y actívalo"] + list(avisos)
@@ -278,6 +285,75 @@ def copiar_a_cliente(db: Session, client: Client, *, nutrition: dict | None,
         "client_id": client.id, "origen": origen, "avisos": len(avisos),
     })
     return plan, avisos
+
+
+def _completar_mitad_faltante(db: Session, client: Client,
+                              nutrition: dict | None, training: dict | None,
+                              et, mp):
+    """Si el origen no traía dieta (o entreno) y el destino SÍ la tiene
+    contratada, se prepara la base determinista del sistema (plan_scaffold,
+    la misma del botón "A mano"). Best-effort: si la ficha no da, se avisa y
+    la copia sigue — nunca se rompe por esto."""
+    from app.services import packages as pkgs
+    from app.services import plan_scaffold
+
+    avisos: list[str] = []
+
+    if nutrition is None and pkgs.has_nutrition(client.package_tier):
+        try:
+            nutrition = plan_scaffold.build_nutrition(client, et, mp)
+            if client.diet_mode == "strict":
+                bank, extra = plan_scaffold.build_strict_menu(
+                    nutrition, allergies=client.food_allergies or [],
+                    dislikes=client.food_dislikes or [],
+                    diet_pattern=client.diet_pattern)
+                nutrition["meal_bank"] = bank
+                avisos += list(extra)
+            else:
+                from app.services.meal_fallback import ensure_bank_slots
+
+                ensure_bank_slots(
+                    nutrition, allergies=client.food_allergies or [],
+                    dislikes=client.food_dislikes or [],
+                    diet_pattern=client.diet_pattern)
+            nutrition["gen_inputs"] = {
+                "weight_kg": reference_weight_kg(db, client),
+                "height_cm": client.height_cm, "level": client.level,
+                "training_days": client.training_days,
+                "training_place": client.training_place,
+                "diet_mode": client.diet_mode, "diet_pattern": client.diet_pattern,
+            }
+            avisos.append("El origen no traía dieta: se ha preparado la base "
+                          "del sistema (revísala).")
+        except Exception:  # noqa: BLE001
+            nutrition = None
+            avisos.append("El origen no traía dieta y la base no se pudo "
+                          "montar con su ficha: añádela a mano o genera.")
+
+    if training is None and pkgs.has_training(client.package_tier):
+        try:
+            from app.models import Exercise
+
+            permitidos = _biblioteca_permitida(db, client)
+            all_ex = db.scalars(select(Exercise)).all()
+            library = [{
+                "id": e.id, "canonical_name": e.canonical_name,
+                "name": e.canonical_name, "movement_pattern": e.movement_pattern,
+                "muscle_primary": e.muscle_primary,
+                "muscle_secondary": e.muscle_secondary or [],
+                "equipment": e.equipment or [], "level_min": e.level_min,
+                "contraindications": e.contraindications or [],
+                "archived": e.archived,
+            } for e in all_ex if permitidos is None or e.id in permitidos]
+            training = plan_scaffold.build_training(client, library)
+            avisos.append("El origen no traía entrenamiento: se ha preparado "
+                          "la base del sistema (revísala).")
+        except Exception:  # noqa: BLE001
+            training = None
+            avisos.append("El origen no traía entrenamiento y la base no se "
+                          "pudo montar: añádelo a mano o genera.")
+
+    return nutrition, training, avisos
 
 
 # -------------------------------------------------------------- modelos ----

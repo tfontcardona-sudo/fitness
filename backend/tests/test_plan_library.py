@@ -207,3 +207,37 @@ def test_aplicar_exige_exactamente_un_origen(client, auth):
     r = client.post("/api/plan-library/apply", headers=auth,
                     json={"client_id": destino, "plan_id": 1, "template_id": 1})
     assert r.status_code == 400
+
+
+def test_copiar_solo_entreno_completa_la_dieta_con_la_base(client, auth):
+    """Guardar un "sistema de entrenamiento" y aplicarlo a un cliente con
+    dieta contratada no puede dejarle la dieta vacía: la mitad que falta se
+    completa con la base determinista del sistema (0 créditos)."""
+    origen = _cliente(client, auth, full_name="Origen Sistema Entreno")
+    plan_origen = _plan_base(client, auth, origen)
+
+    r = client.post("/api/plan-library/templates", headers=auth,
+                    json={"plan_id": plan_origen["id"], "title": "Sistema torso-pierna"})
+    tpl_id = r.json()["id"]
+    # El modelo se queda SIN nutrición (simula un sistema de solo entreno).
+    from app.db import SessionLocal
+    from app.models import PlanTemplate
+
+    db = SessionLocal()
+    try:
+        tpl = db.get(PlanTemplate, tpl_id)
+        tpl.nutrition_json = None
+        db.commit()
+    finally:
+        db.close()
+
+    destino = _cliente(client, auth, full_name="Destino Full Sistema")
+    r = client.post("/api/plan-library/apply", headers=auth,
+                    json={"client_id": destino, "template_id": tpl_id})
+    assert r.status_code == 200, r.text
+    copia = r.json()
+    assert copia["training"] is not None
+    assert copia["nutrition"] is not None, "la dieta debía completarse con la base"
+    assert copia["nutrition"]["target_kcal"] > 0
+    assert any("no traía dieta" in w for w in copia["warnings"])
+    client.delete(f"/api/plan-library/templates/{tpl_id}", headers=auth)
