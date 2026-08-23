@@ -300,3 +300,57 @@ def test_activar_retira_los_avisos_de_copia(client, auth):
     flags = r.json()["guardrail_flags"] or []
     assert not any(f.startswith("copiado de") or f.startswith("copia: ")
                    for f in flags), flags
+
+
+def test_el_aviso_de_alergeno_mira_titulo_y_preparacion(client, auth):
+    """Regresión de la revisión adversarial: el aviso de la copia usaba solo
+    los INGREDIENTES (más laxo que el Revisor 0). Un subingrediente escondido
+    en la preparación («salsa pesto» → frutos secos) debe avisar igual."""
+    from app.db import SessionLocal
+    from app.models import Client as ClientModel
+    from app.services.plan_library import _avisos_de_seguridad
+
+    cid = _cliente(client, auth, full_name="Alérgica Ligera",
+                   food_allergies=["frutos secos"])
+    nutrition = {
+        "meal_bank": {"mode": "flexible_7", "slots": [{
+            "slot": 1,
+            "options": [{
+                "key": "pollo_pesto", "title": "Pollo con arroz",
+                "prep": "Saltea el pollo y termina con una cucharada de salsa pesto.",
+                # Ingredientes LIMPIOS: el criterio de solo-ingredientes no lo veía.
+                "ingredients": [{"food": "Pollo"}, {"food": "Arroz"}],
+            }],
+        }]},
+    }
+    with SessionLocal() as db:
+        destino = db.get(ClientModel, cid)
+        avisos = _avisos_de_seguridad(nutrition, None, destino, db)
+    assert any("ALÉRGENO" in a for a in avisos), avisos
+
+
+def test_copiar_entreno_a_cliente_solo_entreno_no_exige_dieta(client, auth):
+    """Regresión: a un cliente SOLO-ENTRENO (sin modo de dieta en la ficha) se
+    le puede copiar una rutina — el contrato calórico no pinta nada ahí y
+    antes la copia moría con 422 «falta Modo de dieta»."""
+    origen = _cliente(client, auth, full_name="Origen Full B")
+    plan_origen = _plan_base(client, auth, origen)
+
+    r = client.post("/api/clients", headers=auth, json={
+        "full_name": "Destino Solo Entreno",
+        "email": f"lib-{uuid.uuid4().hex[:8]}@example.com",
+    })
+    assert r.status_code == 201, r.text
+    destino = r.json()["client"]["id"]
+    ficha = {k: v for k, v in FICHA.items() if k != "diet_mode"}
+    r = client.patch(f"/api/clients/{destino}", headers=auth,
+                     json=ficha | {"package_tier": "train"})
+    assert r.status_code == 200, r.text
+
+    r = client.post("/api/plan-library/apply", headers=auth,
+                    json={"client_id": destino, "plan_id": plan_origen["id"]})
+    assert r.status_code == 200, r.text
+    copia = r.json()
+    assert copia["training"], "el entreno tiene que llegar igual"
+    assert copia["nutrition"] is None
+    assert any("no tiene nutrición contratada" in w for w in copia["warnings"])

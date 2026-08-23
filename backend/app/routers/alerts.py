@@ -453,7 +453,7 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
     if client.food_allergies or client.food_dislikes or getattr(client, "diet_pattern", None):
         from app.services.guardrails import (
             _DIET_PATTERN_FORBIDDEN, _all_option_texts, _iter_options,
-            _match_term, _norm_food, option_allergen,
+            _match_term, _norm_food, option_conflict,
         )
 
         forbidden_pat = (_DIET_PATTERN_FORBIDDEN.get(
@@ -464,11 +464,13 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
         try:
             for slot, opt in _iter_options(published.nutrition_json or {}):
                 if hit_allergy is None and client.food_allergies:
-                    found = option_allergen(opt, client.food_allergies)
+                    # Criterio COMPLETO del Revisor 0 (ingredientes + título +
+                    # preparación): un «pesto» en la elaboración también avisa.
+                    found = option_conflict(opt, client.food_allergies)
                     if found:
                         hit_allergy = (slot, opt.get("title") or opt.get("key") or "?", found)
                 if hit_dislike is None and client.food_dislikes:
-                    found = option_allergen(opt, client.food_dislikes)
+                    found = option_conflict(opt, client.food_dislikes)
                     if found:
                         hit_dislike = (slot, opt.get("title") or opt.get("key") or "?", found)
                 if hit_pattern is None and forbidden_pat:

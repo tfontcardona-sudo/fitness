@@ -480,8 +480,18 @@ cd backend && python -m pytest tests/ -q
    - **Editor**: "Quitar día" por sesión (confirmación; mínimo 1 día) — el
      complemento natural de copiar un plan con más días de los que entrena
      el destino.
-   - Tests: `tests/test_plan_library.py` (7). ⚠️ El contrato usa `mp.kcal`
+   - Tests: `tests/test_plan_library.py` (13). ⚠️ El contrato usa `mp.kcal`
      (no `et.target_kcal` a secas) y `package_tier` es nutri|train|full.
+   - **Revisión adversarial de la ronda (confirmados corregidos)**: CRÍTICO —
+     el `tdee_kcal` del DESTINO debe escribirse ANTES de `reconcile_nutrition`
+     (con el del origen, `clamp_targets` acotaba las kcal de la copia al TDEE
+     del cliente de origen: a una clienta ligera le dejaba +50% de sus kcal);
+     `guardrails.option_conflict` es el escáner ÚNICO de alérgenos/aversiones
+     con el criterio completo del Revisor 0 (ingredientes + título +
+     preparación — «pollo al pesto» avisa a un alérgico a frutos secos) y lo
+     usan la copia Y la alerta viva de `routers/alerts.py` (`option_allergen`
+     a secas es más laxo: solo ingredientes); a un cliente SOLO-ENTRENO no se
+     le exige el contrato calórico para copiarle una rutina.
 
 000000000000. ✅ **RECORDATORIOS ANCLADOS + ACORDEÓN GLOBAL + AUDITORÍA
    (agosto 2026).** El dueño: "pulsas el aviso, te lleva al sitio exacto, te lo

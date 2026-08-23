@@ -117,7 +117,7 @@ def _avisos_de_seguridad(nutrition: dict | None, training: dict | None,
     Revisor 0 y que la alerta viva del panel — no una tercera fórmula."""
     from app.services.guardrails import (
         _DIET_PATTERN_FORBIDDEN, _all_option_texts, _iter_options,
-        _match_term, _norm_food, option_allergen,
+        _match_term, _norm_food, option_conflict,
     )
 
     avisos: list[str] = []
@@ -129,13 +129,13 @@ def _avisos_de_seguridad(nutrition: dict | None, training: dict | None,
         for slot, opt in _iter_options(nutrition):
             titulo = opt.get("title") or opt.get("key") or "?"
             if client.food_allergies:
-                f = option_allergen(opt, client.food_allergies)
+                f = option_conflict(opt, client.food_allergies)
                 if f and f"a:{slot}:{f}" not in vistos:
                     vistos.add(f"a:{slot}:{f}")
                     avisos.append(f"⚠ ALÉRGENO para este cliente: «{titulo}» "
                                   f"(toma {slot}, contiene {f}). Cámbialo antes de activar.")
             if client.food_dislikes:
-                f = option_allergen(opt, client.food_dislikes)
+                f = option_conflict(opt, client.food_dislikes)
                 if f and f"d:{slot}:{f}" not in vistos:
                     vistos.add(f"d:{slot}:{f}")
                     avisos.append(f"No lo tolera/odia: «{titulo}» (toma {slot}, {f}).")
@@ -240,7 +240,12 @@ def copiar_a_cliente(db: Session, client: Client, *, nutrition: dict | None,
             "este cliente tiene contratado."
         )
 
-    weight, et, mp = _contrato_del_destino(db, client)
+    # El contrato calórico solo hace falta si va a haber DIETA (copiada o
+    # completada con la base). A un cliente solo-entreno no se le puede exigir
+    # el modo de dieta para copiarle una rutina.
+    weight = et = mp = None
+    if pkgs.has_nutrition(client.package_tier):
+        weight, et, mp = _contrato_del_destino(db, client)
 
     if nutrition:
         # Lo que pertenecía al CICLO del cliente de origen no viaja: sus
@@ -252,7 +257,7 @@ def copiar_a_cliente(db: Session, client: Client, *, nutrition: dict | None,
         # El TDEE del DESTINO va ANTES de reconciliar: clamp_targets acota las
         # kcal con nut["tdee_kcal"], y con el del origen a una clienta ligera
         # la copia le dejaba MÁS kcal de las suyas (crítico de la revisión).
-        nutrition["tdee_kcal"] = et.tdee
+        nutrition["tdee_kcal"] = round(et.tdee)  # redondeado como en la generación
         base = _copy.deepcopy(nutrition)  # la base ORIGINAL, antes de mutar
         # mp.kcal, no et.target_kcal: el plan guarda el invariante del sistema
         # (kcal ≡ 4/4/9 de sus macros), igual que la generación y el editor.

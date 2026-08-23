@@ -237,6 +237,19 @@ def option_allergen(opt: dict, allergies: list[str] | None) -> str | None:
     return None
 
 
+def option_conflict(opt: dict, items: list[str] | None) -> str | None:
+    """Como `option_allergen` pero con el criterio COMPLETO del Revisor 0:
+    ingredientes + medida casera + TÍTULO + preparación. Un subingrediente
+    escondido en el nombre o la elaboración («pollo al pesto» → piñones) se
+    detecta igual que en la validación determinista — la biblioteca de planes
+    y la alerta viva usan ESTE, no una fórmula más laxa."""
+    texts = _all_option_texts(opt)
+    for it in items or []:
+        if _match_term(_terms_for(it), texts):
+            return it
+    return None
+
+
 def food_allergen(food: str | None, allergies: list[str] | None) -> str | None:
     """Como `option_allergen` pero para un alimento suelto (equivalencias)."""
     texts = [_norm_food(food)]
