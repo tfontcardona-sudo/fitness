@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import {
+  Copy,
   CheckCircle2,
   Dumbbell,
   ExternalLink,
@@ -38,8 +39,8 @@ export default function RecursosPage() {
   // La pestaña viaja en la URL: sobrevive a recargar y, sobre todo, permite
   // ENLAZARLA desde donde se la menciona ("conecta Google en Recursos" lleva
   // directo al bloque de Google, no a buscarlo).
-  type RTab = "productos" | "videos" | "enlaces" | "aprendizaje";
-  const TABS_VALIDAS: RTab[] = ["productos", "videos", "enlaces", "aprendizaje"];
+  type RTab = "productos" | "videos" | "enlaces" | "aprendizaje" | "modelos";
+  const TABS_VALIDAS: RTab[] = ["productos", "videos", "enlaces", "aprendizaje", "modelos"];
   const [tab, setTabState] = useState<RTab>(() => {
     const q = new URLSearchParams(window.location.search);
     const t = q.get("tab") as RTab | null;
@@ -59,7 +60,7 @@ export default function RecursosPage() {
       </header>
 
       <div className="mb-6 inline-flex rounded-xl border p-1" style={{ borderColor: "var(--line-strong)" }}>
-        {([["productos", "Productos", Package], ["videos", "Vídeos de ejercicios", Video], ["enlaces", "Página de enlaces", ExternalLink], ["aprendizaje", "Aprendizaje", GraduationCap]] as const).map(
+        {([["productos", "Productos", Package], ["videos", "Vídeos de ejercicios", Video], ["modelos", "Modelos de plan", Copy], ["enlaces", "Página de enlaces", ExternalLink], ["aprendizaje", "Aprendizaje", GraduationCap]] as const).map(
           ([id, label, Icon]) => (
             <button
               key={id}
@@ -79,6 +80,7 @@ export default function RecursosPage() {
       </div>
 
       {tab === "productos" ? <ProductsManager /> : tab === "videos" ? <ExerciseVideosManager />
+        : tab === "modelos" ? <TemplatesManager />
         : tab === "enlaces" ? <LinksPageManager /> : <LearningManager />}
     </div>
   );
@@ -1250,4 +1252,108 @@ function ExerciseVideoRow({
 function youtubeThumb(url: string): string | null {
   const id = youtubeId(url);
   return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null;
+}
+
+
+/**
+ * Modelos de planificación: el pool reutilizable del coach. Se crean desde el
+ * plan de un cliente (menú «Más» → «Guardar como modelo») y se usan desde
+ * «Elegir base» en la ficha de cualquier cliente. Todo a 0 créditos.
+ */
+function TemplatesManager() {
+  const toast = useToast();
+  const [templates, setTemplates] = useState<
+    { id: number; title: string; summary: string | null; created_at: string | null }[] | null
+  >(null);
+  const [fallo, setFallo] = useState(false);
+  const [intento, setIntento] = useState(0);
+
+  useEffect(() => {
+    setFallo(false);
+    api.planLibrary()
+      .then((lib) => setTemplates(lib.templates))
+      .catch(() => setFallo(true));
+  }, [intento]);
+
+  async function renombrar(id: number, actual: string) {
+    const titulo = window.prompt("Nuevo nombre del modelo:", actual);
+    if (!titulo?.trim() || titulo.trim() === actual) return;
+    try {
+      await api.renameTemplate(id, titulo.trim());
+      setTemplates((ts) => (ts ?? []).map((t) => (t.id === id ? { ...t, title: titulo.trim() } : t)));
+      toast.push("Modelo renombrado");
+    } catch (e: any) {
+      toast.push(e?.message ?? "No se pudo renombrar", "error");
+    }
+  }
+
+  const [borrando, setBorrando] = useState<number | null>(null);
+  async function borrar(id: number, titulo: string) {
+    if (borrando != null) return;
+    if (!window.confirm(`¿Borrar el modelo «${titulo}»? Los planes ya creados a partir de él no se tocan.`)) return;
+    setBorrando(id);
+    try {
+      await api.deleteTemplate(id);
+      setTemplates((ts) => (ts ?? []).filter((t) => t.id !== id));
+      toast.push("Modelo borrado");
+    } catch (e: any) {
+      // Un segundo clic que llega tras el primero: el 404 significa que YA
+      // está borrado — decir "no se pudo" tras un borrado que funcionó miente.
+      if (e?.status === 404) {
+        setTemplates((ts) => (ts ?? []).filter((t) => t.id !== id));
+      } else {
+        toast.push(e?.message ?? "No se pudo borrar", "error");
+      }
+    } finally {
+      setBorrando(null);
+    }
+  }
+
+  if (fallo) {
+    return (
+      <div className="card p-6 text-center">
+        <p className="text-sm text-zinc-400">No se pudieron cargar los modelos.</p>
+        <button onClick={() => setIntento((n) => n + 1)} className="btn btn-ghost mt-2 text-xs">Reintentar</button>
+      </div>
+    );
+  }
+  if (templates === null) return <div className="flex justify-center py-10"><Spinner /></div>;
+
+  return (
+    <div className="max-w-2xl space-y-3">
+      <div className="card p-5">
+        <h3 className="text-sm font-semibold text-zinc-200">Modelos de planificación</h3>
+        <p className="mt-1 text-sm text-zinc-500">
+          Se guardan desde el plan de un cliente (menú «Más» → «Guardar como
+          modelo») y se usan en «Elegir base» de cualquier ficha. Al aplicarlos,
+          las cifras se recalculan para ese cliente. 0 créditos.
+        </p>
+      </div>
+      {templates.length === 0 ? (
+        <div className="card p-6 text-center text-sm text-zinc-500">
+          Aún no hay modelos guardados.
+        </div>
+      ) : (
+        <ul className="space-y-2">
+          {templates.map((t) => (
+            <li key={t.id} className="card flex flex-wrap items-center gap-3 p-4">
+              <div className="min-w-0 flex-1 basis-52">
+                <p className="text-sm font-semibold text-zinc-100">{t.title}</p>
+                <p className="mt-0.5 text-xs text-zinc-500">{t.summary ?? ""}</p>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => void renombrar(t.id, t.title)} className="btn btn-ghost !py-1.5 text-xs">
+                  Renombrar
+                </button>
+                <button onClick={() => void borrar(t.id, t.title)}
+                  className="btn btn-ghost !py-1.5 text-xs text-red-400 hover:text-red-300">
+                  Borrar
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }

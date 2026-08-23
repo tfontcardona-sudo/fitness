@@ -302,9 +302,38 @@ export const api = {
       nutrition: any; training: any; education: any;
     }>("POST", `/clients/${clientId}/scaffold-plan${monthIndex ? `?month_index=${monthIndex}` : ""}`,
       meals && meals.length ? { meals } : undefined),
+  // ---- Biblioteca de planificaciones (todo a 0 créditos) ----------------
+  /** Los MODELOS guardados + el plan vigente de cada cliente, con su resumen
+   *  de una línea: es la lista de "empezar desde otro plan". */
+  planLibrary: () => request<{
+    templates: { id: number; title: string; summary: string | null; created_at: string | null }[];
+    client_plans: { plan_id: number; client_id: number; client_name: string;
+      status: string; summary: string; updated_at: string | null }[];
+  }>("GET", "/plan-library"),
+  /** Congela un plan como modelo reutilizable ("Planificación base"). */
+  saveTemplate: (planId: number, title: string) =>
+    request<{ id: number; title: string; summary: string | null }>(
+      "POST", "/plan-library/templates", { plan_id: planId, title }),
+  renameTemplate: (templateId: number, title: string) =>
+    request<{ id: number; title: string }>(
+      "PATCH", `/plan-library/templates/${templateId}`, { title }),
+  deleteTemplate: (templateId: number) =>
+    request<void>("DELETE", `/plan-library/templates/${templateId}`),
+  /** Copia un plan (de otro cliente o de un modelo) como BORRADOR para este
+   *  cliente. La estructura viene del origen; kcal/macros/comidas/banco se
+   *  recalculan para el destino. Devuelve avisos de seguridad. */
+  applyFromLibrary: (clientId: number, source: { plan_id?: number; template_id?: number }) =>
+    request<{
+      id: number; month_index: number; version: number; status: string;
+      guardrail_flags: string[]; nutrition: any; training: any; education: any;
+      warnings: string[]; summary: string;
+    }>("POST", "/plan-library/apply", { client_id: clientId, ...source }),
   adaptPlan: (clientId: number) =>
     request<{ id: number; month_index: number; version: number; status: string }>(
       "POST", `/clients/${clientId}/adapt-plan`),
+  /** Descarta un borrador (copia o base equivocada): pasa a superseded. */
+  discardPlan: (planId: number) =>
+    request<{ status: string }>("POST", `/plans/${planId}/discard`),
   publishPlan: (planId: number) =>
     request<{ status: string }>("POST", `/plans/${planId}/publish`),
   /** Ida y vuelta del Word editable: sube el .docx editado y devuelve los

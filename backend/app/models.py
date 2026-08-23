@@ -739,6 +739,30 @@ class Payment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+# -------------------------------------------------------- plan_templates ----
+class PlanTemplate(Base):
+    """MODELO de planificación reutilizable (p. ej. "Planificación base").
+
+    Congelado desde un plan existente por el coach, con título editable.
+    Al aplicarlo a un cliente NO se pegan sus números: el backend recalcula el
+    contrato calórico del destino y reescala (services/plan_library.py).
+    Sin datos personales: el título lo escribe el coach.
+    """
+
+    __tablename__ = "plan_templates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(120))
+    # Resumen de UNA línea para elegir sin abrir nada ("2.200 kcal · 4 días…").
+    summary: Mapped[str | None] = mapped_column(String(200))
+    nutrition_json: Mapped[dict | None] = mapped_column(JSONB)
+    training_json: Mapped[dict | None] = mapped_column(JSONB)
+    education_json: Mapped[dict | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 # ------------------------------------------------------------ audit_log ----
 class AuditLog(Base):
     __tablename__ = "audit_log"

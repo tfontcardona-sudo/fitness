@@ -125,7 +125,7 @@ def usage_summary(db: Session) -> dict:
         plans = int(db.scalar(
             select(func.count(Plan.id))
             .where(Plan.created_at >= since, Plan.generated_by.isnot(None),
-                   Plan.generated_by.notin_(("coach", "scaffold")))
+                   Plan.generated_by.notin_(("coach", "scaffold", "library")))
         ) or 0)
         if plans > 0 and out["spent_window_usd"] > 0:
             out["avg_cost_per_plan_usd"] = round(out["spent_window_usd"] / plans, 4)

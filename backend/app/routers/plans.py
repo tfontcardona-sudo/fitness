@@ -293,7 +293,9 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
     # BASE SIN IA del cliente avanzado (generated_by="scaffold") se edita en
     # varias tandas antes de estar lista; activarla al primer guardado enviaría
     # al cliente un plan a medio hacer. Esa se activa SOLO con el botón Activar.
-    if plan.status == "draft" and plan.generated_by != "scaffold":
+    # …ni la COPIA de la biblioteca ("library"): también se adapta en varias
+    # tandas (cambiar el alérgeno señalado, quitar días…) antes de estar lista.
+    if plan.status == "draft" and plan.generated_by not in ("scaffold", "library"):
         from app.services.plan_activation import activate_plan
 
         activate_plan(db, plan)
@@ -365,6 +367,31 @@ def list_plans(client_id: int, db: Session = Depends(get_db)) -> list[PlanOut]:
         .order_by(Plan.month_index.desc(), Plan.version.desc())
     ).all()
     return [PlanOut.model_validate(p) for p in plans]
+
+
+@router.post("/api/plans/{plan_id}/discard", response_model=PlanOut)
+def discard_plan(plan_id: int, db: Session = Depends(get_db)) -> PlanOut:
+    """Descarta un BORRADOR (copia equivocada, base que no va a usarse).
+
+    Solo borradores: un plan publicado no se descarta (se sustituye activando
+    otro). Así una copia con avisos no se queda parpadeando para siempre sin
+    salida. No borra la fila (el historial es historia): pasa a `superseded`,
+    que es exactamente "versión que no rige"."""
+    from app.services.audit import log_event
+
+    plan = db.get(Plan, plan_id)
+    if not plan:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan no encontrado")
+    if plan.status != "draft":
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "Solo se descartan borradores. Para cambiar el plan "
+                            "activo, activa otro en su lugar.")
+    plan.status = "superseded"
+    log_event(db, "plan", plan.id, "plan_discarded",
+              {"client_id": plan.client_id, "version": plan.version})
+    db.commit()
+    db.refresh(plan)
+    return PlanOut.model_validate(plan)
 
 
 @router.post("/api/plans/{plan_id}/publish", response_model=PlanOut)

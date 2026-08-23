@@ -266,9 +266,19 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
             return ((p.nutrition_json or {}).get("applied_adjustments") or {}).get("period_index")
 
         if _adapted_idx(latest) != last_analyzed.period_index:
-            out.append(_alert(client, "adapt_plan", "alta",
-                              f"Planificación sin adaptar a la revisión #{last_analyzed.period_index}.",
-                              "planificacion", "Adaptar planificación"))
+            if (latest is not None and latest.status == "draft"
+                    and latest.generated_by in ("scaffold", "library")):
+                # El coach YA está montando el plan nuevo (base sin IA o copia
+                # de la biblioteca): gritarle "sin adaptar" mientras trabaja es
+                # falso ruido. Se le recuerda terminar y activar, en media.
+                out.append(_alert(client, "publish_plan", "media",
+                                  f"Borrador v{latest.version} en preparación: "
+                                  "termínalo y actívalo.",
+                                  "planificacion", "Activar planificación"))
+            else:
+                out.append(_alert(client, "adapt_plan", "alta",
+                                  f"Planificación sin adaptar a la revisión #{last_analyzed.period_index}.",
+                                  "planificacion", "Adaptar planificación"))
         elif latest is not None and latest.status == "draft":
             out.append(_alert(client, "publish_plan", "alta",
                               f"Borrador adaptado a la revisión #{last_analyzed.period_index} sin activar.",
@@ -443,7 +453,7 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
     if client.food_allergies or client.food_dislikes or getattr(client, "diet_pattern", None):
         from app.services.guardrails import (
             _DIET_PATTERN_FORBIDDEN, _all_option_texts, _iter_options,
-            _match_term, _norm_food, option_allergen,
+            _match_term, _norm_food, option_conflict,
         )
 
         forbidden_pat = (_DIET_PATTERN_FORBIDDEN.get(
@@ -454,11 +464,13 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
         try:
             for slot, opt in _iter_options(published.nutrition_json or {}):
                 if hit_allergy is None and client.food_allergies:
-                    found = option_allergen(opt, client.food_allergies)
+                    # Criterio COMPLETO del Revisor 0 (ingredientes + título +
+                    # preparación): un «pesto» en la elaboración también avisa.
+                    found = option_conflict(opt, client.food_allergies)
                     if found:
                         hit_allergy = (slot, opt.get("title") or opt.get("key") or "?", found)
                 if hit_dislike is None and client.food_dislikes:
-                    found = option_allergen(opt, client.food_dislikes)
+                    found = option_conflict(opt, client.food_dislikes)
                     if found:
                         hit_dislike = (slot, opt.get("title") or opt.get("key") or "?", found)
                 if hit_pattern is None and forbidden_pat:

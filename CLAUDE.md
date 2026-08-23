@@ -442,6 +442,57 @@ cd backend && python -m pytest tests/ -q
 
 ## 9. Trabajo pendiente / próximos pasos
 
+0000000000000. ✅ **BIBLIOTECA DE PLANIFICACIONES (agosto 2026): copiar,
+   modelos y a mano — todo a 0 créditos.** Petición del dueño: copiar la
+   planificación de un cliente a otro, guardar modelos ("Planificación base")
+   con título editable, hacer dieta/entreno a mano sin créditos, quitar días
+   de la rutina y un buzón para la dieta hecha fuera.
+   - **El principio que lo conecta todo**: un plan puede nacer de CUATRO
+     sitios (IA · a mano · copiado de otro cliente · desde un modelo) y solo
+     el primero gasta créditos. **LOS NÚMEROS NUNCA VIAJAN**: al pegar en otro
+     cliente, `services/plan_library.copiar_a_cliente` recalcula el contrato
+     del DESTINO (`metrics.energy_targets`+`macro_targets`, `mp.kcal` para
+     conservar el invariante kcal ≡ 4/4/9) y reescala comidas y banco con
+     `rescale_nutrition`+`reconcile_nutrition` (las del editor y el Word).
+     Se copia la ESTRUCTURA; las cifras son siempre las del destino.
+   - **Avisos de seguridad de la copia** con el MISMO motor del Revisor 0
+     (`_iter_options` cubre flexible, strict y equivalencias): alérgenos,
+     aversiones y patrón del destino; ejercicios fuera de su biblioteca
+     filtrada; más días que los que entrena. Van en `warnings` y en
+     `guardrail_flags` (visibles en el panel hasta corregirse).
+   - **Lo que pertenece al ciclo del ORIGEN no viaja**: `applied_adjustments`,
+     `rev` y `gen_inputs` se limpian; el snapshot se rehace para el destino.
+   - **La copia es `generated_by="library"`** y editarla NO la activa (misma
+     excepción del PATCH que la base sin IA). Chip propio: "Copia — adáptala
+     y actívala".
+   - **Modelos** (`models.PlanTemplate`, mig. 0040, SIN datos personales — el
+     título lo pone el coach): guardar desde "Más → Guardar como modelo",
+     gestionar en Recursos → "Modelos de plan", elegir en el selector.
+   - **Router `/api/plan-library`**: GET (modelos + pool del plan vigente de
+     cada cliente, cada uno con `resumen_plan` de una línea), POST/PATCH/
+     DELETE de modelos, POST /apply (plan_id XOR template_id).
+   - **Panel**: la vista "sin plan" pasa a TRES caminos iguales de visibles
+     con su coste ("Con IA" · "A mano · 0 créditos" — la base sin IA ya NO se
+     esconde a los no avanzados, el backend nunca la restringió — · "Desde
+     otro plan · 0 créditos" con el selector). Debajo, el camino de la dieta
+     hecha fuera: preparar base → Word → subir (0 créditos, máquina del
+     import-word de siempre).
+   - **Editor**: "Quitar día" por sesión (confirmación; mínimo 1 día) — el
+     complemento natural de copiar un plan con más días de los que entrena
+     el destino.
+   - Tests: `tests/test_plan_library.py` (13). ⚠️ El contrato usa `mp.kcal`
+     (no `et.target_kcal` a secas) y `package_tier` es nutri|train|full.
+   - **Revisión adversarial de la ronda (confirmados corregidos)**: CRÍTICO —
+     el `tdee_kcal` del DESTINO debe escribirse ANTES de `reconcile_nutrition`
+     (con el del origen, `clamp_targets` acotaba las kcal de la copia al TDEE
+     del cliente de origen: a una clienta ligera le dejaba +50% de sus kcal);
+     `guardrails.option_conflict` es el escáner ÚNICO de alérgenos/aversiones
+     con el criterio completo del Revisor 0 (ingredientes + título +
+     preparación — «pollo al pesto» avisa a un alérgico a frutos secos) y lo
+     usan la copia Y la alerta viva de `routers/alerts.py` (`option_allergen`
+     a secas es más laxo: solo ingredientes); a un cliente SOLO-ENTRENO no se
+     le exige el contrato calórico para copiarle una rutina.
+
 000000000000. ✅ **RECORDATORIOS ANCLADOS + ACORDEÓN GLOBAL + AUDITORÍA
    (agosto 2026).** El dueño: "pulsas el aviso, te lleva al sitio exacto, te lo
    MARCA, y te deja un recordatorio de lo que ibas a cambiar; cuando lo

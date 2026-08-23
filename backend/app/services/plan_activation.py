@@ -27,6 +27,14 @@ def activate_plan(db: Session, plan: Plan, *, notify: bool = True) -> None:
     si no, al cambiar de objetivo y generar el mes siguiente con el período aún
     abierto, el portal y el PDF del cliente seguirían sirviendo el plan viejo
     anclado a ese período hasta el siguiente feedback."""
+    # Los avisos de COPIA eran notas de revisión del borrador: al activar, los
+    # chequeos vivos (alerta de alérgenos sobre el plan publicado, Revisor 0)
+    # toman el relevo — dejarlos congelados aquí duplicaba avisos para siempre.
+    if plan.guardrail_flags:
+        limpios = [f for f in plan.guardrail_flags
+                   if not (f.startswith("copiado de") or f.startswith("copia: "))]
+        if len(limpios) != len(plan.guardrail_flags):
+            plan.guardrail_flags = limpios
     client = db.get(Client, plan.client_id)
 
     same_month_replaced = False

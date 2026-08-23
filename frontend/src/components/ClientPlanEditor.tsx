@@ -85,6 +85,7 @@ export function ClientPlanEditor({
     // al guardar): con key por índice, reordenar/quitar dejaba el <details>
     // abierto en la POSICIÓN y el formulario pasaba a mostrar OTRO ejercicio.
     for (const sess of d.training?.sessions ?? []) {
+      if (sess && sess._uid == null) sess._uid = newUid();
       for (const ex of sess?.exercises ?? []) {
         if (ex && ex._uid == null) ex._uid = newUid();
       }
@@ -386,6 +387,7 @@ export function ClientPlanEditor({
       // El _uid es identidad de fila SOLO del editor: fuera antes de persistir.
       const training = structuredClone(draft.training);
       for (const sess of training?.sessions ?? []) {
+        if (sess && "_uid" in sess) delete sess._uid;
         for (const ex of sess?.exercises ?? []) {
           if (ex && "_uid" in ex) delete ex._uid;
         }
@@ -806,7 +808,7 @@ export function ClientPlanEditor({
 
         <Subhead text="Sesiones (desplegables por día)" />
         {tr.sessions.map((s: any, si: number) => (
-          <details key={si} name="editor-sesiones" className="mt-2 rounded-lg p-3" style={{ background: "var(--surface-raised)" }}>
+          <details key={s._uid ?? si} name="editor-sesiones" className="mt-2 rounded-lg p-3" style={{ background: "var(--surface-raised)" }}>
             <summary className="flex cursor-pointer flex-wrap items-center gap-2 text-sm font-medium text-zinc-200">
               <span
                 className="rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide"
@@ -816,6 +818,22 @@ export function ClientPlanEditor({
               </span>
               {s.name}
               <span className="text-xs font-normal text-zinc-500">{(s.exercises ?? []).length} ejercicios</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (draft.training.sessions.length <= 1) {
+                    toast.push("Es el único día del plan: edítalo en vez de quitarlo", "error");
+                    return;
+                  }
+                  if (!window.confirm(`¿Quitar «${s.day || `Sesión ${si + 1}`} · ${s.name ?? ""}» del plan? Ese día queda de descanso.`)) return;
+                  mutate((d) => d.training.sessions.splice(si, 1));
+                }}
+                className="tap ml-auto flex items-center gap-1 text-xs text-zinc-500 hover:text-red-400"
+                title="Ese día pasa a ser descanso"
+              >
+                <Trash2 size={13} /> Quitar día
+              </button>
             </summary>
             <div className="mt-2 grid grid-cols-2 gap-2">
               <Text label="Día" value={s.day ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].day = v))} />
