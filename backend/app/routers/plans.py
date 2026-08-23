@@ -369,6 +369,31 @@ def list_plans(client_id: int, db: Session = Depends(get_db)) -> list[PlanOut]:
     return [PlanOut.model_validate(p) for p in plans]
 
 
+@router.post("/api/plans/{plan_id}/discard", response_model=PlanOut)
+def discard_plan(plan_id: int, db: Session = Depends(get_db)) -> PlanOut:
+    """Descarta un BORRADOR (copia equivocada, base que no va a usarse).
+
+    Solo borradores: un plan publicado no se descarta (se sustituye activando
+    otro). Así una copia con avisos no se queda parpadeando para siempre sin
+    salida. No borra la fila (el historial es historia): pasa a `superseded`,
+    que es exactamente "versión que no rige"."""
+    from app.services.audit import log_event
+
+    plan = db.get(Plan, plan_id)
+    if not plan:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan no encontrado")
+    if plan.status != "draft":
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "Solo se descartan borradores. Para cambiar el plan "
+                            "activo, activa otro en su lugar.")
+    plan.status = "superseded"
+    log_event(db, "plan", plan.id, "plan_discarded",
+              {"client_id": plan.client_id, "version": plan.version})
+    db.commit()
+    db.refresh(plan)
+    return PlanOut.model_validate(plan)
+
+
 @router.post("/api/plans/{plan_id}/publish", response_model=PlanOut)
 def publish_plan(plan_id: int, db: Session = Depends(get_db)) -> PlanOut:
     """LEGADO: activa un borrador antiguo. Los planes nuevos quedan ACTIVOS

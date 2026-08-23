@@ -763,8 +763,15 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
 
   // Adaptación que quedó RETENIDA por los guardarraíles: es más nueva que el
   // plan que se está enseñando y sigue sin activar.
-  const retenido = allPlans.find(
+  // Si conviven una adaptación RETENIDA (violaciones) y una copia nueva, la
+  // banda enseña primero la retenida: sus vetos de seguridad no pueden quedar
+  // tapados por una copia posterior.
+  const borradoresNuevos = allPlans.filter(
     (p) => p.status === "draft" && (p.id ?? 0) > (plan?.id ?? 0));
+  const retenido =
+    borradoresNuevos.find((p) => (p.guardrail_flags ?? [])
+      .some((f: string) => f.startsWith("violation:") || f.startsWith("retenido")))
+    ?? borradoresNuevos[0];
   const motivosRetencion = retenido
     ? traducirFlags((retenido.guardrail_flags ?? [])
         .filter((f: string) => f.startsWith("violation:") || f.startsWith("retenido")))
@@ -825,7 +832,23 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
               Ver este borrador
             </button>
             <button onClick={activarRetenido} disabled={publishing} className="btn btn-primary text-xs">
-              {publishing ? "Activando…" : "Activar de todas formas"}
+              {publishing ? "Activando…" : esCopia ? "Activar" : "Activar de todas formas"}
+            </button>
+            <button
+              onClick={async () => {
+                if (!window.confirm(`¿Descartar el borrador v${retenido.version}? No se puede deshacer desde aquí (queda en Planificaciones anteriores).`)) return;
+                try {
+                  await api.discardPlan(retenido.id);
+                  setAllPlans(await api.listPlans(client.id).catch(() => allPlans));
+                  toast.push("Borrador descartado");
+                } catch (e: any) {
+                  toast.push(e?.message ?? "No se pudo descartar", "error");
+                }
+              }}
+              className="btn btn-ghost text-xs text-zinc-500"
+              title="La copia o base deja de estar pendiente; el plan activo no se toca"
+            >
+              Descartar
             </button>
           </div>
         </div>
@@ -941,11 +964,14 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                 const adj = (nut as any)?.applied_adjustments;
                 const manual = ((nut as any)?.manual_changes?.items ?? []).length;
                 const esBase = plan.guardrail_flags?.some((f) => f.startsWith("base sin IA"));
+                const esCopiaLinea = plan.guardrail_flags?.some((f) => f.startsWith("copiado de"));
                 const origen = adj?.period_index != null
                   ? `Adaptada a la revisión quincenal #${adj.period_index}`
                   : esBase
                     ? "Base sin IA, rematada por ti"
-                    : "Generada con IA · anamnesis";
+                    : esCopiaLinea
+                      ? "Copiada de la biblioteca · cifras recalculadas"
+                      : "Generada con IA · anamnesis";
                 return (
                   <>
                     Mes {plan.month_index} de asesoría · {origen}

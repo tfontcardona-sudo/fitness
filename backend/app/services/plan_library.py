@@ -238,17 +238,20 @@ def copiar_a_cliente(db: Session, client: Client, *, nutrition: dict | None,
     if nutrition:
         # Lo que pertenecía al CICLO del cliente de origen no viaja: sus
         # ajustes de revisión, su contador de ediciones y su snapshot.
-        for clave in ("applied_adjustments", "rev", "gen_inputs"):
+        # Lo del ciclo del ORIGEN no viaja: sus ajustes de revisión, su contador
+        # de ediciones, su snapshot y sus "cambios sin enviar al cliente".
+        for clave in ("applied_adjustments", "rev", "gen_inputs", "manual_changes"):
             nutrition.pop(clave, None)
+        # El TDEE del DESTINO va ANTES de reconciliar: clamp_targets acota las
+        # kcal con nut["tdee_kcal"], y con el del origen a una clienta ligera
+        # la copia le dejaba MÁS kcal de las suyas (crítico de la revisión).
+        nutrition["tdee_kcal"] = et.tdee
         base = _copy.deepcopy(nutrition)  # la base ORIGINAL, antes de mutar
         # mp.kcal, no et.target_kcal: el plan guarda el invariante del sistema
         # (kcal ≡ 4/4/9 de sus macros), igual que la generación y el editor.
         rescale_nutrition(nutrition, base, float(mp.kcal),
                           float(mp.protein_g), float(mp.carbs_g), float(mp.fat_g))
         reconcile_nutrition(nutrition, weight_kg=weight)
-        # TDEE autoritativo del backend (como en la generación): sin él, el
-        # déficit/superávit mostrado sería el del cliente de ORIGEN.
-        nutrition["tdee_kcal"] = et.tdee
         nutrition["gen_inputs"] = {
             "weight_kg": weight, "height_cm": client.height_cm,
             "level": client.level, "training_days": client.training_days,
@@ -265,7 +268,16 @@ def copiar_a_cliente(db: Session, client: Client, *, nutrition: dict | None,
 
     avisos += _avisos_de_seguridad(nutrition, training, client, db)
 
-    flags = [f"copiado de {origen} — revísalo y actívalo"] + list(avisos)
+    # Lo que el sistema NO recalcula por diseño (la IA/el coach escriben, el
+    # backend no inventa): dosis de suplementos y textos personalizados. Se
+    # dice UNA vez para que el coach los repase con nombre y apellido.
+    if nutrition and (nutrition.get("supplements") or nutrition.get("rationale")):
+        avisos.append("Suplementos y textos vienen del origen: repasa dosis y "
+                      "redacción antes de activar.")
+
+    # Prefijo "copia:" en los avisos → el panel los enseña en ámbar mientras es
+    # borrador y la ACTIVACIÓN los retira (los chequeos vivos toman el relevo).
+    flags = [f"copiado de {origen} — revísalo y actívalo"]         + [f"copia: {a}" for a in avisos]
     month_index = current_month_index(db, client.id)
     last = db.scalar(
         select(Plan).where(Plan.client_id == client.id,
@@ -367,11 +379,11 @@ def guardar_modelo(db: Session, plan: Plan, titulo: str) -> PlanTemplate:
     nutrition = _copy.deepcopy(plan.nutrition_json) if plan.nutrition_json else None
     if nutrition:
         # El modelo tampoco arrastra el ciclo de nadie.
-        for clave in ("applied_adjustments", "rev", "gen_inputs"):
+        for clave in ("applied_adjustments", "rev", "gen_inputs", "manual_changes"):
             nutrition.pop(clave, None)
     tpl = PlanTemplate(
         title=titulo[:120],
-        summary=resumen_plan(nutrition, plan.training_json, plan.goal_type),
+        summary=resumen_plan(nutrition, plan.training_json, plan.goal_type)[:200],
         nutrition_json=nutrition,
         training_json=_copy.deepcopy(plan.training_json) if plan.training_json else None,
         education_json=_copy.deepcopy(plan.education_json) if plan.education_json else None,

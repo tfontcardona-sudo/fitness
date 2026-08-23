@@ -331,6 +331,9 @@ export const api = {
   adaptPlan: (clientId: number) =>
     request<{ id: number; month_index: number; version: number; status: string }>(
       "POST", `/clients/${clientId}/adapt-plan`),
+  /** Descarta un borrador (copia o base equivocada): pasa a superseded. */
+  discardPlan: (planId: number) =>
+    request<{ status: string }>("POST", `/plans/${planId}/discard`),
   publishPlan: (planId: number) =>
     request<{ status: string }>("POST", `/plans/${planId}/publish`),
   /** Ida y vuelta del Word editable: sube el .docx editado y devuelve los

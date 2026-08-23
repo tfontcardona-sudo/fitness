@@ -85,6 +85,7 @@ export function ClientPlanEditor({
     // al guardar): con key por índice, reordenar/quitar dejaba el <details>
     // abierto en la POSICIÓN y el formulario pasaba a mostrar OTRO ejercicio.
     for (const sess of d.training?.sessions ?? []) {
+      if (sess && sess._uid == null) sess._uid = newUid();
       for (const ex of sess?.exercises ?? []) {
         if (ex && ex._uid == null) ex._uid = newUid();
       }
@@ -386,6 +387,7 @@ export function ClientPlanEditor({
       // El _uid es identidad de fila SOLO del editor: fuera antes de persistir.
       const training = structuredClone(draft.training);
       for (const sess of training?.sessions ?? []) {
+        if (sess && "_uid" in sess) delete sess._uid;
         for (const ex of sess?.exercises ?? []) {
           if (ex && "_uid" in ex) delete ex._uid;
         }
@@ -806,7 +808,7 @@ export function ClientPlanEditor({
 
         <Subhead text="Sesiones (desplegables por día)" />
         {tr.sessions.map((s: any, si: number) => (
-          <details key={si} name="editor-sesiones" className="mt-2 rounded-lg p-3" style={{ background: "var(--surface-raised)" }}>
+          <details key={s._uid ?? si} name="editor-sesiones" className="mt-2 rounded-lg p-3" style={{ background: "var(--surface-raised)" }}>
             <summary className="flex cursor-pointer flex-wrap items-center gap-2 text-sm font-medium text-zinc-200">
               <span
                 className="rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide"

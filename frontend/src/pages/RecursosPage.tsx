@@ -1287,14 +1287,25 @@ function TemplatesManager() {
     }
   }
 
+  const [borrando, setBorrando] = useState<number | null>(null);
   async function borrar(id: number, titulo: string) {
+    if (borrando != null) return;
     if (!window.confirm(`¿Borrar el modelo «${titulo}»? Los planes ya creados a partir de él no se tocan.`)) return;
+    setBorrando(id);
     try {
       await api.deleteTemplate(id);
       setTemplates((ts) => (ts ?? []).filter((t) => t.id !== id));
       toast.push("Modelo borrado");
     } catch (e: any) {
-      toast.push(e?.message ?? "No se pudo borrar", "error");
+      // Un segundo clic que llega tras el primero: el 404 significa que YA
+      // está borrado — decir "no se pudo" tras un borrado que funcionó miente.
+      if (e?.status === 404) {
+        setTemplates((ts) => (ts ?? []).filter((t) => t.id !== id));
+      } else {
+        toast.push(e?.message ?? "No se pudo borrar", "error");
+      }
+    } finally {
+      setBorrando(null);
     }
   }
 

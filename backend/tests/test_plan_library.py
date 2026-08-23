@@ -241,3 +241,62 @@ def test_copiar_solo_entreno_completa_la_dieta_con_la_base(client, auth):
     assert copia["nutrition"]["target_kcal"] > 0
     assert any("no traía dieta" in w for w in copia["warnings"])
     client.delete(f"/api/plan-library/templates/{tpl_id}", headers=auth)
+
+
+def test_el_tope_calorico_de_la_copia_usa_el_tdee_del_destino(client, auth):
+    """CRÍTICO de la revisión: reconcile corría con el tdee_kcal del ORIGEN
+    todavía en el JSON, y clamp_targets acotaba las kcal del destino contra
+    ese TDEE ajeno — a una clienta ligera la copia le dejaba MÁS kcal de las
+    suyas (el suelo TDEE−30% del origen quedaba por encima de su objetivo)."""
+    origen = _cliente(client, auth, full_name="Origen Pesado",
+                      start_weight_kg=105, height_cm=190)
+    plan_origen = _plan_base(client, auth, origen)
+    tdee_origen = plan_origen["nutrition"]["tdee_kcal"]
+
+    destino = _cliente(client, auth, full_name="Destino Muy Ligera", sex="female",
+                       start_weight_kg=50, height_cm=158, goal_type="fat_loss")
+    r = client.post("/api/plan-library/apply", headers=auth,
+                    json={"client_id": destino, "plan_id": plan_origen["id"]})
+    assert r.status_code == 200, r.text
+    nut = r.json()["nutrition"]
+    reco = client.get(f"/api/clients/{destino}/macro-recommendation",
+                      headers=auth).json()
+    assert nut["tdee_kcal"] == pytest.approx(reco["tdee"], abs=1)
+    assert nut["target_kcal"] == pytest.approx(reco["kcal"], abs=1)
+    # Y desde luego NO el suelo del TDEE del origen.
+    assert nut["target_kcal"] < tdee_origen * 0.7 + 50
+
+
+def test_descartar_un_borrador_copia(client, auth):
+    origen = _cliente(client, auth, full_name="Origen Descartable")
+    plan_origen = _plan_base(client, auth, origen)
+    destino = _cliente(client, auth, full_name="Destino Descartable")
+    r = client.post("/api/plan-library/apply", headers=auth,
+                    json={"client_id": destino, "plan_id": plan_origen["id"]})
+    copia = r.json()
+
+    r = client.post(f"/api/plans/{copia['id']}/discard", headers=auth)
+    assert r.status_code == 200 and r.json()["status"] == "superseded"
+    # Un plan publicado NO se descarta.
+    r = client.post(f"/api/plans/{plan_origen['id']}/publish", headers=auth)
+    assert r.status_code == 200
+    r = client.post(f"/api/plans/{plan_origen['id']}/discard", headers=auth)
+    assert r.status_code == 409
+
+
+def test_activar_retira_los_avisos_de_copia(client, auth):
+    """Los avisos de copia eran notas del borrador: al activar, los chequeos
+    vivos toman el relevo — congelados aquí duplicaban avisos para siempre."""
+    origen = _cliente(client, auth, full_name="Origen Flags")
+    plan_origen = _plan_base(client, auth, origen)
+    destino = _cliente(client, auth, full_name="Destino Flags")
+    r = client.post("/api/plan-library/apply", headers=auth,
+                    json={"client_id": destino, "plan_id": plan_origen["id"]})
+    copia = r.json()
+    assert any(f.startswith("copiado de") for f in copia["guardrail_flags"])
+
+    r = client.post(f"/api/plans/{copia['id']}/publish", headers=auth)
+    assert r.status_code == 200, r.text
+    flags = r.json()["guardrail_flags"] or []
+    assert not any(f.startswith("copiado de") or f.startswith("copia: ")
+                   for f in flags), flags
