@@ -99,8 +99,15 @@ export const OFFER_PERIOD: BillingPeriod = "oferta";
 export const OFFER_FIRST_EUR = 1;
 export const OFFER_MONTHLY_EUR = 120;
 
+/** La MISMA oferta en 2 pagos: 120,50 € hoy y 120,50 € al mes (total 241 €,
+ *  igual que 1 + 120 + 120). La suscripción se cancela sola al segundo cobro. */
+export const OFFER2_PERIOD: BillingPeriod = "oferta2";
+export const OFFER2_EACH_EUR = 120.5;
+export const OFFER2_CHARGES = 2;
+
 /** Etiqueta de una duración ("1m" → "Mensual"). Desconocida → mensual. */
 export function billingLabel(period: string | null | undefined): string {
   if (period === OFFER_PERIOD) return "Oferta 1 €";
+  if (period === OFFER2_PERIOD) return "Oferta 2 pagos";
   return BILLING_PERIODS.find((b) => b.value === period)?.label ?? "Mensual";
 }

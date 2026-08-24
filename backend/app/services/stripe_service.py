@@ -66,6 +66,18 @@ OFFER_FIRST_MONTH_CENTS = 100         # 1 € el primer mes
 OFFER_LOOKUP = "dqr_full_oferta"      # lookup_key del precio RECURRENTE
 OFFER_COUPON_ID = "dqr_oferta_primer_mes"  # id estable del cupón (duration=once)
 
+# --- OFERTA EN 2 PAGOS (misma oferta, otra forma de pagarla): 120,50 € hoy y
+# 120,50 € al mes — total 241 €, exactamente lo mismo que 1 + 120 + 120. Es una
+# suscripción mensual de 120,50 € que el webhook CANCELA en Stripe en cuanto se
+# cobra la SEGUNDA factura (no hay tercer cobro: el programa queda pagado).
+# El job diario reintenta la cancelación por si el webhook se perdiera.
+OFFER2_PERIOD = "oferta2"             # billing_period del cliente en 2 pagos
+OFFER2_MONTHLY_CENTS = 12050          # 120,50 € cada uno de los dos pagos
+OFFER2_CHARGES = 2                    # nº de cobros: al segundo, se cancela
+OFFER2_LOOKUP = "dqr_full_oferta2"    # = _lookup_key("full", "oferta2")
+# Las DOS formas de pagar la misma oferta (ambas solo del plan Full).
+OFFER_PERIODS = (OFFER_PERIOD, OFFER2_PERIOD)
+
 
 class StripeError(RuntimeError):
     """Error recuperable de Stripe (config ausente, plan inválido, firma mala)."""
@@ -108,7 +120,8 @@ def ensure_canonical_prices(stripe, log=None) -> list[str]:
 
     products = {(p.get("metadata") or {}).get("dqr_tier"): p["id"]
                 for p in stripe.Product.list(active=True, limit=100)["data"]}
-    keys = [_lookup_key(t, p) for t in TIER_ORDER for p in PERIOD_ORDER] + [OFFER_LOOKUP]
+    keys = ([_lookup_key(t, p) for t in TIER_ORDER for p in PERIOD_ORDER]
+            + [OFFER_LOOKUP, OFFER2_LOOKUP])
     existing = {pr["lookup_key"]: pr
                 for pr in stripe.Price.list(lookup_keys=keys, active=True,
                                             limit=100)["data"]
@@ -152,33 +165,39 @@ def ensure_canonical_prices(stripe, log=None) -> list[str]:
                 note(f"  + {key}: creado con {amount / 100:.2f} €")
 
     # ---- OFERTA: precio RECURRENTE mensual (suscripción) + cupón 1er mes 1 € ----
-    pr = existing.get(OFFER_LOOKUP)
-    ok = (pr is not None and pr.get("unit_amount") == OFFER_MONTHLY_CENTS
-          and pr.get("currency") == CURRENCY
-          and (pr.get("recurring") or {}).get("interval") == "month")
-    if not ok:
-        if pr is not None:
-            stripe.Price.create(
-                product=pr["product"], currency=CURRENCY,
-                unit_amount=OFFER_MONTHLY_CENTS,
-                recurring={"interval": "month"},
-                lookup_key=OFFER_LOOKUP, transfer_lookup_key=True,
-                nickname="DQR Full · oferta (120 €/mes)",
-            )
-            stripe.Price.modify(pr["id"], active=False)
-            note(f"  ~ {OFFER_LOOKUP}: reprecio a {OFFER_MONTHLY_CENTS / 100:.2f} €/mes "
-                 "(precio nuevo, el antiguo desactivado)")
+    # La variante en 2 PAGOS es otro precio recurrente (120,50 €/mes) con su
+    # propio lookup_key: mismo tratamiento idempotente.
+    for lookup, cents, nick in (
+        (OFFER_LOOKUP, OFFER_MONTHLY_CENTS, "DQR Full · oferta (120 €/mes)"),
+        (OFFER2_LOOKUP, OFFER2_MONTHLY_CENTS, "DQR Full · oferta 2 pagos (120,50 € ×2)"),
+    ):
+        pr = existing.get(lookup)
+        ok = (pr is not None and pr.get("unit_amount") == cents
+              and pr.get("currency") == CURRENCY
+              and (pr.get("recurring") or {}).get("interval") == "month")
+        if not ok:
+            if pr is not None:
+                stripe.Price.create(
+                    product=pr["product"], currency=CURRENCY,
+                    unit_amount=cents,
+                    recurring={"interval": "month"},
+                    lookup_key=lookup, transfer_lookup_key=True,
+                    nickname=nick,
+                )
+                stripe.Price.modify(pr["id"], active=False)
+                note(f"  ~ {lookup}: reprecio a {cents / 100:.2f} €/mes "
+                     "(precio nuevo, el antiguo desactivado)")
+            else:
+                stripe.Price.create(
+                    product=products["full"], currency=CURRENCY,
+                    unit_amount=cents,
+                    recurring={"interval": "month"},
+                    lookup_key=lookup, transfer_lookup_key=True,
+                    nickname=nick,
+                )
+                note(f"  + {lookup}: creado (suscripción {cents / 100:.2f} €/mes)")
         else:
-            stripe.Price.create(
-                product=products["full"], currency=CURRENCY,
-                unit_amount=OFFER_MONTHLY_CENTS,
-                recurring={"interval": "month"},
-                lookup_key=OFFER_LOOKUP, transfer_lookup_key=True,
-                nickname="DQR Full · oferta (120 €/mes)",
-            )
-            note(f"  + {OFFER_LOOKUP}: creado (suscripción {OFFER_MONTHLY_CENTS / 100:.2f} €/mes)")
-    else:
-        note(f"  = {OFFER_LOOKUP}: ya existe ({OFFER_MONTHLY_CENTS / 100:.2f} €/mes, sin cambios)")
+            note(f"  = {lookup}: ya existe ({cents / 100:.2f} €/mes, sin cambios)")
 
     # Cupón del primer mes a 1 €: id ESTABLE, un solo cobro con descuento
     # (duration=once). Un cupón no se puede editar: si existe con otro importe,
@@ -272,7 +291,8 @@ def _price_by_lookup(tier: str, period: str) -> str:
         return _lookup_cache["ids"][key]
     try:
         stripe = _stripe()
-        keys = [_lookup_key(t, p) for t in TIER_ORDER for p in PERIOD_ORDER] + [OFFER_LOOKUP]
+        keys = ([_lookup_key(t, p) for t in TIER_ORDER for p in PERIOD_ORDER]
+                + [OFFER_LOOKUP, OFFER2_LOOKUP])
 
         def _list_prices() -> dict:
             return {pr["lookup_key"]: pr
@@ -289,10 +309,13 @@ def _price_by_lookup(tier: str, period: str) -> str:
                     if (pr is None or pr.get("unit_amount") != CANONICAL_AMOUNTS[t][p]
                             or pr.get("currency") != CURRENCY):
                         return True
-            of = found.get(OFFER_LOOKUP)  # el precio recurrente de la oferta
-            if (of is None or of.get("unit_amount") != OFFER_MONTHLY_CENTS
-                    or (of.get("recurring") or {}).get("interval") != "month"):
-                return True
+            # Los precios recurrentes de la oferta (las dos formas de pago).
+            for lk, cents in ((OFFER_LOOKUP, OFFER_MONTHLY_CENTS),
+                              (OFFER2_LOOKUP, OFFER2_MONTHLY_CENTS)):
+                of = found.get(lk)
+                if (of is None or of.get("unit_amount") != cents
+                        or (of.get("recurring") or {}).get("interval") != "month"):
+                    return True
             # El CUPÓN del primer mes también es reparable: borrado a mano en el
             # dashboard dejaría la promo muerta en silencio (cada checkout
             # fallaría con "No such coupon") y los precios seguirían alineados.
@@ -354,9 +377,9 @@ def create_checkout_url(db: Session, tier: str, period: str = "1m", *,
         raise StripeError("Stripe no está configurado (falta STRIPE_SECRET_KEY en el .env).")
     if tier not in _TIERS:
         raise StripeError(f"Plan desconocido: {tier}")
-    es_oferta = period == OFFER_PERIOD
+    es_oferta = period in OFFER_PERIODS
     if es_oferta and tier != OFFER_TIER:
-        raise StripeError("La oferta (1 € el primer mes) es solo del plan Full.")
+        raise StripeError("La oferta es solo del plan Full.")
     if not es_oferta and period not in _PERIODS:
         raise StripeError(f"Duración desconocida: {period}")
     price = _resolve_price_id(tier, period)
@@ -379,12 +402,15 @@ def create_checkout_url(db: Session, tier: str, period: str = "1m", *,
         extra["phone_number_collection"] = {"enabled": True}
 
     if es_oferta:
-        # SUSCRIPCIÓN mensual de 120 € con el primer cobro a 1 € (cupón de un
-        # solo uso por suscripción). La renovación la cobra Stripe cada mes sin
-        # que el coach mande nada; invoice.paid/payment_failed (webhook) mantienen
-        # el estado de pago del cliente al día. La metadata viaja también en la
-        # suscripción para poder mapear las facturas de renovación al cliente.
-        extra["discounts"] = [{"coupon": OFFER_COUPON_ID}]
+        # SUSCRIPCIÓN mensual. En la oferta clásica, el primer cobro queda a
+        # 1 € (cupón de un solo uso por suscripción) y Stripe renueva a 120 €
+        # cada mes. En la oferta EN 2 PAGOS no hay cupón: dos cobros de
+        # 120,50 € y el webhook cancela la suscripción al segundo (no hay
+        # tercer cobro). invoice.paid/payment_failed mantienen el estado del
+        # cliente al día; la metadata viaja también en la suscripción para
+        # mapear las facturas al cliente.
+        if period == OFFER_PERIOD:
+            extra["discounts"] = [{"coupon": OFFER_COUPON_ID}]
         extra["subscription_data"] = {"metadata": dict(metadata)}
 
     try:
@@ -417,7 +443,7 @@ def open_invoice_url(client: Client) -> str | None:
     (página alojada por Stripe: actualiza la tarjeta y paga lo pendiente), o
     None si no hay ninguna. La usa el enlace de pago estable para NO crear una
     SEGUNDA suscripción con otro primer mes a 1 € tras un impago. Best-effort."""
-    if not (client.billing_period == OFFER_PERIOD and client.stripe_subscription_id
+    if not (client.billing_period in OFFER_PERIODS and client.stripe_subscription_id
             and settings.stripe_enabled):
         return None
     try:
@@ -568,7 +594,7 @@ def _mark_paid(db: Session, client: Client, period: str | None = None, *,
     contando desde el primer pago para siempre (auditoría del libro de caja).
     Con él, una reentrega del MISMO pago sigue sin duplicar avisos."""
     # La duración que el cliente pagó de verdad manda sobre la de la ficha.
-    if (period in _PERIODS or period == OFFER_PERIOD) and client.billing_period != period:
+    if (period in _PERIODS or period in OFFER_PERIODS) and client.billing_period != period:
         client.billing_period = period
     # Y el PLAN pagado también: un cliente existente que compra OTRA tarifa por
     # el enlace del kit de ventas quedaba con la tarifa antigua en la ficha (y
@@ -674,7 +700,7 @@ def _create_selfserve_client(db: Session, *, name: str, email: str,
         # pkgs.normalize traduce la metadata ANTIGUA ("start"→nutri, "pro"→full)
         # de Checkout Sessions creadas antes del renombrado y aún en vuelo.
         package_tier=pkgs.normalize(tier),
-        billing_period=period if (period in _PERIODS or period == OFFER_PERIOD) else "1m",
+        billing_period=period if (period in _PERIODS or period in OFFER_PERIODS) else "1m",
         status="onboarding",
         auto_pilot=settings.auto_pilot_default,
         portal_token="pendiente",
@@ -785,20 +811,40 @@ def _invoice_subscription_bits(invoice: dict) -> tuple[str | None, dict]:
 
 
 def _invoice_es_de_la_oferta(invoice: dict) -> bool:
-    """¿La factura pertenece a NUESTRA oferta? Mira el lookup_key del precio de
-    sus líneas (dqr_full_oferta). Sin esto, una cuenta de Stripe con OTROS
-    productos (facturas manuales, suscripciones antiguas…) contaminaría el
-    estado de pago de clientes homónimos vía la reserva por email."""
+    """¿La factura pertenece a NUESTRA oferta (en cualquiera de sus dos formas
+    de pago)? Mira el lookup_key del precio de sus líneas (dqr_full_oferta /
+    dqr_full_oferta2). Sin esto, una cuenta de Stripe con OTROS productos
+    (facturas manuales, suscripciones antiguas…) contaminaría el estado de
+    pago de clientes homónimos vía la reserva por email."""
     for line in ((invoice.get("lines") or {}).get("data") or []):
         price = line.get("price") or {}
-        if price.get("lookup_key") == OFFER_LOOKUP:
+        if price.get("lookup_key") in (OFFER_LOOKUP, OFFER2_LOOKUP):
             return True
         # Forma 2025-03-31+: la línea lleva pricing.price_details, sin
         # lookup_key. Reserva: metadata de la propia línea/suscripción.
-        if (line.get("metadata") or {}).get("billing_period") == OFFER_PERIOD:
+        if (line.get("metadata") or {}).get("billing_period") in OFFER_PERIODS:
             return True
     _sub, meta = _invoice_subscription_bits(invoice)
-    return meta.get("billing_period") == OFFER_PERIOD or bool(meta.get("client_id"))
+    return meta.get("billing_period") in OFFER_PERIODS or bool(meta.get("client_id"))
+
+
+def periodo_de_factura(invoice: dict, client: Client | None = None) -> str:
+    """¿A qué FORMA de la oferta pertenece esta factura: "oferta" (1 € →
+    120 €/mes) u "oferta2" (2 pagos de 120,50 €)? Lookup del precio primero,
+    metadata después y, como reserva, la ficha del cliente."""
+    for line in ((invoice.get("lines") or {}).get("data") or []):
+        if (line.get("price") or {}).get("lookup_key") == OFFER2_LOOKUP:
+            return OFFER2_PERIOD
+        if (line.get("price") or {}).get("lookup_key") == OFFER_LOOKUP:
+            return OFFER_PERIOD
+        if (line.get("metadata") or {}).get("billing_period") in OFFER_PERIODS:
+            return (line.get("metadata") or {})["billing_period"]
+    _sub, meta = _invoice_subscription_bits(invoice)
+    if meta.get("billing_period") in OFFER_PERIODS:
+        return meta["billing_period"]
+    if client is not None and client.billing_period in OFFER_PERIODS:
+        return client.billing_period
+    return OFFER_PERIOD
 
 
 def _client_from_invoice(db: Session, invoice: dict) -> Client | None:
@@ -849,6 +895,7 @@ def _anotar_factura(db: Session, invoice: dict, client: Client | None, *,
     cuando = ((invoice.get("status_transitions") or {}).get("paid_at")
               if pagada else None) or invoice.get("created")
     razon = invoice.get("billing_reason")
+    periodo = periodo_de_factura(invoice, client)
     pago = pay_svc.record_payment(
         db, object_id=invoice.get("id") or "", kind="invoice",
         status="paid" if pagada else "failed",
@@ -858,9 +905,9 @@ def _anotar_factura(db: Session, invoice: dict, client: Client | None, *,
         customer_name=invoice.get("customer_name"),
         customer_email=invoice.get("customer_email"),
         tier=(client.package_tier if client else OFFER_TIER),
-        billing_period=OFFER_PERIOD,
+        billing_period=periodo,
         description=pay_svc.describe(client.package_tier if client else OFFER_TIER,
-                                     OFFER_PERIOD, kind="invoice", billing_reason=razon),
+                                     periodo, kind="invoice", billing_reason=razon),
         paid_at=pay_svc.ts_to_dt(cuando), event_id=event_id,
         payment_intent=_pi_of(invoice),
     )
@@ -957,6 +1004,62 @@ def _handle_charge_refunded(db: Session, event: dict) -> dict:
     return {"refunded": devuelto, "client_id": client.id if client else None}
 
 
+def pagos_2pagos_completados(db: Session, client: Client) -> int:
+    """Nº de FACTURAS COBRADAS de la oferta en 2 pagos que constan en el libro
+    de caja para este cliente. Con ≥ OFFER2_CHARGES el programa está pagado
+    entero: la suscripción debe cancelarse y su baja no es un impago."""
+    from app.models import Payment
+
+    return int(db.scalar(
+        select(func.count(Payment.id)).where(
+            Payment.client_id == client.id, Payment.kind == "invoice",
+            Payment.status == "paid", Payment.billing_period == OFFER2_PERIOD,
+        )
+    ) or 0)
+
+
+def detener_suscripcion_2pagos(db: Session, client: Client, sub_id: str | None,
+                               *, motivo: str) -> bool:
+    """Cancela EN STRIPE la suscripción de la oferta en 2 pagos: el segundo
+    cobro ya entró y no puede haber un tercero. Devuelve True si quedó
+    cancelada. Si Stripe falla, avisa al COACH al momento (push): es dinero —
+    un tercer cobro indebido sería una devolución y un cliente enfadado. El
+    mantenimiento diario reintenta solo (backstop del webhook perdido)."""
+    sub_id = sub_id or client.stripe_subscription_id
+    if not sub_id:
+        return False
+    try:
+        stripe = _stripe()
+        cancel = getattr(stripe.Subscription, "cancel", None) or stripe.Subscription.delete
+        cancel(sub_id)
+        log_event(db, "client", client.id, "subscription_completed",
+                  {"subscription": sub_id, "motivo": motivo})
+        return True
+    except Exception as exc:  # noqa: BLE001
+        msg = str(exc).lower()
+        if "canceled" in msg or "cancelled" in msg or "no such subscription" in msg:
+            # Ya estaba cancelada (reintento del webhook o baja manual): hecho.
+            return True
+        _log.warning("No se pudo cancelar la suscripción de 2 pagos %s: %s",
+                     sub_id, exc)
+        try:
+            from app.services import push as push_svc
+
+            first = ((client.full_name or "").split() or ["Un cliente"])[0]
+            push_svc.send_to_coach(db, {
+                "title": "💰⚠️ Cancela la suscripción de 2 pagos",
+                "body": (f"{first} ya pagó sus 2 cobros de 120,50 € pero la "
+                         "suscripción no se pudo cancelar sola: cancélala en "
+                         "Stripe o le llegará un tercer cobro."),
+                "count": 1,
+                "url": f"https://dashboard.stripe.com/subscriptions/{sub_id}",
+                "tag": f"dq-oferta2-cancelar-{sub_id}",
+            })
+        except Exception:  # noqa: BLE001
+            pass
+        return False
+
+
 def _handle_invoice_event(db: Session, event: dict) -> dict:
     """Renovaciones de la suscripción de la oferta: cada mes Stripe cobra solo y
     avisa aquí. invoice.paid refresca el pago del cliente; invoice.payment_failed
@@ -1034,6 +1137,17 @@ def _handle_invoice_event(db: Session, event: dict) -> dict:
                    "amount_eur": (invoice.get("amount_due") or 0) / 100.0})
         _notify_coach_payment_failed(db, client)
     db.commit()
+    # OFERTA EN 2 PAGOS: con el segundo cobro anotado, la suscripción se
+    # CANCELA en Stripe — el programa está pagado entero y no puede haber un
+    # tercer cargo. Se cuenta sobre el LIBRO (no sobre billing_reason): así el
+    # reintento de un webhook o una factura repescada por sync no lo rompen.
+    if (pagada and periodo_de_factura(invoice, client) == OFFER2_PERIOD
+            and pagos_2pagos_completados(db, client) >= OFFER2_CHARGES):
+        detener_suscripcion_2pagos(
+            db, client,
+            _invoice_subscription_bits(invoice)[0] or client.stripe_subscription_id,
+            motivo="segundo_pago_cobrado")
+        db.commit()
     return {"invoice": "paid" if pagada else "failed", "client_id": client.id}
 
 
@@ -1055,6 +1169,32 @@ def _handle_subscription_deleted(db: Session, event: dict) -> dict:
         client = db.scalar(select(Client).where(Client.stripe_subscription_id == sub_id))
     if client is None:
         return {"ignored": "subscription_sin_cliente"}
+    # OFERTA EN 2 PAGOS COMPLETADA: la baja la provocamos NOSOTROS al entrar el
+    # segundo cobro (o el coach al ver el aviso). No es un impago ni un
+    # abandono: el programa está pagado entero, la ficha sigue "pagada" y el
+    # contador de renovación corre desde el último cobro. Solo si la
+    # suscripción muere ANTES de los 2 cobros es una baja de verdad.
+    completada = (client.billing_period == OFFER2_PERIOD
+                  and pagos_2pagos_completados(db, client) >= OFFER2_CHARGES)
+    if completada:
+        if client.stripe_subscription_id == sub_id:
+            client.stripe_subscription_id = None
+        log_event(db, "client", client.id, "subscription_completed",
+                  {"subscription": sub_id, "motivo": "dos_pagos_cobrados"})
+        from app.services import payments as pay_svc
+
+        pay_svc.record_payment(
+            db, object_id=sub_id or f"sub_fin_{client.id}", kind="subscription",
+            status="canceled", amount_cents=0,
+            livemode=bool(sub.get("livemode", True)), client=client,
+            billing_period=OFFER2_PERIOD,
+            description="Oferta en 2 pagos completada (no habrá más cobros)",
+            paid_at=pay_svc.ts_to_dt(sub.get("canceled_at") or sub.get("ended_at")
+                                     or event.get("created")),
+            event_id=event.get("id"),
+        )
+        db.commit()
+        return {"subscription_completed": client.id}
     client.payment_status = "pending"
     if client.stripe_subscription_id == sub_id:
         client.stripe_subscription_id = None
@@ -1197,7 +1337,7 @@ def handle_webhook(db: Session, payload: bytes, sig_header: str | None) -> dict:
         # alta normal: puede ser un atajo para rebajarse el plan. Se procesa
         # (el dinero entró y la suscripción existe) pero con push DISTINTIVO
         # para que el coach lo revise y decida (idempotente: solo si cambia).
-        era_oferta = existing.billing_period == OFFER_PERIOD
+        era_oferta = existing.billing_period in OFFER_PERIODS
         nuevo = _anotar_checkout(db, session, existing, event_id=evt_id)
         _mark_paid(db, existing, period, movimiento_nuevo=nuevo, amount_cents=importe,
                    pagado_en=_pay_svc_ts(session.get("created")), tier=tier)
@@ -1209,7 +1349,7 @@ def handle_webhook(db: Session, payload: bytes, sig_header: str | None) -> dict:
             pass
         db.commit()
         _tag_subscription(db, session, existing)
-        if period == OFFER_PERIOD and not era_oferta:
+        if period in OFFER_PERIODS and not era_oferta:
             _notify_coach_offer_reused(db, existing)
         return {"marked_paid": existing.id, "existing": True}
 

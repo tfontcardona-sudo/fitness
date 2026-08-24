@@ -75,9 +75,10 @@ def pay_plan_link(request: Request, tier: str, period: str,
     t = pkgs.LEGACY_TIERS.get(tier.strip().lower(), tier.strip().lower())
     # Estricto A PROPÓSITO (sin caer al plan por defecto): un enlace mal escrito
     # no puede acabar cobrando el plan más caro. Ante cualquier duda → /planes.
-    # "oferta" (1 € el primer mes → suscripción) solo existe para el plan Full.
+    # La oferta (1 € → 120 €/mes, u "oferta2" = 2 pagos de 120,50 €) solo
+    # existe para el plan Full.
     valido = (t in pkgs.TIERS and period in ("1m", "3m", "6m")) or \
-             (t == "full" and period == "oferta")
+             (t == "full" and period in ("oferta", "oferta2"))
     if not valido:
         return RedirectResponse(f"{base}/planes", status_code=302)
 
@@ -98,6 +99,10 @@ def pay_plan_link(request: Request, tier: str, period: str,
         if period == "oferta":
             title = f"{pkgs.label(t)} — primer mes 1 €"
             desc = "Oferta: tu primer mes del plan completo por 1 €. Pago seguro con Stripe."
+        elif period == "oferta2":
+            title = f"{pkgs.label(t)} — 2 pagos de 120,50 €"
+            desc = ("Oferta: el plan completo en solo 2 pagos de 120,50 € "
+                    "(hoy y en un mes). Pago seguro con Stripe.")
         else:
             title = f"{pkgs.label(t)} — pago seguro"
             desc = "Asesoría 100 % personalizada. Pago seguro con Stripe."
@@ -142,12 +147,12 @@ def pay_link(request: Request, client: Client = Depends(get_client_by_token),
 
         if not is_due(client, today_local()):
             return RedirectResponse(f"{base}/pago-ok", status_code=302)
-    # OFERTA con suscripción YA creada: reabrir el enlace tras un impago no
-    # puede montar una SEGUNDA suscripción (doble cobro mensual y otro primer
-    # mes a 1 €). Si su suscripción tiene una factura abierta, se le manda ahí
-    # (paga lo pendiente y actualiza la tarjeta); si no la hay, la suscripción
-    # está al día y no toca cobrar nada.
-    if client.billing_period == "oferta" and client.stripe_subscription_id:
+    # OFERTA (cualquiera de sus dos formas) con suscripción YA creada: reabrir
+    # el enlace tras un impago no puede montar una SEGUNDA suscripción (doble
+    # cobro mensual y otro primer mes a 1 €, u otros 2 pagos de 120,50 €). Si
+    # su suscripción tiene una factura abierta, se le manda ahí (paga lo
+    # pendiente y actualiza la tarjeta); si no la hay, está al día.
+    if client.billing_period in ("oferta", "oferta2") and client.stripe_subscription_id:
         from app.services.stripe_service import open_invoice_url
 
         pendiente = open_invoice_url(client)

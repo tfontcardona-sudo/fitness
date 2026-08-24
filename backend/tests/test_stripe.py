@@ -194,6 +194,7 @@ class FakeStripe:
         self.prices: list[dict] = []
         self.coupons: dict[str, dict] = {}
         self.sub_modifications: list[tuple[str, dict]] = []
+        self.sub_cancelaciones: list[str] = []
         fake = self
 
         class Product:
@@ -252,6 +253,11 @@ class FakeStripe:
             def retrieve(sub_id):
                 raise KeyError(sub_id)
 
+            @staticmethod
+            def cancel(sub_id, **kw):
+                fake.sub_cancelaciones.append(sub_id)
+                return {"id": sub_id, "status": "canceled"}
+
         self.Product = Product
         self.Price = Price
         self.Coupon = Coupon
@@ -275,21 +281,25 @@ def test_auto_alta_crea_los_9_precios_que_faltan(monkeypatch):
 
     pid = ss._price_by_lookup("train", "1m")
     assert pid
-    # 9 pagos únicos + 1 recurrente de la oferta; cupón del primer mes creado.
-    assert len(fake.products) == 3 and len(fake.prices) == 10
+    # 9 pagos únicos + 2 recurrentes de la oferta (1 €→120 €/mes y 2 pagos de
+    # 120,50 €); cupón del primer mes creado.
+    assert len(fake.products) == 3 and len(fake.prices) == 11
     creado = next(p for p in fake.prices if p["lookup_key"] == "dqr_train_1m")
     assert creado["unit_amount"] == 6900 and creado["currency"] == "eur"
     assert pid == creado["id"]
     oferta = next(p for p in fake.prices if p["lookup_key"] == "dqr_full_oferta")
     assert oferta["unit_amount"] == 12000
     assert oferta["recurring"] == {"interval": "month"}
+    oferta2 = next(p for p in fake.prices if p["lookup_key"] == "dqr_full_oferta2")
+    assert oferta2["unit_amount"] == 12050
+    assert oferta2["recurring"] == {"interval": "month"}
     cupon = fake.coupons["dqr_oferta_primer_mes"]
     assert cupon["amount_off"] == 11900 and cupon["duration"] == "once"
 
     # Idempotente: resolver otra combinación después no crea nada más.
     _reset_stripe_caches(monkeypatch, ss)
     assert ss._price_by_lookup("nutri", "3m")
-    assert len(fake.prices) == 10 and len(fake.coupons) == 1
+    assert len(fake.prices) == 11 and len(fake.coupons) == 1
 
 
 def test_auto_reprecio_detecta_importes_desviados(monkeypatch):
@@ -930,3 +940,233 @@ def test_webhook_metadata_antigua_crea_el_plan_correcto(monkeypatch):
         # final de la suite, como en el resto de tests del webhook.
     finally:
         db.close()
+
+
+# ---- OFERTA EN 2 PAGOS: 120,50 € hoy y 120,50 € al mes; se detiene sola ----
+
+def test_oferta2_checkout_es_suscripcion_sin_cupon(monkeypatch):
+    """La oferta en 2 pagos va en modo SUSCRIPCIÓN (120,50 €/mes) pero SIN el
+    cupón del euro: dos cobros iguales. Solo del plan Full."""
+    from types import SimpleNamespace
+
+    from app.config import settings
+    from app.services import stripe_service as ss
+
+    capturas = []
+
+    class _FakeCheckout:
+        class checkout:
+            class Session:
+                @staticmethod
+                def create(**kw):
+                    capturas.append(kw)
+                    return SimpleNamespace(url="https://stripe.test/oferta2")
+
+    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_x")
+    monkeypatch.setattr(ss, "_resolve_price_id", lambda t, p: "price_oferta2")
+    monkeypatch.setattr(ss, "_stripe", lambda: _FakeCheckout())
+
+    url = ss.create_checkout_url(None, "full", "oferta2")
+    assert url == "https://stripe.test/oferta2"
+    kw = capturas[0]
+    assert kw["mode"] == "subscription"
+    assert "discounts" not in kw  # sin cupón: los dos pagos son de 120,50 €
+    assert kw["subscription_data"]["metadata"]["billing_period"] == "oferta2"
+    assert kw["subscription_data"]["metadata"]["tier"] == "full"
+
+    with pytest.raises(ss.StripeError):
+        ss.create_checkout_url(None, "nutri", "oferta2")
+
+
+def test_enlace_de_pago_de_la_oferta2(monkeypatch):
+    """GET /api/pay/plan/full/oferta2 redirige al checkout; con otro plan, a
+    /planes. El bot de vista previa ve los 2 pagos sin crear sesión."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.routers import stripe_router as sr
+
+    monkeypatch.setattr(sr, "create_checkout_url",
+                        lambda db, t, p, **kw: f"https://stripe.test/{t}/{p}")
+    with TestClient(app) as http:
+        r = http.get("/api/pay/plan/full/oferta2", follow_redirects=False)
+        assert r.status_code == 302
+        assert r.headers["location"] == "https://stripe.test/full/oferta2"
+
+        r = http.get("/api/pay/plan/nutri/oferta2", follow_redirects=False)
+        assert r.status_code == 302 and r.headers["location"].endswith("/planes")
+
+        r = http.get("/api/pay/plan/full/oferta2",
+                     headers={"User-Agent": "WhatsApp/2.24.1"}, follow_redirects=False)
+        assert r.status_code == 200 and "2 pagos de 120,50" in r.text
+
+
+def _cliente_oferta2(db, *, sub_id="sub_2p"):
+    from app.models import Client
+    from app.security import new_portal_token
+
+    c = Client(full_name="Dos Pagos", email=f"o2-{uuid.uuid4().hex[:8]}@x.com",
+               package_tier="full", billing_period="oferta2", status="active",
+               portal_token="p", payment_status="paid",
+               stripe_subscription_id=sub_id)
+    db.add(c)
+    db.flush()
+    c.portal_token = new_portal_token(c.id)
+    db.commit()
+    return c
+
+
+def _evento_factura_oferta2(cid: int, invoice_id: str, razon: str) -> dict:
+    return {"type": "invoice.paid", "data": {"object": {
+        "id": invoice_id, "subscription": "sub_2p",
+        "subscription_details": {"metadata": {"client_id": str(cid),
+                                              "billing_period": "oferta2"}},
+        "billing_reason": razon, "amount_paid": 12050,
+        "lines": {"data": [{"price": {"lookup_key": "dqr_full_oferta2"}}]},
+    }}}
+
+
+def test_webhook_segundo_pago_detiene_la_suscripcion(monkeypatch):
+    """Al cobrarse la SEGUNDA factura de la oferta en 2 pagos, el webhook
+    cancela la suscripción en Stripe (no puede haber un tercer cargo), y la
+    baja que llega después NO marca al cliente como pendiente: el programa
+    está pagado entero."""
+    stripe_service = _prep(monkeypatch)
+    from sqlalchemy import select
+
+    from app.db import SessionLocal
+    from app.models import Client, Payment
+    from app.services import push as push_svc
+
+    avisos = []
+    monkeypatch.setattr(push_svc, "send_to_coach", lambda db, payload: avisos.append(payload))
+
+    fake = FakeStripe()
+
+    db = SessionLocal()
+    try:
+        c = _cliente_oferta2(db)
+        cid = c.id
+
+        def _mandar(evento):
+            class _Hooked:
+                Webhook = type("W", (), {
+                    "construct_event": staticmethod(lambda *a, **k: evento)})
+                Subscription = fake.Subscription
+
+            monkeypatch.setattr(stripe_service, "_stripe", lambda: _Hooked)
+            return stripe_service.handle_webhook(db, b"{}", "sig")
+
+        # Primer pago (subscription_create): se anota, no se cancela nada.
+        res = _mandar(_evento_factura_oferta2(cid, "in_2p_1", "subscription_create"))
+        assert res == {"invoice": "paid", "client_id": cid}
+        assert fake.sub_cancelaciones == []
+
+        # Segundo pago (subscription_cycle): la suscripción se CANCELA.
+        res = _mandar(_evento_factura_oferta2(cid, "in_2p_2", "subscription_cycle"))
+        assert res == {"invoice": "paid", "client_id": cid}
+        assert fake.sub_cancelaciones == ["sub_2p"]
+
+        # La baja que Stripe emite tras la cancelación es un FIN natural: el
+        # cliente sigue "pagado" y el feed lo cuenta como completada.
+        res = _mandar({"type": "customer.subscription.deleted",
+                       "data": {"object": {"id": "sub_2p",
+                                           "metadata": {"client_id": str(cid)}}}})
+        assert res == {"subscription_completed": cid}
+        db.expire_all()
+        c = db.get(Client, cid)
+        assert c.payment_status == "paid"
+        assert c.stripe_subscription_id is None
+        assert not any("Suscripción cancelada" in a.get("title", "") for a in avisos)
+        fila = db.scalar(select(Payment).where(Payment.stripe_object_id == "sub_2p",
+                                               Payment.status == "canceled"))
+        assert fila is not None and "completada" in (fila.description or "")
+    finally:
+        db.close()
+
+
+def test_webhook_baja_temprana_de_la_oferta2_es_impago(monkeypatch):
+    """Si la suscripción de 2 pagos muere ANTES del segundo cobro (impagos
+    agotados, baja manual), sí es una baja de verdad: pendiente + push."""
+    stripe_service = _prep(monkeypatch)
+    from app.db import SessionLocal
+    from app.models import Client
+    from app.services import push as push_svc
+
+    avisos = []
+    monkeypatch.setattr(push_svc, "send_to_coach", lambda db, payload: avisos.append(payload))
+
+    db = SessionLocal()
+    try:
+        c = _cliente_oferta2(db, sub_id="sub_2p_corta")
+        cid = c.id
+        # Solo consta UN pago en el libro.
+        from app.services.payments import record_payment
+
+        record_payment(db, object_id=f"in_2p_solo_{cid}", kind="invoice",
+                       status="paid", amount_cents=12050, client=c,
+                       billing_period="oferta2", description="pago 1 de 2")
+        db.commit()
+
+        event = {"type": "customer.subscription.deleted",
+                 "data": {"object": {"id": "sub_2p_corta",
+                                     "metadata": {"client_id": str(cid)}}}}
+        monkeypatch.setattr(stripe_service, "_stripe", _fake_stripe(event))
+        res = stripe_service.handle_webhook(db, b"{}", "sig")
+        assert res == {"subscription_cancelled": cid}
+        db.expire_all()
+        assert db.get(Client, cid).payment_status == "pending"
+        assert any("Suscripción cancelada" in a.get("title", "") for a in avisos)
+    finally:
+        db.close()
+
+
+def test_oferta2_solo_full(monkeypatch):
+    """El registro público rechaza train/nutri con la oferta en 2 pagos."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.routers import public_site
+
+    # El limitador del MÓDULO (5/min por IP) se apaga solo aquí: la suite
+    # entera comparte la IP del TestClient y este test corre tarde — sin esto
+    # respondía 429 por cuota agotada, no lo que se prueba (el 422).
+    monkeypatch.setattr(public_site.limiter, "enabled", False)
+    with TestClient(app) as http:
+        r = http.post("/api/public/register", json={
+            "full_name": "No Puede", "email": f"no2-{uuid.uuid4().hex[:6]}@x.com",
+            "phone": "600000001", "tier": "train", "period": "oferta2",
+        })
+        assert r.status_code == 422
+
+
+def test_renovacion_de_la_oferta2_tras_completarse():
+    """Completados los 2 pagos (suscripción ya cancelada y despegada), el
+    programa de 3 meses acaba ~60 días después del segundo cobro: la ventana
+    de renovación cuenta desde paid_at + 60."""
+    from datetime import datetime, timedelta, timezone
+    from types import SimpleNamespace
+
+    from app.services.renewals import renewal_window
+
+    hoy = datetime.now(timezone.utc)
+    c = SimpleNamespace(payment_status="paid", stripe_subscription_id=None,
+                        paid_at=hoy - timedelta(days=55), billing_period="oferta2")
+    w = renewal_window(c, hoy.date())
+    assert w is not None
+    ends_on, dias = w
+    assert dias == 5  # 60 − 55
+
+    # Mientras la suscripción sigue viva, se cobra sola: sin ventana.
+    c.stripe_subscription_id = "sub_2p"
+    assert renewal_window(c, hoy.date()) is None
+
+
+def test_describe_oferta2():
+    """El feed de pagos dice cuál de los dos pagos es cada movimiento."""
+    from app.services.payments import describe
+
+    assert describe("full", "oferta2", kind="invoice",
+                    billing_reason="subscription_create").endswith("pago 1 de 2)")
+    assert describe("full", "oferta2", kind="invoice",
+                    billing_reason="subscription_cycle").endswith("pago 2 de 2)")

@@ -32,6 +32,9 @@ export default function OfertaPage() {
   const coachDigits = waPhone(landing?.contact_phone);
   const waHref = coachDigits ? waUrl(coachDigits, WA_MESSAGE) : null;
   const payHref = "/api/pay/plan/full/oferta";
+  // La MISMA oferta en 2 pagos de 120,50 € (hoy y al mes): tras el segundo
+  // cobro no hay más cargos — el backend cancela la suscripción solo.
+  const pay2Href = "/api/pay/plan/full/oferta2";
 
   const bg = landing?.color_bg ?? "#0B111C";
   return (
@@ -100,6 +103,17 @@ export default function OfertaPage() {
             className="flex items-center justify-center gap-2 rounded-xl px-6 py-4 text-base font-extrabold text-white shadow-lg transition-transform hover:brightness-110 active:scale-[0.98]"
             style={{ background: "#E8833A" }}>
             Empezar hoy por 1 € →
+          </a>
+          {/* La MISMA oferta, en 2 pagos: para quien prefiere dejarlo cerrado. */}
+          <a href={pay2Href}
+            className="block rounded-xl bg-white/95 px-5 py-3 text-center shadow-md transition-transform hover:brightness-105 active:scale-[0.98]">
+            <span className="block text-sm font-extrabold">
+              ¿Lo prefieres en solo 2 pagos? 120,50 € hoy y 120,50 € en un mes →
+            </span>
+            <span className="mt-0.5 block text-[12px] opacity-70">
+              Mismo programa y mismo total. Tras el segundo pago no se te cobra
+              nada más: se detiene solo.
+            </span>
           </a>
           {waHref && (
             <a href={waHref} target="_blank" rel="noopener"

@@ -157,6 +157,29 @@ def run_daily_maintenance(db: Session, today: date | None = None) -> dict:
     except Exception:  # noqa: BLE001
         pass
 
+    # BACKSTOP de la oferta en 2 PAGOS: si el webhook que cancela la
+    # suscripción tras el 2º cobro se perdió (o Stripe falló en ese momento),
+    # aquí se reintenta a diario — sin esto, al mes siguiente entraría un
+    # TERCER cargo de 120,50 € indebido. Best-effort: nunca rompe el job.
+    try:
+        from app.services.stripe_service import (
+            OFFER2_CHARGES, OFFER2_PERIOD, detener_suscripcion_2pagos,
+            pagos_2pagos_completados,
+        )
+
+        pendientes = db.scalars(
+            select(Client).where(Client.billing_period == OFFER2_PERIOD,
+                                 Client.stripe_subscription_id.is_not(None))
+        ).all()
+        for c in pendientes:
+            if pagos_2pagos_completados(db, c) >= OFFER2_CHARGES:
+                if detener_suscripcion_2pagos(db, c, c.stripe_subscription_id,
+                                              motivo="backstop_diario"):
+                    summary["oferta2_detenidas"] = summary.get("oferta2_detenidas", 0) + 1
+                db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()
+
     return summary
 
 

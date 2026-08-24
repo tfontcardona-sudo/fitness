@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { BadgeEuro, Check, Copy, Send } from "lucide-react";
 import { api } from "../lib/api";
-import { OFFER_FIRST_EUR, OFFER_MONTHLY_EUR, PACKAGES, PACKAGE_ORDER, billingLabel } from "../lib/packages";
+import { OFFER2_EACH_EUR, OFFER_FIRST_EUR, OFFER_MONTHLY_EUR, PACKAGES, PACKAGE_ORDER, billingLabel } from "../lib/packages";
 import { openWhatsApp, waPhone } from "../lib/whatsapp";
 import { useToast } from "./ui";
 import type { PackageTier, PlanPricesOut, PublicBillingPeriod } from "../types";
@@ -68,6 +68,22 @@ function offerText(): string {
   );
 }
 
+/** Mensaje de la OFERTA EN 2 PAGOS (120,50 € hoy + 120,50 € al mes y se
+ *  detiene solo: mismo total que 1 + 120 + 120). */
+function offer2Text(): string {
+  const link = `${window.location.origin}/api/pay/plan/full/oferta2`;
+  const cada = OFFER2_EACH_EUR.toLocaleString("es-ES", { minimumFractionDigits: 2 });
+  return (
+    `*Oferta DQR Full* - en solo 2 pagos de ${cada} €\n` +
+    "El primero hoy y el segundo dentro de un mes; después NO se te cobra nada más " +
+    "(el cobro se detiene solo).\n" +
+    "Incluye el plan completo: entrenamiento y nutrición 100 % a tu medida, " +
+    "WhatsApp conmigo a diario, app de seguimiento y videollamada de revisión.\n\n" +
+    `Empieza hoy: ${link}\n` +
+    "Pago seguro con Stripe."
+  );
+}
+
 function planText(prices: PlanPricesOut, tier: PackageTier, period: PublicBillingPeriod): string {
   const pr = prices.tiers?.[tier]?.[period];
   const dur = billingLabel(period).toLowerCase();
@@ -89,8 +105,8 @@ export function SalesKit() {
   const [open, setOpen] = useState(false);
   const [prices, setPrices] = useState<PlanPricesOut | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Qué hay en el cuadro: el catálogo, la oferta 1 € o un plan concreto.
-  const [sel, setSel] = useState<{ tier: PackageTier; period: PublicBillingPeriod } | "catalog" | "oferta" | null>(null);
+  // Qué hay en el cuadro: el catálogo, la oferta (1 € o 2 pagos) o un plan.
+  const [sel, setSel] = useState<{ tier: PackageTier; period: PublicBillingPeriod } | "catalog" | "oferta" | "oferta2" | null>(null);
   const [text, setText] = useState("");
   const [phone, setPhone] = useState("");
   const [copied, setCopied] = useState(false);
@@ -109,7 +125,7 @@ export function SalesKit() {
     if (open && prices === null) void load();
   }, [open, prices, load]);
 
-  function pick(next: { tier: PackageTier; period: PublicBillingPeriod } | "catalog" | "oferta") {
+  function pick(next: { tier: PackageTier; period: PublicBillingPeriod } | "catalog" | "oferta" | "oferta2") {
     if (!prices) return;
     // Re-pulsar el chip YA seleccionado no regenera el texto: machacaría en
     // silencio lo que el coach haya editado en el cuadro.
@@ -121,6 +137,7 @@ export function SalesKit() {
     setCopied(false);
     setText(next === "catalog" ? catalogText(prices)
       : next === "oferta" ? offerText()
+      : next === "oferta2" ? offer2Text()
       : planText(prices, next.tier, next.period));
   }
 
@@ -215,6 +232,16 @@ export function SalesKit() {
                 >
                   Oferta 1 €
                 </button>
+                <button
+                  onClick={() => pick("oferta2")}
+                  className="tap rounded-lg border px-3 py-1.5 text-xs font-bold"
+                  style={sel === "oferta2"
+                    ? { background: "#2E7D46", color: "white", borderColor: "#2E7D46" }
+                    : { borderColor: "#2E7D46", color: "#2E7D46" }}
+                  title="La misma oferta en 2 pagos de 120,50 € (hoy y al mes); se detiene sola tras el segundo (solo Full)"
+                >
+                  Oferta 2 pagos
+                </button>
                 <span className="text-xs" style={{ color: "var(--text-faint)" }}>o un plan:</span>
               </div>
               <div className="space-y-1.5">
@@ -248,7 +275,7 @@ export function SalesKit() {
                   <textarea
                     value={text}
                     onChange={(e) => { setText(e.target.value); setCopied(false); }}
-                    rows={sel === "catalog" ? 14 : sel === "oferta" ? 8 : 6}
+                    rows={sel === "catalog" ? 14 : sel === "oferta" || sel === "oferta2" ? 8 : 6}
                     className="w-full resize-y rounded-lg border bg-transparent p-2.5 font-mono text-xs outline-none"
                     style={{ borderColor: "var(--line)", color: "var(--text)" }}
                   />

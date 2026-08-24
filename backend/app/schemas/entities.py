@@ -51,7 +51,7 @@ PackageTier = Literal["nutri", "train", "full"]
 # tiene un precio de Stripe por duración, 9 combinaciones) + "oferta": la
 # promoción de captación del plan Full — 1 € el primer mes y después
 # 120 €/mes en SUSCRIPCIÓN de Stripe (renovación automática).
-BillingPeriod = Literal["1m", "3m", "6m", "oferta"]
+BillingPeriod = Literal["1m", "3m", "6m", "oferta", "oferta2"]
 PaymentStatus = Literal["pending", "paid"]
 ClientStatus = Literal[
     "onboarding", "active", "awaiting_feedback", "at_risk", "review_pending", "inactive"
