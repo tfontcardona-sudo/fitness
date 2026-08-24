@@ -243,12 +243,14 @@ def _get_or_404(db: Session, client_id: int) -> Client:
 def create_client(body: ClientCreate, db: Session = Depends(get_db)) -> ClientCreatedOut:
     """Alta mínima: nombre + email (+ teléfono). El resto lo aporta el cliente
     en el wizard de anamnesis vía el link público que devuelve esta llamada."""
-    # La periodicidad "oferta" (1 € → 120 €/mes en suscripción) es SOLO del plan
-    # Full: un alta train/nutri con oferta cobraría un plan que no existe.
+    # La oferta ("oferta": 1 € → 120 €/mes; "oferta2": 2 pagos de 120,50 €) es
+    # SOLO del plan Full: un alta train/nutri con oferta cobraría un plan que
+    # no existe.
     from app.services import packages as pkgs
-    if body.billing_period == "oferta" and pkgs.normalize(body.package_tier) != "full":
+    if (body.billing_period in ("oferta", "oferta2")
+            and pkgs.normalize(body.package_tier) != "full"):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            "La oferta (1 € el primer mes) es solo del plan Full")
+                            "La oferta es solo del plan Full")
 
     # Email normalizado a minúsculas: así el login (que compara en minúsculas) y
     # la unicidad usan la MISMA clave y no pueden crearse "A@x" y "a@x".
@@ -429,10 +431,10 @@ def update_client(client_id: int, body: ClientUpdate, db: Session = Depends(get_
         from app.services import packages as pkgs
         billing_final = changes.get("billing_period", client.billing_period)
         tier_final = changes.get("package_tier", client.package_tier)
-        if billing_final == "oferta" and pkgs.normalize(tier_final) != "full":
+        if billing_final in ("oferta", "oferta2") and pkgs.normalize(tier_final) != "full":
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
-                "La oferta (1 € el primer mes) es solo del plan Full: cambia "
+                "La oferta es solo del plan Full: cambia "
                 "antes la duración si quieres otro plan.")
 
     # Cambio de ESTADO manual (auditoría del ciclo: `inactive` era una trampa

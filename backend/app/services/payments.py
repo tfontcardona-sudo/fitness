@@ -87,6 +87,12 @@ def describe(tier: str | None, billing_period: str | None, *,
         if billing_reason == "subscription_create":
             return f"{plan} · oferta (primer mes)"
         return f"{plan} · oferta (mes)" if kind == "invoice" else f"{plan} · oferta"
+    if billing_period == "oferta2":
+        # La misma oferta en 2 pagos de 120,50 €: se dice cuál de los dos es.
+        if billing_reason == "subscription_create":
+            return f"{plan} · oferta (pago 1 de 2)"
+        return (f"{plan} · oferta (pago 2 de 2)" if kind == "invoice"
+                else f"{plan} · oferta 2 pagos")
     periodo = PERIOD_LABEL.get(billing_period or "", "")
     return f"{plan} · {periodo}" if periodo else plan
 
@@ -576,7 +582,10 @@ def sync_from_stripe(db: Session, *, days: int = SYNC_DEFAULT_DAYS) -> dict:
                 created={"gte": desde}, status="paid", limit=100).auto_paging_iter()):
             if not _invoice_es_de_la_oferta(inv):
                 continue  # factura de otro producto de la misma cuenta de Stripe
+            from app.services.stripe_service import periodo_de_factura
+
             cliente = _client_from_invoice(db, inv)
+            periodo = periodo_de_factura(inv, cliente)
             pagada_en = ((inv.get("status_transitions") or {}).get("paid_at")
                          or inv.get("created"))
             if record_payment(
@@ -587,8 +596,8 @@ def sync_from_stripe(db: Session, *, days: int = SYNC_DEFAULT_DAYS) -> dict:
                 client=cliente, customer_name=inv.get("customer_name"),
                 customer_email=inv.get("customer_email"),
                 tier=(cliente.package_tier if cliente else "full"),
-                billing_period="oferta",
-                description=describe("full", "oferta", kind="invoice",
+                billing_period=periodo,
+                description=describe("full", periodo, kind="invoice",
                                      billing_reason=inv.get("billing_reason")),
                 paid_at=ts_to_dt(pagada_en),
                 seen=_visto_por_antiguedad(ts_to_dt(pagada_en)),

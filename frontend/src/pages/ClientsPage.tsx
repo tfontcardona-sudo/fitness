@@ -8,7 +8,7 @@ import { EmptyState, PageLoader, StatusBadge, useToast } from "../components/ui"
 import { Avatar } from "./DashboardPage";
 import { GOAL_LABEL, goalReviewDue, relativeDays } from "../lib/format";
 import { onboardingMessage, openWhatsApp, portalAccessMessage, waPhone } from "../lib/whatsapp";
-import { BILLING_PERIODS, OFFER_MONTHLY_EUR, PACKAGES, PACKAGE_ORDER, pkg } from "../lib/packages";
+import { BILLING_PERIODS, OFFER2_EACH_EUR, OFFER_MONTHLY_EUR, PACKAGES, PACKAGE_ORDER, pkg } from "../lib/packages";
 import type { BillingPeriod, PackageTier } from "../types";
 
 /** CARPETAS de la cartera según LO QUE FALTA de cada cliente (agrupado como
@@ -538,9 +538,10 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
                         type="button"
                         onClick={() => {
                           setTier(t);
-                          // La oferta es SOLO del plan Full: al cambiar de plan
-                          // se vuelve a mensual (sin sorpresas en el cobro).
-                          if (t !== "full" && period === "oferta") setPeriod("1m");
+                          // La oferta (en sus dos formas) es SOLO del plan Full:
+                          // al cambiar de plan se vuelve a mensual (sin
+                          // sorpresas en el cobro).
+                          if (t !== "full" && (period === "oferta" || period === "oferta2")) setPeriod("1m");
                         }}
                         aria-pressed={sel}
                         className="flex w-full items-start gap-2.5 rounded-xl border p-3 text-left transition-colors"
@@ -643,6 +644,28 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
                   </span>
                   <span className="mt-0.5 block text-xs text-zinc-500">
                     Luego {OFFER_MONTHLY_EUR} €/mes · suscripción Stripe · solo Full
+                  </span>
+                </button>
+                {/* La MISMA oferta en 2 pagos: 120,50 € hoy y 120,50 € al mes.
+                    El cobro se detiene solo tras el segundo pago. */}
+                <button
+                  type="button"
+                  onClick={() => { setPeriod("oferta2"); setTier("full"); }}
+                  aria-pressed={period === "oferta2"}
+                  className="mt-2 w-full rounded-xl border px-3 py-2 text-left transition-colors"
+                  style={{
+                    borderColor: period === "oferta2" ? "var(--brand-accent)" : "var(--line-strong)",
+                    background: period === "oferta2"
+                      ? "color-mix(in srgb, var(--brand-accent) 10%, transparent)" : "transparent",
+                  }}
+                >
+                  <span className="block text-sm font-semibold"
+                    style={{ color: period === "oferta2" ? "var(--brand-accent)" : "var(--text)" }}>
+                    Oferta: 2 pagos de {OFFER2_EACH_EUR.toLocaleString("es-ES", { minimumFractionDigits: 2 })} €
+                  </span>
+                  <span className="mt-0.5 block text-xs text-zinc-500">
+                    Hoy y dentro de un mes; después el cobro se detiene solo (total
+                    241 €, lo mismo que 1 € + 120 € + 120 €). Solo plan Full.
                   </span>
                 </button>
               </div>

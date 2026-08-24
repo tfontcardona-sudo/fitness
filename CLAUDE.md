@@ -442,6 +442,39 @@ cd backend && python -m pytest tests/ -q
 
 ## 9. Trabajo pendiente / próximos pasos
 
+00000000000000. ✅ **OFERTA EN 2 PAGOS (agosto 2026).** La oferta Full tiene DOS
+   formas de pago en el mismo enlace (/oferta) y ambas son SOLO del plan Full:
+   - `billing_period="oferta"`: 1 € el primer mes → 120 €/mes en suscripción
+     ABIERTA (sin permanencia: se renueva cada mes hasta que se cancele — NO
+     se detiene al tercer mes; la página pública lo anuncia así).
+   - `billing_period="oferta2"` (NUEVA): 2 pagos de 120,50 € (total 241 €,
+     igual que 1+120+120). Suscripción mensual de 120,50 €
+     (`dqr_full_oferta2`, sin cupón) que el webhook CANCELA en Stripe al
+     cobrarse la 2ª factura (`detener_suscripcion_2pagos`; cuenta sobre el
+     LIBRO de pagos, no sobre billing_reason; si Stripe falla → push al coach
+     con el enlace directo a la suscripción). Backstop en el mantenimiento
+     diario (`jobs.py`) por si el webhook se pierde — sin él entraría un 3er
+     cargo indebido. La baja tras completar los 2 pagos NO marca pendiente
+     (`subscription_completed`; la ficha sigue "pagada" y el feed dice
+     "Oferta en 2 pagos completada"); una baja ANTES del 2º cobro sí es
+     impago. Renovación: `renewals.BILLING_DAYS["oferta2"]=60` (el programa
+     de 3 meses acaba ~60 días tras el 2º pago, con la suscripción ya
+     despegada de la ficha). `periodo_de_factura` distingue las dos formas
+     (lookup del precio → metadata → ficha); el feed del libro dice
+     "pago 1 de 2 / pago 2 de 2".
+   - Tocado: `stripe_service` (constantes OFFER2_*, tupla `OFFER_PERIODS`,
+     precio idempotente en `ensure_canonical_prices` + `_desalineado`),
+     `payments.describe`/sync, `renewals`, validadores (schemas
+     `BillingPeriod`, public_site, stripe_router — bot preview propio —,
+     clients.py alta+PATCH), `jobs.py`, y front: /oferta (CTA secundaria
+     "2 pagos"), kit de ventas (chip "Oferta 2 pagos" + mensaje WhatsApp),
+     alta de cliente y ficha (selector). Tests: batería oferta2 en
+     `tests/test_stripe.py` (checkout sin cupón, corte al 2º cobro, baja
+     temprana = impago, solo-Full, ventana de renovación, describe).
+   - ⚠️ Gotcha de tests: cada router tiene SU `Limiter` module-level — para
+     esquivar un 429 en un test tardío se apaga `public_site.limiter.enabled`
+     (monkeypatch), no `app.state.limiter`.
+
 0000000000000. ✅ **BIBLIOTECA DE PLANIFICACIONES (agosto 2026): copiar,
    modelos y a mano — todo a 0 créditos.** Petición del dueño: copiar la
    planificación de un cliente a otro, guardar modelos ("Planificación base")

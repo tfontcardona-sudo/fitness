@@ -67,8 +67,9 @@ class Client(Base):
     )
     # Duración contratada del plan (decide qué precio de Stripe se cobra):
     # 1m (mensual) | 3m (trimestral) | 6m (semestral) | oferta (1 € el primer
-    # mes → 120 €/mes en suscripción). Informativo, como el estado de pago; el
-    # enlace de pago del cliente usa SU duración. (mig. 0035: VARCHAR(12))
+    # mes → 120 €/mes en suscripción) | oferta2 (la misma oferta en 2 pagos de
+    # 120,50 €; la suscripción se cancela sola al 2º cobro). Informativo, como
+    # el estado de pago; el enlace de pago usa SU duración. (mig. 0035: VARCHAR(12))
     billing_period: Mapped[str] = mapped_column(
         String(12), default="1m", server_default=text("'1m'"), nullable=False
     )

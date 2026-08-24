@@ -6,11 +6,14 @@ Una sola verdad para "¿cuándo vence el ciclo pagado de este cliente?", usada p
 - el enlace estable de pago (routers/stripe_router.py): con la renovación al
   caer, el enlace vuelve a abrir un checkout aunque la ficha diga "paid".
 
-La oferta (suscripción de Stripe) queda fuera a propósito: se cobra sola.
+La oferta 1 € (suscripción de Stripe abierta) queda fuera a propósito: se cobra
+sola. La oferta EN 2 PAGOS sí entra cuando su suscripción ya terminó (el
+webhook la cancela al 2º cobro y limpia stripe_subscription_id): paid_at es el
+segundo pago y el programa de 3 meses acaba ~60 días después.
 """
 from datetime import date, timedelta
 
-BILLING_DAYS = {"1m": 30, "3m": 90, "6m": 180}
+BILLING_DAYS = {"1m": 30, "3m": 90, "6m": 180, "oferta2": 60}
 RENEWAL_WARN_DAYS = 5  # el dueño avisa al cliente 5 días antes
 
 
