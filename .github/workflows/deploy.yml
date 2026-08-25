@@ -65,6 +65,32 @@ jobs:
             docker ps -a --format '{{.Names}}' | grep -E '^[0-9a-f]{10,}_fitness-system-' | xargs -r docker rm -f || true
             docker compose up -d --build
             docker compose ps
+            # --- COMPROBACIÓN REAL DE VIDA: el deploy no es "verde" si la web
+            # no responde. El arranque de la API aplica migraciones y seeds;
+            # si eso falla, el contenedor muere en bucle DESPUÉS del "up" y
+            # este workflow quedaba verde con la web rota. Se prueba desde el
+            # propio VPS pasando por Caddy (el mismo camino que un cliente).
+            # Si la API no contesta, se vuelcan sus logs SIN las líneas de
+            # peticiones (llevan tokens de portal en la URL y este repo es
+            # público) y el despliegue FALLA a la vista.
+            sleep 12
+            docker compose ps
+            ok=""
+            for i in 1 2 3 4 5 6; do
+              if curl -sk --max-time 8 --resolve dqrassessories.com:443:127.0.0.1 \
+                   https://dqrassessories.com/api/public/plan-prices | grep -q '"tiers"'; then
+                ok=1; break
+              fi
+              sleep 5
+            done
+            if [ -z "$ok" ]; then
+              echo "❌ La API no responde tras el despliegue. Últimos logs (sin peticiones):"
+              docker compose logs api --tail 120 2>&1 | grep -v ' HTTP/1.1" ' || true
+              exit 1
+            fi
+            curl -sk --max-time 8 --resolve dqrassessories.com:443:127.0.0.1 \
+              https://dqrassessories.com/ -o /dev/null -w "frontend HTTP %{http_code}\n"
+            echo "✅ Web y API responden tras el despliegue."
             # Las imágenes colgantes de cada rebuild se acumulan y acaban
             # llenando el disco del VPS: fuera las que ya no usa nadie.
             docker image prune -f
