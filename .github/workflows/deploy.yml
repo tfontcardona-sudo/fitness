@@ -89,15 +89,16 @@ jobs:
             fi
             echo "✅ API viva (migraciones y arranque OK)."
             # 2) INFORMATIVO — el dominio público vía Caddy (el camino real de
-            #    un cliente). NO tumba el deploy: un DNS caído o un certificado
-            #    pendiente están FUERA del servidor, pero hay que VERLO aquí.
-            #    (25-08-2026: dqrassessories.com se quedó SIN registro A en
-            #    Namecheap — la web "no iba" con el servidor perfecto.)
-            echo "— Dominio que espera Caddy:"
-            docker compose exec -T web printenv DOMAIN || echo "(DOMAIN vacío: sirve en :80)"
-            if curl -sk --max-time 10 --resolve dqrassessories.com:443:127.0.0.1 \
-                 https://dqrassessories.com/api/public/plan-prices | grep -q '"tiers"'; then
-              echo "✅ HTTPS del dominio OK desde el VPS."
+            #    un cliente), leyendo el DOMAIN REAL del contenedor (la web
+            #    vive en app.dqrassessories.com; el dominio raíz no tiene DNS
+            #    — sondear el raíz a pelo dio un falso "web caída" el 25-08).
+            #    NO tumba el deploy: un DNS caído o un certificado pendiente
+            #    están FUERA del servidor, pero hay que VERLO aquí.
+            DOMINIO="$(docker compose exec -T web printenv DOMAIN | tr -d '\r\n' || true)"
+            echo "— Dominio que sirve Caddy: ${DOMINIO:-'(vacío: sirve en :80)'}"
+            if [ -n "$DOMINIO" ] && curl -sk --max-time 10 --resolve "$DOMINIO:443:127.0.0.1" \
+                 "https://$DOMINIO/api/public/plan-prices" | grep -q '"tiers"'; then
+              echo "✅ HTTPS de $DOMINIO OK desde el VPS (certificado y Caddy bien)."
             else
               echo "⚠️ El HTTPS del dominio NO responde desde el VPS (¿DNS/certificado?). Logs de Caddy:"
               docker compose logs web --tail 25 || true
