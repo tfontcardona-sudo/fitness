@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     # --- Seguridad ---
     jwt_secret: str = "dev-insecure-jwt-secret"
     portal_token_secret: str = "dev-insecure-portal-secret"
-    jwt_expire_minutes: int = 60 * 12  # jornada de trabajo del coach
+    jwt_expire_minutes: int = 60 * 72  # el coach vive con la pestaña abierta días: 12 h lo expulsaba al login en mitad de una acción cada mañana (single-tenant, riesgo asumible)
 
     # --- Admins (seed inicial single-tenant) ---
     admin_1_user: str = ""

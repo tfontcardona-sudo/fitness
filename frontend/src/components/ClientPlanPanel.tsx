@@ -500,6 +500,29 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
     }
   }
 
+  // ⚠️ HOOKS SIEMPRE ANTES de los return tempranos (cargando / sin plan /
+  // edición). Este efecto vivía más abajo y violaba las Rules of Hooks: al
+  // cargar el plan cambiaba el número de hooks entre renders y React tumbaba
+  // TODA la app EN BLANCO al abrir esta pestaña (auditoría 26-08).
+  // Ámbito de los recordatorios nacidos de los avisos del PLAN. Se ancla al
+  // CLIENTE, no a la versión: al regenerar cambia el id del plan y los
+  // recordatorios de la versión anterior no se retirarían nunca.
+  const ambitoPlan = `plan:${client.id}`;
+  // Los avisos VIVOS de este plan, ahora mismo. Todo recordatorio de este
+  // ámbito que ya no esté aquí es que se arregló: se borra solo.
+  const avisosVivos = (() => {
+    const c = plan?.review?.color;
+    const fs = (c === "rojo" || c === "ambar") ? (plan?.review?.findings ?? []) : [];
+    return agrupar(fs.map(toAviso))
+      .flatMap((g) => g.items)
+      .map((a) => clavePlan(a.destino, a.titulo));
+  })();
+  const avisosFirma = avisosVivos.join("|");
+  useEffect(() => {
+    // Solo con el plan cargado: sin plan no se puede afirmar que no haya avisos.
+    if (plan) syncScope(ambitoPlan, avisosFirma ? avisosFirma.split("|") : []);
+  }, [plan, ambitoPlan, avisosFirma]);
+
   if (loading) {
     return (
       <div className="card flex items-center justify-center gap-2 p-8 text-sm text-zinc-500">
@@ -733,10 +756,6 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
   // UN SOLO recuento de puntos a corregir, compartido por el chip de estado y
   // el bloque de avisos: son las líneas que el coach VE (avisos ya fusionados
   // entre revisores + avisos del guardarraíl ya traducidos y agrupados).
-  // Ámbito de los recordatorios nacidos de los avisos del PLAN. Se ancla al
-  // CLIENTE, no a la versión: al regenerar cambia el id del plan y los
-  // recordatorios de la versión anterior no se retirarían nunca.
-  const ambitoPlan = `plan:${client.id}`;
 
   const nRojoTotal = (() => {
     // Mismo filtro por color que el bloque: sin él salía una caja roja vacía
@@ -749,21 +768,6 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
       .filter((f) => f.startsWith("violation:") || f.startsWith("retenido")));
     return agrupar(bloq.map(toAviso)).reduce((n, g) => n + g.items.length, 0) + flags.length;
   })();
-
-  // Los avisos VIVOS de este plan, ahora mismo. Todo recordatorio de este
-  // ámbito que ya no esté aquí es que se arregló: se borra solo.
-  const avisosVivos = (() => {
-    const c = plan?.review?.color;
-    const fs = (c === "rojo" || c === "ambar") ? (plan?.review?.findings ?? []) : [];
-    return agrupar(fs.map(toAviso))
-      .flatMap((g) => g.items)
-      .map((a) => clavePlan(a.destino, a.titulo));
-  })();
-  const avisosFirma = avisosVivos.join("|");
-  useEffect(() => {
-    // Solo con el plan cargado: sin plan no se puede afirmar que no haya avisos.
-    if (plan) syncScope(ambitoPlan, avisosFirma ? avisosFirma.split("|") : []);
-  }, [plan, ambitoPlan, avisosFirma]);
 
   // Adaptación que quedó RETENIDA por los guardarraíles: es más nueva que el
   // plan que se está enseñando y sigue sin activar.

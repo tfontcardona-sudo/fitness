@@ -37,7 +37,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     api
       .me()
       .then(setUser)
-      .catch(() => clearToken())
+      .catch((e: any) => {
+        // Solo el 401 invalida la sesión (y ese ya lo limpia la capa de API).
+        // Un 502 mientras la API arranca tras un deploy, o la red caída, NO
+        // pueden destruir un token válido: expulsaban al coach al login sin
+        // motivo justo después de cada despliegue (auditoría 26-08).
+        if (e?.status !== 401) setUser(null);
+      })
       .finally(() => setLoading(false));
   }, []);
 

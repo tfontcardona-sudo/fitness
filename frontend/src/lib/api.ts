@@ -68,13 +68,27 @@ import type {
 const TOKEN_KEY = "fitness_coach_token";
 
 export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  // localStorage puede LANZAR (Safari "bloquear todas las cookies", webviews
+  // con storage capado): sin el try, el arranque entero moría en blanco.
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
 }
 export function setToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
+  try {
+    localStorage.setItem(TOKEN_KEY, token);
+  } catch {
+    // Sin storage la sesión será solo de esta pestaña; mejor que no entrar.
+  }
 }
 export function clearToken(): void {
-  localStorage.removeItem(TOKEN_KEY);
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // sin storage no hay nada que limpiar
+  }
 }
 
 export class ApiError extends Error {

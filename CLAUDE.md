@@ -442,6 +442,48 @@ cd backend && python -m pytest tests/ -q
 
 ## 9. Trabajo pendiente / próximos pasos
 
+000000000000000. ✅ **AUDITORÍA DE FUNCIONAMIENTO EN VIVO (26-08-2026)** — el
+   socio del dueño sufría "pantalla en blanco / no carga / no hace lo que
+   debería" en producción. Auditoría REAL: stack completo levantado en la
+   sesión (Postgres + uvicorn + dist servido con réplica de Caddy) y navegado
+   con Chromium headless (playwright-core) capturando consola, pageerrors y
+   pantallazos, más 5 auditores de código en paralelo. DOS CAUSAS RAÍZ
+   confirmadas y reproducidas:
+   - **Hook condicional en `ClientPlanPanel`** (entró con los recordatorios
+     anclados): un `useEffect` declarado DESPUÉS de los return tempranos
+     (cargando / sin plan / edición) → Rules of Hooks rotas → al abrir la
+     pestaña Planificación de un cliente CON plan React tumbaba TODA la app
+     en blanco, 100 % reproducible. Movido antes de los returns. **Guardián
+     permanente**: `frontend/eslint.config.mjs` + `npm run lint:hooks`
+     (react-hooks/rules-of-hooks como error) — DEBE estar en verde antes de
+     fusionar frontend.
+   - **Chunks purgados por cada deploy**: pestaña/PWA abierta de antes navega
+     a una ruta lazy no visitada → su chunk hasheado ya no existe → import()
+     falla → blanco (reproducido con navegador). Arreglos: listener de
+     `vite:preloadError` → recarga automática UNA vez (`lib/recarga.ts`, freno
+     15 s anti-bucle) + **ErrorBoundary global** (`components/ErrorBoundary.tsx`)
+     que ante cualquier crash enseña pantalla de marca con «Recargar la
+     aplicación» en vez del vacío.
+   - Defensa en profundidad (auditores): **Caddyfile** — /assets/* ya NO cae
+     al index.html (404 real; antes servía HTML con `immutable` de 1 AÑO bajo
+     la URL del chunk → caché envenenada, y un revert rompía la app incluso
+     con F5) y TODO el HTML va con no-cache (antes solo /, /index.html y
+     /sw.js: las rutas profundas quedaban en caché heurística); validado con
+     `caddy validate` (modo producción). **Dockerfile frontend** — `npm ci`
+     con package-lock (antes `npm install` de solo package.json: builds no
+     reproducibles y churn total de hashes al perder la caché de Docker).
+     **useAuth** — un 502/red caída durante un deploy ya no borra el token
+     (solo el 401 desloguea; antes cada deploy podía expulsar al coach al
+     login). **api.ts** — localStorage con try/catch (Safari "bloquear
+     cookies" lanzaba y tumbaba el arranque). **alerts** — aislamiento por
+     cliente en `list_alerts` (un cliente con datos rotos tumbaba campana y
+     colas de TODO el panel en silencio). **JWT** 12 h → 72 h (la pestaña
+     eterna del coach; single-tenant).
+   - Diagnósticos previos de la misma queja: el dominio raíz dqrassessories.com
+     NO tiene registro A (Namecheap) — la web vive SOLO en
+     app.dqrassessories.com; y el workflow de deploy ahora comprueba vida real
+     (API bloqueante + dominio informativo, ver deploy.yml).
+
 00000000000000. ✅ **OFERTA EN 2 PAGOS (agosto 2026).** La oferta Full tiene DOS
    formas de pago en el mismo enlace (/oferta) y ambas son SOLO del plan Full:
    - `billing_period="oferta"`: 1 € el primer mes → 120 €/mes en suscripción
