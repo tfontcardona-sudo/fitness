@@ -1,0 +1,99 @@
+/* Sistema de diseño DQR · campaña "Supervisado a diario" (agosto 2026).
+   Se renderiza con Chromium headless a 1080×1350 (post) / 1080×1920 (story).
+   Tipos: Anton (display), Archivo (texto/UI), Fraunces italic (acento humano).
+   Si se re-renderiza en otra máquina, el <link> a Google Fonts los trae. */
+@import url('https://fonts.googleapis.com/css2?family=Anton&family=Archivo:ital,wght@0,100..900;1,100..900&family=Fraunces:ital,opsz,wght@1,9..144,300..900&display=swap');
+
+:root{
+  --ink:#070B14;          /* negro azulado profundo */
+  --ink2:#0C1322;
+  --paper:#F4EFE8;        /* marfil premium (nunca blanco puro) */
+  --paper-dim:rgba(244,239,232,.72);
+  --paper-faint:rgba(244,239,232,.45);
+  --gold:#F6A560;
+  --brand:#E8833A;
+  --line:rgba(244,239,232,.16);
+  --green:#6FE39A;
+  --wa:#25D366;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--ink);color:var(--paper);font-family:Archivo,system-ui,sans-serif;
+     -webkit-font-smoothing:antialiased;overflow:hidden}
+.post{width:1080px;height:1350px;position:relative;overflow:hidden}
+.story{width:1080px;height:1920px;position:relative;overflow:hidden}
+
+/* Grano de película sutil (feTurbulence inline): el detalle que separa un
+   fondo plano de uno "de cámara". */
+.grain::after{content:"";position:absolute;inset:0;z-index:9;pointer-events:none;opacity:.05;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)'/%3E%3C/svg%3E")}
+
+/* Capas de foto */
+.bleed{position:absolute;inset:0;z-index:0}
+.bleed img{width:100%;height:100%;object-fit:cover;display:block}
+.veil{position:absolute;inset:0;z-index:1}
+
+/* Tipografía */
+.display{font-family:Anton,Archivo,sans-serif;text-transform:uppercase;line-height:.96;letter-spacing:.5px}
+.hand{font-family:Fraunces,Georgia,serif;font-style:italic;font-weight:550}
+.kicker{display:inline-flex;align-items:center;gap:18px;font-weight:700;font-size:27px;
+        letter-spacing:7px;text-transform:uppercase;color:var(--gold)}
+.kicker::before,.kicker.rule-r::after{content:"";width:64px;height:2px;background:var(--gold);opacity:.9}
+.gold{color:var(--gold)}
+.dim{color:var(--paper-dim)}
+.num{font-family:Anton;letter-spacing:1px}
+
+/* Contenido sobre la foto */
+.over{position:relative;z-index:2;height:100%;display:flex;flex-direction:column}
+
+/* Marco de tarjeta */
+.card{background:rgba(7,11,20,.62);border:1.5px solid var(--line);border-radius:34px;
+      backdrop-filter:blur(6px);box-shadow:0 30px 70px rgba(0,0,0,.5)}
+
+/* Fila de check premium */
+.tick{display:flex;gap:22px;align-items:flex-start;font-size:33px;font-weight:600;line-height:1.28}
+.tick .dot{flex:0 0 auto;width:46px;height:46px;border-radius:50%;margin-top:2px;
+  display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:900;color:#0B0E07;
+  background:linear-gradient(135deg,var(--gold),var(--brand))}
+
+/* Pie de marca */
+.foot{position:absolute;left:0;right:0;bottom:0;z-index:5;display:flex;align-items:center;
+      justify-content:space-between;padding:0 84px;height:150px;
+      border-top:1.5px solid var(--line);background:rgba(7,11,20,.55);backdrop-filter:blur(8px)}
+.foot .brand{display:flex;align-items:center;gap:22px;font-weight:800;font-size:30px;letter-spacing:5px}
+.foot .brand img{height:62px;width:62px;border-radius:16px}
+.foot .url{font-weight:700;font-size:28px;letter-spacing:1px;color:var(--gold)}
+
+/* CTA */
+.cta{display:inline-flex;align-items:center;justify-content:center;gap:16px;
+     background:linear-gradient(135deg,var(--gold),var(--brand));color:#160B02;
+     font-weight:800;border-radius:22px;box-shadow:0 24px 60px rgba(232,131,58,.35)}
+
+/* Teléfono (maqueta de la app real) */
+.phone{position:relative;background:#05080F;border-radius:64px;border:3px solid rgba(244,239,232,.22);
+       box-shadow:0 50px 120px rgba(0,0,0,.65), inset 0 0 0 10px #000;overflow:hidden}
+.phone .notch{position:absolute;top:22px;left:50%;transform:translateX(-50%);
+       width:200px;height:38px;border-radius:22px;background:#000;z-index:3}
+.phone .scr{position:absolute;inset:12px;border-radius:52px;overflow:hidden;
+       background:linear-gradient(180deg,#0C1322 0%,#070B14 100%);padding:86px 40px 40px}
+
+/* UI de la app dentro del teléfono */
+.appbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:26px}
+.appbar .t{font-weight:800;font-size:30px;letter-spacing:.5px}
+.chip{white-space:nowrap;display:inline-flex;align-items:center;gap:10px;background:rgba(246,165,96,.16);
+      border:1.5px solid rgba(246,165,96,.5);color:var(--gold);
+      font-weight:800;font-size:24px;border-radius:999px;padding:10px 22px}
+.row{display:flex;justify-content:space-between;align-items:center;background:rgba(244,239,232,.055);
+     border:1.5px solid rgba(244,239,232,.11);border-radius:22px;padding:22px 26px;margin-bottom:16px}
+.row .l{font-weight:700;font-size:26px}
+.row .r{font-weight:800;font-size:26px;color:var(--gold)}
+.done{color:var(--green);font-weight:900}
+
+/* Burbujas WhatsApp */
+.wa-wrap{display:flex;flex-direction:column;gap:18px}
+.bub{max-width:78%;padding:22px 28px;border-radius:26px;font-size:29px;line-height:1.32;font-weight:600;
+     box-shadow:0 8px 30px rgba(0,0,0,.35)}
+.bub .h{display:block;font-size:21px;font-weight:800;letter-spacing:1px;margin-bottom:6px;opacity:.8}
+.bub.in{align-self:flex-start;background:#1A2536;border:1.5px solid rgba(244,239,232,.1);
+        border-bottom-left-radius:8px;color:var(--paper)}
+.bub.out{align-self:flex-end;background:#134B31;border-bottom-right-radius:8px;color:#EAF7EE}
+.bub .t{display:block;text-align:right;font-size:19px;opacity:.55;margin-top:8px;font-weight:600}
