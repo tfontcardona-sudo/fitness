@@ -40,18 +40,29 @@
 		}
 	}
 
+	# ASSETS HASHEADOS aparte y SIN fallback al index: un chunk purgado por un
+	# deploy debe dar 404 de verdad. Antes caía al try_files de abajo y se
+	# servía index.html con 200 + immutable DE UN AÑO bajo la URL del chunk:
+	# caché del navegador envenenada, y tras un revert la app quedaba rota
+	# incluso recargando (auditoría 26-08). El matcher `file` pone el immutable
+	# SOLO si el fichero existe — un 404 no viaja con cabeceras de caché.
+	handle /assets/* {
+		root * /srv
+		@existe file
+		header @existe Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
 	handle {
 		root * /srv
 		try_files {path} /index.html
 
-		# Caché correcta tras cada deploy: el HTML y el service worker se
-		# REVALIDAN siempre (si no, un index.html cacheado apuntaba a assets
-		# hasheados ya purgados → pantalla rota hasta Ctrl+Shift+R); los assets
-		# con hash en el nombre son inmutables y se cachean un año.
-		@immutable path /assets/*
-		header @immutable Cache-Control "public, max-age=31536000, immutable"
-		@revalidate path / /index.html /sw.js
-		header @revalidate Cache-Control "no-cache"
+		# TODO el HTML se revalida SIEMPRE — también las rutas profundas
+		# (/clientes/5, /pagos, /p/…): antes solo /, /index.html y /sw.js
+		# llevaban no-cache y el resto quedaba a merced de la caché heurística
+		# del navegador, que podía servir un index rancio apuntando a assets
+		# purgados tras un deploy (auditoría 26-08).
+		header Cache-Control "no-cache"
 
 		file_server
 	}

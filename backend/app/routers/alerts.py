@@ -561,7 +561,16 @@ def list_alerts(db: Session = Depends(get_db)) -> dict:
     clients = db.scalars(select(Client).order_by(Client.full_name)).all()
     alerts: list[dict] = []
     for c in clients:
-        alerts.extend(client_alerts(db, c))
+        # Aislamiento por cliente: un solo cliente con datos rotos tumbaba el
+        # endpoint ENTERO (500) y el panel se quedaba sin campana ni colas,
+        # en silencio. Su fallo se registra y los demás siguen saliendo.
+        try:
+            alerts.extend(client_alerts(db, c))
+        except Exception:  # noqa: BLE001
+            import logging
+
+            logging.getLogger("app.alerts").exception(
+                "alertas del cliente %s ilegibles; se omite", c.id)
     alerts.sort(key=lambda a: (0 if a["severity"] == "alta" else 1, a["client_name"]))
     return {"alerts": alerts, "count": len(alerts),
             "high": sum(1 for a in alerts if a["severity"] == "alta")}
