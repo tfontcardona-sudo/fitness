@@ -247,8 +247,8 @@ def _maintain_client(db: Session, client: Client, today: date,
         days_onb = (today - client.created_at.date()).days
         if days_onb in (3, 7):
             try:
-                from app.services.storage import list_documents
-                has_doc = bool(list_documents(client.id))
+                from app.services.storage import anamnesis_documents
+                has_doc = bool(anamnesis_documents(client.id))
             except Exception:  # noqa: BLE001
                 has_doc = True  # ante la duda, no molestar
             # El formulario digital del portal también cuenta como enviada.

@@ -236,10 +236,13 @@ export const api = {
   listClientDocuments: (clientId: number) =>
     request<{ name: string; size_kb: number; uploaded_at: number }[]>(
       "GET", `/clients/${clientId}/documents`),
-  uploadClientDocument: (clientId: number, file: File) => {
+  uploadClientDocument: (clientId: number, file: File, kind: "anamnesis" | "adjunto" = "anamnesis") => {
     const fd = new FormData();
     fd.append("file", file);
-    return request<{ name: string; read_ok: boolean; read_error: string | null; portal_access: string | null }>(
+    // "adjunto" = documento ADICIONAL (analítica, informe): no sustituye la
+    // anamnesis ni se lee con IA — antes subir la analítica la destruía.
+    fd.append("kind", kind);
+    return request<{ name: string; read_ok: boolean | null; read_error: string | null; portal_access: string | null }>(
       "POST", `/clients/${clientId}/documents`, fd);
   },
   clientDocumentUrl: (clientId: number, name: string) =>
@@ -358,6 +361,8 @@ export const api = {
     return request<{
       changes: string[]; warnings: string[]; has_changes: boolean;
       base_rev: number; nutrition_json: any; training_json: any;
+      // solo viene con contenido si el Word trae cambios del educativo
+      education_json: any | null;
     }>("POST", `/plans/${planId}/import-word`, fd);
   },
   updatePlan: (planId: number, patch: { nutrition_json?: any; training_json?: any; education_json?: any; base_rev?: number }) =>
@@ -375,7 +380,7 @@ export const api = {
       kcal?: number; protein_g?: number; carbs_g?: number; fat_g?: number; warnings?: string[] }>(
       "GET", `/clients/${clientId}/macro-recommendation`),
   readAnamnesis: (clientId: number) =>
-    request<{ extracted: any; deep_analysis: string | null; message: string }>(
+    request<{ extracted: any; deep_analysis: string | null; contradictions: string[]; message: string }>(
       "POST", `/clients/${clientId}/read-anamnesis`),
 
   // --- peticiones de cambio del cliente (portal → coach) ---

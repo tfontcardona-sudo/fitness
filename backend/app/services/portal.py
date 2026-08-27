@@ -285,7 +285,11 @@ def _meals_for_today(plan: Plan, client: Client, chosen: dict | None) -> list[di
                      "prep_minutes": o.get("prep_minutes"), "tags": o.get("tags", [])}
                     for o in build_fallback_options(
                         mdef, allergies=client.food_allergies or [],
-                        dislikes=client.food_dislikes or [])
+                        dislikes=client.food_dislikes or [],
+                        # mismo criterio que el PDF y el Revisor 0: sin el
+                        # patrón dietético se colaban pavo/huevo a un vegano
+                        # justo en la toma que quedó vacía por seguridad
+                        diet_pattern=client.diet_pattern)
                 ]
         elif mode == "strict":
             # plato del día = el del weekday actual en el menú cerrado
@@ -340,6 +344,12 @@ def _resolve_session(db: Session, sess: dict, load_factor: float = 1.0) -> dict:
             # Indicaciones personalizadas del coach (capacidades/limitaciones):
             # el portal las destaca junto al ejercicio.
             "coach_notes": e.get("coach_notes"),
+            # Prescripción completa: la regla de progresión, la clave
+            # biomecánica y el tempo se escribían en el plan y el cliente del
+            # portal no los veía por ningún canal (auditoría 27-08).
+            "progression_rule": e.get("progression_rule"),
+            "biomech_cue": e.get("biomech_cue"),
+            "tempo": e.get("tempo"),
             "video_url": _playable(video),
         })
     return {

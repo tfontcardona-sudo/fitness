@@ -449,7 +449,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
   // cambios detectados y aplicarlos por el MISMO camino que el editor web.
   const [importPreview, setImportPreview] = useState<{
     changes: string[]; warnings: string[]; base_rev: number;
-    nutrition_json: any; training_json: any;
+    nutrition_json: any; training_json: any; education_json?: any | null;
   } | null>(null);
   const [importing, setImporting] = useState(false);
   const [applyingImport, setApplyingImport] = useState(false);
@@ -478,6 +478,9 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
       const patch: any = { base_rev: importPreview.base_rev };
       if (importPreview.nutrition_json) patch.nutrition_json = importPreview.nutrition_json;
       if (importPreview.training_json) patch.training_json = importPreview.training_json;
+      // El educativo (píldoras/técnica/FAQ) también va y vuelve en el Word:
+      // solo viaja si el importador detectó cambios en sus cajas.
+      if (importPreview.education_json) patch.education_json = importPreview.education_json;
       const r = await api.updatePlan(plan.id, patch);
       setPlan(normalize({
         ...plan,
@@ -1217,9 +1220,13 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
               </div>
             )}
             <p className="mb-2 text-[11px] text-zinc-500">
-              Se importan los datos estructurados (kcal y macros, horas y nombres de las
-              tomas, ejercicios con sus series/RIR/descansos/textos, progresión, suplementos,
-              deload y pasos). Las recetas del banco de comidas se editan en el editor web.
+              Se importa TODO el contenido editable del Word: kcal y macros, tomas
+              (hora/nombre/estrategia), recetas del banco («Opción N…») y menú cerrado
+              por días (con macros recalculados por el sistema), ejercicios con sus
+              series/RIR/descansos/textos, calentamientos, progresión, cardio,
+              suplementos, deload, margen de maniobra, «Por qué este enfoque» y el
+              educativo. Solo las EQUIVALENCIAS de comida/cena quedan fuera
+              (se regeneran o cambian con el swap).
             </p>
             <div className="flex justify-end gap-2">
               <button onClick={() => setImportPreview(null)} className="btn btn-ghost !py-1.5 text-xs">

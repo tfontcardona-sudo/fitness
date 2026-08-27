@@ -85,6 +85,13 @@ class Client(Base):
     start_weight_kg: Mapped[float | None] = mapped_column(Float)
     current_weight_kg: Mapped[float | None] = mapped_column(Float)
     body_fat_pct: Mapped[float | None] = mapped_column(Float)
+    # Perímetros INICIALES (cm) de la anamnesis (mig. 0041): la línea base para
+    # el delta de medidas del primer informe — antes el PDF los pedía y el
+    # sistema los tiraba (solo existían los de CIERRE de período).
+    initial_waist_cm: Mapped[float | None] = mapped_column(Float)
+    initial_hip_cm: Mapped[float | None] = mapped_column(Float)
+    initial_arm_cm: Mapped[float | None] = mapped_column(Float)
+    initial_thigh_cm: Mapped[float | None] = mapped_column(Float)
     goal_type: Mapped[str | None] = mapped_column(String(20))  # fat_loss|muscle_gain|recomp|maintenance|injury_recovery
     goal_weight_kg: Mapped[float | None] = mapped_column(Float)
     goal_deadline: Mapped[date | None] = mapped_column(Date)

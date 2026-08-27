@@ -56,10 +56,30 @@ export function restructureNutritionMeals(nut: any, keys: string[]): void {
     const k = mealKeyFromName(m?.name ?? "");
     if (k && !oldByKey.has(k)) oldByKey.set(k, m);
   }
-  const kept = selected.filter((k) => oldByKey.has(k));
-  const added = selected.filter((k) => !oldByKey.has(k));
-  const wSel = selected.reduce((s, k) => s + (MEAL_WEIGHTS[k] ?? 0.1), 0);
-  const shareAdded = added.reduce((s, k) => s + (MEAL_WEIGHTS[k] ?? 0.1), 0) / wSel;
+  // Tomas SIN clave canónica ("Post-entreno" del meal_schedule, o una segunda
+  // "Comida 2" que colisiona): antes se BORRABAN en silencio con su recetario
+  // al reestructurar (auditoría 27-08). Ahora se CONSERVAN tal cual.
+  const asignados = new Set(oldByKey.values());
+  const extras = oldMeals.filter((m) => !asignados.has(m));
+
+  const canonical = new Map(CANONICAL_MEALS.map((m) => [m.key, m]));
+  const entradas = [
+    ...selected.map((k) => ({ key: k as string | null, prev: oldByKey.get(k) ?? null,
+                              canon: canonical.get(k)! as MealOption | null })),
+    ...extras.map((m) => ({ key: null as string | null, prev: m, canon: null as MealOption | null })),
+  ];
+  // Orden natural del día por hora (las extras se intercalan donde les toca).
+  const minutos = (t: string | undefined) => {
+    const m = /^(\d{1,2}):(\d{2})/.exec((t ?? "").trim());
+    return m ? +m[1] * 60 + +m[2] : 9999;
+  };
+  entradas.sort((a, b) =>
+    minutos(a.prev?.time ?? a.canon?.time) - minutos(b.prev?.time ?? b.canon?.time));
+
+  const peso = (e: (typeof entradas)[number]) =>
+    e.key ? (MEAL_WEIGHTS[e.key] ?? 0.1) : 0.1;
+  const wSel = entradas.reduce((s, e) => s + peso(e), 0);
+  const shareAdded = entradas.filter((e) => !e.prev).reduce((s, e) => s + peso(e), 0) / wSel;
 
   // Totales del cliente (los que "le pertocan"): macros del plan; las kcal de
   // cada comida se derivan al final (4/4/9) para que todo cuadre solo.
@@ -69,32 +89,28 @@ export function restructureNutritionMeals(nut: any, keys: string[]): void {
     fat_g: nut.macros?.fat_g ?? 0,
   };
 
-  // Nuevo listado en el orden natural del día, slots 1..N. Las que se quedan
-  // conservan su nombre y hora reales; las nuevas entran con los canónicos.
-  const canonical = new Map(CANONICAL_MEALS.map((m) => [m.key, m]));
-  const meals = selected.map((k, i) => {
-    const prev = oldByKey.get(k);
-    const c = canonical.get(k)!;
-    return {
-      slot: i + 1,
-      name: prev?.name ?? c.name,
-      time: prev?.time ?? c.time,
-      target: { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 } as Record<string, number>,
-    };
-  });
+  // Nuevo listado, slots 1..N. Las que se quedan (canónicas Y extras) conservan
+  // su nombre y hora reales; las nuevas entran con los canónicos.
+  const meals = entradas.map((e, i) => ({
+    slot: i + 1,
+    name: e.prev?.name ?? e.canon?.name ?? `Comida ${i + 1}`,
+    time: e.prev?.time ?? e.canon?.time ?? "",
+    ...(e.prev?.strategy ? { strategy: e.prev.strategy } : {}),
+    target: { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 } as Record<string, number>,
+  }));
 
   for (const axis of ["protein_g", "carbs_g", "fat_g"] as const) {
     const T = totals[axis];
-    const poolKept = kept.reduce((s, k) => s + (oldByKey.get(k)?.target?.[axis] ?? 0), 0);
-    for (let i = 0; i < selected.length; i++) {
-      const k = selected[i];
+    const poolKept = entradas.reduce((s, e) => s + (e.prev?.target?.[axis] ?? 0), 0);
+    for (let i = 0; i < entradas.length; i++) {
+      const e = entradas[i];
       let v: number;
-      if (oldByKey.has(k) && poolKept > 0) {
+      if (e.prev && poolKept > 0) {
         // proporcional a lo que ya tenía, dentro del hueco que no ocupan las nuevas
-        v = ((oldByKey.get(k).target?.[axis] ?? 0) * T * (1 - shareAdded)) / poolKept;
+        v = ((e.prev.target?.[axis] ?? 0) * T * (1 - shareAdded)) / poolKept;
       } else {
         // comida nueva (o plan sin reparto previo): su peso típico sobre el total
-        v = (T * (MEAL_WEIGHTS[k] ?? 0.1)) / wSel;
+        v = (T * peso(e)) / wSel;
       }
       meals[i].target[axis] = Math.max(0, Math.round(v));
     }
@@ -110,31 +126,24 @@ export function restructureNutritionMeals(nut: any, keys: string[]): void {
   }
   nut.meals = meals;
 
-  // Banco de comidas: renumera los slots de las tomas que SIGUEN y descarta los
-  // de las quitadas. Una toma añadida queda sin bloque (portal y PDF lo toleran).
-  const newSlotByKey = new Map(selected.map((k, i) => [k, i + 1]));
-  const oldSlotToKey = new Map<number, string>();
-  for (const m of oldMeals) {
-    const k = mealKeyFromName(m?.name ?? "");
-    if (k && !([...oldSlotToKey.values()].includes(k))) oldSlotToKey.set(m.slot, k);
-  }
+  // Banco de comidas: renumera los slots de TODAS las tomas que siguen (también
+  // las extras, que conservan su recetario) y descarta solo los de las quitadas.
+  // Una toma añadida queda sin bloque (portal y PDF lo toleran).
+  const nuevoSlotPorViejo = new Map<number, number>();
+  entradas.forEach((e, i) => {
+    if (e.prev?.slot != null) nuevoSlotPorViejo.set(e.prev.slot, i + 1);
+  });
   const bank = nut.meal_bank;
   if (bank?.mode === "flexible_7" && Array.isArray(bank.slots)) {
     bank.slots = bank.slots
-      .filter((s: any) => {
-        const k = oldSlotToKey.get(s.slot);
-        return k != null && newSlotByKey.has(k);
-      })
-      .map((s: any) => ({ ...s, slot: newSlotByKey.get(oldSlotToKey.get(s.slot)!)! }))
+      .filter((s: any) => nuevoSlotPorViejo.has(s.slot))
+      .map((s: any) => ({ ...s, slot: nuevoSlotPorViejo.get(s.slot)! }))
       .sort((a: any, b: any) => a.slot - b.slot);
   } else if (bank?.mode === "strict" && Array.isArray(bank.days)) {
     for (const d of bank.days) {
       d.meals = (d.meals ?? [])
-        .filter((m: any) => {
-          const k = oldSlotToKey.get(m.slot);
-          return k != null && newSlotByKey.has(k);
-        })
-        .map((m: any) => ({ ...m, slot: newSlotByKey.get(oldSlotToKey.get(m.slot)!)! }))
+        .filter((m: any) => nuevoSlotPorViejo.has(m.slot))
+        .map((m: any) => ({ ...m, slot: nuevoSlotPorViejo.get(m.slot)! }))
         .sort((a: any, b: any) => a.slot - b.slot);
     }
   }

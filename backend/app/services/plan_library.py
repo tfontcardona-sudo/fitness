@@ -122,6 +122,19 @@ def _avisos_de_seguridad(nutrition: dict | None, training: dict | None,
 
     avisos: list[str] = []
     if nutrition:
+        # Choque de MODO de dieta: el portal y el PDF deciden el formato por el
+        # banco copiado (bank["mode"]), así que un cliente de menú cerrado que
+        # recibe un plan flexible (o al revés) se queda con el formato del
+        # ORIGEN para siempre — y nadie avisaba (auditoría 27-08).
+        modo_banco = ((nutrition.get("meal_bank") or {}).get("mode") or "").strip()
+        modo_cliente = (client.diet_mode or "").strip()
+        if modo_banco and modo_cliente and modo_banco != modo_cliente:
+            etiquetas = {"strict": "menú cerrado", "flexible_7": "banco flexible"}
+            avisos.append(
+                f"⚠ El plan copiado es de {etiquetas.get(modo_banco, modo_banco)} "
+                f"y este cliente tiene contratado {etiquetas.get(modo_cliente, modo_cliente)}: "
+                "el portal y el PDF mostrarán el formato copiado. Si no es lo "
+                "que quieres, genera el plan en su modo.")
         forbidden_pat = (_DIET_PATTERN_FORBIDDEN.get(
             _norm_food(client.diet_pattern).replace(" ", "_"))
             if getattr(client, "diet_pattern", None) else None)

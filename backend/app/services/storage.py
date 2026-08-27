@@ -124,7 +124,7 @@ def list_documents(client_id: int) -> list[dict]:
     folder = storage_root() / "clients" / str(client_id) / "documents"
     if not folder.exists():
         return []
-    items = []
+    items: list[dict] = []
     for f in folder.iterdir():
         # El consentimiento RGPD del formulario digital también vive aquí como
         # PDF: NO es la anamnesis y no puede colarse como tal (apagaría el
@@ -140,6 +140,16 @@ def list_documents(client_id: int) -> list[dict]:
                 "rel_path": str(f.relative_to(storage_root())),
             })
     return sorted(items, key=lambda x: x["uploaded_at"], reverse=True)
+
+
+def anamnesis_documents(client_id: int) -> list[dict]:
+    """Solo la ANAMNESIS del cliente: excluye los adjuntos (`adjunto_…` —
+    analítica, informes médicos). Es lo que deben mirar los flujos de
+    «anamnesis recibida» y la lectura con IA; sin este filtro, subir una
+    analítica contaba como anamnesis y la IA leía el informe de sangre como
+    si fuera el cuestionario (auditoría 27-08)."""
+    return [d for d in list_documents(client_id)
+            if not d["name"].startswith("adjunto_")]
 
 
 def save_brand_logo(raw: bytes, filename_hint: str) -> str:

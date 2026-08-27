@@ -8,7 +8,8 @@ import statistics
 import zipfile
 from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
+from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query,
+                     Response, UploadFile, status)
 from pydantic import BaseModel
 from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
@@ -110,6 +111,15 @@ def _quincenal_entry(db: Session, period: Period, prev: Period | None) -> dict:
     ))
     first_w = next((lg.weight_kg for lg in logs if lg.weight_kg is not None), None)
     before_w = first_w if first_w is not None else (prev.closing_weight_kg if prev else None)
+    # Primera revisión sin período previo: el "antes" de los perímetros son los
+    # INICIALES de la anamnesis (mig. 0041) — antes ese delta no existía.
+    cli = db.get(Client, period.client_id) if prev is None else None
+
+    def _antes(attr: str):
+        if prev is not None:
+            return getattr(prev, attr)
+        return getattr(cli, attr.replace("closing_", "initial_"), None) if cli else None
+
     return {
         "period_index": period.period_index,
         "starts_on": period.starts_on.isoformat(),
@@ -119,11 +129,12 @@ def _quincenal_entry(db: Session, period: Period, prev: Period | None) -> dict:
         # Peso día 1 → día 15
         "weight_before": before_w,
         "weight_after": period.closing_weight_kg,
-        # Perímetros (cinta): período anterior → este
-        "waist_before": prev.closing_waist_cm if prev else None, "waist_after": period.closing_waist_cm,
-        "hip_before": prev.closing_hip_cm if prev else None, "hip_after": period.closing_hip_cm,
-        "arm_before": prev.closing_arm_cm if prev else None, "arm_after": period.closing_arm_cm,
-        "thigh_before": prev.closing_thigh_cm if prev else None, "thigh_after": period.closing_thigh_cm,
+        # Perímetros (cinta): período anterior (o los INICIALES de la anamnesis
+        # en la primera revisión) → este
+        "waist_before": _antes("closing_waist_cm"), "waist_after": period.closing_waist_cm,
+        "hip_before": _antes("closing_hip_cm"), "hip_after": period.closing_hip_cm,
+        "arm_before": _antes("closing_arm_cm"), "arm_after": period.closing_arm_cm,
+        "thigh_before": _antes("closing_thigh_cm"), "thigh_after": period.closing_thigh_cm,
         # Sensaciones + valoración /10
         "feelings": period.closing_feelings_json,
         "feelings_score_10": _feelings_score_10(period.closing_feelings_json),
@@ -647,9 +658,14 @@ def ingest_anamnesis_pdf(db: Session, client_id: int, content: bytes,
     # NO es una anamnesis: barrerlo aquí destruía la prueba legal del
     # consentimiento de forma irreversible (el 409 del formulario impide
     # regenerarlo) e indetectable (list_documents lo excluye a propósito).
+    # Los ADJUNTOS (analítica, informes médicos — prefijo "adjunto_") tampoco
+    # son anamnesis: el propio PDF pide adjuntar la analítica y subirla por la
+    # única vía que existía BORRABA la anamnesis y leía el informe de sangre
+    # como si fuera la ficha (auditoría 27-08). Ver upload_client_document(kind).
     previous = [p for p in folder.iterdir()
                 if p.is_file() and p.suffix.lower() == ".pdf"
-                and p.name != "consentimiento_rgpd.pdf"]
+                and p.name != "consentimiento_rgpd.pdf"
+                and not p.name.startswith("adjunto_")]
     rel = save_document(client_id, content, filename or "anamnesis.pdf")
     # Una sola anamnesis por cliente: fuera las anteriores (la nueva ya está).
     for old in previous:
@@ -719,12 +735,31 @@ def ingest_anamnesis_pdf(db: Session, client_id: int, content: bytes,
 def upload_client_document(
     client_id: int,
     file: UploadFile = File(..., description="PDF de la anamnesis rellenada"),
+    kind: str = Form("anamnesis"),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Sube un documento (PDF) y lo asocia al cliente."""
+    """Sube un documento (PDF) y lo asocia al cliente.
+
+    `kind="anamnesis"` (por defecto): reemplaza la anamnesis y la lee con IA.
+    `kind="adjunto"`: documento ADICIONAL (analítica, informe médico…) — se
+    guarda con prefijo `adjunto_`, NO borra la anamnesis y NO se lee con IA.
+    Antes no existía hueco para un segundo documento y subir la analítica que
+    el propio PDF pide destruía la anamnesis (auditoría 27-08).
+    """
     _client_or_404_docs(db, client_id)
+    contenido = file.file.read(25 * 1024 * 1024 + 1)
     try:
-        return ingest_anamnesis_pdf(db, client_id, file.file.read(25 * 1024 * 1024 + 1),
+        if kind == "adjunto":
+            nombre = file.filename or "documento.pdf"
+            if not nombre.startswith("adjunto_"):
+                nombre = f"adjunto_{nombre}"
+            rel = save_document(client_id, contenido, nombre)
+            log_event(db, "client", client_id, "document_uploaded",
+                      {"path": rel, "by": "coach", "kind": "adjunto"})
+            db.commit()
+            return {"name": rel.rsplit("/", 1)[-1], "rel_path": rel,
+                    "read_ok": None, "read_error": None, "portal_access": None}
+        return ingest_anamnesis_pdf(db, client_id, contenido,
                                     file.filename or "anamnesis.pdf", by="coach")
     except DocumentValidationError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
@@ -1342,6 +1377,20 @@ def generate_client_plan(
             deep_analysis = saved.get("deep_analysis") or saved.get("injuries_notes")
     except Exception:
         deep_analysis = None
+    if not deep_analysis:
+        # Vía FORMULARIO DIGITAL (sin sidecar de lectura IA): retrato
+        # determinista del cliente (§5, por fin cableado) — el prompt recibe la
+        # misma síntesis priorizada que tendría un cliente llegado por PDF.
+        try:
+            from app.services.anamnesis_extraction import client_portrait
+
+            perfil = {k: getattr(client, k, None) for k in (
+                "sex", "goal_type", "level", "training_days", "session_max_min",
+                "lifestyle_notes", "injuries_notes", "medical_notes",
+                "medication_notes", "food_allergies", "food_dislikes")}
+            deep_analysis = client_portrait(perfil) or None
+        except Exception:
+            deep_analysis = None
 
     # Ajustes del ÚLTIMO feedback quincenal → el nuevo plan queda modificado en
     # consecuencia (dieta y entreno) según lo que el cliente registró.
@@ -1422,6 +1471,8 @@ def generate_client_plan(
         clinical_notes=clinical_notes,
         sport_history=client.sport_history,
         goal_weight_kg=client.goal_weight_kg,
+        strict_free_meal=bool(client.strict_free_meal_enabled),
+        goal_deadline=client.goal_deadline.isoformat() if client.goal_deadline else None,
     )
     # Paquete Start = solo nutrición: la IA no genera entrenamiento (ni el
     # educativo de entreno). Full/Pro generan el plan completo.
@@ -1689,6 +1740,33 @@ def scaffold_client_plan(
             )
             nutrition["meal_bank"] = bank
             flags.extend(avisos)
+            # Comida libre semanal pedida en la anamnesis: pauta determinista
+            # (sin números — el criterio calórico ya lo fija el sistema).
+            if bank is not None and client.strict_free_meal_enabled:
+                bank["free_meal_guidelines"] = (
+                    "Tienes UNA comida libre a la semana: elígela con cabeza "
+                    "(mejor un día social), disfrútala sin convertirla en un día "
+                    "libre entero y retoma el plan en la siguiente comida sin "
+                    "compensar ni saltarte nada."
+                )
+            if bank is None:
+                # NUNCA un plan sin banco: con meal_bank=None el portal servía
+                # las tomas sin ningún plato y el PDF mutaba EN SILENCIO a
+                # formato flexible (auditoría 27-08). Si el menú cerrado no se
+                # puede montar con seguridad, se entrega banco flexible con un
+                # aviso EXPLÍCITO y el coach decide (editor o Word).
+                from app.services.meal_fallback import ensure_bank_slots
+
+                ensure_bank_slots(
+                    nutrition, allergies=client.food_allergies or [],
+                    dislikes=client.food_dislikes or [],
+                    diet_pattern=client.diet_pattern,
+                )
+                if nutrition.get("meal_bank"):
+                    flags.append(
+                        "el menú cerrado no se pudo montar con seguridad: este "
+                        "borrador lleva banco FLEXIBLE de momento — ajústalo y "
+                        "decide si mantener el modo estricto")
         else:
             from app.services.meal_fallback import _slot_is_empty, ensure_bank_slots
 
@@ -1701,7 +1779,7 @@ def scaffold_client_plan(
                       if _slot_is_empty(bank_slots.get(m.get("slot")))]
             if vacias:
                 flags.append("sin opciones seguras de banco en: " + ", ".join(vacias)
-                             + " — complétalas en el editor")
+                             + " — añádelas descargando el Word, editándolo y subiéndolo")
         # Mismos sidecars que la generación: snapshot de entradas (alertas de
         # ficha cambiada) y TDEE del motor.
         nutrition["gen_inputs"] = {
@@ -1827,7 +1905,11 @@ def _do_read_anamnesis(client_id: int, db: Session) -> dict:
     from app.services.ai.extraction import extract_anamnesis_from_pdf
 
     client = _client_or_404_docs(db, client_id)
-    docs = list_documents(client_id)
+    # Solo la ANAMNESIS: un adjunto (analítica) subido después no puede
+    # convertirse en "el PDF más reciente" que la IA lee como cuestionario.
+    from app.services.storage import anamnesis_documents
+
+    docs = anamnesis_documents(client_id)
     if not docs:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -1844,10 +1926,12 @@ def _do_read_anamnesis(client_id: int, db: Session) -> dict:
 
     data = extracted.model_dump()
     for f in [
-        "sex", "birth_date", "height_cm", "start_weight_kg", "body_fat_pct",
-        "goal_type", "goal_weight_kg", "level", "training_days", "daily_activity_level",
-        "session_max_min",
-        "training_place", "equipment", "diet_mode", "meals_per_day", "food_likes",
+        "sex", "birth_date", "phone", "height_cm", "start_weight_kg", "body_fat_pct",
+        "initial_waist_cm", "initial_hip_cm", "initial_arm_cm", "initial_thigh_cm",
+        "goal_type", "goal_weight_kg", "goal_deadline", "level", "training_days",
+        "daily_activity_level", "session_max_min",
+        "training_place", "equipment", "diet_mode", "diet_pattern", "meals_per_day",
+        "food_likes",
         "food_dislikes", "food_allergies", "injuries_notes", "medical_notes",
         "medication_notes", "current_supplements", "sport_history", "lifestyle_notes",
     ]:
@@ -1862,13 +1946,29 @@ def _do_read_anamnesis(client_id: int, db: Session) -> dict:
     if data.get("meal_schedule"):
         client.meal_schedule = data["meal_schedule"]
     db.flush()
-    log_event(db, "client", client_id, "anamnesis_read_ai", {"source": docs[0]["name"]})
+    # Contradicciones deterministas (§5, por fin cableado): plazo imposible,
+    # objetivo que choca con su texto, dieta declarada vs alimentos que dice
+    # comer. NO se resuelven solas: se enseñan al coach junto a la extracción.
+    contradicciones: list[str] = []
+    try:
+        from app.services.anamnesis_extraction import detect_contradictions
+
+        perfil = {k: getattr(client, k, None) for k in (
+            "goal_type", "diet_pattern", "start_weight_kg", "goal_weight_kg",
+            "goal_deadline", "lifestyle_notes", "sport_history", "food_likes")}
+        contradicciones = [c.detail for c in detect_contradictions(perfil)]
+    except Exception:
+        contradicciones = []
+    data["contradictions"] = contradicciones
+    log_event(db, "client", client_id, "anamnesis_read_ai",
+              {"source": docs[0]["name"], "contradictions": contradicciones})
     db.commit()
     try:
         _anamnesis_analysis_path(client_id).write_text(
             _json.dumps({
                 "deep_analysis": data.get("deep_analysis"),
                 "injuries_notes": data.get("injuries_notes"),
+                "contradictions": contradicciones,
             }, ensure_ascii=False),
             encoding="utf-8",
         )
@@ -1884,6 +1984,7 @@ def read_anamnesis_with_ai(client_id: int, db: Session = Depends(get_db)) -> dic
     return {
         "extracted": data,
         "deep_analysis": data.get("deep_analysis"),
+        "contradictions": data.get("contradictions") or [],
         "message": "Anamnesis leída. Revisa los datos antes de generar el plan.",
     }
 

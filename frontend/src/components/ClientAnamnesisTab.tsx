@@ -21,6 +21,9 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
   const [busy, setBusy] = useState(false);
   const [reading, setReading] = useState(false);
   const [analysis, setAnalysis] = useState<string | null>(null);
+  // Contradicciones deterministas de la lectura (§5): plazo imposible, dieta
+  // vs alimentos… — el coach las ve junto al análisis, nunca en silencio.
+  const [contradicciones, setContradicciones] = useState<string[]>([]);
   const [pdfName, setPdfName] = useState<string | null>(null);
   // Por defecto la ficha se VE (ordenada por colores, sin campos editables);
   // el formulario solo aparece si el coach pulsa "Editar datos".
@@ -86,6 +89,7 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
     try {
       const res = await api.readAnamnesis(client.id);
       setAnalysis(res.deep_analysis);
+      setContradicciones(res.contradictions ?? []);
       setDraft({});
       toast.push("Anamnesis leída. Revisa los datos antes de generar.");
       onSaved();
@@ -143,6 +147,18 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
         </div>
       </div>
 
+      {contradicciones.length > 0 && (
+        <div className="card p-4" style={{ borderColor: "#9A6B15" }}>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide" style={{ color: "#9A6B15" }}>
+            ⚠ Posibles contradicciones de la anamnesis
+          </p>
+          <ul className="list-disc space-y-0.5 pl-4 text-sm text-zinc-300">
+            {contradicciones.map((c, i) => <li key={i}>{c}</li>)}
+          </ul>
+          <p className="mt-1 text-xs text-zinc-500">Revísalas con el cliente antes de generar el plan.</p>
+        </div>
+      )}
+
       {analysis && (
         <div className="card p-4">
           <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">Análisis de la IA</p>
@@ -175,6 +191,12 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
         <Num label="Peso inicial (kg)" value={current("start_weight_kg") as number} onChange={(v) => set("start_weight_kg", v as any)} />
         <Num label="% graso (opcional)" value={current("body_fat_pct") as number} onChange={(v) => set("body_fat_pct", v as any)} />
         <Num label="Peso objetivo (kg)" value={current("goal_weight_kg") as number} onChange={(v) => set("goal_weight_kg", v as any)} />
+        {/* Perímetros iniciales (mig. 0041): la línea base del delta de medidas
+            del primer informe — el PDF los pide desde siempre. */}
+        <Num label="Cintura inicial (cm)" value={current("initial_waist_cm") as number} onChange={(v) => set("initial_waist_cm", v as any)} />
+        <Num label="Cadera inicial (cm)" value={current("initial_hip_cm") as number} onChange={(v) => set("initial_hip_cm", v as any)} />
+        <Num label="Brazo relajado inicial (cm)" value={current("initial_arm_cm") as number} onChange={(v) => set("initial_arm_cm", v as any)} />
+        <Num label="Muslo inicial (cm)" value={current("initial_thigh_cm") as number} onChange={(v) => set("initial_thigh_cm", v as any)} />
       </Section>
 
       <Section title="Objetivo y nivel" ancla="anamnesis.campo.goal_type">
@@ -182,6 +204,10 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
           options={[["", "—"], ["fat_loss", "Pérdida de grasa"], ["muscle_gain", "Ganancia muscular"], ["recomp", "Recomposición"], ["maintenance", "Mantenimiento"], ["injury_recovery", "Recuperación de lesión"]]} />
         <Select label="Nivel" value={(current("level") as string) ?? ""} onChange={(v) => set("level", (v || null) as any)}
           options={[["", "—"], ["beginner", "Principiante"], ["intermediate", "Intermedio"], ["advanced", "Avanzado"]]} />
+        {/* Fecha objetivo declarada por el cliente: da contexto de plazo al
+            generador y a las contradicciones (plazo imposible). */}
+        <Field label="Fecha objetivo (si la declaró)" type="date" value={(current("goal_deadline") as string) ?? ""}
+          onChange={(v) => set("goal_deadline", (v || null) as any)} />
       </Section>
 
       <Section title="Entrenamiento">
@@ -212,6 +238,12 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
         <Select label="Patrón dietético (ético/religioso)"
           value={(current("diet_pattern") as string) ?? ""} onChange={(v) => set("diet_pattern", (v || null) as any)}
           options={[["", "Ninguno"], ...Object.entries(DIET_PATTERN_LABEL)]} />
+        {/* El cliente lo pide en su anamnesis y gobierna la pauta de comida
+            libre del menú cerrado — era una columna escrita y jamás leída. */}
+        <Select label="Comida libre semanal (menú cerrado)"
+          value={current("strict_free_meal_enabled") ? "si" : "no"}
+          onChange={(v) => set("strict_free_meal_enabled", (v === "si") as any)}
+          options={[["no", "No"], ["si", "Sí — la pidió en su anamnesis"]]} />
         <CSV label="Alimentos que le gustan" value={current("food_likes") as string[]} onChange={(v) => set("food_likes", v as any)} />
         <CSV label="Alimentos que evita" value={current("food_dislikes") as string[]} onChange={(v) => set("food_dislikes", v as any)} />
         <CSV label="Alergias" value={current("food_allergies") as string[]} onChange={(v) => set("food_allergies", v as any)} />
@@ -326,7 +358,15 @@ function AnamnesisView({ client }: { client: ClientOut }) {
           ["Altura", client.height_cm ? `${client.height_cm} cm` : null],
           ["Peso inicial", client.start_weight_kg ? `${client.start_weight_kg} kg` : null],
           ["% graso", client.body_fat_pct ? `${client.body_fat_pct}%` : null],
+          ["Perímetros iniciales", [
+            client.initial_waist_cm ? `cintura ${client.initial_waist_cm}` : null,
+            client.initial_hip_cm ? `cadera ${client.initial_hip_cm}` : null,
+            client.initial_arm_cm ? `brazo ${client.initial_arm_cm}` : null,
+            client.initial_thigh_cm ? `muslo ${client.initial_thigh_cm}` : null,
+          ].filter(Boolean).join(" · ") || null],
           ["Peso objetivo", client.goal_weight_kg ? `${client.goal_weight_kg} kg` : null],
+          ["Fecha objetivo", client.goal_deadline
+            ? new Date(client.goal_deadline).toLocaleDateString("es-ES") : null],
           ["Objetivo", client.goal_type ? GOAL_LABEL[client.goal_type] : null],
           ["Nivel", client.level ? LEVEL_LABEL[client.level] : null],
         ])} />
@@ -343,6 +383,8 @@ function AnamnesisView({ client }: { client: ClientOut }) {
         <VCard color={V_COLORS.dieta} title="Dieta" rows={pairs([
           ["Modo", client.diet_mode ? DIET_LABEL[client.diet_mode] : null],
           ["Patrón", pattern],
+          ["Comida libre semanal", client.diet_mode === "strict"
+            ? (client.strict_free_meal_enabled ? "Sí (la pidió)" : "No") : null],
           ["Comidas del día", meals],
           ["Le gustan", client.food_likes?.length ? client.food_likes.join(", ") : null],
           ["Evita", client.food_dislikes?.length ? client.food_dislikes.join(", ") : null],

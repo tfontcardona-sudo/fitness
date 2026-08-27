@@ -202,8 +202,8 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
             # cliente la subiera, y si la IA no pudo extraer los campos el
             # coach creía que no había llegado nada. La alerta ahora distingue.
             try:
-                from app.services.storage import list_documents
-                has_doc = bool(list_documents(client.id))
+                from app.services.storage import anamnesis_documents
+                has_doc = bool(anamnesis_documents(client.id))
             except Exception:  # noqa: BLE001 — el storage nunca tumba las alertas
                 has_doc = False
             # El formulario DIGITAL del portal también cuenta como recibida
