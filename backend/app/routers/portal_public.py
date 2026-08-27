@@ -128,8 +128,8 @@ def _needs_anamnesis(client: Client) -> bool:
     if client.consent_signed_at is not None:
         return False
     try:
-        from app.services.storage import list_documents
-        return not list_documents(client.id)
+        from app.services.storage import anamnesis_documents
+        return not anamnesis_documents(client.id)
     except Exception:  # noqa: BLE001
         return False
 
@@ -182,9 +182,28 @@ def submit_anamnesis(
         data["lifestyle_notes"] = (
             f"{prefix}\n{data['lifestyle_notes']}" if data.get("lifestyle_notes") else prefix
         )
+    # Ejercicios favoritos/vetados y horarios de comida en texto libre: se
+    # anexan ETIQUETADOS a las notas que ya llegan al prompt de generación.
+    exercise_prefs = (data.pop("exercise_prefs", None) or "").strip()
+    if exercise_prefs:
+        linea = f"- Ejercicios (favoritos / que detesta): {exercise_prefs}"
+        data["sport_history"] = (
+            f"{data['sport_history']}\n{linea}" if data.get("sport_history") else linea
+        )
+    meal_times = (data.pop("meal_times_text", None) or "").strip()
+    if meal_times:
+        linea = f"[Horarios de comida] {meal_times}"
+        data["lifestyle_notes"] = (
+            f"{data['lifestyle_notes']}\n{linea}" if data.get("lifestyle_notes") else linea
+        )
     data["current_weight_kg"] = data["start_weight_kg"]
 
     for field, value in data.items():
+        # meal_schedule vacío = "no lo pregunté / lo delega": NO machaca el
+        # horario que el coach hubiera apuntado en el alta (antes el default []
+        # pisaba la ficha en silencio — auditoría 27-08).
+        if field == "meal_schedule" and not value:
+            continue
         setattr(client, field, value)
     client.consent_signed_at = datetime.now(timezone.utc)
 
@@ -213,9 +232,24 @@ def submit_anamnesis(
     try:
         from app.services import push as push_svc
 
+        # Contradicciones deterministas (§5): plazo imposible, objetivo que
+        # choca con su texto, dieta vs alimentos — el coach las ve en el push.
+        cuerpo = "Formulario del portal completado: revisa la ficha y genera su planificación."
+        try:
+            from app.services.anamnesis_extraction import detect_contradictions
+
+            perfil = {k: getattr(client, k, None) for k in (
+                "goal_type", "diet_pattern", "start_weight_kg", "goal_weight_kg",
+                "goal_deadline", "lifestyle_notes", "sport_history", "food_likes")}
+            contras = detect_contradictions(perfil)
+            if contras:
+                cuerpo = (f"⚠ {len(contras)} posible(s) contradicción(es): "
+                          f"{contras[0].detail}. Revisa la ficha antes de generar.")
+        except Exception:  # noqa: BLE001
+            pass
         push_svc.send_to_coach(db, {
             "title": f"📋 {client.full_name} ha enviado su anamnesis",
-            "body": "Formulario del portal completado: revisa la ficha y genera su planificación.",
+            "body": cuerpo,
             "url": f"/clientes/{client.id}?tab=anamnesis",
             "tag": f"anamnesis-{client.id}",
         })
@@ -237,6 +271,8 @@ def anamnesis_prefill(
     if client.consent_signed_at is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "La anamnesis ya fue enviada")
     campos = ("sex", "birth_date", "height_cm", "start_weight_kg", "body_fat_pct",
+              "initial_waist_cm", "initial_hip_cm", "initial_arm_cm",
+              "initial_thigh_cm",
               "goal_type", "goal_weight_kg", "goal_deadline", "level",
               "training_days", "daily_activity_level", "session_max_min",
               "training_place", "equipment", "meals_per_day",
@@ -642,10 +678,20 @@ def portal_training(
     if plan is not None and client.plan_notice_pending:
         client.plan_notice_pending = False
         db.commit()
+    # CARDIO Y PASOS: se pautaban en el plan y el portal no los enseñaba en
+    # ninguna pantalla — el cliente solo los veía si descargaba el PDF
+    # (auditoría 27-08).
+    cardio = None
+    if plan is not None:
+        c = (plan.training_json or {}).get("cardio") or {}
+        if c.get("daily_steps") or c.get("sessions"):
+            cardio = {"daily_steps": c.get("daily_steps"),
+                      "sessions": c.get("sessions") or []}
     return {
         "sessions": portal_svc.build_training_sessions(db, client),
         "plan_changes": changes,
         "week": week,
+        "cardio": cardio,
     }
 
 

@@ -39,7 +39,25 @@ _ENUM_MAPS: dict[str, dict[str, str]] = {
                   "definicion": "fat_loss", "adelgazar": "fat_loss",
                   "ganancia muscular": "muscle_gain", "ganar musculo": "muscle_gain",
                   "volumen": "muscle_gain", "hipertrofia": "muscle_gain",
-                  "recomposicion": "recomp", "mantenimiento": "maintenance"},
+                  "recomposicion": "recomp", "mantenimiento": "maintenance",
+                  # recuperación de lesión: objetivo VÁLIDO del sistema que por
+                  # la vía PDF era imposible de obtener (sin sinónimos aquí ni
+                  # mención en el prompt, auditoría 27-08)
+                  "injury_recovery": "injury_recovery",
+                  "recuperacion": "injury_recovery",
+                  "recuperacion de lesion": "injury_recovery",
+                  "rehabilitacion": "injury_recovery"},
+    # Patrón alimentario (PDF "Preferencias y aversiones"): gobierna el filtro
+    # de alimentos, el banco fallback y el Revisor 0. No se extraía y un vegano
+    # de la vía PDF recibía pollo salvo corrección manual (auditoría 27-08).
+    "diet_pattern": {"vegano": "vegano", "vegana": "vegano",
+                     "vegetariano": "vegetariano", "vegetariana": "vegetariano",
+                     "ovolactovegetariano": "vegetariano",
+                     "pescetariano": "pescetariano", "pescetariana": "pescetariano",
+                     "pescatariano": "pescetariano",
+                     "sin cerdo": "sin_cerdo", "sin_cerdo": "sin_cerdo",
+                     "no come cerdo": "sin_cerdo",
+                     "halal": "halal", "kosher": "kosher"},
     "level": {"beginner": "beginner", "intermediate": "intermediate",
               "advanced": "advanced", "principiante": "beginner",
               "novato": "beginner", "intermedio": "intermediate",
@@ -74,13 +92,24 @@ class AnamnesisExtraction(BaseModel):
     # --- Datos personales y antropometría (PDF: "Datos personales" / "Antropometría inicial") ---
     sex: str | None = Field(None, description="male|female (mapea Hombre→male, Mujer→female)")
     birth_date: date | None = Field(None, description="Fecha de nacimiento YYYY-MM-DD")
+    phone: str | None = Field(None, description="Teléfono/móvil tal y como aparece")
     height_cm: float | None = None
     start_weight_kg: float | None = Field(None, description="Peso actual (kg)")
     body_fat_pct: float | None = None
+    # Perímetros iniciales (cm): la línea base corporal que el cliente midió y
+    # escribió — sin ella el primer informe no puede enseñar el delta de
+    # medidas, justo la prueba de progreso cuando la báscula no se mueve.
+    initial_waist_cm: float | None = Field(None, description="Perímetro cintura (cm)")
+    initial_hip_cm: float | None = Field(None, description="Perímetro cadera (cm)")
+    initial_arm_cm: float | None = Field(None, description="Perímetro brazo relajado (cm)")
+    initial_thigh_cm: float | None = Field(None, description="Perímetro muslo (cm)")
 
     # --- Objetivo (PDF: "Motivo y objetivos") ---
-    goal_type: str | None = Field(None, description="fat_loss|muscle_gain|recomp|maintenance")
+    goal_type: str | None = Field(
+        None, description="fat_loss|muscle_gain|recomp|maintenance|injury_recovery")
     goal_weight_kg: float | None = None
+    goal_deadline: date | None = Field(
+        None, description="Fecha objetivo/plazo que declare el cliente (YYYY-MM-DD)")
 
     # --- Entrenamiento (PDF: "Experiencia con pesas" / "Entrenamiento actual y preferencias") ---
     level: str | None = Field(None, description="beginner|intermediate|advanced")
@@ -101,6 +130,9 @@ class AnamnesisExtraction(BaseModel):
 
     # --- Dieta (PDF: "Hábitos dietéticos" / "Preferencias y aversiones") ---
     diet_mode: str | None = Field(None, description="flexible_7|strict")
+    diet_pattern: str | None = Field(
+        None, description="vegano|vegetariano|pescetariano|sin_cerdo|halal|kosher "
+        "(PDF 'Patrón alimentario'; omnívoro/ninguno → null)")
     meals_per_day: int | None = None
     meal_schedule: list[MealSlot] = Field(default_factory=list)
     food_likes: list[str] = Field(default_factory=list)
@@ -168,7 +200,7 @@ class AnamnesisExtraction(BaseModel):
     # irreconocible queda en None (el coach lo ve VACÍO y lo corrige — nunca
     # un cálculo corrupto).
     @field_validator("sex", "goal_type", "level", "training_place", "diet_mode",
-                     "daily_activity_level", mode="before")
+                     "daily_activity_level", "diet_pattern", mode="before")
     @classmethod
     def _normalize_enum(cls, v, info):
         if v is None or not isinstance(v, str):
@@ -224,10 +256,16 @@ CAMPOS ESTRUCTURADOS OBLIGATORIOS — recórrelos UNO A UNO y rellénalos SIEMPR
 aparezca en CUALQUIER parte del documento. NO dejes en null un campo cuyo dato esté presente:
   · birth_date ← "Fecha de nacimiento": convierte DD/MM/AAAA a YYYY-MM-DD (12/03/1990 → 1990-03-12).
   · sex ← "Sexo biológico": Hombre→"male", Mujer→"female" (Otro→null).
+  · phone ← "Teléfono": el móvil tal cual (con prefijo si lo escribe).
   · height_cm ← "Altura"; start_weight_kg ← "Peso actual"; goal_weight_kg ← "Peso objetivo".
+  · initial_waist_cm / initial_hip_cm / initial_arm_cm / initial_thigh_cm ← "Perímetro \
+cintura / cadera / brazo relajado / muslo" (cm) de la antropometría inicial.
   · goal_type ← "Motivo y objetivos" (NO hay casilla: INFIÉRELO del texto): perder grasa/definir/\
 adelgazar→"fat_loss"; ganar músculo/volumen→"muscle_gain"; recomposición/tonificar→"recomp"; \
-mantener el peso (sin ganar ni perder)→"maintenance".
+mantener el peso (sin ganar ni perder)→"maintenance"; recuperarse de una lesión/operación y \
+volver a entrenar→"injury_recovery".
+  · goal_deadline ← si el cliente declara un PLAZO o fecha para su objetivo ("para junio", \
+"en 3 meses", "para la boda del 12/09"), conviértelo a YYYY-MM-DD (aprox. si hace falta).
   · level ← "Nivel auto-percibido en sala de pesas": Principiante→"beginner"; Intermedio→\
 "intermediate"; Avanzado→"advanced".
   · training_place ← "Dónde entrenas": Gimnasio/gym→"gym"; Casa→"home"; Exterior→"outdoor".
@@ -239,6 +277,12 @@ trabajo físico con muchos pasos→"active"; trabajo físico intenso (obra, mens
   · session_max_min ← "Duración media de la sesión", en minutos.
   · diet_mode ← bloque de dieta: si menciona equivalencias/flexibilidad→"flexible_7"; si pide \
 menú cerrado→"strict". Si no está claro, usa "flexible_7".
+  · diet_pattern ← "Patrón alimentario": vegano→"vegano"; vegetariano→"vegetariano"; \
+pescetariano→"pescetariano"; sin cerdo→"sin_cerdo"; halal→"halal"; kosher→"kosher"; \
+omnívoro/"como de todo"/en blanco→null. Es SEGURIDAD: gobierna qué alimentos puede llevar su plan.
+  · Si una respuesta de selección NO encaja en ningún valor del enum, deja el campo en null \
+PERO recoge el texto literal en la nota de su sección — que el coach vea que el cliente \
+contestó y qué escribió, nunca un campo vacío en silencio.
   · meals_per_day ← "¿Cuántas comidas haces al día?". Si marca "Lo decidís vosotros" \
 o deja el bloque en blanco → meals_per_day=null y meal_schedule=[] (DELEGA el número y \
 reparto de comidas en el coach; la IA del plan elegirá el óptimo).
@@ -277,17 +321,20 @@ Formato: "- Nombre — dosis — frecuencia" (+ efecto relevante para dieta/entr
 Sin frases introductorias.
   · current_supplements ← "Suplementación": "- Nombre — dosis — momento", una línea por \
 suplemento, máximo 6; sin valoraciones.
-  · sport_history ← "Experiencia con pesas" + "Otros deportes". MÁXIMO 4 viñetas: años y \
-nivel real con los básicos; qué métodos funcionaron o fallaron; otros deportes actuales con \
-frecuencia (condicionan la recuperación); matiz técnico a vigilar si lo hay. \
-Líneas cortas tipo "- Pesas: 2 años, técnica básica cómoda" / "- Fútbol: 1 vez/semana".
+  · sport_history ← "Experiencia con pesas" + "Otros deportes" + "Ejercicios favoritos / que \
+detesta". MÁXIMO 5 viñetas: años y nivel real con los básicos; qué métodos funcionaron o \
+fallaron; otros deportes actuales con frecuencia (condicionan la recuperación); matiz técnico \
+a vigilar si lo hay; y SIEMPRE que el cliente los declare, "- Ejercicios: favoritos … / \
+detesta …" (el generador los respeta). Líneas cortas tipo "- Pesas: 2 años, técnica básica \
+cómoda" / "- Fútbol: 1 vez/semana".
   · lifestyle_notes ← "Motivo y objetivos" (corto/largo plazo, qué funcionó o no, motivación/\
 confianza), "Logística y entorno alimentario", "Comida emocional", "Hidratación", "Tu trabajo \
 y tu día a día", "Sueño y recuperación", "Estrés y energía" y la auto-evaluación final. \
 PREFIJA cada línea con su tema, EMPEZANDO SIEMPRE por el motivo (es lo primero que lee el \
 coach): "- Motivo: …", "- Trabajo: …", "- Sueño: …", "- Estrés: …", "- Conducta alimentaria: …", \
-"- Logística: …", "- Hidratación: …". MÁXIMO 6 viñetas en total, ordenadas por impacto en la \
-adherencia; máximo 1-2 líneas por tema; los temas sin nada relevante se omiten.
+"- Logística: …", "- Hidratación: …", "- Horario de entreno: …" (la hora habitual a la que \
+entrena condiciona las comidas peri-entreno). MÁXIMO 6 viñetas en total, ordenadas por \
+impacto en la adherencia; máximo 1-2 líneas por tema; los temas sin nada relevante se omiten.
 
 SÍNTESIS:
   · deep_analysis: 3-5 líneas en puntos ("- …"), ORDENADAS de más a menos importante, máximo \

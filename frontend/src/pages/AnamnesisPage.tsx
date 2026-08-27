@@ -26,6 +26,12 @@ interface FormState {
   height_cm: string;
   start_weight_kg: string;
   body_fat_pct: string;
+  // Perímetros iniciales (cm): la línea base para el "antes/después" de
+  // medidas del primer informe (el PDF siempre los pidió).
+  initial_waist_cm: string;
+  initial_hip_cm: string;
+  initial_arm_cm: string;
+  initial_thigh_cm: string;
   goal_type: string;
   goal_weight_kg: string;
   goal_deadline: string;
@@ -37,6 +43,7 @@ interface FormState {
   equipment: string;          // CSV → lista al enviar
   daily_activity_level: string;
   sport_history: string;
+  exercise_prefs: string;     // favoritos / vetados → sport_history
   injuries_notes: string;
   medical_notes: string;
   medication_notes: string;
@@ -44,6 +51,7 @@ interface FormState {
   diet_mode: string;
   diet_pattern: string;
   meals_per_day: string;
+  meal_times_text: string;    // horarios habituales → lifestyle_notes
   food_allergies: string;     // CSV
   food_dislikes: string;      // CSV
   food_likes: string;         // CSV
@@ -54,11 +62,13 @@ interface FormState {
 
 const VACIO: FormState = {
   sex: "", birth_date: "", height_cm: "", start_weight_kg: "", body_fat_pct: "",
+  initial_waist_cm: "", initial_hip_cm: "", initial_arm_cm: "", initial_thigh_cm: "",
   goal_type: "", goal_weight_kg: "", goal_deadline: "", priority_zones: "",
   level: "", training_days: "", session_max_min: "60", training_place: "",
-  equipment: "", daily_activity_level: "", sport_history: "",
+  equipment: "", daily_activity_level: "", sport_history: "", exercise_prefs: "",
   injuries_notes: "", medical_notes: "", medication_notes: "",
   current_supplements: "", diet_mode: "", diet_pattern: "", meals_per_day: "",
+  meal_times_text: "",
   food_allergies: "", food_dislikes: "", food_likes: "",
   strict_free_meal_enabled: false, lifestyle_notes: "", consent_accepted: false,
 };
@@ -171,6 +181,10 @@ export default function AnamnesisPage() {
           height_cm: d.height_cm != null ? String(d.height_cm) : f.height_cm,
           start_weight_kg: d.start_weight_kg != null ? String(d.start_weight_kg) : f.start_weight_kg,
           body_fat_pct: d.body_fat_pct != null ? String(d.body_fat_pct) : f.body_fat_pct,
+          initial_waist_cm: d.initial_waist_cm != null ? String(d.initial_waist_cm) : f.initial_waist_cm,
+          initial_hip_cm: d.initial_hip_cm != null ? String(d.initial_hip_cm) : f.initial_hip_cm,
+          initial_arm_cm: d.initial_arm_cm != null ? String(d.initial_arm_cm) : f.initial_arm_cm,
+          initial_thigh_cm: d.initial_thigh_cm != null ? String(d.initial_thigh_cm) : f.initial_thigh_cm,
           goal_type: d.goal_type ?? f.goal_type,
           goal_weight_kg: d.goal_weight_kg != null ? String(d.goal_weight_kg) : f.goal_weight_kg,
           level: d.level ?? f.level,
@@ -242,6 +256,10 @@ export default function AnamnesisPage() {
       height_cm: num(f.height_cm),
       start_weight_kg: num(f.start_weight_kg),
       body_fat_pct: f.body_fat_pct ? num(f.body_fat_pct) : null,
+      initial_waist_cm: f.initial_waist_cm ? num(f.initial_waist_cm) : null,
+      initial_hip_cm: f.initial_hip_cm ? num(f.initial_hip_cm) : null,
+      initial_arm_cm: f.initial_arm_cm ? num(f.initial_arm_cm) : null,
+      initial_thigh_cm: f.initial_thigh_cm ? num(f.initial_thigh_cm) : null,
       goal_type: f.goal_type,
       goal_weight_kg: f.goal_weight_kg ? num(f.goal_weight_kg) : null,
       goal_deadline: f.goal_deadline || null,
@@ -253,6 +271,7 @@ export default function AnamnesisPage() {
       equipment: f.training_place === "gym" ? [] : csv(f.equipment),
       daily_activity_level: f.daily_activity_level || null,
       sport_history: f.sport_history.trim() || null,
+      exercise_prefs: f.exercise_prefs.trim() || null,
       injuries_notes: f.injuries_notes.trim() || null,
       medical_notes: f.medical_notes.trim() || null,
       medication_notes: f.medication_notes.trim() || null,
@@ -260,6 +279,7 @@ export default function AnamnesisPage() {
       diet_mode: f.diet_mode,
       diet_pattern: f.diet_pattern || null,
       meals_per_day: f.meals_per_day ? +f.meals_per_day : null,
+      meal_times_text: f.meal_times_text.trim() || null,
       food_allergies: csv(f.food_allergies),
       food_dislikes: csv(f.food_dislikes),
       food_likes: csv(f.food_likes),
@@ -481,6 +501,22 @@ export default function AnamnesisPage() {
                   <input type="text" inputMode="decimal" placeholder="si lo sabes" className={inputCls} style={inputStyle}
                     value={form.body_fat_pct} onChange={(e) => set({ body_fat_pct: e.target.value })} />
                 </div>
+                {/* Perímetros iniciales: el "antes" real de tus medidas — clave
+                    cuando el progreso no se ve en la báscula. */}
+                <div>
+                  {label("Perímetros con cinta métrica (cm)", true)}
+                  <p className="mb-1 text-xs opacity-60">Si tienes cinta: mide sin apretar. Son tu punto de partida.</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <input type="text" inputMode="decimal" placeholder="Cintura" className={inputCls} style={inputStyle}
+                      value={form.initial_waist_cm} onChange={(e) => set({ initial_waist_cm: e.target.value })} />
+                    <input type="text" inputMode="decimal" placeholder="Cadera" className={inputCls} style={inputStyle}
+                      value={form.initial_hip_cm} onChange={(e) => set({ initial_hip_cm: e.target.value })} />
+                    <input type="text" inputMode="decimal" placeholder="Brazo relajado" className={inputCls} style={inputStyle}
+                      value={form.initial_arm_cm} onChange={(e) => set({ initial_arm_cm: e.target.value })} />
+                    <input type="text" inputMode="decimal" placeholder="Muslo" className={inputCls} style={inputStyle}
+                      value={form.initial_thigh_cm} onChange={(e) => set({ initial_thigh_cm: e.target.value })} />
+                  </div>
+                </div>
               </>)}
 
               {paso === 1 && (<>
@@ -570,6 +606,11 @@ export default function AnamnesisPage() {
                   <textarea rows={2} placeholder="Qué has entrenado antes, otros deportes…" className={inputCls} style={inputStyle}
                     value={form.sport_history} onChange={(e) => set({ sport_history: e.target.value })} />
                 </div>
+                <div>
+                  {label("Ejercicios favoritos y ejercicios que detestas", true)}
+                  <textarea rows={2} placeholder="p. ej. me encanta el peso muerto; odio las búlgaras" className={inputCls} style={inputStyle}
+                    value={form.exercise_prefs} onChange={(e) => set({ exercise_prefs: e.target.value })} />
+                </div>
               </>)}
 
               {paso === 3 && (<>
@@ -625,6 +666,11 @@ export default function AnamnesisPage() {
                       {[2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{n} comidas</option>)}
                     </select>
                   </div>
+                </div>
+                <div>
+                  {label("¿A qué horas sueles comer?", true)}
+                  <input type="text" placeholder="p. ej. desayuno 7:00, como a las 15h, ceno tarde (turnos)" className={inputCls} style={inputStyle}
+                    value={form.meal_times_text} onChange={(e) => set({ meal_times_text: e.target.value })} />
                 </div>
                 <div>
                   {label("Alergias o intolerancias", true)}

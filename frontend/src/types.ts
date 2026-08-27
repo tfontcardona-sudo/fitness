@@ -235,6 +235,11 @@ export interface AnamnesisSubmit {
   height_cm: number;
   start_weight_kg: number;
   body_fat_pct?: number | null;
+  // Perímetros iniciales (cm) — el PDF los pide desde siempre
+  initial_waist_cm?: number | null;
+  initial_hip_cm?: number | null;
+  initial_arm_cm?: number | null;
+  initial_thigh_cm?: number | null;
   injuries_notes?: string | null;
   medical_notes?: string | null;
   medication_notes?: string | null;
@@ -244,12 +249,16 @@ export interface AnamnesisSubmit {
   goal_weight_kg?: number | null;
   goal_deadline?: string | null;
   priority_zones?: string | null;
+  // Ejercicios favoritos / que detesta (texto libre → sport_history)
+  exercise_prefs?: string | null;
   training_days: number;
   session_max_min: number;
   training_place: TrainingPlace;
   equipment: string[];
   meals_per_day: number;
   meal_schedule: MealScheduleItem[];
+  // Horarios habituales de comida en texto libre (→ lifestyle_notes)
+  meal_times_text?: string | null;
   food_allergies: string[];
   food_dislikes: string[];
   food_likes: string[];
@@ -276,6 +285,11 @@ export interface ClientOut {
   start_weight_kg: number | null;
   current_weight_kg: number | null;
   body_fat_pct: number | null;
+  // Perímetros iniciales de la anamnesis (línea base del delta de medidas)
+  initial_waist_cm?: number | null;
+  initial_hip_cm?: number | null;
+  initial_arm_cm?: number | null;
+  initial_thigh_cm?: number | null;
   goal_type: GoalType | null;
   goal_weight_kg: number | null;
   goal_deadline: string | null;
@@ -638,6 +652,10 @@ export interface TodayExercise {
   technique_cue: string | null;
   /** Indicaciones personalizadas del coach para este cliente. */
   coach_notes?: string | null;
+  /** Prescripción completa (antes solo la veía el panel del coach). */
+  progression_rule?: string | null;
+  biomech_cue?: string | null;
+  tempo?: string | null;
   video_url: string | null;
 }
 

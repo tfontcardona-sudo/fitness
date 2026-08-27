@@ -527,7 +527,8 @@ def generate_plan_doc(
             _nota(doc, "Tu reparto del día. Las horas son orientativas: respeta el "
                        "número de tomas y su contenido, no el reloj.")
             rows = [[m.get("time", ""), m.get("name", f"Comida {m.get('slot')}"),
-                     _estrategia(m.get("name", ""))] for m in meals]
+                     (str(m.get("strategy") or "").strip()
+                      or _estrategia(m.get("name", "")))] for m in meals]
             clean_table(doc, ["Hora", "Toma", "Estrategia"], rows, brand,
                         header_color=WINE, header_text_color="FFFFFF",
                         col_widths=[1500, 3000, 4526], keep_together=False)
@@ -596,6 +597,12 @@ def generate_plan_doc(
                         rp = pp.add_run(prep)
                         rp.font.italic = True
                         rp.font.size = Pt(9)
+            # Comida libre semanal pactada en la anamnesis: sin esta caja la
+            # pauta se generaba y el cliente no la veía en ningún sitio.
+            libre = (bank.get("free_meal_guidelines") or "").strip()
+            if libre:
+                section_bar(doc, "Tu comida libre semanal", GOLD)
+                info_box(doc, [libre], fill=CREAM, cant_split=True)
         elif diet_mode != "strict" and meals:
             blocks = {s.get("slot"): s for s in bank.get("slots", [])}
             for m in meals:
@@ -736,6 +743,16 @@ def generate_plan_doc(
         for ex in sess.get("exercises", []):
             name = exercise_names.get(ex.get("exercise_id"), f"Ejercicio #{ex.get('exercise_id','')}")
             cue = ex.get("technique_cue", "") or ""
+            # La clave BIOMECÁNICA (el porqué del ejercicio) y el TEMPO se
+            # prescriben en el plan y solo los veía el panel del coach: el
+            # cliente no recibía ni el porqué ni la cadencia (auditoría 27-08).
+            # Mismas etiquetas que re-lee word_import._parse_cue_cell.
+            biome = (ex.get("biomech_cue") or "").strip()
+            if biome:
+                cue = f"{cue}\nClave biomecánica: {biome}" if cue else f"Clave biomecánica: {biome}"
+            tempo = str(ex.get("tempo") or "").strip()
+            if tempo:
+                cue = f"{cue}\nTempo: {tempo}" if cue else f"Tempo: {tempo}"
             # Indicaciones personalizadas del coach: en la misma celda, en línea
             # aparte y con etiqueta, para que el cliente no se las salte.
             notes = (ex.get("coach_notes") or "").strip()

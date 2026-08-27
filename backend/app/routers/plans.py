@@ -195,6 +195,13 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
             if (field == "nutrition_json" and plan.nutrition_json is None
                     and isinstance(value, dict) and not value.get("meals")):
                 continue
+            # Simétrico para SOLO-DIETA (training_json NULL): el editor echa un
+            # training vacío ({sessions: [], cardio…}) también en la vista de
+            # solo nutrición; persistirlo convertía el PDF del cliente en
+            # "dieta y entrenamiento" con una sección de entreno vacía.
+            if (field == "training_json" and plan.training_json is None
+                    and isinstance(value, dict) and not value.get("sessions")):
+                continue
             # Red de seguridad: nutrition_json se reemplaza entero; si el editor
             # manda un objeto sin `applied_adjustments` pero el plan lo tenía,
             # se conserva (si no, el portal y el PDF perderían las "Novedades").
@@ -224,6 +231,7 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
                     allergies=(cli.food_allergies or []) if cli else [],
                     dislikes=(cli.food_dislikes or []) if cli else [],
                     diet_pattern=cli.diet_pattern if cli else None,
+                    diet_mode=cli.diet_mode if cli else None,
                 )
                 # Estructura de comidas: si el coach la cambió en el editor (nº de
                 # tomas), la anamnesis del cliente se sincroniza — las próximas
@@ -930,6 +938,8 @@ def import_plan_word(
         "base_rev": rev,
         "nutrition_json": r["nutrition_json"],
         "training_json": r["training_json"],
+        # solo viaja si el Word trae cambios del educativo (píldoras/FAQ/técnica)
+        "education_json": r["education_json"],
     }
 
 

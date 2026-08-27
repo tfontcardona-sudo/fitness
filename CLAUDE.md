@@ -442,6 +442,86 @@ cd backend && python -m pytest tests/ -q
 
 ## 9. Trabajo pendiente / próximos pasos
 
+0000000000000000. ✅ **INGESTA PERFECTA (27-08-2026)** — petición del dueño:
+   "al subir Words, PDFs o planificaciones ya hechas, o al hacerlas a mano, no
+   se aplican al completo… haz que se apliquen y lean todos a la perfección
+   sin fallos". Auditoría de 3 dominios (Word / anamnesis / a mano, 32
+   hallazgos) + implementación completa, verificada EN VIVO (28 asserts contra
+   el stack local, flexible y strict) y con regresiones nuevas
+   (`tests/test_word_import.py` ×12, `tests/test_ingesta_perfecta.py` ×8).
+   - **WORD DE IDA Y VUELTA AL COMPLETO** (`services/word_import.py`
+     reescrito): ahora también van y vuelven las RECETAS del banco flexible
+     («Opción N. Título — Alimento 000 g (medida), …» + preparación) y el
+     MENÚ CERRADO por días del modo strict — los MACROS de cada plato editado
+     los RECALCULA el backend desde `foods` (Atwater 4/4/9, half-up,
+     `_resolver_food` exacto+alias+difuso con candidato único; alimento
+     desconocido → se aplica el contenido y se AVISA de revisar macros). Y
+     además: reparto de macros en CUALQUIER orden/etiqueta (`_parse_reparto`:
+     P/prot, CH/C/HC/hidratos, G/gr/grasas; parcial permitido con aviso),
+     ESTRATEGIA de cada toma (columna 3, comparada contra lo impreso),
+     descanso «2 min»/«1,5 min»/«1 min 30» (`_parse_rest`) con aviso si es
+     ilegible, series «4X12»/«4*12» y aviso al capar >10, enfoque de la
+     progresión en minúsculas/sinónimos (`_INTENT_MAP`, descarga→Deload) y
+     aviso en filas de semanas nuevas o cargas ilegibles, ejercicios por
+     nombre DIFUSO (`_fuzzy_exercise`: palabras clave sin artículos, único
+     candidato → se acepta y se dice; varios → aviso con la lista), RENAME de
+     la sesión desde su barra (si el día tiene una sola), calentamiento y
+     vuelta a la calma, «Estructura ·» (split_rationale), «Por qué este
+     enfoque» (rationale), «Tu margen de maniobra» (reglas + recarga),
+     CARDIO completo (pasos aunque se reescriba la etiqueta + sesiones por
+     posición), deload VACIABLE (borrar el texto lo quita), rejilla «Ejemplo
+     de dieta semanal» (flexible → weekly_examples de 7 celdas; en strict es
+     resumen derivado → aviso de editar los días), tabla «Cambios de tu plan»
+     por posición, comida libre semanal, y el EDUCATIVO (píldoras/técnica/FAQ
+     por posición → `education_json` viaja en el import y el PATCH). Cabecera
+     de tabla retocada → AVISO «restaura la cabecera» (antes la tabla entera
+     se saltaba muda). `_num` entiende «2,150» como millar y `_aplicar_energia`
+     rechaza kcal <500 con aviso (antes 2,15 kcal reescalaban el plan a la
+     nada). ⚠️ ORDEN INTERNO: todo lo que vive en meals/meal_bank se aplica
+     DESPUÉS de `_aplicar_energia` (rescale reconstruye ambos desde la base).
+     Solo quedan fuera las EQUIVALENCIAS de comida/cena (formato libre).
+   - **PDF/plan_doc**: la celda «Clave técnica» imprime también «Clave
+     biomecánica:» y «Tempo:» (y `_parse_cue_cell` los re-lee); la columna
+     Estrategia imprime `meal.strategy` si existe; el menú strict imprime la
+     caja «Tu comida libre semanal».
+   - **ANAMNESIS**: extracción del PDF con `diet_pattern` (¡un vegano por la
+     vía PDF recibía pollo!), `goal_deadline`, `phone`, perímetros iniciales
+     (cintura/cadera/brazo/muslo → columnas nuevas, mig. **0041**),
+     sinónimos de `injury_recovery` (antes IMPOSIBLE por PDF), ejercicios
+     favoritos/vetados → `sport_history`, hora habitual de entrenar →
+     `lifestyle_notes`, y regla «enum irreconocible → null PERO el texto va a
+     la nota de su sección». **Adjuntos** (`kind=adjunto` en
+     `POST /clients/{id}/documents`, prefijo `adjunto_`): subir la analítica
+     ya NO borra la anamnesis ni se lee como cuestionario
+     (`storage.anamnesis_documents()` es lo que miran los flujos de
+     «anamnesis recibida» y la lectura IA). **§5 POR FIN CABLEADO**:
+     `detect_contradictions` corre al leer el PDF (respuesta + sidecar +
+     tarjeta ámbar en la pestaña Anamnesis) y al enviar el formulario (va en
+     el push al coach); `client_portrait` alimenta `deep_analysis` cuando no
+     hay sidecar (vía formulario). **Formulario digital**: pregunta perímetros,
+     ejercicios favoritos/vetados y horarios de comida (texto libre →
+     etiquetado en notas); `meal_schedule=[]` YA NO pisa el horario del alta.
+     `strict_free_meal_enabled` POR FIN SE CONSUME (prompt strict condicional,
+     pauta determinista en la base a mano, caja en el PDF, visible/editable en
+     la pestaña Anamnesis); `goal_deadline` llega al prompt (gestión de
+     expectativas, NUNCA acelera el déficit). Perímetros iniciales = el
+     «antes» de la PRIMERA revisión (métricas y gráficas del informe).
+   - **PLANES A MANO**: el scaffold asigna DÍAS REALES de la semana
+     (`_REPARTO_SEMANAL`; "Día 1" hacía que el portal jamás detectara la
+     sesión de HOY); strict imposible ya no deja `meal_bank=None` (banco
+     flexible con aviso EXPLÍCITO); `ensure_bank_slots(diet_mode=…)` no
+     fabrica banco flexible a un cliente strict; PATCH con guard simétrico de
+     `training_json` (un plan solo-dieta ya no gana un entreno fantasma al
+     guardar el editor); editor con SESIONES DE CARDIO editables y textos
+     honestos (el banco se edita vía Word); `restructureNutritionMeals`
+     CONSERVA las tomas con nombre no canónico y su recetario (antes
+     «Post-entreno» desaparecía al tocar la estructura); copiar de la
+     biblioteca AVISA del choque de modos (strict⇄flexible).
+   - **PORTAL**: `progression_rule`, `biomech_cue` y `tempo` por fin llegan al
+     cliente (payload + tarjetas en Entreno); tarjeta «Cardio y pasos»
+     (`/p/{token}/training` devuelve `cardio`); el fallback de una toma sin
+     banco filtra por `diet_pattern` (a un vegano le salían pavo/huevo).
+
 000000000000000. ✅ **AUDITORÍA DE FUNCIONAMIENTO EN VIVO (26-08-2026)** — el
    socio del dueño sufría "pantalla en blanco / no carga / no hace lo que
    debería" en producción. Auditoría REAL: stack completo levantado en la

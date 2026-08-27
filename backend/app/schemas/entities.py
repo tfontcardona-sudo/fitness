@@ -103,6 +103,13 @@ class AnamnesisSubmit(BaseModel):
     height_cm: float = Field(gt=80, lt=250)
     start_weight_kg: float = Field(gt=30, lt=300)
     body_fat_pct: float | None = Field(default=None, gt=2, lt=60)
+    # Perímetros iniciales (cm) — la línea base que el PDF siempre pidió y el
+    # formulario digital no preguntaba: sin ella el primer informe no puede
+    # enseñar el delta de medidas.
+    initial_waist_cm: float | None = Field(default=None, gt=30, lt=250)
+    initial_hip_cm: float | None = Field(default=None, gt=30, lt=250)
+    initial_arm_cm: float | None = Field(default=None, gt=10, lt=100)
+    initial_thigh_cm: float | None = Field(default=None, gt=20, lt=150)
     # Salud
     injuries_notes: str | None = None
     medical_notes: str | None = None
@@ -114,6 +121,10 @@ class AnamnesisSubmit(BaseModel):
     goal_weight_kg: float | None = Field(default=None, gt=30, lt=300)
     goal_deadline: date | None = None
     priority_zones: str | None = None  # se guarda en lifestyle_notes etiquetado
+    # Ejercicios favoritos / que detesta (texto libre) — el PDF lo pregunta y
+    # el formulario no lo hacía: se anexa etiquetado a sport_history, que ya
+    # llega al prompt de generación.
+    exercise_prefs: str | None = None
     # Entrenamiento
     training_days: int = Field(ge=2, le=6)
     daily_activity_level: Literal["sedentary", "light", "active", "very_active"] | None = None
@@ -124,6 +135,10 @@ class AnamnesisSubmit(BaseModel):
     # delega ("lo decidís vosotros"), la IA elige el reparto óptimo.
     meals_per_day: int | None = Field(default=None, ge=2, le=6)
     meal_schedule: list[MealScheduleItem] = Field(default_factory=list)
+    # Horarios habituales de comida en texto libre (turnos, horario partido…):
+    # se anexa etiquetado a lifestyle_notes para que la IA reparta las tomas
+    # sobre la vida REAL del cliente, no sobre un horario estándar.
+    meal_times_text: str | None = None
     food_allergies: list[str] = Field(default_factory=list)
     food_dislikes: list[str] = Field(default_factory=list)
     food_likes: list[str] = Field(default_factory=list)
@@ -153,6 +168,12 @@ class ClientUpdate(BaseModel):
     start_weight_kg: float | None = Field(default=None, gt=30, lt=300)
     current_weight_kg: float | None = None
     body_fat_pct: float | None = Field(default=None, gt=2, lt=60)
+    # Perímetros iniciales de la anamnesis (editable en la pestaña — gotcha
+    # §5.8: todo campo de la pestaña debe estar aquí o el PATCH lo descarta).
+    initial_waist_cm: float | None = Field(default=None, gt=30, lt=250)
+    initial_hip_cm: float | None = Field(default=None, gt=30, lt=250)
+    initial_arm_cm: float | None = Field(default=None, gt=10, lt=100)
+    initial_thigh_cm: float | None = Field(default=None, gt=20, lt=150)
     goal_type: GoalType | None = None
     goal_weight_kg: float | None = None
     goal_deadline: date | None = None
@@ -198,6 +219,10 @@ class ClientOut(BaseModel):
     start_weight_kg: float | None
     current_weight_kg: float | None
     body_fat_pct: float | None
+    initial_waist_cm: float | None = None
+    initial_hip_cm: float | None = None
+    initial_arm_cm: float | None = None
+    initial_thigh_cm: float | None = None
     goal_type: GoalType | None
     goal_weight_kg: float | None
     goal_deadline: date | None

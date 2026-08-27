@@ -145,7 +145,8 @@ def build_strict_menu(nut: dict, allergies: list[str] | None = None,
         por_toma[int(meal["slot"])] = opts
     if sin_opciones:
         return None, ["menú cerrado sin opciones seguras en: "
-                      + ", ".join(sin_opciones) + " — móntalo en el editor"]
+                      + ", ".join(sin_opciones) + " — revisa alergias/patrón, o "
+                      "edítalo descargando el Word y subiéndolo"]
 
     days = []
     for i, day in enumerate(_DAY_NAMES):
@@ -159,10 +160,22 @@ def build_strict_menu(nut: dict, allergies: list[str] | None = None,
         days.append({"day": day, "meals": meals})
     return ({"mode": "strict", "days": days, "free_meal_guidelines": None},
             ["menú cerrado generado con opciones deterministas rotadas: "
-             "personalízalo en el editor"])
+             "personalízalo descargando el Word, editándolo y subiéndolo"])
 
 
 # ----------------------------------------------------------- entrenamiento ----
+
+# Reparto semanal estándar según el nº de sesiones (mismas etiquetas, con
+# acentos, que usan la IA y el portal: "Lunes"…"Domingo").
+_REPARTO_SEMANAL = {
+    1: ("Lunes",),
+    2: ("Lunes", "Jueves"),
+    3: ("Lunes", "Miércoles", "Viernes"),
+    4: ("Lunes", "Martes", "Jueves", "Viernes"),
+    5: ("Lunes", "Martes", "Miércoles", "Viernes", "Sábado"),
+    6: ("Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"),
+    7: ("Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"),
+}
 
 # Cada día es una lista de "huecos": patrones aceptables por orden de
 # preferencia. Los dos primeros huecos son los básicos de la sesión.
@@ -270,7 +283,13 @@ def build_training(client, filtered: list[dict]) -> dict:
             })
         if exercises:
             sessions.append({
-                "day": f"Día {i}",
+                # Día REAL de la semana, no "Día {i}": el portal detecta la
+                # sesión de HOY comparando con "lunes…domingo", así que un plan
+                # base nunca marcaba sesión del día ni la preseleccionaba en
+                # Entreno (auditoría 27-08). El coach lo reparte a su gusto en
+                # el editor; este es el reparto estándar de partida.
+                "day": _REPARTO_SEMANAL.get(len(day_defs), _REPARTO_SEMANAL[3])[
+                    min(i - 1, 6)],
                 "name": nombre,
                 "warmup": ("5-8 min de cardio suave + 2 series de aproximación "
                            "en los básicos del día."),

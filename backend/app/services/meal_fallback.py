@@ -265,12 +265,18 @@ def _slot_is_empty(entry: dict | None) -> bool:
 
 def ensure_bank_slots(nut: dict, allergies: list[str] | None = None,
                       dislikes: list[str] | None = None,
-                      diet_pattern: str | None = None) -> int:
+                      diet_pattern: str | None = None,
+                      diet_mode: str | None = None) -> int:
     """Garantiza que TODAS las tomas del plan flexible tengan contenido de banco.
 
     Para cada comida sin entrada (o con entrada vacía) inyecta 3 opciones por
     defecto escaladas a sus macros. No toca el modo estricto (menú cerrado) ni
     las tomas que ya tienen opciones/equivalencias. Devuelve cuántas rellenó.
+
+    `diet_mode` es el modo CONTRATADO del cliente: si es "strict" y el plan no
+    tiene banco (base a mano cuyo menú cerrado no se pudo montar), NO se
+    fabrica un banco flexible — antes, el primer guardado del editor convertía
+    en silencio el menú cerrado contratado en flexible para siempre.
     """
     if not isinstance(nut, dict):
         return 0
@@ -279,6 +285,8 @@ def ensure_bank_slots(nut: dict, allergies: list[str] | None = None,
         return 0
     bank = nut.get("meal_bank")
     if isinstance(bank, dict) and bank.get("mode") == "strict":
+        return 0
+    if not isinstance(bank, dict) and diet_mode == "strict":
         return 0
     if not isinstance(bank, dict):
         bank = {"mode": "flexible_7", "slots": []}

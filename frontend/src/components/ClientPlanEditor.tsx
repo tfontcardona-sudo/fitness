@@ -957,12 +957,37 @@ export function ClientPlanEditor({
         <div className="grid grid-cols-2 gap-2">
           <Num label="Pasos diarios" value={tr.cardio.daily_steps} onChange={(v) => mutate((d) => (d.training.cardio.daily_steps = Math.max(0, v ?? 0)))} />
         </div>
+        {/* SESIONES de cardio (LISS/HIIT): se pautaban en el schema, el PDF y
+            el Word, pero el editor solo tocaba los pasos — un plan a mano no
+            podía llevar cardio nunca (auditoría 27-08). */}
+        {(tr.cardio.sessions ?? []).map((cs: any, ci: number) => (
+          <div key={ci} className="grid grid-cols-[1fr_5rem_5rem_auto] items-end gap-2">
+            <Text label="Tipo (LISS, HIIT…)" value={cs.type ?? ""}
+              onChange={(v) => mutate((d) => (d.training.cardio.sessions[ci].type = v))} />
+            <Num label="Min" value={cs.minutes}
+              onChange={(v) => mutate((d) => (d.training.cardio.sessions[ci].minutes = Math.max(0, v ?? 0)))} />
+            <Num label="Veces/sem" value={cs.times_per_week} max={14}
+              onChange={(v) => mutate((d) => (d.training.cardio.sessions[ci].times_per_week = Math.max(0, v ?? 0)))} />
+            <button type="button" className="btn btn-ghost text-xs" title="Quitar sesión de cardio"
+              onClick={() => mutate((d) => d.training.cardio.sessions.splice(ci, 1))}>
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ))}
+        <button type="button" className="btn btn-ghost text-xs"
+          onClick={() => mutate((d) => {
+            d.training.cardio.sessions = d.training.cardio.sessions ?? [];
+            d.training.cardio.sessions.push({ type: "liss", minutes: 30, times_per_week: 2, notes: null });
+          })}>
+          <Plus size={14} /> Añadir sesión de cardio
+        </button>
         <Area label="Instrucciones de deload" value={tr.deload_instructions ?? ""} onChange={(v) => mutate((d) => (d.training.deload_instructions = v))} />
       </div>
       )}
 
       <p className="text-xs text-zinc-500">
-        Banco de comidas: no editable
+        Banco de comidas (recetas y menú cerrado): edítalo descargando el Word
+        editable, cambiando las opciones y subiéndolo — se aplican al plan.
       </p>
     </div>
   );

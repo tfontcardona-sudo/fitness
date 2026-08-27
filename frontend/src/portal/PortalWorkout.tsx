@@ -86,6 +86,9 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
   const [sessions, setSessions] = useState<TodaySession[] | null>(null);
   const [planChanges, setPlanChanges] = useState<PlanChanges | null>(null);
   const [week, setWeek] = useState<TrainingWeek | null>(null);
+  // Cardio y pasos pautados en el plan: antes solo existían en el PDF.
+  const [cardio, setCardio] = useState<{ daily_steps: number | null;
+    sessions: { type: string; minutes: number; times_per_week: number; notes?: string | null }[] } | null>(null);
   const [newsOpen, setNewsOpen] = useState(false);
   const newsRef = useRef<HTMLDetailsElement>(null);
   useDismiss(newsRef, () => setNewsOpen(false), newsOpen); // fuera/ESC → se cierra
@@ -133,6 +136,7 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
       setSessions(ss);
       setPlanChanges(tr.plan_changes ?? null);
       setWeek(tr.week ?? null);
+      setCardio(tr.cardio ?? null);
       setHistory(hist.history ?? {});
       setRecords(hist.records ?? {});
       setTodayDay(t.session?.day ?? null);
@@ -668,6 +672,24 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
                     <span><span className="font-semibold">Técnica.</span> {ex.technique_cue}</span>
                   </p>
                 )}
+                {/* El PORQUÉ del ejercicio y el TEMPO: se prescriben en el plan
+                    y el cliente no los veía por ningún canal (auditoría 27-08). */}
+                {ex.biomech_cue && (
+                  <p className="mt-1.5 flex items-start gap-1.5 text-xs leading-relaxed opacity-60">
+                    <Lightbulb size={13} className="mt-px shrink-0 opacity-60" />
+                    <span><span className="font-semibold">Por qué.</span> {ex.biomech_cue}</span>
+                  </p>
+                )}
+                {ex.tempo && (
+                  <p className="mt-1.5 text-xs leading-relaxed opacity-60">
+                    <span className="font-semibold">Tempo.</span> {ex.tempo}
+                  </p>
+                )}
+                {ex.progression_rule && (
+                  <p className="mt-1.5 text-xs leading-relaxed opacity-60">
+                    <span className="font-semibold">Cómo progresar.</span> {ex.progression_rule}
+                  </p>
+                )}
                 {ex.coach_notes && (
                   // Indicación PERSONAL del coach (limitaciones/adaptación): destacada,
                   // no un consejo genérico — el cliente debe leerla antes de la serie.
@@ -692,6 +714,24 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
               <p className="mt-1 text-xs leading-relaxed opacity-70">{selected.cooldown}</p>
             </div>
           )}
+          {/* Cardio y pasos del plan: se pautaban y el portal no los enseñaba
+              (solo existían en el PDF — auditoría 27-08). */}
+          {cardio && (cardio.daily_steps || cardio.sessions.length > 0) ? (
+            <div className="portal-card p-4">
+              <p className="text-[10px] font-semibold uppercase tracking-wider opacity-45">Cardio y pasos</p>
+              {cardio.daily_steps ? (
+                <p className="mt-1 text-xs leading-relaxed opacity-70">
+                  Objetivo diario: <b>{cardio.daily_steps.toLocaleString("es-ES")} pasos</b>.
+                </p>
+              ) : null}
+              {cardio.sessions.map((cs, i) => (
+                <p key={i} className="mt-1 text-xs leading-relaxed opacity-70">
+                  {cs.type.toUpperCase()}: {cs.minutes} min × {cs.times_per_week}/semana
+                  {cs.notes ? ` — ${cs.notes}` : ""}
+                </p>
+              ))}
+            </div>
+          ) : null}
         </>
       )}
       <p className="pb-2 text-center text-xs opacity-40" aria-live="polite">

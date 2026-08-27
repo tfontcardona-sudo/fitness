@@ -28,6 +28,7 @@ export function ClientDocuments({ client, onUploaded, onGoAnamnesis, portalUrl, 
 }) {
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
+  const adjRef = useRef<HTMLInputElement>(null);
   const [docs, setDocs] = useState<DocItem[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
@@ -78,6 +79,27 @@ export function ClientDocuments({ client, onUploaded, onGoAnamnesis, portalUrl, 
       load();
     } catch (e: any) {
       toast.push(e?.message ?? "No se pudo subir el documento", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // ADJUNTO (analítica, informe médico…): documento ADICIONAL. No sustituye la
+  // anamnesis ni se lee con IA — antes la única vía de subida BORRABA la
+  // anamnesis y leía el informe de sangre como si fuera el cuestionario.
+  async function uploadAdjunto(file: File) {
+    if (busy) return;
+    if (!file.name.toLowerCase().endsWith(".pdf")) {
+      toast.push("Solo se admiten archivos PDF", "error");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.uploadClientDocument(client.id, file, "adjunto");
+      toast.push("Adjunto guardado (la anamnesis no se toca)");
+      load();
+    } catch (e: any) {
+      toast.push(e?.message ?? "No se pudo subir el adjunto", "error");
     } finally {
       setBusy(false);
     }
@@ -254,6 +276,23 @@ export function ClientDocuments({ client, onUploaded, onGoAnamnesis, portalUrl, 
         onChange={(e) => {
           const f = e.target.files?.[0];
           if (f) upload(f);
+          e.target.value = "";
+        }}
+      />
+
+      {/* Adjuntos: la analítica que el propio cuestionario pide, informes…
+          Va aparte para que NUNCA sustituya a la anamnesis. */}
+      <button onClick={() => adjRef.current?.click()} className="btn btn-ghost mt-2 w-full justify-start text-xs">
+        <FileText size={14} className="text-zinc-500" /> Subir adjunto (analítica, informes…)
+      </button>
+      <input
+        ref={adjRef}
+        type="file"
+        accept="application/pdf,.pdf"
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) uploadAdjunto(f);
           e.target.value = "";
         }}
       />

@@ -106,6 +106,14 @@ class ClientContext:
     # Patrón dietético (vegano|vegetariano|pescetariano|sin_cerdo|halal|kosher):
     # restricción al 100%, ya aplicada por el filtro determinista de alimentos.
     diet_pattern: str | None = None
+    # Menú cerrado CON comida libre semanal: lo pidió el cliente en su
+    # anamnesis (strict_free_meal_enabled) — se guardaba y nadie lo consumía
+    # (auditoría 27-08). Solo aplica en diet_mode="strict".
+    strict_free_meal: bool = False
+    # Fecha objetivo declarada por el cliente: contexto de plazo/expectativas
+    # (el CÁLCULO sigue siendo del backend; si el plazo es poco realista, el
+    # plan lo gestiona en el rationale, no acelerando el déficit).
+    goal_deadline: str | None = None
 
 
 @dataclass
@@ -211,6 +219,10 @@ def _client_block(ctx: ClientContext) -> str:
             # selección y progresión a lo que el cliente YA sabe hacer.
             "historial_deportivo": ctx.sport_history or "no declarado",
             "peso_objetivo_kg": ctx.goal_weight_kg or "no declarado",
+            # Plazo declarado por el cliente: gestiona EXPECTATIVAS en el
+            # rationale si es poco realista — NUNCA aceleres el déficit ni
+            # toques números por él (los fija el backend).
+            "fecha_objetivo_declarada": ctx.goal_deadline or "sin plazo declarado",
             "notas": ctx.notes,
             "historial_seguimiento": ctx.tracking_history
             or "cliente nuevo: sin historial todavía",
@@ -566,15 +578,27 @@ Respeta SIEMPRE alergias y aversiones. Devuelve SOLO JSON:
    "items":[{"food":...,"amount":...}, ...]}, ...5 grupos]},"weekly_examples":[...7 textos]}
 ]}"""
 
-    return common + """
+    # Comida libre semanal: SOLO si el cliente la pidió en su anamnesis
+    # (strict_free_meal_enabled). Antes el prompt imponía null siempre y la
+    # petición del cliente se guardaba sin que nadie la consumiera.
+    if ctx.strict_free_meal:
+        free_meal = (
+            '"free_meal_guidelines": PAUTA BREVE (2-3 frases) de la comida '
+            "libre SEMANAL que el cliente pidió: cuándo encaja mejor según su "
+            "semana, qué moderar y cómo retomar el plan después. Sin números "
+            "de kcal (los fija el sistema)."
+        )
+    else:
+        free_meal = '"free_meal_guidelines": null'
+    return common + f"""
 
 MODO strict: menú CERRADO de 7 días (lunes→domingo), un plato por slot y día.
 "day" usa EXACTAMENTE estos valores, en minúsculas y SIN tildes:
 "lunes","martes","miercoles","jueves","viernes","sabado","domingo".
-JSON: {"mode":"strict","days":[{"day":"lunes","meals":[{"slot":N,"dish":{"key":"A","title":...,
-"ingredients":[{"food":...,"grams":N,"household":...}],"prep":...,"prep_minutes":N,
-"macros":{"kcal":N,"protein_g":N,"carbs_g":N,"fat_g":N},"tags":[...]}}, ...]}, ... 7 días],
-"free_meal_guidelines": null}"""
+JSON: {{"mode":"strict","days":[{{"day":"lunes","meals":[{{"slot":N,"dish":{{"key":"A","title":...,
+"ingredients":[{{"food":...,"grams":N,"household":...}}],"prep":...,"prep_minutes":N,
+"macros":{{"kcal":N,"protein_g":N,"carbs_g":N,"fat_g":N}},"tags":[...]}}}}, ...]}}, ... 7 días],
+{free_meal}}}"""
 
 
 def _education_user_prompt(core: PlanCoreOutput) -> str:

@@ -55,8 +55,12 @@ def _prev_period(db: Session, period: Period) -> Period | None:
     )
 
 
-def _perimeters(prev: Period | None, cur: Period) -> dict[str, list[tuple[str, float]]] | None:
-    """Series de perímetros: período anterior (si hay) → actual."""
+def _perimeters(prev: Period | None, cur: Period,
+                client=None) -> dict[str, list[tuple[str, float]]] | None:
+    """Series de perímetros: período anterior (si hay) → actual. En la PRIMERA
+    revisión el "antes" son los perímetros INICIALES de la anamnesis (mig.
+    0041): sin ellos el primer informe no podía enseñar el delta de medidas —
+    justo la prueba de progreso cuando la báscula no se mueve (recomp)."""
     fields = [("Cintura", "closing_waist_cm"), ("Cadera", "closing_hip_cm"),
               ("Brazo", "closing_arm_cm"), ("Muslo", "closing_thigh_cm")]
     out: dict[str, list[tuple[str, float]]] = {}
@@ -66,8 +70,12 @@ def _perimeters(prev: Period | None, cur: Period) -> dict[str, list[tuple[str, f
             continue
         series: list[tuple[str, float]] = []
         prev_v = getattr(prev, attr, None) if prev else None
+        etiqueta_prev = "Anterior"
+        if prev_v is None and client is not None:
+            prev_v = getattr(client, attr.replace("closing_", "initial_"), None)
+            etiqueta_prev = "Inicio"
         if prev_v is not None:
-            series.append(("Anterior", prev_v))
+            series.append((etiqueta_prev, prev_v))
         series.append(("Actual", cur_v))
         out[label] = series
     return out or None
@@ -293,7 +301,7 @@ def _gather_doc_inputs(db: Session, period: Period, client: Client) -> dict:
     pm = M.PeriodMetrics(weight=wt, adherence=adh, exercise_progress=progress)
     return {
         "weight_points": weight_points, "e1rm_exercises": e1rm_exercises,
-        "perimeters": _perimeters(prev, period),
+        "perimeters": _perimeters(prev, period, client),
         "volume_by_group": volume_by_group,
         "photo_pairs": _photo_pairs(db, prev, period),
         "metrics_json": pm.to_json(),
