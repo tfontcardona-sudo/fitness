@@ -179,6 +179,77 @@ def distill_lessons(db: Session, ai=None) -> dict:
     return data
 
 
+# ----------------------------------------------------------- vetos a la IA ----
+# Memoria de VETOS del sistema a la IA (guardrails/Revisor 0/contrato): lo que
+# el validador tuvo que frenar o corregir en generaciones anteriores se
+# recuerda y, si se REPITE, se inyecta en el prompt para que la IA no tropiece
+# dos veces con la misma piedra. Cualitativo: el texto del veto, nunca cifras
+# nuevas (los números siguen viniendo del contrato del backend).
+
+MAX_VETOS = 12
+_VETOS_BLOCK_CHARS = 900
+
+
+def _vetos_path() -> Path:
+    from app.services.storage import storage_root
+
+    d = storage_root() / "brand"
+    d.mkdir(parents=True, exist_ok=True)
+    return d / "_ai_vetos.json"
+
+
+def record_ai_vetos(flags: list[str]) -> None:
+    """Anota los vetos/correcciones de una generación (best-effort, nunca lanza)."""
+    try:
+        interesantes = [
+            f for f in (flags or [])
+            if isinstance(f, str) and f.startswith(("violation:", "contrato:", "núcleo:"))
+        ]
+        if not interesantes:
+            return
+        p = _vetos_path()
+        data = {}
+        if p.exists():
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                data = {}
+        conteo: dict[str, int] = dict(data.get("conteo") or {})
+        for f in interesantes:
+            clave = f.strip()[:180]
+            conteo[clave] = int(conteo.get(clave) or 0) + 1
+        top = dict(sorted(conteo.items(), key=lambda kv: -kv[1])[:60])
+        p.write_text(json.dumps({
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "conteo": top,
+        }, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:  # noqa: BLE001 — la memoria de vetos nunca rompe nada
+        pass
+
+
+def vetos_reference() -> str:
+    """Bloque para el prompt con los tropiezos REPETIDOS ('' si no hay)."""
+    try:
+        p = _vetos_path()
+        if not p.exists():
+            return ""
+        conteo = (json.loads(p.read_text(encoding="utf-8")) or {}).get("conteo") or {}
+        repetidos = sorted(
+            ((k, int(v)) for k, v in conteo.items() if int(v) >= 2),
+            key=lambda kv: -kv[1],
+        )
+        if not repetidos:
+            return ""
+        body = "\n".join(f"- {k}" for k, _ in repetidos[:MAX_VETOS])
+        block = (
+            "\n\nERRORES QUE EL VALIDADOR YA TUVO QUE FRENAR EN PLANES "
+            "ANTERIORES (no los repitas):\n" + body
+        )
+        return block[:_VETOS_BLOCK_CHARS]
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def maybe_refresh(db: Session) -> dict | None:
     """Re-destila SOLO si hay suficientes ediciones nuevas desde la última vez.
     Pensado para el mantenimiento diario: best-effort, nunca lanza."""

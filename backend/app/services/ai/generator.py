@@ -718,13 +718,14 @@ def generate_monthly_plan(
     flags: list[str] = []
     model = settings.model_heavy
 
-    # LECCIONES del coach (§13 en vivo): lo que corrigió a mano en planes
-    # anteriores, destilado en pautas cualitativas. Va en el USER prompt (no en
-    # el system) para no invalidar la caché del system prompt entre clientes.
+    # LECCIONES del coach (§13 en vivo) + memoria de VETOS del validador: lo
+    # que el coach corrigió a mano y lo que los guardrails tuvieron que frenar
+    # en generaciones anteriores. Va en el USER prompt (no en el system) para
+    # no invalidar la caché del system prompt entre clientes.
     try:
-        from app.services.coach_lessons import lessons_reference
+        from app.services.coach_lessons import lessons_reference, vetos_reference
 
-        _lecciones = lessons_reference()
+        _lecciones = lessons_reference() + vetos_reference()
     except Exception:  # noqa: BLE001 — el aprendizaje nunca bloquea generar
         _lecciones = ""
 

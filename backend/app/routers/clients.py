@@ -1587,6 +1587,9 @@ def generate_client_plan(
         nutrition, review_summary = review_generated_plan(
             nutrition, client=client, ctx=ctx, ai=review_ai,
             objective_macros=ctx.macro_plan,
+            # Resumen del entreno para los roles que juzgan la coherencia
+            # dieta↔entreno (antes solo veían la dieta).
+            training=training,
         )
     if review_summary and review_summary.get("color") == "rojo":
         flags = list(flags) + [
@@ -1603,6 +1606,16 @@ def generate_client_plan(
         flags = list(flags) + [
             "retenido: guardado como BORRADOR — revisa y activa tú (el cliente no ha sido avisado)"
         ]
+
+    # MEMORIA DE VETOS: lo que hubo que frenar/corregir en esta generación se
+    # anota; si un tropiezo se repite, la próxima generación lo lleva en el
+    # prompt como advertencia (coach_lessons.vetos_reference).
+    try:
+        from app.services.coach_lessons import record_ai_vetos
+
+        record_ai_vetos(list(flags))
+    except Exception:  # noqa: BLE001
+        pass
 
     # 5) Persistir como borrador (nueva versión del mes). El mes lo decide el
     # ciclo (dos revisiones = un mes) salvo que el llamante lo fije a mano.
@@ -1638,6 +1651,9 @@ def generate_client_plan(
     return {
         "id": plan.id, "month_index": plan.month_index, "version": plan.version,
         "status": plan.status, "guardrail_flags": flags or [],
+        # El frontend necesita saberlo para un toast HONESTO ("borrador
+        # retenido: revísalo") en vez del "Planificación generada" triunfal.
+        "retained": retained,
         "nutrition": nutrition, "training": training, "education": education,
         "review": review_summary,  # §9: color/ICP/hallazgos del panel
         # Fechas: el título del plan ("Planificación · julio 2026") las necesita

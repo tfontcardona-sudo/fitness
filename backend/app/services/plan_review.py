@@ -39,8 +39,9 @@ def build_profile(client, ctx) -> dict:
     return prof
 
 
-def _plan_text(nutrition: dict) -> str:
-    """Render compacto y legible del plan de nutrición para los revisores IA."""
+def _plan_text(nutrition: dict, training: dict | None = None) -> str:
+    """Render compacto y legible del plan (nutrición + resumen de entreno)
+    para los revisores IA."""
     m = nutrition.get("macros") or {}
     lines = [
         f"Objetivo calórico: {nutrition.get('target_kcal')} kcal "
@@ -61,6 +62,22 @@ def _plan_text(nutrition: dict) -> str:
         opts = [o.get("name") for o in (slot.get("options") or []) if o.get("name")]
         if opts:
             lines.append(f"  · Opciones {slot.get('name', '')}: {', '.join(opts[:4])}.")
+    # RESUMEN DEL ENTRENO: sin él, los roles que juzgan la coherencia
+    # dieta↔entreno opinaban a ciegas (solo veían la dieta).
+    if training:
+        sesiones = training.get("sessions") or []
+        lines.append(
+            f"Entrenamiento: {training.get('split_name') or 'split'} · "
+            f"{len(sesiones)} sesión(es)/semana.")
+        for s in sesiones[:7]:
+            ejercicios = s.get("exercises") or []
+            series = sum(int(e.get("sets") or 0) for e in ejercicios)
+            lines.append(f"- {s.get('day', '')} {s.get('name', '')}: "
+                         f"{len(ejercicios)} ejercicios, {series} series.")
+        prog = training.get("weekly_progression") or []
+        if prog:
+            lines.append("Progresión: " + " | ".join(
+                f"sem {w.get('week')}: {w.get('intent', '')}" for w in prog[:4]))
     return "\n".join(lines)
 
 
@@ -119,7 +136,7 @@ def _prompt_version() -> str:
 
 def review_and_repair(
     nutrition: dict, *, client, ctx, ai=None, objective_macros: dict | None = None,
-    is_checkin: bool = False,
+    is_checkin: bool = False, training: dict | None = None,
 ) -> tuple[dict, dict]:
     """Corre el panel con reparación determinista acotada.
 
@@ -136,7 +153,7 @@ def review_and_repair(
         if ai is None:
             return None
         return rp.make_ai_reviewer(
-            ai, plan_text=_plan_text(plan), anamnesis_text=anamnesis_text,
+            ai, plan_text=_plan_text(plan, training), anamnesis_text=anamnesis_text,
             criterios_text=criterios_text,
         )
 
@@ -193,12 +210,28 @@ def _criterios_text() -> str:
 
 def review_generated_plan(
     nutrition: dict, *, client, ctx, ai=None, objective_macros: dict | None = None,
+    training: dict | None = None,
 ) -> tuple[dict, dict | None]:
     """Envoltura BEST-EFFORT para la generación: nunca lanza. Devuelve
     `(nutrition_final, review_summary_or_None)`. Ante cualquier fallo del panel,
-    el plan original se devuelve intacto y sin anotación (color None)."""
+    el plan original se devuelve intacto — pero "no revisado" no puede parecer
+    "aprobado": el resumen queda en ÁMBAR degradado para que el coach lo sepa."""
     try:
         return review_and_repair(nutrition, client=client, ctx=ctx, ai=ai,
-                                 objective_macros=objective_macros)
+                                 objective_macros=objective_macros,
+                                 training=training)
     except Exception:  # noqa: BLE001 — el panel jamás bloquea la generación
-        return nutrition, None
+        return nutrition, {
+            "color": "ambar", "icp": None, "escalated": False, "vetoed": [],
+            "iterations": 0, "red_flags": [],
+            "degraded_reviewers": ["panel"],
+            "findings": [{
+                "severity": "mayor",
+                "title": "Revisión no ejecutada",
+                "description": "El panel de revisión falló al completo: este "
+                               "plan NO ha pasado la revisión automática.",
+                "action": "Revisar el plan a mano antes de enviarlo",
+                "donde": None, "correccion": None, "correccion_propuesta": None,
+            }],
+            "prompt_version": _prompt_version(),
+        }

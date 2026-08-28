@@ -499,6 +499,54 @@ def publish_plan(plan_id: int, db: Session = Depends(get_db)) -> PlanOut:
     return PlanOut.model_validate(plan)
 
 
+@router.post("/api/plans/{plan_id}/generate-education", response_model=PlanOut)
+def generate_education(plan_id: int, db: Session = Depends(get_db)) -> PlanOut:
+    """Regenera SOLO el contenido educativo de un plan (modelo ligero + caché).
+
+    El educativo es complementario: si falló al generar (quedó el aviso "no se
+    pudo generar el contenido educativo"), antes tocaba regenerar el plan
+    ENTERO — repagando núcleo, comidas y panel — para recuperarlo."""
+    plan = db.get(Plan, plan_id)
+    if not plan:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan no encontrado")
+    if not plan.training_json:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "El contenido educativo acompaña al entrenamiento: este plan no lo incluye.")
+
+    from types import SimpleNamespace
+
+    from app.services.ai.client import AIClient, AIGenerationError
+    from app.services.ai.generator import (
+        _education_user_prompt,
+        _education_user_prompt_training,
+        _education_with_cache,
+    )
+
+    split = (plan.training_json or {}).get("split_name") or ""
+    tr_ns = SimpleNamespace(split_name=split)
+    try:
+        if plan.nutrition_json:
+            edu = _education_with_cache(
+                AIClient(), split_name=split, variant="full",
+                user=_education_user_prompt(SimpleNamespace(training=tr_ns)))
+        else:
+            edu = _education_with_cache(
+                AIClient(), split_name=split, variant="train",
+                user=_education_user_prompt_training(tr_ns))
+    except AIGenerationError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+    plan.education_json = edu.model_dump()
+    # El aviso de la generación ya no aplica: el educativo existe.
+    flags_e = [f for f in (plan.guardrail_flags or [])
+               if "no se pudo generar el contenido educativo" not in str(f)]
+    plan.guardrail_flags = flags_e or None
+    log_event(db, "plan", plan.id, "education_generated", {})
+    db.commit()
+    db.refresh(plan)
+    return PlanOut.model_validate(plan)
+
+
 @router.post("/api/clients/{client_id}/periods", response_model=dict,
              status_code=status.HTTP_201_CREATED)
 def create_period(client_id: int, body: PeriodCreateIn, db: Session = Depends(get_db)) -> dict:
@@ -767,12 +815,43 @@ def edit_feedback(doc_id: int, body: FeedbackEditIn, db: Session = Depends(get_d
     Si ya estaba enviado, el cliente verá la versión editada en su Progreso."""
     from app.services.feedback_service import FeedbackError, update_feedback_text
 
-    if not db.get(FeedbackDoc, doc_id):
+    fb0 = db.get(FeedbackDoc, doc_id)
+    if not fb0:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Feedback no encontrado")
+    old_adjust = list((fb0.content_json or {}).get("plan_adjustments") or [])
     try:
         fb = update_feedback_text(db, doc_id, body.model_dump(exclude_unset=True))
     except FeedbackError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+
+    # §13: corregir los AJUSTES que propuso la IA es una lección de primera
+    # (la cuadrícula que "Adaptar" aplica al plan estaba mal) — antes esta
+    # corrección no se registraba y el aprendizaje nunca la veía.
+    if body.plan_adjustments is not None and body.plan_adjustments != old_adjust:
+        try:
+            from app.services.continuous_learning import classify_change_text, record_edit
+
+            period = db.get(Period, fb.period_id)
+            plan = db.scalar(
+                select(Plan).where(Plan.client_id == period.client_id)
+                .order_by(Plan.month_index.desc(), Plan.version.desc()).limit(1)
+            ) if period else None
+            if plan is not None:
+                nuevos = "; ".join(
+                    f"[{a.get('area')}] {a.get('change')}" for a in body.plan_adjustments)
+                with db.begin_nested():
+                    record_edit(
+                        db, plan_id=plan.id,
+                        category=classify_change_text(nuevos),
+                        field_path="feedback.plan_adjustments",
+                        before=old_adjust, after=body.plan_adjustments,
+                        note="el coach corrigió los ajustes propuestos por la "
+                             "revisión: " + (nuevos or "los dejó vacíos"),
+                        commit=False,
+                    )
+                db.commit()
+        except Exception:  # noqa: BLE001 — el aprendizaje nunca rompe la edición
+            pass
     return {
         "id": fb.id, "content": fb.content_json,
         "sent_at": fb.sent_at.isoformat() if fb.sent_at else None,
@@ -1038,7 +1117,8 @@ def send_plan_email(plan_id: int, db: Session = Depends(get_db)) -> dict:
     except Exception:
         pass
 
-    is_adapted = bool((plan.nutrition_json or {}).get("applied_adjustments"))
+    is_adapted = bool((plan.nutrition_json or {}).get("applied_adjustments")
+                      or (plan.training_json or {}).get("applied_adjustments"))
     brand = brand_from_config(db)
     portal_url = f"{settings.public_base_url}/p/{client.portal_token}"
     _first = ((client.full_name or "").split() or [(client.email or "cliente").split("@")[0]])[0]

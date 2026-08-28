@@ -669,7 +669,10 @@ def portal_training(
     )
     changes = None
     if plan is not None and plan.status == "published":
-        changes = (plan.nutrition_json or {}).get("applied_adjustments") or None
+        # En un plan solo-entreno las Novedades viven en training_json.
+        changes = ((plan.nutrition_json or {}).get("applied_adjustments")
+                   or (plan.training_json or {}).get("applied_adjustments")
+                   or None)
     week = portal_svc.current_training_week(db, plan, portal_svc.today_local())
     if week:
         week = {**week, "started_on": week["started_on"].isoformat()}
@@ -729,6 +732,9 @@ def portal_plan(
         training=plan.training_json,
         education=plan.education_json,
         diet_mode=client.diet_mode,
+        plan_changes=((plan.nutrition_json or {}).get("applied_adjustments")
+                      or (plan.training_json or {}).get("applied_adjustments")
+                      or None),
     )
 
 
