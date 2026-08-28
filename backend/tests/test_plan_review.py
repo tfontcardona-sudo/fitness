@@ -98,10 +98,15 @@ def test_veto_clinico_escala_a_rojo():
 
 
 def test_best_effort_nunca_rompe():
-    # Ante cualquier fallo del panel (aquí, nutrición None que rompe el validador),
-    # la envoltura devuelve el plan tal cual y sin anotación (color None).
+    # Ante cualquier fallo del panel (aquí, nutrición None que rompe el
+    # validador), la envoltura devuelve el plan tal cual — pero "no revisado"
+    # NO puede parecer "aprobado": el resumen queda en ÁMBAR degradado con el
+    # hallazgo "Revisión no ejecutada" para que el coach lo revise a mano.
     from app.services.plan_review import review_generated_plan
 
     nut, review = review_generated_plan(None, client=_client(), ctx=_ctx(), ai=None)
     assert nut is None
-    assert review is None
+    assert review is not None
+    assert review["color"] == "ambar"
+    assert review["degraded_reviewers"] == ["panel"]
+    assert any("Revisión no ejecutada" in f["title"] for f in review["findings"])

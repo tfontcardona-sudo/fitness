@@ -36,6 +36,32 @@ DB = _db_available()
 pytestmark_db = pytest.mark.skipif(not DB, reason="Requiere PostgreSQL")
 
 
+@pytest.fixture(autouse=True, scope="module")
+def _limpia_ejercicios_de_prueba():
+    """Los ejercicios que crean estos tests NO pueden quedarse en la biblioteca
+    real del coach (conftest solo limpia clientes de dominios de prueba)."""
+    yield
+    if not DB:
+        return
+    from sqlalchemy import delete, select
+
+    from app.db import SessionLocal
+    from app.models import Exercise, WorkoutLog
+
+    db = SessionLocal()
+    try:
+        ids = list(db.scalars(select(Exercise.id).where(
+            Exercise.canonical_name.like("Press banca test %"))))
+        if ids:
+            db.execute(delete(WorkoutLog).where(WorkoutLog.exercise_id.in_(ids)))
+            db.execute(delete(Exercise).where(Exercise.id.in_(ids)))
+            db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
+
+
 def _nuevo_cliente_con_plan(db, *, con_dieta=True, con_entreno=True):
     from app.models import Client, Exercise, Plan
     from app.security import new_portal_token
@@ -45,8 +71,11 @@ def _nuevo_cliente_con_plan(db, *, con_dieta=True, con_entreno=True):
                portal_token="p", status="active", goal_type="fat_loss",
                sex="male", current_weight_kg=80)
     db.add(c); db.flush(); c.portal_token = new_portal_token(c.id)
+    # Listas SIEMPRE explícitas (nunca NULL): ExerciseOut las exige y una fila
+    # con arrays a NULL rompía el listado de ejercicios de otros tests.
     ex = Exercise(canonical_name=f"Press banca test {uid}", muscle_primary="pecho",
-                  movement_pattern="empuje_horizontal", equipment=["barra"])
+                  movement_pattern="empuje_horizontal", equipment=["barra"],
+                  aliases=[], muscle_secondary=[], contraindications=[])
     db.add(ex); db.flush()
     nutrition = None
     if con_dieta:
