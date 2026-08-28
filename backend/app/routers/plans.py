@@ -279,7 +279,14 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
 
     # §13 (hardening): captura de las ediciones del coach para el aprendizaje
     # continuo. Best-effort con savepoint: si algo falla NUNCA corrompe la edición.
-    if diff_items:
+    # SOLO CORRECCIONES (auditoría 28-08): montar a mano una base/copia en
+    # borrador es CONSTRUCCIÓN, no una corrección de la IA — aprender de esas
+    # tandas contaminaba las lecciones con ruido ("el coach siempre cambia X"
+    # cuando estaba escribiendo X por primera vez). En cuanto el plan está
+    # activo, sus ediciones sí son correcciones y sí se aprenden.
+    es_construccion = (plan.status == "draft"
+                      and plan.generated_by in ("scaffold", "library"))
+    if diff_items and not es_construccion:
         try:
             from app.services.continuous_learning import classify_change_text, record_edit
 
@@ -306,7 +313,62 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
     if plan.status == "draft" and plan.generated_by not in ("scaffold", "library"):
         from app.services.plan_activation import activate_plan
 
-        activate_plan(db, plan)
+        # SEGURIDAD (auditoría 28-08): un borrador RETENIDO por los
+        # guardarraíles (violación / semáforo ROJO) NO se activa por el mero
+        # hecho de guardarlo — el coach pudo tocar UNA celda (o aplicar un
+        # Word) sin corregir la violación, y activar avisa al cliente. Al
+        # guardar se RE-VALIDA el contenido EDITADO con el Revisor 0:
+        # · limpio → los avisos rancios se apagan y el plan se activa;
+        # · sigue violando → sigue en borrador con las violaciones ACTUALES.
+        # El ROJO del panel §9 es un juicio CUALITATIVO que el Revisor 0 no
+        # puede avalar: es PEGAJOSO — solo lo levanta el botón «Activar»
+        # explícito (que lo asume y lo deja en auditoría).
+        flags_act = [str(f) for f in (plan.guardrail_flags or [])]
+        retenia = any(f.startswith(("violation:", "retenido:", "revisión: ROJO"))
+                      for f in flags_act)
+        if not retenia:
+            activate_plan(db, plan)
+        else:
+            vivas: list[str] = []
+            if isinstance(plan.nutrition_json, dict):
+                try:
+                    from app.services.guardrails import (
+                        check_nutrition, validate_plan_deterministic,
+                    )
+
+                    _c = db.get(Client, plan.client_id)
+                    vivas_rep = check_nutrition(
+                        plan.nutrition_json,
+                        sex=(_c.sex if _c else None) or "male",
+                        weight_kg=float(((_c.current_weight_kg or _c.start_weight_kg or 0)
+                                         if _c else 0) or 70.0),
+                        bmr=0.0,
+                        tdee=float(plan.nutrition_json.get("tdee_kcal") or 0),
+                    ).merge(validate_plan_deterministic(
+                        plan.nutrition_json,
+                        allergies=(_c.food_allergies or []) if _c else [],
+                        dislikes=(_c.food_dislikes or []) if _c else [],
+                        diet_pattern=_c.diet_pattern if _c else None,
+                    ))
+                    vivas = [f"violation: {v}" for v in vivas_rep.violations]
+                except Exception:  # noqa: BLE001 — ante la duda, conserva la retención
+                    vivas = [f for f in flags_act if f.startswith("violation:")]
+            else:
+                # Retención sin bloque de nutrición (solo-entreno): no hay
+                # re-chequeo determinista fiable — la activa el botón Activar.
+                vivas = [f for f in flags_act if f.startswith("violation:")] or [
+                    "violation: retenido sin re-chequeo automático"]
+            rojo = [f for f in flags_act if f.startswith("revisión: ROJO")]
+            resto = [f for f in flags_act
+                     if not f.startswith(("violation:", "retenido:", "revisión: ROJO"))]
+            if vivas or rojo:
+                plan.guardrail_flags = resto + rojo + vivas + [
+                    "retenido: sigue en BORRADOR — corrige lo señalado o pulsa "
+                    "«Activar» si lo decides tú (el cliente no ha sido avisado)"]
+            else:
+                # La edición corrigió lo que retenía: fuera avisos rancios.
+                plan.guardrail_flags = resto or None
+                activate_plan(db, plan)
     db.commit()
     db.refresh(plan)
     return PlanOut.model_validate(plan)
@@ -421,6 +483,16 @@ def publish_plan(plan_id: int, db: Session = Depends(get_db)) -> PlanOut:
             status.HTTP_409_CONFLICT,
             "Esta versión fue sustituida por otra más nueva: usa el historial "
             "si quieres restaurarla.")
+    # Activar EXPLÍCITO sobre un plan retenido = decisión del coach: la
+    # retención se apaga (dejarla encendida mantenía la banda roja «retenido»
+    # para siempre sobre un plan que él ya asumió). Queda en la auditoría.
+    flags_pub = [str(f) for f in (plan.guardrail_flags or [])]
+    asumidas = [f for f in flags_pub
+                if f.startswith(("violation:", "retenido:", "revisión: ROJO"))]
+    if asumidas:
+        plan.guardrail_flags = [f for f in flags_pub if f not in asumidas] or None
+        log_event(db, "plan", plan.id, "plan_activated_with_override",
+                  {"asumidas": asumidas[:10]})
     activate_plan(db, plan)
     db.commit()
     db.refresh(plan)
