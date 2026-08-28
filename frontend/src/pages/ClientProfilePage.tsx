@@ -615,7 +615,7 @@ function BillingRow({ client, onSaved }: { client: ClientOut; onSaved: () => voi
               blanco y cambiarlo era un billete de ida sin vuelta. */}
           {pkg(client.package_tier).tier === "full" && (
             <>
-              <option value="oferta">Oferta 1 € → 120 €/mes</option>
+              <option value="oferta">Oferta · 1 € + 120 € + 120 € (3 meses)</option>
               <option value="oferta2">Oferta · 2 pagos de 120,50 €</option>
             </>
           )}

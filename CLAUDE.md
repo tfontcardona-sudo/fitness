@@ -442,6 +442,40 @@ cd backend && python -m pytest tests/ -q
 
 ## 9. Trabajo pendiente / próximos pasos
 
+00000000000000000. ✅ **OFERTA = PROGRAMA CERRADO DE 3 MESES (28-08-2026).**
+   Decisión del dueño: la oferta es UNA — 3 meses de DQR Full con permanencia
+   (1 € el primer mes + 120 € el 2º + 120 € el 3º = 241 €) — y sus DOS formas
+   de pago son solo maneras de pagar lo mismo: en 3 plazos (`oferta`, con el
+   gancho del euro) o en 2 plazos de 120,50 € (`oferta2`). La forma del 1 €
+   dejó de ser suscripción abierta:
+   - `OFFER_CHARGES=3` + `OFFER_CHARGES_BY_PERIOD` (stripe_service); el corte
+     se generalizó: `pagos_oferta_cobrados(db, client, periodo)` cuenta las
+     facturas cobradas del LIBRO (la del 1 € también es la 1ª de las 3) y
+     `detener_suscripcion_oferta(..., periodo=…)` cancela en Stripe al llegar
+     a las requeridas (webhook `_handle_invoice_event` + backstop diario en
+     `jobs.py`, ahora sobre AMBOS periodos, summary `ofertas_detenidas`). Los
+     antiguos `pagos_2pagos_completados`/`detener_suscripcion_2pagos` ya no
+     existen.
+   - En la forma del 1 € el corte con éxito manda PUSH informativo al coach
+     ("Oferta completada: cobros detenidos… en un mes le llegará el aviso de
+     renovación"): los suscriptores ANTIGUOS de la oferta abierta que ya
+     pasaran de 3 facturas se cortan también al desplegarse (backstop) — el
+     push hace visible esa transición.
+   - Baja tras completar (2 o 3 cobros según forma) = `subscription_completed`
+     (sigue "pagado", feed "Oferta (1 € + 120 € + 120 €) completada"); baja
+     ANTES = impago. Renovación: `BILLING_DAYS["oferta"]=30` (el programa
+     acaba ~30 días tras el 3er cobro; con la suscripción viva no avisa).
+   - `payments.describe`: "oferta (pago 1 de 3 · 1 €)" / "(pago 2 o 3 de 3)".
+     Checkout con `custom_text.submit` explicando el programa y el corte (el
+     checkout de Stripe enseña "120 €/mes" y sin ese texto parecía abierta);
+     bot preview actualizado.
+   - Front: OfertaPage (fuera "sin permanencia/cancelas cuando quieras" → "3
+     meses, se detiene solo, sin renovación automática"), SalesKit (mensajes y
+     chips), packages.ts (OFFER_CHARGES/OFFER_TOTAL_EUR, billingLabel "Oferta
+     3 pagos (1 €)"), alta y ficha.
+   - Tests nuevos en `tests/test_stripe.py`: corte a la 3ª factura, baja
+     temprana = impago, ventana de renovación +30, describe.
+
 0000000000000000. ✅ **INGESTA PERFECTA (27-08-2026)** — petición del dueño:
    "al subir Words, PDFs o planificaciones ya hechas, o al hacerlas a mano, no
    se aplican al completo… haz que se apliquen y lean todos a la perfección
@@ -566,9 +600,11 @@ cd backend && python -m pytest tests/ -q
 
 00000000000000. ✅ **OFERTA EN 2 PAGOS (agosto 2026).** La oferta Full tiene DOS
    formas de pago en el mismo enlace (/oferta) y ambas son SOLO del plan Full:
-   - `billing_period="oferta"`: 1 € el primer mes → 120 €/mes en suscripción
-     ABIERTA (sin permanencia: se renueva cada mes hasta que se cancele — NO
-     se detiene al tercer mes; la página pública lo anuncia así).
+   - `billing_period="oferta"`: 1 € el primer mes → 120 €/mes. ⚠️ SUPERSEDIDO
+     (28-08-2026, decisión del dueño): ya NO es suscripción abierta — es el
+     MISMO programa cerrado de 3 meses que la oferta2, pagado en 3 plazos
+     (1 € + 120 € + 120 € = 241 €), y el webhook la CANCELA al cobrarse la 3ª
+     factura. Ver la entrada "OFERTA = PROGRAMA CERRADO" más arriba.
    - `billing_period="oferta2"` (NUEVA): 2 pagos de 120,50 € (total 241 €,
      igual que 1+120+120). Suscripción mensual de 120,50 €
      (`dqr_full_oferta2`, sin cupón) que el webhook CANCELA en Stripe al

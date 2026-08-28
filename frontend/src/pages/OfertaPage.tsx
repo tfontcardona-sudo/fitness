@@ -5,10 +5,11 @@ import { waPhone, waUrl } from "../lib/whatsapp";
 
 /**
  * Página PÚBLICA de la OFERTA (el enlace de la bio en la campaña de story/post):
- * primer mes del plan completo por 1 €. El ÚNICO precio visible es el euro —
- * del resto solo se dice que queda por debajo de entreno y nutrición por
- * separado. Dos salidas: pagar ya (Stripe, suscripción con el primer mes a 1 €)
- * o preguntar por WhatsApp. Garantía: sin permanencia, cancelas cuando quieras.
+ * PROGRAMA CERRADO de 3 meses del plan completo — 1 € el primer mes y 120 € el
+ * segundo y el tercero (total 241 €). Dos formas de pagarlo (3 pagos con el
+ * gancho del euro, o 2 pagos de 120,50 €) y en ambas el cobro SE DETIENE SOLO:
+ * sin renovación automática ni sorpresas. Tercera salida: preguntar por
+ * WhatsApp.
  */
 
 const WA_MESSAGE =
@@ -66,8 +67,9 @@ export default function OfertaPage() {
           </h1>
           <p className="mt-3 max-w-md text-sm text-white/90">
             El plan completo: entrenamiento y nutrición hechos SOLO para ti,
-            conmigo cada día por WhatsApp. Un mes entero para probarlo en serio.
-            Un euro. Eso es todo.
+            conmigo cada día por WhatsApp. Un programa de 3 meses: empiezas hoy
+            por 1 €, y el segundo y el tercer mes son 120 € cada uno. Después,
+            nada más.
           </p>
         </header>
 
@@ -87,12 +89,13 @@ export default function OfertaPage() {
           <div className="mt-4 rounded-xl border p-3 text-[13px] leading-snug"
             style={{ borderColor: "#cfe3cf", background: "#f4faf4" }}>
             <p className="flex items-center gap-1.5 font-bold" style={{ color: "#2E7D46" }}>
-              <ShieldCheck size={15} /> Garantía de satisfacción
+              <ShieldCheck size={15} /> Sin sorpresas, garantizado
             </p>
             <p className="mt-1 opacity-80">
-              Sin permanencia: si el primer mes no te convence, cancelas y no pagas
-              nada más. Y si sigues, el precio mensual queda por debajo de lo que
-              cuestan el plan de entrenamiento y el de nutrición por separado.
+              Programa cerrado de 3 meses: 1 € hoy, 120 € el segundo mes y 120 €
+              el tercero (241 € en total, por debajo de lo que cuestan el plan de
+              entrenamiento y el de nutrición por separado). Después el cobro se
+              detiene SOLO: sin renovación automática ni permanencia escondida.
             </p>
           </div>
         </div>
@@ -151,8 +154,8 @@ export default function OfertaPage() {
 
         <p className="mt-6 text-center text-xs text-white/60"
           style={{ textShadow: "0 1px 3px rgba(0,0,0,0.6)" }}>
-          Pago seguro con Stripe · Suscripción mensual sin permanencia · Cancelas
-          cuando quieras · Te respondo personalmente
+          Pago seguro con Stripe · Programa de 3 meses (1 € + 120 € + 120 €) ·
+          El cobro se detiene solo · Te respondo personalmente
         </p>
       </div>
     </div>

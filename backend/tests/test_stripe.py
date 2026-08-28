@@ -1162,6 +1162,163 @@ def test_renovacion_de_la_oferta2_tras_completarse():
     assert renewal_window(c, hoy.date()) is None
 
 
+# ---- La OFERTA en 3 pagos también es un programa CERRADO: 1 € + 120 + 120 ----
+
+def _cliente_oferta3(db, *, sub_id="sub_o3"):
+    from app.models import Client
+    from app.security import new_portal_token
+
+    c = Client(full_name="Tres Pagos", email=f"o3-{uuid.uuid4().hex[:8]}@x.com",
+               package_tier="full", billing_period="oferta", status="active",
+               portal_token="p", payment_status="paid",
+               stripe_subscription_id=sub_id)
+    db.add(c)
+    db.flush()
+    c.portal_token = new_portal_token(c.id)
+    db.commit()
+    return c
+
+
+def _evento_factura_oferta3(cid: int, invoice_id: str, razon: str,
+                            centimos: int) -> dict:
+    return {"type": "invoice.paid", "data": {"object": {
+        "id": invoice_id, "subscription": "sub_o3",
+        "subscription_details": {"metadata": {"client_id": str(cid),
+                                              "billing_period": "oferta"}},
+        "billing_reason": razon, "amount_paid": centimos,
+        "lines": {"data": [{"price": {"lookup_key": "dqr_full_oferta"}}]},
+    }}}
+
+
+def test_webhook_tercer_pago_detiene_la_oferta(monkeypatch):
+    """La oferta del 1 € es el MISMO programa de 3 meses que la de 2 pagos:
+    al cobrarse la TERCERA factura (1 € + 120 + 120) el webhook cancela la
+    suscripción en Stripe — no hay cuarto cobro — y la baja posterior no
+    marca al cliente como pendiente: el programa está pagado entero."""
+    stripe_service = _prep(monkeypatch)
+    from sqlalchemy import select
+
+    from app.db import SessionLocal
+    from app.models import Client, Payment
+    from app.services import push as push_svc
+
+    avisos = []
+    monkeypatch.setattr(push_svc, "send_to_coach", lambda db, payload: avisos.append(payload))
+
+    fake = FakeStripe()
+
+    db = SessionLocal()
+    try:
+        c = _cliente_oferta3(db)
+        cid = c.id
+
+        def _mandar(evento):
+            class _Hooked:
+                Webhook = type("W", (), {
+                    "construct_event": staticmethod(lambda *a, **k: evento)})
+                Subscription = fake.Subscription
+
+            monkeypatch.setattr(stripe_service, "_stripe", lambda: _Hooked)
+            return stripe_service.handle_webhook(db, b"{}", "sig")
+
+        # Pago 1 (1 €, subscription_create) y pago 2 (120 €): sin cancelar.
+        res = _mandar(_evento_factura_oferta3(cid, "in_o3_1", "subscription_create", 100))
+        assert res == {"invoice": "paid", "client_id": cid}
+        res = _mandar(_evento_factura_oferta3(cid, "in_o3_2", "subscription_cycle", 12000))
+        assert res == {"invoice": "paid", "client_id": cid}
+        assert fake.sub_cancelaciones == []
+
+        # Pago 3 (120 €): la suscripción se CANCELA — programa completo.
+        res = _mandar(_evento_factura_oferta3(cid, "in_o3_3", "subscription_cycle", 12000))
+        assert res == {"invoice": "paid", "client_id": cid}
+        assert fake.sub_cancelaciones == ["sub_o3"]
+
+        # La baja que emite Stripe tras la cancelación es un FIN natural.
+        res = _mandar({"type": "customer.subscription.deleted",
+                       "data": {"object": {"id": "sub_o3",
+                                           "metadata": {"client_id": str(cid)}}}})
+        assert res == {"subscription_completed": cid}
+        db.expire_all()
+        c = db.get(Client, cid)
+        assert c.payment_status == "paid"
+        assert c.stripe_subscription_id is None
+        assert not any("Suscripción cancelada" in a.get("title", "") for a in avisos)
+        fila = db.scalar(select(Payment).where(Payment.stripe_object_id == "sub_o3",
+                                               Payment.status == "canceled"))
+        assert fila is not None and "1 € + 120 € + 120 €" in (fila.description or "")
+    finally:
+        db.close()
+
+
+def test_webhook_baja_temprana_de_la_oferta3_es_impago(monkeypatch):
+    """Si la suscripción de la oferta muere ANTES del tercer cobro (impagos
+    agotados, baja manual), sí es una baja de verdad: pendiente + push."""
+    stripe_service = _prep(monkeypatch)
+    from app.db import SessionLocal
+    from app.models import Client
+    from app.services import push as push_svc
+
+    avisos = []
+    monkeypatch.setattr(push_svc, "send_to_coach", lambda db, payload: avisos.append(payload))
+
+    db = SessionLocal()
+    try:
+        c = _cliente_oferta3(db, sub_id="sub_o3_corta")
+        cid = c.id
+        # Solo constan DOS pagos en el libro (1 € + 120 €): falta el tercero.
+        from app.services.payments import record_payment
+
+        record_payment(db, object_id=f"in_o3a_{cid}", kind="invoice",
+                       status="paid", amount_cents=100, client=c,
+                       billing_period="oferta", description="pago 1 de 3")
+        record_payment(db, object_id=f"in_o3b_{cid}", kind="invoice",
+                       status="paid", amount_cents=12000, client=c,
+                       billing_period="oferta", description="pago 2 de 3")
+        db.commit()
+
+        event = {"type": "customer.subscription.deleted",
+                 "data": {"object": {"id": "sub_o3_corta",
+                                     "metadata": {"client_id": str(cid)}}}}
+        monkeypatch.setattr(stripe_service, "_stripe", _fake_stripe(event))
+        res = stripe_service.handle_webhook(db, b"{}", "sig")
+        assert res == {"subscription_cancelled": cid}
+        db.expire_all()
+        assert db.get(Client, cid).payment_status == "pending"
+        assert any("Suscripción cancelada" in a.get("title", "") for a in avisos)
+    finally:
+        db.close()
+
+
+def test_renovacion_de_la_oferta3_tras_completarse():
+    """Completados los 3 pagos (suscripción cancelada y despegada), el
+    programa acaba ~30 días después del TERCER cobro: la ventana de renovación
+    cuenta desde paid_at + 30. Con la suscripción viva, nunca avisa."""
+    from datetime import datetime, timedelta, timezone
+    from types import SimpleNamespace
+
+    from app.services.renewals import renewal_window
+
+    hoy = datetime.now(timezone.utc)
+    c = SimpleNamespace(payment_status="paid", stripe_subscription_id=None,
+                        paid_at=hoy - timedelta(days=25), billing_period="oferta")
+    w = renewal_window(c, hoy.date())
+    assert w is not None and w[1] == 5  # 30 − 25
+    viva = SimpleNamespace(payment_status="paid", stripe_subscription_id="sub_x",
+                           paid_at=hoy - timedelta(days=200), billing_period="oferta")
+    assert renewal_window(viva, hoy.date()) is None
+
+
+def test_describe_de_la_oferta3():
+    from app.services.payments import describe
+
+    assert describe("full", "oferta", kind="invoice",
+                    billing_reason="subscription_create") == \
+        "DQR Full · oferta (pago 1 de 3 · 1 €)"
+    assert describe("full", "oferta", kind="invoice",
+                    billing_reason="subscription_cycle") == \
+        "DQR Full · oferta (pago 2 o 3 de 3)"
+
+
 def test_describe_oferta2():
     """El feed de pagos dice cuál de los dos pagos es cada movimiento."""
     from app.services.payments import describe

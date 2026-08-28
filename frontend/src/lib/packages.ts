@@ -92,22 +92,26 @@ export const BILLING_PERIODS: { value: PublicBillingPeriod; label: string }[] = 
   { value: "6m", label: "Semestral" },
 ];
 
-/** Oferta de captación (solo plan Full): 1 € el primer mes → 120 €/mes en
- *  SUSCRIPCIÓN de Stripe (renovación automática). Espejo de las constantes
- *  OFFER_* de backend/app/services/stripe_service.py. */
+/** Oferta de captación (solo plan Full): PROGRAMA CERRADO de 3 meses —
+ *  1 € el primer mes y 120 € el segundo y el tercero (total 241 €). Es una
+ *  suscripción de Stripe que el backend DETIENE SOLO al tercer cobro (no hay
+ *  cuarto). Espejo de las constantes OFFER_* de
+ *  backend/app/services/stripe_service.py. */
 export const OFFER_PERIOD: BillingPeriod = "oferta";
 export const OFFER_FIRST_EUR = 1;
 export const OFFER_MONTHLY_EUR = 120;
+export const OFFER_CHARGES = 3;
+export const OFFER_TOTAL_EUR = 241;
 
-/** La MISMA oferta en 2 pagos: 120,50 € hoy y 120,50 € al mes (total 241 €,
- *  igual que 1 + 120 + 120). La suscripción se cancela sola al segundo cobro. */
+/** La MISMA oferta de 3 meses en 2 pagos: 120,50 € hoy y 120,50 € al mes
+ *  (total 241 €, igual que 1 + 120 + 120). Se cancela sola al segundo cobro. */
 export const OFFER2_PERIOD: BillingPeriod = "oferta2";
 export const OFFER2_EACH_EUR = 120.5;
 export const OFFER2_CHARGES = 2;
 
 /** Etiqueta de una duración ("1m" → "Mensual"). Desconocida → mensual. */
 export function billingLabel(period: string | null | undefined): string {
-  if (period === OFFER_PERIOD) return "Oferta 1 €";
+  if (period === OFFER_PERIOD) return "Oferta 3 pagos (1 €)";
   if (period === OFFER2_PERIOD) return "Oferta 2 pagos";
   return BILLING_PERIODS.find((b) => b.value === period)?.label ?? "Mensual";
 }

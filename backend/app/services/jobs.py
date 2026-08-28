@@ -157,25 +157,29 @@ def run_daily_maintenance(db: Session, today: date | None = None) -> dict:
     except Exception:  # noqa: BLE001
         pass
 
-    # BACKSTOP de la oferta en 2 PAGOS: si el webhook que cancela la
-    # suscripción tras el 2º cobro se perdió (o Stripe falló en ese momento),
-    # aquí se reintenta a diario — sin esto, al mes siguiente entraría un
-    # TERCER cargo de 120,50 € indebido. Best-effort: nunca rompe el job.
+    # BACKSTOP de la OFERTA (las dos formas de pago): si el webhook que
+    # cancela la suscripción tras el último cobro (el 2º de 120,50 € o el 3º
+    # de 1 € + 120 + 120) se perdió (o Stripe falló en ese momento), aquí se
+    # reintenta a diario — sin esto, al mes siguiente entraría un cargo
+    # indebido. Best-effort: nunca rompe el job.
     try:
         from app.services.stripe_service import (
-            OFFER2_CHARGES, OFFER2_PERIOD, detener_suscripcion_2pagos,
-            pagos_2pagos_completados,
+            OFFER_CHARGES_BY_PERIOD, detener_suscripcion_oferta,
+            pagos_oferta_cobrados,
         )
 
         pendientes = db.scalars(
-            select(Client).where(Client.billing_period == OFFER2_PERIOD,
-                                 Client.stripe_subscription_id.is_not(None))
+            select(Client).where(
+                Client.billing_period.in_(list(OFFER_CHARGES_BY_PERIOD)),
+                Client.stripe_subscription_id.is_not(None))
         ).all()
         for c in pendientes:
-            if pagos_2pagos_completados(db, c) >= OFFER2_CHARGES:
-                if detener_suscripcion_2pagos(db, c, c.stripe_subscription_id,
-                                              motivo="backstop_diario"):
-                    summary["oferta2_detenidas"] = summary.get("oferta2_detenidas", 0) + 1
+            requeridos = OFFER_CHARGES_BY_PERIOD[c.billing_period]
+            if pagos_oferta_cobrados(db, c, c.billing_period) >= requeridos:
+                if detener_suscripcion_oferta(db, c, c.stripe_subscription_id,
+                                              motivo="backstop_diario",
+                                              periodo=c.billing_period):
+                    summary["ofertas_detenidas"] = summary.get("ofertas_detenidas", 0) + 1
                 db.commit()
     except Exception:  # noqa: BLE001
         db.rollback()
