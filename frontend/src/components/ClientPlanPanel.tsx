@@ -70,6 +70,12 @@ function normalize(p: any): PlanData {
   };
 }
 
+// GENERACIONES EN VUELO por cliente (a nivel de módulo): tardan ~1 minuto y el
+// componente se REMONTA al cambiar de pestaña — sin esto, al volver se perdía
+// el "Generando…" (parecía que no pasaba nada y se podía relanzar → doble
+// gasto de créditos).
+const enVuelo = new Map<number, Promise<unknown>>();
+
 /**
  * Planificación: genera el plan mensual con IA a partir de la anamnesis, lo
  * PERSISTE (al volver a la pestaña se recarga el último plan guardado), muestra
@@ -96,7 +102,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
   // Vídeo de cada ejercicio (biblioteca): botón directo en la rutina.
   const [exVideo, setExVideo] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
+  const [generating, setGenerating] = useState(() => enVuelo.has(client.id));
   const [publishing, setPublishing] = useState(false);
   const [editing, setEditing] = useState(false);
   // El perfil se entera de que el editor está abierto (guard de navegación).
@@ -109,6 +115,9 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
     id: number; period_index: number; plan_id: number | null; starts_on: string; ends_on: string; status: string;
     feedback_id?: number | null;
     plan_adjustments?: { area: string; change: string; reason: string }[] | null;
+    // Decisión de la revisión automática (§8): "Adaptar" debe ofrecerse aunque
+    // la IA no propusiera ajustes de texto (p. ej. solo un diet break).
+    biweekly_decision?: { action?: string; kcal_delta_pct?: number; rationale?: string } | null;
   }[]>([]);
   // Todas las versiones (archivo de planificaciones anteriores por objetivo)
   const [allPlans, setAllPlans] = useState<any[]>([]);
@@ -120,6 +129,9 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
   // Tras EDITAR el plan: recordatorio de descargar el PDF de nuevo (la versión
   // editada ya está guardada; el PDF descargado antes se queda antiguo).
   const [needsDownload, setNeedsDownload] = useState(false);
+  // Tras descargar el Word editable, la VUELTA ("Subir Word editado") sale a
+  // primera fila — antes vivía solo dentro de «Más» y costaba encontrarla.
+  const [wordDescargado, setWordDescargado] = useState(false);
   // Historial de versiones (§4): instantáneas guardadas antes de cada edición,
   // restaurables si un cambio salió mal.
   const [histOpen, setHistOpen] = useState(false);
@@ -297,6 +309,26 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
   // ¿La operación en curso es la base sin IA? (para el texto de progreso)
   const [scaffolding, setScaffolding] = useState(false);
 
+  // Reengancha una generación EN VUELO tras un remount (cambio de pestaña):
+  // al terminar refresca el plan y apaga el "Generando…".
+  useEffect(() => {
+    const enCurso = enVuelo.get(client.id);
+    if (!enCurso) return;
+    setGenerating(true);
+    let vivo = true;
+    enCurso.finally(async () => {
+      if (!vivo) return;
+      setGenerating(false);
+      try {
+        const plans = await api.listPlans(client.id);
+        setAllPlans(plans);
+        const v = vigente(plans);
+        if (v) setPlan(normalize(v));
+      } catch { /* la carga normal del montaje ya lo enseña */ }
+    });
+    return () => { vivo = false; };
+  }, [client.id]);
+
   async function generate(meals?: string[]) {
     if (generating) return;
     // Cliente avanzado: la IA es la vía EXCEPCIONAL y además auto-activa — se
@@ -308,18 +340,26 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
     setGenerating(true);
     setScaffolding(false);
     setMissing(null);
+    const peticion = api.generatePlan(client.id, null, meals);
+    enVuelo.set(client.id, peticion.catch(() => undefined));
     try {
-      const p = await api.generatePlan(client.id, null, meals);
+      const p = await peticion;
       setPlan(normalize(p));
       setPeriods(await api.listPeriods(client.id).catch(() => periods));
       setNeedsDownload(false); // versión nueva: el aviso de re-descarga ya no aplica
       onClientChanged?.(); // resincroniza sidebar (Dieta), badges y carpetas
-      toast.push(`Plan generado y ACTIVO`);
+      // Toast HONESTO: si los guardarraíles lo retuvieron, no se canta victoria.
+      if ((p as any).retained) {
+        toast.push("Borrador RETENIDO por avisos: revísalo y actívalo tú (el cliente no ve nada)", "error");
+      } else {
+        toast.push(`Plan generado y ACTIVO`);
+      }
     } catch (e: any) {
       const detail = e?.detail ?? e?.data?.detail;
       if (detail?.missing) setMissing(detail.missing);
       else toast.push([detail?.message ?? e?.message ?? "No se pudo generar el plan", detail?.error].filter(Boolean).join(" — "), "error");
     } finally {
+      enVuelo.delete(client.id);
       setGenerating(false);
     }
   }
@@ -327,8 +367,10 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
   async function adapt() {
     if (generating) return;
     setGenerating(true);
+    const peticion = api.adaptPlan(client.id);
+    enVuelo.set(client.id, peticion.catch(() => undefined));
     try {
-      const r = await api.adaptPlan(client.id);
+      const r = await peticion;
       const plans = await api.listPlans(client.id);
       setAllPlans(plans);
       const full = plans.find((pl) => pl.id === r.id) ?? vigente(plans);
@@ -336,11 +378,17 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
       setPeriods(await api.listPeriods(client.id).catch(() => periods));
       setNeedsDownload(false); // versión nueva activa: el aviso de la edición anterior caduca
       onClientChanged?.(); // resincroniza sidebar (Dieta) y estados
-      toast.push(`Adaptado y ACTIVO · v${r.version}`);
+      // Igual que al generar: una adaptación retenida NO se anuncia como activa.
+      if ((full ?? r).status !== "published") {
+        toast.push(`Adaptación v${r.version} en BORRADOR retenido: revísala antes de activar`, "error");
+      } else {
+        toast.push(`Adaptado y ACTIVO · v${r.version}`);
+      }
     } catch (e: any) {
       const detail = e?.detail ?? e?.data?.detail;
       toast.push([detail?.message ?? e?.message ?? "No se pudo adaptar el plan", detail?.error].filter(Boolean).join(" — "), "error");
     } finally {
+      enVuelo.delete(client.id);
       setGenerating(false);
     }
   }
@@ -439,6 +487,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
         a.click();
         URL.revokeObjectURL(url);
         setNeedsDownload(false); // ya tiene la versión actualizada
+        if (format === "docx") setWordDescargado(true); // la vuelta, a mano
       })
       .catch(() => toast.push("No se pudo descargar", "error"));
   }
@@ -839,10 +888,22 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
               : "Los guardarraíles la pararon: revísala y corrige lo señalado, o actívala si estás de acuerdo tal cual."}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <button onClick={() => setPlan(normalize(retenido))} className="btn btn-ghost text-xs">
+            {/* Con retención por seguridad lo PRIMERO es revisar: el botón
+                destacado es "Ver este borrador"; activar sin corregir queda en
+                segundo plano y pide confirmación. En una copia normal, al revés. */}
+            <button onClick={() => setPlan(normalize(retenido))}
+              className={esCopia ? "btn btn-ghost text-xs" : "btn btn-primary text-xs"}>
               Ver este borrador
             </button>
-            <button onClick={activarRetenido} disabled={publishing} className="btn btn-primary text-xs">
+            <button
+              onClick={() => {
+                if (!esCopia && !window.confirm(
+                  "Este borrador está RETENIDO por avisos de seguridad. "
+                  + "¿Activarlo de todas formas? El cliente lo verá al momento.")) return;
+                activarRetenido();
+              }}
+              disabled={publishing}
+              className={esCopia ? "btn btn-primary text-xs" : "btn btn-ghost text-xs"}>
               {publishing ? "Activando…" : esCopia ? "Activar" : "Activar de todas formas"}
             </button>
             <button
@@ -863,6 +924,18 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
             </button>
           </div>
         </div>
+        );
+      })()}
+
+      {/* Viendo un borrador que NO es el plan activo: salida clara de vuelta
+          (antes el coach se quedaba "atrapado" mirando el borrador). */}
+      {plan && (() => {
+        const v = vigente(allPlans);
+        if (!v || v.id === plan.id) return null;
+        return (
+          <button onClick={() => setPlan(normalize(v))} className="btn btn-ghost text-xs">
+            ← Volver al plan activo (v{v.version})
+          </button>
         );
       })()}
 
@@ -1006,6 +1079,24 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
             <button onClick={downloadPdf} className="btn btn-ghost">
               <Download size={15} /> Descargar PDF
             </button>
+            {/* La VUELTA del Word: tras descargar el editable, subirlo está a
+                un clic (no escondido dentro de «Más»). */}
+            {wordDescargado && (
+              <label className="btn btn-ghost cursor-pointer"
+                title="Revisar cambios antes de aplicarlos">
+                {importing ? <Spinner /> : <FileUp size={15} />} Subir Word editado
+                <input
+                  type="file"
+                  accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  className="hidden"
+                  disabled={importing}
+                  onChange={(e) => {
+                    onWordPicked(e.target.files?.[0]);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            )}
             {/* Las acciones poco frecuentes viven en un menú: la botonera pasa
                 de 6-7 botones del mismo peso a 3-4 (lo frecuente destaca). */}
             <details className="relative"
@@ -1278,14 +1369,22 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
       {/* Estructura de comidas del día: desplegable para elegir qué tomas hace el
           cliente (desayuno, media mañana, comida, snack, cena, pre-cama). Se
           inicializa con las comidas del plan actual; al cambiarlas y regenerar,
-          toda la planificación (macros, estructura, PDF, portal) se readapta. */}
+          toda la planificación (macros, estructura, PDF, portal) se readapta.
+          Solo con NUTRICIÓN contratada: en un plan solo-entreno no hay comidas. */}
+      {hasNutrition && (
       <MealStructureCard
         currentNames={(Array.isArray(nut.meals) ? nut.meals : []).map((m: any) => m?.name ?? "")}
         generating={generating}
         // Cliente AVANZADO: regenerar con otras comidas rehace la BASE sin IA
         // (0 créditos, sigue en borrador); al resto se lo regenera la IA.
         onRegenerate={(keys) => (client.level === "advanced" ? void scaffold(keys) : generate(keys))}
+        // La base sin IA del avanzado es gratis y no pisa nada publicado; en el
+        // resto, regenerar GASTA créditos y sustituye la versión actual.
+        confirmText={client.level === "advanced" ? null
+          : "¿Regenerar el plan con estas comidas? Gasta créditos de IA y sustituye "
+            + "la versión actual, ediciones manuales incluidas (queda en el historial)."}
       />
+      )}
 
       {/* CAMBIOS MANUALES detectados al editar (diff exacto): el sistema sabe
           que esta versión es un ajuste esporádico del coach → aviso con la
@@ -1418,18 +1517,37 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
       />
 
       {/* Cambios PROPUESTOS por la última revisión quincenal: se ven ANTES de
-          adaptar (qué cambia y por qué, dieta y entreno) y el botón va dentro. */}
-      {review?.plan_adjustments?.length && !alreadyAdapted ? (
+          adaptar (qué cambia y por qué, dieta y entreno) y el botón va dentro.
+          También sale cuando la IA no propuso texto pero la revisión automática
+          SÍ decidió algo aplicable (ajuste de kcal o diet break): antes esa
+          decisión se quedaba sin botón que la aplicara. */}
+      {(() => {
+        const decision = review?.biweekly_decision ?? null;
+        const decisionAccionable = ["adjust_kcal", "diet_break"].includes(decision?.action ?? "");
+        const nAjustes = review?.plan_adjustments?.length ?? 0;
+        if (!review || alreadyAdapted || (!nAjustes && !decisionAccionable)) return null;
+        return (
         <details open name="plan-secciones" className="card p-5" {...ancla("plan.adaptar")}
           style={{ borderColor: "color-mix(in srgb, var(--brand-accent) 55%, transparent)" }}>
           <summary className="cursor-pointer text-sm font-semibold text-zinc-100">
             Propuestas · revisión #{review.period_index}
             <span className="ml-2 text-xs font-normal text-zinc-500">
-              {review.plan_adjustments.length} ajustes · {hasTraining ? "dieta y entrenamiento" : "dieta"}
+              {nAjustes > 0
+                ? `${nAjustes} ajustes · ${hasTraining ? "dieta y entrenamiento" : "dieta"}`
+                : "ajuste automático de la revisión"}
             </span>
           </summary>
           <div className="mt-3 space-y-2">
-            {review.plan_adjustments.map((a, i) => (
+            {decisionAccionable && decision && (
+              <AdjustmentRow
+                area="dieta"
+                main={decision.action === "diet_break"
+                  ? "Diet break: 7-10 días comiendo a mantenimiento"
+                  : `Calorías ${(decision.kcal_delta_pct ?? 0) > 0 ? "+" : ""}${decision.kcal_delta_pct ?? 0}% (revisión automática)`}
+                reason={decision.rationale ?? "Regla fija de la revisión automática sobre tu progreso real."}
+              />
+            )}
+            {(review.plan_adjustments ?? []).map((a, i) => (
               <AdjustmentRow key={i} area={a.area} main={a.change} reason={a.reason} />
             ))}
           </div>
@@ -1442,7 +1560,8 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
             </button>
           </div>
         </details>
-      ) : null}
+        );
+      })()}
 
       {/* Cambios APLICADOS en esta versión (tras adaptar): antes→después + porqué.
           Queda visible también una vez publicado, como registro de la versión, y
@@ -1997,10 +2116,13 @@ function MealStructureCard({
   currentNames,
   generating,
   onRegenerate,
+  confirmText,
 }: {
   currentNames: string[];
   generating: boolean;
   onRegenerate: (keys: string[]) => void;
+  /** Confirmación previa (gasto de créditos + pisa ediciones); null = directo. */
+  confirmText?: string | null;
 }) {
   const currentKeys = mealKeysFromNames(currentNames);
   const [sel, setSel] = useState<string[]>(currentKeys);
@@ -2067,7 +2189,10 @@ function MealStructureCard({
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <button
           type="button"
-          onClick={() => onRegenerate(orderedKeys)}
+          onClick={() => {
+            if (confirmText && !window.confirm(confirmText)) return;
+            onRegenerate(orderedKeys);
+          }}
           disabled={generating || tooFew || !changed}
           className="btn btn-primary"
         >

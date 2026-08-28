@@ -718,13 +718,14 @@ def generate_monthly_plan(
     flags: list[str] = []
     model = settings.model_heavy
 
-    # LECCIONES del coach (§13 en vivo): lo que corrigió a mano en planes
-    # anteriores, destilado en pautas cualitativas. Va en el USER prompt (no en
-    # el system) para no invalidar la caché del system prompt entre clientes.
+    # LECCIONES del coach (§13 en vivo) + memoria de VETOS del validador: lo
+    # que el coach corrigió a mano y lo que los guardrails tuvieron que frenar
+    # en generaciones anteriores. Va en el USER prompt (no en el system) para
+    # no invalidar la caché del system prompt entre clientes.
     try:
-        from app.services.coach_lessons import lessons_reference
+        from app.services.coach_lessons import lessons_reference, vetos_reference
 
-        _lecciones = lessons_reference()
+        _lecciones = lessons_reference() + vetos_reference()
     except Exception:  # noqa: BLE001 — el aprendizaje nunca bloquea generar
         _lecciones = ""
 
@@ -733,6 +734,15 @@ def generate_monthly_plan(
         if not include_training:
             raise PlanGenerationError(
                 "un plan debe incluir al menos nutrición o entrenamiento")
+        def _chequea_entreno(tc):
+            return gr.check_training(
+                tc.training.model_dump(),
+                training_days_declared=ctx.training_days,
+                session_max_min=ctx.session_max_min,
+                client_contraindications=ctx.contraindications,
+                exercise_lookup=_exercise_lookup(ctx.exercise_library),
+            )
+
         try:
             tcore = ai.generate_json(
                 model=model, system=system_prompt_training_only(),
@@ -742,13 +752,27 @@ def generate_monthly_plan(
         except AIGenerationError as exc:
             raise PlanGenerationError(f"núcleo de entrenamiento: {exc}") from exc
 
-        tr_report = gr.check_training(
-            tcore.training.model_dump(),
-            training_days_declared=ctx.training_days,
-            session_max_min=ctx.session_max_min,
-            client_contraindications=ctx.contraindications,
-            exercise_lookup=_exercise_lookup(ctx.exercise_library),
-        )
+        tr_report = _chequea_entreno(tcore)
+        if not tr_report.ok:
+            # Reintento ÚNICO con los vetos inyectados: casi todas las
+            # violaciones (contraindicación, volumen, duración) se corrigen a
+            # la primera si la IA sabe exactamente qué rompió. Antes un veto
+            # tumbaba la generación entera y el coach solo veía un error.
+            try:
+                tcore2 = ai.generate_json(
+                    model=model, system=system_prompt_training_only(),
+                    user=_core_user_prompt_training_only(ctx) + _lecciones
+                    + "\n\nATENCIÓN: tu intento anterior violó estas reglas de "
+                      "seguridad; corrígelas TODAS sin cambiar nada más:\n- "
+                    + "\n- ".join(tr_report.violations),
+                    schema=TrainingOnlyCoreOutput,
+                )
+                rep2 = _chequea_entreno(tcore2)
+                if rep2.ok:
+                    tcore, tr_report = tcore2, rep2
+                    flags.append("núcleo: reintentado tras violar guardrails (corregido)")
+            except Exception:  # noqa: BLE001 — el reintento es oportunista
+                pass
         if not tr_report.ok:
             raise PlanGenerationError(
                 "el entrenamiento viola guardrails: " + "; ".join(tr_report.violations),
@@ -770,96 +794,124 @@ def generate_monthly_plan(
             education=education_t, guardrail_flags=flags, generated_by=model,
         )
 
-    # ① Núcleo
-    if include_training:
-        try:
-            core = ai.generate_json(
-                model=model, system=system_prompt_full(),
-                user=_core_user_prompt(ctx) + _lecciones, schema=PlanCoreOutput,
-            )
-        except AIGenerationError as exc:
-            raise PlanGenerationError(f"núcleo del plan: {exc}") from exc
-        training_core: TrainingCore | None = core.training
-    else:
-        # Solo-nutrición: ni entrenamiento ni biblioteca de ejercicios.
-        try:
-            core = ai.generate_json(
-                model=model, system=system_prompt_nutrition_only(),
-                user=_core_user_prompt_nutrition_only(ctx) + _lecciones,
-                schema=NutritionOnlyCoreOutput,
-            )
-        except AIGenerationError as exc:
-            raise PlanGenerationError(f"núcleo de nutrición: {exc}") from exc
-        training_core = None
-
-    # Coherencia numérica ANTES de nada: target_kcal ≡ macros (4/4/9) ≡ suma de
-    # los objetivos por comida. Así la IA nunca deja un plan donde un apartado
-    # diga X kcal y otro diga otro número, y el banco de comidas (paso ②) se pide
-    # contra unos objetivos por slot ya cuadrados. Es idempotente.
+    # ① Núcleo — con REINTENTO único si viola guardrails: se relanza la llamada
+    # con los vetos inyectados para que la IA los corrija ella misma. Antes un
+    # veto del Revisor 0 tumbaba la generación entera y el coach solo veía un
+    # error sin plan; ahora la mayoría de vetos se autocorrigen a la primera.
     from app.services.nutrition_scale import reconcile_nutrition
 
-    # clamp=False: los guardrails de abajo deben ver los números REALES de la
-    # IA y bloquear si son peligrosos (no corregirlos en silencio).
-    core.nutrition = NutritionCore.model_validate(
-        reconcile_nutrition(core.nutrition.model_dump(), weight_kg=ctx.weight_kg,
-                            clamp=False)
-    )
-
-    # El CONTRATO del backend MANDA (hardening §3): el eco de la IA es solo un
-    # eco. Si se desvía del objetivo calculado en código (kcal ±2% o macros
-    # fuera de tolerancia), los totales se FIJAN a los del contrato y los
-    # objetivos por comida se reescalan a ellos — "una sola verdad" también en
-    # el camino bloqueante, no solo en el panel best-effort.
-    if ctx.macro_plan and ctx.target_kcal:
-        import copy as _copy
-
-        from app.services.nutrition_scale import rescale_nutrition
-
-        nutd = core.nutrition.model_dump()
-        mp = ctx.macro_plan
-        tk = float(ctx.target_kcal)
-        ai_k = float(nutd.get("target_kcal") or 0)
-        m = nutd.get("macros") or {}
-        # Mismas tolerancias que el Revisor 0 (DET_*): si aquí se toleraba más
-        # (G>8, HC>15) que en el validador (G>5, HC>10), un eco intermedio
-        # pasaba sin fijar y el plan acababa vetado sin necesidad.
-        deviated = (
-            abs(ai_k - tk) > max(30.0, tk * gr.DET_KCAL_TOL_PCT)
-            or abs(float(m.get("protein_g") or 0) - float(mp.get("protein_g") or 0)) > gr.DET_PROTEIN_TOL_G
-            or abs(float(m.get("fat_g") or 0) - float(mp.get("fat_g") or 0)) > gr.DET_FAT_TOL_G
-            or abs(float(m.get("carbs_g") or 0) - float(mp.get("carbs_g") or 0)) > gr.DET_CARB_TOL_G
+    def _llamar_nucleo(extra: str = ""):
+        if include_training:
+            return ai.generate_json(
+                model=model, system=system_prompt_full(),
+                user=_core_user_prompt(ctx) + _lecciones + extra,
+                schema=PlanCoreOutput,
+            )
+        # Solo-nutrición: ni entrenamiento ni biblioteca de ejercicios.
+        return ai.generate_json(
+            model=model, system=system_prompt_nutrition_only(),
+            user=_core_user_prompt_nutrition_only(ctx) + _lecciones + extra,
+            schema=NutritionOnlyCoreOutput,
         )
-        if deviated:
-            rescale_nutrition(nutd, _copy.deepcopy(nutd), tk,
-                              float(mp.get("protein_g") or 0),
-                              float(mp.get("carbs_g") or 0),
-                              float(mp.get("fat_g") or 0))
-            core.nutrition = NutritionCore.model_validate(nutd)
-            flags.append(
-                f"contrato: la IA devolvió {round(ai_k)} kcal (objetivo del backend: "
-                f"{round(tk)}) — totales y comidas fijados al contrato")
 
-    nut_report = gr.check_nutrition(
-        core.nutrition.model_dump(), sex=ctx.sex, weight_kg=ctx.weight_kg,
-        bmr=ctx.bmr, tdee=ctx.tdee,
-    )
-    if training_core is not None:
-        tr_report = gr.check_training(
-            training_core.model_dump(),
-            training_days_declared=ctx.training_days,
-            session_max_min=ctx.session_max_min,
-            client_contraindications=ctx.contraindications,
-            exercise_lookup=_exercise_lookup(ctx.exercise_library),
+    def _normaliza_y_valida(c):
+        """Coherencia numérica + contrato del backend + guardrails de un intento.
+
+        Devuelve (core, flags_del_intento, informe). Los flags se acumulan
+        fuera SOLO para el intento que finalmente se queda."""
+        intento_flags: list[str] = []
+
+        # Coherencia numérica ANTES de nada: target_kcal ≡ macros (4/4/9) ≡
+        # suma de los objetivos por comida. Así la IA nunca deja un plan donde
+        # un apartado diga X kcal y otro diga otro número, y el banco de
+        # comidas (paso ②) se pide contra objetivos por slot ya cuadrados.
+        # clamp=False: los guardrails de abajo deben ver los números REALES de
+        # la IA y bloquear si son peligrosos (no corregirlos en silencio).
+        c.nutrition = NutritionCore.model_validate(
+            reconcile_nutrition(c.nutrition.model_dump(), weight_kg=ctx.weight_kg,
+                                clamp=False)
         )
-        core_report = nut_report.merge(tr_report)
-    else:
-        core_report = nut_report
+
+        # El CONTRATO del backend MANDA (hardening §3): el eco de la IA es solo
+        # un eco. Si se desvía del objetivo calculado en código (kcal ±2% o
+        # macros fuera de tolerancia), los totales se FIJAN a los del contrato
+        # y los objetivos por comida se reescalan a ellos — "una sola verdad"
+        # también en el camino bloqueante, no solo en el panel best-effort.
+        if ctx.macro_plan and ctx.target_kcal:
+            import copy as _copy
+
+            from app.services.nutrition_scale import rescale_nutrition
+
+            nutd = c.nutrition.model_dump()
+            mp = ctx.macro_plan
+            tk = float(ctx.target_kcal)
+            ai_k = float(nutd.get("target_kcal") or 0)
+            m = nutd.get("macros") or {}
+            # Mismas tolerancias que el Revisor 0 (DET_*): si aquí se toleraba
+            # más (G>8, HC>15) que en el validador (G>5, HC>10), un eco
+            # intermedio pasaba sin fijar y el plan acababa vetado sin necesidad.
+            deviated = (
+                abs(ai_k - tk) > max(30.0, tk * gr.DET_KCAL_TOL_PCT)
+                or abs(float(m.get("protein_g") or 0) - float(mp.get("protein_g") or 0)) > gr.DET_PROTEIN_TOL_G
+                or abs(float(m.get("fat_g") or 0) - float(mp.get("fat_g") or 0)) > gr.DET_FAT_TOL_G
+                or abs(float(m.get("carbs_g") or 0) - float(mp.get("carbs_g") or 0)) > gr.DET_CARB_TOL_G
+            )
+            if deviated:
+                rescale_nutrition(nutd, _copy.deepcopy(nutd), tk,
+                                  float(mp.get("protein_g") or 0),
+                                  float(mp.get("carbs_g") or 0),
+                                  float(mp.get("fat_g") or 0))
+                c.nutrition = NutritionCore.model_validate(nutd)
+                intento_flags.append(
+                    f"contrato: la IA devolvió {round(ai_k)} kcal (objetivo del backend: "
+                    f"{round(tk)}) — totales y comidas fijados al contrato")
+
+        nut_report = gr.check_nutrition(
+            c.nutrition.model_dump(), sex=ctx.sex, weight_kg=ctx.weight_kg,
+            bmr=ctx.bmr, tdee=ctx.tdee,
+        )
+        tc = getattr(c, "training", None)
+        if tc is not None:
+            tr_report = gr.check_training(
+                tc.model_dump(),
+                training_days_declared=ctx.training_days,
+                session_max_min=ctx.session_max_min,
+                client_contraindications=ctx.contraindications,
+                exercise_lookup=_exercise_lookup(ctx.exercise_library),
+            )
+            rep = nut_report.merge(tr_report)
+        else:
+            rep = nut_report
+        return c, intento_flags, rep
+
+    try:
+        core = _llamar_nucleo()
+    except AIGenerationError as exc:
+        etiqueta = "núcleo del plan" if include_training else "núcleo de nutrición"
+        raise PlanGenerationError(f"{etiqueta}: {exc}") from exc
+    core, intento_flags, core_report = _normaliza_y_valida(core)
+    if not core_report.ok:
+        # Reintento ÚNICO con los vetos inyectados; oportunista — si también
+        # falla, el veto original sigue mandando (nunca se afloja el guardrail).
+        try:
+            core2 = _llamar_nucleo(
+                "\n\nATENCIÓN: tu intento anterior violó estas reglas de "
+                "seguridad; corrígelas TODAS sin cambiar nada más:\n- "
+                + "\n- ".join(core_report.violations))
+            core2, flags2, rep2 = _normaliza_y_valida(core2)
+            if rep2.ok:
+                core, core_report = core2, rep2
+                intento_flags = flags2 + [
+                    "núcleo: reintentado tras violar guardrails (corregido)"]
+        except Exception:  # noqa: BLE001 — el reintento es oportunista
+            pass
     if not core_report.ok:
         raise PlanGenerationError(
             "el núcleo viola guardrails: " + "; ".join(core_report.violations),
             flags=core_report.as_flags(),
         )
-    flags += core_report.as_flags()
+    training_core: TrainingCore | None = getattr(core, "training", None)
+    flags += intento_flags + core_report.as_flags()
 
     # §6 (hardening): coherencia cruzada dieta↔entreno DETERMINISTA en el flujo
     # vivo (déficit profundo vs volumen, CH peri-entreno…). Sus avisos van a los
@@ -882,7 +934,10 @@ def generate_monthly_plan(
     try:
         meals = ai.generate_json(
             model=model, system=system_prompt_meals(),
-            user=_meals_user_prompt(ctx, core, food_catalog), schema=schema,
+            # Las lecciones del coach también aquí: la llamada que ELIGE los
+            # alimentos era justo la que no las recibía.
+            user=_meals_user_prompt(ctx, core, food_catalog) + _lecciones,
+            schema=schema,
         )
     except AIGenerationError as exc:
         raise PlanGenerationError(f"banco de comidas: {exc}") from exc

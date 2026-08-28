@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { DietAdherence, Macros, PortalBrand } from "../types";
+import type { DietAdherence, Macros, PlanChanges, PortalBrand } from "../types";
 import { usePortalToast } from "./PortalToast";
 import { fmt1, Loading, localToday, useDecimalField } from "./PortalUi";
 import { PortalError } from "./portalApi";
@@ -38,9 +38,12 @@ const EMPTY: DiaryForm = {
  * Cada cambio se guarda con debounce para no perder nada (G.4: autosave).
  */
 export function PortalDiary({ api, brand, periodStatus = null, businessToday = null,
-  hasPeriod = true, hasNutrition = true }: {
+  hasPeriod = true, hasNutrition = true, hasTraining = true }: {
   api: Api; brand: PortalBrand; periodStatus?: string | null; businessToday?: string | null;
   hasPeriod?: boolean; hasNutrition?: boolean;
+  // Con entreno contratado las Novedades ya viven en la pestaña Entreno; el
+  // cliente SOLO-DIETA no abre esa pantalla y se le enseñan aquí.
+  hasTraining?: boolean;
 }) {
   const toast = usePortalToast();
   // Fecha CONGELADA al montar: recalcularla en cada render hacía que, pasada
@@ -66,6 +69,9 @@ export function PortalDiary({ api, brand, periodStatus = null, businessToday = n
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   // Objetivo nutricional del día (solo lectura, si el paquete lleva dieta).
   const [target, setTarget] = useState<{ kcal: number; macros: Macros } | null>(null);
+  // Novedades de la última adaptación, SOLO para el cliente sin entreno: antes
+  // un cliente de solo dieta no veía nunca qué le cambió la revisión.
+  const [planChanges, setPlanChanges] = useState<PlanChanges | null>(null);
 
   // Tira compacta con el objetivo del día: sale del plan publicado. Se carga
   // junto al fetch inicial, sin spinner propio; si falla, simplemente no se
@@ -75,8 +81,9 @@ export function PortalDiary({ api, brand, periodStatus = null, businessToday = n
     api.plan().then((p) => {
       const n = p.nutrition;
       if (n && n.target_kcal != null && n.macros) setTarget({ kcal: n.target_kcal, macros: n.macros });
+      if (!hasTraining) setPlanChanges(p.plan_changes ?? null);
     }).catch(() => { /* sin tira: el objetivo es un extra, no bloquea nada */ });
-  }, [api, hasNutrition]);
+  }, [api, hasNutrition, hasTraining]);
 
   useEffect(() => {
     setLoadError(false);
@@ -196,6 +203,35 @@ export function PortalDiary({ api, brand, periodStatus = null, businessToday = n
           </p>
         )}
       </div>
+
+      {/* Novedades del plan para el cliente SOLO-DIETA: qué cambió en su última
+          revisión y por qué (con entreno, esto vive en la pantalla Entreno). */}
+      {planChanges?.items?.length ? (
+        <details className="portal-card overflow-hidden">
+          <summary className="tap flex cursor-pointer items-center gap-2 p-3.5 text-sm font-semibold">
+            Novedades de tu plan
+            <span className="ml-auto rounded-full px-2 py-0.5 text-[10px] font-bold text-white"
+              style={{ background: brand.color_secondary }}>
+              revisión #{planChanges.period_index}
+            </span>
+          </summary>
+          <div className="space-y-2 px-3.5 pb-3.5">
+            {planChanges.items.map((it, i) => (
+              <div key={i} className="rounded-xl border p-2.5" style={{ borderColor: "rgba(128,128,128,0.18)" }}>
+                <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold">
+                  <span className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white"
+                    style={{ background: brand.color_primary }}>
+                    {/diet|nutri/i.test(it.area) ? "Dieta" : it.area}
+                  </span>
+                  {it.detail ?? it.change}
+                </div>
+                {it.reason && <p className="mt-1 text-xs opacity-70">{it.reason}</p>}
+              </div>
+            ))}
+            <p className="pt-0.5 text-[11px] opacity-50">Ya aplicado en tu plan y en tu PDF.</p>
+          </div>
+        </details>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-3">
         {/* Cursor azul: entrada de DATOS (el naranja queda para acciones).

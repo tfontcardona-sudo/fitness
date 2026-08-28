@@ -212,6 +212,25 @@ def apply_swap(
         "old_exercise_id": old_exercise_id, "new_exercise_id": new_exercise_id,
         "permanent": permanent, "reason": reason, "from_plan": plan.id,
     })
+    # §13: un swap también es una CORRECCIÓN del coach (o del cliente con su
+    # motivo) — sin registrarla, el aprendizaje nunca veía que un ejercicio
+    # concreto se cambia una y otra vez.
+    try:
+        from app.services.continuous_learning import record_edit
+
+        old_ex = db.get(Exercise, old_exercise_id)
+        with db.begin_nested():
+            record_edit(
+                db, plan_id=new_plan.id, category="volumen",
+                field_path="training.sessions.exercises",
+                note=(f"cambio de ejercicio: {old_ex.name if old_ex else old_exercise_id}"
+                      f" → {new_ex.name}"
+                      + (f" (motivo: {reason})" if reason else "")
+                      + (" · excluido permanentemente" if permanent else "")),
+                commit=False,
+            )
+    except Exception:  # noqa: BLE001 — el aprendizaje nunca rompe el swap
+        pass
     # Igual que generar/adaptar/editar: la versión nueva queda ACTIVA (si no,
     # el portal y el PDF seguirían sirviendo el plan anterior sin el cambio).
     # Sin re-notificar al cliente: un swap no es un plan nuevo.

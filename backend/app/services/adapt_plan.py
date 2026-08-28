@@ -70,6 +70,62 @@ def _apply(current: float | None, mode: str, val: float, floor: float = 0.0) -> 
     return int(round(max(floor, result)))
 
 
+# Reglas del motor quincenal → texto legible: las Novedades del portal y la
+# pestaña del coach no pueden hablar en clave interna ("dato_insuficiente").
+_RULE_ES = {
+    "adherencia_baja": "primero hay que asentar la adherencia",
+    "dato_insuficiente": "faltan datos de peso para decidir con garantías",
+    "posible_ciclo_menstrual": "el repunte de peso puede ser del ciclo menstrual",
+    "fatiga_roja_2_revisiones": "hay señales de fatiga acumulada",
+    "recomposicion_en_marcha": "la recomposición va en marcha",
+    "dentro_del_ritmo": "el ritmo actual es el buscado",
+    "sin_cambio_neto": "no hay cambio neto que corregir",
+    "deriva_no_deseada": "el peso deriva sin buscarlo",
+    "fuera_del_ritmo": "el ritmo se ha salido del rango buscado",
+}
+
+
+def _regla_legible(decision: dict) -> str:
+    rule = str(decision.get("rule") or "")
+    return _RULE_ES.get(rule, rule.replace("_", " ")
+                        or "la revisión automática lo desaconseja")
+
+
+def _calibrar_pesos_desde_registros(db: Session, period: Period, tr: dict) -> int:
+    """Aprende del feedback REAL de las rutinas: fija la carga de arranque de
+    cada ejercicio al último peso que el cliente registró en el período (la
+    mejor serie de su último día, redondeada a 0,5 kg). Devuelve cuántos tocó."""
+    import math
+
+    from app.models import DailyLog, WorkoutLog
+
+    rows = db.execute(
+        select(WorkoutLog.exercise_id, DailyLog.log_date, WorkoutLog.weight_kg)
+        .join(DailyLog, WorkoutLog.daily_log_id == DailyLog.id)
+        .where(DailyLog.period_id == period.id, WorkoutLog.weight_kg.is_not(None))
+    ).all()
+    ultimo: dict[int, tuple] = {}
+    for ex_id, log_date, w in rows:
+        if ex_id is None or w is None:
+            continue
+        prev = ultimo.get(ex_id)
+        if prev is None or log_date > prev[0] or (log_date == prev[0] and float(w) > prev[1]):
+            ultimo[ex_id] = (log_date, float(w))
+    if not ultimo:
+        return 0
+    n = 0
+    for s in tr.get("sessions", []) or []:
+        for ex in s.get("exercises", []) or []:
+            reg = ultimo.get(ex.get("exercise_id"))
+            if not reg or reg[1] <= 0:
+                continue
+            nuevo = math.floor(reg[1] * 2 + 0.5) / 2  # a 0,5 kg, half-up
+            if ex.get("start_weight_hint_kg") != nuevo:
+                ex["start_weight_hint_kg"] = nuevo
+                n += 1
+    return n
+
+
 def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
     """Crea una nueva versión (borrador) del plan aplicando los ajustes de la
     última revisión quincenal analizada. No llama a la IA."""
@@ -115,7 +171,10 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
     # · si ya existe un BORRADOR adaptado a esta revisión → se rehace ese
     #   borrador desde el plan publicado (no se crea otra versión más).
     def _adapted_idx(p: Plan) -> int | None:
-        return ((p.nutrition_json or {}).get("applied_adjustments") or {}).get("period_index")
+        # En un plan solo-entreno el sello vive en training_json (no hay dieta).
+        return (((p.nutrition_json or {}).get("applied_adjustments")
+                 or (p.training_json or {}).get("applied_adjustments")
+                 or {})).get("period_index")
 
     if _adapted_idx(base) == period.period_index:
         raise AdaptError(
@@ -133,7 +192,15 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
     nut = copy.deepcopy(base.nutrition_json or {})
     tr = copy.deepcopy(base.training_json or {})
     edu = copy.deepcopy(base.education_json or {})
-    macros = nut.setdefault("macros", {})
+    # Qué incluye el plan base DE VERDAD: un plan solo-entreno no debe salir de
+    # aquí con una "dieta" vacía fabricada (antes nutrition_json acababa como
+    # {} con macros/rationale y el PDF/portal imprimían una dieta en blanco).
+    tiene_dieta = bool(base.nutrition_json)
+    tiene_entreno = bool(base.training_json)
+    # La adaptación no arrastra el rastro de ediciones del plan base: los
+    # cambios manuales pendientes de avisar pertenecen a la versión anterior.
+    nut.pop("manual_changes", None)
+    macros = nut.setdefault("macros", {}) if tiene_dieta else {}
     # ¿Qué totales tocan los ajustes? (para la coherencia+reescalado de abajo)
     kcal_touched = protein_touched = carbs_touched = fat_touched = False
 
@@ -141,6 +208,25 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
     # automáticamente): lo consumen la pestaña Planificación del coach, el
     # desplegable "Novedades de tu plan" del portal y el PDF.
     items: list[dict] = []
+
+    # APRENDER DEL FEEDBACK DE LAS RUTINAS: antes de aplicar nada, la carga de
+    # arranque de cada ejercicio se calibra con el último peso que el cliente
+    # registró en el período — el plan nuevo arranca donde lo dejó, y los
+    # ajustes relativos ("+2,5 kg") se aplican sobre esa base real.
+    if tiene_entreno:
+        try:
+            calibrados = _calibrar_pesos_desde_registros(db, period, tr)
+        except Exception:  # noqa: BLE001 — la calibración nunca rompe adaptar
+            calibrados = 0
+        if calibrados:
+            items.append({
+                "area": "entreno",
+                "change": "Cargas de arranque calibradas con tus registros",
+                "reason": "El plan nuevo arranca donde lo dejaste: el último "
+                          "peso que registraste en cada ejercicio.",
+                "applied": True,
+                "detail": f"{calibrados} ejercicio(s) puestos al día con tu último peso registrado",
+            })
     for a in adjustments:
         area = _norm(a.get("area", ""))
         change = a.get("change", "")
@@ -157,7 +243,9 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
         details: list[str] = []
         # "Mantener X" no es un cambio numérico: no debe tocar los macros
         # aunque el texto lleve un número ("mantener proteína en 180 g").
-        if is_diet and "manten" not in cn:
+        if is_diet and not tiene_dieta:
+            entry["detail"] = "No aplicado: este plan no incluye dieta"
+        elif is_diet and "manten" not in cn:
             # Cada CLÁUSULA se interpreta por separado: así "subir proteína a 180
             # y bajar grasa a 55" aplica 180 a proteína y 55 a grasa (antes el
             # primer número se aplicaba a TODOS los macros nombrados → corrupción).
@@ -197,16 +285,18 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
                     seen.add("target_kcal")
                     if kcal_vetoed:
                         details.append(
-                            "Calorías: NO aplicado — la decisión determinista "
-                            f"(«{decision.get('rule') or d_action}») indica no tocarlas")
+                            "Calorías: no se tocan en esta revisión — "
+                            + _regla_legible(decision))
                     elif kcal_engine:
                         details.append(
-                            "Calorías: las fija la decisión determinista (ver ajuste del motor)")
+                            "Calorías: las fija la revisión automática (ver el ajuste de abajo)")
                     else:
                         before = nut.get("target_kcal")
                         nut["target_kcal"] = _apply(before, c_mode, c_val)
                         kcal_touched = True
                         details.append(f"Calorías: {round(before) if before else '—'} → {nut['target_kcal']} kcal")
+        elif "entren" in area and not tiene_entreno:
+            entry["detail"] = "No aplicado: este plan no incluye entrenamiento"
         elif val is not None and "entren" in area:
             # En entreno solo aplicamos ajustes RELATIVOS de carga (+X kg): un
             # objetivo absoluto no se puede repartir entre todos los ejercicios.
@@ -226,7 +316,7 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
 
     # Ajuste de calorías del MOTOR (§8): número determinista sobre el plan base,
     # con la proteína bloqueada (los carbohidratos hacen de colchón más abajo).
-    if kcal_engine:
+    if kcal_engine and tiene_dieta:
         before_k = nut.get("target_kcal") or 0
         if before_k:
             import math
@@ -235,11 +325,46 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
             protein_touched = True  # enruta al cuadre con proteína/grasa fijas
             items.append({
                 "area": "dieta",
-                "change": f"Calorías {'+' if d_pct > 0 else ''}{d_pct:g}% (decisión determinista)",
-                "reason": decision.get("rationale") or decision.get("rule")
-                or "Motor quincenal (§8): reglas fijas sobre tu progreso real.",
+                "change": f"Calorías {'+' if d_pct > 0 else ''}{d_pct:g}% (revisión automática)",
+                "reason": decision.get("rationale")
+                or "Revisión automática: reglas fijas sobre tu progreso real.",
                 "applied": True,
                 "detail": f"Calorías: {round(before_k)} → {nut['target_kcal']} kcal · proteína bloqueada",
+            })
+
+    # DIET BREAK (§8): la decisión "diet_break" era solo texto — nadie la
+    # aplicaba. Ahora sube las calorías a mantenimiento (TDEE) con la proteína
+    # bloqueada; el coach revisa, y a los 7-10 días adapta de nuevo o revierte.
+    kcal_salto_por_diseno = False
+    if d_action == "diet_break" and tiene_dieta:
+        before_k = nut.get("target_kcal") or 0
+        tdee_k = float(nut.get("tdee_kcal") or 0)
+        razon = (decision.get("rationale")
+                 or "Revisión automática: descanso de dieta para recuperar antes de seguir.")
+        if before_k and tdee_k:
+            import math
+            nut["target_kcal"] = int(math.floor(tdee_k + 0.5))
+            kcal_touched = True
+            protein_touched = True  # enruta al cuadre con proteína/grasa fijas
+            # Subir a mantenimiento puede superar el ±15% de recalibración: es
+            # un salto POR DISEÑO (el TDEE lo calculó el backend), no un
+            # desmadre de la IA — el tope no aplica a este movimiento.
+            kcal_salto_por_diseno = True
+            items.append({
+                "area": "dieta",
+                "change": "Diet break: 7-10 días comiendo a mantenimiento",
+                "reason": razon,
+                "applied": True,
+                "detail": f"Calorías: {round(before_k)} → {nut['target_kcal']} kcal (mantenimiento) · proteína bloqueada",
+            })
+        else:
+            items.append({
+                "area": "dieta",
+                "change": "Diet break: 7-10 días comiendo a mantenimiento",
+                "reason": razon,
+                "applied": False,
+                "detail": "No aplicado automáticamente (el plan no tiene TDEE "
+                          "guardado): sube las calorías a mantenimiento a mano.",
             })
 
     # COHERENCIA + REESCALADO EN BLOQUE: si algún ajuste tocó calorías o
@@ -247,7 +372,7 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
     # kcal, los TRES macros escalan en proporción al mix del plan) y las
     # COMIDAS y los GRAMOS del banco se reescalan a los totales nuevos (antes
     # el PDF se quedaba con los gramos antiguos).
-    if kcal_touched or protein_touched or carbs_touched or fat_touched:
+    if tiene_dieta and (kcal_touched or protein_touched or carbs_touched or fat_touched):
         from app.services.nutrition_scale import (
             kcal_of, macros_scaled_to_kcal, rescale_nutrition,
         )
@@ -292,8 +417,8 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
                 items.append({
                     "area": "dieta",
                     "change": "Macros rebalanceados a las calorías previas",
-                    "reason": "La decisión determinista de la revisión indica no "
-                              "tocar las kcal: el cambio de macros se aplica sin "
+                    "reason": "La revisión automática indica no tocar las "
+                              "calorías: el cambio de macros se aplica sin "
                               "alterar la energía total.",
                     "applied": True,
                     "detail": f"Totales mantenidos en {round(K)} kcal",
@@ -339,30 +464,44 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
     # Coherencia final garantizada: target_kcal ≡ macros (4/4/9) ≡ suma de los
     # objetivos por comida — aunque la revisión no tocara nada de nutrición o el
     # plan base venga de antes de esta invariante. Idempotente.
-    from app.services.nutrition_scale import reconcile_nutrition
-
     _cli = db.get(Client, client_id)
     from app.services.periods import reference_weight_kg
-    reconcile_nutrition(
-        nut, weight_kg=reference_weight_kg(db, _cli) if _cli else None
-    )
-    # Ninguna toma sin contenido tras adaptar: los slots que quedaran vacíos
-    # reciben 3 opciones por defecto escaladas a sus macros (nunca "toma libre").
-    from app.services.meal_fallback import ensure_bank_slots
 
-    ensure_bank_slots(
-        nut,
-        allergies=(_cli.food_allergies or []) if _cli else [],
-        dislikes=(_cli.food_dislikes or []) if _cli else [],
-        diet_pattern=_cli.diet_pattern if _cli else None,
-    )
+    if tiene_dieta:
+        from app.services.nutrition_scale import reconcile_nutrition
+
+        reconcile_nutrition(
+            nut, weight_kg=reference_weight_kg(db, _cli) if _cli else None
+        )
+        # Ninguna toma sin contenido tras adaptar: los slots que quedaran vacíos
+        # reciben 3 opciones por defecto escaladas a sus macros (nunca "toma libre").
+        from app.services.meal_fallback import ensure_bank_slots
+
+        ensure_bank_slots(
+            nut,
+            allergies=(_cli.food_allergies or []) if _cli else [],
+            dislikes=(_cli.food_dislikes or []) if _cli else [],
+            diet_pattern=_cli.diet_pattern if _cli else None,
+        )
+        # El snapshot de inputs se REFRESCA: la alerta plan_stale_inputs debe
+        # comparar contra la ficha con la que se ADAPTÓ, no contra la de la
+        # generación original (si no, "ficha cambiada tras generar" no se
+        # apagaba nunca en los planes adaptados).
+        if _cli is not None:
+            nut["gen_inputs"] = {
+                "weight_kg": reference_weight_kg(db, _cli),
+                "height_cm": _cli.height_cm,
+                "level": _cli.level, "training_days": _cli.training_days,
+                "training_place": _cli.training_place, "diet_mode": _cli.diet_mode,
+                "diet_pattern": _cli.diet_pattern,
+            }
 
     # Los DETALLES que verá el cliente ("Proteína: 150 → X g", "Totales
     # finales…") se reescriben con los valores FINALES tras los topes
     # fisiológicos: si un ajuste de la IA se acotó (p. ej. "proteína a 400 g"
     # clampado a 210), las Novedades y el PDF no pueden prometer un número que
     # el plan real no lleva.
-    _fm = nut.get("macros") or {}
+    _fm = (nut.get("macros") or {}) if tiene_dieta else {}
     _finales = (
         ("Proteína", _fm.get("protein_g"), "g"),
         ("Carbohidratos", _fm.get("carbs_g"), "g"),
@@ -386,27 +525,34 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
         it["detail"] = d
 
     # Siempre se sobreescribe (el plan base puede arrastrar el bloque de una
-    # adaptación anterior tras el deepcopy).
+    # adaptación anterior tras el deepcopy). En un plan solo-entreno el sello
+    # vive en training_json — antes se escribía en una nutrición fantasma y
+    # ni el coach ni el portal veían las Novedades.
     if items:
-        nut["applied_adjustments"] = {"period_index": period.period_index, "items": items}
+        destino = nut if tiene_dieta else tr
+        destino["applied_adjustments"] = {"period_index": period.period_index, "items": items}
+        (tr if tiene_dieta else nut).pop("applied_adjustments", None)
     else:
         nut.pop("applied_adjustments", None)
+        tr.pop("applied_adjustments", None)
 
-    if adjustments:
-        grid = "\n".join(f"- [{a.get('area')}] {a.get('change')} — {a.get('reason')}" for a in adjustments)
-        nut["rationale"] = f"Adaptación a la revisión quincenal #{period.period_index}:\n{grid}"
-    else:
-        nut["rationale"] = (f"Copia para adaptar a la revisión quincenal #{period.period_index} "
-                            "(la revisión no incluía ajustes automáticos: edita manualmente).")
-    tr["split_rationale"] = (tr.get("split_rationale", "") or "") + \
-        f" · Adaptado a la revisión quincenal #{period.period_index}."
+    if tiene_dieta:
+        if adjustments:
+            grid = "\n".join(f"- [{a.get('area')}] {a.get('change')} — {a.get('reason')}" for a in adjustments)
+            nut["rationale"] = f"Adaptación a la revisión quincenal #{period.period_index}:\n{grid}"
+        else:
+            nut["rationale"] = (f"Copia para adaptar a la revisión quincenal #{period.period_index} "
+                                "(la revisión no incluía ajustes automáticos: edita manualmente).")
+    if tiene_entreno:
+        tr["split_rationale"] = (tr.get("split_rationale", "") or "") + \
+            f" · Adaptado a la revisión quincenal #{period.period_index}."
 
     if existing_draft is not None:
         # Rehacer el borrador existente (mismo número de versión): los ajustes
         # se recalculan siempre desde el plan publicado, nunca se acumulan.
-        existing_draft.nutrition_json = nut
-        existing_draft.training_json = tr
-        existing_draft.education_json = edu
+        existing_draft.nutrition_json = nut if tiene_dieta else None
+        existing_draft.training_json = tr if tiene_entreno else None
+        existing_draft.education_json = edu or None
         plan = existing_draft
     else:
         # Mes de asesoría: dos revisiones = un mes. La adaptación de la 2ª, 4ª…
@@ -423,7 +569,9 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
         plan = Plan(
             client_id=client_id, month_index=month_index,
             version=(last.version if last else 0) + 1, status="draft",
-            nutrition_json=nut, training_json=tr, education_json=edu,
+            nutrition_json=(nut if tiene_dieta else None),
+            training_json=(tr if tiene_entreno else None),
+            education_json=edu or None,
             guardrail_flags=[], generated_by="adaptación quincenal",
             goal_type=(client.goal_type if client else base.goal_type),
         )
@@ -440,20 +588,23 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
     from app.services.guardrails import check_nutrition
 
     violations: list[str] = []
-    try:
-        _c = db.get(Client, client_id)
-        rep = check_nutrition(
-            nut,
-            sex=(_c.sex if _c else None) or "male",
-            weight_kg=float((_c.current_weight_kg or _c.start_weight_kg or 0) if _c else 0) or 70.0,
-            bmr=0.0,  # sin BMR fiable aquí: aplica el suelo por sexo igualmente
-            tdee=float(nut.get("tdee_kcal") or 0),
-            is_recalibration=True,
-            previous_target_kcal=float((base.nutrition_json or {}).get("target_kcal") or 0) or None,
-        )
-        violations = [f"violation: {v}" for v in rep.violations]
-    except Exception:  # noqa: BLE001 — el chequeo nunca rompe la adaptación
-        violations = []
+    if tiene_dieta:
+        try:
+            _c = db.get(Client, client_id)
+            rep = check_nutrition(
+                nut,
+                sex=(_c.sex if _c else None) or "male",
+                weight_kg=float((_c.current_weight_kg or _c.start_weight_kg or 0) if _c else 0) or 70.0,
+                bmr=0.0,  # sin BMR fiable aquí: aplica el suelo por sexo igualmente
+                tdee=float(nut.get("tdee_kcal") or 0),
+                is_recalibration=True,
+                previous_target_kcal=(
+                    None if kcal_salto_por_diseno
+                    else float((base.nutrition_json or {}).get("target_kcal") or 0) or None),
+            )
+            violations = [f"violation: {v}" for v in rep.violations]
+        except Exception:  # noqa: BLE001 — el chequeo nunca rompe la adaptación
+            violations = []
     if violations:
         plan.guardrail_flags = violations + [
             "retenido: adaptación guardada como BORRADOR — revisa y activa tú "
@@ -464,10 +615,18 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
         return plan
 
     # La versión adaptada queda ACTIVA al momento (portal y PDF actualizados);
-    # el coach puede retocarla con Editar y enviarla por WhatsApp.
+    # el coach puede retocarla con Editar y enviarla por WhatsApp. El AVISO al
+    # cliente ("plan nuevo") solo sale si el feedback de esta revisión ya se
+    # ENVIÓ: si aún es borrador, avisar aquí filtraba la revisión por la puerta
+    # de atrás antes de que el coach la mandara.
+    from app.models import FeedbackDoc
     from app.services.plan_activation import activate_plan
 
-    activate_plan(db, plan)
+    fb = db.scalar(
+        select(FeedbackDoc).where(FeedbackDoc.period_id == period.id)
+        .order_by(FeedbackDoc.id.desc()).limit(1)
+    )
+    activate_plan(db, plan, notify=bool(fb and fb.sent_at))
     db.commit()
     db.refresh(plan)
     return plan

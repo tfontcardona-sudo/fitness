@@ -263,7 +263,10 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
         def _adapted_idx(p: Plan | None) -> int | None:
             if p is None:
                 return None
-            return ((p.nutrition_json or {}).get("applied_adjustments") or {}).get("period_index")
+            # En un plan solo-entreno el sello vive en training_json.
+            return (((p.nutrition_json or {}).get("applied_adjustments")
+                     or (p.training_json or {}).get("applied_adjustments")
+                     or {})).get("period_index")
 
         if _adapted_idx(latest) != last_analyzed.period_index:
             if (latest is not None and latest.status == "draft"

@@ -279,7 +279,14 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
 
     # §13 (hardening): captura de las ediciones del coach para el aprendizaje
     # continuo. Best-effort con savepoint: si algo falla NUNCA corrompe la edición.
-    if diff_items:
+    # SOLO CORRECCIONES (auditoría 28-08): montar a mano una base/copia en
+    # borrador es CONSTRUCCIÓN, no una corrección de la IA — aprender de esas
+    # tandas contaminaba las lecciones con ruido ("el coach siempre cambia X"
+    # cuando estaba escribiendo X por primera vez). En cuanto el plan está
+    # activo, sus ediciones sí son correcciones y sí se aprenden.
+    es_construccion = (plan.status == "draft"
+                      and plan.generated_by in ("scaffold", "library"))
+    if diff_items and not es_construccion:
         try:
             from app.services.continuous_learning import classify_change_text, record_edit
 
@@ -306,7 +313,62 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
     if plan.status == "draft" and plan.generated_by not in ("scaffold", "library"):
         from app.services.plan_activation import activate_plan
 
-        activate_plan(db, plan)
+        # SEGURIDAD (auditoría 28-08): un borrador RETENIDO por los
+        # guardarraíles (violación / semáforo ROJO) NO se activa por el mero
+        # hecho de guardarlo — el coach pudo tocar UNA celda (o aplicar un
+        # Word) sin corregir la violación, y activar avisa al cliente. Al
+        # guardar se RE-VALIDA el contenido EDITADO con el Revisor 0:
+        # · limpio → los avisos rancios se apagan y el plan se activa;
+        # · sigue violando → sigue en borrador con las violaciones ACTUALES.
+        # El ROJO del panel §9 es un juicio CUALITATIVO que el Revisor 0 no
+        # puede avalar: es PEGAJOSO — solo lo levanta el botón «Activar»
+        # explícito (que lo asume y lo deja en auditoría).
+        flags_act = [str(f) for f in (plan.guardrail_flags or [])]
+        retenia = any(f.startswith(("violation:", "retenido:", "revisión: ROJO"))
+                      for f in flags_act)
+        if not retenia:
+            activate_plan(db, plan)
+        else:
+            vivas: list[str] = []
+            if isinstance(plan.nutrition_json, dict):
+                try:
+                    from app.services.guardrails import (
+                        check_nutrition, validate_plan_deterministic,
+                    )
+
+                    _c = db.get(Client, plan.client_id)
+                    vivas_rep = check_nutrition(
+                        plan.nutrition_json,
+                        sex=(_c.sex if _c else None) or "male",
+                        weight_kg=float(((_c.current_weight_kg or _c.start_weight_kg or 0)
+                                         if _c else 0) or 70.0),
+                        bmr=0.0,
+                        tdee=float(plan.nutrition_json.get("tdee_kcal") or 0),
+                    ).merge(validate_plan_deterministic(
+                        plan.nutrition_json,
+                        allergies=(_c.food_allergies or []) if _c else [],
+                        dislikes=(_c.food_dislikes or []) if _c else [],
+                        diet_pattern=_c.diet_pattern if _c else None,
+                    ))
+                    vivas = [f"violation: {v}" for v in vivas_rep.violations]
+                except Exception:  # noqa: BLE001 — ante la duda, conserva la retención
+                    vivas = [f for f in flags_act if f.startswith("violation:")]
+            else:
+                # Retención sin bloque de nutrición (solo-entreno): no hay
+                # re-chequeo determinista fiable — la activa el botón Activar.
+                vivas = [f for f in flags_act if f.startswith("violation:")] or [
+                    "violation: retenido sin re-chequeo automático"]
+            rojo = [f for f in flags_act if f.startswith("revisión: ROJO")]
+            resto = [f for f in flags_act
+                     if not f.startswith(("violation:", "retenido:", "revisión: ROJO"))]
+            if vivas or rojo:
+                plan.guardrail_flags = resto + rojo + vivas + [
+                    "retenido: sigue en BORRADOR — corrige lo señalado o pulsa "
+                    "«Activar» si lo decides tú (el cliente no ha sido avisado)"]
+            else:
+                # La edición corrigió lo que retenía: fuera avisos rancios.
+                plan.guardrail_flags = resto or None
+                activate_plan(db, plan)
     db.commit()
     db.refresh(plan)
     return PlanOut.model_validate(plan)
@@ -421,7 +483,65 @@ def publish_plan(plan_id: int, db: Session = Depends(get_db)) -> PlanOut:
             status.HTTP_409_CONFLICT,
             "Esta versión fue sustituida por otra más nueva: usa el historial "
             "si quieres restaurarla.")
+    # Activar EXPLÍCITO sobre un plan retenido = decisión del coach: la
+    # retención se apaga (dejarla encendida mantenía la banda roja «retenido»
+    # para siempre sobre un plan que él ya asumió). Queda en la auditoría.
+    flags_pub = [str(f) for f in (plan.guardrail_flags or [])]
+    asumidas = [f for f in flags_pub
+                if f.startswith(("violation:", "retenido:", "revisión: ROJO"))]
+    if asumidas:
+        plan.guardrail_flags = [f for f in flags_pub if f not in asumidas] or None
+        log_event(db, "plan", plan.id, "plan_activated_with_override",
+                  {"asumidas": asumidas[:10]})
     activate_plan(db, plan)
+    db.commit()
+    db.refresh(plan)
+    return PlanOut.model_validate(plan)
+
+
+@router.post("/api/plans/{plan_id}/generate-education", response_model=PlanOut)
+def generate_education(plan_id: int, db: Session = Depends(get_db)) -> PlanOut:
+    """Regenera SOLO el contenido educativo de un plan (modelo ligero + caché).
+
+    El educativo es complementario: si falló al generar (quedó el aviso "no se
+    pudo generar el contenido educativo"), antes tocaba regenerar el plan
+    ENTERO — repagando núcleo, comidas y panel — para recuperarlo."""
+    plan = db.get(Plan, plan_id)
+    if not plan:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan no encontrado")
+    if not plan.training_json:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "El contenido educativo acompaña al entrenamiento: este plan no lo incluye.")
+
+    from types import SimpleNamespace
+
+    from app.services.ai.client import AIClient, AIGenerationError
+    from app.services.ai.generator import (
+        _education_user_prompt,
+        _education_user_prompt_training,
+        _education_with_cache,
+    )
+
+    split = (plan.training_json or {}).get("split_name") or ""
+    tr_ns = SimpleNamespace(split_name=split)
+    try:
+        if plan.nutrition_json:
+            edu = _education_with_cache(
+                AIClient(), split_name=split, variant="full",
+                user=_education_user_prompt(SimpleNamespace(training=tr_ns)))
+        else:
+            edu = _education_with_cache(
+                AIClient(), split_name=split, variant="train",
+                user=_education_user_prompt_training(tr_ns))
+    except AIGenerationError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+    plan.education_json = edu.model_dump()
+    # El aviso de la generación ya no aplica: el educativo existe.
+    flags_e = [f for f in (plan.guardrail_flags or [])
+               if "no se pudo generar el contenido educativo" not in str(f)]
+    plan.guardrail_flags = flags_e or None
+    log_event(db, "plan", plan.id, "education_generated", {})
     db.commit()
     db.refresh(plan)
     return PlanOut.model_validate(plan)
@@ -536,6 +656,9 @@ class PeriodOut(BaseModel):
     # Ajustes propuestos por el feedback IA de esta revisión (área/cambio/motivo):
     # la pestaña Planificación los muestra ANTES de pulsar "Adaptar".
     plan_adjustments: list[dict] | None = None
+    # Decisión de la revisión automática (§8): la tarjeta "Adaptar" debe salir
+    # aunque la IA no propusiera ajustes de texto (p. ej. solo un diet break).
+    biweekly_decision: dict | None = None
 
     model_config = {"from_attributes": True}
 
@@ -557,6 +680,7 @@ def list_periods(client_id: int, db: Session = Depends(get_db)) -> list[PeriodOu
         )
         po.feedback_id = fb.id if fb else None
         po.plan_adjustments = (p.ai_analysis_json or {}).get("plan_adjustments") or None
+        po.biweekly_decision = (p.ai_analysis_json or {}).get("biweekly_decision") or None
         out.append(po)
     return out
 
@@ -695,12 +819,43 @@ def edit_feedback(doc_id: int, body: FeedbackEditIn, db: Session = Depends(get_d
     Si ya estaba enviado, el cliente verá la versión editada en su Progreso."""
     from app.services.feedback_service import FeedbackError, update_feedback_text
 
-    if not db.get(FeedbackDoc, doc_id):
+    fb0 = db.get(FeedbackDoc, doc_id)
+    if not fb0:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Feedback no encontrado")
+    old_adjust = list((fb0.content_json or {}).get("plan_adjustments") or [])
     try:
         fb = update_feedback_text(db, doc_id, body.model_dump(exclude_unset=True))
     except FeedbackError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+
+    # §13: corregir los AJUSTES que propuso la IA es una lección de primera
+    # (la cuadrícula que "Adaptar" aplica al plan estaba mal) — antes esta
+    # corrección no se registraba y el aprendizaje nunca la veía.
+    if body.plan_adjustments is not None and body.plan_adjustments != old_adjust:
+        try:
+            from app.services.continuous_learning import classify_change_text, record_edit
+
+            period = db.get(Period, fb.period_id)
+            plan = db.scalar(
+                select(Plan).where(Plan.client_id == period.client_id)
+                .order_by(Plan.month_index.desc(), Plan.version.desc()).limit(1)
+            ) if period else None
+            if plan is not None:
+                nuevos = "; ".join(
+                    f"[{a.get('area')}] {a.get('change')}" for a in body.plan_adjustments)
+                with db.begin_nested():
+                    record_edit(
+                        db, plan_id=plan.id,
+                        category=classify_change_text(nuevos),
+                        field_path="feedback.plan_adjustments",
+                        before=old_adjust, after=body.plan_adjustments,
+                        note="el coach corrigió los ajustes propuestos por la "
+                             "revisión: " + (nuevos or "los dejó vacíos"),
+                        commit=False,
+                    )
+                db.commit()
+        except Exception:  # noqa: BLE001 — el aprendizaje nunca rompe la edición
+            pass
     return {
         "id": fb.id, "content": fb.content_json,
         "sent_at": fb.sent_at.isoformat() if fb.sent_at else None,
@@ -966,7 +1121,8 @@ def send_plan_email(plan_id: int, db: Session = Depends(get_db)) -> dict:
     except Exception:
         pass
 
-    is_adapted = bool((plan.nutrition_json or {}).get("applied_adjustments"))
+    is_adapted = bool((plan.nutrition_json or {}).get("applied_adjustments")
+                      or (plan.training_json or {}).get("applied_adjustments"))
     brand = brand_from_config(db)
     portal_url = f"{settings.public_base_url}/p/{client.portal_token}"
     _first = ((client.full_name or "").split() or [(client.email or "cliente").split("@")[0]])[0]

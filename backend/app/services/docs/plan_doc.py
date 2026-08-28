@@ -718,6 +718,23 @@ def generate_plan_doc(
     _title(doc, "PLAN DE ENTRENAMIENTO", client_name,
            meta=f"Mes {month_index} · {_goal_label(goal_type)}")
 
+    # Cambios de la última adaptación también en el plan SOLO-ENTRENO (ahí el
+    # sello vive en training_json; con dieta ya se imprimió en su sección).
+    if not include_nutrition:
+        aa_t = training.get("applied_adjustments") or {}
+        aa_t_items = aa_t.get("items") or []
+        if aa_t_items:
+            section_bar(doc, f"Cambios de tu plan · revisión #{aa_t.get('period_index', '')}", GOLD)
+            rows = [[
+                (it.get("area") or "").capitalize(),
+                it.get("detail") or it.get("change") or "",
+                it.get("reason") or "",
+            ] for it in aa_t_items]
+            clean_table(doc, ["Área", "Qué cambia", "Por qué"], rows, brand,
+                        header_color=WINE, header_text_color="FFFFFF",
+                        col_widths=[1400, 3800, 3826],
+                        cant_split_rows=False, keep_together=False)
+
     section_bar(doc, f"Estructura · {training.get('split_name','')}", BLUE)
     info_box(doc, [
         (_dias_semana(len(training.get("sessions", []))), training.get("split_rationale", "")),

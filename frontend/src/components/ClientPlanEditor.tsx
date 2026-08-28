@@ -480,8 +480,10 @@ export function ClientPlanEditor({
           )}
         </h3>
         <div className="flex items-center gap-2">
+          {/* Visible TAMBIÉN en móvil: con `hidden sm:inline` el botón salía
+              deshabilitado sin explicación en pantallas pequeñas. */}
           {nutritionBlocked && (
-            <span className="hidden text-xs text-[#9A6B15] sm:inline">
+            <span className="text-xs text-[#9A6B15]">
               {kcalInvalid ? "Faltan calorías objetivo" : "Descuadre en Nutrición"}
             </span>
           )}

@@ -764,6 +764,9 @@ class PortalPlanOut(BaseModel):
     training: dict | None
     education: dict | None
     diet_mode: DietMode | None
+    # Novedades de la última adaptación (también aquí: un cliente solo-dieta
+    # no pisa la pantalla Entreno, que era el único sitio que las enseñaba).
+    plan_changes: dict | None = None
 
 
 # --------------------------------------------------- recursos del portal ----

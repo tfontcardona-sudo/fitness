@@ -1173,6 +1173,66 @@ cd backend && python -m pytest tests/ -q
      clave + no-root + ufw. Riesgo aceptado documentado: tokens en localStorage
      (mitigado por CSP) y enlaces de portal sin caducidad (revocables a mano).
 
+00000. ✅ **AUDITORÍA DE LA PRODUCCIÓN DE PLANIFICACIONES (agosto 2026)** — el
+   dueño pidió que crear planes (a mano, subiéndolos, con IA) funcione entero y
+   sin errores, que las revisiones/ediciones tengan MEMORIA para aprender, y que
+   TODO sea sencillo: saber qué pulsar y por qué. Suite completa en verde, `tsc`
+   limpio, build OK.
+   - **La generación ya no se cae por un veto**: el núcleo que viola guardrails
+     se REINTENTA una vez con los vetos inyectados (full, solo-nutrición y
+     solo-entreno). Si el reintento también viola, manda el veto original —
+     nunca se afloja el guardarraíl (flag "núcleo: reintentado…").
+   - **Activación honesta**: un plan RETENIDO (violación/ROJO) ya NO se
+     auto-activaba al guardar cualquier edición — ahora el PATCH RE-VALIDA la
+     nutrición editada con el Revisor 0 y solo activa si las violaciones se
+     corrigieron; el ROJO del panel §9 es PEGAJOSO (solo lo levanta «Activar»
+     explícito, que queda auditado como `plan_activated_with_override`).
+   - **ADAPTACIÓN QUINCENAL, arreglada de raíz**:
+     · un plan SOLO-ENTRENO ya no sale con una dieta fantasma (`nut.setdefault`
+       fabricaba macros sobre `None` → PDF/portal con una dieta en blanco); los
+       ajustes de dieta se marcan "No aplicado: este plan no incluye dieta" y el
+       sello de Novedades vive en `training_json` (con fallback en portal,
+       alertas, email y PDF);
+     · el **diet break** del motor §8 se APLICA de verdad (kcal a mantenimiento,
+       proteína bloqueada) — antes era solo texto que nadie ejecutaba; el salto
+       por diseño no dispara el tope ±15% de recalibración;
+     · **aprender del feedback de las rutinas**: las cargas de arranque se
+       calibran con el ÚLTIMO peso que registró el cliente (mejor serie de su
+       último día, a 0,5 kg) y los ajustes relativos se aplican sobre esa base;
+     · Novedades **en cristiano** (fuera «decisión determinista» y claves como
+       `dato_insuficiente`), `gen_inputs` refrescado, `manual_changes` del plan
+       base no se arrastra, y **no se avisa al cliente si el feedback de la
+       revisión sigue sin enviar** (se filtraba por la puerta de atrás).
+   - **MEMORIA / APRENDIZAJE (§13) ampliado**: las lecciones del coach llegan
+     también a la llamada de COMIDAS (la que ELIGE alimentos) y al feedback;
+     un **swap de ejercicio** y la **corrección de los ajustes propuestos** se
+     registran en `plan_edits`; el diff de construir un plan a mano
+     (scaffold/library) ya NO contamina el aprendizaje; y nueva **memoria de
+     vetos** (`brand/_ai_vetos.json`, `record_ai_vetos`/`vetos_reference`): lo
+     que el validador tuvo que frenar, si se REPITE, entra como advertencia en
+     el prompt de la siguiente generación. El coach puede QUITAR una lección
+     desde Recursos → Aprendizaje (`DELETE /api/learning/lessons/{index}`).
+   - **Panel §9 más honesto y mejor informado**: si revienta entero deja
+     resumen ÁMBAR degradado («Revisión no ejecutada») en vez de parecer un
+     plan aprobado, y los revisores IA ven ahora el RESUMEN DEL ENTRENO (antes
+     juzgaban la coherencia dieta↔entreno a ciegas).
+   - **`POST /api/plans/{id}/generate-education`**: recuperar el educativo
+     fallido sin regenerar (ni repagar) el plan entero.
+   - **SENCILLEZ (lo que pidió el dueño)**: "Generando…" sobrevive al cambio de
+     pestaña (mapa de peticiones en vuelo → no se relanza ni se gasta el doble);
+     toast honesto cuando el borrador queda retenido; en la banda de retención
+     el botón destacado es «Ver este borrador» y «Activar de todas formas» pide
+     confirmación; «Volver al plan activo»; «Regenerar con estas comidas» avisa
+     del gasto y de que pisa ediciones; «Subir Word editado» sale a primera fila
+     tras descargar el Word; la tarjeta «Adaptar» aparece también cuando la
+     revisión automática decidió algo sin ajustes de texto; el editor explica en
+     MÓVIL por qué «Guardar» está bloqueado; y el cliente SOLO-DIETA ve sus
+     Novedades en "Mi día" (solo estaban en Entreno, que él nunca abre).
+   - Tests: `tests/test_produccion_planes.py` (8) — solo-entreno sin dieta
+     fantasma, diet break aplicado, calibración con registros reales, Novedades
+     sin jerga, memoria de vetos, panel caído en ámbar, resumen de entreno para
+     los revisores y no-aviso con feedback sin enviar.
+
 0000. ✅ **RONDA 3 (agosto 2026): Word de ida y vuelta + créditos al mínimo +
    pulido integral.** Todo en verde (suite completa, tsc, build).
    - **WORD EDITABLE DE IDA Y VUELTA** (petición estrella del dueño): botón

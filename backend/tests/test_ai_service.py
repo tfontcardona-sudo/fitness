@@ -314,14 +314,34 @@ def test_feedback_nutrition_only_prompt_excludes_training():
 
 
 def test_pipeline_blocks_core_violating_guardrails():
-    # Núcleo con kcal por debajo del suelo → guardrail de nutrición bloquea
+    # Núcleo con kcal por debajo del suelo → guardrail de nutrición bloquea.
+    # Se scriptea el núcleo malo DOS veces: el pipeline reintenta una vez con
+    # los vetos inyectados y, si el reintento también viola, veta de verdad.
     bad_core = json.loads(_valid_core_json())
     bad_core["nutrition"]["target_kcal"] = 1200
     bad_core["nutrition"]["macros"] = {"protein_g": 175, "carbs_g": 60, "fat_g": 45}
-    client = ScriptedClient([json.dumps(bad_core)])
+    client = ScriptedClient([json.dumps(bad_core), json.dumps(bad_core)])
     with pytest.raises(PlanGenerationError) as exc:
         generate_monthly_plan(_ctx(), client)
     assert "guardrails" in str(exc.value)
+    # El reintento existió y llevaba los vetos inyectados en el user prompt.
+    assert len(client.calls) == 2
+    assert "violó estas reglas" in client.calls[1]["user"]
+
+
+def test_pipeline_reintenta_y_corrige_el_nucleo_vetado():
+    # Primer núcleo vetado + segundo válido → el plan SALE (antes moría con
+    # PlanGenerationError a la primera) y queda constancia en los flags.
+    bad_core = json.loads(_valid_core_json())
+    bad_core["nutrition"]["target_kcal"] = 1200
+    bad_core["nutrition"]["macros"] = {"protein_g": 175, "carbs_g": 60, "fat_g": 45}
+    client = ScriptedClient([
+        json.dumps(bad_core), _valid_core_json(),
+        _flexible_meals_json(), _education_json(),
+    ])
+    plan = generate_monthly_plan(_ctx(), client)
+    assert plan.nutrition is not None
+    assert any("reintentado tras violar guardrails" in f for f in plan.guardrail_flags)
 
 
 def test_pipeline_flags_out_of_tolerance_meal_options():
