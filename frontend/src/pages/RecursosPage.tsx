@@ -146,7 +146,26 @@ function LearningManager() {
               <li key={i} className="flex items-start gap-2 rounded-xl border p-3 text-sm text-zinc-200"
                   style={{ borderColor: "var(--line-strong)" }}>
                 <GraduationCap size={15} className="mt-0.5 shrink-0" style={{ color: "var(--brand-accent)" }} />
-                {l}
+                <span className="min-w-0 flex-1">{l}</span>
+                {/* Control del coach: una lección mal aprendida se quita aquí
+                    mismo y deja de inyectarse al generar planes. */}
+                <button
+                  onClick={async () => {
+                    if (!window.confirm("¿Quitar esta lección? Dejará de aplicarse al generar planes.")) return;
+                    try {
+                      const r = await api.deleteLearningLesson(i);
+                      setData({ ...data, lessons: r.lessons });
+                      toast.push("Lección quitada");
+                    } catch (e) {
+                      toast.push(e instanceof ApiError ? e.message : "No se pudo quitar", "error");
+                    }
+                  }}
+                  aria-label="Quitar esta lección"
+                  title="Quitar esta lección"
+                  className="shrink-0 p-1 text-zinc-500 hover:text-zinc-200"
+                >
+                  <X size={14} />
+                </button>
               </li>
             ))}
           </ul>

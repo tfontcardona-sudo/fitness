@@ -710,6 +710,9 @@ export interface PortalPlanOut {
   training: TrainingCore | null;
   education: EducationOutput | null;
   diet_mode: DietMode | null;
+  // Novedades de la última adaptación: también en la pantalla del plan (el
+  // cliente solo-dieta no pisa Entreno, que era el único sitio que las tenía).
+  plan_changes?: PlanChanges | null;
 }
 
 export interface FeedbackDocOut {

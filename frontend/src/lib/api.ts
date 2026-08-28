@@ -306,6 +306,8 @@ export const api = {
     request<{
       id: number; month_index: number; version: number; status: string;
       guardrail_flags: string[];
+      // true = quedó en BORRADOR retenido por los guardarraíles (toast honesto).
+      retained?: boolean;
       nutrition: any; training: any; education: any;
     }>("POST", `/clients/${clientId}/generate-plan${monthIndex ? `?month_index=${monthIndex}` : ""}`,
       meals && meals.length ? { meals } : undefined),
@@ -403,6 +405,8 @@ export const api = {
       closing_waist_cm: number | null; closing_hip_cm: number | null;
       closing_arm_cm: number | null; closing_thigh_cm: number | null;
       feedback_id: number | null;
+      plan_adjustments?: { area: string; change: string; reason: string }[] | null;
+      biweekly_decision?: { action?: string; kcal_delta_pct?: number; rationale?: string } | null;
     }[]>("GET", `/clients/${clientId}/periods`),
   // Cierre de la quincena POR EL COACH cuando el cliente no la envía: sin esto
   // el ciclo se quedaba bloqueado esperándole indefinidamente.
@@ -537,6 +541,9 @@ export const api = {
   refreshLearningLessons: () =>
     request<{ lessons: string[]; updated_at: string | null; source_edits: number;
               skipped?: string | null }>("POST", "/learning/lessons/refresh"),
+  /** Borra UNA lección con la que el coach no está de acuerdo. */
+  deleteLearningLesson: (index: number) =>
+    request<{ lessons: string[]; removed: string }>("DELETE", `/learning/lessons/${index}`),
 
   getAiCredit: () => request<AiCreditOut>("GET", "/ai-credit"),
   setAiCredit: (balance_usd: number) =>

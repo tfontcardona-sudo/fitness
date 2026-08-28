@@ -35,6 +35,30 @@ def get_lessons(db: Session = Depends(get_db)) -> dict:
     }
 
 
+@router.delete("/lessons/{index}")
+def delete_lesson(index: int, db: Session = Depends(get_db)) -> dict:
+    """Borra UNA lección con la que el coach no está de acuerdo — control
+    total: el sistema no puede imponerle un criterio mal aprendido."""
+    import json
+    from datetime import datetime, timezone
+
+    from app.services.audit import log_event
+    from app.services.coach_lessons import _sidecar_path, load_lessons
+
+    data = load_lessons()
+    lessons = list(data.get("lessons") or [])
+    if not (0 <= index < len(lessons)):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Esa lección ya no existe")
+    quitada = lessons.pop(index)
+    data["lessons"] = lessons
+    data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    _sidecar_path().write_text(json.dumps(data, ensure_ascii=False, indent=2),
+                               encoding="utf-8")
+    log_event(db, "learning", 0, "coach_lesson_deleted", {"lesson": quitada[:200]})
+    db.commit()
+    return {"lessons": lessons, "removed": quitada}
+
+
 @router.post("/lessons/refresh")
 def refresh_lessons(db: Session = Depends(get_db)) -> dict:
     """Re-destila las lecciones AHORA (modelo ligero). Errores → mensaje claro."""

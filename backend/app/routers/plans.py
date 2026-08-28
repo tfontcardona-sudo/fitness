@@ -656,6 +656,9 @@ class PeriodOut(BaseModel):
     # Ajustes propuestos por el feedback IA de esta revisión (área/cambio/motivo):
     # la pestaña Planificación los muestra ANTES de pulsar "Adaptar".
     plan_adjustments: list[dict] | None = None
+    # Decisión de la revisión automática (§8): la tarjeta "Adaptar" debe salir
+    # aunque la IA no propusiera ajustes de texto (p. ej. solo un diet break).
+    biweekly_decision: dict | None = None
 
     model_config = {"from_attributes": True}
 
@@ -677,6 +680,7 @@ def list_periods(client_id: int, db: Session = Depends(get_db)) -> list[PeriodOu
         )
         po.feedback_id = fb.id if fb else None
         po.plan_adjustments = (p.ai_analysis_json or {}).get("plan_adjustments") or None
+        po.biweekly_decision = (p.ai_analysis_json or {}).get("biweekly_decision") or None
         out.append(po)
     return out
 
