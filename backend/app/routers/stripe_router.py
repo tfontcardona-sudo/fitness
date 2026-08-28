@@ -98,11 +98,14 @@ def pay_plan_link(request: Request, tier: str, period: str,
 
         if period == "oferta":
             title = f"{pkgs.label(t)} — primer mes 1 €"
-            desc = "Oferta: tu primer mes del plan completo por 1 €. Pago seguro con Stripe."
+            desc = ("Oferta de 3 meses del plan completo: 1 € el primer mes y "
+                    "120 € el segundo y el tercero. Se detiene sola: sin más "
+                    "cobros. Pago seguro con Stripe.")
         elif period == "oferta2":
             title = f"{pkgs.label(t)} — 2 pagos de 120,50 €"
-            desc = ("Oferta: el plan completo en solo 2 pagos de 120,50 € "
-                    "(hoy y en un mes). Pago seguro con Stripe.")
+            desc = ("La misma oferta de 3 meses en solo 2 pagos de 120,50 € "
+                    "(hoy y en un mes). Se detiene sola: sin más cobros. "
+                    "Pago seguro con Stripe.")
         else:
             title = f"{pkgs.label(t)} — pago seguro"
             desc = "Asesoría 100 % personalizada. Pago seguro con Stripe."

@@ -625,8 +625,9 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
                     );
                   })}
                 </div>
-                {/* Oferta de captación: 1 € el primer mes → 120 €/mes en
-                    suscripción. Elegirla fuerza el plan Full (es solo de Full). */}
+                {/* Oferta de captación: programa CERRADO de 3 meses en 3 pagos
+                    (1 € + 120 € + 120 €); el backend corta la suscripción al
+                    tercer cobro. Elegirla fuerza el plan Full (es solo de Full). */}
                 <button
                   type="button"
                   onClick={() => { setPeriod("oferta"); setTier("full"); }}
@@ -640,10 +641,10 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
                 >
                   <span className="block text-sm font-semibold"
                     style={{ color: period === "oferta" ? "var(--brand-accent)" : "var(--text)" }}>
-                    Oferta: primer mes 1 €
+                    Oferta: 3 meses en 3 pagos (1 € hoy)
                   </span>
                   <span className="mt-0.5 block text-xs text-zinc-500">
-                    Luego {OFFER_MONTHLY_EUR} €/mes · suscripción Stripe · solo Full
+                    1 € + {OFFER_MONTHLY_EUR} € + {OFFER_MONTHLY_EUR} € · se detiene sola · solo Full
                   </span>
                 </button>
                 {/* La MISMA oferta en 2 pagos: 120,50 € hoy y 120,50 € al mes.

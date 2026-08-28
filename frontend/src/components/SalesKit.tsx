@@ -54,27 +54,29 @@ function catalogText(prices: PlanPricesOut): string {
   );
 }
 
-/** Mensaje de la OFERTA (1 € el primer mes → 120 €/mes en suscripción). */
+/** Mensaje de la OFERTA en 3 pagos (1 € + 120 € + 120 €, programa de 3 meses
+ *  que se detiene solo al tercer cobro). */
 function offerText(): string {
   const link = `${window.location.origin}/api/pay/plan/full/oferta`;
   return (
-    `*Oferta DQR Full* - tu primer mes por ${OFFER_FIRST_EUR} €\n` +
-    `Después, ${OFFER_MONTHLY_EUR} €/mes en suscripción (menos de lo que cuestan ` +
-    "entreno y nutrición por separado) y sin permanencia: cancelas cuando quieras.\n" +
+    `*Oferta DQR Full* - 3 meses empezando por ${OFFER_FIRST_EUR} €\n` +
+    `Pagas ${OFFER_FIRST_EUR} € hoy, y ${OFFER_MONTHLY_EUR} € el segundo mes y ` +
+    `${OFFER_MONTHLY_EUR} € el tercero. Después NO se te cobra nada más: el ` +
+    "cobro se detiene solo.\n" +
     "Incluye el plan completo: entrenamiento y nutrición 100 % a tu medida, " +
     "WhatsApp conmigo a diario, app de seguimiento y videollamada de revisión.\n\n" +
     `Empieza hoy por ${OFFER_FIRST_EUR} €: ${link}\n` +
-    "Pago seguro con Stripe; la renovación es automática cada mes."
+    "Pago seguro con Stripe. Sin renovación automática ni sorpresas."
   );
 }
 
-/** Mensaje de la OFERTA EN 2 PAGOS (120,50 € hoy + 120,50 € al mes y se
- *  detiene solo: mismo total que 1 + 120 + 120). */
+/** Mensaje de la MISMA oferta EN 2 PAGOS (120,50 € hoy + 120,50 € al mes y se
+ *  detiene solo: mismo programa de 3 meses y mismo total que 1 + 120 + 120). */
 function offer2Text(): string {
   const link = `${window.location.origin}/api/pay/plan/full/oferta2`;
   const cada = OFFER2_EACH_EUR.toLocaleString("es-ES", { minimumFractionDigits: 2 });
   return (
-    `*Oferta DQR Full* - en solo 2 pagos de ${cada} €\n` +
+    `*Oferta DQR Full* - los mismos 3 meses, en solo 2 pagos de ${cada} €\n` +
     "El primero hoy y el segundo dentro de un mes; después NO se te cobra nada más " +
     "(el cobro se detiene solo).\n" +
     "Incluye el plan completo: entrenamiento y nutrición 100 % a tu medida, " +
@@ -228,9 +230,9 @@ export function SalesKit() {
                   style={sel === "oferta"
                     ? { background: "#2E7D46", color: "white", borderColor: "#2E7D46" }
                     : { borderColor: "#2E7D46", color: "#2E7D46" }}
-                  title={`Primer mes ${OFFER_FIRST_EUR} € y después ${OFFER_MONTHLY_EUR} €/mes en suscripción (solo Full)`}
+                  title={`3 meses en 3 pagos: ${OFFER_FIRST_EUR} € hoy y ${OFFER_MONTHLY_EUR} € el 2º y el 3er mes; se detiene sola tras el tercero (solo Full)`}
                 >
-                  Oferta 1 €
+                  Oferta 3 pagos (1 €)
                 </button>
                 <button
                   onClick={() => pick("oferta2")}

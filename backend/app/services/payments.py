@@ -83,10 +83,12 @@ def describe(tier: str | None, billing_period: str | None, *,
 
     plan = pkgs.label(tier) if tier else "Asesoría"
     if billing_period == "oferta":
-        # La oferta es una suscripción: distingue el alta (1 €) de la renovación.
+        # Programa cerrado de 3 pagos (1 € + 120 + 120): se dice cuál es el 1º;
+        # los otros dos llegan como facturas mensuales de 120 €.
         if billing_reason == "subscription_create":
-            return f"{plan} · oferta (primer mes)"
-        return f"{plan} · oferta (mes)" if kind == "invoice" else f"{plan} · oferta"
+            return f"{plan} · oferta (pago 1 de 3 · 1 €)"
+        return (f"{plan} · oferta (pago 2 o 3 de 3)" if kind == "invoice"
+                else f"{plan} · oferta")
     if billing_period == "oferta2":
         # La misma oferta en 2 pagos de 120,50 €: se dice cuál de los dos es.
         if billing_reason == "subscription_create":

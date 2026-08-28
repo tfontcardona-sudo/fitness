@@ -54,29 +54,35 @@ PRODUCT_NAMES = {"train": "DQR Train", "nutri": "DQR Nutri", "full": "DQR Full"}
 PERIOD_LABEL = {"1m": "1 mes", "3m": "3 meses", "6m": "6 meses"}
 CURRENCY = "eur"
 
-# --- OFERTA de captación (solo plan Full): 1 € el primer mes → 120 €/mes ---
-# Es una SUSCRIPCIÓN de Stripe (renovación automática cada mes), no un pago
-# único: precio recurrente mensual de 120 € + cupón estable de un solo uso por
-# suscripción que deja el primer mes en 1 €. 120 €/mes queda por debajo de
-# Train+Nutri sueltos (69+79=148 €) — el gancho de la promo.
+# --- OFERTA de captación (solo plan Full): 3 meses, 1 € + 120 € + 120 € ---
+# Es una SUSCRIPCIÓN de Stripe, pero NO abierta: la oferta es un PROGRAMA
+# CERRADO de 3 meses — 1 € el primer mes y 120 € el segundo y el tercero
+# (total 241 €). Precio recurrente mensual de 120 € + cupón estable de un solo
+# uso por suscripción que deja el primer mes en 1 €; en cuanto se cobra la
+# TERCERA factura, el webhook CANCELA la suscripción (no hay cuarto cobro).
+# 120 €/mes queda por debajo de Train+Nutri sueltos (69+79=148 €) — el gancho.
 OFFER_PERIOD = "oferta"               # billing_period del cliente en la oferta
 OFFER_TIER = "full"                   # la oferta es SOLO del plan completo
-OFFER_MONTHLY_CENTS = 12000           # 120 €/mes a partir del segundo mes
+OFFER_MONTHLY_CENTS = 12000           # 120 €/mes el segundo y el tercer mes
 OFFER_FIRST_MONTH_CENTS = 100         # 1 € el primer mes
+OFFER_CHARGES = 3                     # nº de facturas (1 € + 120 + 120): a la 3ª, se cancela
 OFFER_LOOKUP = "dqr_full_oferta"      # lookup_key del precio RECURRENTE
 OFFER_COUPON_ID = "dqr_oferta_primer_mes"  # id estable del cupón (duration=once)
 
-# --- OFERTA EN 2 PAGOS (misma oferta, otra forma de pagarla): 120,50 € hoy y
-# 120,50 € al mes — total 241 €, exactamente lo mismo que 1 + 120 + 120. Es una
-# suscripción mensual de 120,50 € que el webhook CANCELA en Stripe en cuanto se
-# cobra la SEGUNDA factura (no hay tercer cobro: el programa queda pagado).
-# El job diario reintenta la cancelación por si el webhook se perdiera.
+# --- OFERTA EN 2 PAGOS (la MISMA oferta de 3 meses, otra forma de pagarla):
+# 120,50 € hoy y 120,50 € al mes — total 241 €, exactamente lo mismo que
+# 1 + 120 + 120. Es una suscripción mensual de 120,50 € que el webhook CANCELA
+# en Stripe en cuanto se cobra la SEGUNDA factura (no hay tercer cobro: el
+# programa queda pagado). El job diario reintenta la cancelación por si el
+# webhook se perdiera — mismo mecanismo que la forma en 3 pagos.
 OFFER2_PERIOD = "oferta2"             # billing_period del cliente en 2 pagos
 OFFER2_MONTHLY_CENTS = 12050          # 120,50 € cada uno de los dos pagos
 OFFER2_CHARGES = 2                    # nº de cobros: al segundo, se cancela
 OFFER2_LOOKUP = "dqr_full_oferta2"    # = _lookup_key("full", "oferta2")
-# Las DOS formas de pagar la misma oferta (ambas solo del plan Full).
+# Las DOS formas de pagar la misma oferta (ambas solo del plan Full) y cuántas
+# facturas completan el programa en cada una.
 OFFER_PERIODS = (OFFER_PERIOD, OFFER2_PERIOD)
+OFFER_CHARGES_BY_PERIOD = {OFFER_PERIOD: OFFER_CHARGES, OFFER2_PERIOD: OFFER2_CHARGES}
 
 
 class StripeError(RuntimeError):
@@ -402,16 +408,26 @@ def create_checkout_url(db: Session, tier: str, period: str = "1m", *,
         extra["phone_number_collection"] = {"enabled": True}
 
     if es_oferta:
-        # SUSCRIPCIÓN mensual. En la oferta clásica, el primer cobro queda a
-        # 1 € (cupón de un solo uso por suscripción) y Stripe renueva a 120 €
-        # cada mes. En la oferta EN 2 PAGOS no hay cupón: dos cobros de
-        # 120,50 € y el webhook cancela la suscripción al segundo (no hay
-        # tercer cobro). invoice.paid/payment_failed mantienen el estado del
-        # cliente al día; la metadata viaja también en la suscripción para
-        # mapear las facturas al cliente.
+        # SUSCRIPCIÓN mensual de un PROGRAMA CERRADO de 3 meses. En la forma
+        # de 3 pagos, el primer cobro queda a 1 € (cupón de un solo uso por
+        # suscripción) y el webhook cancela la suscripción a la TERCERA
+        # factura (1 € + 120 + 120). En la forma EN 2 PAGOS no hay cupón: dos
+        # cobros de 120,50 € y cancelación al segundo. invoice.paid/
+        # payment_failed mantienen el estado del cliente al día; la metadata
+        # viaja también en la suscripción para mapear las facturas al cliente.
         if period == OFFER_PERIOD:
             extra["discounts"] = [{"coupon": OFFER_COUPON_ID}]
         extra["subscription_data"] = {"metadata": dict(metadata)}
+        # El checkout de Stripe enseña "120,00 € al mes" (es una suscripción):
+        # sin este texto, el cliente no sabría que el cobro SE DETIENE SOLO.
+        mensaje = ("Oferta de 3 meses: 1 € hoy y 120 € el 2º y el 3er mes "
+                   "(total 241 €). Después no se te cobra nada más: la "
+                   "suscripción se detiene sola."
+                   if period == OFFER_PERIOD else
+                   "Oferta de 3 meses en 2 pagos: 120,50 € hoy y 120,50 € en "
+                   "un mes (total 241 €). Después no se te cobra nada más: la "
+                   "suscripción se detiene sola.")
+        extra["custom_text"] = {"submit": {"message": mensaje}}
 
     try:
         session = stripe.checkout.Session.create(
@@ -1004,27 +1020,30 @@ def _handle_charge_refunded(db: Session, event: dict) -> dict:
     return {"refunded": devuelto, "client_id": client.id if client else None}
 
 
-def pagos_2pagos_completados(db: Session, client: Client) -> int:
-    """Nº de FACTURAS COBRADAS de la oferta en 2 pagos que constan en el libro
-    de caja para este cliente. Con ≥ OFFER2_CHARGES el programa está pagado
-    entero: la suscripción debe cancelarse y su baja no es un impago."""
+def pagos_oferta_cobrados(db: Session, client: Client, periodo: str) -> int:
+    """Nº de FACTURAS COBRADAS de la oferta (en la forma de pago `periodo`)
+    que constan en el libro de caja para este cliente. Con ≥ las que marca
+    OFFER_CHARGES_BY_PERIOD el programa está pagado entero: la suscripción
+    debe cancelarse y su baja no es un impago. En la forma de 3 pagos la
+    factura del 1 € también cuenta (es la primera de las tres)."""
     from app.models import Payment
 
     return int(db.scalar(
         select(func.count(Payment.id)).where(
             Payment.client_id == client.id, Payment.kind == "invoice",
-            Payment.status == "paid", Payment.billing_period == OFFER2_PERIOD,
+            Payment.status == "paid", Payment.billing_period == periodo,
         )
     ) or 0)
 
 
-def detener_suscripcion_2pagos(db: Session, client: Client, sub_id: str | None,
-                               *, motivo: str) -> bool:
-    """Cancela EN STRIPE la suscripción de la oferta en 2 pagos: el segundo
-    cobro ya entró y no puede haber un tercero. Devuelve True si quedó
-    cancelada. Si Stripe falla, avisa al COACH al momento (push): es dinero —
-    un tercer cobro indebido sería una devolución y un cliente enfadado. El
-    mantenimiento diario reintenta solo (backstop del webhook perdido)."""
+def detener_suscripcion_oferta(db: Session, client: Client, sub_id: str | None,
+                               *, motivo: str, periodo: str = OFFER2_PERIOD) -> bool:
+    """Cancela EN STRIPE la suscripción de la oferta: el último cobro del
+    programa ya entró (el 2º de 120,50 € o el 3º de la forma 1 € + 120 + 120)
+    y no puede haber otro. Devuelve True si quedó cancelada. Si Stripe falla,
+    avisa al COACH al momento (push): es dinero — un cargo indebido sería una
+    devolución y un cliente enfadado. El mantenimiento diario reintenta solo
+    (backstop del webhook perdido)."""
     sub_id = sub_id or client.stripe_subscription_id
     if not sub_id:
         return False
@@ -1034,26 +1053,49 @@ def detener_suscripcion_2pagos(db: Session, client: Client, sub_id: str | None,
         cancel(sub_id)
         log_event(db, "client", client.id, "subscription_completed",
                   {"subscription": sub_id, "motivo": motivo})
+        if periodo == OFFER_PERIOD:
+            # En la forma del 1 € el corte es NUEVO (antes era suscripción
+            # abierta): el coach se entera de cada programa que termina — y de
+            # que en ~1 mes le llegará a ese cliente el aviso de renovación.
+            try:
+                from app.services import push as push_svc
+
+                first = ((client.full_name or "").split() or ["Un cliente"])[0]
+                base = settings.public_base_url.rstrip("/")
+                push_svc.send_to_coach(db, {
+                    "title": "💰 Oferta completada: cobros detenidos",
+                    "body": (f"{first} ya pagó los 3 cobros de la oferta "
+                             "(1 € + 120 € + 120 €): la suscripción se ha "
+                             "detenido sola. En un mes le llegará el aviso de "
+                             "renovación."),
+                    "count": 1,
+                    "url": f"{base}/clientes/{client.id}",
+                    "tag": f"dq-oferta-fin-{sub_id}",
+                })
+            except Exception:  # noqa: BLE001 — el push nunca rompe el corte
+                pass
         return True
     except Exception as exc:  # noqa: BLE001
         msg = str(exc).lower()
         if "canceled" in msg or "cancelled" in msg or "no such subscription" in msg:
             # Ya estaba cancelada (reintento del webhook o baja manual): hecho.
             return True
-        _log.warning("No se pudo cancelar la suscripción de 2 pagos %s: %s",
+        _log.warning("No se pudo cancelar la suscripción de la oferta %s: %s",
                      sub_id, exc)
         try:
             from app.services import push as push_svc
 
             first = ((client.full_name or "").split() or ["Un cliente"])[0]
+            detalle = ("sus 2 cobros de 120,50 €" if periodo == OFFER2_PERIOD
+                       else "sus 3 cobros de la oferta (1 € + 120 € + 120 €)")
             push_svc.send_to_coach(db, {
-                "title": "💰⚠️ Cancela la suscripción de 2 pagos",
-                "body": (f"{first} ya pagó sus 2 cobros de 120,50 € pero la "
-                         "suscripción no se pudo cancelar sola: cancélala en "
-                         "Stripe o le llegará un tercer cobro."),
+                "title": "💰⚠️ Cancela la suscripción de la oferta",
+                "body": (f"{first} ya pagó {detalle} pero la suscripción no se "
+                         "pudo cancelar sola: cancélala en Stripe o le llegará "
+                         "otro cobro indebido."),
                 "count": 1,
                 "url": f"https://dashboard.stripe.com/subscriptions/{sub_id}",
-                "tag": f"dq-oferta2-cancelar-{sub_id}",
+                "tag": f"dq-oferta-cancelar-{sub_id}",
             })
         except Exception:  # noqa: BLE001
             pass
@@ -1137,16 +1179,19 @@ def _handle_invoice_event(db: Session, event: dict) -> dict:
                    "amount_eur": (invoice.get("amount_due") or 0) / 100.0})
         _notify_coach_payment_failed(db, client)
     db.commit()
-    # OFERTA EN 2 PAGOS: con el segundo cobro anotado, la suscripción se
-    # CANCELA en Stripe — el programa está pagado entero y no puede haber un
-    # tercer cargo. Se cuenta sobre el LIBRO (no sobre billing_reason): así el
-    # reintento de un webhook o una factura repescada por sync no lo rompen.
-    if (pagada and periodo_de_factura(invoice, client) == OFFER2_PERIOD
-            and pagos_2pagos_completados(db, client) >= OFFER2_CHARGES):
-        detener_suscripcion_2pagos(
+    # PROGRAMA DE LA OFERTA COMPLETADO: con el último cobro anotado (el 2º de
+    # 120,50 € o el 3º de la forma 1 € + 120 + 120), la suscripción se CANCELA
+    # en Stripe — el programa está pagado entero y no puede haber otro cargo.
+    # Se cuenta sobre el LIBRO (no sobre billing_reason): así el reintento de
+    # un webhook o una factura repescada por sync no lo rompen.
+    periodo_f = periodo_de_factura(invoice, client)
+    requeridos = OFFER_CHARGES_BY_PERIOD.get(periodo_f or "")
+    if (pagada and requeridos
+            and pagos_oferta_cobrados(db, client, periodo_f) >= requeridos):
+        detener_suscripcion_oferta(
             db, client,
             _invoice_subscription_bits(invoice)[0] or client.stripe_subscription_id,
-            motivo="segundo_pago_cobrado")
+            motivo="programa_cobrado_entero", periodo=periodo_f)
         db.commit()
     return {"invoice": "paid" if pagada else "failed", "client_id": client.id}
 
@@ -1169,26 +1214,31 @@ def _handle_subscription_deleted(db: Session, event: dict) -> dict:
         client = db.scalar(select(Client).where(Client.stripe_subscription_id == sub_id))
     if client is None:
         return {"ignored": "subscription_sin_cliente"}
-    # OFERTA EN 2 PAGOS COMPLETADA: la baja la provocamos NOSOTROS al entrar el
-    # segundo cobro (o el coach al ver el aviso). No es un impago ni un
-    # abandono: el programa está pagado entero, la ficha sigue "pagada" y el
-    # contador de renovación corre desde el último cobro. Solo si la
-    # suscripción muere ANTES de los 2 cobros es una baja de verdad.
-    completada = (client.billing_period == OFFER2_PERIOD
-                  and pagos_2pagos_completados(db, client) >= OFFER2_CHARGES)
+    # PROGRAMA DE LA OFERTA COMPLETADO: la baja la provocamos NOSOTROS al
+    # entrar el último cobro (o el coach al ver el aviso). No es un impago ni
+    # un abandono: el programa está pagado entero, la ficha sigue "pagada" y
+    # el contador de renovación corre desde el último cobro. Solo si la
+    # suscripción muere ANTES de completar los cobros es una baja de verdad.
+    requeridos = OFFER_CHARGES_BY_PERIOD.get(client.billing_period or "")
+    completada = (requeridos is not None
+                  and pagos_oferta_cobrados(db, client, client.billing_period)
+                  >= requeridos)
     if completada:
         if client.stripe_subscription_id == sub_id:
             client.stripe_subscription_id = None
         log_event(db, "client", client.id, "subscription_completed",
-                  {"subscription": sub_id, "motivo": "dos_pagos_cobrados"})
+                  {"subscription": sub_id, "motivo": "programa_cobrado_entero"})
         from app.services import payments as pay_svc
 
+        descripcion = ("Oferta en 2 pagos completada (no habrá más cobros)"
+                       if client.billing_period == OFFER2_PERIOD else
+                       "Oferta (1 € + 120 € + 120 €) completada (no habrá más cobros)")
         pay_svc.record_payment(
             db, object_id=sub_id or f"sub_fin_{client.id}", kind="subscription",
             status="canceled", amount_cents=0,
             livemode=bool(sub.get("livemode", True)), client=client,
-            billing_period=OFFER2_PERIOD,
-            description="Oferta en 2 pagos completada (no habrá más cobros)",
+            billing_period=client.billing_period,
+            description=descripcion,
             paid_at=pay_svc.ts_to_dt(sub.get("canceled_at") or sub.get("ended_at")
                                      or event.get("created")),
             event_id=event.get("id"),

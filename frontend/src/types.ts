@@ -15,9 +15,10 @@ export type PackageTier = "nutri" | "train" | "full";
 // Duraciones PÚBLICAS con precio propio en el catálogo (conmutador de /planes).
 export type PublicBillingPeriod = "1m" | "3m" | "6m";
 // Duración contratada del plan (decide el precio de Stripe que se cobra):
-// mensual, trimestral, semestral, u oferta en sus DOS formas de pago (solo
-// plan Full): "oferta" (1 € el primer mes → 120 €/mes en suscripción) y
-// "oferta2" (2 pagos de 120,50 €; la suscripción se cancela sola al 2º cobro).
+// mensual, trimestral, semestral, u OFERTA (programa cerrado de 3 meses, solo
+// plan Full) en sus DOS formas de pago: "oferta" (3 pagos: 1 € + 120 € +
+// 120 €; se cancela sola al 3er cobro) y "oferta2" (2 pagos de 120,50 €; se
+// cancela sola al 2º cobro).
 export type BillingPeriod = PublicBillingPeriod | "oferta" | "oferta2";
 export type PaymentStatus = "pending" | "paid";
 export type ClientStatus =
