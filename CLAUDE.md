@@ -1173,6 +1173,51 @@ cd backend && python -m pytest tests/ -q
      clave + no-root + ufw. Riesgo aceptado documentado: tokens en localStorage
      (mitigado por CSP) y enlaces de portal sin caducidad (revocables a mano).
 
+000000. ✅ **VENDER: pantalla de ofertas y enlaces que SÍ abren Stripe (agosto
+   2026)** — el dueño pidió que elegir la oferta para mandar el enlace de pago
+   fuera más visual e intuitivo, y que el enlace copiado/enviado abra
+   DIRECTAMENTE la pasarela ("alguna daba algún error"). Suite en verde, `tsc`
+   limpio, build OK.
+   - **CAUSA RAÍZ del error (crítica)**: `Price.list` se llamaba con las ONCE
+     lookup_keys (9 planes + las 2 formas de pagar la oferta) y **Stripe admite
+     10 por llamada**. Desde que se añadió `oferta2` (la clave nº 11) la
+     resolución de precios por lookup fallaba entera y los enlaces de la OFERTA
+     acababan en `/planes` en vez de en Stripe. Ahora se piden en TANDAS de 10
+     (`_prices_by_lookup`, usada por los dos sitios). El `FakeStripe` de los
+     tests era más permisivo que Stripe (por eso la suite daba verde): ahora
+     impone el límite real.
+   - **Más caminos que no llegaban a Stripe** (todos con regresión): enlace
+     pegado con puntuación (`…/full/oferta.`) o en mayúsculas → se normaliza
+     como el tier; el id de precio VACÍO se cacheaba 10 min (un tropiezo dejaba
+     la oferta sin enlace, que no tiene reserva en `.env`) → ya no se cachea;
+     **renovar a un cliente de la oferta le revendía la oferta a 1 €** → se le
+     cobra su plan MENSUAL; `open_invoice_url` devolvía None al fallar y se le
+     decía "¡Pago recibido!" a quien quizá debía dinero → ahora es un error
+     explícito; tier legado (`start`/`pro`) en la ficha moría con "Plan
+     desconocido"; `STRIPE_MODE` mal escrito tumbaba todos los enlaces de plan;
+     `_stripe()` fuera del try salía como 500.
+   - **Y cuando falla, se nota**: `/planes?pago=error` con explicación y CTA de
+     WhatsApp, **push al coach** (`notify_coach_pay_link_failed`), 429 y 404 de
+     `/api/pay/*` en HTML legible (antes JSON crudo), y la vista previa de
+     WhatsApp ya no crea sesiones de pago reales ni deja al usuario sin salida
+     (botón "Ir al pago seguro", `?ir=1`).
+   - **Pantalla VENDER** (`/vender`, entrada propia en la barra; el kit de
+     ventas del panel "Hoy" pasa a ser un acceso directo): las dos ofertas en
+     tarjetas grandes (lo que paga HOY, nº de cobros, total, "se detiene
+     solo"), planes sueltos en rejilla, la elegida con tick y borde, y el
+     ENLACE a la vista con **Copiar enlace / Copiar mensaje / WhatsApp /
+     Probar**. `SalesKit.tsx` eliminado.
+   - **El enlace lo da el BACKEND** (`GET /api/sales/catalog`,
+     `services/sales_catalog.py`): dominio público oficial, importes REALES de
+     Stripe (una sola consulta troceada) y **semáforo por enlace**
+     (`ready`/`issue`): falta el precio, precio archivado, cupón del 1 € roto,
+     Stripe sin configurar o en modo PRUEBA. Si no está listo, la tarjeta sale
+     en rojo y no deja enviarlo. `GET /api/sales/client-link/{id}` hace lo
+     mismo con el enlace de un cliente y dice qué hará al abrirlo (cobra /
+     renueva / no cobra porque ya pagó) — la ficha lo muestra bajo el botón.
+   - Tests: `tests/test_sales_catalog.py` (6) + 5 regresiones nuevas en
+     `tests/test_stripe.py`.
+
 00000. ✅ **AUDITORÍA DE LA PRODUCCIÓN DE PLANIFICACIONES (agosto 2026)** — el
    dueño pidió que crear planes (a mano, subiéndolos, con IA) funcione entero y
    sin errores, que las revisiones/ediciones tengan MEMORIA para aprender, y que

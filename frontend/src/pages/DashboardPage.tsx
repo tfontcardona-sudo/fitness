@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
+  BadgeEuro,
   CalendarPlus,
   CheckCircle2,
+  ChevronRight,
   ClipboardCheck,
   ClipboardList,
   Flag,
@@ -23,7 +25,6 @@ import { hrefCliente } from "../lib/anchors";
 import { pin, pinId } from "../lib/pins";
 import { goalReviewDue, initials, relativeDays } from "../lib/format";
 import { WhatsAppRound } from "../components/WhatsAppRound";
-import { SalesKit } from "../components/SalesKit";
 import { AiCreditButton } from "../components/AiCreditButton";
 
 /**
@@ -304,11 +305,23 @@ export default function DashboardPage() {
         <WhatsAppRound />
       </div>
 
-      {/* Kit de ventas: catálogo de precios y enlaces de pago por plan, listos
-          para responder a un interesado que escribe desde /planes. */}
-      <div className="mt-4">
-        <SalesKit />
-      </div>
+      {/* VENDER: el kit de ventas vive ahora en su propia pantalla (ofertas en
+          tarjetas grandes, enlace comprobado antes de enviarlo). Aquí queda el
+          acceso directo: es lo que se usa cuando alguien acaba de escribir. */}
+      <Link to="/vender" className="card card-hover mt-4 flex items-center justify-between gap-3 p-4">
+        <span className="flex items-center gap-2.5">
+          <BadgeEuro size={20} style={{ color: "var(--brand-accent)" }} />
+          <span>
+            <span className="block text-sm font-semibold" style={{ color: "var(--text)" }}>
+              Vender: ofertas y enlaces de pago
+            </span>
+            <span className="block text-xs" style={{ color: "var(--text-faint)" }}>
+              Elige la oferta y manda el enlace de Stripe
+            </span>
+          </span>
+        </span>
+        <ChevronRight size={18} style={{ color: "var(--text-faint)" }} />
+      </Link>
 
       {loadFailed && (
         <div className="card mt-4 p-3 text-sm text-zinc-300">

@@ -89,6 +89,26 @@ class StripeError(RuntimeError):
     """Error recuperable de Stripe (config ausente, plan inválido, firma mala)."""
 
 
+# Stripe admite un MÁXIMO de 10 `lookup_keys` por llamada a Price.list. Con los
+# 9 planes + las DOS formas de pagar la oferta son ONCE: la llamada entera
+# fallaba ("You cannot specify more than 10 lookup_keys"), la resolución de
+# precios por lookup se caía y los enlaces de la OFERTA acababan redirigiendo a
+# /planes en vez de abrir Stripe. Se pide por tandas y se juntan los resultados.
+_LOOKUP_BATCH = 10
+
+
+def _prices_by_lookup(stripe, keys: list[str]) -> dict:
+    """{lookup_key: precio} pidiéndolos en tandas de 10 como manda la API."""
+    found: dict = {}
+    for i in range(0, len(keys), _LOOKUP_BATCH):
+        tanda = keys[i:i + _LOOKUP_BATCH]
+        for pr in stripe.Price.list(lookup_keys=tanda, active=True,
+                                    limit=100)["data"]:
+            if pr.get("lookup_key"):
+                found[pr["lookup_key"]] = pr
+    return found
+
+
 def _stripe():
     import stripe
 
@@ -128,10 +148,7 @@ def ensure_canonical_prices(stripe, log=None) -> list[str]:
                 for p in stripe.Product.list(active=True, limit=100)["data"]}
     keys = ([_lookup_key(t, p) for t in TIER_ORDER for p in PERIOD_ORDER]
             + [OFFER_LOOKUP, OFFER2_LOOKUP])
-    existing = {pr["lookup_key"]: pr
-                for pr in stripe.Price.list(lookup_keys=keys, active=True,
-                                            limit=100)["data"]
-                if pr.get("lookup_key")}
+    existing = _prices_by_lookup(stripe, keys)
 
     for tier in TIER_ORDER:
         product_id = products.get(tier)
@@ -301,10 +318,7 @@ def _price_by_lookup(tier: str, period: str) -> str:
                 + [OFFER_LOOKUP, OFFER2_LOOKUP])
 
         def _list_prices() -> dict:
-            return {pr["lookup_key"]: pr
-                    for pr in stripe.Price.list(lookup_keys=keys, active=True,
-                                                limit=100)["data"]
-                    if pr.get("lookup_key")}
+            return _prices_by_lookup(stripe, keys)
 
         found = _list_prices()
 
@@ -320,6 +334,7 @@ def _price_by_lookup(tier: str, period: str) -> str:
                               (OFFER2_LOOKUP, OFFER2_MONTHLY_CENTS)):
                 of = found.get(lk)
                 if (of is None or of.get("unit_amount") != cents
+                        or of.get("currency") != CURRENCY
                         or (of.get("recurring") or {}).get("interval") != "month"):
                     return True
             # El CUPÓN del primer mes también es reparable: borrado a mano en el
@@ -346,8 +361,15 @@ def _price_by_lookup(tier: str, period: str) -> str:
                 _log.info("Precios de Stripe alineados con la tabla canónica (auto-alta).")
             except Exception as exc:  # noqa: BLE001 — clave sin permisos, red…
                 _log.warning("Auto-alta de precios en Stripe fallida: %s", exc)
+        # Solo se cachea lo ENCONTRADO. Cachear el vacío dejaba todos los
+        # enlaces muertos durante los 10 minutos del TTL por un fallo puntual
+        # de Stripe (y la oferta no tiene reserva en el .env que la salve).
         for k in keys:
-            _lookup_cache["ids"][k] = (found.get(k) or {}).get("id", "")
+            pid = (found.get(k) or {}).get("id", "")
+            if pid:
+                _lookup_cache["ids"][k] = pid
+            else:
+                _lookup_cache["ids"].pop(k, None)
     except Exception as exc:  # noqa: BLE001 — sin red/clave: se cae a los .env
         _log.warning("No se pudieron resolver precios por lookup_key: %s", exc)
         return ""
@@ -395,8 +417,7 @@ def create_checkout_url(db: Session, tier: str, period: str = "1m", *,
             "scripts/setup_stripe_prices.py (o pon "
             f"STRIPE_PRICE_{tier.upper()}_{period.upper()} en el .env).")
 
-    stripe = _stripe()
-    base = settings.public_base_url
+    base = settings.public_base_url.rstrip("/")
     metadata = {"tier": tier, "billing_period": period}
     extra: dict = {}
     if client is not None:
@@ -429,9 +450,16 @@ def create_checkout_url(db: Session, tier: str, period: str = "1m", *,
                    "suscripción se detiene sola.")
         extra["custom_text"] = {"submit": {"message": mensaje}}
 
+    # El MODO se valida: un STRIPE_MODE mal escrito en el .env tumbaba TODOS
+    # los enlaces de plan (Stripe rechaza la sesión) sin decir dónde estaba el
+    # fallo. Ante un valor raro, el de siempre: pago único.
+    modo = settings.stripe_mode if settings.stripe_mode in ("payment", "subscription") else "payment"
     try:
+        # _stripe() dentro del try: un fallo aquí (clave ilegible, SDK) salía
+        # como 500 al navegador del interesado en vez de traducirse.
+        stripe = _stripe()
         session = stripe.checkout.Session.create(
-            mode="subscription" if es_oferta else settings.stripe_mode,
+            mode="subscription" if es_oferta else modo,
             line_items=[{"price": price, "quantity": 1}],
             success_url=f"{base}/pago-ok",
             cancel_url=f"{base}/planes",
@@ -468,8 +496,12 @@ def open_invoice_url(client: Client) -> str | None:
                                    status="open", limit=1)["data"]
         return invs[0].get("hosted_invoice_url") if invs else None
     except Exception as exc:  # noqa: BLE001
-        _log.warning("Sin factura abierta para el cliente %s: %s", client.id, exc)
-        return None
+        # OJO: "no se pudo consultar" NO es "no debe nada". Devolviendo None se
+        # mandaba a la página de "¡Pago recibido!" a un cliente que quizá tiene
+        # una factura pendiente. El caller decide qué enseñar.
+        _log.warning("No se pudo consultar la factura del cliente %s: %s", client.id, exc)
+        raise StripeError(
+            "No se ha podido consultar el estado de tu suscripción.") from exc
 
 
 # ---------------------------------------------------------------- precios ----

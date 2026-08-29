@@ -47,6 +47,30 @@ class CheckoutIn(BaseModel):
 
 
 
+def _es_vista_previa(request: Request) -> bool:
+    """¿Quien abre el enlace es un ROBOT de vista previa (WhatsApp, redes) o un
+    prefetch? Se le da una mini-página en vez de crear una sesión de pago real.
+    `?ir=1` es la salida para una persona que caiga aquí por su user-agent."""
+    if request.query_params.get("ir") == "1":
+        return False
+    ua = (request.headers.get("user-agent") or "").lower()
+    return request.method == "HEAD" or any(b in ua for b in (
+        "whatsapp", "facebookexternalhit", "bot", "crawler", "spider",
+        "preview", "curl", "wget", "python-requests"))
+
+
+def _avisa_al_coach(db: Session, que: str, motivo: str) -> None:
+    """Push al coach cuando un enlace de pago no ha podido abrir Stripe.
+    Best-effort: avisar nunca puede romper la respuesta al cliente."""
+    try:
+        from app.services.push import notify_coach_pay_link_failed
+
+        notify_coach_pay_link_failed(db, que=que, motivo=motivo)
+        db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()
+
+
 @router.post("/api/public/checkout")
 @limiter.limit("10/minute")
 def public_checkout(request: Request, body: CheckoutIn, db: Session = Depends(get_db)) -> dict:
@@ -72,7 +96,14 @@ def pay_plan_link(request: Request, tier: str, period: str,
     from app.services import packages as pkgs
 
     base = settings.public_base_url.rstrip("/")
-    t = pkgs.LEGACY_TIERS.get(tier.strip().lower(), tier.strip().lower())
+    def _limpia(v: str) -> str:
+        # Un enlace pegado desde WhatsApp arrastra a veces el punto final de la
+        # frase o un paréntesis: "…/full/oferta." acababa en /planes como si
+        # fuera un enlace inventado. Se limpia la puntuación de los bordes.
+        return (v or "").strip().strip(".,;:!?()[]{}\u00ab\u00bb\u201c\u201d\"'").lower()
+
+    t = pkgs.LEGACY_TIERS.get(_limpia(tier), _limpia(tier))
+    period = _limpia(period)
     # Estricto A PROPÓSITO (sin caer al plan por defecto): un enlace mal escrito
     # no puede acabar cobrando el plan más caro. Ante cualquier duda → /planes.
     # La oferta (1 € → 120 €/mes, u "oferta2" = 2 pagos de 120,50 €) solo
@@ -89,11 +120,7 @@ def pay_plan_link(request: Request, tier: str, period: str,
     # Starlette ejecuta el handler entero también para HEAD. Un bot con UA de
     # navegador se cuela igualmente: solo genera sesiones huérfanas que caducan
     # solas en Stripe (sin cobro), acotadas por el rate limit.
-    ua = (request.headers.get("user-agent") or "").lower()
-    es_bot = any(b in ua for b in (
-        "whatsapp", "facebookexternalhit", "bot", "crawler", "spider",
-        "preview", "curl", "wget", "python-requests"))
-    if es_bot or request.method == "HEAD":
+    if _es_vista_previa(request):
         from fastapi.responses import HTMLResponse
 
         if period == "oferta":
@@ -109,12 +136,21 @@ def pay_plan_link(request: Request, tier: str, period: str,
         else:
             title = f"{pkgs.label(t)} — pago seguro"
             desc = "Asesoría 100 % personalizada. Pago seguro con Stripe."
+        # El cuerpo lleva un BOTÓN real al pago (?ir=1): si quien abre esto es
+        # una persona y no un robot de vista previa, no se queda atrapada.
         return HTMLResponse(
-            "<!doctype html><html><head><meta charset='utf-8'>"
+            "<!doctype html><html lang='es'><head><meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width,initial-scale=1'>"
             f"<title>{title}</title>"
             f"<meta property='og:title' content='{title}'>"
             f"<meta property='og:description' content='{desc}'>"
-            f"</head><body>{desc}</body></html>"
+            "</head><body style=\"font-family:system-ui,sans-serif;max-width:34rem;"
+            "margin:3rem auto;padding:0 1.25rem;text-align:center\">"
+            f"<h1 style='font-size:1.25rem'>{title}</h1><p>{desc}</p>"
+            f"<p><a href='{request.url.path}?ir=1' style=\"display:inline-block;"
+            "background:#E8833A;color:#fff;text-decoration:none;font-weight:700;"
+            "padding:0.9rem 1.5rem;border-radius:0.75rem\">Ir al pago seguro</a></p>"
+            "</body></html>"
         )
 
     try:
@@ -123,7 +159,11 @@ def pay_plan_link(request: Request, tier: str, period: str,
         import logging
         logging.getLogger("app.stripe").warning(
             "pay_plan_link %s %s sin checkout: %s", t, period, exc)
-        return RedirectResponse(f"{base}/planes", status_code=302)
+        # El interesado ya no se queda mirando la página de planes sin saber
+        # qué ha pasado (parecía que el enlace estaba roto), y el COACH se
+        # entera por push: hasta ahora seguía mandando el mismo enlace muerto.
+        _avisa_al_coach(db, f"{pkgs.label(t)} {period}", str(exc))
+        return RedirectResponse(f"{base}/planes?pago=error", status_code=302)
     return RedirectResponse(url, status_code=302)
 
 
@@ -136,6 +176,29 @@ def pay_link(request: Request, client: Client = Depends(get_client_by_token),
     Con rate limit (como los otros enlaces públicos de pago): cada apertura sin
     pagar crea una Checkout Session REAL en Stripe."""
     from app.config import settings
+
+    # Vista previa de WhatsApp/redes: sin esto, CADA previsualización del
+    # mensaje del coach creaba una sesión de pago real en Stripe (y enseñaba
+    # en la tarjeta a dónde lleva el enlace).
+    if _es_vista_previa(request):
+        from fastapi.responses import HTMLResponse
+
+        return HTMLResponse(
+            "<!doctype html><html lang='es'><head><meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+            "<title>Tu pago seguro</title>"
+            "<meta property='og:title' content='Tu pago seguro'>"
+            "<meta property='og:description' content='Completa el pago de tu "
+            "asesoría con Stripe.'></head>"
+            "<body style=\"font-family:system-ui,sans-serif;max-width:34rem;"
+            "margin:3rem auto;padding:0 1.25rem;text-align:center\">"
+            "<h1 style='font-size:1.25rem'>Tu pago seguro</h1>"
+            "<p>Completa el pago de tu asesoría con Stripe.</p>"
+            f"<p><a href='{request.url.path}?ir=1' style=\"display:inline-block;"
+            "background:#E8833A;color:#fff;text-decoration:none;font-weight:700;"
+            "padding:0.9rem 1.5rem;border-radius:0.75rem\">Ir al pago seguro</a></p>"
+            "</body></html>"
+        )
 
     base = settings.public_base_url.rstrip("/")
     # YA PAGADO: el botón del email de arranque vive para siempre — reabrirlo
@@ -158,17 +221,41 @@ def pay_link(request: Request, client: Client = Depends(get_client_by_token),
     if client.billing_period in ("oferta", "oferta2") and client.stripe_subscription_id:
         from app.services.stripe_service import open_invoice_url
 
-        pendiente = open_invoice_url(client)
+        try:
+            pendiente = open_invoice_url(client)
+        except StripeError as exc:
+            # No se pudo consultar Stripe: decirle "¡Pago recibido!" a alguien
+            # que a lo mejor DEBE dinero es peor que reconocer el fallo.
+            import logging
+            logging.getLogger("app.stripe").warning(
+                "pay_link %s sin factura consultable: %s", client.id, exc)
+            _avisa_al_coach(db, f"enlace de {client.full_name or 'un cliente'}", str(exc))
+            return RedirectResponse(f"{base}/planes?pago=error", status_code=302)
         return RedirectResponse(pendiente or f"{base}/pago-ok", status_code=302)
     try:
-        url = create_checkout_url(db, client.package_tier, client.billing_period,
-                                  client=client)
+        # Tier LEGADO en la ficha ("start"/"pro", de antes del renombrado):
+        # create_checkout_url no los conoce y el enlace moría con "Plan
+        # desconocido". Se traducen igual que en el enlace por plan.
+        from app.services import packages as _pkgs
+
+        tier_cli = (client.package_tier or "").strip().lower()
+        tier_cli = _pkgs.LEGACY_TIERS.get(tier_cli, tier_cli)
+        # RENOVAR a alguien que entró por la OFERTA no puede volver a venderle
+        # la oferta: se le abría OTRO programa de 3 meses con el primer mes a
+        # 1 €, cuando el coach creía estar cobrando la renovación. La
+        # continuación natural es el plan MENSUAL de su mismo paquete.
+        periodo_cli = client.billing_period
+        if periodo_cli in ("oferta", "oferta2"):
+            periodo_cli = "1m"
+        url = create_checkout_url(db, tier_cli, periodo_cli, client=client)
     except StripeError as exc:
         # Un cliente en su navegador no debe ver JSON con detalles internos:
-        # a la página de planes, donde puede escribirnos. El detalle, al log.
+        # a la página de planes, con un aviso de que el pago no se pudo abrir.
+        # El detalle, al log; y al coach, un push (antes no se enteraba nadie).
         import logging
         logging.getLogger("app.stripe").warning("pay_link %s sin checkout: %s", client.id, exc)
-        return RedirectResponse(f"{base}/planes", status_code=302)
+        _avisa_al_coach(db, f"enlace de {client.full_name or 'un cliente'}", str(exc))
+        return RedirectResponse(f"{base}/planes?pago=error", status_code=302)
     return RedirectResponse(url, status_code=302)
 
 

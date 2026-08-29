@@ -94,6 +94,9 @@ export default function PlansPage() {
     return null;
   }
 
+  // ?pago=error: venimos de un enlace de pago que no pudo abrir Stripe.
+  const pagoConError = new URLSearchParams(window.location.search).get("pago") === "error";
+
   const bg = landing?.color_bg ?? "#0B111C";
   return (
     <div className="relative" style={{ minHeight: "100vh", background: bg, color: "#26211a" }}>
@@ -111,6 +114,30 @@ export default function PlansPage() {
           style={{ background: `radial-gradient(120% 80% at 50% 0%, ${(landing?.color_secondary ?? "#2E5E8C")}44 0%, ${bg} 60%)` }} />
       )}
       <div className="relative mx-auto max-w-4xl px-5 py-10">
+        {/* El enlace de pago no pudo abrir Stripe y hemos traído aquí a quien
+            lo abrió: sin este aviso parecía que el enlace estaba roto y se
+            marchaba sin decir nada. */}
+        {pagoConError && (
+          <div className="mb-5 rounded-2xl bg-white p-4 text-center shadow-lg">
+            <p className="text-sm font-extrabold" style={{ color: "#B91C1C" }}>
+              No hemos podido abrir la pasarela de pago
+            </p>
+            <p className="mt-1 text-[13px] leading-snug opacity-80">
+              Ha sido cosa nuestra, no tuya. Escríbeme y lo resolvemos al momento
+              (o inténtalo de nuevo en unos minutos).
+            </p>
+            {contactHref("Hola, he intentado pagar desde la web y no se abría la pasarela.",
+                         "No puedo pagar") && (
+              <a href={contactHref("Hola, he intentado pagar desde la web y no se abría la pasarela.",
+                                   "No puedo pagar") as string}
+                target="_blank" rel="noopener"
+                className="mt-3 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-white"
+                style={{ background: "#25D366" }}>
+                <MessageCircle size={15} /> Escríbeme y lo arreglamos
+              </a>
+            )}
+          </div>
+        )}
         {/* Cabecera en BLANCO sobre la foto (como /dq), con sombra para leerse. */}
         <header className="mb-6 flex flex-col items-center text-center text-white"
           style={{ textShadow: "0 2px 12px rgba(0,0,0,0.55), 0 1px 3px rgba(0,0,0,0.7)" }}>

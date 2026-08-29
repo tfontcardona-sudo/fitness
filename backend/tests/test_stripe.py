@@ -193,6 +193,8 @@ class FakeStripe:
         self.products: list[dict] = []
         self.prices: list[dict] = []
         self.coupons: dict[str, dict] = {}
+        # Cada llamada a Price.list con lookup_keys (para comprobar el troceado).
+        self.lookup_calls: list[list[str]] = []
         self.sub_modifications: list[tuple[str, dict]] = []
         self.sub_cancelaciones: list[str] = []
         fake = self
@@ -211,6 +213,15 @@ class FakeStripe:
         class Price:
             @staticmethod
             def list(lookup_keys=None, **kw):
+                # LÍMITE REAL de la API: Stripe rechaza más de 10 lookup_keys
+                # por llamada. Sin esta comprobación el doble era más
+                # permisivo que Stripe y la suite daba verde mientras los
+                # enlaces de la oferta se rompían en producción (9 planes +
+                # las 2 formas de pago de la oferta = 11 claves).
+                if lookup_keys is not None and len(lookup_keys) > 10:
+                    raise ValueError(
+                        "You cannot specify more than 10 lookup_keys")
+                fake.lookup_calls.append(list(lookup_keys or []))
                 data = [p for p in fake.prices if p.get("active", True)
                         and (not lookup_keys or p.get("lookup_key") in lookup_keys)]
                 return {"data": data}
@@ -268,6 +279,71 @@ def _reset_stripe_caches(monkeypatch, ss):
     monkeypatch.setattr(ss, "_lookup_cache", {"at": 0.0, "ids": {}})
     monkeypatch.setattr(ss, "_ensure_state", {"at": 0.0})
     monkeypatch.setattr(ss, "_prices_cache", {"at": 0.0, "data": None})
+
+
+def test_enlace_con_puntuacion_pegada_sigue_yendo_a_stripe(monkeypatch):
+    """REGRESIÓN: un enlace pegado desde WhatsApp arrastra a veces el punto
+    final de la frase ("…/full/oferta.") o llega en mayúsculas. Antes eso se
+    tomaba por un enlace inventado y acababa en /planes sin cobrar."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.routers import stripe_router as sr
+
+    monkeypatch.setattr(sr, "create_checkout_url",
+                        lambda db, t, p, **kw: f"https://stripe.test/{t}/{p}")
+    with TestClient(app) as http:
+        for path in ("/api/pay/plan/full/oferta.", "/api/pay/plan/full/3M",
+                     "/api/pay/plan/FULL/oferta2)", "/api/pay/plan/full/1m,"):
+            r = http.get(path, follow_redirects=False)
+            assert r.status_code == 302, path
+            assert r.headers["location"].startswith("https://stripe.test/"), path
+
+
+def test_un_fallo_puntual_no_deja_los_enlaces_muertos_diez_minutos(monkeypatch):
+    """REGRESIÓN: el id VACÍO se cacheaba con el TTL de 10 minutos, así que un
+    tropiezo de Stripe dejaba la oferta (que no tiene reserva en el .env) sin
+    enlace hasta que caducara la caché. Ahora el vacío no se cachea."""
+    from app.services import stripe_service as ss
+
+    fake = FakeStripe()
+    monkeypatch.setattr(ss, "_stripe", lambda: fake)
+    _reset_stripe_caches(monkeypatch, ss)
+    # Stripe "vacío" y sin auto-alta posible: la resolución no encuentra nada.
+    monkeypatch.setattr(ss, "ensure_canonical_prices",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("sin permisos")))
+    assert ss._price_by_lookup("full", "oferta") == ""
+    assert "dqr_full_oferta" not in ss._lookup_cache["ids"]  # NO se cachea el vacío
+
+    # Stripe se recupera: el siguiente intento ya resuelve (sin esperar al TTL).
+    fake.prices.append({"id": "price_of", "lookup_key": "dqr_full_oferta",
+                        "active": True, "unit_amount": ss.OFFER_MONTHLY_CENTS,
+                        "currency": "eur", "recurring": {"interval": "month"}})
+    assert ss._price_by_lookup("full", "oferta") == "price_of"
+
+
+def test_los_lookup_keys_se_piden_en_tandas_de_diez(monkeypatch):
+    """REGRESIÓN (el enlace de la oferta acababa en /planes): son ONCE claves
+    (9 planes + las 2 formas de pagar la oferta) y Stripe admite 10 por
+    llamada. Se piden en tandas y NINGUNA supera el límite."""
+    from app.services import stripe_service as ss
+
+    fake = FakeStripe()
+    monkeypatch.setattr(ss, "_stripe", lambda: fake)
+    _reset_stripe_caches(monkeypatch, ss)
+
+    # Resolver el precio de la OFERTA (la clave nº 11) tiene que funcionar.
+    pid = ss._price_by_lookup("full", "oferta")
+    assert pid, "el precio de la oferta no se resolvió: el enlace acabaría en /planes"
+
+    assert fake.lookup_calls, "no se consultó ningún lookup_key"
+    assert all(len(t) <= 10 for t in fake.lookup_calls), fake.lookup_calls
+    # Y entre todas las tandas se piden las once, sin dejarse ninguna.
+    pedidas = {k for tanda in fake.lookup_calls for k in tanda}
+    assert {"dqr_full_oferta", "dqr_full_oferta2", "dqr_train_1m"} <= pedidas
+
+    # La segunda forma de pago también resuelve (era la que rompía el límite).
+    assert ss._price_by_lookup("full", "oferta2")
 
 
 def test_auto_alta_crea_los_9_precios_que_faltan(monkeypatch):
@@ -366,7 +442,7 @@ def test_error_del_sdk_de_stripe_no_revienta_el_enlace_de_pago(monkeypatch):
 
     with TestClient(app) as http:
         r = http.get("/api/pay/plan/full/3m", follow_redirects=False)
-        assert r.status_code == 302 and r.headers["location"].endswith("/planes")
+        assert r.status_code == 302 and r.headers["location"].endswith("/planes?pago=error")
     assert ss._lookup_cache["ids"] == {}  # el siguiente clic re-resuelve
 
 
@@ -481,7 +557,7 @@ def test_enlace_de_pago_directo_por_plan(monkeypatch):
             raise sr.StripeError("sin clave")
         monkeypatch.setattr(sr, "create_checkout_url", _boom)
         r = http.get("/api/pay/plan/full/3m", follow_redirects=False)
-        assert r.status_code == 302 and r.headers["location"].endswith("/planes")
+        assert r.status_code == 302 and r.headers["location"].endswith("/planes?pago=error")
 
 
 # ---- OFERTA: 1 € el primer mes → 120 €/mes en suscripción ----
@@ -1327,3 +1403,83 @@ def test_describe_oferta2():
                     billing_reason="subscription_create").endswith("pago 1 de 2)")
     assert describe("full", "oferta2", kind="invoice",
                     billing_reason="subscription_cycle").endswith("pago 2 de 2)")
+
+
+# --- Enlace ESTABLE del cliente: que lleve a Stripe y cobre lo que toca ------
+
+def test_renovar_a_un_cliente_de_la_oferta_no_le_revende_la_oferta(monkeypatch):
+    """REGRESIÓN (dinero): al renovar a alguien que entró por la oferta, el
+    enlace le abría OTRO programa de 3 meses con el primer mes a 1 € — el coach
+    creía estar cobrando la renovación. Debe cobrarle su plan MENSUAL."""
+    from datetime import datetime, timedelta, timezone
+
+    from fastapi.testclient import TestClient
+
+    from app.db import SessionLocal
+    from app.main import app
+    from app.routers import stripe_router as sr
+
+    db = SessionLocal()
+    c = _cliente_oferta3(db, sub_id="")          # programa ya completado
+    c.stripe_subscription_id = None
+    # 32 días desde el último cobro: el programa (30 d) ya venció → toca renovar
+    c.paid_at = datetime.now(timezone.utc) - timedelta(days=32)
+    db.commit()
+    token = c.portal_token
+    db.close()
+
+    pedidos = []
+    monkeypatch.setattr(sr, "create_checkout_url",
+                        lambda db, t, p, **kw: (pedidos.append((t, p)) or f"https://stripe.test/{t}/{p}"))
+    with TestClient(app) as http:
+        r = http.get(f"/api/pay/{token}", follow_redirects=False)
+    assert r.status_code == 302, r.text
+    assert r.headers["location"].startswith("https://stripe.test/"), r.headers
+    assert pedidos and pedidos[-1] == ("full", "1m"), pedidos
+
+
+def test_enlace_de_pago_caducado_no_enseña_json_crudo():
+    """REGRESIÓN: si al cliente se le regenera el acceso al portal, su enlace de
+    pago viejo devolvía {"detail":"No encontrado"} en crudo. Ahora es una página
+    que le dice qué hacer."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    with TestClient(app) as http:
+        r = http.get("/api/pay/token-que-ya-no-vale", follow_redirects=False)
+    assert r.status_code in (403, 404)
+    assert "text/html" in r.headers.get("content-type", "")
+    assert "ya no vale" in r.text
+
+
+def test_la_vista_previa_de_whatsapp_no_crea_sesiones_de_pago(monkeypatch):
+    """REGRESIÓN: cada previsualización del mensaje del coach abría una sesión
+    REAL en Stripe (y enseñaba a dónde llevaba el enlace). Ahora se le da una
+    mini-página; una persona sale de ella con el botón."""
+    from fastapi.testclient import TestClient
+
+    from app.db import SessionLocal
+    from app.main import app
+    from app.routers import stripe_router as sr
+
+    db = SessionLocal()
+    c = _cliente_oferta3(db, sub_id="")
+    c.stripe_subscription_id = None
+    c.payment_status = "pending"
+    db.commit()
+    token = c.portal_token
+    db.close()
+
+    creadas = []
+    monkeypatch.setattr(sr, "create_checkout_url",
+                        lambda db, t, p, **kw: (creadas.append((t, p)) or "https://stripe.test/x"))
+    cabecera = {"user-agent": "WhatsApp/2.23"}
+    with TestClient(app) as http:
+        r = http.get(f"/api/pay/{token}", headers=cabecera, follow_redirects=False)
+        assert r.status_code == 200 and "text/html" in r.headers.get("content-type", "")
+        assert not creadas, "la vista previa creó una sesión de pago"
+        # La persona que caiga ahí sale con el botón (?ir=1).
+        r2 = http.get(f"/api/pay/{token}?ir=1", headers=cabecera, follow_redirects=False)
+        assert r2.status_code == 302 and creadas
+
