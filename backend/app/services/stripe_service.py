@@ -1068,6 +1068,30 @@ def pagos_oferta_cobrados(db: Session, client: Client, periodo: str) -> int:
     ) or 0)
 
 
+def cancelar_suscripcion(sub_id: str | None) -> tuple[bool, str]:
+    """Cancela una suscripción EN STRIPE. Devuelve (cancelada, detalle).
+
+    Pensada para la baja del cliente (RGPD): sin esto, Stripe le seguía
+    cobrando todos los meses a alguien que ya no existe en el sistema, el
+    cobro entraba como huérfano y el coach se enteraba por la reclamación.
+    Una suscripción que ya estaba cancelada (o que no existe) cuenta como
+    cancelada: si no, la baja quedaría bloqueada para siempre.
+    """
+    if not sub_id:
+        return True, "sin suscripción"
+    try:
+        stripe = _stripe()
+        cancel = getattr(stripe.Subscription, "cancel", None) or stripe.Subscription.delete
+        cancel(sub_id)
+        return True, "cancelada"
+    except Exception as exc:  # noqa: BLE001 — se traduce a un mensaje para el coach
+        texto = str(exc).lower()
+        if ("no such subscription" in texto or "resource_missing" in texto
+                or "already canceled" in texto or "already been canceled" in texto):
+            return True, "ya estaba cancelada"
+        return False, str(exc)[:200]
+
+
 def detener_suscripcion_oferta(db: Session, client: Client, sub_id: str | None,
                                *, motivo: str, periodo: str = OFFER2_PERIOD) -> bool:
     """Cancela EN STRIPE la suscripción de la oferta: el último cobro del

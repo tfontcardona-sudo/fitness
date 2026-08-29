@@ -585,6 +585,26 @@ def delete_client(
             "La confirmación no coincide con el nombre completo del cliente",
         )
 
+    # ANTES DE BORRAR: cortar el cobro recurrente. Sin esto, Stripe le seguía
+    # cobrando cada mes a alguien que ya no existe en el sistema: el cargo
+    # entraba como pago huérfano (sin ficha a la que asociarlo) y el coach se
+    # enteraba por la reclamación del cliente. Si Stripe no responde NO se
+    # borra: se le dice al coach que la cancele allí y repita, porque borrar
+    # ahora sería perder el único hilo que queda para pararla.
+    if client.stripe_subscription_id and settings.stripe_enabled:
+        from app.services.stripe_service import cancelar_suscripcion
+
+        cancelada, detalle = cancelar_suscripcion(client.stripe_subscription_id)
+        if not cancelada:
+            raise HTTPException(
+                status.HTTP_502_BAD_GATEWAY,
+                f"No se pudo cancelar su suscripción de Stripe ({detalle}). "
+                "Cancélala en Stripe y vuelve a intentarlo: si se borra ahora, "
+                "se le seguiría cobrando todos los meses.",
+            )
+        log_event(db, "client", client_id, "subscription_cancelled",
+                  {"motivo": "baja_rgpd", "detalle": detalle})
+
     period_ids = list(db.scalars(select(Period.id).where(Period.client_id == client_id)))
     if period_ids:
         daily_ids = list(db.scalars(select(DailyLog.id).where(DailyLog.period_id.in_(period_ids))))

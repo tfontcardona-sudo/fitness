@@ -235,6 +235,31 @@ def record_refunds_of_charge(db: Session, charge: dict, *,
             agregada.amount_cents = total
             return 1
         return 0
+
+    # SIMÉTRICO al guard de arriba: ¿ya hay filas re_… de este mismo cargo?
+    # (las anotó un webhook cuya carga SÍ traía el desglose y ahora llega una
+    # que no — con las versiones nuevas de la API, `charge.refunds` ya no viene
+    # por defecto y la sincronización lo omite). Insertar además la fila
+    # agregada restaría el MISMO dinero dos veces: 129 € devueltos pasaban a
+    # restar 258 € del mes, de la gráfica y del CSV de la gestoría.
+    pi_id = comun["payment_intent"]
+    if pi_id:
+        ya_devuelto = int(db.scalar(
+            select(func.coalesce(func.sum(Payment.amount_cents), 0)).where(
+                Payment.kind == "refund", Payment.status == "refunded",
+                Payment.payment_intent == pi_id)
+        ) or 0)
+        if ya_devuelto >= total:
+            return 0
+        if ya_devuelto > 0:
+            # Se ha devuelto MÁS de lo anotado y esta carga no trae el
+            # desglose: se anota solo la DIFERENCIA. El id lleva el total
+            # dentro, así que una reentrega no la duplica.
+            pago = record_payment(db, object_id=f"{cargo_id}_dif{total}",
+                                  amount_cents=total - ya_devuelto,
+                                  paid_at=ts_to_dt(charge.get("created")), **comun)
+            return 1 if pago is not None else 0
+
     pago = record_payment(db, object_id=cargo_id, amount_cents=total,
                           paid_at=ts_to_dt(charge.get("created")), **comun)
     return 1 if pago is not None else 0

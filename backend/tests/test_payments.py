@@ -484,6 +484,53 @@ def test_devoluciones_parciales_sucesivas_se_suman(monkeypatch):
         db.close()
 
 
+def test_una_devolucion_no_puede_restar_dos_veces(monkeypatch):
+    """REGRESIÓN: el webhook anota los `re_…` y después la sincronización trae
+    el mismo cargo SIN el desglose (con las versiones nuevas de la API,
+    `charge.refunds` ya no viene por defecto).
+
+    Sin el guard simétrico se insertaba además la fila agregada del cargo y los
+    129 € devueltos restaban 258 € del mes, de la gráfica y del CSV.
+    """
+    _prep(monkeypatch)
+    from app.db import SessionLocal
+    from app.services import payments as pay_svc
+
+    db = SessionLocal()
+    try:
+        c = _nuevo_cliente(db)
+        antes = pay_svc.summary(db)["month_total_cents"]
+        ahora = int(datetime.now(timezone.utc).timestamp())
+        ch_id = f"ch_test_{uuid.uuid4().hex[:10]}"
+        pi_id = f"pi_test_{uuid.uuid4().hex[:10]}"
+        base = {"id": ch_id, "currency": "eur", "livemode": True, "amount": 12900,
+                "created": ahora, "payment_intent": pi_id,
+                "billing_details": {"email": c.email, "name": c.full_name}}
+
+        # 1) Webhook CON desglose → una fila re_…
+        con_desglose = {**base, "amount_refunded": 12900, "refunds": {"data": [
+            {"id": f"re_{uuid.uuid4().hex[:10]}", "amount": 12900, "created": ahora}]}}
+        assert pay_svc.record_refunds_of_charge(db, con_desglose, client=c) == 1
+        db.commit()
+
+        # 2) Sincronización del MISMO cargo, ya sin `refunds`
+        sin_desglose = {**base, "amount_refunded": 12900}
+        assert pay_svc.record_refunds_of_charge(db, sin_desglose, client=c) == 0
+        db.commit()
+
+        db.expire_all()
+        assert pay_svc.summary(db)["month_total_cents"] == antes - 12900
+
+        # 3) Y si de verdad han devuelto MÁS, se anota solo la diferencia.
+        mas = {**base, "amount_refunded": 15000}
+        assert pay_svc.record_refunds_of_charge(db, mas, client=c) == 1
+        db.commit()
+        db.expire_all()
+        assert pay_svc.summary(db)["month_total_cents"] == antes - 15000
+    finally:
+        db.close()
+
+
 def test_devolucion_de_un_cobro_ajeno_no_resta(monkeypatch):
     """REGRESIÓN (revisión adversarial): una factura ajena de la misma cuenta de
     Stripe (un taller, otro producto) NO se anota como ingreso, así que su

@@ -203,3 +203,78 @@ def test_ninguna_tabla_nueva_se_escapa_del_borrado():
         f"Tablas nuevas que cuelgan del cliente y NO están contempladas en el "
         f"borrado RGPD: {sorted(nuevas)}. Añádelas a "
         f"routers/clients.delete_client y a TABLAS_QUE_CUELGAN.")
+
+
+@needs_db
+def test_la_baja_corta_el_cobro_recurrente(http, auth, monkeypatch):
+    """Dar de baja a un cliente con suscripción de Stripe la CANCELA allí.
+
+    Sin esto, a alguien que ya no existe en el sistema se le seguía cobrando
+    cada mes: el cargo entraba como pago huérfano y el coach se enteraba por
+    la reclamación.
+    """
+    from app.config import settings
+    from app.db import SessionLocal
+    from app.models import Client
+    from app.services import stripe_service
+
+    canceladas: list[str] = []
+    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_x", raising=False)
+    monkeypatch.setattr(stripe_service, "cancelar_suscripcion",
+                        lambda sub: (canceladas.append(sub), (True, "cancelada"))[1])
+
+    nombre = f"Baja Suscrita {uuid.uuid4().hex[:6]}"
+    creado = http.post("/api/clients", headers=auth, json={
+        "full_name": nombre, "email": f"baja-{uuid.uuid4().hex[:8]}@example.com",
+    })
+    cid = creado.json()["client"]["id"]
+    db = SessionLocal()
+    try:
+        db.get(Client, cid).stripe_subscription_id = "sub_test_123"
+        db.commit()
+    finally:
+        db.close()
+
+    r = http.delete(f"/api/clients/{cid}?confirm={nombre}", headers=auth)
+    assert r.status_code == 204, r.text
+    assert canceladas == ["sub_test_123"]
+
+
+@needs_db
+def test_si_stripe_falla_no_se_borra_a_ciegas(http, auth, monkeypatch):
+    """Si la cancelación falla, la baja se detiene con un mensaje accionable:
+    borrar dejaría la suscripción cobrando sin nadie a quien asociarla."""
+    from app.config import settings
+    from app.db import SessionLocal
+    from app.models import Client
+    from app.services import stripe_service
+
+    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_x", raising=False)
+    monkeypatch.setattr(stripe_service, "cancelar_suscripcion",
+                        lambda sub: (False, "Stripe no responde"))
+
+    nombre = f"Baja Fallida {uuid.uuid4().hex[:6]}"
+    creado = http.post("/api/clients", headers=auth, json={
+        "full_name": nombre, "email": f"bajaf-{uuid.uuid4().hex[:8]}@example.com",
+    })
+    cid = creado.json()["client"]["id"]
+    db = SessionLocal()
+    try:
+        db.get(Client, cid).stripe_subscription_id = "sub_test_falla"
+        db.commit()
+    finally:
+        db.close()
+
+    r = http.delete(f"/api/clients/{cid}?confirm={nombre}", headers=auth)
+    assert r.status_code == 502
+    assert "Stripe" in r.json()["detail"]
+    db = SessionLocal()
+    try:
+        assert db.get(Client, cid) is not None, "no se puede borrar a medias"
+        # Limpieza: sin suscripción, la baja normal sí funciona.
+        db.get(Client, cid).stripe_subscription_id = None
+        db.commit()
+    finally:
+        db.close()
+    assert http.delete(f"/api/clients/{cid}?confirm={nombre}",
+                       headers=auth).status_code == 204
