@@ -299,20 +299,9 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
         # — un cliente que solo ABRÍA la app nunca disparaba la alerta
         # (auditoría crítica). Registro real = diario rellenado, series de
         # entreno o comidas elegidas.
-        from app.models import WorkoutLog
-        from app.services.push import _DIARY_FIELDS
+        from app.services.push import dias_con_registro
 
-        logs_periodo = list(db.scalars(
-            select(DailyLog).where(DailyLog.period_id == last_period.id)))
-        con_series = set(db.scalars(
-            select(WorkoutLog.daily_log_id).where(
-                WorkoutLog.daily_log_id.in_([l.id for l in logs_periodo] or [0]))))
-        fechas_reales = [
-            l.log_date for l in logs_periodo
-            if l.id in con_series
-            or l.chosen_options_json
-            or any(getattr(l, f, None) not in (None, "") for f in _DIARY_FIELDS)
-        ]
+        fechas_reales = dias_con_registro(db, last_period.id)
         last_log = max(fechas_reales) if fechas_reales else None
         since = last_log or (last_period.starts_on - date.resolution)
         gap = (today - since).days

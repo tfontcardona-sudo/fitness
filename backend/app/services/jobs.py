@@ -73,18 +73,15 @@ def _facts_for(db: Session, client: Client) -> ClientFacts:
 
     # Solo cuentan los días con contenido REAL: el autosave del portal crea la
     # fila vacía con solo abrir la pantalla, y contarla inflaba la adherencia
-    # (el disparador de "en riesgo" y el % que ve el coach mentían).
-    from app.services.push import diary_is_filled
+    # (el disparador de "en riesgo" y el % que ve el coach mentían). Y cuenta
+    # TODO lo que el cliente registra —diario, series de entreno o comidas
+    # elegidas—, no solo el diario: un DQR Train registra sus series y nada
+    # más, y salía con 0 días → "en riesgo" con adherencia 0 %.
+    from app.services.push import dias_con_registro
 
-    logs = list(db.scalars(
-        select(DailyLog).where(DailyLog.period_id == period.id)
-    ))
-    days_logged = sum(1 for lg in logs if diary_is_filled(lg))
-
-    last_log_date = db.scalar(
-        select(func.max(DailyLog.log_date)).where(DailyLog.period_id == period.id)
-    )
-    last_activity = last_log_date or period.starts_on
+    dias = dias_con_registro(db, period.id)
+    days_logged = len(dias)
+    last_activity = max(dias) if dias else period.starts_on
 
     return ClientFacts(
         status=client.status,

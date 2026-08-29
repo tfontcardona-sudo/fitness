@@ -178,9 +178,15 @@ def streak_days(db, client_id: int, today: date) -> int:
     consulta se mantiene barata)."""
     from sqlalchemy import or_, select
 
-    from app.models import DailyLog, Period
+    from app.models import DailyLog, Period, WorkoutLog
 
     desde = today - timedelta(days=90)
+    # Las SERIES de entreno también son un día registrado: quien más entrena
+    # (y un DQR Train no tiene diario de dieta) veía racha 0 y la palanca de
+    # adherencia se le volvía en contra.
+    tiene_series = (select(WorkoutLog.id)
+                    .where(WorkoutLog.daily_log_id == DailyLog.id)
+                    .exists())
     con_algo = [
         DailyLog.weight_kg.is_not(None), DailyLog.sleep_hours.is_not(None),
         DailyLog.steps.is_not(None), DailyLog.satiety_1_10.is_not(None),
@@ -188,6 +194,7 @@ def streak_days(db, client_id: int, today: date) -> int:
         DailyLog.energy_1_5.is_not(None), DailyLog.mood_1_5.is_not(None),
         DailyLog.fatigue_1_5.is_not(None), DailyLog.free_notes.is_not(None),
         DailyLog.chosen_options_json.is_not(None),
+        tiene_series,
     ]
     dias = set(db.scalars(
         select(DailyLog.log_date)

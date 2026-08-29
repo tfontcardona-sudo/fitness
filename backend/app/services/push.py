@@ -167,6 +167,35 @@ def diary_is_filled(log: DailyLog | None) -> bool:
     return any(getattr(log, f, None) not in (None, "") for f in _DIARY_FIELDS)
 
 
+def dias_con_registro(db: Session, period_id: int) -> set[date]:
+    """Días del período en que el cliente REGISTRÓ algo, en el sentido amplio.
+
+    UNA SOLA VERDAD para las tres capas que antes divergían: el motor de "en
+    riesgo" (jobs), la alerta `no_logs` del panel y la racha 🔥 del portal.
+    Cuenta como registro el diario relleno, las SERIES de entreno y las comidas
+    elegidas — antes el motor solo miraba el diario, así que un cliente que
+    entrenaba y registraba sus series cada sesión (todo lo que tiene contratado
+    un DQR Train) figuraba con 0 días y acababa marcado "en riesgo" con
+    adherencia 0 %, mientras el panel de al lado decía que sí registraba.
+    """
+    logs = list(db.scalars(select(DailyLog).where(DailyLog.period_id == period_id)))
+    return dias_registrados(db, logs)
+
+
+def dias_registrados(db: Session, logs: list[DailyLog]) -> set[date]:
+    """Igual que `dias_con_registro` pero sobre filas de diario ya cargadas
+    (el resumen semanal recorre varios períodos de una vez)."""
+    if not logs:
+        return set()
+    con_series = set(db.scalars(
+        select(WorkoutLog.daily_log_id).where(
+            WorkoutLog.daily_log_id.in_([lg.id for lg in logs]))))
+    return {
+        lg.log_date for lg in logs
+        if lg.id in con_series or lg.chosen_options_json or diary_is_filled(lg)
+    }
+
+
 def photos_pending(db: Session, client: Client, *, now: datetime | None = None,
                    min_minutes: int = 0) -> bool:
     """¿Falta que el cliente confirme el envío de sus fotos de progreso?

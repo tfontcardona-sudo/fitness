@@ -207,3 +207,60 @@ def test_job_respects_client_email_toggle(db, _no_real_email):
     log = db.scalar(select(EmailLog).where(
         EmailLog.client_id == client.id, EmailLog.kind == "coach_at_risk"))
     assert log is not None and log.status == "disabled"
+
+
+def test_quien_solo_registra_entrenos_no_es_un_cliente_en_riesgo(db, _no_real_email):
+    """DQR Train: registra sus series cada sesión y NADA de diario.
+
+    El motor de "en riesgo" solo miraba los campos del diario, así que lo veía
+    con 0 días y el día 10 lo marcaba `at_risk` con «adherencia 0%», mientras
+    la alerta `no_logs` del panel —que sí cuenta las series— decía lo
+    contrario. Ahora las tres capas leen la misma definición de "día
+    registrado".
+    """
+    import uuid
+
+    from app.models import DailyLog, Exercise, WorkoutLog
+    from app.services.jobs import run_daily_maintenance
+
+    hoy = date(2026, 6, 20)
+    client = _make_client(db, status="active", email="train@example.com")
+    period = _make_period(db, client, start=hoy - timedelta(days=10),
+                          end=hoy + timedelta(days=4), status="open")
+
+    ex = Exercise(canonical_name=f"Sentadilla train {uuid.uuid4().hex[:6]}",
+                  muscle_primary="pierna", movement_pattern="sentadilla",
+                  equipment=["barra"], aliases=[], muscle_secondary=[],
+                  contraindications=[])
+    db.add(ex)
+    db.flush()
+    for i in range(9):
+        lg = DailyLog(period_id=period.id, log_date=hoy - timedelta(days=9 - i))
+        db.add(lg)
+        db.flush()
+        db.add(WorkoutLog(daily_log_id=lg.id, exercise_id=ex.id, set_number=1,
+                          reps=8, weight_kg=80))
+    db.commit()
+
+    from app.services.jobs import _facts_for
+
+    hechos = _facts_for(db, client)
+    assert hechos.days_logged_in_period == 9
+
+    run_daily_maintenance(db, hoy)
+    db.refresh(client)
+    assert client.status == "active", "entrenar cada día no puede ser 'en riesgo'"
+    assert _count_emails(db, client.id, "coach_at_risk") == 0
+
+    # Y la racha del portal cuenta esos mismos días.
+    from app.services.portal import streak_days
+
+    assert streak_days(db, client.id, hoy) >= 1
+
+    # Limpieza: el ejercicio no es del cliente, así que el barrido de conftest
+    # (que borra los clientes de dominios de prueba) no se lo lleva.
+    import sqlalchemy as sa
+
+    db.execute(sa.delete(WorkoutLog).where(WorkoutLog.exercise_id == ex.id))
+    db.execute(sa.delete(Exercise).where(Exercise.id == ex.id))
+    db.commit()
