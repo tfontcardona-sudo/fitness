@@ -100,7 +100,7 @@ def pay_plan_link(request: Request, tier: str, period: str,
         # Un enlace pegado desde WhatsApp arrastra a veces el punto final de la
         # frase o un paréntesis: "…/full/oferta." acababa en /planes como si
         # fuera un enlace inventado. Se limpia la puntuación de los bordes.
-        return (v or "").strip().strip(".,;:)]}\u00bb\"'").lower()
+        return (v or "").strip().strip(".,;:!?()[]{}\u00ab\u00bb\u201c\u201d\"'").lower()
 
     t = pkgs.LEGACY_TIERS.get(_limpia(tier), _limpia(tier))
     period = _limpia(period)
