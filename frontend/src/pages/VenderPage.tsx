@@ -164,7 +164,17 @@ export default function VenderPage() {
 
   useEffect(() => { void cargar(); }, [cargar]);
 
-  const items = cat?.items ?? [];
+  // En DESARROLLO el backend no tiene dominio configurado y devuelve
+  // http://localhost (sin el puerto del Vite): el enlace no abriría. Solo en
+  // ese caso se usa el origen del navegador. En producción manda el backend.
+  const items = useMemo(() => {
+    const base = cat?.base_url ?? "";
+    const esLocal = base.startsWith("http://localhost") || base.startsWith("http://127.");
+    const arreglar = esLocal && window.location.origin !== base;
+    return (cat?.items ?? []).map((i) => (arreglar
+      ? { ...i, url: i.url.replace(base, window.location.origin) }
+      : i));
+  }, [cat]);
   const ofertas = useMemo(() => items.filter((i) => i.kind === "oferta"), [items]);
   const planes = useMemo(() => items.filter((i) => i.kind === "plan"), [items]);
   const elegido = useMemo(
