@@ -524,3 +524,35 @@ def test_subir_pdf_no_borra_el_consentimiento_rgpd(http, db, tmp_path, monkeypat
     assert "consentimiento_rgpd.pdf" in nombres          # la prueba legal sigue
     assert "anamnesis_vieja.pdf" not in nombres          # la anterior sí se retira
     assert any(n.endswith(".pdf") and "consentimiento" not in n for n in nombres)
+
+
+# --- Memoria de vetos: útil, pero SIN datos de nadie -------------------------
+
+def test_la_memoria_de_vetos_no_lleva_datos_del_cliente(tmp_path, monkeypatch):
+    """Las advertencias de vetos se inyectan en la generación de TODOS los
+    clientes: no pueden llevar las cifras ni los alimentos de uno concreto (ni
+    por privacidad ni porque los números los pone el backend, no la IA)."""
+    from app.config import settings
+    from app.services.coach_lessons import record_ai_vetos, vetos_reference
+
+    monkeypatch.setattr(settings, "storage_path", str(tmp_path))
+
+    reales = [
+        "violation: kcal objetivo 1450 por debajo del mínimo 1600 (max BMR/1600)",
+        "violation: proteína 120 g < mínimo 144 g (1.8 g/kg)",
+        "violation: ⚠ ALÉRGENO lactosa en «yogur griego» (opción 2 del slot 3)",
+        "violation: aversión declarada: pescado en «merluza al horno»",
+        "contrato: la IA devolvió 2300 kcal (objetivo del backend: 2000) — fijados",
+    ]
+    record_ai_vetos(reales)      # dos veces: solo lo repetido entra en el prompt
+    record_ai_vetos(reales)
+
+    bloque = vetos_reference()
+    assert bloque, "los vetos repetidos deberían entrar en el prompt"
+    assert not any(ch.isdigit() for ch in bloque), bloque
+    for dato in ("lactosa", "yogur", "merluza", "pescado", "1450", "144"):
+        assert dato not in bloque, f"se filtró «{dato}» al prompt de otro cliente"
+    # Y la lección SÍ se conserva, en genérico.
+    assert "alérgeno declarado" in bloque
+    assert "por debajo del mínimo" in bloque
+

@@ -198,13 +198,53 @@ def _vetos_path() -> Path:
     return d / "_ai_vetos.json"
 
 
+def _sin_cifras(texto: str) -> str:
+    """Deja el TIPO de error sin un solo dato del cliente.
+
+    Los vetos vienen con números suyos ("kcal objetivo 1450 por debajo del
+    mínimo 1600", "proteína 120 g < mínimo 144 g"). Como estas advertencias se
+    inyectan en la generación de TODOS los clientes, no pueden llevar cifras:
+    ni las de otro cliente ni ninguna, porque los números los pone el backend
+    y la IA no calcula. Se queda la forma del problema, que es lo útil.
+    """
+    import re as _re
+
+    t = (texto or "")
+    # Familias que por naturaleza llevan datos del cliente (su alergia, el
+    # alimento concreto): se reducen a la LECCIÓN, sin el dato.
+    bajo = t.lower()
+    if "alérgeno" in bajo or "alergeno" in bajo:
+        return "violation: se coló un alimento con un alérgeno declarado"
+    if "aversión" in bajo or "aversion" in bajo or "no tolera" in bajo:
+        return "violation: se coló un alimento que el cliente rechaza"
+    if "patrón" in bajo or "patron dietético" in bajo:
+        return "violation: se coló un alimento fuera del patrón dietético"
+    if "contraindic" in bajo:
+        return "violation: se coló un ejercicio contraindicado"
+    # Fuera nombres entrecomillados (alimentos, ejercicios) y cifras.
+    t = _re.sub(r"[«\"'][^»\"']*[»\"']", "", t)
+    t = _re.sub(r"\d+(?:[.,]\d+)?\s*(?:%|g/kg|kcal|g|kg|min|h)?", "", t)
+    # Paréntesis que se quedan sin contenido útil tras quitar las cifras
+    # ("(max BMR/)", "(objetivo del backend: )").
+    t = _re.sub(r"\([^)]*[:/·,;-]\s*\)", "", t)
+    t = _re.sub(r"\(\s*\)", "", t)
+    t = _re.sub(r"\([^)\d]*\)", "", t)   # "(opción del slot )" y similares
+    t = _re.sub(r"\s{2,}", " ", t)
+    t = _re.sub(r"\s+([,.;:])", r"\1", t)
+    return t.strip(" ·-,;:").strip()
+
+
 def record_ai_vetos(flags: list[str]) -> None:
-    """Anota los vetos/correcciones de una generación (best-effort, nunca lanza)."""
+    """Anota los vetos/correcciones de una generación (best-effort, nunca lanza).
+
+    Se guarda el TIPO de veto, nunca las cifras del cliente: estas advertencias
+    acaban en el prompt de otras generaciones."""
     try:
         interesantes = [
-            f for f in (flags or [])
+            _sin_cifras(f) for f in (flags or [])
             if isinstance(f, str) and f.startswith(("violation:", "contrato:", "núcleo:"))
         ]
+        interesantes = [f for f in interesantes if len(f) > 12]
         if not interesantes:
             return
         p = _vetos_path()
