@@ -870,3 +870,30 @@ export interface PaymentsSummaryOut {
   total_count: number;
   stripe_enabled: boolean;
 }
+
+/** Una cosa vendible del panel (una forma de pagar la oferta, o un plan × duración)
+ *  con su enlace de pago y si Stripe está listo para cobrarlo. Espejo de
+ *  backend/app/services/sales_catalog.py. */
+export interface SalesItem {
+  key: string;                 // "oferta" | "oferta2" | "full-3m"…
+  kind: "oferta" | "plan";
+  tier: string;
+  period: string;
+  title: string;               // "Oferta · en 3 pagos"
+  subtitle: string;            // "1 € hoy, luego 120 € y 120 €"
+  charges: number;             // cuántos cobros hará Stripe
+  total_eur: number;           // lo que acaba pagando en total
+  first_eur: number;           // lo que paga HOY
+  auto_stop: boolean;          // el cobro se detiene solo al acabar
+  url: string;                 // enlace de pago definitivo (dominio oficial)
+  ready: boolean;              // false = NO enviarlo: Stripe no puede cobrarlo
+  issue: string | null;        // por qué no está listo
+  highlight: boolean;          // destacar (las ofertas)
+}
+
+export interface SalesCatalogOut {
+  base_url: string;
+  stripe_enabled: boolean;
+  test_mode: boolean;          // claves de PRUEBA: los enlaces no cobran de verdad
+  items: SalesItem[];
+}

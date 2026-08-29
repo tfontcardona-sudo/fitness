@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useSinConexion } from "../lib/offline";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
+  BadgeEuro,
   LayoutDashboard,
   Library,
   LogOut,
@@ -22,6 +23,7 @@ import { AiCreditButton } from "./AiCreditButton";
 const NAV = [
   { to: "/", label: "Hoy", icon: LayoutDashboard, end: true },
   { to: "/clientes", label: "Clientes", icon: Users, end: false },
+  { to: "/vender", label: "Vender", icon: BadgeEuro, end: false },
   { to: "/pagos", label: "Pagos", icon: Wallet, end: false },
   { to: "/recursos", label: "Recursos", icon: Library, end: false },
 ];

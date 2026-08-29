@@ -21,7 +21,7 @@ from app.routers import (
     ai_credit, alerts, auth, brand, clients, coach_push, email, exercises,
     google_oauth, learning, payments, plan_library,
     plans, portal_public, public_site,
-    resources, stripe_router, whatsapp,
+    resources, sales, stripe_router, whatsapp,
 )
 
 APP_VERSION = "0.2.0"
@@ -226,6 +226,7 @@ app.include_router(plan_library.router)
 app.include_router(alerts.router)
 app.include_router(ai_credit.router)
 app.include_router(payments.router)
+app.include_router(sales.router)
 app.include_router(learning.router)
 app.include_router(email.router)
 app.include_router(stripe_router.router)

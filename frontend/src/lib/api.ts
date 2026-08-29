@@ -60,6 +60,7 @@ import type {
   RecommendedProductIn,
   RecommendedProductOut,
   RecommendedProductUpdate,
+  SalesCatalogOut,
   TokenOut,
   VideoCallAgendaItem,
   VideoCallOut,
@@ -533,6 +534,17 @@ export const api = {
     method: "efectivo" | "transferencia" | "bizum" | "otro";
     paid_on?: string; note?: string;
   }) => request<{ id: number; amount_cents: number }>("POST", "/payments/manual", body),
+
+  // --- VENDER: catálogo de ofertas/planes con su enlace de pago ------------
+  /** Todo lo vendible con importes REALES de Stripe, el enlace definitivo y si
+   *  está listo para enviarse (precio y cupón presentes en Stripe). */
+  salesCatalog: (refresh = false) =>
+    request<SalesCatalogOut>("GET", `/sales/catalog${refresh ? "?refresh=true" : ""}`),
+  /** Enlace de pago de UN cliente ya dado de alta + qué hará al abrirlo. */
+  clientPayLink: (clientId: number) =>
+    request<{ url: string; state: "cobra" | "pagado" | "renovacion" | "suscripcion";
+      note: string; tier: string | null; period: string | null;
+      payment_status: string | null }>("GET", `/sales/client-link/${clientId}`),
 
   /** Lecciones aprendidas de las ediciones del coach (aprendizaje continuo). */
   learningLessons: () =>
