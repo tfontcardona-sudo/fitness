@@ -39,6 +39,24 @@ def build_profile(client, ctx) -> dict:
     return prof
 
 
+def _plato(opcion: dict) -> str:
+    """Nombre del plato + sus ingredientes principales, para el revisor.
+
+    El alérgeno o el alimento incompatible con el patrón casi nunca está en el
+    título ("Bowl de la casa"): vive en los ingredientes. Se recortan a los
+    primeros para no disparar el coste de la ronda.
+    """
+    if not isinstance(opcion, dict):
+        return ""
+    nombre = str(opcion.get("title") or opcion.get("name") or "").strip()
+    ings = [str((i or {}).get("food") or "").strip()
+            for i in (opcion.get("ingredients") or []) if isinstance(i, dict)]
+    ings = [i for i in ings if i][:5]
+    if nombre and ings:
+        return f"{nombre} ({', '.join(ings)})"
+    return nombre or (", ".join(ings) if ings else "")
+
+
 def _plan_text(nutrition: dict, training: dict | None = None) -> str:
     """Render compacto y legible del plan (nutrición + resumen de entreno)
     para los revisores IA."""
@@ -58,10 +76,32 @@ def _plan_text(nutrition: dict, training: dict | None = None) -> str:
             f"P{t.get('protein_g')}/C{t.get('carbs_g')}/G{t.get('fat_g')}."
         )
     bank = nutrition.get("meal_bank") or {}
+    # LOS PLATOS. Sin esto los 8-10 revisores (incluido el clínico CON VETO)
+    # juzgaban la dieta viendo solo kcal y macros: ni un alérgeno, ni un
+    # alimento fuera del patrón dietético, ni la monotonía del menú. El campo
+    # del esquema es `title` (MealOption), no `name` — leerlo mal dejaba la
+    # lista vacía y la línea de opciones no se emitía nunca.
     for slot in (bank.get("slots") or [])[:8]:
-        opts = [o.get("name") for o in (slot.get("options") or []) if o.get("name")]
+        opts = [_plato(o) for o in (slot.get("options") or [])]
+        opts = [o for o in opts if o]
         if opts:
-            lines.append(f"  · Opciones {slot.get('name', '')}: {', '.join(opts[:4])}.")
+            lines.append(f"  · Opciones toma {slot.get('slot', '')}: {'; '.join(opts[:4])}.")
+    # MENÚ CERRADO (modo strict): el banco no trae `slots` sino `days`.
+    dias = bank.get("days") or []
+    for dia in dias[:3]:
+        platos = [_plato(m.get("dish") or {}) for m in (dia.get("meals") or [])]
+        platos = [x for x in platos if x]
+        if platos:
+            lines.append(f"  · {dia.get('day', 'día')}: {'; '.join(platos[:6])}.")
+    if len(dias) > 3:
+        lines.append(f"  · (…y {len(dias) - 3} día(s) más con el mismo estilo de menú)")
+    # EQUIVALENCIAS: el cliente las usa a diario, así que también se revisan
+    # (un intercambio con marisco o cerdo se cuela igual que un plato).
+    for grupo in (bank.get("equivalences") or [])[:6]:
+        items = [str(i.get("food") or "") for i in (grupo.get("items") or [])]
+        items = [i for i in items if i]
+        if items:
+            lines.append(f"  · Equivalencias {grupo.get('name', '')}: {', '.join(items[:8])}.")
     # RESUMEN DEL ENTRENO: sin él, los roles que juzgan la coherencia
     # dieta↔entreno opinaban a ciegas (solo veían la dieta).
     if training:

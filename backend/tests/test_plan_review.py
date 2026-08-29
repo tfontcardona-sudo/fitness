@@ -110,3 +110,52 @@ def test_best_effort_nunca_rompe():
     assert review["color"] == "ambar"
     assert review["degraded_reviewers"] == ["panel"]
     assert any("Revisión no ejecutada" in f["title"] for f in review["findings"])
+
+
+def test_los_revisores_ven_los_platos_del_plan():
+    """Los revisores juzgan alergias, patrón dietético y variedad: si no ven un
+    solo plato, opinan a ciegas (y el clínico VETA a ciegas).
+
+    El esquema real (`MealOption`) llama al plato `title`, no `name`: leerlo mal
+    dejaba la lista vacía y la línea de opciones no salía nunca.
+    """
+    from app.services.plan_review import _plan_text
+
+    nut = dict(_nutrition())
+    nut["meal_bank"] = {"mode": "flexible_7", "slots": [
+        {"slot": 1, "options": [
+            {"key": "A", "title": "Tortilla de la casa",
+             "ingredients": [{"food": "Gambas", "grams": 90},
+                             {"food": "Huevo", "grams": 120}],
+             "macros": {"kcal": 800, "protein_g": 68, "carbs_g": 60, "fat_g": 32}},
+        ]},
+    ], "equivalences": [
+        {"name": "Proteína magra", "items": [{"food": "Pavo", "amount": "150 g"},
+                                             {"food": "Atún", "amount": "140 g"}]},
+    ]}
+    texto = _plan_text(nut)
+    assert "Tortilla de la casa" in texto
+    assert "Gambas" in texto, "el alérgeno vive en los ingredientes, no en el título"
+    assert "Pavo" in texto, "las equivalencias también se comen"
+
+
+def test_los_revisores_ven_el_menu_cerrado():
+    """En modo strict el banco no trae `slots` sino `days`."""
+    from app.services.plan_review import _plan_text
+
+    def _plato(nombre, *ings):
+        return {"title": nombre, "prep": "",
+                "ingredients": [{"food": i, "grams": 100} for i in ings],
+                "macros": {"kcal": 800, "protein_g": 68, "carbs_g": 60, "fat_g": 32}}
+
+    nut = dict(_nutrition())
+    nut["meal_bank"] = {"mode": "strict", "days": [
+        {"day": "lunes", "meals": [{"slot": 1, "dish": _plato("Avena con plátano", "Avena")},
+                                   {"slot": 2, "dish": _plato("Pollo con arroz", "Pollo")}]},
+        {"day": "martes", "meals": [{"slot": 1, "dish": _plato("Tostada con huevo", "Huevo")}]},
+        {"day": "miércoles", "meals": [{"slot": 1, "dish": _plato("Yogur y nueces", "Yogur")}]},
+        {"day": "jueves", "meals": [{"slot": 1, "dish": _plato("Batido de fresa", "Fresa")}]},
+    ]}
+    texto = _plan_text(nut)
+    assert "Avena con plátano" in texto and "Pollo con arroz" in texto
+    assert "día(s) más" in texto      # se resume, no se vuelca entero
