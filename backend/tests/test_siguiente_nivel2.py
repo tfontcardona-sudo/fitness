@@ -398,6 +398,46 @@ def test_consentimiento_no_cuenta_como_anamnesis(db, tmp_path, monkeypatch):
     assert [x["name"] for x in st.list_documents(c.id)] == ["anamnesis.pdf"]
 
 
+def test_quien_ya_mando_su_anamnesis_no_puede_reescribir_la_ficha(http, db, tmp_path,
+                                                                  monkeypatch):
+    """Ni por la vía PDF ni con el plan ya en marcha.
+
+    El enlace del cuestionario es permanente. Con el criterio antiguo (solo
+    `consent_signed_at`), el cliente que la mandó en PDF volvía a su enlace,
+    veía el formulario en blanco y podía machacar peso, objetivo, lesiones y
+    alergias de una ficha ya revisada — sin diff, sin historial y sin que
+    nadie se enterara.
+    """
+    import app.services.storage as st
+    from app.routers.portal_public import _anamnesis_recibida
+
+    monkeypatch.setattr(st, "storage_root", lambda: tmp_path)
+    c = _make_client(db, status="onboarding")
+    d = tmp_path / "clients" / str(c.id) / "documents"
+    d.mkdir(parents=True)
+    (d / "anamnesis.pdf").write_bytes(b"%PDF-1.4 anamnesis")
+    db.commit()
+
+    assert _anamnesis_recibida(c) is True
+    estado = http.get(f"/api/p/{c.portal_token}").json()
+    assert estado["anamnesis_done"] is True     # ve "recibida", no el wizard
+
+    body = {
+        "sex": "female", "birth_date": "1990-05-01", "height_cm": 160,
+        "start_weight_kg": 55.0, "goal_type": "muscle_gain", "level": "beginner",
+        "training_days": 3, "session_max_min": 45, "training_place": "home",
+        "daily_activity_level": "light", "diet_mode": "flexible_7",
+        "consent_accepted": True,
+    }
+    r = http.post(f"/api/p/{c.portal_token}/anamnesis", json=body)
+    assert r.status_code == 409, r.text
+    assert http.get(f"/api/p/{c.portal_token}/anamnesis/prefill").status_code == 409
+
+    # Y con el cliente ya activo (plan en marcha), tampoco.
+    c2 = _make_client(db, status="active")
+    assert http.post(f"/api/p/{c2.portal_token}/anamnesis", json=body).status_code == 409
+
+
 def test_formulario_digital_apaga_el_banner_y_avisa(http, db):
     from app.routers.portal_public import _needs_anamnesis
 

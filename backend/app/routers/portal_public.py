@@ -119,26 +119,32 @@ def _photos_count(db: Session, client_id: int) -> int:
     )
 
 
-def _needs_anamnesis(client: Client) -> bool:
-    """Onboarding sin anamnesis: el portal debe señalar el camino. Cuenta como
-    recibida por CUALQUIERA de las dos vías: el formulario digital (sello de
-    consentimiento) o el PDF subido."""
-    if client.status != "onboarding":
-        return False
+def _anamnesis_recibida(client: Client) -> bool:
+    """¿Tenemos su anamnesis? Cuenta CUALQUIERA de las dos vías: el formulario
+    digital (sello de consentimiento) o el PDF subido.
+
+    Una sola verdad: con dos criterios distintos, el cliente que la mandó en
+    PDF volvía a su enlace, veía el cuestionario en blanco y podía reescribir
+    de arriba abajo la ficha que el coach ya había revisado."""
     if client.consent_signed_at is not None:
-        return False
+        return True
     try:
         from app.services.storage import anamnesis_documents
-        return not anamnesis_documents(client.id)
+        return bool(anamnesis_documents(client.id))
     except Exception:  # noqa: BLE001
         return False
+
+
+def _needs_anamnesis(client: Client) -> bool:
+    """Onboarding sin anamnesis: el portal debe señalar el camino."""
+    return client.status == "onboarding" and not _anamnesis_recibida(client)
 
 
 def _state(db: Session, client: Client) -> AnamnesisStateOut:
     brand = db.scalar(select(BrandConfig).limit(1)) or BrandConfig()
     return AnamnesisStateOut(
         first_name=_first_name(client),
-        anamnesis_done=client.consent_signed_at is not None,
+        anamnesis_done=_anamnesis_recibida(client),
         photos_count=_photos_count(db, client.id),
         brand_name=brand.name,
         color_primary=brand.color_primary,
@@ -168,7 +174,12 @@ def submit_anamnesis(
 ) -> AnamnesisStateOut:
     """Recibe el wizard completo. Idempotencia: una vez firmada, 409 (las
     correcciones posteriores las hace el coach con audit trail)."""
-    if client.consent_signed_at is not None:
+    # Ya recibida (formulario O PDF) o cliente en marcha: no se reescribe la
+    # ficha. Sin el segundo guard, un cliente con meses de plan activo podía
+    # volver a su enlace y machacar en silencio el peso, el objetivo, las
+    # lesiones y las alergias que el coach había revisado — sin diff, sin
+    # historial y sin que nadie se enterara.
+    if _anamnesis_recibida(client) or client.status != "onboarding":
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "La anamnesis ya fue enviada; contacta con tu coach para cambios",
@@ -216,13 +227,14 @@ def submit_anamnesis(
 
     # Acceso al portal: en el alta MANUAL del coach el email de credenciales
     # salía al subir el PDF — con el formulario digital también debe salir.
+    acceso = "no_intentado"
     if client.portal_access_sent_at is None:
         try:
             from app.services.portal_access import send_portal_access
 
-            send_portal_access(db, client)
+            acceso = (send_portal_access(db, client) or {}).get("status") or "desconocido"
         except Exception:  # noqa: BLE001 — el acceso se puede reenviar a mano
-            pass
+            acceso = "failed"
 
     db.commit()
     db.refresh(client)
@@ -247,6 +259,11 @@ def submit_anamnesis(
                           f"{contras[0].detail}. Revisa la ficha antes de generar.")
         except Exception:  # noqa: BLE001
             pass
+        # El cliente lee "te hemos enviado el acceso por email": si NO salió,
+        # el coach tiene que enterarse ahora — por esta vía el reintento
+        # automático (que vive en la subida del PDF) ya no puede ocurrir.
+        if acceso in ("failed", "no_email", "desconocido"):
+            cuerpo += " ⚠ El email de acceso al portal no salió: reenvíaselo desde su ficha."
         push_svc.send_to_coach(db, {
             "title": f"📋 {client.full_name} ha enviado su anamnesis",
             "body": cuerpo,
@@ -268,7 +285,7 @@ def anamnesis_prefill(
     """Valores actuales de la ficha para PRE-RELLENAR el formulario digital
     (el coach pudo apuntar ya algunos datos en el alta). Solo mientras la
     anamnesis no esté enviada; después, los cambios son cosa del coach."""
-    if client.consent_signed_at is not None:
+    if _anamnesis_recibida(client) or client.status != "onboarding":
         raise HTTPException(status.HTTP_409_CONFLICT, "La anamnesis ya fue enviada")
     campos = ("sex", "birth_date", "height_cm", "start_weight_kg", "body_fat_pct",
               "initial_waist_cm", "initial_hip_cm", "initial_arm_cm",
