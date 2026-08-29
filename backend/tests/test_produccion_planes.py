@@ -326,3 +326,43 @@ def test_adaptar_no_avisa_si_el_feedback_sigue_sin_enviar(monkeypatch):
     adapt_plan_from_feedback(db, c2.id)
     assert llamadas[-1] is True
     db.close()
+
+
+@pytestmark_db
+def test_la_adaptacion_no_pisa_el_texto_que_lee_el_cliente():
+    """`rationale` sale en el PDF como "Por qué este enfoque".
+
+    La adaptación lo machacaba con un volcado interno («- [dieta] … — …», que
+    además repite la tabla "Cambios de tu plan" de justo debajo) o con una
+    instrucción para el coach («edita manualmente»), y el argumentario real del
+    plan se perdía para siempre: del mes 2 en adelante el cliente no volvía a
+    leer por qué su plan es como es.
+    """
+    from app.db import SessionLocal
+    from app.services.adapt_plan import adapt_plan_from_feedback
+
+    db = SessionLocal()
+    c, plan, _ex = _nuevo_cliente_con_plan(db)
+    original = ("Trabajamos con un déficit moderado para que pierdas grasa sin "
+                "perder fuerza en los básicos.")
+    plan.nutrition_json = {**plan.nutrition_json, "rationale": original}
+    _periodo_analizado(db, c, plan, {"plan_adjustments": [
+        {"area": "dieta", "change": "Bajar calorías un 5%", "reason": "ritmo lento"},
+    ]})
+    db.commit()
+
+    nuevo = adapt_plan_from_feedback(db, c.id)
+    texto = (nuevo.nutrition_json or {}).get("rationale") or ""
+    assert original in texto, "el argumentario del plan no puede desaparecer"
+    assert "[dieta]" not in texto and "manualmente" not in texto
+    assert "revisión #1" in texto
+
+    # Y sin ajustes tampoco se ensucia con instrucciones para el coach.
+    c2, plan2, _ = _nuevo_cliente_con_plan(db)
+    plan2.nutrition_json = {**plan2.nutrition_json, "rationale": original}
+    _periodo_analizado(db, c2, plan2, {"plan_adjustments": []})
+    db.commit()
+    nuevo2 = adapt_plan_from_feedback(db, c2.id)
+    texto2 = (nuevo2.nutrition_json or {}).get("rationale") or ""
+    assert original in texto2 and "manualmente" not in texto2
+    db.close()

@@ -683,13 +683,31 @@ JSON: {{"mode":"strict","days":[{{"day":"lunes","meals":[{{"slot":N,"dish":{{"ke
 {free_meal}}}"""
 
 
-def _education_user_prompt(core: PlanCoreOutput) -> str:
+def _education_user_prompt(core: PlanCoreOutput, ctx: "ClientContext | None" = None) -> str:
     patterns = sorted({
         "empuje_horizontal", "empuje_vertical", "traccion_horizontal",
         "traccion_vertical", "sentadilla", "bisagra_cadera",
     })
-    return f"""Genera el CONTENIDO EDUCATIVO del plan.
+    # Restricciones alimentarias EN EL PROMPT: el educativo es lo único del
+    # documento que no lo sabía, y encima se cachea por prompt — así que una
+    # píldora sobre lácteos escrita para otro cliente acababa impresa en el PDF
+    # de un alérgico a la leche o de un vegano. Al viajar en el prompt, la
+    # caché las separa sola (la clave incluye el texto del prompt).
+    restricciones = ""
+    if ctx is not None:
+        partes = []
+        if getattr(ctx, "diet_pattern", None):
+            partes.append(f"patrón dietético {ctx.diet_pattern}")
+        if getattr(ctx, "food_allergies", None):
+            partes.append("alergias/intolerancias: " + ", ".join(ctx.food_allergies))
+        if partes:
+            restricciones = ("\nRESTRICCIONES ALIMENTARIAS DEL CLIENTE (" +
+                             " · ".join(partes) +
+                             "): ningún ejemplo, píldora ni FAQ puede recomendar "
+                             "esos alimentos.\n")
 
+    return f"""Genera el CONTENIDO EDUCATIVO del plan.
+{restricciones}
 Split del cliente: {core.training.split_name}.
 JSON: {{"pills":[{{"topic":...,"for_client":...}} (EXACTAMENTE 3)],
 "biomech_by_pattern":[{{"pattern":...,"cues":[...],"why":...}}],
@@ -1089,7 +1107,7 @@ def generate_monthly_plan(
         try:
             education = _education_with_cache(
                 ai, split_name=core.training.split_name, variant="full",
-                user=_education_user_prompt(core),
+                user=_education_user_prompt(core, ctx),
             )
         except AIGenerationError:
             # AHORRO + robustez (auditoría de costes): antes un fallo aquí

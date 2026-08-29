@@ -442,7 +442,7 @@ export const api = {
       period_index: number; status: string;
       weight: { start_kg: number | null; end_kg: number | null; delta_kg: number | null; weekly_rate_kg: number | null };
       body_weight_now_kg: number | null; goal_weight_kg: number | null; distance_to_goal_kg: number | null;
-      adherence: { diet_pct: number; log_pct: number; days_logged: number; period_days: number };
+      adherence: { diet_pct: number | null; log_pct: number; days_logged: number; period_days: number };
       strength: { name: string; e1rm_kg: number; delta_kg: number | null }[];
     }>("GET", `/periods/${periodId}/metrics`),
   feedbackDocumentUrl: (docId: number) => `/api/feedback/${docId}/document`,

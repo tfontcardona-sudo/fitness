@@ -180,3 +180,40 @@ def test_feedback_doc_limits_changes_to_5_bullets():
         xml = zf.read("word/document.xml").decode("utf-8")
     assert "Cambio 0" in xml and "Cambio 4" in xml
     assert "Cambio 5" not in xml and "Cambio 7" not in xml
+
+
+def _texto_docx(data: bytes) -> str:
+    from docx import Document
+
+    doc = Document(io.BytesIO(data))
+    partes = [p.text for p in doc.paragraphs]
+    for t in doc.tables:
+        for row in t.rows:
+            partes += [c.text for c in row.cells]
+    return "\n".join(partes)
+
+
+def test_el_informe_no_reprocha_una_dieta_que_no_se_ha_contratado():
+    """Un cliente de SOLO ENTRENAMIENTO ni ve el campo de dieta en su portal:
+    su `diet_adherence_ratio` es 0.0 por defecto, y el informe le llegaba con
+    una tarjeta "Adherencia dieta 0%" y su barra a cero. Ausencia de dato no es
+    incumplimiento."""
+    metrics = {
+        "weight": {"delta_kg": -0.4},
+        "adherence": {"diet_adherence_ratio": 0.0, "log_ratio": 0.9,
+                      "days_logged": 13, "period_days": 14,
+                      "diet_yes": 0, "diet_partial": 0, "diet_no": 0},
+    }
+    comun = dict(
+        brand=BRAND, client_name="Train Only", period_index=1, metrics=metrics,
+        weight_points=[], goal_kg=None, e1rm_exercises=[], perimeters=None,
+        volume_by_group=None, photo_pairs=None, ai_photo_analysis=None,
+        natural_analysis="x", changes_bullets=[], answers=None,
+        next_objectives=[], closing_message="y",
+    )
+    sin_dieta = _texto_docx(generate_feedback_doc(**comun, has_nutrition=False))
+    assert "Adherencia dieta" not in sin_dieta
+
+    # Con dieta contratada pero sin un solo registro: "Sin datos", no 0 %.
+    con_dieta = _texto_docx(generate_feedback_doc(**comun, has_nutrition=True))
+    assert "Sin datos" in con_dieta and "0%" not in con_dieta

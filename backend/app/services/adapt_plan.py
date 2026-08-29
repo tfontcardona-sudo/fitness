@@ -537,12 +537,24 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
         tr.pop("applied_adjustments", None)
 
     if tiene_dieta:
-        if adjustments:
-            grid = "\n".join(f"- [{a.get('area')}] {a.get('change')} — {a.get('reason')}" for a in adjustments)
-            nut["rationale"] = f"Adaptación a la revisión quincenal #{period.period_index}:\n{grid}"
-        else:
-            nut["rationale"] = (f"Copia para adaptar a la revisión quincenal #{period.period_index} "
-                                "(la revisión no incluía ajustes automáticos: edita manualmente).")
+        # OJO: `rationale` LO LEE EL CLIENTE (sale en el PDF como "Por qué este
+        # enfoque"). Aquí se machacaba con texto interno —un volcado con
+        # etiquetas de máquina "- [dieta] … — …", que además repite la tabla
+        # "Cambios de tu plan" de justo debajo, o directamente una instrucción
+        # para el coach ("edita manualmente")— y el argumentario real del plan
+        # se perdía para siempre: del mes 2 en adelante ningún cliente volvía a
+        # leer por qué su plan es como es.
+        # El detalle de la adaptación YA viaja por `applied_adjustments`.
+        base_rationale = (nut.get("rationale") or "").strip()
+        marca = f"Ajustado tras tu revisión #{period.period_index}"
+        if marca not in base_rationale:
+            nut["rationale"] = (
+                f"{base_rationale}\n\n{marca}: mantenemos el enfoque y afinamos "
+                "las cifras con lo que has registrado estas dos semanas."
+                if base_rationale else
+                f"{marca}: afinamos las cifras con lo que has registrado estas "
+                "dos semanas."
+            )
     if tiene_entreno:
         tr["split_rationale"] = (tr.get("split_rationale", "") or "") + \
             f" · Adaptado a la revisión quincenal #{period.period_index}."

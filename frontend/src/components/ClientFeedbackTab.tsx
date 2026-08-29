@@ -500,7 +500,11 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                   <Stat label="A su objetivo" value={m.distance_to_goal_kg != null ? `${Math.abs(m.distance_to_goal_kg)} kg` : "—"} />
                   <Stat
                     label="Adherencia dieta"
-                    value={`${m.adherence?.diet_pct ?? 0}% · ${(m.adherence?.diet_days_yes ?? 0) + (m.adherence?.diet_days_partial ?? 0)} de ${m.adherence?.period_days ?? 0} días`}
+                    // Sin un solo registro de dieta no es un 0 %: es que no
+                    // hay dato (un cliente de solo entreno ni ve ese campo).
+                    value={m.adherence?.diet_pct == null
+                      ? "Sin datos"
+                      : `${m.adherence.diet_pct}% · ${(m.adherence?.diet_days_yes ?? 0) + (m.adherence?.diet_days_partial ?? 0)} de ${m.adherence?.period_days ?? 0} días`}
                   />
                   <Stat label="Días registrados" value={`${m.adherence?.days_logged ?? 0}/${m.adherence?.period_days ?? 0}`} />
                 </div>

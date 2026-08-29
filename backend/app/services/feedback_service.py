@@ -234,7 +234,11 @@ def compute_period_summary(db: Session, period_id: int) -> dict:
         "goal_weight_kg": goal,
         "distance_to_goal_kg": distance,
         "adherence": {
-            "diet_pct": round(adh.diet_adherence_ratio * 100),
+            # None = SIN registros de dieta (no es un 0 % de incumplimiento):
+            # la pantalla lo dice con "Sin datos" en vez de acusar al cliente.
+            "diet_pct": (round(adh.diet_adherence_ratio * 100)
+                         if (adh.diet_yes + adh.diet_partial + adh.diet_no) > 0
+                         else None),
             "log_pct": round(min(1.0, adh.log_ratio) * 100),
             "days_logged": adh.days_logged, "period_days": adh.period_days,
             # Días que SIGUIÓ el plan (dieta): completos y a medias, para poder
@@ -337,6 +341,10 @@ def _write_feedback_doc(db: Session, client: Client, period: Period, inputs: dic
     docx = generate_feedback_doc(
         brand=_doc_brand(db), client_name=client.full_name, period_index=period.period_index,
         period_label=_period_label(period), goal_label=_goal_label_es(client.goal_type),
+        # Lo contratado manda también en el DOCUMENTO (ya mandaba en el prompt
+        # de la IA): a un cliente de solo entrenamiento no se le puede reprochar
+        # por escrito una "adherencia dieta 0 %".
+        has_nutrition=pkgs.has_nutrition(client.package_tier),
         metrics=inputs["metrics_json"], weight_points=inputs["weight_points"],
         goal_kg=client.goal_weight_kg, e1rm_exercises=inputs["e1rm_exercises"],
         perimeters=inputs["perimeters"], volume_by_group=inputs["volume_by_group"],
