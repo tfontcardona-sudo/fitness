@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle, BadgeEuro, Check, Copy, ExternalLink, Link2, MessageCircle,
   RefreshCw, Send, ShieldCheck, Sparkles,
@@ -181,13 +181,22 @@ export default function VenderPage() {
     () => (sel && sel !== "catalogo" ? items.find((i) => i.key === sel) ?? null : null),
     [sel, items]);
 
+  // Al elegir, el bloque de envío se trae a la vista: en el móvil quedaba
+  // debajo del pliegue y parecía que elegir no hacía nada.
+  const envioRef = useRef<HTMLElement | null>(null);
+
   function elegir(key: string | "catalogo") {
     if (key === sel) return;         // no machaca lo que el coach haya editado
     setSel(key);
     setCopiado("");
-    if (key === "catalogo") { setTexto(mensajeCatalogo(items)); return; }
-    const it = items.find((i) => i.key === key);
-    setTexto(it ? mensajeDe(it) : "");
+    if (key === "catalogo") setTexto(mensajeCatalogo(items));
+    else {
+      const it = items.find((i) => i.key === key);
+      setTexto(it ? mensajeDe(it) : "");
+    }
+    setTimeout(() => {
+      envioRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 60);
   }
 
   async function copiar(que: "enlace" | "mensaje") {
@@ -322,7 +331,8 @@ export default function VenderPage() {
 
       {/* ENVIAR — el enlace a la vista, comprobable, y el mensaje editable */}
       {sel !== null && (
-        <section className="card mt-6 p-4" style={{ borderColor: "var(--brand-accent)" }}>
+        <section ref={envioRef} className="card mt-6 p-4"
+          style={{ borderColor: "var(--brand-accent)", borderWidth: 2 }}>
           <h2 className="flex items-center gap-2 text-sm font-extrabold" style={{ color: "var(--text)" }}>
             <Send size={15} style={{ color: "var(--brand-accent)" }} />
             {sel === "catalogo" ? "Enviar el catálogo de precios" : `Enviar: ${elegido?.title ?? ""}`}
