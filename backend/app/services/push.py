@@ -379,6 +379,25 @@ def notify_video_call_scheduled(db: Session, client: Client, when_label: str,
     return send_to_client(db, client, payload)
 
 
+def notify_coach_pay_link_failed(db: Session, *, que: str, motivo: str) -> int:
+    """Avisa al COACH de que un ENLACE DE PAGO no ha podido abrir Stripe.
+
+    Antes esto era invisible: el interesado acababa en la página de planes y el
+    coach seguía mandando el mismo enlace roto. La `tag` es única por producto
+    para que dos fallos seguidos del mismo enlace no llenen la pantalla."""
+    if not push_configured():
+        return 0
+    base = settings.public_base_url.rstrip("/")
+    payload = {
+        "title": "⚠️ Enlace de pago sin abrir",
+        "body": f"{que}: {motivo}. Revísalo en Vender antes de mandarlo.",
+        "count": 1,
+        "url": f"{base}/vender",
+        "tag": f"dq-pay-fail-{que}".replace(" ", "-").lower()[:40],
+    }
+    return send_to_coach(db, payload)
+
+
 def notify_coach_video_call_proposed(db: Session, client: Client, when_label: str) -> int:
     """Avisa al COACH (push) de que un cliente propuso día/hora de videollamada.
     Al tocar, abre el panel del coach. Silencioso sin push/dispositivos."""

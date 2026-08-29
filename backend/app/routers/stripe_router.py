@@ -47,6 +47,18 @@ class CheckoutIn(BaseModel):
 
 
 
+def _avisa_al_coach(db: Session, que: str, motivo: str) -> None:
+    """Push al coach cuando un enlace de pago no ha podido abrir Stripe.
+    Best-effort: avisar nunca puede romper la respuesta al cliente."""
+    try:
+        from app.services.push import notify_coach_pay_link_failed
+
+        notify_coach_pay_link_failed(db, que=que, motivo=motivo)
+        db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()
+
+
 @router.post("/api/public/checkout")
 @limiter.limit("10/minute")
 def public_checkout(request: Request, body: CheckoutIn, db: Session = Depends(get_db)) -> dict:
@@ -93,7 +105,11 @@ def pay_plan_link(request: Request, tier: str, period: str,
     es_bot = any(b in ua for b in (
         "whatsapp", "facebookexternalhit", "bot", "crawler", "spider",
         "preview", "curl", "wget", "python-requests"))
-    if es_bot or request.method == "HEAD":
+    # `?ir=1` = "soy una persona, llévame al pago": el botón de la vista previa
+    # de abajo. Sin esta salida, quien cayera en el filtro (una app cuyo
+    # user-agent lleve "bot"/"preview") se quedaba en una página muerta.
+    quiere_ir = request.query_params.get("ir") == "1"
+    if (es_bot or request.method == "HEAD") and not quiere_ir:
         from fastapi.responses import HTMLResponse
 
         if period == "oferta":
@@ -109,12 +125,21 @@ def pay_plan_link(request: Request, tier: str, period: str,
         else:
             title = f"{pkgs.label(t)} — pago seguro"
             desc = "Asesoría 100 % personalizada. Pago seguro con Stripe."
+        # El cuerpo lleva un BOTÓN real al pago (?ir=1): si quien abre esto es
+        # una persona y no un robot de vista previa, no se queda atrapada.
         return HTMLResponse(
-            "<!doctype html><html><head><meta charset='utf-8'>"
+            "<!doctype html><html lang='es'><head><meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width,initial-scale=1'>"
             f"<title>{title}</title>"
             f"<meta property='og:title' content='{title}'>"
             f"<meta property='og:description' content='{desc}'>"
-            f"</head><body>{desc}</body></html>"
+            "</head><body style=\"font-family:system-ui,sans-serif;max-width:34rem;"
+            "margin:3rem auto;padding:0 1.25rem;text-align:center\">"
+            f"<h1 style='font-size:1.25rem'>{title}</h1><p>{desc}</p>"
+            f"<p><a href='{request.url.path}?ir=1' style=\"display:inline-block;"
+            "background:#E8833A;color:#fff;text-decoration:none;font-weight:700;"
+            "padding:0.9rem 1.5rem;border-radius:0.75rem\">Ir al pago seguro</a></p>"
+            "</body></html>"
         )
 
     try:
@@ -123,7 +148,11 @@ def pay_plan_link(request: Request, tier: str, period: str,
         import logging
         logging.getLogger("app.stripe").warning(
             "pay_plan_link %s %s sin checkout: %s", t, period, exc)
-        return RedirectResponse(f"{base}/planes", status_code=302)
+        # El interesado ya no se queda mirando la página de planes sin saber
+        # qué ha pasado (parecía que el enlace estaba roto), y el COACH se
+        # entera por push: hasta ahora seguía mandando el mismo enlace muerto.
+        _avisa_al_coach(db, f"{pkgs.label(t)} {period}", str(exc))
+        return RedirectResponse(f"{base}/planes?pago=error", status_code=302)
     return RedirectResponse(url, status_code=302)
 
 
@@ -165,10 +194,12 @@ def pay_link(request: Request, client: Client = Depends(get_client_by_token),
                                   client=client)
     except StripeError as exc:
         # Un cliente en su navegador no debe ver JSON con detalles internos:
-        # a la página de planes, donde puede escribirnos. El detalle, al log.
+        # a la página de planes, con un aviso de que el pago no se pudo abrir.
+        # El detalle, al log; y al coach, un push (antes no se enteraba nadie).
         import logging
         logging.getLogger("app.stripe").warning("pay_link %s sin checkout: %s", client.id, exc)
-        return RedirectResponse(f"{base}/planes", status_code=302)
+        _avisa_al_coach(db, f"enlace de {client.full_name or 'un cliente'}", str(exc))
+        return RedirectResponse(f"{base}/planes?pago=error", status_code=302)
     return RedirectResponse(url, status_code=302)
 
 

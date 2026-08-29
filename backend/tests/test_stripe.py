@@ -193,6 +193,8 @@ class FakeStripe:
         self.products: list[dict] = []
         self.prices: list[dict] = []
         self.coupons: dict[str, dict] = {}
+        # Cada llamada a Price.list con lookup_keys (para comprobar el troceado).
+        self.lookup_calls: list[list[str]] = []
         self.sub_modifications: list[tuple[str, dict]] = []
         self.sub_cancelaciones: list[str] = []
         fake = self
@@ -211,6 +213,15 @@ class FakeStripe:
         class Price:
             @staticmethod
             def list(lookup_keys=None, **kw):
+                # LÍMITE REAL de la API: Stripe rechaza más de 10 lookup_keys
+                # por llamada. Sin esta comprobación el doble era más
+                # permisivo que Stripe y la suite daba verde mientras los
+                # enlaces de la oferta se rompían en producción (9 planes +
+                # las 2 formas de pago de la oferta = 11 claves).
+                if lookup_keys is not None and len(lookup_keys) > 10:
+                    raise ValueError(
+                        "You cannot specify more than 10 lookup_keys")
+                fake.lookup_calls.append(list(lookup_keys or []))
                 data = [p for p in fake.prices if p.get("active", True)
                         and (not lookup_keys or p.get("lookup_key") in lookup_keys)]
                 return {"data": data}
@@ -268,6 +279,30 @@ def _reset_stripe_caches(monkeypatch, ss):
     monkeypatch.setattr(ss, "_lookup_cache", {"at": 0.0, "ids": {}})
     monkeypatch.setattr(ss, "_ensure_state", {"at": 0.0})
     monkeypatch.setattr(ss, "_prices_cache", {"at": 0.0, "data": None})
+
+
+def test_los_lookup_keys_se_piden_en_tandas_de_diez(monkeypatch):
+    """REGRESIÓN (el enlace de la oferta acababa en /planes): son ONCE claves
+    (9 planes + las 2 formas de pagar la oferta) y Stripe admite 10 por
+    llamada. Se piden en tandas y NINGUNA supera el límite."""
+    from app.services import stripe_service as ss
+
+    fake = FakeStripe()
+    monkeypatch.setattr(ss, "_stripe", lambda: fake)
+    _reset_stripe_caches(monkeypatch, ss)
+
+    # Resolver el precio de la OFERTA (la clave nº 11) tiene que funcionar.
+    pid = ss._price_by_lookup("full", "oferta")
+    assert pid, "el precio de la oferta no se resolvió: el enlace acabaría en /planes"
+
+    assert fake.lookup_calls, "no se consultó ningún lookup_key"
+    assert all(len(t) <= 10 for t in fake.lookup_calls), fake.lookup_calls
+    # Y entre todas las tandas se piden las once, sin dejarse ninguna.
+    pedidas = {k for tanda in fake.lookup_calls for k in tanda}
+    assert {"dqr_full_oferta", "dqr_full_oferta2", "dqr_train_1m"} <= pedidas
+
+    # La segunda forma de pago también resuelve (era la que rompía el límite).
+    assert ss._price_by_lookup("full", "oferta2")
 
 
 def test_auto_alta_crea_los_9_precios_que_faltan(monkeypatch):
@@ -366,7 +401,7 @@ def test_error_del_sdk_de_stripe_no_revienta_el_enlace_de_pago(monkeypatch):
 
     with TestClient(app) as http:
         r = http.get("/api/pay/plan/full/3m", follow_redirects=False)
-        assert r.status_code == 302 and r.headers["location"].endswith("/planes")
+        assert r.status_code == 302 and r.headers["location"].endswith("/planes?pago=error")
     assert ss._lookup_cache["ids"] == {}  # el siguiente clic re-resuelve
 
 
@@ -481,7 +516,7 @@ def test_enlace_de_pago_directo_por_plan(monkeypatch):
             raise sr.StripeError("sin clave")
         monkeypatch.setattr(sr, "create_checkout_url", _boom)
         r = http.get("/api/pay/plan/full/3m", follow_redirects=False)
-        assert r.status_code == 302 and r.headers["location"].endswith("/planes")
+        assert r.status_code == 302 and r.headers["location"].endswith("/planes?pago=error")
 
 
 # ---- OFERTA: 1 € el primer mes → 120 €/mes en suscripción ----

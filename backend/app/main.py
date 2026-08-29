@@ -121,7 +121,27 @@ app.mount("/api/media", StaticFiles(directory=media_dir()), name="media")
 
 
 @app.exception_handler(RateLimitExceeded)
-def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+def _rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    # Los ENLACES DE PAGO los abre una persona en su navegador: un JSON crudo
+    # ("detail: Demasiadas peticiones") parecía la web rota y era justo el
+    # momento de cobrar. Se le da una página legible que puede reintentar.
+    if request.url.path.startswith("/api/pay/"):
+        from fastapi.responses import HTMLResponse
+
+        return HTMLResponse(
+            "<!doctype html><html lang='es'><head><meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+            "<title>Un momento…</title></head>"
+            "<body style=\"font-family:system-ui,sans-serif;max-width:32rem;"
+            "margin:3rem auto;padding:0 1.25rem;text-align:center\">"
+            "<h1 style='font-size:1.2rem'>Un momento, por favor</h1>"
+            "<p>Se han abierto muchos pagos seguidos desde esta conexión. "
+            "Espera unos segundos y vuelve a intentarlo.</p>"
+            "<p><a href='' style=\"display:inline-block;background:#E8833A;"
+            "color:#fff;text-decoration:none;font-weight:700;padding:0.9rem 1.5rem;"
+            "border-radius:0.75rem\">Reintentar</a></p></body></html>",
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
     return JSONResponse(
         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         content={"detail": "Demasiadas peticiones, inténtalo en un momento"},

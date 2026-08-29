@@ -89,6 +89,26 @@ class StripeError(RuntimeError):
     """Error recuperable de Stripe (config ausente, plan inválido, firma mala)."""
 
 
+# Stripe admite un MÁXIMO de 10 `lookup_keys` por llamada a Price.list. Con los
+# 9 planes + las DOS formas de pagar la oferta son ONCE: la llamada entera
+# fallaba ("You cannot specify more than 10 lookup_keys"), la resolución de
+# precios por lookup se caía y los enlaces de la OFERTA acababan redirigiendo a
+# /planes en vez de abrir Stripe. Se pide por tandas y se juntan los resultados.
+_LOOKUP_BATCH = 10
+
+
+def _prices_by_lookup(stripe, keys: list[str]) -> dict:
+    """{lookup_key: precio} pidiéndolos en tandas de 10 como manda la API."""
+    found: dict = {}
+    for i in range(0, len(keys), _LOOKUP_BATCH):
+        tanda = keys[i:i + _LOOKUP_BATCH]
+        for pr in stripe.Price.list(lookup_keys=tanda, active=True,
+                                    limit=100)["data"]:
+            if pr.get("lookup_key"):
+                found[pr["lookup_key"]] = pr
+    return found
+
+
 def _stripe():
     import stripe
 
@@ -128,10 +148,7 @@ def ensure_canonical_prices(stripe, log=None) -> list[str]:
                 for p in stripe.Product.list(active=True, limit=100)["data"]}
     keys = ([_lookup_key(t, p) for t in TIER_ORDER for p in PERIOD_ORDER]
             + [OFFER_LOOKUP, OFFER2_LOOKUP])
-    existing = {pr["lookup_key"]: pr
-                for pr in stripe.Price.list(lookup_keys=keys, active=True,
-                                            limit=100)["data"]
-                if pr.get("lookup_key")}
+    existing = _prices_by_lookup(stripe, keys)
 
     for tier in TIER_ORDER:
         product_id = products.get(tier)
@@ -301,10 +318,7 @@ def _price_by_lookup(tier: str, period: str) -> str:
                 + [OFFER_LOOKUP, OFFER2_LOOKUP])
 
         def _list_prices() -> dict:
-            return {pr["lookup_key"]: pr
-                    for pr in stripe.Price.list(lookup_keys=keys, active=True,
-                                                limit=100)["data"]
-                    if pr.get("lookup_key")}
+            return _prices_by_lookup(stripe, keys)
 
         found = _list_prices()
 
