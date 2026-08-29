@@ -495,8 +495,12 @@ def open_invoice_url(client: Client) -> str | None:
                                    status="open", limit=1)["data"]
         return invs[0].get("hosted_invoice_url") if invs else None
     except Exception as exc:  # noqa: BLE001
-        _log.warning("Sin factura abierta para el cliente %s: %s", client.id, exc)
-        return None
+        # OJO: "no se pudo consultar" NO es "no debe nada". Devolviendo None se
+        # mandaba a la página de "¡Pago recibido!" a un cliente que quizá tiene
+        # una factura pendiente. El caller decide qué enseñar.
+        _log.warning("No se pudo consultar la factura del cliente %s: %s", client.id, exc)
+        raise StripeError(
+            "No se ha podido consultar el estado de tu suscripción.") from exc
 
 
 # ---------------------------------------------------------------- precios ----

@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from sqlalchemy import text
 
 from app.config import settings
@@ -118,6 +119,30 @@ from fastapi.staticfiles import StaticFiles  # noqa: E402
 from app.services.storage import media_dir  # noqa: E402
 
 app.mount("/api/media", StaticFiles(directory=media_dir()), name="media")
+
+
+@app.exception_handler(StarletteHTTPException)
+def _http_error_handler(request: Request, exc: StarletteHTTPException):
+    """Los ENLACES DE PAGO los abre una persona: un 404 en JSON crudo
+    ({"detail":"No encontrado"}) es lo que veía un cliente cuyo enlace había
+    caducado porque se le regeneró el acceso al portal. Se le da una página que
+    explica qué hacer; el resto de la API sigue devolviendo JSON."""
+    if request.url.path.startswith("/api/pay/") and exc.status_code in (403, 404):
+        from fastapi.responses import HTMLResponse
+
+        return HTMLResponse(
+            "<!doctype html><html lang='es'><head><meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+            "<title>Enlace caducado</title></head>"
+            "<body style=\"font-family:system-ui,sans-serif;max-width:32rem;"
+            "margin:3rem auto;padding:0 1.25rem;text-align:center\">"
+            "<h1 style='font-size:1.2rem'>Este enlace de pago ya no vale</h1>"
+            "<p>Se ha renovado por seguridad. Escríbeme y te paso uno nuevo al "
+            "momento: no pierdes nada.</p></body></html>",
+            status_code=exc.status_code,
+        )
+    return JSONResponse(status_code=exc.status_code,
+                        content={"detail": exc.detail})
 
 
 @app.exception_handler(RateLimitExceeded)

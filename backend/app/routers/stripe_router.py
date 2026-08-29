@@ -47,6 +47,18 @@ class CheckoutIn(BaseModel):
 
 
 
+def _es_vista_previa(request: Request) -> bool:
+    """¿Quien abre el enlace es un ROBOT de vista previa (WhatsApp, redes) o un
+    prefetch? Se le da una mini-página en vez de crear una sesión de pago real.
+    `?ir=1` es la salida para una persona que caiga aquí por su user-agent."""
+    if request.query_params.get("ir") == "1":
+        return False
+    ua = (request.headers.get("user-agent") or "").lower()
+    return request.method == "HEAD" or any(b in ua for b in (
+        "whatsapp", "facebookexternalhit", "bot", "crawler", "spider",
+        "preview", "curl", "wget", "python-requests"))
+
+
 def _avisa_al_coach(db: Session, que: str, motivo: str) -> None:
     """Push al coach cuando un enlace de pago no ha podido abrir Stripe.
     Best-effort: avisar nunca puede romper la respuesta al cliente."""
@@ -108,15 +120,7 @@ def pay_plan_link(request: Request, tier: str, period: str,
     # Starlette ejecuta el handler entero también para HEAD. Un bot con UA de
     # navegador se cuela igualmente: solo genera sesiones huérfanas que caducan
     # solas en Stripe (sin cobro), acotadas por el rate limit.
-    ua = (request.headers.get("user-agent") or "").lower()
-    es_bot = any(b in ua for b in (
-        "whatsapp", "facebookexternalhit", "bot", "crawler", "spider",
-        "preview", "curl", "wget", "python-requests"))
-    # `?ir=1` = "soy una persona, llévame al pago": el botón de la vista previa
-    # de abajo. Sin esta salida, quien cayera en el filtro (una app cuyo
-    # user-agent lleve "bot"/"preview") se quedaba en una página muerta.
-    quiere_ir = request.query_params.get("ir") == "1"
-    if (es_bot or request.method == "HEAD") and not quiere_ir:
+    if _es_vista_previa(request):
         from fastapi.responses import HTMLResponse
 
         if period == "oferta":
@@ -173,6 +177,29 @@ def pay_link(request: Request, client: Client = Depends(get_client_by_token),
     pagar crea una Checkout Session REAL en Stripe."""
     from app.config import settings
 
+    # Vista previa de WhatsApp/redes: sin esto, CADA previsualización del
+    # mensaje del coach creaba una sesión de pago real en Stripe (y enseñaba
+    # en la tarjeta a dónde lleva el enlace).
+    if _es_vista_previa(request):
+        from fastapi.responses import HTMLResponse
+
+        return HTMLResponse(
+            "<!doctype html><html lang='es'><head><meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+            "<title>Tu pago seguro</title>"
+            "<meta property='og:title' content='Tu pago seguro'>"
+            "<meta property='og:description' content='Completa el pago de tu "
+            "asesoría con Stripe.'></head>"
+            "<body style=\"font-family:system-ui,sans-serif;max-width:34rem;"
+            "margin:3rem auto;padding:0 1.25rem;text-align:center\">"
+            "<h1 style='font-size:1.25rem'>Tu pago seguro</h1>"
+            "<p>Completa el pago de tu asesoría con Stripe.</p>"
+            f"<p><a href='{request.url.path}?ir=1' style=\"display:inline-block;"
+            "background:#E8833A;color:#fff;text-decoration:none;font-weight:700;"
+            "padding:0.9rem 1.5rem;border-radius:0.75rem\">Ir al pago seguro</a></p>"
+            "</body></html>"
+        )
+
     base = settings.public_base_url.rstrip("/")
     # YA PAGADO: el botón del email de arranque vive para siempre — reabrirlo
     # tras pagar NO puede cobrar una segunda vez. Se le lleva a la página de
@@ -194,7 +221,16 @@ def pay_link(request: Request, client: Client = Depends(get_client_by_token),
     if client.billing_period in ("oferta", "oferta2") and client.stripe_subscription_id:
         from app.services.stripe_service import open_invoice_url
 
-        pendiente = open_invoice_url(client)
+        try:
+            pendiente = open_invoice_url(client)
+        except StripeError as exc:
+            # No se pudo consultar Stripe: decirle "¡Pago recibido!" a alguien
+            # que a lo mejor DEBE dinero es peor que reconocer el fallo.
+            import logging
+            logging.getLogger("app.stripe").warning(
+                "pay_link %s sin factura consultable: %s", client.id, exc)
+            _avisa_al_coach(db, f"enlace de {client.full_name or 'un cliente'}", str(exc))
+            return RedirectResponse(f"{base}/planes?pago=error", status_code=302)
         return RedirectResponse(pendiente or f"{base}/pago-ok", status_code=302)
     try:
         # Tier LEGADO en la ficha ("start"/"pro", de antes del renombrado):
@@ -204,8 +240,14 @@ def pay_link(request: Request, client: Client = Depends(get_client_by_token),
 
         tier_cli = (client.package_tier or "").strip().lower()
         tier_cli = _pkgs.LEGACY_TIERS.get(tier_cli, tier_cli)
-        url = create_checkout_url(db, tier_cli, client.billing_period,
-                                  client=client)
+        # RENOVAR a alguien que entró por la OFERTA no puede volver a venderle
+        # la oferta: se le abría OTRO programa de 3 meses con el primer mes a
+        # 1 €, cuando el coach creía estar cobrando la renovación. La
+        # continuación natural es el plan MENSUAL de su mismo paquete.
+        periodo_cli = client.billing_period
+        if periodo_cli in ("oferta", "oferta2"):
+            periodo_cli = "1m"
+        url = create_checkout_url(db, tier_cli, periodo_cli, client=client)
     except StripeError as exc:
         # Un cliente en su navegador no debe ver JSON con detalles internos:
         # a la página de planes, con un aviso de que el pago no se pudo abrir.

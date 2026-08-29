@@ -1403,3 +1403,83 @@ def test_describe_oferta2():
                     billing_reason="subscription_create").endswith("pago 1 de 2)")
     assert describe("full", "oferta2", kind="invoice",
                     billing_reason="subscription_cycle").endswith("pago 2 de 2)")
+
+
+# --- Enlace ESTABLE del cliente: que lleve a Stripe y cobre lo que toca ------
+
+def test_renovar_a_un_cliente_de_la_oferta_no_le_revende_la_oferta(monkeypatch):
+    """REGRESIÓN (dinero): al renovar a alguien que entró por la oferta, el
+    enlace le abría OTRO programa de 3 meses con el primer mes a 1 € — el coach
+    creía estar cobrando la renovación. Debe cobrarle su plan MENSUAL."""
+    from datetime import datetime, timedelta, timezone
+
+    from fastapi.testclient import TestClient
+
+    from app.db import SessionLocal
+    from app.main import app
+    from app.routers import stripe_router as sr
+
+    db = SessionLocal()
+    c = _cliente_oferta3(db, sub_id="")          # programa ya completado
+    c.stripe_subscription_id = None
+    # 32 días desde el último cobro: el programa (30 d) ya venció → toca renovar
+    c.paid_at = datetime.now(timezone.utc) - timedelta(days=32)
+    db.commit()
+    token = c.portal_token
+    db.close()
+
+    pedidos = []
+    monkeypatch.setattr(sr, "create_checkout_url",
+                        lambda db, t, p, **kw: (pedidos.append((t, p)) or f"https://stripe.test/{t}/{p}"))
+    with TestClient(app) as http:
+        r = http.get(f"/api/pay/{token}", follow_redirects=False)
+    assert r.status_code == 302, r.text
+    assert r.headers["location"].startswith("https://stripe.test/"), r.headers
+    assert pedidos and pedidos[-1] == ("full", "1m"), pedidos
+
+
+def test_enlace_de_pago_caducado_no_enseña_json_crudo():
+    """REGRESIÓN: si al cliente se le regenera el acceso al portal, su enlace de
+    pago viejo devolvía {"detail":"No encontrado"} en crudo. Ahora es una página
+    que le dice qué hacer."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    with TestClient(app) as http:
+        r = http.get("/api/pay/token-que-ya-no-vale", follow_redirects=False)
+    assert r.status_code in (403, 404)
+    assert "text/html" in r.headers.get("content-type", "")
+    assert "ya no vale" in r.text
+
+
+def test_la_vista_previa_de_whatsapp_no_crea_sesiones_de_pago(monkeypatch):
+    """REGRESIÓN: cada previsualización del mensaje del coach abría una sesión
+    REAL en Stripe (y enseñaba a dónde llevaba el enlace). Ahora se le da una
+    mini-página; una persona sale de ella con el botón."""
+    from fastapi.testclient import TestClient
+
+    from app.db import SessionLocal
+    from app.main import app
+    from app.routers import stripe_router as sr
+
+    db = SessionLocal()
+    c = _cliente_oferta3(db, sub_id="")
+    c.stripe_subscription_id = None
+    c.payment_status = "pending"
+    db.commit()
+    token = c.portal_token
+    db.close()
+
+    creadas = []
+    monkeypatch.setattr(sr, "create_checkout_url",
+                        lambda db, t, p, **kw: (creadas.append((t, p)) or "https://stripe.test/x"))
+    cabecera = {"user-agent": "WhatsApp/2.23"}
+    with TestClient(app) as http:
+        r = http.get(f"/api/pay/{token}", headers=cabecera, follow_redirects=False)
+        assert r.status_code == 200 and "text/html" in r.headers.get("content-type", "")
+        assert not creadas, "la vista previa creó una sesión de pago"
+        # La persona que caiga ahí sale con el botón (?ir=1).
+        r2 = http.get(f"/api/pay/{token}?ir=1", headers=cabecera, follow_redirects=False)
+        assert r2.status_code == 302 and creadas
+
