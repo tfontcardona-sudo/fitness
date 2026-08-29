@@ -137,12 +137,49 @@ const num = (s: string): number | null => {
   return Number.isFinite(v) ? v : null;
 };
 
+/* BORRADOR LOCAL DEL CUESTIONARIO.
+   Es el formulario más largo del sistema (30+ campos con textos libres de
+   lesiones, medicación y hábitos) y el primer contacto del cliente con la
+   asesoría. Vivía solo en memoria: una llamada entrante, un cambio de app en
+   iOS —Safari descarta pestañas en segundo plano— o un fallo de red al enviar
+   y el cliente volvía al paso 1 con la pantalla en blanco. Mismo patrón que ya
+   usa el cierre quincenal (PortalClose). Clave POR TOKEN: en un móvil
+   compartido, el borrador de uno no aparece en el de otro. */
+
+const BORRADOR_TTL_MS = 30 * 24 * 3600 * 1000;   // 30 días
+
+const borradorKey = (token: string | undefined) =>
+  `dqr.anamnesis.borrador.${(token ?? "").slice(0, 16)}`;
+
+function guardarBorrador(token: string | undefined, form: FormState, paso: number): void {
+  try {
+    localStorage.setItem(borradorKey(token),
+      JSON.stringify({ form, paso, ts: Date.now() }));
+  } catch { /* sin almacenamiento (modo privado): se pierde, como antes */ }
+}
+function limpiarBorrador(token: string | undefined): void {
+  try { localStorage.removeItem(borradorKey(token)); } catch { /* nada que hacer */ }
+}
+function leerBorrador(token: string | undefined): { form: FormState; paso: number } | null {
+  try {
+    const raw = localStorage.getItem(borradorKey(token));
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    if (!d?.form || typeof d.form !== "object") return null;
+    if (Date.now() - (d.ts ?? 0) > BORRADOR_TTL_MS) return null;
+    return { form: { ...VACIO, ...d.form }, paso: Number(d.paso) || 0 };
+  } catch { return null; }
+}
+
 export default function AnamnesisPage() {
   const { token } = useParams();
   const fileRef = useRef<HTMLInputElement>(null);
   const fotosRef = useRef<HTMLInputElement>(null);
-  const [form, setForm] = useState<FormState>(VACIO);
-  const [paso, setPaso] = useState(0);
+  const borrador = useMemo(() => leerBorrador(token), [token]);
+  const [form, setForm] = useState<FormState>(() => borrador?.form ?? VACIO);
+  const [paso, setPaso] = useState(() => borrador?.paso ?? 0);
+  // Solo para avisar de que se recuperó lo escrito (no molesta si es nuevo).
+  const [recuperado, setRecuperado] = useState(() => borrador != null);
   const [enviando, setEnviando] = useState(false);
   const [hecho, setHecho] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -164,7 +201,7 @@ export default function AnamnesisPage() {
         return r.json();
       })
       .then((st) => {
-        if (st?.anamnesis_done) setHecho(true);
+        if (st?.anamnesis_done) { limpiarBorrador(token); setHecho(true); }
         // Contador REAL de fotos ya subidas: sin esto, quien volvía al enlace
         // veía "Subir mis fotos" a cero y el rechazo por límite era invisible.
         if (typeof st?.photos_count === "number") setFotosSubidas(st.photos_count);
@@ -174,42 +211,63 @@ export default function AnamnesisPage() {
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (!d) return;
-        setForm((f) => ({
-          ...f,
-          sex: d.sex ?? f.sex,
-          birth_date: d.birth_date ?? f.birth_date,
-          height_cm: d.height_cm != null ? String(d.height_cm) : f.height_cm,
-          start_weight_kg: d.start_weight_kg != null ? String(d.start_weight_kg) : f.start_weight_kg,
-          body_fat_pct: d.body_fat_pct != null ? String(d.body_fat_pct) : f.body_fat_pct,
-          initial_waist_cm: d.initial_waist_cm != null ? String(d.initial_waist_cm) : f.initial_waist_cm,
-          initial_hip_cm: d.initial_hip_cm != null ? String(d.initial_hip_cm) : f.initial_hip_cm,
-          initial_arm_cm: d.initial_arm_cm != null ? String(d.initial_arm_cm) : f.initial_arm_cm,
-          initial_thigh_cm: d.initial_thigh_cm != null ? String(d.initial_thigh_cm) : f.initial_thigh_cm,
-          goal_type: d.goal_type ?? f.goal_type,
-          goal_weight_kg: d.goal_weight_kg != null ? String(d.goal_weight_kg) : f.goal_weight_kg,
-          level: d.level ?? f.level,
-          training_days: d.training_days != null ? String(d.training_days) : f.training_days,
-          session_max_min: d.session_max_min != null ? String(d.session_max_min) : f.session_max_min,
-          training_place: d.training_place ?? f.training_place,
-          daily_activity_level: d.daily_activity_level ?? f.daily_activity_level,
-          equipment: Array.isArray(d.equipment) ? d.equipment.join(", ") : f.equipment,
-          meals_per_day: d.meals_per_day != null ? String(d.meals_per_day) : f.meals_per_day,
-          food_allergies: Array.isArray(d.food_allergies) ? d.food_allergies.join(", ") : f.food_allergies,
-          food_dislikes: Array.isArray(d.food_dislikes) ? d.food_dislikes.join(", ") : f.food_dislikes,
-          food_likes: Array.isArray(d.food_likes) ? d.food_likes.join(", ") : f.food_likes,
-          sport_history: d.sport_history ?? f.sport_history,
-          injuries_notes: d.injuries_notes ?? f.injuries_notes,
-          medical_notes: d.medical_notes ?? f.medical_notes,
-          medication_notes: d.medication_notes ?? f.medication_notes,
-          current_supplements: d.current_supplements ?? f.current_supplements,
-          diet_mode: d.diet_mode ?? f.diet_mode,
-          diet_pattern: d.diet_pattern ?? f.diet_pattern,
-          lifestyle_notes: d.lifestyle_notes ?? f.lifestyle_notes,
-          strict_free_meal_enabled: d.strict_free_meal_enabled ?? f.strict_free_meal_enabled,
-        }));
+        // El pre-relleno del coach solo rellena lo que está VACÍO: con un
+        // borrador recuperado, pisar lo que el cliente ya escribió sería
+        // exactamente el problema que el borrador viene a resolver.
+        const pre: Record<string, unknown> = {
+          sex: d.sex ?? undefined,
+          birth_date: d.birth_date ?? undefined,
+          height_cm: d.height_cm != null ? String(d.height_cm) : undefined,
+          start_weight_kg: d.start_weight_kg != null ? String(d.start_weight_kg) : undefined,
+          body_fat_pct: d.body_fat_pct != null ? String(d.body_fat_pct) : undefined,
+          initial_waist_cm: d.initial_waist_cm != null ? String(d.initial_waist_cm) : undefined,
+          initial_hip_cm: d.initial_hip_cm != null ? String(d.initial_hip_cm) : undefined,
+          initial_arm_cm: d.initial_arm_cm != null ? String(d.initial_arm_cm) : undefined,
+          initial_thigh_cm: d.initial_thigh_cm != null ? String(d.initial_thigh_cm) : undefined,
+          goal_type: d.goal_type ?? undefined,
+          goal_weight_kg: d.goal_weight_kg != null ? String(d.goal_weight_kg) : undefined,
+          level: d.level ?? undefined,
+          training_days: d.training_days != null ? String(d.training_days) : undefined,
+          session_max_min: d.session_max_min != null ? String(d.session_max_min) : undefined,
+          training_place: d.training_place ?? undefined,
+          daily_activity_level: d.daily_activity_level ?? undefined,
+          equipment: Array.isArray(d.equipment) ? d.equipment.join(", ") : undefined,
+          meals_per_day: d.meals_per_day != null ? String(d.meals_per_day) : undefined,
+          food_allergies: Array.isArray(d.food_allergies) ? d.food_allergies.join(", ") : undefined,
+          food_dislikes: Array.isArray(d.food_dislikes) ? d.food_dislikes.join(", ") : undefined,
+          food_likes: Array.isArray(d.food_likes) ? d.food_likes.join(", ") : undefined,
+          sport_history: d.sport_history ?? undefined,
+          injuries_notes: d.injuries_notes ?? undefined,
+          medical_notes: d.medical_notes ?? undefined,
+          medication_notes: d.medication_notes ?? undefined,
+          current_supplements: d.current_supplements ?? undefined,
+          diet_mode: d.diet_mode ?? undefined,
+          diet_pattern: d.diet_pattern ?? undefined,
+          lifestyle_notes: d.lifestyle_notes ?? undefined,
+          strict_free_meal_enabled: d.strict_free_meal_enabled ?? undefined,
+        };
+        setForm((f) => {
+          const out = { ...f } as unknown as Record<string, unknown>;
+          for (const [k, v] of Object.entries(pre)) {
+            if (v === undefined || v === null || v === "") continue;
+            const actual = out[k];
+            if (actual === "" || actual === null || actual === undefined || actual === false) {
+              out[k] = v;
+            }
+          }
+          return out as unknown as FormState;
+        });
       })
       .catch(() => {});
   }, [token]);
+
+  // Cada cambio deja el borrador en el móvil del cliente: si cierra la
+  // pestaña, le entra una llamada o se le va la app, al volver sigue donde
+  // estaba (y en el mismo paso).
+  useEffect(() => {
+    if (hecho) return;
+    guardarBorrador(token, form, paso);
+  }, [token, form, paso, hecho]);
 
   const set = (patch: Partial<FormState>) => {
     setError(null);
@@ -306,6 +364,8 @@ export default function AnamnesisPage() {
         } catch { /* sin cuerpo JSON */ }
         throw new Error(msg);
       }
+      limpiarBorrador(token);
+      setRecuperado(false);
       setHecho(true);
       window.scrollTo({ top: 0 });
     } catch (e: any) {
@@ -359,6 +419,7 @@ export default function AnamnesisPage() {
         throw new Error(msg);
       }
       setPdfState("done");
+      limpiarBorrador(token);
       setHecho(true);
     } catch (e: any) {
       setPdfError(e?.message ?? "No se pudo subir. Inténtalo de nuevo en un momento.");
@@ -403,6 +464,24 @@ export default function AnamnesisPage() {
             <p className="mt-1 max-w-md text-sm opacity-70">6 pasos · unos minutos</p>
           )}
         </header>
+
+        {/* Se recuperó lo que había escrito en una visita anterior: decirlo
+            evita que crea que el formulario se ha llenado solo. */}
+        {recuperado && !hecho && !tokenBad && (
+          <div className="mb-4 flex items-start gap-2 rounded-xl px-4 py-3 text-sm"
+            style={{ background: "#efe7d6", border: "1px solid #cbbfa5" }}>
+            <span className="min-w-0">
+              <b>Seguimos donde lo dejaste.</b> Lo que habías escrito se guardó en
+              este móvil.{" "}
+              <button
+                onClick={() => { limpiarBorrador(token); setForm(VACIO); setPaso(0); setRecuperado(false); }}
+                className="underline"
+              >
+                Empezar de cero
+              </button>
+            </span>
+          </div>
+        )}
 
         {tokenBad ? (
           <div style={card} className="text-center">

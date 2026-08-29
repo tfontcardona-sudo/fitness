@@ -312,3 +312,53 @@ def test_racha_de_dias_del_portal():
         assert streak_days(db, c.id, hoy) == 3
     finally:
         db.close()
+
+
+def test_las_fotos_subidas_en_el_cierre_no_se_vuelven_a_pedir(client, auth):
+    """Si el cliente sube sus fotos desde la pantalla de cierre, el sistema no
+    puede seguir persiguiéndolas: `photos_confirmed` queda puesto al cerrar.
+
+    Antes el endpoint de fotos existía y NINGUNA pantalla lo llamaba, así que
+    las fotos acababan sueltas en el WhatsApp del coach y el recordatorio
+    ("¿Ya enviaste tus fotos?") era una confirmación a ciegas.
+    """
+    import io
+    from datetime import date, timedelta
+
+    from app.db import SessionLocal
+    from app.models import Period, Plan
+
+    body = client.post("/api/clients", headers=auth, json={
+        "full_name": "Fotos Cierre",
+        "email": f"fotos-{uuid.uuid4().hex[:8]}@example.com",
+    }).json()
+    cid = body["client"]["id"]
+    token = body["links"]["portal_token"]
+
+    with SessionLocal() as db:
+        plan = Plan(client_id=cid, month_index=1, version=1, status="published")
+        db.add(plan)
+        db.flush()
+        hoy = date.today()
+        per = Period(client_id=cid, plan_id=plan.id, period_index=1,
+                     starts_on=hoy - timedelta(days=14), ends_on=hoy, status="open")
+        db.add(per)
+        db.commit()
+        per_id = per.id
+
+    buf = io.BytesIO()
+    Image.new("RGB", (60, 90), (120, 120, 120)).save(buf, format="JPEG")
+    r = client.post(f"/api/p/{token}/close/photos?kind=front",
+                    files={"files": ("frontal.jpg", buf.getvalue(), "image/jpeg")})
+    assert r.status_code == 200, r.text
+
+    cierre = client.post(f"/api/p/{token}/close", json={
+        "closing_weight_kg": 80.0, "closing_rating": 4,
+        "adherence_diet_0_10": 8, "adherence_training_0_10": 9,
+    })
+    assert cierre.status_code == 200, cierre.text
+
+    with SessionLocal() as db:
+        per = db.get(Period, per_id)
+        assert per.status == "closed"
+        assert per.photos_confirmed is True, "no se le pueden volver a pedir"

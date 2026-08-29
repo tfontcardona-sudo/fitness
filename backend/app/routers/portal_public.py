@@ -1126,7 +1126,14 @@ def portal_close_period(
     # Arranca el recordatorio de fotos: se enviará ~15 min después y luego cada
     # 3 h hasta que el cliente confirme en el portal que las envió al coach.
     period.closing_submitted_at = datetime.now(timezone.utc)
-    period.photos_confirmed = False
+    # …salvo que ya haya subido sus fotos DESDE la propia pantalla de cierre:
+    # perseguirlas entonces sería pedirle algo que ya ha hecho.
+    ya_subidas = db.scalar(
+        select(func.count()).select_from(ProgressPhoto)
+        .where(ProgressPhoto.client_id == client.id,
+               ProgressPhoto.period_id == period.id)
+    ) or 0
+    period.photos_confirmed = bool(ya_subidas)
 
     # El cliente pasa a esperar la revisión del coach (review_pending). También
     # desde `inactive`: cerrar la revisión ES actividad (antes el cierre de un
