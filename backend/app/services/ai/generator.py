@@ -175,6 +175,54 @@ def _strip_allergens_from_bank(meals, allergies: list[str] | None) -> int:
     return removed
 
 
+def _repara_desvios_del_banco(bank: dict, targets: dict[int, dict]) -> int:
+    """Ajusta al objetivo de SU toma los platos que se salen de la tolerancia.
+
+    Principio del sistema: la IA SELECCIONA alimentos, el backend FIJA los
+    gramos. En la generación esto no se hacía: un plato a 700 kcal contra un
+    objetivo de 800 se marcaba como `violation:` y RETENÍA el plan entero, aun
+    sabiendo el backend cuadrarlo (es lo que ya hace en el camino del coach y
+    en la adaptación). Cada eje va por su ratio y las kcal se recalculan de los
+    macros (4/4/9), igual que en `nutrition_scale`. Devuelve cuántos cuadró.
+    """
+    from app.services.nutrition_scale import _scale_dish
+
+    tol = gr.MEAL_OPTION_TOLERANCE
+
+    def _platos():
+        if bank.get("mode") == "strict":
+            for dia in bank.get("days") or []:
+                for m in dia.get("meals") or []:
+                    yield m.get("dish"), targets.get(int(m.get("slot") or 0))
+        else:
+            for s in bank.get("slots") or []:
+                t = targets.get(int(s.get("slot") or 0))
+                for o in s.get("options") or []:
+                    yield o, t
+
+    cuadrados = 0
+    for plato, t in _platos():
+        if not isinstance(plato, dict) or not t:
+            continue
+        mac = plato.get("macros") or {}
+        fuera = False
+        for eje in ("kcal", "protein_g", "carbs_g", "fat_g"):
+            tgt, val = float(t.get(eje) or 0), float(mac.get(eje) or 0)
+            if tgt > 0 and abs(val - tgt) / tgt > tol:
+                fuera = True
+                break
+        if not fuera:
+            continue
+
+        def _r(eje: str, _mac=mac, _t=t) -> float:
+            val, tgt = float(_mac.get(eje) or 0), float(_t.get(eje) or 0)
+            return (tgt / val) if val > 0 and tgt > 0 else 1.0
+
+        _scale_dish(plato, _r("kcal"), _r("protein_g"), _r("carbs_g"), _r("fat_g"))
+        cuadrados += 1
+    return cuadrados
+
+
 def _slot_targets(core: PlanCoreOutput) -> dict[int, dict]:
     """{slot: {kcal, protein_g, carbs_g, fat_g}} desde el núcleo, para validar
     opciones de comida con ±5%."""
@@ -992,6 +1040,33 @@ def generate_monthly_plan(
                 flags.append(f"solver: {snapped} opción(es) con gramos fijados por el catálogo (§2)")
         except Exception:  # noqa: BLE001 — el solver nunca rompe la generación
             pass
+    # PRIMERO REPARAR, DESPUÉS JUZGAR. Al revés (que es como estaba) el informe
+    # veía el banco SIN reparar: sus "violation:" retenían el plan en borrador
+    # por un alérgeno que la línea siguiente ya había retirado y por desvíos que
+    # el propio backend sabe cuadrar. El coach acababa buscando en el editor un
+    # aviso fantasma y activando a mano cada plan.
+
+    # SEGURIDAD: retira del banco cualquier opción/alimento con un alérgeno
+    # declarado (cuando queda alternativa segura), para que un alérgeno NUNCA
+    # llegue al portal ni al PDF por un descuido de la IA. Si un slot quedara sin
+    # alternativa segura, se conserva y el flag "⚠ ALÉRGENO" avisa al coach.
+    if isinstance(meals, MealsFlexibleOutput):
+        removed = _strip_allergens_from_bank(meals, ctx.food_allergies)
+        if removed:
+            flags.append(f"seguridad: retiradas {removed} opción(es)/alimento(s) con alérgenos del banco")
+
+    # CUADRE: la IA elige los alimentos, los gramos los fija el backend.
+    try:
+        bank_dict = meals.model_dump()
+        cuadrados = _repara_desvios_del_banco(bank_dict, targets)
+        if cuadrados:
+            meals = schema.model_validate(bank_dict)
+            flags.append(
+                f"cuadre: {cuadrados} plato(s) ajustados al objetivo de su toma "
+                "(corregido automáticamente)")
+    except Exception:  # noqa: BLE001 — el cuadre nunca rompe la generación
+        pass
+
     if isinstance(meals, MealsFlexibleOutput):
         meal_report = gr.check_meal_options(
             [s.model_dump() for s in meals.slots], targets,
@@ -1002,19 +1077,10 @@ def generate_monthly_plan(
             [d.model_dump() for d in meals.days], targets,
             allergies=ctx.food_allergies, dislikes=ctx.food_dislikes,
         )
-    # Las opciones fuera de ±5% son warnings recuperables: se marcan para que el
-    # coach revise; no bloquean (re-pedir opción por opción se hace en Fase 4
-    # cuando hay scheduler/SSE; aquí lo dejamos como flag accionable).
+    # Lo que sobrevive a la reparación sí es un problema real: si queda una
+    # violación (un alérgeno sin alternativa segura, un plato imposible de
+    # cuadrar) el plan se retiene, que es justo lo que se quiere.
     flags += meal_report.as_flags()
-
-    # SEGURIDAD: retira del banco cualquier opción/alimento con un alérgeno
-    # declarado (cuando queda alternativa segura), para que un alérgeno NUNCA
-    # llegue al portal ni al PDF por un descuido de la IA. Si un slot quedara sin
-    # alternativa segura, se conserva y el flag "⚠ ALÉRGENO" avisa al coach.
-    if isinstance(meals, MealsFlexibleOutput):
-        removed = _strip_allergens_from_bank(meals, ctx.food_allergies)
-        if removed:
-            flags.append(f"seguridad: retiradas {removed} opción(es)/alimento(s) con alérgenos del banco")
 
     # ③ Educativo (solo con entrenamiento: las píldoras y la biomecánica giran
     #    en torno al entreno; en solo-nutrición no aplica).
