@@ -92,9 +92,14 @@ def _cupon_de_la_oferta() -> str | None:
 def _item(*, key: str, kind: str, tier: str, period: str, title: str,
           subtitle: str, charges: int, total_cents: int, first_cents: int,
           auto_stop: bool, base: str, issue: str | None,
-          schedule: list[dict] | None = None,
+          schedule: list[dict] | None = None, per_month_cents: int | None = None,
+          tier_label: str = "", period_label: str = "",
           highlight: bool = False) -> dict:
     return {
+        # Etiquetas ya montadas: el panel no tiene que trocear títulos.
+        "tier_label": tier_label,
+        "period_label": period_label,
+        "per_month_eur": _eur(per_month_cents) if per_month_cents else None,
         # CALENDARIO de cobros (cuándo y cuánto). Lo calcula el backend con los
         # céntimos reales: el panel lo pintaba restando (total − primero) / 2,
         # que se rompe en cuanto cambie un importe.
@@ -132,7 +137,8 @@ def sales_catalog(*, refresh: bool = False) -> dict:
     total3 = ss.OFFER_FIRST_MONTH_CENTS + mensual * (ss.OFFER_CHARGES - 1)
     items.append(_item(
         key="oferta", kind="oferta", tier=ss.OFFER_TIER, period=ss.OFFER_PERIOD,
-        title="Oferta · en 3 pagos",
+        title="Oferta · en 3 pagos", tier_label=TIER_LABEL[ss.OFFER_TIER],
+        period_label="En 3 pagos",
         subtitle=(f"{_txt(ss.OFFER_FIRST_MONTH_CENTS)} hoy, luego "
                   f"{_txt(mensual)} y {_txt(mensual)}"),
         charges=ss.OFFER_CHARGES, total_cents=total3,
@@ -147,7 +153,8 @@ def sales_catalog(*, refresh: bool = False) -> dict:
     cada = of2_cents if of2_cents is not None else ss.OFFER2_MONTHLY_CENTS
     items.append(_item(
         key="oferta2", kind="oferta", tier=ss.OFFER_TIER, period=ss.OFFER2_PERIOD,
-        title="Oferta · en 2 pagos",
+        title="Oferta · en 2 pagos", tier_label=TIER_LABEL[ss.OFFER_TIER],
+        period_label="En 2 pagos",
         subtitle=f"{_txt(cada)} hoy y {_txt(cada)} en un mes",
         charges=ss.OFFER2_CHARGES, total_cents=cada * ss.OFFER2_CHARGES,
         first_cents=cada, auto_stop=True, base=base,
@@ -167,6 +174,8 @@ def sales_catalog(*, refresh: bool = False) -> dict:
             items.append(_item(
                 key=f"{tier}-{period}", kind="plan", tier=tier, period=period,
                 title=f"{TIER_LABEL[tier]} · {PERIOD_LABEL[period]}",
+                tier_label=TIER_LABEL[tier], period_label=PERIOD_LABEL[period],
+                per_month_cents=(round(importe / n) if n > 1 else None),
                 subtitle=f"{_txt(importe)} en un pago{al_mes} · no se renueva solo",
                 charges=1, total_cents=importe, first_cents=importe,
                 auto_stop=False, base=base, issue=issue,

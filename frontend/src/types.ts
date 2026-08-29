@@ -880,6 +880,9 @@ export interface SalesItem {
   tier: string;
   period: string;
   title: string;               // "Oferta · en 3 pagos"
+  tier_label: string;          // "DQR Full"
+  period_label: string;        // "En 3 pagos" | "Trimestral"
+  per_month_eur: number | null;  // equivalente al mes (solo planes de varios meses)
   subtitle: string;            // "1 € hoy, luego 120 € y 120 €"
   charges: number;             // cuántos cobros hará Stripe
   total_eur: number;           // lo que acaba pagando en total
