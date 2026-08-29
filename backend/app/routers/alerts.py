@@ -575,7 +575,10 @@ def list_alerts(db: Session = Depends(get_db)) -> dict:
                 "tab": "resumen", "action": "Revisar el servidor",
                 "target": None, "fix": "Avisa a quien lleva el servidor: los "
                                        "automatismos del sistema no se están ejecutando.",
-                "to": None, "key": "sistema:jobs_parados",
+                # Destino REAL: "Hoy", donde se pinta la banda de sistema con
+                # el motivo completo. Sin `to`, la campana construía
+                # /clientes/0 y aterrizaba en "no se pudo cargar el cliente".
+                "to": "/", "key": "sistema:jobs_parados",
             })
     except Exception:  # noqa: BLE001 — el chequeo no puede tumbar las alertas
         pass
