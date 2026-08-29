@@ -574,6 +574,26 @@ def list_alerts(db: Session = Depends(get_db)) -> dict:
 
             logging.getLogger("app.alerts").exception(
                 "alertas del cliente %s ilegibles; se omite", c.id)
+    # AUTOMATISMOS PARADOS: si el mantenimiento diario no corre, no se abren
+    # períodos, no salen recordatorios y las suscripciones de la oferta no se
+    # cortan solas. Antes eso solo se veía en el log del contenedor: el coach
+    # creía que el sistema trabajaba por él.
+    try:
+        from app.services.job_state import automatismos_parados
+
+        motivo = automatismos_parados()
+        if motivo:
+            alerts.insert(0, {
+                "client_id": 0, "client_name": "Sistema",
+                "kind": "jobs_parados", "severity": "alta", "message": motivo,
+                "tab": "resumen", "action": "Revisar el servidor",
+                "target": None, "fix": "Avisa a quien lleva el servidor: los "
+                                       "automatismos del sistema no se están ejecutando.",
+                "to": None, "key": "sistema:jobs_parados",
+            })
+    except Exception:  # noqa: BLE001 — el chequeo no puede tumbar las alertas
+        pass
+
     alerts.sort(key=lambda a: (0 if a["severity"] == "alta" else 1, a["client_name"]))
     return {"alerts": alerts, "count": len(alerts),
             "high": sum(1 for a in alerts if a["severity"] == "alta")}

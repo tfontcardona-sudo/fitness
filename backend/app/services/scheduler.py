@@ -21,6 +21,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from app.config import settings
 from app.db import SessionLocal
+from app.services.job_state import record_job
 from app.services.jobs import run_daily_maintenance
 from app.services.push import run_coach_digest, run_push_reminders, run_video_call_reminders
 
@@ -48,8 +49,10 @@ def _daily_job() -> None:
     try:
         summary = run_daily_maintenance(db)
         logger.info("mantenimiento diario: %s", summary)
-    except Exception:  # nunca tumbar el scheduler por un fallo puntual
+        record_job("daily_maintenance", ok=True, detalle=str(summary)[:200])
+    except Exception as exc:  # nunca tumbar el scheduler por un fallo puntual
         logger.exception("fallo en el mantenimiento diario")
+        record_job("daily_maintenance", ok=False, detalle=f"{type(exc).__name__}: {exc}")
         db.rollback()
     finally:
         db.close()
@@ -60,8 +63,10 @@ def _push_job() -> None:
     try:
         summary = run_push_reminders(db)
         logger.info("recordatorios push: %s", summary)
-    except Exception:  # nunca tumbar el scheduler por un fallo puntual
+        record_job("push_reminders", ok=True, detalle=str(summary)[:200])
+    except Exception as exc:  # nunca tumbar el scheduler por un fallo puntual
         logger.exception("fallo en los recordatorios push")
+        record_job("push_reminders", ok=False, detalle=f"{type(exc).__name__}: {exc}")
         db.rollback()
     finally:
         db.close()
@@ -72,8 +77,10 @@ def _coach_digest_job() -> None:
     try:
         summary = run_coach_digest(db)
         logger.info("resumen push del coach: %s", summary)
-    except Exception:  # nunca tumbar el scheduler por un fallo puntual
+        record_job("coach_digest", ok=True, detalle=str(summary)[:200])
+    except Exception as exc:  # nunca tumbar el scheduler por un fallo puntual
         logger.exception("fallo en el resumen push del coach")
+        record_job("coach_digest", ok=False, detalle=f"{type(exc).__name__}: {exc}")
         db.rollback()
     finally:
         db.close()
@@ -84,8 +91,10 @@ def _video_call_reminder_job() -> None:
     try:
         summary = run_video_call_reminders(db)
         logger.info("recordatorios de videollamada: %s", summary)
-    except Exception:  # nunca tumbar el scheduler por un fallo puntual
+        record_job("video_call_reminders", ok=True, detalle=str(summary)[:200])
+    except Exception as exc:  # nunca tumbar el scheduler por un fallo puntual
         logger.exception("fallo en los recordatorios de videollamada")
+        record_job("video_call_reminders", ok=False, detalle=f"{type(exc).__name__}: {exc}")
         db.rollback()
     finally:
         db.close()
@@ -98,8 +107,10 @@ def _weekly_digest_job() -> None:
 
         summary = run_weekly_digest(db)
         logger.info("resumen semanal del coach: %s", summary)
-    except Exception:  # nunca tumbar el scheduler por un fallo puntual
+        record_job("weekly_coach_summary", ok=True, detalle=str(summary)[:200])
+    except Exception as exc:  # nunca tumbar el scheduler por un fallo puntual
         logger.exception("fallo en el resumen semanal del coach")
+        record_job("weekly_coach_summary", ok=False, detalle=f"{type(exc).__name__}: {exc}")
         db.rollback()
     finally:
         db.close()
