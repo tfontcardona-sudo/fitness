@@ -42,26 +42,35 @@ def _txt(cents: int) -> str:
     return (f"{int(v)}" if float(v).is_integer() else f"{v:.2f}".replace(".", ",")) + " €"
 
 
-def _precio_de_stripe(tier: str, period: str) -> tuple[int | None, str | None]:
-    """(importe en céntimos, problema). El importe sale de Stripe; si no se
-    puede leer, se devuelve None y el motivo (el caller cae al canónico)."""
+def _todos_los_precios() -> dict:
+    """{lookup_key: precio} de TODO el catálogo en una sola consulta (troceada
+    en tandas de 10 como exige Stripe). Antes se pedía precio a precio: doce
+    viajes a Stripe cada vez que el coach abría la pantalla."""
+    if not settings.stripe_enabled:
+        return {}
+    keys = ([ss._lookup_key(t, p) for t in ss.TIER_ORDER for p in ss.PERIOD_ORDER]
+            + [ss.OFFER_LOOKUP, ss.OFFER2_LOOKUP])
+    try:
+        return ss._prices_by_lookup(ss._stripe(), keys)
+    except Exception as exc:  # noqa: BLE001 — Stripe caído no rompe el panel
+        _log.warning("catálogo: no se pudieron leer los precios: %s", exc)
+        return {}
+
+
+def _precio_de_stripe(precios: dict, tier: str, period: str) -> tuple[int | None, str | None]:
+    """(importe en céntimos, problema) de un plan × duración."""
     if not settings.stripe_enabled:
         return None, "Stripe no está configurado en el servidor."
-    try:
-        price_id = ss._resolve_price_id(tier, period)
-    except Exception as exc:  # noqa: BLE001 — Stripe caído no rompe el panel
-        _log.warning("catálogo: no se pudo resolver el precio %s %s: %s", tier, period, exc)
-        return None, "No se ha podido consultar Stripe ahora mismo."
-    if not price_id:
-        return None, "Falta el precio en Stripe (se crea solo al primer cobro o con el script de precios)."
-    try:
-        pr = ss._stripe().Price.retrieve(price_id)
-        if not pr.get("active", True):
-            return None, "El precio existe en Stripe pero está archivado."
-        return int(pr.get("unit_amount") or 0), None
-    except Exception as exc:  # noqa: BLE001
-        _log.warning("catálogo: precio %s ilegible: %s", price_id, exc)
-        return None, "El precio existe pero Stripe no ha respondido."
+    pr = precios.get(ss._lookup_key(tier, period))
+    if pr is None:
+        # Reserva: un id puesto a mano en el .env sigue siendo válido para cobrar.
+        if settings.stripe_price_for(tier, period) or settings.stripe_price_legacy(tier, period):
+            return None, None
+        return None, ("Falta el precio en Stripe (se crea solo al primer cobro "
+                      "o con el script de precios).")
+    if not pr.get("active", True):
+        return None, "El precio existe en Stripe pero está archivado."
+    return int(pr.get("unit_amount") or 0), None
 
 
 def _cupon_de_la_oferta() -> str | None:
@@ -111,8 +120,9 @@ def sales_catalog(*, refresh: bool = False) -> dict:
     items: list[dict] = []
 
     # --- Las DOS formas de pagar la MISMA oferta (programa cerrado de 3 meses).
+    precios = _todos_los_precios()
     cupon = _cupon_de_la_oferta()
-    of_cents, of_issue = _precio_de_stripe(ss.OFFER_TIER, ss.OFFER_PERIOD)
+    of_cents, of_issue = _precio_de_stripe(precios, ss.OFFER_TIER, ss.OFFER_PERIOD)
     mensual = of_cents if of_cents is not None else ss.OFFER_MONTHLY_CENTS
     total3 = ss.OFFER_FIRST_MONTH_CENTS + mensual * (ss.OFFER_CHARGES - 1)
     items.append(_item(
@@ -125,7 +135,7 @@ def sales_catalog(*, refresh: bool = False) -> dict:
         issue=of_issue or cupon, highlight=True,
     ))
 
-    of2_cents, of2_issue = _precio_de_stripe(ss.OFFER_TIER, ss.OFFER2_PERIOD)
+    of2_cents, of2_issue = _precio_de_stripe(precios, ss.OFFER_TIER, ss.OFFER2_PERIOD)
     cada = of2_cents if of2_cents is not None else ss.OFFER2_MONTHLY_CENTS
     items.append(_item(
         key="oferta2", kind="oferta", tier=ss.OFFER_TIER, period=ss.OFFER2_PERIOD,
@@ -140,7 +150,7 @@ def sales_catalog(*, refresh: bool = False) -> dict:
     meses = {"1m": 1, "3m": 3, "6m": 6}
     for tier in ss.TIER_ORDER:
         for period in ss.PERIOD_ORDER:
-            cents, issue = _precio_de_stripe(tier, period)
+            cents, issue = _precio_de_stripe(precios, tier, period)
             importe = cents if cents is not None else ss.CANONICAL_AMOUNTS[tier][period]
             n = meses[period]
             al_mes = f" · {_txt(round(importe / n))}/mes" if n > 1 else ""
