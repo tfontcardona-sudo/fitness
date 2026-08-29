@@ -234,7 +234,7 @@ export default function VenderPage() {
   const bloqueado = sel !== "catalogo" && elegido != null && !elegido.ready;
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-8">
+    <div className="mx-auto max-w-5xl px-6 py-8 pb-28 sm:pb-8">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-widest" style={{ color: "var(--text-faint)" }}>Panel</p>
@@ -329,6 +329,38 @@ export default function VenderPage() {
         </div>
       </section>
 
+      {/* BARRA PEGAJOSA (solo móvil): con algo elegido, las dos acciones que se
+          usan de verdad quedan siempre al alcance del pulgar, sin volver a
+          buscar el bloque de abajo. Encima de la nav inferior. */}
+      {sel !== null && (
+        <div className="fixed inset-x-0 z-30 border-t px-3 py-2 sm:hidden"
+          style={{
+            bottom: "calc(3.75rem + env(safe-area-inset-bottom))",
+            background: "var(--surface)", borderColor: "var(--line-strong)",
+            boxShadow: "0 -6px 18px rgba(38,33,26,0.10)",
+          }}>
+          <div className="flex items-center gap-2">
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-xs font-bold" style={{ color: "var(--text)" }}>
+                {sel === "catalogo" ? "Catálogo de precios" : elegido?.title}
+              </span>
+              <span className="block truncate text-[11px]" style={{ color: "var(--text-faint)" }}>
+                {sel === "catalogo" ? "sin enlace de pago" : elegido?.subtitle}
+              </span>
+            </span>
+            <button onClick={() => void copiar("mensaje")} disabled={bloqueado}
+              className="btn btn-primary !px-3 !py-2 text-xs">
+              {copiado === "mensaje" ? <Check size={14} /> : <Copy size={14} />} Copiar
+            </button>
+            <button onClick={enviarWhatsApp} disabled={bloqueado}
+              aria-label="Abrir WhatsApp" className="btn btn-ghost !px-3 !py-2"
+              style={{ borderColor: "#25D366", color: "#128C4B" }}>
+              <MessageCircle size={15} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ENVIAR — el enlace a la vista, comprobable, y el mensaje editable */}
       {sel !== null && (
         <section ref={envioRef} className="card mt-6 p-4"
@@ -355,7 +387,7 @@ export default function VenderPage() {
                 </button>
                 <a href={elegido.url} target="_blank" rel="noopener"
                   className="btn btn-ghost"
-                  title="Se abre en otra pestaña la MISMA página de pago que verá el cliente">
+                  title="Abre en otra pestaña la MISMA página de pago que verá el cliente. No cobra nada: la sesión caduca sola en Stripe.">
                   <ExternalLink size={14} /> Probar
                 </a>
               </div>
