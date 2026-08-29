@@ -521,6 +521,39 @@ def _food_catalog_block(food_catalog: list[dict] | None) -> str:
     )
 
 
+# El patrón dietético dicho en cristiano para el prompt que ELIGE los alimentos.
+# Antes solo viajaba en el bloque del cliente (núcleo) y en el filtro del
+# catálogo: la llamada de comidas no lo sabía, así que a un vegano se le podía
+# proponer pollo y el plan acababa vetado por el Revisor 0 (créditos tirados y
+# borrador retenido). Los alimentos prohibidos salen de la MISMA tabla que usa
+# el validador (guardrails._DIET_PATTERN_FORBIDDEN): una sola verdad.
+_PATRON_TEXTO = {
+    "vegano": "VEGANO: ni carne, ni pescado, ni marisco, ni huevo, ni lácteos, ni miel",
+    "vegetariano": "VEGETARIANO: ni carne ni pescado ni marisco (sí huevo y lácteos)",
+    "pescetariano": "PESCETARIANO: nada de carne (sí pescado, huevo y lácteos)",
+    "sin_cerdo": "SIN CERDO: ni cerdo ni sus derivados (jamón, bacon, chorizo…)",
+    "halal": "HALAL: ni cerdo ni derivados ni alcohol",
+    "kosher": "KOSHER: ni cerdo ni marisco; no mezcles carne con lácteos en la misma toma",
+}
+
+
+def _patron_block(patron: str | None) -> str:
+    if not patron:
+        return ""
+    clave = (patron or "").strip().lower().replace(" ", "_")
+    texto = _PATRON_TEXTO.get(clave)
+    if not texto:
+        return f" PATRÓN DIETÉTICO OBLIGATORIO: {patron}."
+    try:
+        from app.services.guardrails import _DIET_PATTERN_FORBIDDEN
+
+        prohibidos = ", ".join(_DIET_PATTERN_FORBIDDEN.get(clave, ())[:14])
+    except Exception:  # noqa: BLE001
+        prohibidos = ""
+    extra = f" (nada de: {prohibidos}…)" if prohibidos else ""
+    return f" PATRÓN DIETÉTICO OBLIGATORIO — {texto}{extra}."
+
+
 def _meals_user_prompt(ctx: ClientContext, core: PlanCoreOutput,
                        food_catalog: list[dict] | None = None) -> str:
     targets = _slot_targets(core)
@@ -534,7 +567,8 @@ TOMAS DEL DÍA (slot, nombre, hora, macros objetivo del slot):
 {json.dumps(slot_info, ensure_ascii=False, indent=2)}
 
 PROHIBIDO (NINGÚN plato puede contenerlo — seguridad): \
-alergias/intolerancias={ctx.food_allergies}, aversiones={ctx.food_dislikes}. \
+alergias/intolerancias={ctx.food_allergies}, aversiones={ctx.food_dislikes}.\
+{_patron_block(ctx.diet_pattern)} \
 PREFERIR / INCLUIR cuando encaje en los macros (alimentos que le gustan): {ctx.food_likes}.\
 {(' SALUD A TENER EN CUENTA EN LA DIETA (patologías, medicación, digestivo): ' + ctx.clinical_notes.replace(chr(10), ' ')) if ctx.clinical_notes else ''}\
 {_food_catalog_block(food_catalog)}"""

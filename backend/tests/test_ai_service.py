@@ -419,3 +419,31 @@ def test_plan_sin_nutricion_ni_entreno_es_error():
     with pytest.raises(PlanGenerationError):
         generate_monthly_plan(_ctx(), ScriptedClient([]), include_training=False,
                               include_nutrition=False)
+
+
+def test_el_patron_dietetico_llega_al_prompt_que_elige_los_alimentos():
+    """Un vegano no puede recibir propuestas con pollo.
+
+    El patrón viajaba solo en el bloque del cliente del NÚCLEO y en el filtro
+    del catálogo; la llamada de comidas (la que de verdad elige los platos) no
+    lo sabía, así que el plan salía con carne y el Revisor 0 lo vetaba después
+    (créditos gastados y borrador retenido).
+    """
+    import dataclasses
+
+    from app.schemas.ai import PlanCoreOutput
+    from app.services.ai.generator import _meals_user_prompt
+
+    core = PlanCoreOutput.model_validate_json(_valid_core_json())
+
+    sin_patron = _meals_user_prompt(_ctx(), core)
+    assert "PATRÓN DIETÉTICO" not in sin_patron
+
+    vegano = dataclasses.replace(_ctx(), diet_pattern="vegano")
+    prompt = _meals_user_prompt(vegano, core)
+    assert "PATRÓN DIETÉTICO OBLIGATORIO" in prompt and "VEGANO" in prompt
+    # Los alimentos prohibidos salen de la misma tabla que usa el validador.
+    assert "pollo" in prompt.lower()
+
+    halal = dataclasses.replace(_ctx(), diet_pattern="Halal")   # con mayúscula
+    assert "HALAL" in _meals_user_prompt(halal, core)
