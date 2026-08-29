@@ -84,7 +84,14 @@ def pay_plan_link(request: Request, tier: str, period: str,
     from app.services import packages as pkgs
 
     base = settings.public_base_url.rstrip("/")
-    t = pkgs.LEGACY_TIERS.get(tier.strip().lower(), tier.strip().lower())
+    def _limpia(v: str) -> str:
+        # Un enlace pegado desde WhatsApp arrastra a veces el punto final de la
+        # frase o un paréntesis: "…/full/oferta." acababa en /planes como si
+        # fuera un enlace inventado. Se limpia la puntuación de los bordes.
+        return (v or "").strip().strip(".,;:)]}\u00bb\"'").lower()
+
+    t = pkgs.LEGACY_TIERS.get(_limpia(tier), _limpia(tier))
+    period = _limpia(period)
     # Estricto A PROPÓSITO (sin caer al plan por defecto): un enlace mal escrito
     # no puede acabar cobrando el plan más caro. Ante cualquier duda → /planes.
     # La oferta (1 € → 120 €/mes, u "oferta2" = 2 pagos de 120,50 €) solo
@@ -190,7 +197,14 @@ def pay_link(request: Request, client: Client = Depends(get_client_by_token),
         pendiente = open_invoice_url(client)
         return RedirectResponse(pendiente or f"{base}/pago-ok", status_code=302)
     try:
-        url = create_checkout_url(db, client.package_tier, client.billing_period,
+        # Tier LEGADO en la ficha ("start"/"pro", de antes del renombrado):
+        # create_checkout_url no los conoce y el enlace moría con "Plan
+        # desconocido". Se traducen igual que en el enlace por plan.
+        from app.services import packages as _pkgs
+
+        tier_cli = (client.package_tier or "").strip().lower()
+        tier_cli = _pkgs.LEGACY_TIERS.get(tier_cli, tier_cli)
+        url = create_checkout_url(db, tier_cli, client.billing_period,
                                   client=client)
     except StripeError as exc:
         # Un cliente en su navegador no debe ver JSON con detalles internos:

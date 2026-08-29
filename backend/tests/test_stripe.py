@@ -281,6 +281,47 @@ def _reset_stripe_caches(monkeypatch, ss):
     monkeypatch.setattr(ss, "_prices_cache", {"at": 0.0, "data": None})
 
 
+def test_enlace_con_puntuacion_pegada_sigue_yendo_a_stripe(monkeypatch):
+    """REGRESIÓN: un enlace pegado desde WhatsApp arrastra a veces el punto
+    final de la frase ("…/full/oferta.") o llega en mayúsculas. Antes eso se
+    tomaba por un enlace inventado y acababa en /planes sin cobrar."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.routers import stripe_router as sr
+
+    monkeypatch.setattr(sr, "create_checkout_url",
+                        lambda db, t, p, **kw: f"https://stripe.test/{t}/{p}")
+    with TestClient(app) as http:
+        for path in ("/api/pay/plan/full/oferta.", "/api/pay/plan/full/3M",
+                     "/api/pay/plan/FULL/oferta2)", "/api/pay/plan/full/1m,"):
+            r = http.get(path, follow_redirects=False)
+            assert r.status_code == 302, path
+            assert r.headers["location"].startswith("https://stripe.test/"), path
+
+
+def test_un_fallo_puntual_no_deja_los_enlaces_muertos_diez_minutos(monkeypatch):
+    """REGRESIÓN: el id VACÍO se cacheaba con el TTL de 10 minutos, así que un
+    tropiezo de Stripe dejaba la oferta (que no tiene reserva en el .env) sin
+    enlace hasta que caducara la caché. Ahora el vacío no se cachea."""
+    from app.services import stripe_service as ss
+
+    fake = FakeStripe()
+    monkeypatch.setattr(ss, "_stripe", lambda: fake)
+    _reset_stripe_caches(monkeypatch, ss)
+    # Stripe "vacío" y sin auto-alta posible: la resolución no encuentra nada.
+    monkeypatch.setattr(ss, "ensure_canonical_prices",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("sin permisos")))
+    assert ss._price_by_lookup("full", "oferta") == ""
+    assert "dqr_full_oferta" not in ss._lookup_cache["ids"]  # NO se cachea el vacío
+
+    # Stripe se recupera: el siguiente intento ya resuelve (sin esperar al TTL).
+    fake.prices.append({"id": "price_of", "lookup_key": "dqr_full_oferta",
+                        "active": True, "unit_amount": ss.OFFER_MONTHLY_CENTS,
+                        "currency": "eur", "recurring": {"interval": "month"}})
+    assert ss._price_by_lookup("full", "oferta") == "price_of"
+
+
 def test_los_lookup_keys_se_piden_en_tandas_de_diez(monkeypatch):
     """REGRESIÓN (el enlace de la oferta acababa en /planes): son ONCE claves
     (9 planes + las 2 formas de pagar la oferta) y Stripe admite 10 por

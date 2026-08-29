@@ -360,8 +360,15 @@ def _price_by_lookup(tier: str, period: str) -> str:
                 _log.info("Precios de Stripe alineados con la tabla canónica (auto-alta).")
             except Exception as exc:  # noqa: BLE001 — clave sin permisos, red…
                 _log.warning("Auto-alta de precios en Stripe fallida: %s", exc)
+        # Solo se cachea lo ENCONTRADO. Cachear el vacío dejaba todos los
+        # enlaces muertos durante los 10 minutos del TTL por un fallo puntual
+        # de Stripe (y la oferta no tiene reserva en el .env que la salve).
         for k in keys:
-            _lookup_cache["ids"][k] = (found.get(k) or {}).get("id", "")
+            pid = (found.get(k) or {}).get("id", "")
+            if pid:
+                _lookup_cache["ids"][k] = pid
+            else:
+                _lookup_cache["ids"].pop(k, None)
     except Exception as exc:  # noqa: BLE001 — sin red/clave: se cae a los .env
         _log.warning("No se pudieron resolver precios por lookup_key: %s", exc)
         return ""
@@ -409,8 +416,7 @@ def create_checkout_url(db: Session, tier: str, period: str = "1m", *,
             "scripts/setup_stripe_prices.py (o pon "
             f"STRIPE_PRICE_{tier.upper()}_{period.upper()} en el .env).")
 
-    stripe = _stripe()
-    base = settings.public_base_url
+    base = settings.public_base_url.rstrip("/")
     metadata = {"tier": tier, "billing_period": period}
     extra: dict = {}
     if client is not None:
@@ -443,9 +449,16 @@ def create_checkout_url(db: Session, tier: str, period: str = "1m", *,
                    "suscripción se detiene sola.")
         extra["custom_text"] = {"submit": {"message": mensaje}}
 
+    # El MODO se valida: un STRIPE_MODE mal escrito en el .env tumbaba TODOS
+    # los enlaces de plan (Stripe rechaza la sesión) sin decir dónde estaba el
+    # fallo. Ante un valor raro, el de siempre: pago único.
+    modo = settings.stripe_mode if settings.stripe_mode in ("payment", "subscription") else "payment"
     try:
+        # _stripe() dentro del try: un fallo aquí (clave ilegible, SDK) salía
+        # como 500 al navegador del interesado en vez de traducirse.
+        stripe = _stripe()
         session = stripe.checkout.Session.create(
-            mode="subscription" if es_oferta else settings.stripe_mode,
+            mode="subscription" if es_oferta else modo,
             line_items=[{"price": price, "quantity": 1}],
             success_url=f"{base}/pago-ok",
             cancel_url=f"{base}/planes",
