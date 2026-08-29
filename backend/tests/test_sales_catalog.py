@@ -125,3 +125,48 @@ def test_sin_stripe_configurado_nada_es_enviable(monkeypatch):
     assert cat["stripe_enabled"] is False
     assert all(i["ready"] is False for i in cat["items"])
     assert all("no está configurado" in (i["issue"] or "") for i in cat["items"])
+
+
+# --- El enlace de UN cliente: el coach tiene que saber qué hará al abrirlo ---
+
+def _cliente(db, **over):
+    from app.models import Client
+    from app.security import new_portal_token
+    import uuid
+
+    campos = dict(full_name="Enlace Cliente", email=f"lnk-{uuid.uuid4().hex[:8]}@test.local",
+                  package_tier="full", billing_period="1m", status="active",
+                  portal_token="p", payment_status="pending")
+    campos.update(over)
+    c = Client(**campos)
+    db.add(c); db.flush()
+    c.portal_token = new_portal_token(c.id)
+    db.commit()
+    return c
+
+
+def test_el_enlace_de_un_cliente_dice_si_va_a_cobrar():
+    """Antes el coach lo mandaba a ciegas: si el cliente ya había pagado, el
+    enlace le llevaba a "¡Pago recibido!" y parecía roto."""
+    import os
+
+    from fastapi.testclient import TestClient
+
+    from app.db import SessionLocal
+    from app.main import app
+    from app.security import create_access_token
+
+    db = SessionLocal()
+    pendiente = _cliente(db)
+    pagado = _cliente(db, payment_status="paid")
+    db.close()
+
+    auth = {"Authorization": f"Bearer {create_access_token(os.environ.get('ADMIN_1_USER', 'coach1'))}"}
+    with TestClient(app) as http:
+        r1 = http.get(f"/api/sales/client-link/{pendiente.id}", headers=auth).json()
+        assert r1["state"] == "cobra" and r1["url"].endswith(f"/api/pay/{pendiente.portal_token}")
+        assert "abre el pago" in r1["note"]
+
+        r2 = http.get(f"/api/sales/client-link/{pagado.id}", headers=auth).json()
+        assert r2["state"] == "pagado" and "NO le cobra" in r2["note"]
+
