@@ -41,6 +41,10 @@ export default function ClientProfilePage() {
   const [deleting, setDeleting] = useState(false);
   const [portalUrl, setPortalUrl] = useState<string | null>(null);
   const [payUrl, setPayUrl] = useState<string | null>(null);
+  // Qué hará ese enlace al abrirlo, dicho por el backend (el coach lo mandaba
+  // sin saber si cobraba o si el cliente acabaría en "pago recibido").
+  const [payNote, setPayNote] = useState<string | null>(null);
+  const [payState, setPayState] = useState<string | null>(null);
   const [anamnesisUrl, setAnamnesisUrl] = useState<string | null>(null);
   // Aviso "revisión cerrada": solo mientras el feedback de la última revisión
   // NO exista todavía. En cuanto el coach lo genera, el aviso desaparece.
@@ -167,7 +171,12 @@ export default function ClientProfilePage() {
     api.portalLink(clientId)
       .then((l) => {
         setPortalUrl(`${window.location.origin}/p/${l.portal_token}`);
-        setPayUrl(api.payLinkUrl(l.portal_token));
+        // El enlace de PAGO lo da el backend: lleva el dominio público
+        // oficial y dice qué hará al abrirlo (cobrar, renovar o no cobrar
+        // porque ya pagó). Antes se armaba aquí y se mandaba a ciegas.
+        api.clientPayLink(clientId)
+          .then((pl) => { setPayUrl(pl.url); setPayNote(pl.note); setPayState(pl.state); })
+          .catch(() => { setPayUrl(api.payLinkUrl(l.portal_token)); });
         setAnamnesisUrl(`${window.location.origin}/anamnesis/${l.portal_token}`);
       })
       .catch(() => { setPortalUrl(null); setPayUrl(null); setAnamnesisUrl(null); });
@@ -379,7 +388,12 @@ export default function ClientProfilePage() {
           {/* ENLACE DE PAGO (Stripe): color diferenciado (verde), debajo del
               portal. Copia el enlace para mandárselo al cliente y que pague. */}
           <div {...ancla("resumen.pago")} className="space-y-3">
-          {payUrl && (client.payment_status !== "paid" || client.renewal_due) && (
+          {/* Manda lo que dice el BACKEND sobre ese enlace (payState): si no va a
+              cobrar nada, no se ofrece como "enlace de pago". Su corazonada
+              local queda de reserva mientras carga. */}
+          {payUrl && (payState
+            ? payState !== "pagado"
+            : (client.payment_status !== "paid" || client.renewal_due)) && (
             <button
               onClick={() => {
                 void copiarConAviso(payUrl, toast, client.payment_status === "paid"
@@ -395,8 +409,7 @@ export default function ClientProfilePage() {
                   {client.payment_status === "paid" ? "Enlace de renovación" : "Enlace de pago"}
                 </span>
                 <span className="block text-xs opacity-80">
-                  copiar y enviar al cliente — {client.payment_status === "paid" ? "renueva" : "cobra"}{" "}
-                  su plan {billingLabel(client.billing_period).toLowerCase()}
+                  {payNote ?? `copiar y enviar al cliente — ${client.payment_status === "paid" ? "renueva" : "cobra"} su plan ${billingLabel(client.billing_period).toLowerCase()}`}
                 </span>
               </span>
             </button>
