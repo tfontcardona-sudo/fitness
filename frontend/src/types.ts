@@ -885,6 +885,9 @@ export interface SalesItem {
   total_eur: number;           // lo que acaba pagando en total
   first_eur: number;           // lo que paga HOY
   auto_stop: boolean;          // el cobro se detiene solo al acabar
+  /** Cuándo y cuánto cobra Stripe: [{when:"Hoy",eur:1}, {when:"Al mes",eur:120}…].
+   *  Lo calcula el backend con los importes reales (el panel no hace cuentas). */
+  schedule: { when: string; eur: number }[];
   url: string;                 // enlace de pago definitivo (dominio oficial)
   ready: boolean;              // false = NO enviarlo: Stripe no puede cobrarlo
   issue: string | null;        // por qué no está listo

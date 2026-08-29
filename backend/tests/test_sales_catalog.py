@@ -66,6 +66,9 @@ def test_el_catalogo_trae_las_dos_ofertas_con_sus_condiciones(monkeypatch):
 
     tres = ofertas["oferta"]
     assert tres["charges"] == 3 and tres["total_eur"] == 241.0
+    # El CALENDARIO lo calcula el backend (el panel no hace cuentas).
+    assert [(c["when"], c["eur"]) for c in tres["schedule"]] == [
+        ("Hoy", 1.0), ("Al mes", 120.0), ("A los 2 meses", 120.0)]
     assert tres["first_eur"] == 1.0 and tres["auto_stop"] is True
     assert tres["url"].endswith("/api/pay/plan/full/oferta")
     assert tres["ready"] is True
@@ -74,11 +77,16 @@ def test_el_catalogo_trae_las_dos_ofertas_con_sus_condiciones(monkeypatch):
     assert dos["charges"] == 2 and dos["total_eur"] == 241.0
     assert dos["first_eur"] == 120.5
     assert "120,50 €" in dos["subtitle"]          # en español, con coma
+    assert [(c["when"], c["eur"]) for c in dos["schedule"]] == [
+        ("Hoy", 120.5), ("Al mes", 120.5)]
     assert dos["url"].endswith("/api/pay/plan/full/oferta2")
 
     # Y los 9 planes sueltos, cada uno con su enlace.
     planes = [i for i in cat["items"] if i["kind"] == "plan"]
     assert len(planes) == 9 and all(p["charges"] == 1 for p in planes)
+    # Un plan es UN pago y no se renueva solo: es lo que pregunta el cliente.
+    assert all(p["auto_stop"] is False and len(p["schedule"]) == 1 for p in planes)
+    assert all("no se renueva solo" in p["subtitle"] for p in planes)
 
 
 def test_nunca_se_piden_mas_de_diez_lookup_keys(monkeypatch):

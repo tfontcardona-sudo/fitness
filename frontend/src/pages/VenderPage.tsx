@@ -48,12 +48,14 @@ function mensajeDe(item: SalesItem): string {
     "Incluye el plan completo: entrenamiento y nutrición 100 % a tu medida, " +
     "WhatsApp conmigo a diario, app de seguimiento y videollamada de revisión.";
   if (item.kind === "oferta") {
-    const cobros = item.key === "oferta"
-      ? `Pagas ${eur(item.first_eur)} hoy y los otros dos meses ${eur((item.total_eur - item.first_eur) / 2)} cada uno.`
-      : `Son dos pagos de ${eur(item.first_eur)}: el primero hoy y el segundo dentro de un mes.`;
+    // El calendario lo manda el backend con los importes reales: aquí no se
+    // reconstruye ninguna cifra (antes se restaba total − primero / 2).
+    const cobros = item.schedule
+      .map((c) => `${c.when.toLowerCase()} ${eur(c.eur)}`)
+      .join(", ") + ".";
     return (
       `*Oferta DQR Full* - programa de 3 meses (${eur(item.total_eur)} en total)\n` +
-      `${cobros} Después NO se te cobra nada más: el cobro se detiene solo.\n` +
+      `Pagas: ${cobros} Después NO se te cobra nada más: el cobro se detiene solo.\n` +
       `${inc}\n\n` +
       `Empieza aquí: ${item.url}\n` +
       "Pago seguro con Stripe. Sin renovación automática ni sorpresas."
@@ -120,6 +122,18 @@ function TarjetaOferta({ item, activa, onElegir }: {
         <span className="ml-1.5 text-xs font-bold" style={{ color: "var(--text-faint)" }}>hoy</span>
       </p>
       <p className="mt-1.5 text-xs" style={{ color: "var(--text-faint)" }}>{item.subtitle}</p>
+      {/* Cuándo y cuánto se le cobra, en orden: la duda número uno del cliente. */}
+      <ol className="mt-2 flex flex-wrap items-center gap-1 text-[11px]">
+        {item.schedule.map((c, i) => (
+          <li key={i} className="flex items-center gap-1">
+            {i > 0 && <span style={{ color: "var(--text-faint)" }}>→</span>}
+            <span className="rounded-md px-1.5 py-0.5 font-semibold tabular-nums"
+              style={{ background: "var(--surface-raised)", color: "var(--text)" }}>
+              {c.when}: {eur(c.eur)}
+            </span>
+          </li>
+        ))}
+      </ol>
       <div className="mt-2.5 flex flex-wrap gap-1.5">
         <span className="rounded-full px-2 py-0.5 text-[11px] font-bold"
           style={{ background: "var(--surface-raised)", color: "var(--text)" }}>

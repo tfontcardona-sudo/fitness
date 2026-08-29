@@ -92,8 +92,13 @@ def _cupon_de_la_oferta() -> str | None:
 def _item(*, key: str, kind: str, tier: str, period: str, title: str,
           subtitle: str, charges: int, total_cents: int, first_cents: int,
           auto_stop: bool, base: str, issue: str | None,
+          schedule: list[dict] | None = None,
           highlight: bool = False) -> dict:
     return {
+        # CALENDARIO de cobros (cuándo y cuánto). Lo calcula el backend con los
+        # céntimos reales: el panel lo pintaba restando (total − primero) / 2,
+        # que se rompe en cuanto cambie un importe.
+        "schedule": schedule or [{"when": "Hoy", "eur": _eur(first_cents)}],
         "key": key,
         "kind": kind,                  # "oferta" | "plan"
         "tier": tier,
@@ -132,6 +137,9 @@ def sales_catalog(*, refresh: bool = False) -> dict:
                   f"{_txt(mensual)} y {_txt(mensual)}"),
         charges=ss.OFFER_CHARGES, total_cents=total3,
         first_cents=ss.OFFER_FIRST_MONTH_CENTS, auto_stop=True, base=base,
+        schedule=[{"when": "Hoy", "eur": _eur(ss.OFFER_FIRST_MONTH_CENTS)},
+                  {"when": "Al mes", "eur": _eur(mensual)},
+                  {"when": "A los 2 meses", "eur": _eur(mensual)}],
         issue=of_issue or cupon, highlight=True,
     ))
 
@@ -143,6 +151,8 @@ def sales_catalog(*, refresh: bool = False) -> dict:
         subtitle=f"{_txt(cada)} hoy y {_txt(cada)} en un mes",
         charges=ss.OFFER2_CHARGES, total_cents=cada * ss.OFFER2_CHARGES,
         first_cents=cada, auto_stop=True, base=base,
+        schedule=[{"when": "Hoy", "eur": _eur(cada)},
+                  {"when": "Al mes", "eur": _eur(cada)}],
         issue=of2_issue, highlight=True,
     ))
 
@@ -157,7 +167,7 @@ def sales_catalog(*, refresh: bool = False) -> dict:
             items.append(_item(
                 key=f"{tier}-{period}", kind="plan", tier=tier, period=period,
                 title=f"{TIER_LABEL[tier]} · {PERIOD_LABEL[period]}",
-                subtitle=f"{_txt(importe)} en un pago{al_mes}",
+                subtitle=f"{_txt(importe)} en un pago{al_mes} · no se renueva solo",
                 charges=1, total_cents=importe, first_cents=importe,
                 auto_stop=False, base=base, issue=issue,
             ))
