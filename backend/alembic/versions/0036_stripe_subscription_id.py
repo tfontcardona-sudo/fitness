@@ -17,7 +17,16 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("clients", sa.Column("stripe_subscription_id", sa.String(64), nullable=True))
+    # Guarda de idempotencia: en una base NUEVA, 0001 crea el esquema
+    # completo con `create_all`, así que estas columnas YA existen y el
+    # add_column reventaba — y como Alembic corre toda la cadena en una
+    # transacción, la base quedaba VACÍA (ni alembic_version) y el
+    # contenedor en crashloop. Sin esto no había forma de arrancar de cero
+    # ni de recuperarse ante un desastre.
+    insp = sa.inspect(op.get_bind())
+    existentes = {c["name"] for c in insp.get_columns("clients")}
+    if "stripe_subscription_id" not in existentes:
+        op.add_column("clients", sa.Column("stripe_subscription_id", sa.String(64), nullable=True))
 
 
 def downgrade() -> None:

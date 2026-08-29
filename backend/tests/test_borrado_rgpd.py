@@ -12,6 +12,7 @@ borrar". Aquí hay dos redes:
    (o de sus períodos/planes/diarios) y que nadie haya añadido al borrado. Así
    el fallo sale aquí y no cuando el coach da de baja a alguien.
 """
+import json
 import os
 import uuid
 import warnings
@@ -203,6 +204,115 @@ def test_ninguna_tabla_nueva_se_escapa_del_borrado():
         f"Tablas nuevas que cuelgan del cliente y NO están contempladas en el "
         f"borrado RGPD: {sorted(nuevas)}. Añádelas a "
         f"routers/clients.delete_client y a TABLAS_QUE_CUELGAN.")
+
+
+@needs_db
+def test_la_baja_se_lleva_tambien_el_historial_clinico_de_la_auditoria(http, auth):
+    """Cada PATCH de la ficha guarda en `audit_log` el ANTES y el DESPUÉS de lo
+    editado: lesiones, patologías, medicación, alergias, teléfono. Son datos de
+    salud (art. 9 RGPD) y se quedaban ahí para siempre — sin ficha, sin
+    caducidad y sin ninguna pantalla desde la que verlos. `audit_log` no tiene
+    clave foránea a clients, así que la red estructural del otro test no puede
+    cazarlo: hace falta esta.
+    """
+    from sqlalchemy import select
+
+    from app.db import SessionLocal
+    from app.models import AuditLog
+
+    nombre = f"Historial Clinico {uuid.uuid4().hex[:6]}"
+    creado = http.post("/api/clients", headers=auth, json={
+        "full_name": nombre, "email": f"clin-{uuid.uuid4().hex[:8]}@example.com",
+    })
+    cid = creado.json()["client"]["id"]
+    r = http.patch(f"/api/clients/{cid}", headers=auth, json={
+        "medical_notes": "Hipotiroidismo diagnosticado en 2019",
+        "medication_notes": "Eutirox 75 mcg",
+    })
+    assert r.status_code == 200, r.text
+
+    db = SessionLocal()
+    try:
+        filas = list(db.scalars(select(AuditLog).where(
+            AuditLog.entity == "client", AuditLog.entity_id == cid)))
+        assert any("Eutirox" in json.dumps(f.detail_json or {}, ensure_ascii=False)
+                   for f in filas), "el test no está mirando donde debe"
+    finally:
+        db.close()
+
+    assert http.delete(f"/api/clients/{cid}?confirm={nombre}",
+                       headers=auth).status_code == 204
+
+    db = SessionLocal()
+    try:
+        quedan = list(db.scalars(select(AuditLog).where(
+            AuditLog.entity == "client", AuditLog.entity_id == cid)))
+        assert not [f for f in quedan
+                    if "Eutirox" in json.dumps(f.detail_json or {}, ensure_ascii=False)]
+    finally:
+        db.close()
+
+
+@needs_db
+def test_descargar_todo_incluye_el_diario_y_las_series(http, auth):
+    """El ZIP de portabilidad llevaba ficha, planes y seis campos por período:
+    dejaba fuera justo lo que el cliente teclea durante meses. Y como una baja
+    se exporta ANTES de borrar, ese historial desaparecía para siempre."""
+    import io
+    import zipfile
+
+    from app.db import SessionLocal
+    from app.models import DailyLog, Exercise, Period, Plan, WorkoutLog
+
+    nombre = f"Portabilidad {uuid.uuid4().hex[:6]}"
+    creado = http.post("/api/clients", headers=auth, json={
+        "full_name": nombre, "email": f"port-{uuid.uuid4().hex[:8]}@example.com",
+    })
+    cid = creado.json()["client"]["id"]
+
+    db = SessionLocal()
+    try:
+        plan = Plan(client_id=cid, month_index=1, version=1, status="published")
+        db.add(plan); db.flush()
+        hoy = date.today()
+        per = Period(client_id=cid, plan_id=plan.id, period_index=1,
+                     starts_on=hoy - timedelta(days=14), ends_on=hoy, status="closed",
+                     closing_waist_cm=84.0, closing_questions="¿Subo el peso?")
+        db.add(per); db.flush()
+        lg = DailyLog(period_id=per.id, log_date=hoy, weight_kg=79.4,
+                      sleep_hours=7.5, free_notes="Hombro algo cargado")
+        db.add(lg); db.flush()
+        ex = Exercise(canonical_name=f"Remo port {uuid.uuid4().hex[:6]}",
+                      muscle_primary="espalda", movement_pattern="traccion_horizontal",
+                      equipment=["barra"], aliases=[], muscle_secondary=[],
+                      contraindications=[])
+        db.add(ex); db.flush()
+        db.add(WorkoutLog(daily_log_id=lg.id, exercise_id=ex.id, set_number=1,
+                          reps=10, weight_kg=60, rpe=8))
+        db.commit()
+        ex_id, ex_nombre = ex.id, ex.canonical_name
+    finally:
+        db.close()
+
+    r = http.get(f"/api/clients/{cid}/export", headers=auth)
+    assert r.status_code == 200, r.text
+    with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+        datos = json.loads(z.read("datos.json"))
+    periodo = datos["periods"][0]
+    assert periodo["cierre"]["cintura_cm"] == 84.0
+    assert periodo["cierre"]["dudas"] == "¿Subo el peso?"
+    dia = periodo["diario"][0]
+    assert dia["peso_kg"] == 79.4 and dia["notas"] == "Hombro algo cargado"
+    assert dia["series"][0]["ejercicio"] == ex_nombre
+    assert dia["series"][0]["reps"] == 10 and dia["series"][0]["peso_kg"] == 60
+
+    http.delete(f"/api/clients/{cid}?confirm={nombre}", headers=auth)
+    db = SessionLocal()
+    try:
+        db.execute(__import__("sqlalchemy").delete(Exercise).where(Exercise.id == ex_id))
+        db.commit()
+    finally:
+        db.close()
 
 
 @needs_db

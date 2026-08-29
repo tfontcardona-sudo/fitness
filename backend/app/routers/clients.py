@@ -510,6 +510,71 @@ def regenerate_portal_token(client_id: int, db: Session = Depends(get_db)) -> Po
 
 
 # ------------------------------------------------- RGPD: portabilidad ----
+def _periodos_exportables(db: Session, client_id: int) -> list[dict]:
+    """Los períodos CON todo lo que el cliente tecleó: su diario día a día y
+    sus series de entreno.
+
+    El ZIP de "descargar todo" llevaba ficha, planes y un resumen de seis
+    campos por período: se dejaba fuera justo lo que el cliente ha ido
+    apuntando durante meses (peso diario, sueño, pasos, agua, saciedad,
+    adherencia, notas) y TODAS sus series (peso × reps × RIR). Y como el flujo
+    natural de una baja es exportar y luego borrar, ese historial desaparecía
+    para siempre.
+    """
+    periodos = list(db.scalars(
+        select(Period).where(Period.client_id == client_id).order_by(Period.period_index)))
+    if not periodos:
+        return []
+    logs = list(db.scalars(
+        select(DailyLog).where(DailyLog.period_id.in_([p.id for p in periodos]))
+        .order_by(DailyLog.log_date)))
+    series_por_log: dict[int, list[dict]] = {}
+    if logs:
+        from app.models import Exercise
+
+        nombres = {e.id: e.canonical_name for e in db.scalars(select(Exercise))}
+        for w in db.scalars(select(WorkoutLog)
+                            .where(WorkoutLog.daily_log_id.in_([lg.id for lg in logs]))
+                            .order_by(WorkoutLog.id)):
+            series_por_log.setdefault(w.daily_log_id, []).append({
+                "ejercicio": nombres.get(w.exercise_id) or w.exercise_id,
+                "serie": w.set_number, "reps": w.reps,
+                "peso_kg": w.weight_kg, "rpe": w.rpe, "notas": w.notes,
+            })
+    logs_por_periodo: dict[int, list[dict]] = {}
+    for lg in logs:
+        logs_por_periodo.setdefault(lg.period_id, []).append({
+            "fecha": _jsonable(lg.log_date), "peso_kg": lg.weight_kg,
+            "sueno_h": lg.sleep_hours, "pasos": lg.steps,
+            "saciedad_1_10": lg.satiety_1_10, "agua_l": lg.water_liters,
+            "adherencia_dieta": lg.diet_adherence, "energia_1_5": lg.energy_1_5,
+            "animo_1_5": lg.mood_1_5, "fatiga_1_5": lg.fatigue_1_5,
+            "notas": lg.free_notes, "comidas_elegidas": lg.chosen_options_json,
+            "series": series_por_log.get(lg.id, []),
+        })
+    return [
+        {
+            "period_index": pe.period_index, "starts_on": _jsonable(pe.starts_on),
+            "ends_on": _jsonable(pe.ends_on), "status": pe.status,
+            "closing_weight_kg": pe.closing_weight_kg, "metrics": pe.metrics_json,
+            "cierre": {
+                "cintura_cm": pe.closing_waist_cm, "cadera_cm": pe.closing_hip_cm,
+                "brazo_cm": pe.closing_arm_cm, "muslo_cm": pe.closing_thigh_cm,
+                "valoracion": pe.closing_rating, "sensaciones": pe.closing_feelings_json,
+                "adherencia_dieta_0_10": pe.adherence_diet_0_10,
+                "adherencia_entreno_0_10": pe.adherence_training_0_10,
+                "lo_mas_dificil": pe.closing_hardest, "dudas": pe.closing_questions,
+                "cambios": pe.closing_changes, "siguiente_objetivo": pe.closing_next_goal,
+                "comidas_libres": pe.free_meals_count,
+                "enviado_el": _jsonable(pe.closing_submitted_at),
+            },
+            "diario": logs_por_periodo.get(pe.id, []),
+        }
+        for pe in periodos
+    ]
+
+
+
 @router.get("/{client_id}/export")
 def export_client_zip(client_id: int, db: Session = Depends(get_db)) -> Response:
     """\"Descargar todo\": ZIP con datos estructurados + fotos + documentos."""
@@ -525,14 +590,7 @@ def export_client_zip(client_id: int, db: Session = Depends(get_db)) -> Response
             }
             for p in db.scalars(select(Plan).where(Plan.client_id == client_id).order_by(Plan.month_index, Plan.version))
         ],
-        "periods": [
-            {
-                "period_index": pe.period_index, "starts_on": _jsonable(pe.starts_on),
-                "ends_on": _jsonable(pe.ends_on), "status": pe.status,
-                "closing_weight_kg": pe.closing_weight_kg, "metrics": pe.metrics_json,
-            }
-            for pe in db.scalars(select(Period).where(Period.client_id == client_id).order_by(Period.period_index))
-        ],
+        "periods": _periodos_exportables(db, client_id),
         "exported_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -619,6 +677,7 @@ def delete_client(
     # video_calls.client_id también es NOT NULL sin ON DELETE (mig. 0023): sin
     # esta línea, borrar a un cliente Pro con videollamadas revienta el commit.
     from app.models import VideoCall
+    vc_ids = list(db.scalars(select(VideoCall.id).where(VideoCall.client_id == client_id)))
     db.execute(delete(VideoCall).where(VideoCall.client_id == client_id))
     # Libro de caja: el movimiento NO se borra (los ingresos del mes no pueden
     # cambiar porque se dé de baja a alguien) pero se ANONIMIZA — se queda sin
@@ -638,6 +697,34 @@ def delete_client(
     db.execute(delete(Plan).where(Plan.client_id == client_id))
     db.execute(delete(ChangeRequest).where(ChangeRequest.client_id == client_id))
     db.execute(update(EmailLog).where(EmailLog.client_id == client_id).values(client_id=None))
+    # AUDITORÍA: cada PATCH de la ficha guarda el ANTES y el DESPUÉS de los
+    # campos editados — lesiones, patologías, medicación, alergias, teléfono.
+    # Son datos de SALUD (art. 9 RGPD) y se quedaban en `audit_log` para
+    # siempre, sin ficha, sin caducidad y sin ninguna pantalla desde la que
+    # verlos. Una "supresión total" que deja el historial clínico no lo es.
+    # (audit_log no tiene FK a clients, por eso la red estructural del test de
+    # borrado no podía cazarlo.)
+    from app.models import AuditLog, WhatsAppRound
+
+    db.execute(delete(AuditLog).where(AuditLog.entity == "client",
+                                      AuditLog.entity_id == client_id))
+    if plan_ids:
+        db.execute(delete(AuditLog).where(AuditLog.entity == "plan",
+                                          AuditLog.entity_id.in_(plan_ids)))
+    if period_ids:
+        db.execute(delete(AuditLog).where(AuditLog.entity == "period",
+                                          AuditLog.entity_id.in_(period_ids)))
+    if vc_ids:
+        db.execute(delete(AuditLog).where(AuditLog.entity == "video_call",
+                                          AuditLog.entity_id.in_(vc_ids)))
+    # Los mensajes de WhatsApp redactados para él viven en un JSON por día,
+    # con su id como clave: se quita la suya sin tocar las de los demás.
+    for ronda in db.scalars(select(WhatsAppRound)):
+        textos = ronda.texts_json or {}
+        if str(client_id) in textos:
+            nuevos = {k: v for k, v in textos.items() if k != str(client_id)}
+            ronda.texts_json = nuevos
+
     db.delete(client)
 
     delete_client_tree(client_id)
