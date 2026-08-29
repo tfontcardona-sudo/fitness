@@ -185,10 +185,16 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
     ))
     published = next((p for p in plans if p.status == "published"), None)
     latest = plans[0] if plans else None
-    last_period = db.scalar(
+    # Los períodos del cliente, UNA sola vez: antes se consultaba la misma tabla
+    # tres veces por cliente (el último, el último analizado y la última
+    # revisión cerrada) y esta función corre para TODOS los clientes cada vez
+    # que el panel refresca las alertas. Un cliente tiene ~2 períodos al mes:
+    # traerlos enteros sale mucho más barato que tres consultas.
+    periodos = list(db.scalars(
         select(Period).where(Period.client_id == client.id)
-        .order_by(Period.period_index.desc()).limit(1)
-    )
+        .order_by(Period.period_index.desc())
+    ))
+    last_period = periodos[0] if periodos else None
 
     # --- Arranque: sin planificación aún -----------------------------------
     if published is None:
@@ -243,13 +249,7 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
     # feedback abre el período siguiente en el acto, y con el ancla vieja la
     # alerta "sin adaptar" moría justo entonces — el ciclo nuevo corría 14 días
     # con las kcal antiguas sin que nadie lo persiguiera (auditoría del ciclo).
-    last_analyzed = last_period if (
-        last_period is not None and last_period.status == "analyzed"
-    ) else db.scalar(
-        select(Period).where(Period.client_id == client.id,
-                             Period.status == "analyzed")
-        .order_by(Period.period_index.desc()).limit(1)
-    )
+    last_analyzed = next((p for p in periodos if p.status == "analyzed"), None)
     if last_analyzed is not None:
         fb = db.scalar(
             select(FeedbackDoc).where(FeedbackDoc.period_id == last_analyzed.id)
@@ -384,11 +384,8 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
     from app.services.portal import format_when_es
 
     if pkgs.has_video_call(client.package_tier):
-        last_review = db.scalar(
-            select(Period).where(Period.client_id == client.id,
-                                 Period.status.in_(("closed", "analyzed")))
-            .order_by(Period.period_index.desc()).limit(1)
-        )
+        last_review = next(
+            (p for p in periodos if p.status in ("closed", "analyzed")), None)
         if last_review is not None:
             vc = db.scalar(select(VideoCall).where(
                 VideoCall.client_id == client.id,
