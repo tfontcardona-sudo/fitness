@@ -334,6 +334,7 @@ def _price_by_lookup(tier: str, period: str) -> str:
                               (OFFER2_LOOKUP, OFFER2_MONTHLY_CENTS)):
                 of = found.get(lk)
                 if (of is None or of.get("unit_amount") != cents
+                        or of.get("currency") != CURRENCY
                         or (of.get("recurring") or {}).get("interval") != "month"):
                     return True
             # El CUPÓN del primer mes también es reparable: borrado a mano en el
