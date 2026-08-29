@@ -232,11 +232,16 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
     const onHide = () => {
       if (document.visibilityState === "hidden") saveNowRef.current();
     };
+    // Al VOLVER LA COBERTURA se reintenta solo (es lo que promete el banner
+    // "sin conexión"): antes había que cambiar de pestaña para recuperarlo.
+    const onOnline = () => saveNowRef.current();
     document.addEventListener("visibilitychange", onHide);
     window.addEventListener("pagehide", onHide);
+    window.addEventListener("online", onOnline);
     return () => {
       document.removeEventListener("visibilitychange", onHide);
       window.removeEventListener("pagehide", onHide);
+      window.removeEventListener("online", onOnline);
       saveNowRef.current(); // al cambiar de pestaña (desmontaje) no se pierde nada
     };
   }, []);

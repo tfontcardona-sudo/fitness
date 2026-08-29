@@ -37,6 +37,37 @@ const EMPTY: DiaryForm = {
  * sueño, adherencia y cómo se siente); los ejercicios del día ya van en HOY.
  * Cada cambio se guarda con debounce para no perder nada (G.4: autosave).
  */
+/* LO TECLEADO NO SE PIERDE (mismo criterio que Entreno).
+   El portal remonta el contenido al cambiar de pestaña, así que re-encolar el
+   guardado fallido en un ref del componente era perderlo: bastaba un tramo sin
+   cobertura (gimnasio en sótano, metro) para que el peso en ayunas, el sueño o
+   la nota del día se esfumaran… mientras el banner prometía "lo que apuntes se
+   guardará al volver". `sessionStorage`: sobrevive a la navegación pero no a
+   cerrar la app días después (un diario de anteayer no se reenvía). */
+
+const K_DIARIO_PENDIENTE = "dqr.diario.pendiente";
+
+function _guardarPendiente(fecha: string, datos: unknown): void {
+  try {
+    sessionStorage.setItem(K_DIARIO_PENDIENTE,
+      JSON.stringify({ fecha, datos, ts: Date.now() }));
+  } catch { /* sin almacenamiento: se pierde, como antes */ }
+}
+function _limpiarPendiente(): void {
+  try { sessionStorage.removeItem(K_DIARIO_PENDIENTE); } catch { /* nada que hacer */ }
+}
+function _leerPendiente(fecha: string): Record<string, unknown> | null {
+  try {
+    const raw = sessionStorage.getItem(K_DIARIO_PENDIENTE);
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    // Solo del MISMO día: reenviar el diario de ayer pisaría el de hoy.
+    if (d?.fecha !== fecha || !d.datos || typeof d.datos !== "object") return null;
+    if (Date.now() - (d.ts ?? 0) > 24 * 3600 * 1000) return null;
+    return d.datos as Record<string, unknown>;
+  } catch { return null; }
+}
+
 export function PortalDiary({ api, brand, periodStatus = null, businessToday = null,
   hasPeriod = true, hasNutrition = true, hasTraining = true }: {
   api: Api; brand: PortalBrand; periodStatus?: string | null; businessToday?: string | null;
@@ -88,17 +119,20 @@ export function PortalDiary({ api, brand, periodStatus = null, businessToday = n
   useEffect(() => {
     setLoadError(false);
     api.getDiary(today).then((d) => {
-      if (d.exists) {
-        setForm({
+      const base: DiaryForm = d.exists
+        ? {
           weight_kg: d.weight_kg, sleep_hours: d.sleep_hours,
           steps: d.steps ?? "", satiety_1_10: d.satiety_1_10, water_liters: d.water_liters,
           diet_adherence: d.diet_adherence, energy_1_5: d.energy_1_5,
           mood_1_5: d.mood_1_5, fatigue_1_5: d.fatigue_1_5,
           free_notes: d.free_notes ?? "",
-        });
-      } else {
-        setForm({ ...EMPTY });
-      }
+        }
+        : { ...EMPTY };
+      // Lo que quedó sin guardar (sin cobertura) MANDA sobre lo del servidor:
+      // si no, la pantalla enseñaría los valores viejos y el siguiente tecleo
+      // los volvería a guardar, borrando lo que el cliente ya había apuntado.
+      const pendiente = _leerPendiente(today) as Partial<DiaryForm> | null;
+      setForm(pendiente ? { ...base, ...pendiente } : base);
     }).catch(() => {
       // Sin esto, un fallo de red dejaba el skeleton girando para siempre.
       setLoadError(true);
@@ -130,12 +164,15 @@ export function PortalDiary({ api, brand, periodStatus = null, businessToday = n
     setSaveState("saving");
     api
       .saveDiary({ log_date: today, ...data })
-      .then(() => { setSavedAt(new Date()); setSaveState("saved"); })
+      .then(() => { _limpiarPendiente(); setSavedAt(new Date()); setSaveState("saved"); })
       .catch((e) => {
         // RE-ENCOLA lo no guardado: el siguiente flush (o el de salida de la
         // app) lo reintenta — antes el dato pendiente se descartaba y solo
-        // otro tecleo volvía a enviarlo.
+        // otro tecleo volvía a enviarlo. Y lo guarda FUERA del componente: el
+        // volcado de última hora ocurre al desmontar (cambiar de pestaña), así
+        // que un ref ya muerto no servía de nada.
         pendingRef.current = pendingRef.current ?? data;
+        _guardarPendiente(today, data);
         setSaveState("idle");
         toast.push(
           e instanceof PortalError ? e.message : "Sin guardar · revisa tu conexión",
@@ -154,14 +191,30 @@ export function PortalDiary({ api, brand, periodStatus = null, businessToday = n
     const onHide = () => {
       if (document.visibilityState === "hidden") saveNowRef.current();
     };
+    // Al VOLVER LA COBERTURA se reintenta solo: la recuperación no puede
+    // depender de que el cliente cambie de pestaña (es lo que promete el
+    // banner "sin conexión").
+    const onOnline = () => saveNowRef.current();
     document.addEventListener("visibilitychange", onHide);
     window.addEventListener("pagehide", onHide);
+    window.addEventListener("online", onOnline);
     return () => {
       document.removeEventListener("visibilitychange", onHide);
       window.removeEventListener("pagehide", onHide);
+      window.removeEventListener("online", onOnline);
       saveNowRef.current();
     };
   }, []);
+
+  // Lo que quedó sin guardar en una visita anterior se reenvía al entrar.
+  useEffect(() => {
+    const sinGuardar = _leerPendiente(today);
+    if (!sinGuardar) return;
+    api.saveDiary({ log_date: today, ...(sinGuardar as any) })
+      .then(() => { _limpiarPendiente(); setSavedAt(new Date()); setSaveState("saved"); })
+      .catch(() => { /* sigue guardado: se reintenta al volver */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api, today]);
 
   if (loadError && !form) {
     return (

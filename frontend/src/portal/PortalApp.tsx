@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSinConexion } from "../lib/offline";
 import { activarAcordeon } from "../lib/accordion";
 import { useSearchParams } from "react-router-dom";
-import { Bell, BellOff, CalendarCheck, Camera, Check, ChevronDown, Dumbbell, FileText, LineChart, Library, LogOut, NotebookPen, Share, Smartphone, Video, X } from "lucide-react";
+import { Bell, BellOff, CalendarCheck, Camera, Check, ChevronDown, Dumbbell, FileText, LineChart, Library, LogOut, MessageSquare, NotebookPen, Share, Smartphone, Video, X } from "lucide-react";
 import { portalApi, portalSession, PortalError } from "./portalApi";
 import type { VideoCallStatus } from "./portalApi";
 import { pkg } from "../lib/packages";
@@ -296,6 +296,7 @@ export default function PortalApp({ token }: { token: string }) {
           )}
           <WelcomeSetup api={apiClient} token={token} accent={state.brand.color_primary}
             secondary={state.brand.color_secondary} />
+          <EscribirAlCoach api={apiClient} accent={state.brand.color_primary} />
           {/* key={effTab+fecha}: transición suave al cambiar de pestaña Y
               remontaje si cambia la FECHA DE NEGOCIO — una PWA resucitada días
               después registraba en el día viejo, pisándolo en silencio
@@ -612,6 +613,116 @@ function PushToggle({ api }: { api: ReturnType<typeof portalApi> }) {
     </button>
   );
 }
+
+/** ESCRIBIR AL COACH desde el portal (petición de ajuste).
+ *
+ *  Entre revisión y revisión el cliente no tenía NINGUNA forma de avisar: si se
+ *  lesionaba el día 3, se iba de viaje o un alimento le sentaba mal, su única
+ *  casilla de texto era "Dudas para tu coach"… que solo se abre el día 14. El
+ *  circuito entero ya estaba construido en el backend (push inmediato ✋, email,
+ *  alerta del panel y tarjeta "Peticiones sin responder" en Seguimiento) y
+ *  nadie lo disparaba: no había pantalla. Esto lo enciende.
+ *
+ *  Cerrado por defecto para no competir con el registro del día. */
+function EscribirAlCoach({ api, accent }: {
+  api: ReturnType<typeof portalApi>; accent: string;
+}) {
+  const toast = usePortalToast();
+  const [abierto, setAbierto] = useState(false);
+  const [texto, setTexto] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [enviado, setEnviado] = useState(false);
+
+  const MIN = 5;      // el backend exige 5 caracteres…
+  const MAX = 2000;   // …y admite 2000: se avisa AQUÍ, no con un 422 críptico.
+  const limpio = texto.trim();
+
+  const enviar = async () => {
+    if (enviando || limpio.length < MIN) return;
+    setEnviando(true);
+    try {
+      await api.changeRequest(limpio.slice(0, MAX));
+      setTexto("");
+      setEnviado(true);
+      setAbierto(false);
+      toast.push("Enviado · tu coach lo verá hoy ✅");
+    } catch {
+      // El mensaje NO se borra: el cliente puede reintentar sin reescribirlo.
+      toast.push("No se pudo enviar · inténtalo de nuevo");
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  if (!abierto) {
+    return (
+      <button
+        onClick={() => { setAbierto(true); setEnviado(false); }}
+        className="portal-note portal-note--info mb-4 w-full items-center text-left"
+      >
+        <MessageSquare size={18} style={{ color: accent }} />
+        <span className="min-w-0">
+          <span className="p-head block" style={{ color: accent }}>
+            {enviado ? "Mensaje enviado ✅" : "Escribir a mi coach"}
+          </span>
+          <span className="p-sub mt-0.5 block">
+            {enviado
+              ? "Te responderá en cuanto lo vea · toca para escribir otro"
+              : "Una duda, una molestia, un viaje… lo que necesites"}
+          </span>
+        </span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="portal-card mb-4 p-3.5">
+      <div className="flex items-start gap-2.5">
+        <span className="mt-0.5 shrink-0" style={{ color: accent }}><MessageSquare size={18} /></span>
+        <div className="min-w-0 flex-1">
+          <label htmlFor="mensaje-coach" className="text-sm font-semibold">
+            Escribir a mi coach
+          </label>
+          <p className="mt-0.5 text-[11px] opacity-60">
+            Le llega al momento. Cuéntale qué pasa y qué necesitas.
+          </p>
+          <textarea
+            id="mensaje-coach"
+            autoFocus
+            rows={4}
+            value={texto}
+            maxLength={MAX}
+            onChange={(e) => setTexto(e.target.value)}
+            placeholder="Ej.: me molesta el hombro derecho en el press y esta semana estoy de viaje…"
+            className="mt-2 min-h-[92px] w-full resize-y rounded-xl border bg-transparent p-3 text-sm"
+            style={{ borderColor: "rgba(128,128,128,0.2)" }}
+          />
+          <div className="mt-1 text-right text-[11px] opacity-50">
+            {limpio.length}/{MAX}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              onClick={enviar}
+              disabled={enviando || limpio.length < MIN}
+              className="portal-btn3d min-h-[36px] px-4 py-1.5 text-xs font-semibold disabled:opacity-50"
+              style={{ background: accent, color: "var(--p-on-accent)" }}
+            >
+              {enviando ? "Enviando…" : "Enviar a mi coach"}
+            </button>
+            <button
+              onClick={() => setAbierto(false)}
+              disabled={enviando}
+              className="tap min-h-[36px] rounded-xl px-3 py-1.5 text-xs font-medium opacity-60 hover:opacity-90"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 /** Recordatorio de FOTOS DE PROGRESO: tras enviar la revisión quincenal, el
  *  cliente confirma aquí si ya envió sus 3 fotos al coach. "Sí" apaga el aviso

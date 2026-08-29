@@ -197,6 +197,11 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
                   <th title="Litros de agua">Agua</th>
                   <th title="Adherencia a la dieta: sí / parcial / no">Dieta</th>
                   {hasTraining && <th title="Series de entreno registradas">Series</th>}
+                  {/* Lo que el cliente ESCRIBE cada día ("me molesta el hombro
+                      en el press"). Se guardaba, el backend lo servía y esta
+                      tabla no lo enseñaba: el coach no lo leía nunca y el aviso
+                      solo llegaba —si llegaba— en el feedback quincenal. */}
+                  <th title="Lo que ha escrito el cliente ese día">Notas</th>
                 </tr>
               </thead>
               <tbody className="text-zinc-200">
@@ -212,6 +217,10 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
                     <td>{fmt1(d.water_liters)}</td>
                     <td>{ADHERENCE_LABEL[d.diet_adherence ?? ""] ?? d.diet_adherence ?? "—"}</td>
                     {hasTraining && <td>{d.workout_sets || "—"}</td>}
+                    <td className="max-w-[220px] truncate pr-3"
+                      title={d.free_notes || undefined}>
+                      {d.free_notes ? `💬 ${d.free_notes}` : "—"}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -226,6 +235,7 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
                     <td>{avg.water_liters ?? "—"}</td>
                     <td>{avg.diet_adherence_pct != null ? `${avg.diet_adherence_pct}%` : "—"}</td>
                     {hasTraining && <td>{avg.workout_sets ?? "—"}</td>}
+                    <td />
                   </tr>
                 </tfoot>
               )}
