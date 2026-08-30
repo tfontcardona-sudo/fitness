@@ -18,6 +18,23 @@ _TEST_EMAIL_PATTERNS = ("%@example.com", "%@example.org", "%@test.local", "%@x.c
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _sin_cache_del_educativo():
+    """La caché del contenido educativo se guarda en un sidecar del storage y
+    SOBREVIVE entre ejecuciones: el primer `pytest` la puebla y el siguiente se
+    salta la llamada de IA que los tests del pipeline están contando. La suite
+    daba resultados distintos según cuántas veces se hubiera corrido antes — y
+    ESA era la causa de los dos fallos de `test_ai_service` que se venían dando
+    por "preexistentes de main". Se apaga en los tests, que es lo que el traspaso
+    ya daba por hecho; en producción sigue ahorrando créditos."""
+    from app.config import settings
+
+    previo = getattr(settings, "education_cache_enabled", True)
+    settings.education_cache_enabled = False
+    yield
+    settings.education_cache_enabled = previo
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _cleanup_test_clients():
     yield
     try:

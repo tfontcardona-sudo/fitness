@@ -71,6 +71,9 @@ _DESTINO: dict[str, tuple[str, str]] = {
     "no_logs": (
         "seguimiento.registros",
         "Escríbele: lleva días sin registrar y la revisión saldrá coja."),
+    "sin_pesajes": (
+        "seguimiento.registros",
+        "Pídele el peso en ayunas: sin pesos, al cerrar no hay con qué ajustar."),
     "period_overdue": (
         "feedback.cerrar",
         "Reclámasela por WhatsApp; si no la manda, ciérrala tú aquí para no "
@@ -347,6 +350,29 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
             out.append(_alert(client, "no_logs", "media",
                               f"Sin registros del cliente desde hace {gap} días.",
                               "seguimiento", "Ver seguimiento"))
+        else:
+            # REGISTRA, PERO NO SE PESA — el punto ciego de contar como registro
+            # las series y las comidas elegidas (que es lo correcto: quien
+            # entrena a diario no puede salir "en riesgo"). Un cliente que toca
+            # su comida cada día cuenta como registrado, va verde en todas las
+            # pantallas y no dispara nada… y al cerrar la quincena el motor
+            # determinista se encuentra con 0-1 pesajes, responde
+            # `dato_insuficiente` y NO hay con qué ajustar el plan: catorce días
+            # perdidos que el coach descubría cuando ya no tenían arreglo. Se
+            # avisa pasada la mitad del período, que es cuando aún da tiempo a
+            # pedírselo. Sale de las filas YA cargadas: ni una consulta más.
+            pesajes = sum(1 for lg in logs_periodo if lg.weight_kg is not None)
+            largo = (last_period.ends_on - last_period.starts_on).days + 1
+            dia = days_in + 1
+            if pesajes <= 1 and dia >= max(7, largo // 2):
+                quedan = max(0, (last_period.ends_on - today).days)
+                como = ("solo se ha pesado una vez" if pesajes
+                        else "no se ha pesado ni un día")
+                out.append(_alert(
+                    client, "sin_pesajes", "media",
+                    f"Registra a diario pero {como}: sin pesos no se puede "
+                    f"ajustar su plan al cerrar (quedan {quedan} días).",
+                    "seguimiento", "Pedirle que se pese"))
 
         # --- Período vencido sin cerrar: el cliente registra pero no envía ---
         overdue = (today - last_period.ends_on).days

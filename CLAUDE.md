@@ -442,6 +442,45 @@ cd backend && python -m pytest tests/ -q
 
 ## 9. Trabajo pendiente / próximos pasos
 
+000000000000000000000. ✅ **TANDA 3 (SEGUNDA MANO): LO QUE QUEDABA DEL CICLO, Y
+   LA SUITE QUE MENTÍA (30-08-2026).** Trabajo en PARALELO con otras dos
+   sesiones sobre el inventario `docs/HALLAZGOS_POR_VERIFICAR.md` (que vive en
+   la rama de la tanda 1). El PR #113 cerró cuatro de esta tanda mientras yo
+   verificaba; esto es lo que quedaba. Cada hallazgo se verificó de forma
+   adversarial (un refutador + un reproductor) ANTES de tocar nada.
+   - ⚠️ **LOS DOS FALLOS DE `test_ai_service` NO ERAN "PREEXISTENTES DE MAIN":
+     era la suite, que dependía del estado.** `pytest` dos veces seguidas daba
+     resultados distintos. La caché del contenido educativo se guarda en un
+     sidecar del storage y SOBREVIVE entre ejecuciones: el primer pase la
+     poblaba y el siguiente se saltaba la llamada de IA que los tests del
+     pipeline están CONTANDO (`assert len(client.calls) == 3` → 2). Las tres
+     sesiones lo estaban dando por bueno como "ya venía roto". Se apaga en los
+     tests (lo que este documento ya daba por hecho) y **la suite queda entera
+     en verde, dos pases seguidos**. Si añades un caché con sidecar, apágalo en
+     `tests/conftest.py` o volverás a envenenar la suite.
+   - **Aviso NUEVO `sin_pesajes` — el punto ciego de "día registrado".** Contar
+     las series y las comidas elegidas como registro es DELIBERADO y está
+     blindado con test (quien entrena a diario no puede salir "en riesgo"): NO
+     se toca. Pero detrás había un hueco real: el cliente que elige su comida
+     cada día cuenta como registrado, va verde en todas las pantallas y no
+     dispara nada… y al cerrar la quincena el motor determinista se encuentra
+     con 0-1 pesajes, responde `dato_insuficiente` y no hay con qué ajustar el
+     plan. Catorce días perdidos que el coach descubría cuando ya no tenían
+     arreglo. Ahora se avisa pasada la mitad del período, y sale de las filas
+     que el bloque de `no_logs` ya carga: ni una consulta más en el barrido.
+   - ⏸️ **HECHO Y ESPERANDO A LA TANDA 1** (rama
+     `claude/tanda3-pendiente-de-tanda1`): la vigilancia de automatismos que
+     solo miraba el mantenimiento diario, la escalada a "lleva N horas" que era
+     inalcanzable tras un fallo, la huella del resumen del coach truncada a 300
+     caracteres (silenciaba el aviso justo cuando había novedades), el cupo de
+     avisos de cierre que contaba los correos FALLIDOS y la racha del portal que
+     no consume la "única verdad". Todo ello vive en código que aún no está en
+     `main` (`job_state.py`, `_enviados_desde`, la dedup del resumen,
+     `dias_registrados`): arreglarlo aquí a medias solo crearía un conflicto con
+     su fusión. **Cuando la tanda 1 entre en `main`, fusiona esa rama.**
+   - 602 tests en verde (dos pases), `tsc` limpio, `check:anclas` y
+     `check:avisos` OK.
+
 00000000000000000. ✅ **OFERTA = PROGRAMA CERRADO DE 3 MESES (28-08-2026).**
    Decisión del dueño: la oferta es UNA — 3 meses de DQR Full con permanencia
    (1 € el primer mes + 120 € el 2º + 120 € el 3º = 241 €) — y sus DOS formas
