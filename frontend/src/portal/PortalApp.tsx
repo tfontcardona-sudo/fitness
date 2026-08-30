@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSinConexion } from "../lib/offline";
 import { activarAcordeon } from "../lib/accordion";
 import { useSearchParams } from "react-router-dom";
@@ -728,10 +728,16 @@ function EscribirAlCoach({ api, accent }: {
 }
 
 
-/** Recordatorio de FOTOS DE PROGRESO: tras enviar la revisión quincenal, el
- *  cliente confirma aquí si ya envió sus 3 fotos al coach. "Sí" apaga el aviso
- *  (portal y push); "Todavía no" lo pliega y el push seguirá recordándoselo cada
- *  3 h hasta que confirme. */
+/** FOTOS DE PROGRESO: tras enviar la revisión quincenal, el cliente puede
+ *  SUBIRLAS aquí mismo, o confirmar que ya se las mandó al coach por otra vía.
+ *  "Todavía no" lo pliega y el push se lo recuerda cada 3 h.
+ *
+ *  El botón de subir vive aquí porque, una vez enviada la revisión, la pantalla
+ *  Quincenal pasa a "Revisión enviada · analizando" y pierde su sección de
+ *  fotos — era la ÚNICA de toda la app que permitía subirlas. El cliente
+ *  quedaba con un aviso cada 3 h que solo podía quitarse mintiendo ("sí, ya las
+ *  envié") o posponiéndolo para siempre. El endpoint del backend siempre lo
+ *  admitió: el período cerrado sigue siendo el activo. */
 function PhotosReminder({ api, accent, onConfirmed }: {
   api: ReturnType<typeof portalApi>; accent: string; onConfirmed: () => void;
 }) {
@@ -740,6 +746,19 @@ function PhotosReminder({ api, accent, onConfirmed }: {
   // "Todavía no": se pliega en ESTA sesión; el aviso vuelve al recargar (sigue
   // pendiente) y el push lo recuerda cada 3 h.
   const [snoozed, setSnoozed] = useState(false);
+  const [fotos, setFotos] = useState(0);
+  const [maxFotos, setMaxFotos] = useState(4);
+  const [subiendo, setSubiendo] = useState(false);
+  const entrada = useRef<HTMLInputElement | null>(null);
+
+  // Cuántas lleva ya, según el SERVIDOR (que es quien pone el tope).
+  useEffect(() => {
+    let vivo = true;
+    api.closePhotosCount()
+      .then((r) => { if (vivo) { setFotos(r.count); setMaxFotos(r.max); } })
+      .catch(() => { /* sin dato, el servidor sigue mandando */ });
+    return () => { vivo = false; };
+  }, [api]);
 
   if (snoozed) return null;
 
@@ -756,21 +775,69 @@ function PhotosReminder({ api, accent, onConfirmed }: {
     }
   };
 
+  /** Sube las que falten. El `kind` continúa por donde se quedó (frontal,
+   *  lateral, espalda, detalle): si se reiniciara, el "antes y ahora" del
+   *  informe compararía ángulos distintos. */
+  const subir = async (files: FileList | null) => {
+    if (!files || !files.length || subiendo) return;
+    const tipos = ["front", "side", "back", "detail"];
+    const lote = Array.from(files).slice(0, Math.max(0, maxFotos - fotos));
+    if (!lote.length) { toast.push(`Ya has subido el máximo de ${maxFotos} fotos`); return; }
+    setSubiendo(true);
+    let subidas = 0;
+    try {
+      for (const f of lote) {
+        await api.closePhotos([f], tipos[Math.min(fotos + subidas, tipos.length - 1)]);
+        subidas += 1;
+        setFotos(fotos + subidas);
+      }
+      toast.push(`${subidas} foto${subidas === 1 ? "" : "s"} subida${subidas === 1 ? "" : "s"} 📸`);
+      // Con las fotos YA en el sistema el aviso sobra: el coach las tiene.
+      await api.confirmPhotos().catch(() => {});
+      onConfirmed();
+    } catch (e: any) {
+      toast.push(e?.message ?? "No se pudieron subir. Inténtalo de nuevo.");
+      api.closePhotosCount().then((r) => setFotos(r.count)).catch(() => {});
+    } finally {
+      setSubiendo(false);
+    }
+  };
+
   return (
     <div className="portal-card mb-4 p-3.5">
       <div className="flex items-start gap-2.5">
         <span className="mt-0.5 shrink-0" style={{ color: accent }}><Camera size={18} /></span>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold">¿Ya enviaste tus fotos?</p>
-          <p className="mt-0.5 text-[11px] opacity-60">Frontal · lateral · espalda</p>
+          <p className="text-sm font-semibold">Tus fotos de progreso</p>
+          <p className="mt-0.5 text-[11px] opacity-60">
+            Frontal · lateral · espalda
+            {fotos > 0 ? ` · llevas ${fotos} de ${maxFotos}` : ""}
+          </p>
+          <input
+            ref={entrada}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(e) => { subir(e.target.files); e.target.value = ""; }}
+          />
           <div className="mt-2.5 flex flex-wrap gap-2">
             <button
-              onClick={confirm}
-              disabled={busy}
+              onClick={() => entrada.current?.click()}
+              disabled={busy || subiendo || fotos >= maxFotos}
               className="portal-btn3d min-h-[36px] px-4 py-1.5 text-xs font-semibold"
               style={{ background: accent, color: "var(--p-on-accent)" }}
             >
-              <span className="inline-flex items-center gap-1"><Check size={13} /> Sí, ya las envié</span>
+              <span className="inline-flex items-center gap-1">
+                <Camera size={13} /> {subiendo ? "Subiendo…" : fotos > 0 ? "Añadir más" : "Subir mis fotos"}
+              </span>
+            </button>
+            <button
+              onClick={confirm}
+              disabled={busy || subiendo}
+              className="tap min-h-[36px] rounded-xl px-3 py-1.5 text-xs font-medium opacity-70 hover:opacity-100"
+            >
+              <span className="inline-flex items-center gap-1"><Check size={13} /> Ya se las mandé</span>
             </button>
             <button
               onClick={() => { setSnoozed(true); toast.push("Te aviso cada 3 h"); }}
