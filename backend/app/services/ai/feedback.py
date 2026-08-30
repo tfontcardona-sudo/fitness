@@ -143,6 +143,19 @@ adherencia a la dieta, energía, sueño y digestiones (no fuerza). En plan_adjus
 usa solo las áreas "Dieta", "Cardio/NEAT" o "Hábitos" (NUNCA "Entrenamiento")."""
 
 
+# Y el simétrico: paquete SOLO ENTRENAMIENTO (Train). Sin esto, el informe le
+# hablaba de calorías, macros y adherencia a la dieta a quien no ha contratado
+# ninguna dieta — y el coach tenía que aclararlo cliente a cliente.
+_TRAINING_ONLY_NOTE = """
+
+PAQUETE SOLO ENTRENAMIENTO (MUY IMPORTANTE): este cliente NO tiene plan de \
+nutrición. NO menciones calorías, macros, dieta, comidas, adherencia a la dieta \
+ni suplementación en NINGÚN campo. El análisis y los ajustes son EXCLUSIVAMENTE \
+de entrenamiento y hábitos. En natural_analysis cubre fuerza, volumen, técnica, \
+sueño, energía y recuperación (no dieta). En plan_adjustments usa solo las áreas \
+"Entrenamiento", "Cardio/NEAT" o "Hábitos" (NUNCA "Dieta")."""
+
+
 def _user_prompt(payload: dict) -> str:
     # JSON COMPACTO a propósito (auditoría de costes): el payload lleva una
     # entrada por día del período y el `indent=2` inflaba la entrada un 20-30%
@@ -154,10 +167,12 @@ def _user_prompt(payload: dict) -> str:
     )
 
 
-def generate_feedback_analysis(payload: dict, ai, nutrition_only: bool = False) -> FeedbackAIOutput:
+def generate_feedback_analysis(payload: dict, ai, nutrition_only: bool = False,
+                               training_only: bool = False) -> FeedbackAIOutput:
     """Pide a la IA la parte cualitativa del feedback a partir de las métricas.
 
-    nutrition_only=True (paquete Start): el feedback no menciona entrenamiento."""
+    nutrition_only=True (paquete Nutri): el feedback no menciona entrenamiento.
+    training_only=True (paquete Train): no menciona dieta."""
     # LECCIONES del coach (§13): sus correcciones a feedbacks/planes anteriores
     # también guían esta redacción (en el USER prompt, para no invalidar la
     # caché del system). El aprendizaje nunca bloquea el feedback.
@@ -172,7 +187,8 @@ def generate_feedback_analysis(payload: dict, ai, nutrition_only: bool = False) 
         # números vienen calculados — así que admite un modelo más barato
         # sin tocar la seguridad. Vacío = el pesado de siempre.
         model=(settings.model_feedback or settings.model_heavy),
-        system=_SYSTEM + (_NUTRITION_ONLY_NOTE if nutrition_only else ""),
+        system=_SYSTEM + (_NUTRITION_ONLY_NOTE if nutrition_only else "")
+        + (_TRAINING_ONLY_NOTE if training_only else ""),
         user=_user_prompt(payload) + _lecciones,
         schema=FeedbackAIOutput,
         temperature=0,  # §14: la lectura de la revisión quincenal es determinista

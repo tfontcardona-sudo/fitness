@@ -376,8 +376,11 @@ def build_period_feedback(db: Session, period_id: int, ai=None) -> FeedbackDoc:
     if period.status == "open":
         raise FeedbackError("El período aún no está cerrado por el cliente")
     client = db.get(Client, period.client_id)
-    # Paquete solo-nutrición (Start): el feedback no habla de entreno.
+    # Paquete solo-nutrición (Nutri): el feedback no habla de entreno.
     nutrition_only = not pkgs.has_training(getattr(client, "package_tier", None))
+    # Y el simétrico (Train): no habla de dieta. Sin esto, el informe le
+    # hablaba de calorías y adherencia a la dieta a quien no la ha contratado.
+    training_only = not pkgs.has_nutrition(getattr(client, "package_tier", None))
 
     inputs = _gather_doc_inputs(db, period, client)
     logs_q = list(db.scalars(
@@ -398,10 +401,13 @@ def build_period_feedback(db: Session, period_id: int, ai=None) -> FeedbackDoc:
             "medidas_cm": {"cintura": period.closing_waist_cm, "cadera": period.closing_hip_cm,
                            "brazo": period.closing_arm_cm, "muslo": period.closing_thigh_cm},
             "sensaciones_1_5": period.closing_feelings_json,
-            "adherencia_dieta_0_10": period.adherence_diet_0_10,
+            # En solo-entreno no hay dieta que reportar (ni el cliente ve
+            # esos campos en su portal: irían siempre a null).
+            **({} if training_only else {
+                "adherencia_dieta_0_10": period.adherence_diet_0_10}),
             # En solo-nutrición no hay adherencia de entreno que reportar.
             **({} if nutrition_only else {"adherencia_entreno_0_10": period.adherence_training_0_10}),
-            "comidas_libres": period.free_meals_count,
+            **({} if training_only else {"comidas_libres": period.free_meals_count}),
             "cambios_importantes": period.closing_changes,
             "lo_mas_dificil": period.closing_hardest,
             "objetivo_proximo": period.closing_next_goal,
@@ -426,7 +432,8 @@ def build_period_feedback(db: Session, period_id: int, ai=None) -> FeedbackDoc:
         ),
     }
     try:
-        ai_out = generate_feedback_analysis(payload, ai, nutrition_only=nutrition_only)
+        ai_out = generate_feedback_analysis(payload, ai, nutrition_only=nutrition_only,
+                                            training_only=training_only)
     except AIGenerationError as exc:
         raise FeedbackError(f"La IA no devolvió un feedback válido: {exc}") from exc
 
