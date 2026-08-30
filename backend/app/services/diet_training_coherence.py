@@ -14,6 +14,8 @@ para poder fusionarlo con los demás guardrails y alimentar el panel/validador.
 """
 from __future__ import annotations
 
+import re
+
 from app.services.guardrails import GuardrailReport
 
 # Déficit (fracción sobre TDEE) a partir del cual un mesociclo de SOBRECARGA
@@ -35,6 +37,49 @@ def _to_minutes(hhmm: str | None) -> int | None:
         return int(h) * 60 + int(m)
     except (ValueError, TypeError):
         return None
+
+
+_RE_HORA = re.compile(r"\b([01]?\d|2[0-3])(?::([0-5]\d))?\s*(?:h|hs|horas)?\b")
+_RE_RANGO = re.compile(
+    r"\b([01]?\d|2[0-3])(?::([0-5]\d))?\s*(?:h|hs)?\s*(?:a|-|–|hasta)\s*"
+    r"([01]?\d|2[0-3])(?::([0-5]\d))?\s*(?:h|hs)?")
+
+
+def _hhmm(h: str, m: str | None) -> str:
+    return f"{int(h):02d}:{int(m or 0):02d}"
+
+
+def horarios_de_las_notas(lifestyle_notes: str | None) -> dict:
+    """Saca de las notas de estilo de vida la JORNADA, la hora de ENTRENO y las
+    horas de SUEÑO, que es lo que la anamnesis ya recoge en texto.
+
+    Sin esto, tres de las comprobaciones de coherencia de este módulo no se
+    ejecutaban NUNCA en producción: existían, tenían tests… y nadie les pasaba
+    los datos. Parser deliberadamente CONSERVADOR: solo entiende lo que está
+    escrito de forma inequívoca (una hora o un rango en la línea de su tema) y
+    ante la duda devuelve nada, que es mejor que un aviso inventado.
+    """
+    out: dict = {}
+    for linea in (lifestyle_notes or "").splitlines():
+        limpio = linea.strip().lstrip("-·• ").strip()
+        bajo = limpio.lower()
+        cuerpo = limpio.split(":", 1)[1] if ":" in limpio else limpio
+        if bajo.startswith("trabajo"):
+            m = _RE_RANGO.search(cuerpo)
+            if m:
+                out["workday"] = (_hhmm(m.group(1), m.group(2)),
+                                  _hhmm(m.group(3), m.group(4)))
+        elif bajo.startswith(("horario de entreno", "hora de entreno", "entreno")):
+            m = _RE_HORA.search(cuerpo)
+            if m:
+                out["training_time"] = _hhmm(m.group(1), m.group(2))
+        elif bajo.startswith("sueño") or bajo.startswith("sueno"):
+            m = re.search(r"(\d{1,2})(?:[.,](\d))?\s*(?:h|horas)", cuerpo.lower())
+            if m:
+                horas = float(f"{m.group(1)}.{m.group(2) or 0}")
+                if 3 <= horas <= 14:
+                    out["sleep_hours"] = horas
+    return out
 
 
 def check_diet_training_coherence(
@@ -87,7 +132,6 @@ def check_diet_training_coherence(
     #    que los HC no sean planos. Aviso informativo (no bloqueo) cuando hay
     #    entreno intenso y los HC del plan son bajos.
     if training and macros:
-        weight_hint = None
         carbs = float(macros.get("carbs_g") or 0)
         # Señal simple: muchos días de entreno con pocos HC → sugerir ciclado.
         n_sessions = len(training.get("sessions") or [])
@@ -100,11 +144,28 @@ def check_diet_training_coherence(
     # 4) Horarios encajados con la jornada y el sueño
     if workday and meals:
         entrada, salida = _to_minutes(workday[0]), _to_minutes(workday[1])
-        for m in meals:
-            mt = _to_minutes(m.get("time"))
-            if mt is None or entrada is None or salida is None:
-                continue
-            # Comida principal justo en horario laboral cerrado sin margen: aviso.
+        # El bucle estaba VACÍO (solo un comentario): esta comprobación se
+        # quedó sin escribir y nunca avisó de nada. Lo que de verdad importa
+        # aquí es cuántas tomas caen DENTRO del turno: son las que el cliente
+        # tiene que llevarse preparadas, y si son varias el plan tiene que
+        # estar pensado para eso (táper, comida fría, nada de "recién hecho").
+        if entrada is not None and salida is not None:
+            def _dentro(minuto: int | None) -> bool:
+                if minuto is None:
+                    return False
+                if salida >= entrada:          # turno normal
+                    return entrada <= minuto <= salida
+                return minuto >= entrada or minuto <= salida   # turno de noche
+
+            en_turno = [m for m in meals if _dentro(_to_minutes(m.get("time")))]
+            if len(en_turno) >= 2:
+                nombres = ", ".join(str(m.get("name") or f"toma {m.get('slot')}")
+                                    for m in en_turno[:3])
+                r.warnings.append(
+                    f"{len(en_turno)} tomas caen dentro de su jornada ({nombres}): "
+                    "tienen que ser transportables (táper/frías), no de preparar "
+                    "al momento."
+                )
         # sueño: última comida no debería solaparse con la hora de dormir
     if sleep_hours and meals:
         last = max((_to_minutes(m.get("time")) for m in meals

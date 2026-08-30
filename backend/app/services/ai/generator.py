@@ -1020,10 +1020,17 @@ def generate_monthly_plan(
         try:
             from app.services.diet_training_coherence import check_diet_training_coherence
 
+            from app.services.diet_training_coherence import horarios_de_las_notas
+
+            # La jornada, la hora de entreno y el sueño están en las notas de
+            # la anamnesis: sin pasarlas, tres de las comprobaciones de §6 no
+            # se ejecutaban nunca en producción.
+            horarios = horarios_de_las_notas(ctx.goal_in_own_words)
             coh = check_diet_training_coherence(
                 core.nutrition.model_dump(), training_core.model_dump(),
                 tdee=ctx.tdee,
                 exercise_lookup=_exercise_lookup(ctx.exercise_library),
+                **horarios,
             )
             flags += coh.as_flags()
         except Exception:  # noqa: BLE001 — el chequeo nunca frena la generación
