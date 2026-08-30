@@ -341,6 +341,10 @@ def run_panel_with_repair(
     return RepairOutcome(history[-1], max_iterations, escalated=True, history=history)
 
 
+# Revisores IA a la vez (el panel son 8-10 llamadas independientes).
+PANEL_MAX_PARALELO = 4
+
+
 def make_ai_reviewer(
     ai_client, plan_text: str, anamnesis_text: str, *, criterios_text: str = "",
 ) -> Callable[[dict], ReviewerVerdict]:
@@ -435,21 +439,38 @@ def run_panel(
     degraded: list[str] = []
     if ai_reviewer is not None:
         roles = REVIEWER_ROLES + (CHECKIN_EXTRA_ROLES if is_checkin else [])
-        for role in roles:
+
+        def _corre(role: dict) -> ReviewerVerdict:
             try:
-                verdicts.append(ai_reviewer(role))
+                return ai_reviewer(role)
             except Exception:  # noqa: BLE001 — un revisor caído no tumba el panel
                 # SIN puntuación fabricada: el revisor no se ejecutó. Si era un
                 # rol con veto (p. ej. clínico), su ausencia pesa como hallazgo
                 # MAYOR (empuja el semáforo a ámbar) — nunca un aprobado ficticio.
                 degraded.append(role["key"])
                 sev = "mayor" if role.get("can_veto") else "menor"
-                verdicts.append(ReviewerVerdict(
+                return ReviewerVerdict(
                     role["key"], "no_ejecutado", 0,
                     [ReviewFinding(sev, f"revisor {role['key']} NO ejecutado "
                                         "(API no disponible): revisión degradada")],
                     can_veto=False,
-                ))
+                )
+
+        # EN PARALELO (menos espera del coach, ni un crédito más): los roles son
+        # independientes por diseño —contexto AISLADO, no se ven entre ellos—,
+        # así que encadenar 8-10 llamadas era el grueso del "Generando…" y no
+        # aportaba nada. El PRIMERO va solo: es el que ESCRIBE la caché de los
+        # bloques `system` compartidos; los demás la leen al 10 %.
+        if roles:
+            verdicts.append(_corre(roles[0]))
+        restantes = roles[1:]
+        if restantes:
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=PANEL_MAX_PARALELO) as pool:
+                # `map` conserva el ORDEN de los roles: el resultado del panel
+                # es idéntico al secuencial.
+                verdicts.extend(pool.map(_corre, restantes))
     result = consolidate(verdicts, profile, icp_threshold=icp_threshold)
     result.degraded_reviewers = degraded
     return result

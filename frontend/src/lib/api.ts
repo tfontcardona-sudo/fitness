@@ -217,13 +217,17 @@ export const api = {
   // Enlace ESTABLE de pago de un cliente (para mandarlo por WhatsApp/email).
   payLinkUrl: (portalToken: string) => `${window.location.origin}/api/pay/${portalToken}`,
   exportClientUrl: (id: number) => `/api/clients/${id}/export`,
-  listPlans: (clientId: number) =>
+  // `ligero`: los JSON recortados (kcal, macros, tomas, sello de la
+  // adaptación). Para las pantallas que solo LEEN — con 12-20 versiones, cada
+  // una con su banco de recetas y su educativo, la ficha descargaba varios MB
+  // por apertura, y DOS veces.
+  listPlans: (clientId: number, opts?: { ligero?: boolean }) =>
     request<{
       id: number; month_index: number; version: number; status: string;
       nutrition_json: any; training_json: any; education_json: any;
       guardrail_flags: string[] | null;
       goal_type: string | null; published_at: string | null; created_at: string | null;
-    }[]>("GET", `/clients/${clientId}/plans`),
+    }[]>("GET", `/clients/${clientId}/plans${opts?.ligero ? "?ligero=true" : ""}`),
   // ---- Etapa del objetivo (45 días) + alertas del coach ----
   goalReviewAnalysis: (clientId: number) =>
     request<{ text: string; options: string[] }>("POST", `/clients/${clientId}/goal-review/analysis`),

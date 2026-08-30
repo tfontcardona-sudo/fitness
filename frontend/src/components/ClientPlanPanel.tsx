@@ -53,6 +53,23 @@ function vigente(plans: any[]): any | null {
     ?? [...plans].sort((a, b) => (b.id ?? 0) - (a.id ?? 0))[0];
 }
 
+/** Sello de la ADAPTACIÓN quincenal del plan.
+ *
+ *  En un plan SOLO-ENTRENO no hay nutrición donde guardarlo, así que el
+ *  backend lo escribe en `training_json` (y así lo lee su alerta). El panel
+ *  solo miraba la nutrición: para todo el tier `train` el ciclo no se cerraba
+ *  NUNCA — banner rojo eterno, "Adaptar" devolviendo 409 y la tarjeta de
+ *  cambios aplicados sin aparecer jamás. Una sola verdad, aquí. */
+export function selloAdaptacion(plan: any): {
+  period_index: number;
+  items: { area: string; change: string; reason: string; applied: boolean; detail: string | null }[];
+} | null {
+  if (!plan) return null;
+  const nut = plan.nutrition ?? plan.nutrition_json ?? null;
+  const tr = plan.training ?? plan.training_json ?? null;
+  return nut?.applied_adjustments ?? tr?.applied_adjustments ?? null;
+}
+
 /** Normaliza un plan venga de generatePlan (nutrition/...) o de listPlans (nutrition_json/...). */
 function normalize(p: any): PlanData {
   return {
@@ -211,7 +228,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
     const win = window.open("", "_blank");
     try {
       const pdfUrl = await planPdfUrl();
-      const adaptedIdx = plan?.nutrition?.applied_adjustments?.period_index ?? null;
+      const adaptedIdx = selloAdaptacion(plan)?.period_index ?? null;
       const url = waUrl(phone, planMessage(client.full_name, pdfUrl, adaptedIdx, plan?.month_index ?? 1));
       if (win) win.location.href = url; else openWhatsApp(phone, planMessage(client.full_name, pdfUrl, adaptedIdx, plan?.month_index ?? 1));
       // El enlace genera el PDF al abrirse → el cliente recibe la versión
@@ -236,7 +253,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
     const win = window.open("", "_blank"); // ver nota en sendPlanWhatsApp
     try {
       const pdfUrl = await planPdfUrl();
-      const adaptedIdx = plan?.nutrition?.applied_adjustments?.period_index ?? null;
+      const adaptedIdx = selloAdaptacion(plan)?.period_index ?? null;
       const url = waUrl(phone, planAndFeedbackMessage(client.full_name, fb.content, pdfUrl, adaptedIdx));
       if (win) win.location.href = url; else openWhatsApp(phone, planAndFeedbackMessage(client.full_name, fb.content, pdfUrl, adaptedIdx));
       setNeedsDownload(false); // el enlace enviado sirve la versión vigente
@@ -288,12 +305,25 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
           ? { ...d.orig, detail: d.main, reason: d.reason }
           : { ...d.orig, change: d.main, reason: d.reason },
       );
-      const nutrition = { ...plan.nutrition, applied_adjustments: { ...appliedBlock, items } };
+      // En un plan SOLO-ENTRENO el sello vive en `training_json`: escribirlo
+      // en la nutrición le fabricaría una dieta fantasma (que el PDF y el
+      // portal pintarían en blanco).
+      const tieneDieta = !!plan.nutrition;
+      const bloque = { ...appliedBlock, items };
+      const cuerpo = tieneDieta
+        ? { nutrition_json: { ...plan.nutrition, applied_adjustments: bloque } }
+        : { training_json: { ...plan.training, applied_adjustments: bloque } };
       // La respuesta trae el rev incrementado por el backend: guardarla evita
       // que la SIGUIENTE edición muera con un 409 falso de "otra pestaña"
       // (auditoría crítica). Mismo patrón que el save del editor.
-      const r = await api.updatePlan(plan.id, { nutrition_json: nutrition });
-      setPlan(normalize({ ...plan, nutrition_json: r.nutrition_json ?? nutrition }));
+      const r = await api.updatePlan(plan.id, cuerpo as any);
+      setPlan(normalize({
+        ...plan,
+        nutrition_json: tieneDieta
+          ? (r.nutrition_json ?? (cuerpo as any).nutrition_json) : plan.nutrition,
+        training_json: tieneDieta
+          ? plan.training : (r.training_json ?? (cuerpo as any).training_json),
+      }));
       setAdjDraft(null);
       // Estos cambios también salen en el PDF ("Novedades de tu plan"):
       // el descargado antes queda antiguo.
@@ -758,8 +788,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
   const review = periods
     .filter((p) => p.status === "analyzed")
     .reduce<(typeof periods)[number] | null>((a, b) => (!a || b.period_index > a.period_index ? b : a), null);
-  const appliedBlock: { period_index: number; items: { area: string; change: string; reason: string; applied: boolean; detail: string | null }[] } | null =
-    nut.applied_adjustments ?? null;
+  const appliedBlock = selloAdaptacion(plan);
   const alreadyAdapted = review != null && appliedBlock?.period_index === review.period_index;
 
   /** Un clic en el aviso lleva a donde se resuelve: el editor abierto por la
@@ -1045,7 +1074,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                 revisión #N) y si lleva cambios manuales sin enviar. */}
             <p className="mt-0.5 text-xs text-zinc-500">
               {(() => {
-                const adj = (nut as any)?.applied_adjustments;
+                const adj = selloAdaptacion(plan);
                 const manual = ((nut as any)?.manual_changes?.items ?? []).length;
                 const esBase = plan.guardrail_flags?.some((f) => f.startsWith("base sin IA"));
                 const esCopiaLinea = plan.guardrail_flags?.some((f) => f.startsWith("copiado de"));
@@ -1989,13 +2018,14 @@ function archivedPlans(all: any[], currentId: number): any[] {
       const from = p.created_at ? new Date(p.created_at) : null;
       const next = asc[i + 1]?.created_at ? new Date(asc[i + 1].created_at) : new Date();
       const days = from ? Math.max(1, Math.round((next.getTime() - from.getTime()) / 86400000)) : null;
-      const applied = p.nutrition_json?.applied_adjustments?.items as any[] | undefined;
+      const sello = selloAdaptacion(p);
+      const applied = sello?.items as any[] | undefined;
       const whyChanged = (applied ?? [])
         .filter((it) => it?.change || it?.detail)
         .map((it) => ({ change: it.detail ?? it.change, reason: it.reason ?? "" }));
       const rationale: string | null = p.nutrition_json?.rationale ?? null;
       const whyLabel = whyChanged.length
-        ? `Adaptación a la revisión #${p.nutrition_json?.applied_adjustments?.period_index}:`
+        ? `Adaptación a la revisión #${sello?.period_index}:`
         : rationale
           ? rationale.split("\n")[0].slice(0, 180)
           : p.generated_by === "ai"

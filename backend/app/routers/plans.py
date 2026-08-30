@@ -429,13 +429,57 @@ def revert_plan(plan_id: int, body: PlanRevertIn, db: Session = Depends(get_db))
     return PlanOut.model_validate(plan)
 
 
+def _plan_ligero(p: Plan) -> Plan:
+    """Copia del plan con los JSON GORDOS recortados a lo que pintan las
+    pantallas de solo lectura (la línea "Dieta" del resumen, el sello de la
+    adaptación). Un cliente veterano tiene 12-20 versiones, cada una con su
+    banco de 4×7 recetas con ingredientes, el educativo y los hallazgos del
+    panel: devolverlo entero DOS veces al abrir cada ficha eran varios MB."""
+    nut = p.nutrition_json or None
+    if nut:
+        comidas = nut.get("meals") or []
+        nut = {
+            "target_kcal": nut.get("target_kcal"), "tdee_kcal": nut.get("tdee_kcal"),
+            "macros": nut.get("macros"), "rev": nut.get("rev"),
+            "applied_adjustments": nut.get("applied_adjustments"),
+            "meals": [{"slot": m.get("slot"), "name": m.get("name"),
+                       "time": m.get("time")} for m in comidas if isinstance(m, dict)],
+        }
+    tr = p.training_json or None
+    if tr:
+        sesiones = tr.get("sessions") or []
+        tr = {
+            "split_name": tr.get("split_name"),
+            "applied_adjustments": tr.get("applied_adjustments"),
+            "sessions": [{"day": x.get("day"), "name": x.get("name")}
+                         for x in sesiones if isinstance(x, dict)],
+        }
+    # Objeto SUELTO (no la fila de la sesión): recortar el dict del ORM haría
+    # que SQLAlchemy persistiera el recorte en el siguiente flush.
+    return Plan(
+        id=p.id, client_id=p.client_id, month_index=p.month_index, version=p.version,
+        status=p.status, goal_type=p.goal_type, generated_by=p.generated_by,
+        nutrition_json=nut, training_json=tr, education_json=None,
+        guardrail_flags=p.guardrail_flags, review_json=None,
+        created_at=p.created_at, published_at=p.published_at,
+    )
+
+
 @router.get("/api/clients/{client_id}/plans", response_model=list[PlanOut])
-def list_plans(client_id: int, db: Session = Depends(get_db)) -> list[PlanOut]:
+def list_plans(client_id: int, ligero: bool = False,
+               db: Session = Depends(get_db)) -> list[PlanOut]:
+    """Planes del cliente, del más reciente al más antiguo.
+
+    `ligero=true` devuelve los JSON recortados (kcal, macros, tomas, sello de
+    la adaptación): es lo que necesitan las pantallas que solo LEEN. El editor
+    y el panel de planificación siguen pidiendo el plan completo."""
     _client_or_404(db, client_id)
     plans = db.scalars(
         select(Plan).where(Plan.client_id == client_id)
         .order_by(Plan.month_index.desc(), Plan.version.desc())
     ).all()
+    if ligero:
+        return [PlanOut.model_validate(_plan_ligero(p)) for p in plans]
     return [PlanOut.model_validate(p) for p in plans]
 
 

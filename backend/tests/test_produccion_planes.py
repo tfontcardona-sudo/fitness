@@ -366,3 +366,68 @@ def test_la_adaptacion_no_pisa_el_texto_que_lee_el_cliente():
     texto2 = (nuevo2.nutrition_json or {}).get("rationale") or ""
     assert original in texto2 and "manualmente" not in texto2
     db.close()
+
+
+@pytestmark_db
+def test_la_lista_ligera_de_planes_no_arrastra_el_banco_ni_el_educativo():
+    """La ficha pedía DOS veces todas las versiones del plan con sus cuatro
+    JSONB completos para pintar una línea de kcal y el sello de la adaptación:
+    varios MB por apertura en un cliente veterano."""
+    import os
+
+    from fastapi.testclient import TestClient
+
+    from app.db import SessionLocal
+    from app.main import app
+    from app.security import create_access_token, hash_password
+    from app.models import User
+
+    db = SessionLocal()
+    c, plan, _ex = _nuevo_cliente_con_plan(db)
+    plan.nutrition_json = {
+        **plan.nutrition_json,
+        "meals": [{"slot": 1, "name": "Desayuno", "time": "08:00",
+                   "target": {"kcal": 500}}],
+        "meal_bank": {"mode": "flexible_7", "slots": [{"slot": 1, "options": [
+            {"key": "A", "title": "Tortilla", "ingredients": [{"food": "Huevo", "grams": 120}],
+             "macros": {"kcal": 500, "protein_g": 40, "carbs_g": 40, "fat_g": 15}}]}]},
+        "applied_adjustments": {"period_index": 3, "items": []},
+    }
+    plan.education_json = {"pills": [{"topic": "Sueño", "for_client": "Duerme 8 h"}]}
+    db.commit()
+    cid = c.id
+    db.close()
+
+    usuario = os.environ.get("ADMIN_1_USER", "coach1")
+    db = SessionLocal()
+    try:
+        from sqlalchemy import select
+
+        if not db.scalar(select(User).where(User.username == usuario)):
+            db.add(User(username=usuario, password_hash=hash_password("test")))
+            db.commit()
+    finally:
+        db.close()
+    auth = {"Authorization": f"Bearer {create_access_token(usuario)}"}
+
+    with TestClient(app) as http:
+        completo = http.get(f"/api/clients/{cid}/plans", headers=auth).json()
+        ligero = http.get(f"/api/clients/{cid}/plans?ligero=true", headers=auth).json()
+
+    assert completo[0]["nutrition_json"]["meal_bank"]["slots"], "el completo sigue entero"
+    assert completo[0]["education_json"]
+
+    n = ligero[0]["nutrition_json"]
+    assert "meal_bank" not in n and ligero[0]["education_json"] is None
+    assert n["target_kcal"] == 1800 and n["macros"]["protein_g"] == 160
+    assert len(n["meals"]) == 1 and n["meals"][0]["name"] == "Desayuno"
+    assert n["applied_adjustments"]["period_index"] == 3
+
+    # …y el recorte NO se persiste en la base (es una copia suelta).
+    db = SessionLocal()
+    try:
+        from app.models import Plan
+
+        assert (db.get(Plan, plan.id).nutrition_json or {}).get("meal_bank")
+    finally:
+        db.close()

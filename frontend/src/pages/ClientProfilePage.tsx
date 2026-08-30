@@ -190,7 +190,8 @@ export default function ClientProfilePage() {
   const [planDiet, setPlanDiet] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
-    api.listPlans(clientId)
+    // LIGERO: la línea "Dieta" solo necesita kcal, macros y el nº de tomas.
+    api.listPlans(clientId, { ligero: true })
       .then((plans: any[]) => {
         if (!alive) return;
         const active = plans.find((p) => p.status === "published");

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { libre } from "../lib/accordion";
 import { ancla } from "../lib/anchors";
 import { Sparkles, AlertTriangle, MessageSquare, MessageCircle, Mail, Video, Target, TrendingUp, BarChart3, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
+import { selloAdaptacion } from "./ClientPlanPanel";
 import { api, getToken } from "../lib/api";
 import { feedbackBody, feedbackMessage, openWhatsApp, videoCallModifyMessage, videoCallScheduledMessage, waPhone } from "../lib/whatsapp";
 import { pkg } from "../lib/packages";
@@ -115,8 +116,19 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
   }
 
   const load = useCallback(() => {
-    api.listPlans(client.id)
-      .then((plans) => setAdaptedIdx(plans[0]?.nutrition_json?.applied_adjustments?.period_index ?? null))
+    // LIGERO: esta pantalla solo mira el sello de la adaptación, no necesita
+    // el banco de recetas ni el educativo de cada versión.
+    api.listPlans(client.id, { ligero: true })
+      .then((plans) => {
+        // El plan VIGENTE (publicado; si no, el más nuevo), no `plans[0]`: con
+        // un borrador retenido de un mes superior, ese no es el activo. Y el
+        // sello puede vivir en el entreno (plan solo-entrenamiento): sin eso,
+        // para todo el tier `train` el banner de "revisar y adaptar" era
+        // eterno y el botón devolvía 409.
+        const vigente = plans.find((p: any) => p.status === "published")
+          ?? [...plans].sort((a: any, b: any) => (b.id ?? 0) - (a.id ?? 0))[0];
+        setAdaptedIdx(selloAdaptacion(vigente)?.period_index ?? null);
+      })
       .catch(() => {});
     api.listPeriods(client.id)
       .then(async (ps) => {
