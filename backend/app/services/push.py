@@ -153,9 +153,14 @@ def has_session_on(training_json: dict | None, day: date) -> bool:
     if not training_json:
         return False
     label = portal_svc.DAY_LABELS[day.weekday()].lower()
+    # Mismo lector a prueba de basura que la pantalla "Hoy": con un `day` que
+    # no fuese texto, el `.strip()` reventaba AQUÍ DENTRO del trabajo
+    # programado y se llevaba por delante el recordatorio de TODOS los
+    # clientes, no solo el del plan roto.
     return any(
-        (s.get("day", "").strip().lower() == label)
-        for s in training_json.get("sessions", [])
+        portal_svc.dia_de_sesion(s) == label
+        for s in (training_json.get("sessions") or [])
+        if isinstance(s, dict)
     )
 
 

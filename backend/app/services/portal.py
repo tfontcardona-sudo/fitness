@@ -316,16 +316,24 @@ def _meals_for_today(plan: Plan, client: Client, chosen: dict | None) -> list[di
             # plato del día = el del weekday actual en el menú cerrado
             today_idx = today_local().weekday()
             slug = DAY_SLUGS[today_idx]
-            for d in bank.get("days", []):
-                if d["day"] == slug:
-                    for meal in d["meals"]:
-                        if meal["slot"] == slot:
-                            dish = meal["dish"]
-                            entry["options"] = [{
-                                "key": dish.get("key", "A"), "title": dish["title"],
-                                "macros": dish["macros"], "prep_minutes": dish.get("prep_minutes"),
-                                "tags": dish.get("tags", []),
-                            }]
+            # Lectura defensiva: el menú cerrado también llega editado a
+            # mano o importado del Word, y con una clave de menos el corchete
+            # tumbaba la pantalla entera en vez de saltarse ese día.
+            for d in bank.get("days") or []:
+                if not isinstance(d, dict) or d.get("day") != slug:
+                    continue
+                for meal in d.get("meals") or []:
+                    if not isinstance(meal, dict) or meal.get("slot") != slot:
+                        continue
+                    dish = meal.get("dish") or {}
+                    if not dish.get("title"):
+                        continue
+                    entry["options"] = [{
+                        "key": dish.get("key", "A"), "title": dish["title"],
+                        "macros": dish.get("macros") or {},
+                        "prep_minutes": dish.get("prep_minutes"),
+                        "tags": dish.get("tags", []),
+                    }]
         slots_out.append(entry)
     return slots_out
 
@@ -387,6 +395,18 @@ def _resolve_session(db: Session, sess: dict, load_factor: float = 1.0) -> dict:
     }
 
 
+def dia_de_sesion(sess: dict) -> str:
+    """El día de una sesión, en minúsculas y a prueba de basura.
+
+    El esquema dice `day: str` ("Lunes"…), pero a `training_json` le llegan
+    planes editados a mano, importados del Word y copiados de un modelo. Con un
+    `day` numérico —o nulo— el `.strip()` de quien lo leía reventaba con un
+    AttributeError: la pantalla "Hoy" del cliente (la más visitada del portal)
+    se caía con un 500, y el recordatorio diario se llevaba por delante el
+    aviso de TODOS los clientes, no solo el del plan roto."""
+    return str(sess.get("day") or "").strip().lower()
+
+
 def _session_for_today(db: Session, plan: Plan, today: date) -> dict | None:
     """Sesión de entrenamiento que toca hoy según el día de la semana.
 
@@ -400,7 +420,7 @@ def _session_for_today(db: Session, plan: Plan, today: date) -> dict | None:
     week = current_training_week(db, plan, today)
     factor = (week or {}).get("load_factor") or 1.0
     for sess in training.get("sessions", []):
-        if sess.get("day", "").strip().lower() == today_label:
+        if dia_de_sesion(sess) == today_label:
             return _resolve_session(db, sess, factor)
     return None
 

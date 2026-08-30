@@ -490,3 +490,33 @@ def test_una_progresion_semanal_malformada_no_tumba_la_pantalla_de_entreno():
                 ]})
     semana = current_training_week(_DbFalsa(), plan, hoy)
     assert semana is not None and semana["total_weeks"] == 2
+
+
+def test_un_dia_de_sesion_que_no_es_texto_no_tumba_hoy_ni_los_recordatorios():
+    """`training_json` llega editado a mano, importado del Word y copiado de un
+    modelo. Con un `day` numérico el `.strip()` reventaba en DOS sitios: la
+    pantalla "Hoy" del cliente (la más visitada del portal, 500 y pantalla
+    rota) y `has_session_on`, que corre DENTRO del trabajo de recordatorios y
+    se llevaba por delante el aviso de todos los clientes, no solo el del plan
+    roto."""
+    from datetime import date
+
+    from app.services.portal import DAY_LABELS, dia_de_sesion
+    from app.services.push import has_session_on
+
+    etiquetas = {e.lower() for e in DAY_LABELS}
+    for basura in (1, None, 0, [], {}, 3.5, True):
+        salida = dia_de_sesion({"day": basura})     # lo que NO puede es reventar
+        assert isinstance(salida, str)
+        assert salida not in etiquetas, f"{basura!r} no es un día de la semana"
+    assert dia_de_sesion({"day": "  Lunes  "}) == "lunes"
+    assert dia_de_sesion({}) == ""
+
+    hoy = date.today()
+    etiqueta = DAY_LABELS[hoy.weekday()]
+    # Un plan con basura no puede tumbar el recordatorio: responde False.
+    assert has_session_on({"sessions": [{"day": 3, "name": "Torso"}]}, hoy) is False
+    assert has_session_on({"sessions": ["Lunes", None]}, hoy) is False
+    assert has_session_on({"sessions": None}, hoy) is False
+    # Y el plan bueno sigue detectándose igual.
+    assert has_session_on({"sessions": [{"day": etiqueta, "name": "Torso"}]}, hoy) is True
