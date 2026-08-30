@@ -257,6 +257,26 @@ def submit_anamnesis(
             if contras:
                 cuerpo = (f"⚠ {len(contras)} posible(s) contradicción(es): "
                           f"{contras[0].detail}. Revisa la ficha antes de generar.")
+            # …y se GUARDAN donde la ficha las lee: por esta vía se calculaban
+            # solo para el push y el coach no volvía a verlas nunca.
+            try:
+                import json as _json
+
+                from app.routers.clients import _anamnesis_analysis_path
+                from app.services.anamnesis_extraction import client_portrait
+
+                _anamnesis_analysis_path(client.id).write_text(
+                    _json.dumps({
+                        "deep_analysis": client_portrait({k: getattr(client, k, None) for k in (
+                            "sex", "goal_type", "level", "training_days",
+                            "session_max_min", "lifestyle_notes", "injuries_notes",
+                            "medical_notes", "medication_notes", "food_allergies",
+                            "food_dislikes")}),
+                        "contradictions": [c.detail for c in contras],
+                        "at": datetime.now(timezone.utc).isoformat(),
+                    }, ensure_ascii=False), encoding="utf-8")
+            except Exception:  # noqa: BLE001 — el sidecar nunca rompe el envío
+                pass
         except Exception:  # noqa: BLE001
             pass
         # El cliente lee "te hemos enviado el acceso por email": si NO salió,

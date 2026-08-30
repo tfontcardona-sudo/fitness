@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ancla } from "../lib/anchors";
 import { ChevronDown, Eye, FileText, Pencil, Save, Sparkles } from "lucide-react";
+import { PeriodPhotosFolded } from "./ClientFeedbackTab";
 import { api, ApiError, getToken } from "../lib/api";
 import type { ClientOut } from "../types";
 import { ExpandableArea, Spinner, useToast } from "./ui";
@@ -31,9 +32,20 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
 
   // Nombre del PDF de anamnesis subido (para poder verlo/descargarlo desde aquí).
   useEffect(() => {
-    api.listClientDocuments(client.id)
+    // Solo el CUESTIONARIO: con los adjuntos (analítica, informes) en la
+    // lista, "Ver PDF" abría el informe de sangre en vez de la anamnesis.
+    api.listClientDocuments(client.id, "anamnesis")
       .then((docs) => setPdfName(docs[0]?.name ?? null))
       .catch(() => setPdfName(null));
+    // Y las contradicciones YA detectadas: se calculaban al leer la anamnesis
+    // (o al enviarse el formulario), se guardaban… y solo se veían volviendo a
+    // pulsar "Leer con IA", que gasta créditos y pisa las correcciones.
+    api.anamnesisAnalysis(client.id)
+      .then((a) => {
+        setContradicciones(a.contradictions ?? []);
+        setAnalysis((prev) => prev ?? a.deep_analysis ?? null);
+      })
+      .catch(() => {});
   }, [client.id]);
 
   function openPdf() {
@@ -173,6 +185,13 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
           )}
         </div>
       )}
+
+      {/* FOTOS INICIALES (línea base): el cliente las sube al terminar su
+          cuestionario con un "solo las ve tu coach"… y no había pantalla donde
+          verlas. Es el "antes" que da valor al primer informe. Plegadas y con
+          carga perezosa (no baja un solo blob hasta abrirlas). */}
+      <PeriodPhotosFolded clientId={client.id} periodId={null}
+        label="Fotos iniciales (línea base)" />
 
       {!editMode && <AnamnesisView client={client} />}
 

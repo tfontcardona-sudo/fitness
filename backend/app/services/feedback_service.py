@@ -82,23 +82,37 @@ def _perimeters(prev: Period | None, cur: Period,
 
 
 def _photo_pairs(db: Session, prev: Period | None, cur: Period) -> list[tuple[str, str]] | None:
-    """Empareja fotos por ángulo: período anterior vs actual."""
+    """Empareja fotos por ángulo: el "antes" contra las de este período.
+
+    En la PRIMERA revisión el "antes" son las fotos INICIALES de la anamnesis
+    (las que el cliente sube al terminar el cuestionario, guardadas sin
+    período): mismo criterio que los perímetros iniciales. Antes se devolvía
+    None y el primer informe —el que más necesita enseñar el cambio— salía sin
+    comparativa aunque las fotos existieran.
+    """
     from app.models import ProgressPhoto
 
-    if not prev:
-        return None
-    def by_kind(pid: int) -> dict[str, str]:
-        rows = db.scalars(select(ProgressPhoto).where(ProgressPhoto.period_id == pid))
+    def _por_angulo(consulta) -> dict[str, str]:
         d: dict[str, str] = {}
-        for ph in rows:
+        for ph in db.scalars(consulta):
             try:
                 p = abs_path(ph.file_path)
                 if p.exists():
                     d[ph.kind] = str(p)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 pass
         return d
-    before, after = by_kind(prev.id), by_kind(cur.id)
+
+    after = _por_angulo(select(ProgressPhoto).where(ProgressPhoto.period_id == cur.id))
+    if not after:
+        return None
+    if prev is not None:
+        before = _por_angulo(
+            select(ProgressPhoto).where(ProgressPhoto.period_id == prev.id))
+    else:
+        before = _por_angulo(
+            select(ProgressPhoto).where(ProgressPhoto.client_id == cur.client_id,
+                                        ProgressPhoto.period_id.is_(None)))
     pairs = [(before[k], after[k]) for k in after if k in before]
     return pairs or None
 

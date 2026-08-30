@@ -238,9 +238,17 @@ export const api = {
   listAlerts: () =>
     request<{ alerts: CoachAlert[]; count: number; high: number }>("GET", "/alerts"),
   planDocumentUrl: (planId: number) => `/api/plans/${planId}/document`,
-  listClientDocuments: (clientId: number) =>
-    request<{ name: string; size_kb: number; uploaded_at: number }[]>(
-      "GET", `/clients/${clientId}/documents`),
+  // `kind` distingue el CUESTIONARIO de los adjuntos (analítica, informes):
+  // sin él, subir una analítica daba la anamnesis por recibida y "Ver PDF"
+  // abría el informe de sangre.
+  listClientDocuments: (clientId: number, kind?: "anamnesis" | "adjunto") =>
+    request<{ name: string; kind?: string; size_kb: number; uploaded_at: number }[]>(
+      "GET", `/clients/${clientId}/documents${kind ? `?kind=${kind}` : ""}`),
+  // Lo que dejó anotado la lectura de la anamnesis: la síntesis y las
+  // CONTRADICCIONES detectadas (se calculaban y no las veía nadie).
+  anamnesisAnalysis: (clientId: number) =>
+    request<{ deep_analysis: string | null; contradictions: string[]; read_at: string | null }>(
+      "GET", `/clients/${clientId}/anamnesis-analysis`),
   uploadClientDocument: (clientId: number, file: File, kind: "anamnesis" | "adjunto" = "anamnesis") => {
     const fd = new FormData();
     fd.append("file", file);

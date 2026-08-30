@@ -1085,7 +1085,14 @@ const KIND_LABEL: Record<string, string> = {
  *  NO son públicas). Muestra miniaturas; un toque abre la foto a tamaño real. */
 /** Envoltorio plegado de las fotos: consulta solo el NÚMERO (metadatos, barato)
  *  y no descarga ninguna imagen hasta que el coach abre el desplegable. */
-function PeriodPhotosFolded({ clientId, periodId }: { clientId: number; periodId: number }) {
+export function PeriodPhotosFolded({ clientId, periodId, label }: {
+  clientId: number;
+  /** `null` = las fotos INICIALES de la anamnesis (sin período): el "antes" de
+   *  la primera revisión, que hasta ahora no se veía en ninguna pantalla del
+   *  coach pese a pedírselas al cliente con un "solo las ve tu coach". */
+  periodId: number | null;
+  label?: string;
+}) {
   const [count, setCount] = useState<number | null>(null);
   const [open, setOpen] = useState(false);
   useEffect(() => {
@@ -1100,14 +1107,14 @@ function PeriodPhotosFolded({ clientId, periodId }: { clientId: number; periodId
     <details className="mt-2" {...libre()}
       onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
       <summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-zinc-300">
-        Fotos del período ({count})
+        {label ?? "Fotos del período"} ({count})
       </summary>
       {open && <PeriodPhotos clientId={clientId} periodId={periodId} />}
     </details>
   );
 }
 
-function PeriodPhotos({ clientId, periodId }: { clientId: number; periodId: number }) {
+function PeriodPhotos({ clientId, periodId }: { clientId: number; periodId: number | null }) {
   const [photos, setPhotos] = useState<{ id: number; kind: string; url: string }[] | null>(null);
   const [total, setTotal] = useState(0);
 

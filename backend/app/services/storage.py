@@ -135,6 +135,10 @@ def list_documents(client_id: int) -> list[dict]:
             st = f.stat()
             items.append({
                 "name": f.name,
+                # anamnesis | adjunto (analítica, informe médico): sin esto la
+                # web daba la anamnesis por recibida al subir una analítica, y
+                # "Ver PDF" abría el informe de sangre en vez del cuestionario.
+                "kind": "adjunto" if f.name.startswith("adjunto_") else "anamnesis",
                 "size_kb": round(st.st_size / 1024),
                 "uploaded_at": st.st_mtime,
                 "rel_path": str(f.relative_to(storage_root())),

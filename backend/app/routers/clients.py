@@ -894,10 +894,42 @@ def upload_client_document(
 
 
 @router.get("/{client_id}/documents")
-def get_client_documents(client_id: int, db: Session = Depends(get_db)) -> list[dict]:
-    """Lista los documentos subidos del cliente."""
+def get_client_documents(client_id: int, kind: str | None = None,
+                         db: Session = Depends(get_db)) -> list[dict]:
+    """Documentos subidos del cliente. Cada uno con su `kind`
+    (anamnesis | adjunto); `?kind=anamnesis` filtra solo el cuestionario."""
     _client_or_404_docs(db, client_id)
-    return list_documents(client_id)
+    docs = list_documents(client_id)
+    if kind:
+        docs = [d for d in docs if d.get("kind") == kind]
+    return docs
+
+
+@router.get("/{client_id}/anamnesis-analysis")
+def get_anamnesis_analysis(client_id: int, db: Session = Depends(get_db)) -> dict:
+    """Lo que la lectura de la anamnesis dejó anotado: la síntesis y las
+    CONTRADICCIONES detectadas ("declara vegano pero menciona pollo", "quiere
+    bajar 17 kg antes del 01/10: ~1,8 %/semana").
+
+    Se calculaban, se guardaban en el sidecar… y no las devolvía ningún
+    endpoint: la única forma de verlas era volver a pulsar "Leer con IA", que
+    gasta créditos y pisa las correcciones del coach. Justo lo que hay que
+    resolver ANTES de generar el plan."""
+    import json as _json
+
+    _client_or_404_docs(db, client_id)
+    try:
+        ruta = _anamnesis_analysis_path(client_id)
+        if ruta.exists():
+            datos = _json.loads(ruta.read_text(encoding="utf-8"))
+            return {
+                "deep_analysis": datos.get("deep_analysis"),
+                "contradictions": datos.get("contradictions") or [],
+                "read_at": datos.get("at"),
+            }
+    except Exception:  # noqa: BLE001 — un sidecar roto no rompe la ficha
+        pass
+    return {"deep_analysis": None, "contradictions": [], "read_at": None}
 
 
 @router.post("/{client_id}/send-portal-access")
@@ -2113,6 +2145,7 @@ def _do_read_anamnesis(client_id: int, db: Session) -> dict:
                 "deep_analysis": data.get("deep_analysis"),
                 "injuries_notes": data.get("injuries_notes"),
                 "contradictions": contradicciones,
+                "at": datetime.now(timezone.utc).isoformat(),
             }, ensure_ascii=False),
             encoding="utf-8",
         )
