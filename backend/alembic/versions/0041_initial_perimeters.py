@@ -17,10 +17,14 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("clients", sa.Column("initial_waist_cm", sa.Float(), nullable=True))
-    op.add_column("clients", sa.Column("initial_hip_cm", sa.Float(), nullable=True))
-    op.add_column("clients", sa.Column("initial_arm_cm", sa.Float(), nullable=True))
-    op.add_column("clients", sa.Column("initial_thigh_cm", sa.Float(), nullable=True))
+    # Idempotente: la 0001 crea el esquema con `create_all` desde los modelos,
+    # así que en una instalación NUEVA estas columnas ya nacen puestas y el
+    # ALTER reventaba la cadena entera (el contenedor no llegaba a arrancar).
+    insp = sa.inspect(op.get_bind())
+    cols = {c["name"] for c in insp.get_columns("clients")}
+    for nombre in ("initial_waist_cm", "initial_hip_cm", "initial_arm_cm", "initial_thigh_cm"):
+        if nombre not in cols:
+            op.add_column("clients", sa.Column(nombre, sa.Float(), nullable=True))
 
 
 def downgrade() -> None:

@@ -17,7 +17,12 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("clients", sa.Column("stripe_subscription_id", sa.String(64), nullable=True))
+    # Idempotente: la 0001 crea el esquema con `create_all` desde los modelos,
+    # así que en una instalación NUEVA la columna ya nace puesta y este ALTER
+    # reventaba la cadena entera (el contenedor no llegaba a arrancar).
+    insp = sa.inspect(op.get_bind())
+    if "stripe_subscription_id" not in {c["name"] for c in insp.get_columns("clients")}:
+        op.add_column("clients", sa.Column("stripe_subscription_id", sa.String(64), nullable=True))
 
 
 def downgrade() -> None:

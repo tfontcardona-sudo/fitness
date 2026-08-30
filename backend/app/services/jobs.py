@@ -43,6 +43,19 @@ def _first_name(client: Client) -> str:
 
 
 def _already_sent_today(db: Session, client_id: int, kind: str, today: date) -> bool:
+    """¿Ya se le mandó HOY un correo de este tipo?
+
+    Un envío FALLIDO (SMTP caído, contraseña caducada) deja igualmente su fila en
+    el registro. Contarla como "ya enviado" convertía una caída pasajera del
+    correo en un recordatorio perdido para SIEMPRE: el del día 12, el de cerrar
+    la quincena y los de arranque (D+3/D+7) solo se disparan en SU día, así que
+    no había segunda oportunidad. Ahora un fallo no bloquea: al día siguiente se
+    reintenta (el mantenimiento corre una vez al día, no hay riesgo de repetir).
+
+    Los `disabled` SÍ cuentan: no son un fallo, es que ese cliente tiene los
+    correos apagados a propósito — reintentarlo cada día solo llenaría el
+    registro sin enviar nada.
+    """
     start = datetime(today.year, today.month, today.day, tzinfo=timezone.utc)
     n = db.scalar(
         select(func.count())
@@ -51,6 +64,7 @@ def _already_sent_today(db: Session, client_id: int, kind: str, today: date) -> 
             EmailLog.client_id == client_id,
             EmailLog.kind == kind,
             EmailLog.sent_at >= start,
+            EmailLog.status != "failed",
         )
     )
     return bool(n)

@@ -41,7 +41,12 @@ def db():
 
 @pytest.fixture(autouse=True)
 def _no_real_email(monkeypatch):
-    """Sustituye el transporte SMTP: ningún email sale de verdad."""
+    """Sustituye el transporte SMTP: ningún email sale de verdad.
+
+    Además da por CONFIGURADO el SMTP. Sin eso, `send()` cortaba antes de llegar
+    al transporte y registraba todos los correos como `failed`: la suite creía
+    estar probando envíos y probaba fallos (y la idempotencia se sostenía porque
+    el fallo bloqueaba el reintento — justo el fallo que corrige esta tanda)."""
     from app.services.email_service import EmailService
 
     sent = []
@@ -51,6 +56,9 @@ def _no_real_email(monkeypatch):
     from app.config import settings
 
     monkeypatch.setattr(settings, "emails_enabled", True)
+    monkeypatch.setattr(settings, "smtp_host", "smtp.example.test")
+    monkeypatch.setattr(settings, "smtp_user", "coach@example.com")
+    monkeypatch.setattr(settings, "smtp_pass", "clave-de-prueba")
     monkeypatch.setattr(settings, "smtp_from", "coach@example.com")
     return sent
 
