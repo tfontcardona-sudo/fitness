@@ -57,7 +57,7 @@ def test_si_el_mantenimiento_lleva_dias_sin_correr_se_avisa(sidecar):
     ruta.write_text(json.dumps(datos), encoding="utf-8")
 
     motivo = sidecar.automatismos_parados()
-    assert motivo and "no se ejecuta" in motivo
+    assert motivo and "no se ejecuta" in motivo.lower()
     assert "72 h" in motivo or "71 h" in motivo
 
 
@@ -274,3 +274,59 @@ def test_la_dedup_del_resumen_del_coach_aguanta_muchas_alertas(tmp_path, monkeyp
     # Y sigue distinguiendo: si cambia una alerta, cambia la huella.
     otras = alertas[:-1] + [{"key": "cliente-99:no_logs:2026-08-30", "kind": "x"}]
     assert push_svc._huella_de_alertas(otras) != huella
+
+
+def test_se_vigilan_los_cinco_trabajos_no_solo_el_mantenimiento(sidecar):
+    """Solo se miraba el mantenimiento diario. Los otros cuatro registran su
+    estado desde siempre y nadie los leía: un `push_reminders` caído tres días
+    deja a TODOS los clientes sin un solo aviso durante media quincena, y el
+    panel decía que los automatismos iban bien."""
+    import json
+    from datetime import datetime, timedelta, timezone
+
+    from app.services.job_state import ESPERADO_HORAS, MARGEN_NO_CRITICO
+
+    ahora = datetime.now(timezone.utc)
+    for nombre in ESPERADO_HORAS:
+        sidecar.record_job(nombre, ok=True, detalle="ok")
+    assert sidecar.automatismos_parados() is None, "recién ejecutados: todo bien"
+
+    ruta = sidecar._ruta()
+    for nombre, horas in ESPERADO_HORAS.items():
+        if nombre in sidecar.CRITICOS:
+            continue
+        datos = json.loads(ruta.read_text(encoding="utf-8"))
+        muerto = ahora - timedelta(hours=horas * MARGEN_NO_CRITICO + 2)
+        datos[nombre]["last_success_at"] = muerto.isoformat()
+        ruta.write_text(json.dumps(datos), encoding="utf-8")
+
+        motivo = sidecar.automatismos_parados(ahora)
+        assert motivo, f"{nombre} lleva días muerto y no se avisa"
+        assert "no se ejecuta" in motivo.lower(), motivo
+
+        # Se restaura para no arrastrarlo al siguiente.
+        datos[nombre]["last_success_at"] = ahora.isoformat()
+        ruta.write_text(json.dumps(datos), encoding="utf-8")
+
+
+def test_un_trabajo_que_lleva_dias_fallando_lo_dice(sidecar):
+    """Tras un fallo, el aviso devolvía siempre la misma frase suave y no
+    escalaba nunca: un trabajo roto desde hacía días se leía igual que uno que
+    falló una vez."""
+    import json
+    from datetime import datetime, timedelta, timezone
+
+    ahora = datetime.now(timezone.utc)
+    sidecar.record_job("daily_maintenance", ok=False, detalle="boom")
+    reciente = sidecar.automatismos_parados(ahora)
+    assert reciente and "Falla" in reciente
+
+    ruta = sidecar._ruta()
+    datos = json.loads(ruta.read_text(encoding="utf-8"))
+    datos["daily_maintenance"]["last_success_at"] = (
+        ahora - timedelta(days=5)).isoformat()
+    ruta.write_text(json.dumps(datos), encoding="utf-8")
+
+    viejo = sidecar.automatismos_parados(ahora)
+    assert viejo and "120 h sin completarse" in viejo, viejo
+    assert viejo != reciente, "el aviso tiene que escalar, no repetirse igual"

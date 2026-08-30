@@ -33,9 +33,30 @@ ESPERADO_HORAS = {
 }
 MARGEN = 1.5   # 24 h → se avisa a las 36 h
 
-# Lo que de verdad hace falta que corra: el resto son recordatorios que pueden
-# saltarse una vuelta sin consecuencias.
+# Lo que de verdad hace falta que corra: si esto se para, el ciclo entero se
+# detiene (no se abren períodos, no hay transiciones de estado).
 CRITICOS = ("daily_maintenance",)
+
+# Nombre legible de cada trabajo y qué se pierde si deja de correr. Los no
+# críticos pueden saltarse UNA vuelta sin consecuencias — por eso su margen es
+# más ancho—, pero llevar días muertos no es saltarse una vuelta: un
+# `push_reminders` caído tres días deja a TODOS los clientes sin un solo aviso
+# durante media quincena, y nada lo decía porque solo se vigilaba el
+# mantenimiento diario.
+QUE_SE_PIERDE = {
+    "daily_maintenance": ("el mantenimiento diario",
+                          "los períodos y los recordatorios automáticos están parados"),
+    "push_reminders": ("los recordatorios del portal",
+                       "los clientes no reciben ningún aviso de registro"),
+    "coach_digest": ("el resumen de avisos al móvil",
+                     "no te llega nada al móvil aunque haya avisos"),
+    "video_call_reminders": ("los recordatorios de videollamada",
+                             "ni tú ni el cliente recibís el aviso de la cita"),
+    "weekly_coach_summary": ("el resumen semanal del lunes",
+                             "no sale el repaso de la semana"),
+}
+# Un trabajo NO crítico se avisa cuando lleva muerto varias vueltas, no una.
+MARGEN_NO_CRITICO = 6
 
 
 def _ruta() -> Path:
@@ -98,31 +119,54 @@ def automatismos_parados(ahora: datetime | None = None) -> str | None:
         # alarma (un despliegue reciente es lo normal).
         return None
     ahora = ahora or datetime.now(timezone.utc)
-    for nombre in CRITICOS:
+
+    def _horas_sin_exito(e: dict) -> int | None:
+        exito = e.get("last_success_at")
+        if not exito:
+            return None
+        try:
+            cuando = datetime.fromisoformat(exito)
+        except ValueError:
+            return None
+        if cuando.tzinfo is None:
+            cuando = cuando.replace(tzinfo=timezone.utc)
+        return int((ahora - cuando).total_seconds() // 3600)
+
+    # Los CRÍTICOS primero: si el mantenimiento diario está parado, eso es lo
+    # que hay que contar, no que además falte un recordatorio.
+    for nombre in list(CRITICOS) + [n for n in ESPERADO_HORAS if n not in CRITICOS]:
         e = datos.get(nombre)
         if not e:
             continue
+        critico = nombre in CRITICOS
+        etiqueta, consecuencia = QUE_SE_PIERDE.get(
+            nombre, (f"el trabajo «{nombre}»", "algo automático no se está haciendo"))
+        horas = _horas_sin_exito(e)
+        margen = MARGEN if critico else MARGEN_NO_CRITICO
+        limite_h = ESPERADO_HORAS[nombre] * margen
+
         # La última ejecución terminó MAL (reventó entera, o se dejó clientes
         # por el camino): eso hay que decirlo hoy, no dentro de 36 h. Un fallo
         # por cliente suele ser determinista —sus datos—, así que ese cliente
         # se queda sin recordatorios ni transiciones día tras día.
         if e.get("last_ok") is False:
             detalle = str(e.get("detail") or "")[:160]
-            return ("El mantenimiento diario terminó con errores: hay clientes "
-                    f"sin atender (sin recordatorios ni cambios de estado). {detalle}")
-        exito = e.get("last_success_at")
-        if not exito:
-            return ("El mantenimiento diario no ha llegado a terminar nunca: "
-                    "revisa el servidor.")
-        try:
-            cuando = datetime.fromisoformat(exito)
-        except ValueError:
+            # CUÁNTO lleva roto. Antes esta rama devolvía siempre la misma
+            # frase suave y el aviso no escalaba nunca: un trabajo que llevaba
+            # días fallando se leía igual que uno que falló una vez.
+            desde = ""
+            if horas is not None and horas > limite_h:
+                desde = f" Lleva {horas} h sin completarse."
+            elif horas is None:
+                desde = " No ha llegado a completarse nunca."
+            return (f"Falla {etiqueta}: {consecuencia}.{desde} {detalle}").strip()
+
+        if horas is None:
+            if critico:
+                return (f"No ha llegado a terminar nunca {etiqueta}: "
+                        "revisa el servidor.")
             continue
-        if cuando.tzinfo is None:
-            cuando = cuando.replace(tzinfo=timezone.utc)
-        limite = timedelta(hours=ESPERADO_HORAS[nombre] * MARGEN)
-        if ahora - cuando > limite:
-            horas = int((ahora - cuando).total_seconds() // 3600)
-            return (f"El mantenimiento diario no se ejecuta desde hace {horas} h: "
-                    "los períodos y los recordatorios automáticos están parados.")
+        if horas > limite_h:
+            return (f"No se ejecuta {etiqueta} desde hace {horas} h: "
+                    f"{consecuencia}.")
     return None
