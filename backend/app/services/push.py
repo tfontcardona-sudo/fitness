@@ -172,7 +172,8 @@ def diary_is_filled(log: DailyLog | None) -> bool:
     return any(getattr(log, f, None) not in (None, "") for f in _DIARY_FIELDS)
 
 
-def dias_con_registro(db: Session, period_id: int) -> set[date]:
+def dias_con_registro(db: Session, period_id: int, *,
+                      solo_nutricion: bool = False) -> set[date]:
     """Días del período en que el cliente REGISTRÓ algo, en el sentido amplio.
 
     UNA SOLA VERDAD para las tres capas que antes divergían: el motor de "en
@@ -184,10 +185,11 @@ def dias_con_registro(db: Session, period_id: int) -> set[date]:
     adherencia 0 %, mientras el panel de al lado decía que sí registraba.
     """
     logs = list(db.scalars(select(DailyLog).where(DailyLog.period_id == period_id)))
-    return dias_registrados(db, logs)
+    return dias_registrados(db, logs, solo_nutricion=solo_nutricion)
 
 
-def dias_registrados(db: Session, logs: list[DailyLog]) -> set[date]:
+def dias_registrados(db: Session, logs: list[DailyLog], *,
+                     solo_nutricion: bool = False) -> set[date]:
     """Igual que `dias_con_registro` pero sobre filas de diario ya cargadas
     (el resumen semanal recorre varios períodos de una vez)."""
     if not logs:
@@ -195,19 +197,33 @@ def dias_registrados(db: Session, logs: list[DailyLog]) -> set[date]:
     con_series = set(db.scalars(
         select(WorkoutLog.daily_log_id).where(
             WorkoutLog.daily_log_id.in_([lg.id for lg in logs]))))
-    return dias_registrados_precargado(logs, con_series)
+    return dias_registrados_precargado(logs, con_series,
+                                       solo_nutricion=solo_nutricion)
 
 
-def dias_registrados_precargado(logs: list[DailyLog],
-                                con_series: set[int]) -> set[date]:
+def dias_registrados_precargado(logs: list[DailyLog], con_series: set[int], *,
+                                solo_nutricion: bool = False) -> set[date]:
     """La REGLA de "esto cuenta como registro", sin tocar la base.
 
     Aquí vive la única definición; las dos funciones de arriba solo se
     encargan de traer las series. El barrido de alertas del panel la usa con
-    los diarios y las series de TODOS los clientes ya cargados de una vez."""
+    los diarios y las series de TODOS los clientes ya cargados de una vez.
+
+    `solo_nutricion` mira ÚNICAMENTE la señal de dieta (diario relleno o
+    comidas elegidas), dejando fuera las series de entreno. Sirve para una
+    pregunta distinta de "¿ha abandonado?": la de "¿está registrando lo que
+    tiene contratado?". Un cliente Full que entrena cuatro días por semana y
+    no se pesa NUNCA no ha abandonado —y marcarlo "en riesgo" sería un falso
+    positivo—, pero lleva la quincena entera sin un solo dato de nutrición, y
+    al cerrarla el motor quincenal se niega a ajustar por falta de datos. El
+    ciclo se pierde y el coach se entera al final. Con esto se entera antes.
+    """
+    def _dieta(lg) -> bool:
+        return bool(lg.chosen_options_json) or diary_is_filled(lg)
+
     return {
         lg.log_date for lg in logs
-        if lg.id in con_series or lg.chosen_options_json or diary_is_filled(lg)
+        if _dieta(lg) or (not solo_nutricion and lg.id in con_series)
     }
 
 

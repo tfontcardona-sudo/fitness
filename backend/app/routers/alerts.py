@@ -28,6 +28,10 @@ router = APIRouter(prefix="/api", tags=["alerts"], dependencies=[Depends(get_cur
 
 GOAL_REVIEW_DAYS = 45
 NO_LOGS_DAYS = 4
+# Días sin NINGÚN dato de dieta (peso, diario, comidas elegidas) que se
+# toleran a un cliente con nutrición contratada antes de avisar. Más laxo que
+# `NO_LOGS_DAYS` a propósito: aquí el cliente sí está usando la app.
+NO_DIET_LOGS_DAYS = 6
 
 _GOAL_LABEL = {
     "fat_loss": "pérdida de grasa", "muscle_gain": "ganancia muscular",
@@ -71,6 +75,10 @@ _DESTINO: dict[str, tuple[str, str]] = {
     "no_logs": (
         "seguimiento.registros",
         "Escríbele: lleva días sin registrar y la revisión saldrá coja."),
+    "no_diet_logs": (
+        "seguimiento.registros",
+        "Pídele el peso: sin pesajes, la revisión no podrá ajustar las "
+        "calorías y la quincena se pierde."),
     "period_overdue": (
         "feedback.cerrar",
         "Reclámasela por WhatsApp; si no la manda, ciérrala tú aquí para no "
@@ -186,10 +194,11 @@ class _AlVuelo:
             select(FeedbackDoc).where(FeedbackDoc.period_id == period.id)
             .order_by(FeedbackDoc.id.desc()).limit(1))
 
-    def dias_con_registro(self, db: Session, period: Period) -> set[date]:
+    def dias_con_registro(self, db: Session, period: Period, *,
+                          solo_nutricion: bool = False) -> set[date]:
         from app.services.push import dias_con_registro
 
-        return dias_con_registro(db, period.id)
+        return dias_con_registro(db, period.id, solo_nutricion=solo_nutricion)
 
     def peticiones_abiertas(self, db: Session, client: Client) -> list:
         from app.models import ChangeRequest
@@ -229,6 +238,10 @@ class _EnLote(_AlVuelo):
         self._periodos: dict[int, list[Period]] = defaultdict(list)
         self._feedback: dict[int, FeedbackDoc] = {}
         self._dias: dict[int, set[date]] = {}
+        # Los diarios y las series en crudo, para poder responder también a la
+        # pregunta "¿y solo de nutrición?" sin volver a la base.
+        self._logs: dict[int, list] = {}
+        self._con_series: set[int] = set()
         self._peticiones: dict[int, list] = defaultdict(list)
         self._videollamadas: dict[int, list] = defaultdict(list)
         if not ids:
@@ -282,8 +295,10 @@ class _EnLote(_AlVuelo):
                 .where(WorkoutLog.daily_log_id.in_([lg.id for lg in todos]))
             )) if todos else set()
             for pid in abiertos:
+                self._logs[pid] = logs.get(pid, [])
                 self._dias[pid] = dias_registrados_precargado(logs.get(pid, []),
                                                               con_series)
+            self._con_series = con_series
 
         for cr in db.scalars(
                 select(ChangeRequest)
@@ -307,12 +322,19 @@ class _EnLote(_AlVuelo):
     def feedback(self, db: Session, period: Period) -> FeedbackDoc | None:
         return self._feedback.get(period.id)
 
-    def dias_con_registro(self, db: Session, period: Period) -> set[date]:
+    def dias_con_registro(self, db: Session, period: Period, *,
+                          solo_nutricion: bool = False) -> set[date]:
         # Un período que no estaba abierto al precargar no se precargó: se
         # consulta al vuelo antes que devolver un conjunto vacío falso.
         if period.id in self._dias:
-            return self._dias[period.id]
-        return super().dias_con_registro(db, period)
+            if not solo_nutricion:
+                return self._dias[period.id]
+            from app.services.push import dias_registrados_precargado
+
+            return dias_registrados_precargado(
+                self._logs.get(period.id, []), self._con_series,
+                solo_nutricion=True)
+        return super().dias_con_registro(db, period, solo_nutricion=solo_nutricion)
 
     def peticiones_abiertas(self, db: Session, client: Client) -> list:
         return self._peticiones.get(client.id, [])
@@ -513,6 +535,31 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
             out.append(_alert(client, "no_logs", "media",
                               f"Sin registros del cliente desde hace {gap} días.",
                               "seguimiento", "Ver seguimiento"))
+        elif pkgs.has_nutrition(getattr(client, "package_tier", None)):
+            # SIN DATOS DE DIETA, aunque sí registre. "En riesgo" mide
+            # ABANDONO, y quien entrena cuatro días por semana no ha
+            # abandonado: marcarlo así sería un falso positivo. Pero las
+            # series tapan el hueco en la cuenta de arriba, así que un cliente
+            # con nutrición contratada podía pasarse la quincena ENTERA sin un
+            # solo pesaje ni una comida marcada, figurando "al día" en todas
+            # las capas del coach. Y al cerrar, el motor quincenal se niega a
+            # ajustar las kcal por falta de datos: el ciclo se pierde y el
+            # coach se entera cuando ya no hay nada que hacer. Esta es una
+            # pregunta distinta —"¿registra lo que tiene contratado?"— y por
+            # eso es una alerta aparte, no un cambio del estado del cliente.
+            dias_dieta = datos.dias_con_registro(db, last_period,
+                                                 solo_nutricion=True)
+            ultimo_dieta = max(dias_dieta) if dias_dieta else None
+            desde_dieta = ultimo_dieta or (last_period.starts_on - date.resolution)
+            hueco_dieta = (today - desde_dieta).days
+            if hueco_dieta >= NO_DIET_LOGS_DAYS and days_in >= NO_DIET_LOGS_DAYS:
+                que_falta = ("ni peso ni comidas" if not dias_dieta
+                             else f"nada desde hace {hueco_dieta} días")
+                out.append(_alert(
+                    client, "no_diet_logs", "media",
+                    f"Registra entrenos pero no su dieta: {que_falta}. "
+                    "Sin pesajes, la revisión no podrá ajustar las calorías.",
+                    "seguimiento", "Ver seguimiento"))
 
         # --- Período vencido sin cerrar: el cliente registra pero no envía ---
         overdue = (today - last_period.ends_on).days

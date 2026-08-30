@@ -209,3 +209,86 @@ def test_una_peticion_del_cliente_avisa_aunque_no_tenga_plan_ni_este_activo():
         db.execute(delete(Client).where(Client.id.in_(ids)))
         db.commit()
         db.close()
+
+
+def test_el_que_entrena_pero_no_registra_su_dieta_se_avisa_aparte():
+    """"En riesgo" mide ABANDONO: quien entrena cuatro días por semana no ha
+    abandonado, y marcarlo así sería un falso positivo. Pero las series tapan
+    el hueco en esa cuenta, así que un cliente con nutrición contratada podía
+    pasarse la quincena ENTERA sin un solo pesaje figurando "al día" en todas
+    las capas del coach — y al cerrar, el motor quincenal se niega a ajustar
+    las kcal por falta de datos. El ciclo se pierde y el coach se entera
+    cuando ya no hay nada que hacer."""
+    import uuid
+    from datetime import date, timedelta
+
+    from sqlalchemy import delete
+
+    from app.db import SessionLocal
+    from app.models import (Client, DailyLog, Exercise, Period, Plan,
+                            WorkoutLog)
+    from app.routers.alerts import _EnLote, client_alerts
+
+    db = SessionLocal()
+    hoy = date.today()
+    marca = uuid.uuid4().hex[:8]
+    creados = []
+    try:
+        ejercicio = db.query(Exercise).first()
+        assert ejercicio is not None, "la biblioteca de ejercicios está vacía"
+
+        for tier in ("full", "train"):
+            c = Client(full_name=f"Entrena {tier} {marca}",
+                       email=f"entrena-{tier}-{marca}@test.local",
+                       package_tier=tier, billing_period="1m", status="active",
+                       portal_token=f"tok-{tier}-{marca}", payment_status="paid")
+            db.add(c)
+            db.flush()
+            plan = Plan(client_id=c.id, month_index=1, version=1,
+                        status="published", goal_type="fat_loss",
+                        generated_by="test", nutrition_json={}, training_json={})
+            db.add(plan)
+            db.flush()
+            per = Period(client_id=c.id, plan_id=plan.id, period_index=1,
+                         status="open", starts_on=hoy - timedelta(days=11),
+                         ends_on=hoy + timedelta(days=2))
+            db.add(per)
+            db.flush()
+            # Entrena cada dos días. NADA de dieta: ni peso, ni diario, ni
+            # comidas elegidas.
+            for d in range(0, 11, 2):
+                lg = DailyLog(period_id=per.id, log_date=hoy - timedelta(days=d))
+                db.add(lg)
+                db.flush()
+                db.add(WorkoutLog(daily_log_id=lg.id, exercise_id=ejercicio.id,
+                                  set_number=1, reps=10, weight_kg=60))
+            creados.append(c)
+        db.commit()
+
+        lote = _EnLote(db, creados)
+        for c in creados:
+            avisos = client_alerts(db, c, today=hoy, titulos_producto=[])
+            tipos = [a["kind"] for a in avisos]
+            # Registra: NO puede salir "sin registros".
+            assert "no_logs" not in tipos, f"{c.package_tier}: {tipos}"
+            if c.package_tier == "full":
+                assert "no_diet_logs" in tipos, (
+                    f"con nutrición contratada y cero datos de dieta debería avisar: {tipos}")
+            else:
+                # DQR Train no tiene nutrición: no hay nada que reclamarle.
+                assert "no_diet_logs" not in tipos, tipos
+            # El camino en lote da lo mismo que el de uno en uno.
+            assert client_alerts(db, c, today=hoy, titulos_producto=[],
+                                 datos=lote) == avisos
+    finally:
+        ids = [c.id for c in creados]
+        per_ids = [p.id for p in db.query(Period).filter(Period.client_id.in_(ids))]
+        log_ids = [lg.id for lg in db.query(DailyLog).filter(DailyLog.period_id.in_(per_ids))] if per_ids else []
+        if log_ids:
+            db.execute(delete(WorkoutLog).where(WorkoutLog.daily_log_id.in_(log_ids)))
+            db.execute(delete(DailyLog).where(DailyLog.id.in_(log_ids)))
+        db.execute(delete(Period).where(Period.client_id.in_(ids)))
+        db.execute(delete(Plan).where(Plan.client_id.in_(ids)))
+        db.execute(delete(Client).where(Client.id.in_(ids)))
+        db.commit()
+        db.close()
