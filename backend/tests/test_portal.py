@@ -362,3 +362,25 @@ def test_las_fotos_subidas_en_el_cierre_no_se_vuelven_a_pedir(client, auth):
         per = db.get(Period, per_id)
         assert per.status == "closed"
         assert per.photos_confirmed is True, "no se le pueden volver a pedir"
+
+
+def test_un_ejercicio_incompleto_no_tumba_la_pantalla_de_entreno():
+    """El plan puede llegar con una clave menos (editado a mano por el coach,
+    importado del Word, copiado de la biblioteca): se leían con corchete y el
+    cliente se quedaba con un 500 y la pantalla de Entreno EN BLANCO."""
+    from app.db import SessionLocal
+    from app.services.portal import _resolve_session
+
+    db = SessionLocal()
+    try:
+        sesion = {"day": "Lunes", "name": "Torso", "exercises": [
+            {"exercise_id": None},                       # sin ejercicio
+            {"sets": 3},                                 # sin id ni rep_range
+            {"exercise_id": 999999, "sets": 4, "rep_range": "8-10"},
+        ]}
+        salida = _resolve_session(db, sesion)
+        assert len(salida["exercises"]) == 3
+        assert salida["exercises"][0]["rep_range"] == ""
+        assert salida["exercises"][2]["rep_range"] == "8-10"
+    finally:
+        db.close()

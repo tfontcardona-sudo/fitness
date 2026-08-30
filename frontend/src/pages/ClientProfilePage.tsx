@@ -645,7 +645,11 @@ function BillingRow({ client, onSaved }: { client: ClientOut; onSaved: () => voi
           disabled={busy}
           value={client.billing_period}
           onChange={(e) => change(e.target.value)}
-          className="input h-7 w-auto px-1.5 py-0 text-xs"
+          // ANCHO ACOTADO: un `<select>` se ensancha hasta caber su opción más
+          // larga, así que las de la oferta lo sacaban FUERA de la tarjeta (en
+          // el móvil se salía de la pantalla y tapaba el resto de la ficha).
+          // El detalle de cada oferta está en Vender, que es donde se elige.
+          className="input h-7 w-auto max-w-[9.5rem] truncate px-1.5 py-0 text-xs"
         >
           {BILLING_PERIODS.map((b) => (
             <option key={b.value} value={b.value}>{b.label}</option>
@@ -655,8 +659,12 @@ function BillingRow({ client, onSaved }: { client: ClientOut; onSaved: () => voi
               blanco y cambiarlo era un billete de ida sin vuelta. */}
           {pkg(client.package_tier).tier === "full" && (
             <>
-              <option value="oferta">Oferta · 1 € + 120 € + 120 € (3 meses)</option>
-              <option value="oferta2">Oferta · 2 pagos de 120,50 €</option>
+              <option value="oferta" title="1 € + 120 € + 120 € (241 € en total)">
+                Oferta · 3 meses
+              </option>
+              <option value="oferta2" title="2 pagos de 120,50 € (241 € en total)">
+                Oferta · 2 pagos
+              </option>
             </>
           )}
         </select>

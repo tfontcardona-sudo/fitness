@@ -876,3 +876,35 @@ def test_filtro_sin_ficha_lleva_a_los_cobros_huerfanos(http):
     # Sin el filtro, el mismo movimiento sigue en el feed general.
     r2 = http.get("/api/payments?limit=50", headers=_auth())
     assert any(p["stripe_object_id"] == obj for p in r2.json()["items"])
+
+
+def test_un_tipo_de_movimiento_desconocido_no_tumba_el_libro(monkeypatch):
+    """Una sola fila con un `kind` que el esquema no reconoce —una versión
+    anterior, un arreglo a mano en la base, un tipo nuevo de Stripe— devolvía
+    un 500 y se llevaba por delante el feed ENTERO de /pagos y el bloque de
+    cobros de la ficha. El libro de caja tiene que enseñar lo que hay."""
+    _prep(monkeypatch)
+    from app.db import SessionLocal
+    from app.models import Payment
+    from app.services import payments as pay_svc
+
+    db = SessionLocal()
+    try:
+        c = _nuevo_cliente(db)
+        raro = Payment(
+            stripe_object_id=f"ch_raro_{uuid.uuid4().hex[:8]}", kind="charge",
+            status="paid", amount_cents=12900, currency="eur", livemode=False,
+            client_id=c.id, description="Cobro de un tipo que no conocemos",
+            paid_at=datetime.now(timezone.utc))
+        db.add(raro)
+        db.commit()
+
+        filas, _total = pay_svc.list_payments(db, client_id=c.id, limit=10)
+        assert any(p.kind == "charge" for p in filas)
+        # Y el mapper del feed lo serializa sin reventar (era el 500).
+        from app.routers.payments import _to_out
+
+        salida = [_to_out(p, {c.id: c.full_name}) for p in filas]
+        assert salida and any(x.kind == "charge" for x in salida)
+    finally:
+        db.close()

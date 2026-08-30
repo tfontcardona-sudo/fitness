@@ -836,6 +836,11 @@ class PeriodCreateIn(BaseModel):
 # Libro de caja de Stripe (tabla `payments`): quién pagó, cuánto y cuándo.
 # Espejo en frontend/src/types.ts (regla A.1.5).
 # "manual": cobro fuera de Stripe anotado por el coach (efectivo, transferencia…).
+# Los tipos que ESCRIBE el sistema hoy. En la SALIDA no se validan como enum:
+# la columna es texto libre y una sola fila con un tipo inesperado —una versión
+# anterior, un arreglo a mano en la base, un `kind` nuevo de Stripe— tumbaba
+# con un 500 el feed ENTERO de pagos y el bloque de cobros de la ficha. El
+# libro de caja tiene que enseñar lo que hay, aunque no lo reconozca.
 PaymentKind = Literal["checkout", "invoice", "refund", "subscription", "manual"]
 PaymentMovementStatus = Literal["paid", "failed", "refunded", "canceled"]
 
@@ -844,8 +849,8 @@ class PaymentOut(BaseModel):
     """Un movimiento del feed de pagos del panel."""
 
     id: int
-    kind: PaymentKind
-    status: PaymentMovementStatus
+    kind: str
+    status: str
     amount_cents: int
     currency: str
     # Movimiento en modo PRUEBA de Stripe: se ve, pero no suma en los totales.

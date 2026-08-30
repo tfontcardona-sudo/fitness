@@ -431,3 +431,33 @@ def test_upload_image_validation(client, auth):
     anon = client.post(f"/api/resources/products/{pid}/image",
                        files=[("file", ("p.png", _png_bytes(), "image/png"))])
     assert anon.status_code == 401
+
+
+def test_una_imagen_que_ya_no_esta_en_disco_no_se_promete(tmp_path, monkeypatch):
+    """La ficha del producto puede decir que hay imagen subida y el fichero no
+    estar (restauración de la base sin el volumen de storage, borrado a mano):
+    Recursos y el portal pedían esa URL y recibían un 404 por cada producto."""
+    from datetime import datetime, timezone
+
+    import app.services.storage as st
+    from app.models import RecommendedProduct
+    from app.services.portal import product_image_url
+
+    monkeypatch.setattr(st, "storage_root", lambda: tmp_path)
+    p = RecommendedProduct(id=7, title="Creatina", url="https://tienda/x",
+                           image_path="products/7.jpg",
+                           image_url="https://cdn.externa/creatina.jpg",
+                           updated_at=datetime.now(timezone.utc))
+    # Sin fichero: se usa la URL externa, no la del endpoint.
+    assert product_image_url(p) == "https://cdn.externa/creatina.jpg"
+
+    # Con el fichero en su sitio, manda la subida.
+    destino = tmp_path / "products"
+    destino.mkdir(parents=True)
+    (destino / "7.jpg").write_bytes(b"jpg")
+    assert (product_image_url(p) or "").startswith("/api/resources/products/7/image")
+
+    # Sin fichero y sin URL externa: ninguna promesa.
+    p.image_url = None
+    (destino / "7.jpg").unlink()
+    assert product_image_url(p) is None

@@ -233,7 +233,11 @@ export default function PortalApp({ token }: { token: string }) {
                 })()}
                 {/* Concordancia y momento clave: "1 día restante" (no "1 días")
                     y, a 0, la llamada a la acción de la quincena. */}
-                <p className="p-micro mt-1">
+                {/* La etiqueta se ciñe al ancho del anillo y parte en dos
+                    líneas: en una sola, "días restantes" empujaba la cabecera
+                    y el saludo salía cortado ("Hola, M…") en un móvil de
+                    390 px, que es donde vive el cliente. */}
+                <p className="p-micro mt-1 w-14 text-center leading-tight">
                   {Math.max(0, state.period.days_left) === 0
                     ? "¡toca revisión!"
                     : Math.max(0, state.period.days_left) === 1

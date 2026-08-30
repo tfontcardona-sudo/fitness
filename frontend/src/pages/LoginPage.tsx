@@ -48,9 +48,17 @@ export default function LoginPage() {
         <p className="mt-1 text-sm text-zinc-500">Panel del coach</p>
 
         <div className="mt-7 space-y-4">
+          {/* `name` + `autoComplete` + label asociada: sin ellos el gestor de
+              contraseñas del móvil no ofrece rellenar (el coach entra a diario)
+              y el lector de pantalla no sabe a qué campo pertenece cada
+              etiqueta. */}
           <div>
-            <label className="label">Usuario</label>
+            <label className="label" htmlFor="login-usuario">Usuario</label>
             <input
+              id="login-usuario"
+              name="username"
+              type="text"
+              autoComplete="username"
               className="input"
               autoFocus
               value={username}
@@ -59,10 +67,13 @@ export default function LoginPage() {
             />
           </div>
           <div>
-            <label className="label">Contraseña</label>
+            <label className="label" htmlFor="login-password">Contraseña</label>
             <input
+              id="login-password"
+              name="password"
               className="input"
               type="password"
+              autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && submit()}

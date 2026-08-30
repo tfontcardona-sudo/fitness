@@ -321,14 +321,15 @@ def _resolve_session(db: Session, sess: dict, load_factor: float = 1.0) -> dict:
     de ejercicio y vídeo resueltos desde la biblioteca. `load_factor` ajusta el
     peso sugerido a la SEMANA del mesociclo que vive el cliente (p. ej. 1.05 en
     la semana de pico, 0.6 en la descarga), redondeado a 0,5 kg."""
-    ex_ids = [e["exercise_id"] for e in sess.get("exercises", [])]
+    ex_ids = [e.get("exercise_id") for e in sess.get("exercises", [])
+              if e.get("exercise_id") is not None]
     lib = {
         ex.id: ex
         for ex in db.scalars(select(Exercise).where(Exercise.id.in_(ex_ids)))
     } if ex_ids else {}
     exercises = []
     for e in sess.get("exercises", []):
-        ex = lib.get(e["exercise_id"])
+        ex = lib.get(e.get("exercise_id"))
         # Vídeo del ejercicio: el archivo SUBIDO (servido por /api/media) tiene
         # prioridad; si no, el enlace externo re-filtrado (solo http(s)) — los
         # datos legados sin esquema no pueden llegar al portal como href.
@@ -340,10 +341,16 @@ def _resolve_session(db: Session, sess: dict, load_factor: float = 1.0) -> dict:
         # mostraba 21,0 donde tocaba 21,5). Valor que VE el cliente.
         import math
         week_hint = (math.floor(hint * load_factor * 2 + 0.5) / 2) if isinstance(hint, (int, float)) else None
+        # Acceso DEFENSIVO: el resto del bloque ya usa `.get()`, pero estas tres
+        # claves se leían con corchete, así que un plan al que le faltara una
+        # —editado a mano por el coach, importado del Word, copiado de la
+        # biblioteca— tumbaba con un 500 la pantalla ENTERA de Entreno del
+        # cliente. Mejor una sesión con un hueco que un portal roto.
         exercises.append({
-            "exercise_id": e["exercise_id"],
-            "name": ex.canonical_name if ex else f"Ejercicio {e['exercise_id']}",
-            "sets": e["sets"], "rep_range": e["rep_range"], "rir": e.get("rir", ""),
+            "exercise_id": e.get("exercise_id"),
+            "name": ex.canonical_name if ex else f"Ejercicio {e.get('exercise_id') or '?'}",
+            "sets": e.get("sets") or 0, "rep_range": e.get("rep_range") or "",
+            "rir": e.get("rir", ""),
             "rest_sec": e.get("rest_sec", 90),
             "start_weight_hint_kg": e.get("start_weight_hint_kg"),
             "week_weight_hint_kg": week_hint,
@@ -460,10 +467,22 @@ def discount_buy_url(product_url: str | None, code: str | None,
 
 def product_image_url(p: RecommendedProduct) -> str | None:
     """URL efectiva de la imagen de un producto: la subida (servida por la API,
-    con cache-busting por updated_at) tiene prioridad; si no, la URL externa."""
+    con cache-busting por updated_at) tiene prioridad; si no, la URL externa.
+
+    Si la ficha dice que hay imagen subida pero el FICHERO ya no está —una
+    restauración de la base sin el volumen de storage, un borrado a mano— se
+    cae a la URL externa en vez de prometer una imagen que devuelve 404: en
+    Recursos y en el portal del cliente salía un hueco roto por cada producto.
+    """
     if p.image_path:
-        ver = int(p.updated_at.timestamp()) if p.updated_at else 0
-        return f"/api/resources/products/{p.id}/image?v={ver}"
+        try:
+            from app.services.storage import abs_path
+
+            if abs_path(p.image_path).exists():
+                ver = int(p.updated_at.timestamp()) if p.updated_at else 0
+                return f"/api/resources/products/{p.id}/image?v={ver}"
+        except Exception:  # noqa: BLE001 — una ruta rara no puede tumbar la lista
+            pass
     return p.image_url or None
 
 
