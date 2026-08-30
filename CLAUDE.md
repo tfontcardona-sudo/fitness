@@ -406,7 +406,10 @@ GET  /api/p/{token}/feedback               (Portal) feedbacks ENVIADOS (sent_at)
 cd backend && python -m pytest tests/ -q
 ```
 
-- **~370 tests en verde** en base de datos limpia y migrada a head.
+- **627 tests en verde** en base de datos limpia y migrada a head.
+- `tests/test_migraciones.py` comprueba el arranque DESDE CERO: crea una base
+  temporal y corre `alembic upgrade head` entera (el camino del día que se
+  pierda el VPS, que estaba roto y nadie veía).
 - ⚠️ En un entorno nuevo exporta `ADMIN_1_USER`/`ADMIN_1_PASS` y corre los seeds
   antes: varios tests de integración hacen login real del coach (sin admin
   sembrado fallan con 401, y no es un bug del código).
@@ -441,6 +444,97 @@ cd backend && python -m pytest tests/ -q
 ---
 
 ## 9. Trabajo pendiente / próximos pasos
+
+000000000000000000. ✅ **AUDITORÍA INTEGRAL DE TODO EL SISTEMA (30-08-2026).**
+   Petición del dueño: "una auditoría de absolutamente todo el sistema DQR…
+   que todo funcione en orden, optimizado, sin ningún error ni bug, en ningún
+   aspecto". 14 dominios auditados en paralelo (ciclo, IA/planes, revisión,
+   portal, panel, anamnesis, pagos, documentos, avisos, datos, seguridad,
+   rendimiento) con ~50 hallazgos; TODOS los confirmados corregidos y con
+   regresión. 627 tests + tsc + build + `check:anclas` + `check:avisos` +
+   `lint:hooks` en verde. Lo importante, por bloques:
+   - **LA IA REVISABA A CIEGAS**: el texto que reciben los 8-10 revisores del
+     panel §9 (incluido el clínico CON VETO) no llevaba NI UN PLATO —
+     `_plan_text` leía `option["name"]` y el esquema usa `title`, y el menú
+     strict (`bank["days"]`) ni se miraba. Ahora ven platos, ingredientes,
+     menú cerrado y equivalencias. Y el **patrón dietético** (vegano, halal,
+     kosher…) por fin viaja al prompt que ELIGE los alimentos: antes se
+     proponía pollo a un vegano y el Revisor 0 vetaba el plan entero DESPUÉS
+     de pagarlo. ⚠️ Los revisores corren ahora EN PARALELO (mismo orden, mismo
+     veredicto, ni un crédito más): eran 8-24 llamadas encadenadas dentro de
+     la petición que espera el coach.
+   - **PRIMERO REPARAR, DESPUÉS JUZGAR** (`generator`): el informe del banco se
+     calculaba ANTES de retirar alérgenos y de cuadrar los platos, así que el
+     plan se retenía por un aviso fantasma ("contiene leche" en una opción que
+     ya se había quitado) y por desvíos que el propio backend sabe corregir.
+   - **"DÍA REGISTRADO" ES LO MISMO EN TODO EL SISTEMA** (`push.dias_con_registro`):
+     el motor de "en riesgo" solo miraba el diario, así que un DQR Train que
+     registraba TODAS sus series salía con 0 días, se marcaba `at_risk` con
+     "adherencia 0 %" y la racha del portal le decía 0. Lo consumen el job
+     diario, la alerta del panel, el resumen semanal y la racha.
+   - **EL CANAL CLIENTE→COACH ESTABA MUERTO**: "Solicitar ajuste" existía
+     entero en el backend (push ✋, email, alerta, tarjeta en Seguimiento) y no
+     había pantalla que lo llamara. Ahora hay "Escribir a mi coach" en el
+     portal. Además: el Diario ya no pierde lo tecleado sin cobertura
+     (sessionStorage + reintento al volver la conexión, como Entreno), el
+     cuestionario de 6 pasos guarda BORRADOR, las fotos de la revisión se
+     suben desde el propio cierre (el endpoint existía y nadie lo usaba) y las
+     notas diarias del cliente por fin se ven en la tabla del coach.
+   - **DINERO**: la baja RGPD no cancelaba la suscripción de Stripe (se seguía
+     cobrando a alguien que ya no existe, con el cargo entrando como
+     huérfano); una devolución podía restar DOS veces (el guard solo cubría un
+     sentido y las versiones nuevas de la API ya no mandan `charge.refunds`);
+     un cobro a mano mal tecleado no se podía borrar; y "Sincronizar" decía
+     "sin cobros pendientes" aunque el barrido se hubiera cortado (ahora hay
+     cupo por fuente: las sesiones abandonadas ya no se comen el presupuesto
+     de facturas y devoluciones).
+   - **RECUPERACIÓN ANTE DESASTRE**: `alembic upgrade head` sobre una base
+     VACÍA moría en 0036 y 0041 y dejaba la base sin una sola tabla (Alembic
+     corre la cadena en una transacción) → el contenedor en crashloop. Nadie
+     lo veía porque en producción la cadena ya estaba sellada. Guarda de
+     idempotencia + `tests/test_migraciones.py`, que crea una base temporal y
+     corre la cadena entera (verificado: falla sin el arreglo).
+   - **RGPD DE VERDAD**: el borrado dejaba intacto `audit_log`, donde cada
+     PATCH guarda el antes/después de lesiones, patologías, medicación y
+     alergias (art. 9), y "Descargar todo" no incluía ni el diario ni una sola
+     serie de entreno — con el flujo natural (exportar → borrar), ese
+     historial se perdía para siempre.
+   - **AVISOS QUE INSISTEN SIN ACOSAR**: "Pendiente hoy · Fotos" salía 5 veces
+     al día PARA SIEMPRE (ahora caduca y se apaga al enviarse el informe); una
+     quincena sin cerrar mandaba ~31 emails y ~150 push (tope de 3 avisos y
+     una semana); el resumen del coach sonaba cada 3 h con el mismo texto
+     (ahora solo con novedades + uno de cortesía al día); y las tags
+     compartidas hacían que dos clientes que cerraban la misma tarde se vieran
+     como UNA sola notificación.
+   - **DOCUMENTO DEL CLIENTE**: la adaptación quincenal machacaba "Por qué
+     este enfoque" con texto interno (del mes 2 en adelante el cliente no
+     volvía a leer el argumentario); "Adherencia dieta 0 %" se le reprochaba a
+     quien no ha contratado dieta; la lista de la compra del menú cerrado
+     estaba hecha y con tests y no la recibía nadie; la fecha de la cabecera
+     era la de DESCARGA; y el educativo era la única sección sin filtro de
+     alérgenos (y con contenido cacheado por split, o sea compartido).
+   - **SEGURIDAD**: los tokens del portal —credencial permanente al historial
+     clínico— se escribían EN CLARO en el access log de uvicorn, con logs sin
+     rotar en el VPS; no había tope de tamaño de cuerpo en ningún punto; el
+     formulario público podía vaciar la cuota diaria de email del coach
+     (cupo `PUBLIC_SIGNUPS_PER_DAY`); y cada PDF del portal arrancaba un
+     LibreOffice de ~300 MB sin caché ni cola (10-30/min permitidos).
+   - **RENDIMIENTO**: las alertas cargaban TODAS las versiones de TODOS los
+     planes con sus 4 JSONB por cliente y por barrido; Seguimiento rehacía el
+     histórico entero cada 3 s (y sin comprobar `document.hidden`); la ficha
+     pedía dos veces todos los planes completos (nuevo `?ligero=true`); y
+     recharts (~106 KB gzip) viajaba en la primera carga del portal.
+   - **Y ADEMÁS**: el cuestionario ya no se puede reescribir una vez recibido
+     (por PDF o con el plan en marcha); las contradicciones de la anamnesis se
+     ven sin volver a pagar la lectura; los adjuntos (analítica) ya no cuentan
+     como anamnesis; las fotos iniciales son el "antes" del primer informe; el
+     cierre por el coach no inventa un segundo pesaje (anulaba el guardarraíl
+     y aplicaba un −6 % real); el informe de un DQR Train no habla de dieta;
+     el aviso de sistema "automatismos parados" se ve en Hoy (y no lleva a
+     /clientes/0); un cliente caído en el mantenimiento ya no cuenta como
+     ejecución correcta; los avisos de día exacto (día 12, D+3/D+7) son
+     umbrales y no se pierden si el job se salta un día; y cambiar el plan o
+     la duración de un cliente pide confirmación.
 
 00000000000000000. ✅ **OFERTA = PROGRAMA CERRADO DE 3 MESES (28-08-2026).**
    Decisión del dueño: la oferta es UNA — 3 meses de DQR Full con permanencia
