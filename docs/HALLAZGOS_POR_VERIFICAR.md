@@ -1,5 +1,15 @@
 # Hallazgos pendientes de verificar (agosto 2026)
 
+> **REPARTO EN CURSO (sesiones paralelas).** Tanda 1 (graves + Stripe): sesión
+> "DQR asesories" (rama `claude/stripe-integration-steps-somce4`). Tanda 2
+> (pagos/libro de caja/altas): sesión "rutina y dieta quice"
+> (`claude/continue-previous-n6layq`). **Tanda 3 (el ciclo: automatismos, avisos
+> y recordatorios): sesión "Google Meet y Calendario integrados"
+> (`claude/google-meet-calendar-integration-1po1c2`)** — alcance: jobs.py
+> (63/106/253), job_state.py (38/109), push.py (589/742), alerts.py
+> («Escribir a mi coach»), portal.py (racha), sw.js (badge sin count). Si coges
+> otra tanda, añade tu reclamo aquí para que nadie se solape.
+
 > **Qué es esto.** El inventario en crudo de dos barridos automáticos: una
 > verificación adversarial de los 27 commits de la auditoría anterior, y los dos
 > dominios que aquella auditoría nunca llegó a cubrir (coherencia de UX e
