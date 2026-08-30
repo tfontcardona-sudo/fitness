@@ -220,8 +220,13 @@ def period_info(period: Period | None, today: date) -> dict | None:
     days_total = (period.ends_on - period.starts_on).days + 1
     days_elapsed = max(0, min(days_total, (today - period.starts_on).days + 1))
     days_left = max(0, (period.ends_on - today).days)
-    # Cierre disponible desde el día 14 del período (G.4)
-    can_close = days_elapsed >= 14 and period.status == "open"
+    # Cierre disponible desde el día 14 del período (G.4) — o el ÚLTIMO día, si
+    # ese período resulta ser más corto (uno abierto a mano, uno recortado al
+    # publicar el plan a mitad de ciclo). Con el 14 fijo, un período de 13 días
+    # dejaba al cliente en un callejón: el anillo del portal decía "¡toca
+    # revisión!" y la pantalla, "disponible al día 14 · se activa el <fecha que
+    # YA pasó>". No podía enviarla nunca y solo lo desbloqueaba el coach.
+    can_close = days_elapsed >= min(14, days_total) and period.status == "open"
     return {
         "period_id": period.id,
         "period_index": period.period_index,

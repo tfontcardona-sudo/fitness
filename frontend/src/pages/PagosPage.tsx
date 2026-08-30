@@ -332,18 +332,25 @@ export default function PagosPage() {
         <p className="text-xs uppercase tracking-widest text-zinc-500">
           Cobrado en {mesActual}
         </p>
+        {/* SIN RESUMEN no se inventa un 0: mientras carga (o si falla) decía
+            "0,00 € · 0 cobros" con toda la autoridad de una cifra real, y lo
+            primero que mira el coach al abrir Pagos es justo ese número. */}
         <p className="mt-1 text-3xl font-semibold text-zinc-100">
-          {fmtMoney(mes, resumen?.currency ?? "eur")}
+          {resumen ? fmtMoney(mes, resumen.currency ?? "eur") : "—"}
         </p>
         <p className="mt-1 text-sm text-zinc-500">
-          {resumen?.month_count ?? 0} cobro{(resumen?.month_count ?? 0) === 1 ? "" : "s"}
-          {" · mes anterior "}
-          {fmtMoney(prev, resumen?.currency ?? "eur")}
-          {variacion !== null && (
-            <span style={{ color: variacion >= 0 ? "#2E7D46" : "#C2453A" }}>
-              {" "}({variacion >= 0 ? "+" : ""}{variacion}%)
-            </span>
-          )}
+          {resumen ? (
+            <>
+              {resumen.month_count} cobro{resumen.month_count === 1 ? "" : "s"}
+              {" · mes anterior "}
+              {fmtMoney(prev, resumen.currency ?? "eur")}
+              {variacion !== null && (
+                <span style={{ color: variacion >= 0 ? "#2E7D46" : "#C2453A" }}>
+                  {" "}({variacion >= 0 ? "+" : ""}{variacion}%)
+                </span>
+              )}
+            </>
+          ) : falloCarga ? "no se pudo cargar el resumen" : "cargando…"}
         </p>
         {/* Neto real tras comisiones de Stripe (solo si hay fee consultado). */}
         {(resumen?.month_fee_cents ?? 0) > 0 && (

@@ -384,3 +384,26 @@ def test_un_ejercicio_incompleto_no_tumba_la_pantalla_de_entreno():
         assert salida["exercises"][2]["rep_range"] == "8-10"
     finally:
         db.close()
+
+
+def test_un_periodo_mas_corto_de_14_dias_se_puede_cerrar_su_ultimo_dia():
+    """Con el día 14 fijo, un período de 13 días dejaba al cliente atascado: el
+    anillo decía "¡toca revisión!" y la pantalla "disponible al día 14 · se
+    activa el <fecha ya pasada>". Solo lo desbloqueaba el coach."""
+    from datetime import date, timedelta
+
+    from app.models import Period
+    from app.services.portal import period_info
+
+    hoy = date.today()
+    corto = Period(client_id=1, plan_id=1, period_index=1, status="open",
+                   starts_on=hoy - timedelta(days=12), ends_on=hoy)   # 13 días
+    info = period_info(corto, hoy)
+    assert info["days_total"] == 13 and info["days_elapsed"] == 13
+    assert info["can_close"] is True
+
+    # El de 14 días sigue abriéndose el día 14, ni antes ni después.
+    normal = Period(client_id=1, plan_id=1, period_index=1, status="open",
+                    starts_on=hoy - timedelta(days=13), ends_on=hoy)
+    assert period_info(normal, hoy)["can_close"] is True
+    assert period_info(normal, hoy - timedelta(days=1))["can_close"] is False
