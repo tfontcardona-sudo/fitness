@@ -1014,6 +1014,12 @@ def _confirm_meet(db: Session, client: Client, vc, *, start_aware: datetime,
                 attendee_email=client.email or None)
     except gcal.GoogleCalendarError as exc:
         db.rollback()
+        # El rollback deshace TAMBIÉN el borrado de la credencial que Google
+        # acaba de rechazar: sin esto la fila revocada volvía, el panel seguía
+        # diciendo "Google conectado" y cada intento de agendar repetía el
+        # mismo error sin que el coach viera nunca el botón de reconectar.
+        if getattr(exc, "revocado", False) and gcal.olvidar_credencial(db):
+            db.commit()
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
 
     vc.status = "scheduled"

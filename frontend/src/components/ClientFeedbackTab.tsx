@@ -799,7 +799,11 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
         </div>
       )}
 
-      {/* Propuesta del cliente: aceptar tal cual o modificar (WhatsApp). */}
+      {/* Propuesta del cliente: aceptar tal cual, modificar (WhatsApp) o darla
+          por hecha. Este último botón faltaba: el backend admite cerrar desde
+          `proposed` y `pending_manual` justamente para que sin Google (o si la
+          llamada se hizo por teléfono) la propuesta tenga salida, pero la web
+          no lo ofrecía y su alerta ALTA sonaba para siempre. */}
       {call?.status === "proposed" && (
         <div className="mt-2 space-y-2">
           <p className="text-xs text-zinc-300">
@@ -821,6 +825,14 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
               onClick={() => onModify(call)}>
               <Pencil size={13} /> Modificar (WhatsApp)
             </button>
+            <button className="btn btn-ghost !px-3 !py-1.5 text-xs" disabled={busy}
+              onClick={() => run(
+                () => api.videoCallDone(clientId, call.id),
+                "Videollamada marcada como hecha",
+              )}
+              title="Si ya la hicisteis por teléfono o WhatsApp, o no vas a usar Meet">
+              <CheckCircle2 size={13} /> Ya está hecha
+            </button>
           </div>
           {notConnectedNote}
         </div>
@@ -834,6 +846,16 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
             escríbelo aquí:
           </p>
           {manualScheduler}
+          <div className="flex flex-wrap items-center gap-2">
+            <button className="btn btn-ghost !px-3 !py-1.5 text-xs" disabled={busy}
+              onClick={() => run(
+                () => api.videoCallDone(clientId, call.id),
+                "Videollamada marcada como hecha",
+              )}
+              title="Si ya la hicisteis por teléfono o WhatsApp, o no vas a usar Meet">
+              <CheckCircle2 size={13} /> Ya está hecha
+            </button>
+          </div>
           <button className="text-[11px] text-zinc-500 hover:text-zinc-300"
             onClick={() => onModify(call)}>
             Reenviar WhatsApp al cliente

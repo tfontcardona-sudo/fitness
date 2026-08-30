@@ -195,7 +195,54 @@ def test_si_google_revoca_el_permiso_el_panel_deja_de_decir_conectado(monkeypatc
     with pytest.raises(gc.GoogleCalendarError) as err:
         gc._valid_access_token(db)
     assert "revocado" in str(err.value)
+    assert err.value.revocado is True, "quien lo capture no puede distinguirlo"
     db.flush()
     assert gc.connection_status(db)["connected"] is False
     db.rollback()
     db.close()
+
+
+def test_el_rollback_de_quien_agenda_no_puede_resucitar_la_credencial_revocada(monkeypatch):
+    """El endpoint de agendar hace `db.rollback()` cuando Google falla, para no
+    dejar la videollamada a medias — y ese rollback deshacía TAMBIÉN el borrado
+    de la credencial que Google acababa de rechazar. La fila revocada volvía,
+    el panel seguía diciendo "Google conectado" y cada intento repetía el mismo
+    error sin que el coach viera nunca el botón de reconectar."""
+    import httpx
+
+    from app.db import SessionLocal
+    from app.models import GoogleCredential
+    from app.services import google_calendar as gc
+
+    db = SessionLocal()
+    try:
+        db.query(GoogleCredential).delete()
+        db.add(GoogleCredential(refresh_token="rt-revocado", access_token=None,
+                                token_expiry=None))
+        db.commit()                      # ya guardada: como en producción
+        assert gc.connection_status(db)["connected"] is True
+
+        def _post_revocado(*a, **kw):
+            peticion = httpx.Request("POST", "https://oauth2.googleapis.com/token")
+            respuesta = httpx.Response(400, request=peticion,
+                                       text='{"error": "invalid_grant"}')
+            raise httpx.HTTPStatusError("400", request=peticion, response=respuesta)
+
+        monkeypatch.setattr(gc.httpx, "post", _post_revocado)
+        with pytest.raises(gc.GoogleCalendarError) as err:
+            gc._valid_access_token(db)
+        assert err.value.revocado is True
+
+        db.rollback()                    # lo que hace el endpoint de agendar
+        assert gc.connection_status(db)["connected"] is True, \
+            "el rollback devolvió la credencial revocada (era el fallo)"
+
+        assert gc.olvidar_credencial(db) is True
+        db.commit()
+        assert gc.connection_status(db)["connected"] is False
+        assert gc.olvidar_credencial(db) is False, "sin credencial no puede fallar"
+    finally:
+        db.rollback()
+        db.query(GoogleCredential).delete()
+        db.commit()
+        db.close()
