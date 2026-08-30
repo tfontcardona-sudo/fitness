@@ -46,6 +46,16 @@ def _first_name(client: Client) -> str:
 MAX_AVISOS_DE_CIERRE = 3
 
 
+# `EmailLog` anota los TRES desenlaces: `sent`, `failed` (SMTP caído, dirección
+# rechazada…) y `disabled` (el cliente tiene los emails apagados). Los contadores
+# de abajo miran solo los ENVIADOS DE VERDAD. Contando también los otros dos, un
+# correo que ni salió consumía su intento: un fallo puntual de SMTP dejaba el
+# recordatorio sin reintentar JAMÁS, y tres días de SMTP caído agotaban el tope
+# de avisos de cierre para toda la quincena — el cliente no recibía ninguno y
+# nadie lo notaba, porque en el libro constaban tres.
+_ENVIADO_DE_VERDAD = EmailLog.status == "sent"
+
+
 def _already_sent_today(db: Session, client_id: int, kind: str, today: date) -> bool:
     start = datetime(today.year, today.month, today.day, tzinfo=timezone.utc)
     n = db.scalar(
@@ -55,6 +65,7 @@ def _already_sent_today(db: Session, client_id: int, kind: str, today: date) -> 
             EmailLog.client_id == client_id,
             EmailLog.kind == kind,
             EmailLog.sent_at >= start,
+            _ENVIADO_DE_VERDAD,
         )
     )
     return bool(n)
@@ -62,12 +73,13 @@ def _already_sent_today(db: Session, client_id: int, kind: str, today: date) -> 
 
 def _enviados_desde(db: Session, client_id: int, kind: str, desde: date) -> int:
     """Cuántas veces se ha mandado ese aviso desde una fecha (inicio de período
-    o alta del cliente)."""
+    o alta del cliente). Solo cuenta los que SALIERON."""
     inicio = datetime(desde.year, desde.month, desde.day, tzinfo=timezone.utc)
     return int(db.scalar(
         select(func.count()).select_from(EmailLog).where(
             EmailLog.client_id == client_id, EmailLog.kind == kind,
             EmailLog.sent_at >= inicio,
+            _ENVIADO_DE_VERDAD,
         )
     ) or 0)
 

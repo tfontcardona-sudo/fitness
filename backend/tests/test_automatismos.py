@@ -193,3 +193,53 @@ def test_el_resumen_del_coach_no_se_repite_cada_tres_horas(sidecar, monkeypatch)
             db.delete(creada)
             db.commit()
         db.close()
+
+
+def test_un_correo_que_falla_no_consume_el_intento(monkeypatch):
+    """`EmailLog` anota los tres desenlaces: `sent`, `failed` (SMTP caído) y
+    `disabled` (el cliente los tiene apagados). Los contadores de idempotencia
+    los sumaban todos, así que un correo que NI SALIÓ consumía su intento: el
+    recordatorio no se reintentaba jamás, y tres días de SMTP caído agotaban el
+    tope de avisos de cierre para toda la quincena — el cliente no recibía
+    ninguno y en el libro constaban tres."""
+    from datetime import date, datetime, timedelta, timezone
+
+    from sqlalchemy import delete
+
+    from app.db import SessionLocal
+    from app.models import Client, EmailLog
+    from app.services.jobs import (MAX_AVISOS_DE_CIERRE, _already_sent_today,
+                                   _enviados_desde, _ya_enviado_desde)
+
+    db = SessionLocal()
+    hoy = date.today()
+    ahora = datetime.now(timezone.utc)
+    c = Client(full_name="Correos Fallidos", email=f"fallo-{uuid.uuid4().hex[:8]}@test.local",
+               package_tier="full", billing_period="1m", status="active",
+               portal_token=f"tok-{uuid.uuid4().hex[:8]}", payment_status="paid")
+    db.add(c)
+    db.flush()
+    try:
+        def _anota(estado: str) -> None:
+            db.add(EmailLog(client_id=c.id, kind="closing_due", subject="x",
+                            sent_at=ahora, status=estado))
+            db.flush()
+
+        # Tres intentos que NO llegaron: ni cuentan como enviados ni gastan tope.
+        _anota("failed")
+        _anota("disabled")
+        _anota("failed")
+        assert _already_sent_today(db, c.id, "closing_due", hoy) is False
+        assert _enviados_desde(db, c.id, "closing_due", hoy - timedelta(days=20)) == 0
+        assert _ya_enviado_desde(db, c.id, "closing_due", hoy - timedelta(days=20)) is False
+
+        # El que SÍ salió sí cuenta.
+        _anota("sent")
+        assert _already_sent_today(db, c.id, "closing_due", hoy) is True
+        assert _enviados_desde(db, c.id, "closing_due", hoy - timedelta(days=20)) == 1
+        assert _enviados_desde(db, c.id, "closing_due", hoy - timedelta(days=20)) < MAX_AVISOS_DE_CIERRE
+    finally:
+        db.execute(delete(EmailLog).where(EmailLog.client_id == c.id))
+        db.execute(delete(Client).where(Client.id == c.id))
+        db.commit()
+        db.close()
