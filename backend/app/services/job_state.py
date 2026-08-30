@@ -33,9 +33,29 @@ ESPERADO_HORAS = {
 }
 MARGEN = 1.5   # 24 h → se avisa a las 36 h
 
-# Lo que de verdad hace falta que corra: el resto son recordatorios que pueden
-# saltarse una vuelta sin consecuencias.
+# Lo que de verdad hace falta que corra: si esto se para, se avisa enseguida.
 CRITICOS = ("daily_maintenance",)
+
+# El resto SÍ puede saltarse una vuelta sin consecuencias (por eso no están en
+# CRITICOS), pero "saltarse una vuelta" no es lo mismo que llevar días muerto:
+# los recordatorios del cliente, el resumen del coach y los avisos de
+# videollamada podían fallar indefinidamente sin que nadie se enterara. Con este
+# margen mucho más ancho, una vuelta perdida no molesta y una parada real canta.
+MARGEN_SECUNDARIOS = 8   # push cada 3 h → se avisa a las 24 h
+
+# Nombres legibles para el aviso del panel (el coach no sabe qué es "coach_digest").
+NOMBRES = {
+    "daily_maintenance": "el mantenimiento diario",
+    "push_reminders": "los recordatorios del cliente",
+    "coach_digest": "tu resumen de pendientes",
+    "video_call_reminders": "los avisos de videollamada",
+    "weekly_coach_summary": "el resumen semanal",
+}
+
+# Entradas del sidecar que NO son trabajos programados: `record_job` se reutiliza
+# para guardar la huella del resumen del coach (dedup), y sin excluirla se
+# vigilaría como si fuera un automatismo parado.
+NO_SON_TRABAJOS = ("coach_digest_huella",)
 
 
 def _ruta() -> Path:
@@ -98,10 +118,41 @@ def automatismos_parados(ahora: datetime | None = None) -> str | None:
         # alarma (un despliegue reciente es lo normal).
         return None
     ahora = ahora or datetime.now(timezone.utc)
+
+    def _horas_sin_exito(entrada: dict) -> float | None:
+        """Horas desde el último final BUENO, o None si no se puede saber."""
+        exito = entrada.get("last_success_at")
+        if not exito:
+            return None
+        try:
+            cuando = datetime.fromisoformat(exito)
+        except ValueError:
+            return None
+        if cuando.tzinfo is None:
+            cuando = cuando.replace(tzinfo=timezone.utc)
+        return (ahora - cuando).total_seconds() / 3600
+
+    # 1) Los críticos, primero: si el mantenimiento diario se para, todo lo demás
+    #    da igual. La ANTIGÜEDAD se mira ANTES que el "terminó con errores": si
+    #    no, un trabajo que falló y además dejó de ejecutarse se quedaba
+    #    eternamente en "terminó con errores" —que suena a que sigue corriendo—
+    #    y el aviso no escalaba nunca a "lleva N horas sin ejecutarse".
     for nombre in CRITICOS:
         e = datos.get(nombre)
         if not e:
             continue
+        horas = _horas_sin_exito(e)
+        limite = ESPERADO_HORAS[nombre] * MARGEN
+        if horas is None:
+            return ("El mantenimiento diario no ha llegado a terminar nunca: "
+                    "revisa el servidor.")
+        if horas > limite:
+            extra = ""
+            if e.get("last_ok") is False:
+                detalle = str(e.get("detail") or "")[:160]
+                extra = f" Además, el último intento terminó con errores. {detalle}"
+            return (f"El mantenimiento diario no se ejecuta desde hace {int(horas)} h: "
+                    f"los períodos y los recordatorios automáticos están parados.{extra}")
         # La última ejecución terminó MAL (reventó entera, o se dejó clientes
         # por el camino): eso hay que decirlo hoy, no dentro de 36 h. Un fallo
         # por cliente suele ser determinista —sus datos—, así que ese cliente
@@ -110,19 +161,21 @@ def automatismos_parados(ahora: datetime | None = None) -> str | None:
             detalle = str(e.get("detail") or "")[:160]
             return ("El mantenimiento diario terminó con errores: hay clientes "
                     f"sin atender (sin recordatorios ni cambios de estado). {detalle}")
-        exito = e.get("last_success_at")
-        if not exito:
-            return ("El mantenimiento diario no ha llegado a terminar nunca: "
-                    "revisa el servidor.")
-        try:
-            cuando = datetime.fromisoformat(exito)
-        except ValueError:
+
+    # 2) Los secundarios: no se alarma por una vuelta perdida, pero llevar días
+    #    muerto sí se canta. Antes NADIE los vigilaba: los recordatorios del
+    #    cliente, el resumen del coach o los avisos de videollamada podían estar
+    #    caídos indefinidamente y el panel seguía diciendo que todo iba bien.
+    for nombre, esperado in ESPERADO_HORAS.items():
+        if nombre in CRITICOS or nombre in NO_SON_TRABAJOS:
             continue
-        if cuando.tzinfo is None:
-            cuando = cuando.replace(tzinfo=timezone.utc)
-        limite = timedelta(hours=ESPERADO_HORAS[nombre] * MARGEN)
-        if ahora - cuando > limite:
-            horas = int((ahora - cuando).total_seconds() // 3600)
-            return (f"El mantenimiento diario no se ejecuta desde hace {horas} h: "
-                    "los períodos y los recordatorios automáticos están parados.")
+        e = datos.get(nombre)
+        if not e:
+            continue  # nunca ha corrido: puede que no aplique todavía
+        horas = _horas_sin_exito(e)
+        if horas is None or horas <= esperado * MARGEN_SECUNDARIOS:
+            continue
+        que = NOMBRES.get(nombre, nombre)
+        return (f"Hace {int(horas)} h que no funciona {que}: "
+                "revisa el servidor (los automatismos están a medias).")
     return None

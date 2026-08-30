@@ -20,7 +20,13 @@ self.addEventListener("push", (event) => {
   }
 
   const title = data.title || "Tu seguimiento";
-  const count = Number(data.count) || 0;
+  // "Sin count" NO es "count 0": un aviso puntual (resumen semanal, un cliente
+  // que pasa a inactivo…) no sabe cuántos pendientes hay y no debe TOCAR el
+  // badge. Antes `Number(undefined) || 0` lo dejaba en 0 y llamaba a
+  // clearAppBadge(), así que ese aviso APAGABA el "N pagos sin leer" que otro
+  // push había puesto — el numerito desaparecía sin que el coach leyera nada.
+  const traeCount = data.count !== undefined && data.count !== null;
+  const count = traeCount ? Number(data.count) || 0 : null;
 
   const tasks = [
     self.registration.showNotification(title, {
@@ -34,7 +40,7 @@ self.addEventListener("push", (event) => {
   ];
 
   // Badge del icono de la app (Android/desktop instalada e iOS ≥16.4)
-  if ("setAppBadge" in self.navigator) {
+  if (traeCount && "setAppBadge" in self.navigator) {
     tasks.push(
       count > 0 ? self.navigator.setAppBadge(count) : self.navigator.clearAppBadge()
     );

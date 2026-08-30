@@ -445,6 +445,66 @@ cd backend && python -m pytest tests/ -q
 
 ## 9. Trabajo pendiente / próximos pasos
 
+00000000000000000000. ✅ **LA TANDA 3 DE `HALLAZGOS_POR_VERIFICAR`: EL CICLO —
+   AUTOMATISMOS, AVISOS Y RECORDATORIOS (30-08-2026).** Trabajo en PARALELO con
+   otras dos sesiones (tanda 1: los graves + Stripe · tanda 2: pagos y altas);
+   el reparto está escrito en la cabecera de `docs/HALLAZGOS_POR_VERIFICAR.md`
+   para que nadie pise a nadie. Cada hallazgo se verificó de forma adversarial
+   (un refutador + un reproductor) ANTES de tocar nada, y cada arreglo lleva su
+   regresión, comprobada de la única forma que vale: **falla sin el arreglo**.
+   - **Un correo que FALLA contaba como enviado.** La dedup y el cupo miraban
+     `email_log` sin su `status`: con el SMTP caído, los intentos fallidos
+     gastaban el tope de 3 avisos y el cliente se quedaba sin recordatorio de
+     cierre el resto de la quincena —y sin el del día 12 para siempre— aunque el
+     correo volviera esa misma tarde. Ahora solo cuentan `sent` y `disabled`.
+     ⚠️ Esto destapó que el fixture `_no_real_email` sustituía el transporte pero
+     NO configuraba el SMTP: `EmailService` cortaba antes y **en los tests todos
+     los correos se registraban como fallidos**, lo contrario de lo que el
+     fixture simulaba.
+   - **La vigilancia de automatismos solo miraba el mantenimiento diario**: los
+     recordatorios del cliente, el resumen del coach y los avisos de
+     videollamada podían llevar días muertos con el panel diciendo que todo iba
+     bien. Ahora se vigilan todos, con margen ancho para los secundarios (una
+     vuelta perdida no alarma). Y la rama de "terminó con errores" devolvía
+     ANTES de mirar la antigüedad, así que un trabajo que falló y además se paró
+     se quedaba para siempre en un mensaje que suena a que sigue corriendo.
+   - **El resumen del coach se silenciaba justo cuando había novedades**: su
+     huella de dedup se guardaba en crudo y `record_job` la recorta a 300
+     caracteres; con ~10 alertas abiertas, dos conjuntos DISTINTOS se leían como
+     iguales. Ahora se guarda un sha256.
+   - **Dos videollamadas el mismo día se veían como una** en el móvil del coach
+     (tag fija `dq-vc-coach`) — el mismo fallo de tags compartidas que ya se
+     había corregido en otros avisos.
+   - **"Escribir a mi coach" caía en un agujero**: la alerta vivía detrás de los
+     `return` de "sin plan publicado" e "inactivo", justo los dos clientes que
+     más escriben. Ahora se evalúa lo PRIMERO, antes de cualquier salida.
+   - **La racha del portal no consumía la "única verdad"** que su propio
+     comentario prometía: su predicado en SQL (`is_not(None)`) daba por bueno lo
+     que el motor descarta (`free_notes` vacío, `chosen_options_json` sin elegir
+     — filas que el autosave crea al abrir la pantalla) y premiaba días que para
+     el coach no existían.
+   - **Un push sin `count` APAGABA el badge del coach**: `Number(undefined)||0`
+     llamaba a `clearAppBadge()`, así que el resumen semanal y el aviso de
+     cliente inactivo —los dos emisores que no lo mandaban— borraban el "N pagos
+     sin leer" sin que se leyera nada. "Sin count" ya no es "count 0".
+   - **El punto ciego de "día registrado" (aviso `sin_pesajes` NUEVO).** Contar
+     las series y las comidas como registro es DELIBERADO y está blindado con
+     test (un DQR Train que entrena a diario no puede salir "en riesgo"): **no se
+     tocó**. Pero detrás había un hueco real: quien elige su comida cada día
+     cuenta como registrado, va verde en todas las pantallas, y al cerrar la
+     quincena el motor determinista se encuentra con 0-1 pesajes, responde
+     `dato_insuficiente` y no hay con qué ajustar — catorce días perdidos que el
+     coach descubría tarde. Ahora se avisa pasada la mitad del período, sin una
+     sola consulta extra en el barrido (sale de las filas que el lote ya trae).
+   - ⚠️ **La suite era dependiente del estado**: `pytest` dos veces seguidas daba
+     resultados distintos. La caché del contenido educativo vive en un sidecar
+     del storage y SOBREVIVE entre ejecuciones: el primer pase la poblaba y el
+     siguiente se saltaba la llamada de IA que los tests del pipeline cuentan.
+     Se apaga en los tests (lo que este documento ya daba por hecho). Con eso
+     desaparecen los dos fallos que arrastraba `test_ai_service`.
+   - **652 tests en verde** (dos pases seguidos, reproducible), `tsc` limpio,
+     build OK, `check:anclas` y `check:avisos` OK.
+
 0000000000000000000. ⚠️ **SEGUNDA VUELTA A LA AUDITORÍA (30-08-2026): lo que
    la primera NO hizo.** Al preguntarle el dueño si de verdad no quedaba nada
    por mejorar, la respuesta honesta fue que no: la auditoría anterior había

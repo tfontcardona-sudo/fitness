@@ -444,3 +444,41 @@ def test_coach_subscription_upsert_and_digest_skips(db, monkeypatch) -> None:
     day = datetime(2026, 7, 20, 12, 0, tzinfo=ZoneInfo(settings.tz))
     out = push_svc.run_coach_digest(db, day.astimezone(timezone.utc))
     assert out.get("skipped") == "el coach no tiene dispositivos suscritos"
+
+
+@needs_db
+def test_dos_videollamadas_el_mismo_dia_no_se_pisan_en_el_movil_del_coach(db, monkeypatch):
+    """El aviso al coach usaba una tag FIJA ("dq-vc-coach"): dos clientes con
+    llamada el mismo día generaban dos notificaciones con la misma tag y el
+    móvil solo enseñaba la última — la primera desaparecía sin leerse."""
+    from app.config import settings
+    from app.services import push as push_svc
+
+    monkeypatch.setattr(settings, "push_enabled", True)
+    monkeypatch.setattr(settings, "vapid_public_key", "pub")
+    monkeypatch.setattr(settings, "vapid_private_key", "priv")
+
+    enviados = []
+    monkeypatch.setattr(push_svc, "send_to_coach",
+                        lambda _db, payload: enviados.append(payload) or 1)
+    monkeypatch.setattr(push_svc, "send_to_client", lambda _db, _c, _p: 1)
+
+    class _VC:
+        def __init__(self, vc_id):
+            self.id = vc_id
+            self.meet_url = None
+
+    class _C:
+        id = 1
+        portal_token = "tok"
+        full_name = "Ana"
+
+    push_svc._send_videocall_reminder(db, _C(), _VC(11), "Marca",
+                                      client_body="c", coach_body="Ana: mañana")
+    push_svc._send_videocall_reminder(db, _C(), _VC(12), "Marca",
+                                      client_body="c", coach_body="Luis: mañana")
+
+    tags = [p["tag"] for p in enviados]
+    assert len(set(tags)) == 2, f"las dos llamadas comparten tag: {tags}"
+    # Y siguen llevando `count`: sin él, el service worker apaga el badge.
+    assert all(p.get("count") for p in enviados)

@@ -71,6 +71,9 @@ _DESTINO: dict[str, tuple[str, str]] = {
     "no_logs": (
         "seguimiento.registros",
         "Escríbele: lleva días sin registrar y la revisión saldrá coja."),
+    "sin_pesajes": (
+        "seguimiento.registros",
+        "Pídele el peso en ayunas: sin pesos, al cerrar no hay con qué ajustar."),
     "period_overdue": (
         "feedback.cerrar",
         "Reclámasela por WhatsApp; si no la manda, ciérrala tú aquí para no "
@@ -191,6 +194,13 @@ class _AlVuelo:
 
         return dias_con_registro(db, period.id)
 
+    def pesajes(self, db: Session, period: Period) -> int:
+        """Cuántos días se pesó el cliente en ese período."""
+        return int(db.scalar(
+            select(func.count()).select_from(DailyLog).where(
+                DailyLog.period_id == period.id,
+                DailyLog.weight_kg.is_not(None))) or 0)
+
     def peticiones_abiertas(self, db: Session, client: Client) -> list:
         from app.models import ChangeRequest
 
@@ -229,6 +239,7 @@ class _EnLote(_AlVuelo):
         self._periodos: dict[int, list[Period]] = defaultdict(list)
         self._feedback: dict[int, FeedbackDoc] = {}
         self._dias: dict[int, set[date]] = {}
+        self._pesajes: dict[int, int] = {}
         self._peticiones: dict[int, list] = defaultdict(list)
         self._videollamadas: dict[int, list] = defaultdict(list)
         if not ids:
@@ -284,6 +295,9 @@ class _EnLote(_AlVuelo):
             for pid in abiertos:
                 self._dias[pid] = dias_registrados_precargado(logs.get(pid, []),
                                                               con_series)
+                # De las MISMAS filas ya traídas: ni una consulta más.
+                self._pesajes[pid] = sum(
+                    1 for lg in logs.get(pid, []) if lg.weight_kg is not None)
 
         for cr in db.scalars(
                 select(ChangeRequest)
@@ -314,6 +328,11 @@ class _EnLote(_AlVuelo):
             return self._dias[period.id]
         return super().dias_con_registro(db, period)
 
+    def pesajes(self, db: Session, period: Period) -> int:
+        if period.id in self._pesajes:
+            return self._pesajes[period.id]
+        return super().pesajes(db, period)
+
     def peticiones_abiertas(self, db: Session, client: Client) -> list:
         return self._peticiones.get(client.id, [])
 
@@ -322,6 +341,29 @@ class _EnLote(_AlVuelo):
 
 
 _AL_VUELO = _AlVuelo()
+
+
+def _peticiones_abiertas(db: Session, client: Client, datos: _AlVuelo,
+                         out: list[dict]) -> None:
+    """El cliente escribió una duda/petición desde su portal: el coach debe
+    verlo. Persiste hasta que se marque resuelta.
+
+    Vive aparte porque se evalúa ANTES de las salidas tempranas de
+    `client_alerts` (cliente inactivo, cliente sin plan publicado): una petición
+    no puede quedarse sin avisar por el estado del cliente."""
+    open_crs = datos.peticiones_abiertas(db, client)
+    if not open_crs:
+        return
+    # Con el TEXTO de la petición: el coach debe poder leer QUÉ pide sin
+    # depender del email (en dev está apagado y el mensaje se perdía).
+    extracto = (open_crs[0].message or "").strip()
+    if len(extracto) > 140:
+        extracto = extracto[:137] + "…"
+    prefix = f"{len(open_crs)} peticiones · última: " if len(open_crs) > 1 else ""
+    out.append(_alert(
+        client, "change_request", "alta",
+        f"{prefix}«{extracto}»",
+        "seguimiento", "Ver petición"))
 
 
 def client_alerts(db: Session, client: Client, today: date | None = None,
@@ -341,6 +383,16 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
     today = today or today_local()
     datos = datos or _AL_VUELO
     out: list[dict] = []
+
+    # --- Petición de cambio del cliente sin atender (portal → coach) ---------
+    # LO PRIMERO, antes de cualquier salida temprana: el portal ofrece "Escribir
+    # a mi coach" a TODO cliente con acceso, pero esta alerta vivía detrás del
+    # `return` de "sin plan publicado" y del de "inactivo". Justo los dos que más
+    # escriben —el que aún no tiene plan y pregunta por él, y el que lleva
+    # semanas parado— mandaban su mensaje a un agujero: llegaba a la base de
+    # datos y no lo veía nadie.
+    _peticiones_abiertas(db, client, datos, out)
+
     if client.status == "inactive":
         # Antes se devolvía [] y el cliente inactivo desaparecía de TODO el
         # radar (auditoría del ciclo): estado sin salida y sin aviso. Una única
@@ -485,6 +537,28 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
             out.append(_alert(client, "no_logs", "media",
                               f"Sin registros del cliente desde hace {gap} días.",
                               "seguimiento", "Ver seguimiento"))
+        else:
+            # REGISTRA, PERO NO SE PESA. El punto ciego que dejó ampliar "día
+            # registrado" a las series y las comidas (correcto: un DQR Train que
+            # entrena a diario no puede salir "en riesgo"): un cliente que toca
+            # su comida cada día cuenta como registrado, va verde en el resumen
+            # semanal y no dispara nada… y al cerrar la quincena el motor
+            # determinista se encuentra con 0-1 pesajes, responde
+            # `dato_insuficiente` y NO se puede ajustar nada. Catorce días
+            # perdidos que el coach descubre cuando ya no tienen arreglo. Se
+            # avisa pasada la mitad del período, cuando aún da tiempo a pedirlo.
+            dia = (today - last_period.starts_on).days + 1
+            largo = (last_period.ends_on - last_period.starts_on).days + 1
+            if last_period.status == "open" and dia >= max(7, largo // 2):
+                pesajes = datos.pesajes(db, last_period)
+                if pesajes <= 1:
+                    quedan = max(0, (last_period.ends_on - today).days)
+                    out.append(_alert(
+                        client, "sin_pesajes", "media",
+                        f"Registra a diario pero {'solo se ha pesado una vez' if pesajes else 'no se ha pesado ni un día'}: "
+                        f"sin pesos no se puede ajustar su plan al cerrar "
+                        f"(quedan {quedan} días).",
+                        "seguimiento", "Pedirle que se pese"))
 
         # --- Período vencido sin cerrar: el cliente registra pero no envía ---
         overdue = (today - last_period.ends_on).days
@@ -494,22 +568,6 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
                 f"Su revisión quincenal venció hace {overdue} días y no la ha "
                 "enviado: recuérdaselo por WhatsApp.",
                 "feedback", "Cerrar la revisión"))
-
-    # --- Petición de cambio del cliente sin atender (portal → coach) ---------
-    # El cliente escribió una duda/petición desde su portal: el coach debe
-    # verlo. Persiste hasta que se marque resuelta.
-    open_crs = datos.peticiones_abiertas(db, client)
-    if open_crs:
-        # Con el TEXTO de la petición: el coach debe poder leer QUÉ pide sin
-        # depender del email (en dev está apagado y el mensaje se perdía).
-        extracto = (open_crs[0].message or "").strip()
-        if len(extracto) > 140:
-            extracto = extracto[:137] + "…"
-        prefix = f"{len(open_crs)} peticiones · última: " if len(open_crs) > 1 else ""
-        out.append(_alert(
-            client, "change_request", "alta",
-            f"{prefix}«{extracto}»",
-            "seguimiento", "Ver petición"))
 
     # --- Suplementos del plan SIN producto en Recursos ----------------------
     # El portal del cliente destaca los productos de SU planificación (con el

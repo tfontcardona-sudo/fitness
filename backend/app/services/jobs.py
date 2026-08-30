@@ -46,6 +46,16 @@ def _first_name(client: Client) -> str:
 MAX_AVISOS_DE_CIERRE = 3
 
 
+# Estados de email_log que cuentan como "este aviso ya está resuelto": entregado
+# ("sent") o deliberadamente no enviado porque el cliente no quiere correos
+# ("disabled"). "failed" NO cuenta: es transitorio (SMTP caído, credencial
+# caducada) y el aviso TIENE que reintentarse — contarlo gastaba el cupo con
+# correos que nunca salieron. Con el SMTP caído tres días, un cliente se quedaba
+# sin recordatorio de cierre el resto de la quincena, y sin el aviso del día 12
+# para siempre, aunque el correo volviera a funcionar esa misma tarde.
+ESTADOS_RESUELTOS = ("sent", "disabled")
+
+
 def _already_sent_today(db: Session, client_id: int, kind: str, today: date) -> bool:
     start = datetime(today.year, today.month, today.day, tzinfo=timezone.utc)
     n = db.scalar(
@@ -55,6 +65,7 @@ def _already_sent_today(db: Session, client_id: int, kind: str, today: date) -> 
             EmailLog.client_id == client_id,
             EmailLog.kind == kind,
             EmailLog.sent_at >= start,
+            EmailLog.status.in_(ESTADOS_RESUELTOS),
         )
     )
     return bool(n)
@@ -62,12 +73,14 @@ def _already_sent_today(db: Session, client_id: int, kind: str, today: date) -> 
 
 def _enviados_desde(db: Session, client_id: int, kind: str, desde: date) -> int:
     """Cuántas veces se ha mandado ese aviso desde una fecha (inicio de período
-    o alta del cliente)."""
+    o alta del cliente). Solo cuenta los que SALIERON (o los que no salieron a
+    propósito): ver ESTADOS_RESUELTOS."""
     inicio = datetime(desde.year, desde.month, desde.day, tzinfo=timezone.utc)
     return int(db.scalar(
         select(func.count()).select_from(EmailLog).where(
             EmailLog.client_id == client_id, EmailLog.kind == kind,
             EmailLog.sent_at >= inicio,
+            EmailLog.status.in_(ESTADOS_RESUELTOS),
         )
     ) or 0)
 
@@ -362,6 +375,7 @@ def _maintain_client(db: Session, client: Client, today: date,
                     push_svc.send_to_coach(db, {
                         "title": f"💤 {client.full_name} ha pasado a inactivo",
                         "body": decision.reason or "30 días sin actividad.",
+                        "count": 1,  # sin count, el sw apagaba el badge de otros avisos
                         "url": f"/clientes/{client.id}",
                         "tag": f"inactive-{client.id}",
                     })
