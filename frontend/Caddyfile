@@ -25,7 +25,7 @@
 		# fuentes de Google y los reproductores de vídeo de los ejercicios
 		# (YouTube-nocookie y Vimeo van EN iframe DENTRO de la web; que la web no
 		# pueda ser enmarcada lo controla frame-ancestors, aparte de frame-src).
-		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: blob: https:; font-src 'self' https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self'; connect-src 'self'; frame-src https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com; media-src 'self' blob:; form-action 'self'"
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: blob: https:; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-src https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com; media-src 'self' blob:; form-action 'self'"
 		# No anunciar qué servidor corre por debajo (menos pistas a un atacante).
 		-Server
 		-X-Powered-By
@@ -60,6 +60,18 @@
 		root * /srv
 		@existe file
 		header @existe Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# FUENTES E ICONOS: nombre estable y contenido que no cambia salvo que se
+	# sustituya el fichero a mano. Sin esto caían en el `handle` de abajo con
+	# no-cache y el navegador revalidaba las dos .woff2 (133 KB) y los iconos de
+	# la PWA en CADA carga — un viaje de ida y vuelta de más en cada pantalla
+	# del portal, que se usa desde el móvil y con datos.
+	@estaticos path /fonts/* /icons/*
+	handle @estaticos {
+		root * /srv
+		header Cache-Control "public, max-age=2592000"
 		file_server
 	}
 
