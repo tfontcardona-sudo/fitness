@@ -175,6 +175,34 @@ def _strip_allergens_from_bank(meals, allergies: list[str] | None) -> int:
     return removed
 
 
+# Cuánto pueden separarse entre sí los ratios de los tres macros para que el
+# desvío del plato siga siendo "de escala" y no "de composición" (ver abajo).
+_RATIO_ESCALA_MAX = 1.05
+
+
+def _es_desvio_de_escala(mac: dict, t: dict) -> bool:
+    """¿El plato es el mix CORRECTO en la cantidad equivocada?
+
+    Es la única forma de desvío que se puede arreglar moviendo los gramos: si
+    al plato le falta un 12% de todo, con un 12% más de cada ingrediente queda
+    cuadrado y sigue siendo lo que sus ingredientes dan.
+
+    Si en cambio le sobra grasa y le falta proteína (desvío de COMPOSICIÓN), no
+    hay ningún factor de gramos que lo arregle: habría que cambiar el reparto
+    de alimentos. Escalar ahí deja los macros clavados al objetivo y los gramos
+    produciendo otra cosa — el plan IMPRIME unos macros que su propia lista de
+    la compra no da.
+    """
+    ratios = []
+    for eje in ("protein_g", "carbs_g", "fat_g"):
+        val, tgt = float(mac.get(eje) or 0), float(t.get(eje) or 0)
+        if val > 0 and tgt > 0:
+            ratios.append(tgt / val)
+    if len(ratios) < 2:          # sin dos ejes que comparar, no se afirma nada
+        return False
+    return (max(ratios) / min(ratios)) <= _RATIO_ESCALA_MAX
+
+
 def _repara_desvios_del_banco(bank: dict, targets: dict[int, dict]) -> int:
     """Ajusta al objetivo de SU toma los platos que se salen de la tolerancia.
 
@@ -184,6 +212,17 @@ def _repara_desvios_del_banco(bank: dict, targets: dict[int, dict]) -> int:
     sabiendo el backend cuadrarlo (es lo que ya hace en el camino del coach y
     en la adaptación). Cada eje va por su ratio y las kcal se recalculan de los
     macros (4/4/9), igual que en `nutrition_scale`. Devuelve cuántos cuadró.
+
+    SOLO se cuadra el desvío de ESCALA. `_scale_dish` fija cada macro a su eje
+    pero mueve todos los gramos por un ÚNICO factor (el cambio de energía del
+    plato), así que con un desvío de COMPOSICIÓN los macros quedaban exactos y
+    los ingredientes ya no los producían: el plato DECLARABA una proteína que
+    sus gramos no dan, el PDF imprimía esos gramos y la lista de la compra los
+    sumaba. Y nada lo cazaba después — el Revisor 0 compara los macros
+    DECLARADOS con el objetivo, y los revisores IA solo ven nombres de
+    alimentos. Un desvío de composición se deja SIN TOCAR: su `violation:`
+    sobrevive y el plan queda retenido para que lo mire el coach, que es
+    justo lo que debe pasar cuando el reparto de alimentos no da el objetivo.
     """
     from app.services.nutrition_scale import _scale_dish
 
@@ -213,6 +252,9 @@ def _repara_desvios_del_banco(bank: dict, targets: dict[int, dict]) -> int:
                 break
         if not fuera:
             continue
+
+        if not _es_desvio_de_escala(mac, t):
+            continue     # de composición: que lo vea el coach, no se maquilla
 
         def _r(eje: str, _mac=mac, _t=t) -> float:
             val, tgt = float(_mac.get(eje) or 0), float(_t.get(eje) or 0)
