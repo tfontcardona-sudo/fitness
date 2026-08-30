@@ -445,6 +445,82 @@ cd backend && python -m pytest tests/ -q
 
 ## 9. Trabajo pendiente / próximos pasos
 
+0000000000000000000. ⚠️ **SEGUNDA VUELTA A LA AUDITORÍA (30-08-2026): lo que
+   la primera NO hizo.** Al preguntarle el dueño si de verdad no quedaba nada
+   por mejorar, la respuesta honesta fue que no: la auditoría anterior había
+   dejado cuatro huecos. Esto es lo que se hizo con cada uno.
+
+   - **PRUEBAS EN NAVEGADOR DE VERDAD (hecho).** Cero navegador en la ronda
+     anterior, pese a que el §10 lo exige. Montado un banco real (uvicorn +
+     Vite + cliente demo sembrado + Playwright/Chromium) y recorridos el panel
+     (escritorio y móvil 390 px), el portal, el cuestionario y el editor del
+     plan. Encontró y se arregló lo que ningún test veía:
+     · **dos 500 que rompían pantallas enteras**: un `kind` de movimiento
+       inesperado tumbaba el feed de pagos COMPLETO (`PaymentOut` validaba la
+       salida como enum), y un ejercicio con una clave de menos dejaba la
+       pantalla de Entreno del cliente EN BLANCO (se leía con corchete);
+     · un período de menos de 14 días dejaba al cliente sin poder enviar nunca
+       su revisión ("se activa el <fecha que ya pasó>");
+     · `/pagos` pintaba "0,00 € · 0 cobros" mientras cargaba, con la autoridad
+       de una cifra real;
+     · en el MÓVIL del coach: dos pestañas de Recursos y los chips de filtro de
+       Pagos fuera de la pantalla (solo alcanzables arrastrando la página
+       entera de lado), el menú "Más" de Planificación empezando 44 px fuera
+       del borde izquierdo, y botones de 21×21 px y enlaces de 16 px de alto;
+     · el login sin `name`/`autocomplete` (los gestores de contraseñas no lo
+       reconocían) y la marca del coach sin cargar en la pantalla de login.
+     Guiones en el scratchpad; se pueden rehacer.
+   - **OPTIMIZACIÓN MEDIDA (hecho, parcial).** Con 60 fichas sintéticas,
+     `/api/alerts` hacía **431 consultas y 355 ms** por refresco —siete por
+     cliente, y el panel lo pide cada 20 s—: ahora **8 consultas y 85 ms**, con
+     el mismo resultado exacto y dos regresiones que lo vigilan. La tipografía
+     Inter deja de venir de Google (la IP de cada cliente del portal viajaba a
+     un tercero en cada carga, y era una hoja de estilo externa BLOQUEANTE
+     antes del primer pintado): se sirve del propio dominio, la CSP se estrecha
+     y Caddy cachea `/fonts` e `/icons` 30 días. Quedan medidos y sin tocar
+     varios N+1 más (ver el documento de hallazgos).
+   - **VERIFICACIÓN ADVERSARIAL Y LOS DOS DOMINIOS QUE FALTABAN (a medias —
+     LEER ESTO).** Se lanzaron los dos barridos, pero de 146 agentes
+     terminaron 25: el resto murió contra el límite de sesión y con ellos casi
+     toda la fase de verificación. Lo que sí llegó a comprobarse en firme, más
+     lo que verifiqué a mano, está arreglado (abajo). El resto —**~85 pistas
+     con fichero y línea, SIN verificar**— está en
+     **`docs/HALLAZGOS_POR_VERIFICAR.md`**. No son hechos: hay falsos positivos
+     garantizados. **El siguiente paso natural del proyecto es volver a lanzar
+     esa verificación con presupuesto suficiente** y arreglar lo que sobreviva.
+   - **Arreglado de esa cosecha, todo comprobado a mano antes de tocar nada:**
+     · **la segunda contratación de la oferta se cancelaba tras cobrar 1 €** —
+       el recuento de "¿está cobrado entero?" miraba TODAS las facturas del
+       cliente de siempre, así que las tres del programa anterior ya sumaban:
+       tres meses de asesoría por un euro. Cada factura queda sellada con SU
+       suscripción (mig. 0042, con relleno de las que están en curso);
+     · **los 8-10 revisores IA no veían la comida ni la cena**: las
+       equivalencias se leían de `meal_bank["equivalences"]`, una clave que el
+       esquema no declara — código muerto. Y en flexible_7 el prompt manda
+       COMIDA y CENA como equivalencias (sus `options` llegan vacías), así que
+       las dos tomas principales no aportaban una línea al texto del panel. La
+       seguridad dura nunca estuvo comprometida (el Revisor 0 determinista las
+       recorre por su cuenta); lo ciego era el juicio cualitativo de pago. El
+       test que lo blindaba fabricaba una forma de banco que el sistema no
+       produce: validaba el bug. Reescrito con la forma real;
+     · **el token del portal seguía en claro en el log** en `/api/pay/{token}`
+       (el enlace de cobro lleva el mismo token que el portal);
+     · **el contador de fotos del cierre** vivía solo en memoria: al volver a la
+       pantalla reetiquetaba desde "frontal" —el "antes y ahora" del informe
+       comparaba ángulos distintos— y ofrecía huecos que el servidor no tenía;
+     · **videollamadas**: sin Google conectado, una propuesta no tenía NINGUNA
+       salida (el endpoint `done` lo admitía desde siempre, pero ningún botón lo
+       llamaba) y su alerta alta sonaba para siempre; y el `db.rollback()` del
+       endpoint de agendar resucitaba la credencial que Google acababa de
+       revocar, dejando el sistema atascado en "conectado" con todo fallando.
+   - Suite completa en verde (~640), `tsc` limpio, build OK, `check:anclas` y
+     `check:avisos` OK. Migración nueva: **0042** (`payments.subscription_id`).
+   - ⚠️ **Aviso de entorno**: el contenedor de esta sesión se restauró a una
+     instantánea vieja CUATRO veces, llevándose el árbol de trabajo y la base de
+     pruebas. Si algo no cuadra, `git log --oneline -1` primero; se recupera con
+     `git fetch origin <rama> && git reset --hard origin/<rama>` y
+     `alembic upgrade head` contra la base de pruebas.
+
 000000000000000000. ✅ **AUDITORÍA INTEGRAL DE TODO EL SISTEMA (30-08-2026).**
    Petición del dueño: "una auditoría de absolutamente todo el sistema DQR…
    que todo funcione en orden, optimizado, sin ningún error ni bug, en ningún
