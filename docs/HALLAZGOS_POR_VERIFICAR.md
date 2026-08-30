@@ -32,6 +32,21 @@
 | Las equivalencias se leen de una clave que no existe: comida y cena invisibles para los revisores IA | `backend/app/services/plan_review.py` | `39666fd` |
 | El test de las equivalencias inventa una forma de banco que el sistema no produce | `backend/tests/test_plan_review.py` | `39666fd` |
 | El barrido de `/api/alerts` hace 7 consultas por cliente | `backend/app/routers/alerts.py` | `86eef25` |
+| El plan declaraba macros que sus ingredientes no dan (cuadre de composición) | `backend/app/services/ai/generator.py` | `bf14bc0` |
+| La memoria de vetos solo se saneaba al escribir, no al leer | `backend/app/services/coach_lessons.py` | `03c5149` |
+| Una petición del cliente no avisaba si estaba inactivo o sin plan | `backend/app/routers/alerts.py` | `feb62ca` |
+| Dos videollamadas el mismo día = un solo aviso al coach (tag compartida) | `backend/app/services/push.py` | `feb62ca` |
+| Un correo que falló consumía su intento (día 12 y tope de cierre) | `backend/app/services/jobs.py` | `f15a561` |
+| El que entrena pero no se pesa figuraba "al día" toda la quincena | `backend/app/routers/alerts.py` | `f9c8e03` |
+| Un push sin `count` apagaba el badge del coach | `frontend/public/sw.js` | `2a0827f` |
+| La huella del resumen se guardaba truncada: se repetía cada barrido | `backend/app/services/push.py` | `2a0827f` |
+| Cuatro de los cinco automatismos podían morir en silencio | `backend/app/services/job_state.py` | `d1fa9ab` |
+| El aviso de fallo del mantenimiento no escalaba nunca | `backend/app/services/job_state.py` | `d1fa9ab` |
+| El gasto de IA se pisaba entre revisores en paralelo | `backend/app/services/ai_credit.py` | `616d2d4` |
+| La racha contaba días que el motor descarta (cadena vacía) | `backend/app/services/portal.py` | `616d2d4` |
+| Un `weekly_progression` malformado tumbaba la pantalla de Entreno (500) | `backend/app/services/portal.py` | `91d5f39` |
+| Un `day` no textual tumbaba "Hoy" y los recordatorios de todos (500) | `backend/app/services/portal.py` | `3c6a561` |
+| El cliente no podía subir fotos tras enviar la revisión | `frontend/src/portal/PortalApp.tsx` | `2ea541f` |
 
 ---
 
@@ -44,8 +59,6 @@ fallo que dice cazar).
 
 ### Graves
 
-- **[alta] La memoria de vetos ya guardada sigue yendo al prompt con las cifras y los alimentos del cliente** — `backend/app/services/coach_lessons.py:276` · `arreglo_incompleto`
-- **[alta] El cuadre fija los macros al objetivo pero los gramos por otro ratio: el plan declara macros que sus propios ingredientes no dan** — `backend/app/services/ai/generator.py:221` · `regresion`
 
 ### Medias
 
@@ -54,14 +67,8 @@ fallo que dice cazar).
 - **[media] El sello editado (y el `rev` nuevo) se tiran: `normalize` se queda con el plan viejo** — `frontend/src/components/ClientPlanPanel.tsx:320` · `suposicion_falsa`
 - **[media] DQR Train: regenerar el plan no sella la adaptación → el banner "sin adaptar" es eterno** — `backend/app/routers/clients.py:1726` · `arreglo_incompleto`
 - **[media] Copiar un plan/modelo arrastra el sello de adaptación de OTRO cliente dentro de `training_json`** — `backend/app/services/plan_library.py:268` · `arreglo_incompleto`
-- **[media] Contar las series como "día registrado" para TODOS los paquetes deja ciego al coach con el cliente Full/Nutri que no se pesa** — `backend/app/services/jobs.py:106` · `regresion`
-- **[media] La vigilancia de automatismos solo mira el mantenimiento diario: los otros cuatro trabajos pueden fallar indefinidamente en silencio** — `backend/app/services/job_state.py:38` · `arreglo_incompleto`
-- **[media] La huella del resumen del coach se guarda truncada a 300 caracteres: con ~10 alertas abiertas la dedup deja de funcionar** — `backend/app/services/push.py:742` · `arreglo_incompleto`
-- **[media] El tope de 3 avisos de cierre cuenta también los emails FALLIDOS y DESACTIVADOS: un SMTP caído 3 días deja al cliente sin recordatorio toda la quincena** — `backend/app/services/jobs.py:253` · `regresion`
-- **[media] Quedó una tag de push del coach compartida: dos videollamadas el mismo día se ven como una sola notificación** — `backend/app/services/push.py:589` · `arreglo_incompleto`
 - **[media] El reenvío del pendiente del Diario corre sin control de concurrencia y borra lo tecleado después** — `frontend/src/portal/PortalDiary.tsx:213` · `regresion`
 - **[media] El pendiente del Diario se guarda con una clave sin cliente: en un móvil compartido escribe el diario de otro** — `frontend/src/portal/PortalDiary.tsx:48` · `regresion`
-- **[media] "Escribir a mi coach" se enseña a todos, pero la alerta del panel no existe para el cliente sin plan ni para el inactivo** — `backend/app/routers/alerts.py:252` · `suposicion_falsa`
 - **[media] El sidecar de la vía formulario congela el retrato y las correcciones del coach dejan de llegar al prompt** — `backend/app/routers/portal_public.py:268` · `regresion`
 - **[media] Las contradicciones del nuevo endpoint son una foto fija: no se apagan al corregir la ficha ni aparecen si las crea el coach** — `backend/app/routers/clients.py:927` · `arreglo_incompleto`
 - **[media] Las fotos iniciales se guardan todas como `front`: el primer informe empareja un ángulo equivocado** — `backend/app/services/feedback_service.py:116` · `regresion`
@@ -84,9 +91,6 @@ fallo que dice cazar).
 
 - **[baja] Las ramas de "aversión" y "patrón" de `_sin_cifras` no coinciden con ningún veto real: el prompt recibe frases mutiladas** — `backend/app/services/coach_lessons.py:219`
 - **[baja] La memoria de vetos (§13) deja de aprender del banco de comidas: los alérgenos y los desvíos ya no se anotan** — `backend/app/services/ai/generator.py:1079`
-- **[baja] Los revisores en paralelo se pisan el saldo de créditos (lost update sobre `ai_credit_state`)** — `backend/app/services/ai_credit.py:70`
-- **[baja] La racha del portal NO consume la "única verdad": su predicado SQL cuenta días que el motor descarta** — `backend/app/services/portal.py:195`
-- **[baja] Tras un fallo del mantenimiento, el panel ya nunca escala a "lleva N horas sin ejecutarse"** — `backend/app/services/job_state.py:109`
 - **[baja] El diario sin guardar al cruzar la medianoche se tira a la basura, pudiendo reenviarse con su fecha** — `frontend/src/portal/PortalDiary.tsx:64`
 - **[baja] El pre-relleno "solo si está vacío" deja muerto el campo de duración de sesión (y trata `false` como vacío)** — `frontend/src/pages/AnamnesisPage.tsx:254`
 - **[baja] El criterio único no llega a `/anamnesis-pdf`: el camino inverso sigue pisando la ficha revisada** — `backend/app/routers/portal_public.py:406`
@@ -114,7 +118,6 @@ fallo que dice cazar).
 
 ### Coherencia de UX — portal del cliente
 
-- **[alta] Tras enviar la revisión desaparece la única pantalla que sube fotos, pero el portal y el push las siguen pidiendo cada 3 h** — `frontend/src/portal/PortalApp.tsx:764`
 - **[media] El cuestionario dice "te hemos enviado el acceso por email" aunque no se haya enviado ninguno, y no deja vía de vuelta al portal** — `frontend/src/pages/AnamnesisPage.tsx:497`
 - **[media] Al cliente DQR Train el portal le anuncia una dieta que su PDF no contiene** — `frontend/src/portal/PortalApp.tsx:290`
 - **[baja] "Recursos" es la única pantalla del portal cuyo error no se puede reintentar, y el texto invita a hacerlo** — `frontend/src/portal/PortalResources.tsx:46`
@@ -132,8 +135,6 @@ fallo que dice cazar).
 
 - **[alta] El diagnóstico de correo existe en el backend y no hay ninguna pantalla que lo abra** — `backend/app/routers/email.py:35`
 - **[alta] La página de "¡Pago recibido!" promete un correo que en la renovación no existe** — `frontend/src/pages/PlansPage.tsx:312`
-- **[media] Un correo que FALLA cuenta como enviado: el recordatorio del día 12 no se reintenta nunca** — `backend/app/services/jobs.py:63`
-- **[baja] Los push sin `count` apagan el badge del coach: el "pagos sin leer" desaparece sin leer nada** — `frontend/public/sw.js:37`
 
 ### Integraciones — Google y WhatsApp
 
