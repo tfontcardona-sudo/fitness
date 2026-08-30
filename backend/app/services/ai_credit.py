@@ -9,7 +9,7 @@ página de recarga de la consola de Anthropic.
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import AiCreditState
@@ -65,9 +65,21 @@ def record_usage(model: str, input_tokens: int, output_tokens: int) -> None:
         from app.db import SessionLocal
         from app.models import AiUsageEvent
 
+        from sqlalchemy import update
+
         with SessionLocal() as db:
-            state = get_state(db)
-            state.spent_usd = (state.spent_usd or 0.0) + cost
+            state = get_state(db)   # get-or-create de la fila única
+            # SUMA EN LA BASE, no leer-modificar-escribir. Los 8-10 revisores
+            # del panel corren EN PARALELO, cada uno con su sesión: con el
+            # patrón anterior todos leían el mismo saldo y el último en
+            # escribir se llevaba por delante lo que habían sumado los otros.
+            # El gasto anotado salía por debajo del real y el coach veía un
+            # saldo optimista justo en la operación que más créditos consume.
+            db.execute(
+                update(AiCreditState)
+                .where(AiCreditState.id == state.id)
+                .values(spent_usd=func.coalesce(AiCreditState.spent_usd, 0.0) + cost)
+            )
             db.add(AiUsageEvent(
                 model=model or "?", input_tokens=input_tokens or 0,
                 output_tokens=output_tokens or 0, cost_usd=cost,

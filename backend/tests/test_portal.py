@@ -520,3 +520,63 @@ def test_un_dia_de_sesion_que_no_es_texto_no_tumba_hoy_ni_los_recordatorios():
     assert has_session_on({"sessions": None}, hoy) is False
     # Y el plan bueno sigue detectándose igual.
     assert has_session_on({"sessions": [{"day": etiqueta, "name": "Torso"}]}, hoy) is True
+
+
+def test_la_racha_no_cuenta_un_dia_que_el_motor_descarta():
+    """La racha del portal se calcula con SQL propio y el motor de "sin
+    registros" con `diary_is_filled`. El SQL solo miraba el NULO, así que una
+    nota escrita y borrada (cadena vacía) contaba para la racha y no para el
+    motor: el portal decía "🔥 5 días" mientras el panel del coach avisaba de
+    "sin registros desde hace 5 días"."""
+    import uuid
+    from datetime import date, timedelta
+
+    from sqlalchemy import delete
+
+    from app.db import SessionLocal
+    from app.models import Client, DailyLog, Period, Plan
+    from app.services.portal import streak_days
+    from app.services.push import diary_is_filled
+
+    db = SessionLocal()
+    hoy = date.today()
+    marca = uuid.uuid4().hex[:8]
+    try:
+        c = Client(full_name=f"Racha {marca}", email=f"racha-{marca}@test.local",
+                   package_tier="full", billing_period="1m", status="active",
+                   portal_token=f"tok-{marca}", payment_status="paid")
+        db.add(c)
+        db.flush()
+        plan = Plan(client_id=c.id, month_index=1, version=1, status="published")
+        db.add(plan)
+        db.flush()
+        per = Period(client_id=c.id, plan_id=plan.id, period_index=1, status="open",
+                     starts_on=hoy - timedelta(days=5), ends_on=hoy + timedelta(days=8))
+        db.add(per)
+        db.flush()
+        # Tres días seguidos con SOLO cadenas vacías: el autosave las deja así
+        # cuando el cliente escribe y borra.
+        vacios = [DailyLog(period_id=per.id, log_date=hoy - timedelta(days=d),
+                           free_notes="", steps="", diet_adherence="")
+                  for d in range(3)]
+        for lg in vacios:
+            db.add(lg)
+        db.commit()
+
+        for lg in vacios:
+            assert diary_is_filled(lg) is False, "el motor no los cuenta"
+        assert streak_days(db, c.id, hoy) == 0, "la racha tampoco puede contarlos"
+
+        # Y con contenido de verdad, la racha sí corre.
+        vacios[0].free_notes = "Hoy me he encontrado bien"
+        db.commit()
+        assert streak_days(db, c.id, hoy) == 1
+    finally:
+        per_ids = [p.id for p in db.query(Period).filter(Period.client_id == c.id)]
+        if per_ids:
+            db.execute(delete(DailyLog).where(DailyLog.period_id.in_(per_ids)))
+        db.execute(delete(Period).where(Period.client_id == c.id))
+        db.execute(delete(Plan).where(Plan.client_id == c.id))
+        db.execute(delete(Client).where(Client.id == c.id))
+        db.commit()
+        db.close()

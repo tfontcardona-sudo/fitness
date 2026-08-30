@@ -185,7 +185,7 @@ def streak_days(db, client_id: int, today: date) -> int:
     de teclear); el día de HOY aún sin rellenar no rompe la racha (se rompe al
     terminar el día en blanco). Tope de mirada: 90 días (más que de sobra y la
     consulta se mantiene barata)."""
-    from sqlalchemy import or_, select
+    from sqlalchemy import and_, or_, select
 
     from app.models import DailyLog, Period, WorkoutLog
 
@@ -196,12 +196,22 @@ def streak_days(db, client_id: int, today: date) -> int:
     tiene_series = (select(WorkoutLog.id)
                     .where(WorkoutLog.daily_log_id == DailyLog.id)
                     .exists())
+    # Espejo EXACTO de `push.diary_is_filled`, que descarta el vacío además del
+    # nulo. Con solo `is_not(None)`, una nota escrita y borrada dejaba el campo
+    # en cadena vacía: la racha contaba ese día y el motor de "sin registros"
+    # no, así que el portal decía "🔥 5 días" mientras el panel del coach
+    # avisaba de "sin registros desde hace 5 días". Los campos de texto se
+    # comparan también contra "" (los numéricos no admiten esa comparación).
+    def _relleno(col):
+        return col.is_not(None) if col.type.python_type is not str else and_(
+            col.is_not(None), col != "")
+
     con_algo = [
-        DailyLog.weight_kg.is_not(None), DailyLog.sleep_hours.is_not(None),
-        DailyLog.steps.is_not(None), DailyLog.satiety_1_10.is_not(None),
-        DailyLog.water_liters.is_not(None), DailyLog.diet_adherence.is_not(None),
-        DailyLog.energy_1_5.is_not(None), DailyLog.mood_1_5.is_not(None),
-        DailyLog.fatigue_1_5.is_not(None), DailyLog.free_notes.is_not(None),
+        _relleno(DailyLog.weight_kg), _relleno(DailyLog.sleep_hours),
+        _relleno(DailyLog.steps), _relleno(DailyLog.satiety_1_10),
+        _relleno(DailyLog.water_liters), _relleno(DailyLog.diet_adherence),
+        _relleno(DailyLog.energy_1_5), _relleno(DailyLog.mood_1_5),
+        _relleno(DailyLog.fatigue_1_5), _relleno(DailyLog.free_notes),
         DailyLog.chosen_options_json.is_not(None),
         tiene_series,
     ]
