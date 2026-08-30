@@ -1128,7 +1128,11 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
             )}
             {/* Las acciones poco frecuentes viven en un menú: la botonera pasa
                 de 6-7 botones del mismo peso a 3-4 (lo frecuente destaca). */}
-            <details className="relative"
+            {/* Ancho COMPLETO en móvil: el menú es de 240 px y cuelga del
+                borde derecho del botón; con el botón en media columna (154 px)
+                salía 44 px por FUERA de la pantalla y las opciones quedaban
+                cortadas por la izquierda, sin forma de arrastrarlas. */}
+            <details className="relative col-span-2 sm:col-span-1"
               onKeyDown={(e) => {
                 if (e.key !== "Escape") return;
                 e.currentTarget.removeAttribute("open");

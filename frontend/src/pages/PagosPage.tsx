@@ -428,6 +428,9 @@ export default function PagosPage() {
 
       {/* Filtros + marcar leído */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        {/* Con el filtro "Sin ficha" a la vista son cinco chips: en un móvil el
+            último quedaba fuera de la pantalla. La tira se desliza sola. */}
+        <div className="tab-strip min-w-0">
         <div className="inline-flex rounded-xl border p-1" style={{ borderColor: "var(--line-strong)" }}>
           {[...FILTROS, ...(((resumen?.orphan_count ?? 0) > 0 || filtro === "orphan")
               ? [{ id: "orphan" as Filtro, label: "Sin ficha" }] : [])].map((f) => (
@@ -447,6 +450,7 @@ export default function PagosPage() {
               {f.label}
             </button>
           ))}
+        </div>
         </div>
         {(resumen?.unseen ?? 0) > 0 && (
           <button onClick={marcarLeidos} className="btn btn-ghost">

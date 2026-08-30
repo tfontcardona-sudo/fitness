@@ -59,7 +59,11 @@ export default function RecursosPage() {
         <h1 className="text-xl font-semibold text-zinc-100">Recursos del portal</h1>
       </header>
 
-      <div className="mb-6 inline-flex rounded-xl border p-1" style={{ borderColor: "var(--line-strong)" }}>
+      {/* Cinco pestañas no caben en un móvil: "Página de enlaces" y
+          "Aprendizaje" quedaban FUERA de la pantalla y solo se llegaba a ellas
+          arrastrando la página entera de lado. */}
+      <div className="tab-strip mb-6">
+      <div className="inline-flex rounded-xl border p-1" style={{ borderColor: "var(--line-strong)" }}>
         {([["productos", "Productos", Package], ["videos", "Vídeos de ejercicios", Video], ["modelos", "Modelos de plan", Copy], ["enlaces", "Página de enlaces", ExternalLink], ["aprendizaje", "Aprendizaje", GraduationCap]] as const).map(
           ([id, label, Icon]) => (
             <button
@@ -77,6 +81,7 @@ export default function RecursosPage() {
             </button>
           ),
         )}
+      </div>
       </div>
 
       {tab === "productos" ? <ProductsManager /> : tab === "videos" ? <ExerciseVideosManager />

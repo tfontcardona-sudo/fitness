@@ -247,16 +247,24 @@ body::before {
     bottom: calc(4.75rem + env(safe-area-inset-bottom)) !important;
   }
 }
-/* Pestañas del perfil deslizables en pantallas estrechas (sin cortar) */
-.profile-tabs {
+/* Tiras de pestañas y filtros deslizables en pantallas estrechas.
+   Sin esto, lo que no cabe se sale de la pantalla y para alcanzarlo hay que
+   arrastrar la PÁGINA ENTERA de lado (el <main> del panel scrollea en
+   horizontal), con las cabeceras desplazándose de paso. Así la tira se
+   desliza sola y el resto se queda quieto. */
+.profile-tabs,
+.tab-strip {
   overflow-x: auto;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
 }
-.profile-tabs::-webkit-scrollbar {
+.profile-tabs::-webkit-scrollbar,
+.tab-strip::-webkit-scrollbar {
   display: none;
 }
-.profile-tabs > button {
+.profile-tabs > button,
+.tab-strip > * {
   white-space: nowrap;
   flex-shrink: 0;
 }
