@@ -324,6 +324,29 @@ class _EnLote(_AlVuelo):
 _AL_VUELO = _AlVuelo()
 
 
+def _alerta_peticion(db: Session, client: Client, datos: "_AlVuelo") -> dict | None:
+    """El cliente escribió una duda o petición desde su portal.
+
+    Va SEPARADA del ciclo de la asesoría a propósito. Estaba dentro, después
+    de dos `return` tempranos —el del cliente inactivo y el del que aún no
+    tiene plan publicado—, así que justo los dos que más necesitan respuesta
+    escribían al vacío: el recién dado de alta que pregunta antes de recibir
+    su primera planificación, y el inactivo que quiere volver. El portal
+    ofrece "Escribir a mi coach" a TODOS; el aviso también tiene que existir
+    para todos."""
+    abiertas = datos.peticiones_abiertas(db, client)
+    if not abiertas:
+        return None
+    # Con el TEXTO de la petición: el coach debe poder leer QUÉ pide sin
+    # depender del email (en dev está apagado y el mensaje se perdía).
+    extracto = (abiertas[0].message or "").strip()
+    if len(extracto) > 140:
+        extracto = extracto[:137] + "…"
+    prefix = f"{len(abiertas)} peticiones · última: " if len(abiertas) > 1 else ""
+    return _alert(client, "change_request", "alta", f"{prefix}«{extracto}»",
+                  "seguimiento", "Ver petición")
+
+
 def client_alerts(db: Session, client: Client, today: date | None = None,
                   titulos_producto: list[str] | None = None,
                   datos: _AlVuelo | None = None) -> list[dict]:
@@ -341,6 +364,11 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
     today = today or today_local()
     datos = datos or _AL_VUELO
     out: list[dict] = []
+    # Lo PRIMERO, porque sobrevive a los dos `return` de abajo: una petición
+    # sin atender no puede depender de en qué punto del ciclo esté el cliente.
+    peticion = _alerta_peticion(db, client, datos)
+    if peticion is not None:
+        out.append(peticion)
     if client.status == "inactive":
         # Antes se devolvía [] y el cliente inactivo desaparecía de TODO el
         # radar (auditoría del ciclo): estado sin salida y sin aviso. Una única
@@ -494,22 +522,6 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
                 f"Su revisión quincenal venció hace {overdue} días y no la ha "
                 "enviado: recuérdaselo por WhatsApp.",
                 "feedback", "Cerrar la revisión"))
-
-    # --- Petición de cambio del cliente sin atender (portal → coach) ---------
-    # El cliente escribió una duda/petición desde su portal: el coach debe
-    # verlo. Persiste hasta que se marque resuelta.
-    open_crs = datos.peticiones_abiertas(db, client)
-    if open_crs:
-        # Con el TEXTO de la petición: el coach debe poder leer QUÉ pide sin
-        # depender del email (en dev está apagado y el mensaje se perdía).
-        extracto = (open_crs[0].message or "").strip()
-        if len(extracto) > 140:
-            extracto = extracto[:137] + "…"
-        prefix = f"{len(open_crs)} peticiones · última: " if len(open_crs) > 1 else ""
-        out.append(_alert(
-            client, "change_request", "alta",
-            f"{prefix}«{extracto}»",
-            "seguimiento", "Ver petición"))
 
     # --- Suplementos del plan SIN producto en Recursos ----------------------
     # El portal del cliente destaca los productos de SU planificación (con el

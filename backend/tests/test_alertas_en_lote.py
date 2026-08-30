@@ -159,3 +159,53 @@ def test_el_barrido_no_crece_con_el_numero_de_clientes():
         event.remove(engine, "before_cursor_execute", _cuenta)
         _borra(db, clientes)
         db.close()
+
+
+def test_una_peticion_del_cliente_avisa_aunque_no_tenga_plan_ni_este_activo():
+    """El portal ofrece "Escribir a mi coach" a TODOS los clientes, pero el
+    aviso vivía DESPUÉS de dos `return` tempranos —el del cliente inactivo y el
+    del que aún no tiene plan publicado—, así que justo los dos que más
+    necesitan respuesta escribían al vacío: el recién dado de alta que pregunta
+    antes de recibir su primera planificación, y el inactivo que quiere volver.
+    """
+    import uuid
+    from datetime import date
+
+    from sqlalchemy import delete
+
+    from app.db import SessionLocal
+    from app.models import ChangeRequest, Client
+    from app.routers.alerts import _EnLote, client_alerts
+
+    db = SessionLocal()
+    marca = uuid.uuid4().hex[:8]
+    creados = []
+    try:
+        for estado in ("active", "inactive"):
+            c = Client(full_name=f"Escribe {estado} {marca}",
+                       email=f"escribe-{estado}-{marca}@test.local",
+                       package_tier="full", billing_period="1m", status=estado,
+                       portal_token=f"tok-{estado}-{marca}", payment_status="paid")
+            db.add(c)
+            db.flush()
+            db.add(ChangeRequest(client_id=c.id, status="open",
+                                 message="Me voy de viaje dos semanas, ¿qué hago?"))
+            creados.append(c)
+        db.commit()
+
+        hoy = date.today()
+        for c in creados:
+            # SIN plan publicado (recién dado de alta) y también inactivo.
+            avisos = client_alerts(db, c, today=hoy, titulos_producto=[])
+            tipos = [a["kind"] for a in avisos]
+            assert "change_request" in tipos, f"{c.status}: {tipos}"
+            # Y por el camino en lote, que es el que usa el panel.
+            lote = _EnLote(db, [c])
+            en_lote = client_alerts(db, c, today=hoy, titulos_producto=[], datos=lote)
+            assert en_lote == avisos
+    finally:
+        ids = [c.id for c in creados]
+        db.execute(delete(ChangeRequest).where(ChangeRequest.client_id.in_(ids)))
+        db.execute(delete(Client).where(Client.id.in_(ids)))
+        db.commit()
+        db.close()

@@ -599,9 +599,15 @@ def _send_videocall_reminder(db: Session, client: Client, vc, brand_name: str,
         "title": brand_name, "body": client_body, "count": 1,
         "url": vc.meet_url or f"{base}/p/{client.portal_token}", "tag": "dq-videollamada",
     })
+    # Tag ÚNICA POR LLAMADA. Con una tag compartida, el móvil sustituye el
+    # aviso anterior por el nuevo: dos clientes con videollamada el mismo día
+    # y el coach solo veía UNA notificación. Es el mismo fallo que ya se
+    # corrigió en los cobros. (Dentro de la misma llamada sí interesa que se
+    # sustituyan: "mañana" y "en 1 hora" hablan de la misma cita.)
     n += send_to_coach(db, {
         "title": "Videollamada", "body": coach_body, "count": 1,
-        "url": vc.meet_url or f"{base}/clientes/{client.id}?tab=feedback", "tag": "dq-vc-coach",
+        "url": vc.meet_url or f"{base}/clientes/{client.id}?tab=feedback",
+        "tag": f"dq-vc-coach-{vc.id}",
     })
     return n
 
