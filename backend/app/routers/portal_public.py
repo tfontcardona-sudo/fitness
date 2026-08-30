@@ -288,6 +288,7 @@ def submit_anamnesis(
             cuerpo += " ⚠ El email de acceso al portal no salió: reenvíaselo desde su ficha."
         push_svc.send_to_coach(db, {
             "title": f"📋 {client.full_name} ha enviado su anamnesis",
+                "count": 1,
             "body": cuerpo,
             "url": f"/clientes/{client.id}?tab=anamnesis",
             "tag": f"anamnesis-{client.id}",
@@ -1396,6 +1397,7 @@ def portal_change_request(
         extracto = cr.message if len(cr.message) <= 120 else cr.message[:117] + "…"
         push_svc.send_to_coach(db, {
             "title": f"✋ {client.full_name} pide un ajuste",
+                "count": 1,
             "body": extracto,
             "url": f"/clientes/{client.id}?tab=seguimiento",
             "tag": f"change-request-{client.id}",

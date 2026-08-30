@@ -243,3 +243,34 @@ def test_un_correo_que_falla_no_consume_el_intento(monkeypatch):
         db.execute(delete(Client).where(Client.id == c.id))
         db.commit()
         db.close()
+
+
+def test_la_dedup_del_resumen_del_coach_aguanta_muchas_alertas(tmp_path, monkeypatch):
+    """`record_job` guarda el detalle recortado a 300 caracteres. La huella era
+    la lista literal de claves de alerta, que los pasa con ~10 alertas
+    abiertas: a partir de ahí se comparaba la huella ENTERA contra una guardada
+    a medias, nunca coincidían y el resumen se enviaba en cada barrido aunque
+    no hubiera cambiado nada — justo el machaqueo que esta dedup evita."""
+    from app.config import settings
+    from app.services import push as push_svc
+    from app.services.job_state import estado_de_los_trabajos, record_job
+
+    monkeypatch.setattr(settings, "storage_path", str(tmp_path))
+    monkeypatch.setattr(settings, "push_enabled", True)
+    monkeypatch.setattr(settings, "vapid_public_key", "pub")
+    monkeypatch.setattr(settings, "vapid_private_key", "priv")
+
+    # 12 alertas con claves realistas: la lista literal pasa de 300 caracteres.
+    alertas = [{"key": f"cliente-{i}:plan_stale_inputs:2026-08-30", "kind": "x"}
+               for i in range(12)]
+    literal = "|".join(sorted(str(a["key"]) for a in alertas))
+    assert len(literal) > 300, "el caso de prueba tiene que superar el recorte"
+
+    huella = push_svc._huella_de_alertas(alertas)
+    record_job("coach_digest_huella", ok=True, detalle=huella)
+    guardada = (estado_de_los_trabajos().get("coach_digest_huella") or {}).get("detail")
+    assert guardada == huella, "la huella no cabe entera: la dedup no funcionará"
+
+    # Y sigue distinguiendo: si cambia una alerta, cambia la huella.
+    otras = alertas[:-1] + [{"key": "cliente-99:no_logs:2026-08-30", "kind": "x"}]
+    assert push_svc._huella_de_alertas(otras) != huella

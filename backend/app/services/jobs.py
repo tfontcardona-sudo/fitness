@@ -373,6 +373,7 @@ def _maintain_client(db: Session, client: Client, today: date,
 
                     push_svc.send_to_coach(db, {
                         "title": f"💤 {client.full_name} ha pasado a inactivo",
+                "count": 1,
                         "body": decision.reason or "30 días sin actividad.",
                         "url": f"/clientes/{client.id}",
                         "tag": f"inactive-{client.id}",

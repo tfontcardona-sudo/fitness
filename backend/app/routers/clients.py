@@ -847,6 +847,7 @@ def ingest_anamnesis_pdf(db: Session, client_id: int, content: bytes,
                       "La lectura automática falló: revísala y rellena la ficha a mano.")
             push_svc.send_to_coach(db, {
                 "title": f"📋 {client.full_name} ha enviado su anamnesis",
+                "count": 1,
                 "body": cuerpo,
                 "url": f"/clientes/{client.id}?tab=anamnesis",
                 "tag": f"anamnesis-{client.id}",

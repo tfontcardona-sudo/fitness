@@ -24,6 +24,7 @@ Decisiones:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from datetime import date, datetime, timezone
@@ -730,6 +731,19 @@ def run_push_reminders(db: Session, now: datetime | None = None) -> dict:
     return summary
 
 
+
+def _huella_de_alertas(alerts: list[dict]) -> str:
+    """Huella COMO HASH de las alertas abiertas, no como lista literal.
+
+    `record_job` guarda el detalle recortado a 300 caracteres, y la lista de
+    claves los pasa con ~10 alertas abiertas: a partir de ahí se comparaba la
+    huella ENTERA contra una guardada a medias, nunca coincidían y el resumen
+    se enviaba en cada barrido aunque no hubiera cambiado nada — que es justo
+    el machaqueo que esta dedup existe para evitar. Un hash cabe siempre."""
+    claves = "|".join(sorted(str(a.get("key") or a.get("kind")) for a in alerts))
+    return hashlib.sha256(claves.encode("utf-8")).hexdigest()[:32]
+
+
 def run_coach_digest(db: Session, now: datetime | None = None) -> dict:
     """Resumen push al MÓVIL DEL COACH (cada 3 h, 08–22): cuántos pendientes
     hay y los primeros, derivados del centro de alertas — siempre al día de
@@ -771,7 +785,13 @@ def run_coach_digest(db: Session, now: datetime | None = None) -> dict:
     # silenciando la app — y con ella los avisos inmediatos que sí valen
     # dinero. Se envía cuando hay algo NUEVO, y una vez al día de cortesía si
     # todo sigue igual.
-    huella = "|".join(sorted(str(a.get("key") or a.get("kind")) for a in alerts))
+    # HUELLA COMO HASH, no como lista literal. `record_job` guarda el detalle
+    # recortado a 300 caracteres, y la lista de claves los pasa con ~10 alertas
+    # abiertas: a partir de ahí se comparaba la huella ENTERA contra una
+    # guardada a medias, nunca coincidían, y el resumen se enviaba en cada
+    # barrido aunque no hubiera cambiado nada — que es justo el machaqueo que
+    # esta dedup existe para evitar. Un hash cabe siempre.
+    huella = _huella_de_alertas(alerts)
     try:
         from app.services.job_state import estado_de_los_trabajos, record_job
 
