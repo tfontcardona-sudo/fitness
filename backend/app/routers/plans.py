@@ -914,6 +914,12 @@ def _advance_cycle_after_feedback(db: Session, fb: FeedbackDoc) -> Client | None
 
     fb.sent_at = datetime.now(timezone.utc)
     period = db.get(Period, fb.period_id)
+    # El "!" de "revisión recibida" se apagaba SOLO al abrir la pestaña
+    # Seguimiento: el coach podía generar el informe, enviárselo al cliente y
+    # seguir con la marca encendida en su lista. Enviar la revisión ES haberla
+    # atendido.
+    if period is not None and period.coach_reviewed_at is None:
+        period.coach_reviewed_at = datetime.now(timezone.utc)
     client = db.get(Client, period.client_id) if period else None
     if client and client.status == "review_pending":
         client.status = "active"  # cerrado el feedback, arranca el siguiente ciclo

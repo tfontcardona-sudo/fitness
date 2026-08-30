@@ -1658,6 +1658,12 @@ def generate_client_plan(
         ) from exc
 
     nutrition, training, education, flags = generated.to_persistable()
+    # AVISOS DE LAS MÉTRICAS: "el suelo seguro queda por encima del TDEE: esto
+    # es mantenimiento, no déficit", "edad fuera de rango", "los suelos de
+    # macros no cabían y se han subido las kcal"… se calculaban y se TIRABAN en
+    # este camino (la base sin IA sí los conserva), así que el coach nunca los
+    # veía en el plan generado con IA — que es el camino normal.
+    flags = list(et.warnings) + list(_mp.notes) + list(flags)
 
     # Ninguna toma sin contenido: si la IA omitió un slot (o el filtrado de
     # alérgenos lo vació), recibe 3 opciones por defecto escaladas a sus macros —
