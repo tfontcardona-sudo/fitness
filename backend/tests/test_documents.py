@@ -13,6 +13,8 @@ import io
 import json
 import zipfile
 
+import pytest
+
 from app.services.docs import charts
 from app.services.docs.feedback_doc import generate_feedback_doc
 from app.services.docs.plan_doc import generate_plan_doc
@@ -217,3 +219,39 @@ def test_el_informe_no_reprocha_una_dieta_que_no_se_ha_contratado():
     # Con dieta contratada pero sin un solo registro: "Sin datos", no 0 %.
     con_dieta = _texto_docx(generate_feedback_doc(**comun, has_nutrition=True))
     assert "Sin datos" in con_dieta and "0%" not in con_dieta
+
+
+def test_la_conversion_a_pdf_se_cachea_y_no_se_desborda(monkeypatch):
+    """Cada conversión arranca un LibreOffice de ~300 MB; los endpoints del
+    portal permitían decenas simultáneas contra un VPS de un worker. Ahora hay
+    caché por contenido (el cliente reabre su plan muchas veces) y un tope de
+    conversiones a la vez."""
+    from app.services.docs import pdf_convert
+
+    llamadas = []
+    monkeypatch.setattr(pdf_convert, "_convierte",
+                        lambda data, timeout: llamadas.append(1) or b"%PDF-1.4 fake")
+    pdf_convert._cache.clear()
+    pdf_convert._cache_orden.clear()
+
+    doc = b"PK\x03\x04 documento de prueba"
+    assert pdf_convert.docx_bytes_to_pdf(doc).startswith(b"%PDF")
+    assert pdf_convert.docx_bytes_to_pdf(doc).startswith(b"%PDF")
+    assert len(llamadas) == 1, "la segunda descarga sale de la caché"
+
+    # Otro documento sí convierte.
+    pdf_convert.docx_bytes_to_pdf(b"PK\x03\x04 otro")
+    assert len(llamadas) == 2
+
+    # Sin hueco, se avisa en vez de tumbar el servidor.
+    pdf_convert._hueco.acquire()
+    pdf_convert._hueco.acquire()
+    monkeypatch.setattr(pdf_convert, "_ESPERA_MAX_S", 0.1)
+    try:
+        with pytest.raises(pdf_convert.ConversionOcupada):
+            pdf_convert.docx_bytes_to_pdf(b"PK\x03\x04 tercero")
+    finally:
+        pdf_convert._hueco.release()
+        pdf_convert._hueco.release()
+        pdf_convert._cache.clear()
+        pdf_convert._cache_orden.clear()

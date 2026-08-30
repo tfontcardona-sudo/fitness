@@ -197,3 +197,26 @@ def test_public_landing_shape(http):
                 # teléfono para pedir información (sin precios publicados).
                 "contact_phone", "contact_email"):
         assert key in data
+
+
+def test_el_formulario_publico_tiene_cupo_diario(http, monkeypatch):
+    """Sin tope global, quien rota IPs y direcciones podía crear fichas reales
+    y vaciar la cuota diaria de correo del coach: a partir de ahí no salen ni
+    los accesos al portal, ni los planes, ni los informes de los clientes de
+    verdad (y la cuenta puede quedar restringida por spam)."""
+    import uuid
+
+    from app.routers import public_site
+
+    monkeypatch.setattr(public_site, "MAX_ALTAS_PUBLICAS_DIA", 0)
+    avisos = []
+    monkeypatch.setattr(public_site, "_avisa_cupo_al_coach",
+                        lambda db, n: avisos.append(n))
+
+    r = http.post("/api/public/register", json={
+        "full_name": "Cupo Agotado", "email": f"cupo-{uuid.uuid4().hex[:8]}@example.com",
+        "phone": "600111222", "tier": "full", "period": "1m",
+    })
+    assert r.status_code == 429
+    assert "WhatsApp" in r.json()["detail"]
+    assert avisos, "el coach tiene que enterarse el mismo día"

@@ -6,6 +6,7 @@ en entrypoint.sh antes de arrancar; el scheduler se añade en la Fase 4.
 
 from contextlib import asynccontextmanager
 import logging
+import re
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,9 +28,45 @@ from app.routers import (
 
 APP_VERSION = "0.2.0"
 
+# ---------------------------------------------------------------- logs ----
+# El token del portal es una credencial PERMANENTE al historial clínico
+# completo del cliente (anamnesis, medicación, lesiones, peso, fotos) y viaja
+# en la RUTA, así que el access log de uvicorn lo escribía EN CLARO en cada
+# línea: `GET /api/p/<TOKEN>/state 200`. Cualquiera con acceso a los logs del
+# contenedor —o una copia de seguridad de ellos— entraba al portal de todos.
+_RE_TOKEN_PORTAL = re.compile(r"(/api/p/)[^/\s\"']+")
+
+
+def enmascara_tokens(texto: str) -> str:
+    """Sustituye el token del portal por *** en cualquier texto de log."""
+    return _RE_TOKEN_PORTAL.sub(r"\1***", texto)
+
+
+class _FiltroTokens(logging.Filter):
+    """Filtro para `uvicorn.access` (y cualquier logger): enmascara el token."""
+
+    def filter(self, record: logging.LogRecord) -> bool:  # noqa: A003
+        try:
+            if record.args:
+                record.args = tuple(
+                    enmascara_tokens(a) if isinstance(a, str) else a
+                    for a in record.args
+                )
+            if isinstance(record.msg, str):
+                record.msg = enmascara_tokens(record.msg)
+        except Exception:  # noqa: BLE001 — un log jamás puede tumbar la app
+            pass
+        return True
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Lo primero de lo primero: que ningún token de portal acabe en los logs.
+    for _nombre in ("uvicorn.access", "uvicorn.error", "app.errors"):
+        _lg = logging.getLogger(_nombre)
+        if not any(isinstance(f, _FiltroTokens) for f in _lg.filters):
+            _lg.addFilter(_FiltroTokens())
+
     # SEGURIDAD (lo primero): los secretos de firma NO pueden ser los de ejemplo
     # del repositorio público ni ser cortos. En producción se REHÚSA arrancar
     # con secretos forjables (mejor una caída visible que sesiones falsificables);
@@ -196,7 +233,8 @@ def _peticion_de_coach(request: Request) -> bool:
 
 @app.exception_handler(Exception)
 async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    _errlog.exception("Error no controlado en %s %s", request.method, request.url.path)
+    _errlog.exception("Error no controlado en %s %s", request.method,
+                      enmascara_tokens(request.url.path))
     # A un desconocido NUNCA se le da el detalle interno del error (va al log).
     # Al coach autenticado sí, para que la web muestre la causa sin ir al servidor.
     detail = (f"Error interno ({type(exc).__name__}): {exc}"

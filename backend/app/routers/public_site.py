@@ -81,6 +81,47 @@ def public_plan_prices(request: Request) -> dict:
     return get_plan_prices()
 
 
+# TOPE DIARIO GLOBAL del formulario público. El límite por IP (5/min) y el de
+# una hora por dirección no frenan a quien rota IPs y direcciones: cada llamada
+# creaba una ficha REAL y mandaba un email desde el buzón del coach a la
+# dirección que eligiera el que llama. Con la cuota de Gmail (~500/día) agotada
+# no salen NI los accesos al portal, NI los planes, NI los informes de los
+# clientes de verdad — y la cuenta puede acabar restringida por spam.
+MAX_ALTAS_PUBLICAS_DIA = 25
+
+
+def _altas_publicas_de_hoy(db: Session) -> int:
+    from datetime import datetime, timezone as _tz
+
+    from app.models import AuditLog
+
+    hoy = datetime.now(_tz.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    return int(db.scalar(
+        select(func.count(AuditLog.id)).where(
+            AuditLog.entity == "client", AuditLog.event == "client_created",
+            AuditLog.created_at >= hoy,
+            AuditLog.detail_json["by"].astext == "self")
+    ) or 0)
+
+
+def _avisa_cupo_al_coach(db: Session, altas: int) -> None:
+    """Un tope alcanzado puede ser un ataque… o una campaña que funciona: el
+    coach tiene que enterarse el mismo día, no descubrirlo por las quejas."""
+    try:
+        from app.services import push as push_svc
+
+        push_svc.send_to_coach(db, {
+            "title": "⚠ Altas públicas al tope",
+            "body": (f"{altas} registros hoy desde la web: se ha frenado el "
+                     "formulario público para proteger el email. Revísalo."),
+            "count": 1,
+            "url": f"{settings.public_base_url.rstrip('/')}/clientes",
+            "tag": "dq-cupo-altas",
+        })
+    except Exception:  # noqa: BLE001 — el aviso nunca rompe la petición
+        pass
+
+
 @router.post("/register")
 @limiter.limit("5/minute")
 def public_register(request: Request, body: PublicRegisterIn,
@@ -95,6 +136,18 @@ def public_register(request: Request, body: PublicRegisterIn,
                             "La oferta es solo del plan Full")
     email = body.email.strip().lower()
     client = db.scalar(select(Client).where(func.lower(Client.email) == email))
+
+    # Cupo diario: solo para ALTAS NUEVAS (un cliente que reintenta su propio
+    # pago nunca se queda fuera).
+    if client is None:
+        altas = _altas_publicas_de_hoy(db)
+        if altas >= MAX_ALTAS_PUBLICAS_DIA:
+            _avisa_cupo_al_coach(db, altas)
+            db.commit()
+            raise HTTPException(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                "Estamos recibiendo muchas solicitudes ahora mismo. "
+                "Escríbenos por WhatsApp y te damos el alta a mano.")
 
     # Solo se reutiliza una ficha en ONBOARDING con pago pendiente (el reintento
     # legítimo del propio interesado). Cualquier otra — pagada O YA EN MARCHA

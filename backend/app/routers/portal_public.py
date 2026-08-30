@@ -756,7 +756,9 @@ def portal_plan(
 
 
 @router.get("/{token}/plan.pdf")
-@limiter.limit("10/minute")
+# Cada descarga puede arrancar un LibreOffice: se acota (con la caché por
+# contenido, reabrir el mismo plan ya no convierte nada).
+@limiter.limit("6/minute")
 def portal_plan_pdf(
     request: Request,
     client: Client = Depends(get_client_by_token),
@@ -1273,7 +1275,7 @@ def portal_feedback(
 
 
 @router.get("/{token}/feedback/{doc_id}.pdf")
-@limiter.limit("30/minute")
+@limiter.limit("6/minute")
 def portal_feedback_document(
     request: Request,
     doc_id: int,

@@ -32,6 +32,16 @@
 	}
 
 	handle /api/* {
+		# TOPE DE TAMAÑO donde no cuesta nada: Caddy corta con 413 sin que el
+		# cuerpo llegue a Python. Sin esto no había límite en ningún punto —
+		# ni en Caddy, ni en uvicorn, ni en Starlette, que escribe cada parte
+		# del multipart en DISCO antes de ejecutar el endpoint (así que el
+		# "lectura acotada a 10 MB" del código llegaba tarde) y el 429 del
+		# rate limit también se evalúa DESPUÉS de recibirlo entero.
+		# 30 MB deja holgura a la anamnesis en PDF y a las fotos de progreso.
+		request_body {
+			max_size 30MB
+		}
 		# X-Real-IP = IP real del cliente que ve Caddy ({remote_host}); no es
 		# falseable por el cliente. El backend la usa para limitar por IP en
 		# lugar de un cubo global compartido (un pico dejaría sin login a todos).
