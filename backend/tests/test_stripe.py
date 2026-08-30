@@ -1331,6 +1331,61 @@ def test_webhook_tercer_pago_detiene_la_oferta(monkeypatch):
         db.close()
 
 
+def test_una_segunda_contratacion_de_la_oferta_no_se_cancela_con_el_primer_euro(monkeypatch):
+    """Un cliente que vuelve y contrata la oferta OTRA VEZ empieza de cero.
+
+    El recuento miraba TODAS las facturas del cliente, de siempre: con las tres
+    del programa anterior en el libro, su primera factura de 1 € ya sumaba
+    cuatro, el sistema daba el programa por cobrado entero y cancelaba la
+    suscripción. Tres meses de asesoría por un euro."""
+    stripe_service = _prep(monkeypatch)
+    from app.db import SessionLocal
+    from app.services import push as push_svc
+    from app.services.payments import record_payment
+
+    monkeypatch.setattr(push_svc, "send_to_coach", lambda db, payload: None)
+    fake = FakeStripe()
+
+    db = SessionLocal()
+    try:
+        c = _cliente_oferta3(db, sub_id="sub_nueva")
+        cid = c.id
+        # El programa ANTERIOR, ya cobrado entero y con su suscripción muerta.
+        for i, cents in enumerate((100, 12000, 12000)):
+            record_payment(db, object_id=f"in_vieja_{cid}_{i}", kind="invoice",
+                           status="paid", amount_cents=cents, client=c,
+                           billing_period="oferta", description=f"pago {i + 1} de 3",
+                           subscription_id="sub_vieja")
+        db.commit()
+
+        def _mandar(evento):
+            class _Hooked:
+                Webhook = type("W", (), {
+                    "construct_event": staticmethod(lambda *a, **k: evento)})
+                Subscription = fake.Subscription
+
+            monkeypatch.setattr(stripe_service, "_stripe", lambda: _Hooked)
+            return stripe_service.handle_webhook(db, b"{}", "sig")
+
+        def _factura(invoice_id, razon, centimos):
+            ev = _evento_factura_oferta3(cid, invoice_id, razon, centimos)
+            ev["data"]["object"]["subscription"] = "sub_nueva"
+            return ev
+
+        # Primera factura de la contratación NUEVA: 1 €. No puede cancelar.
+        assert _mandar(_factura("in_nueva_1", "subscription_create", 100)) == \
+            {"invoice": "paid", "client_id": cid}
+        assert fake.sub_cancelaciones == [], "canceló el programa nuevo cobrando 1 €"
+
+        # Y cuando SÍ se completa el programa nuevo, se cancela como debe.
+        _mandar(_factura("in_nueva_2", "subscription_cycle", 12000))
+        assert fake.sub_cancelaciones == []
+        _mandar(_factura("in_nueva_3", "subscription_cycle", 12000))
+        assert fake.sub_cancelaciones == ["sub_nueva"]
+    finally:
+        db.close()
+
+
 def test_webhook_baja_temprana_de_la_oferta3_es_impago(monkeypatch):
     """Si la suscripción de la oferta muere ANTES del tercer cobro (impagos
     agotados, baja manual), sí es una baja de verdad: pendiente + push."""

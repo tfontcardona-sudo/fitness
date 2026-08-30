@@ -119,6 +119,7 @@ def record_payment(
     seen: bool = False,
     fee_cents: int | None = None,
     payment_intent: str | None = None,
+    subscription_id: str | None = None,
 ) -> Payment | None:
     """Anota un movimiento en el libro. Devuelve la fila creada, o None si ya
     estaba anotada (idempotente por objeto+estado) o si algo falló.
@@ -144,6 +145,7 @@ def record_payment(
             amount_cents=int(amount_cents or 0),
             fee_cents=int(fee_cents) if fee_cents is not None else None,
             payment_intent=payment_intent or None,
+            subscription_id=subscription_id or None,
             currency=(currency or "eur").lower(),
             livemode=bool(livemode),
             client_id=client.id if client is not None else None,

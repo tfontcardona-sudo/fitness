@@ -720,6 +720,12 @@ class Payment(Base):
     # pi_… del cobro: ata checkout/factura/cargo/devolución entre sí aunque la
     # ficha se borre (RGPD) — la pertenencia no depende solo del email.
     payment_intent: Mapped[str | None] = mapped_column(String(80), index=True)
+    # sub_… de la factura (mig. 0042). Sin esto, "¿cuántas facturas de la
+    # oferta lleva pagadas?" contaba TODAS las suyas de siempre: un cliente que
+    # vuelve y contrata por segunda vez arrastraba las tres del programa
+    # anterior, y al pagar la primera de 1 € el sistema daba el programa por
+    # cobrado entero y cancelaba la suscripción.
+    subscription_id: Mapped[str | None] = mapped_column(String(80), index=True)
     currency: Mapped[str] = mapped_column(String(8), default="eur")
     # Pago en modo PRUEBA de Stripe (clave sk_test_): no es dinero real y no
     # puede sumar en los totales del coach sin avisar.

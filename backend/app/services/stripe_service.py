@@ -959,6 +959,9 @@ def _anotar_factura(db: Session, invoice: dict, client: Client | None, *,
                                      periodo, kind="invoice", billing_reason=razon),
         paid_at=pay_svc.ts_to_dt(cuando), event_id=event_id,
         payment_intent=_pi_of(invoice),
+        # A QUÉ suscripción pertenece: sin esto, el recuento de facturas de la
+        # oferta mezclaba las de una contratación anterior con las de la nueva.
+        subscription_id=_invoice_subscription_bits(invoice)[0],
     )
     if pago is not None and pagada and pago.fee_cents is None:
         cargo = invoice.get("charge")
@@ -1053,19 +1056,36 @@ def _handle_charge_refunded(db: Session, event: dict) -> dict:
     return {"refunded": devuelto, "client_id": client.id if client else None}
 
 
-def pagos_oferta_cobrados(db: Session, client: Client, periodo: str) -> int:
+def pagos_oferta_cobrados(db: Session, client: Client, periodo: str,
+                          sub_id: str | None = None) -> int:
     """Nº de FACTURAS COBRADAS de la oferta (en la forma de pago `periodo`)
-    que constan en el libro de caja para este cliente. Con ≥ las que marca
+    que constan en el libro de caja para ESTA contratación. Con ≥ las que marca
     OFFER_CHARGES_BY_PERIOD el programa está pagado entero: la suscripción
     debe cancelarse y su baja no es un impago. En la forma de 3 pagos la
-    factura del 1 € también cuenta (es la primera de las tres)."""
+    factura del 1 € también cuenta (es la primera de las tres).
+
+    Acotado a la suscripción en curso. Contando TODAS las del cliente, uno que
+    vuelve y contrata la oferta por segunda vez arrastraba las tres del
+    programa anterior: al pagar su primera factura de 1 € la cuenta daba
+    cuatro, el programa se daba por cobrado entero y la suscripción se
+    cancelaba — tres meses de asesoría por un euro. Los movimientos anteriores
+    a la mig. 0042 no llevan `subscription_id`: para ellos se mantiene el
+    criterio de antes (son, justamente, los de la contratación vieja)."""
     from app.models import Payment
 
+    sub_id = sub_id or client.stripe_subscription_id
+    condiciones = [
+        Payment.client_id == client.id, Payment.kind == "invoice",
+        Payment.status == "paid", Payment.billing_period == periodo,
+    ]
+    if sub_id:
+        # Sin suscripción en la ficha no hay nada que distinguir y vale el
+        # recuento de siempre. La mig. 0042 rellenó el sello de las facturas
+        # de las suscripciones EN CURSO, así que una contratación a medio
+        # camino en el momento del despliegue sigue contando entera.
+        condiciones.append(Payment.subscription_id == sub_id)
     return int(db.scalar(
-        select(func.count(Payment.id)).where(
-            Payment.client_id == client.id, Payment.kind == "invoice",
-            Payment.status == "paid", Payment.billing_period == periodo,
-        )
+        select(func.count(Payment.id)).where(*condiciones)
     ) or 0)
 
 
@@ -1243,11 +1263,16 @@ def _handle_invoice_event(db: Session, event: dict) -> dict:
     # un webhook o una factura repescada por sync no lo rompen.
     periodo_f = periodo_de_factura(invoice, client)
     requeridos = OFFER_CHARGES_BY_PERIOD.get(periodo_f or "")
+    # La suscripción DE ESTA FACTURA manda sobre la de la ficha, que puede
+    # haberse quedado atrás: lo que se cuenta son las facturas de la
+    # contratación en curso, no todas las que el cliente pagó alguna vez.
+    sub_de_la_factura = _invoice_subscription_bits(invoice)[0]
     if (pagada and requeridos
-            and pagos_oferta_cobrados(db, client, periodo_f) >= requeridos):
+            and pagos_oferta_cobrados(db, client, periodo_f,
+                                      sub_de_la_factura) >= requeridos):
         detener_suscripcion_oferta(
             db, client,
-            _invoice_subscription_bits(invoice)[0] or client.stripe_subscription_id,
+            sub_de_la_factura or client.stripe_subscription_id,
             motivo="programa_cobrado_entero", periodo=periodo_f)
         db.commit()
     return {"invoice": "paid" if pagada else "failed", "client_id": client.id}
