@@ -193,7 +193,7 @@ export function PortalProgress({ api, brand, hasTraining = true, token }: { api:
             <>
               <PhotoColumn api={api} title="Tus fotos" date={data.photos.first_date} photos={data.photos.first} wide />
               <p className="mt-2 flex items-center gap-1.5 text-xs opacity-60">
-                <CameraOff size={13} /> Envía fotos la próxima revisión
+                <CameraOff size={13} /> Sube tus fotos al cerrar la próxima revisión
               </p>
             </>
           )}

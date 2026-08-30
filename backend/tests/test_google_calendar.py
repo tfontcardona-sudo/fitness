@@ -166,3 +166,36 @@ def test_cancel_meet_event_ignores_404(monkeypatch):
     monkeypatch.setattr(gcal.httpx, "delete", lambda *a, **k: _Resp(status_code=404))
     # 404/410 = el evento ya no existe: no debe lanzar (el objetivo ya se cumple)
     gcal.cancel_meet_event(db=None, event_id="nope")
+
+
+def test_si_google_revoca_el_permiso_el_panel_deja_de_decir_conectado(monkeypatch):
+    """Si el coach quita el acceso desde su cuenta de Google, el refresh_token
+    guardado ya no vale — pero seguía en la base y el panel decía "conectado"
+    mientras cada intento de agendar fallaba."""
+    import httpx
+
+    from app.db import SessionLocal
+    from app.models import GoogleCredential
+    from app.services import google_calendar as gc
+
+    db = SessionLocal()
+    db.query(GoogleCredential).delete()
+    db.add(GoogleCredential(refresh_token="rt-viejo", access_token=None,
+                            token_expiry=None))
+    db.flush()
+    assert gc.connection_status(db)["connected"] is True
+
+    def _post_revocado(*a, **kw):
+        peticion = httpx.Request("POST", "https://oauth2.googleapis.com/token")
+        respuesta = httpx.Response(400, request=peticion,
+                                   text='{"error": "invalid_grant"}')
+        raise httpx.HTTPStatusError("400", request=peticion, response=respuesta)
+
+    monkeypatch.setattr(gc.httpx, "post", _post_revocado)
+    with pytest.raises(gc.GoogleCalendarError) as err:
+        gc._valid_access_token(db)
+    assert "revocado" in str(err.value)
+    db.flush()
+    assert gc.connection_status(db)["connected"] is False
+    db.rollback()
+    db.close()

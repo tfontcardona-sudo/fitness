@@ -47,7 +47,8 @@ const FEELINGS_NUTRITION: { key: string; label: string }[] = [
  * REVISIÓN QUINCENAL (cierre de período, desde el día 14). Réplica del documento
  * del coach: medidas, sensaciones (1-5), adherencia (0-10), comidas libres,
  * cambios, qué cuesta, objetivo. Al enviar dispara el feedback de adaptación IA.
- * Las fotos de progreso se envían por WhatsApp (no se suben aquí).
+ * Las fotos de progreso se suben AQUÍ (sección 7); mandarlas por WhatsApp
+ * sigue valiendo para quien lo prefiera.
  */
 export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, closeDate, periodStatus, hasTraining = true, hasNutrition = true, directContact = true }: {
   api: Api; token: string; brand: PortalBrand; onClosed: () => void; canClose: boolean;
@@ -55,7 +56,8 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
   // Paquete solo-nutrición (Start): sin adherencia ni sensaciones de entreno.
   hasTraining?: boolean;
   hasNutrition?: boolean;
-  // Contacto directo (Pro): las fotos van por WhatsApp; si no, por email.
+  // Contacto directo (Pro): la vía alternativa de las fotos es WhatsApp; si
+  // no, el email. (Lo normal es subirlas en la sección 7.)
   directContact?: boolean;
 }) {
   const FEELINGS = hasTraining ? FEELINGS_TRAINING : FEELINGS_NUTRITION;

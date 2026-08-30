@@ -5,7 +5,10 @@
 /** Normaliza un teléfono a formato wa.me (dígitos con prefijo de país).
  *  9 dígitos → se asume España (+34). Devuelve null si no hay teléfono. */
 export function waPhone(phone: string | null | undefined): string | null {
-  const digits = (phone ?? "").replace(/\D/g, "");
+  let digits = (phone ?? "").replace(/\D/g, "");
+  // "0034 600…" es una forma habitual de apuntar el prefijo, y wa.me no la
+  // entiende: el enlace se abría en una conversación inexistente.
+  if (digits.startsWith("00")) digits = digits.slice(2);
   if (!digits) return null;
   return digits.length === 9 ? `34${digits}` : digits;
 }

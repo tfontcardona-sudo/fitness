@@ -230,6 +230,24 @@ def _valid_access_token(db: Session) -> str:
         tok = resp.json()
     except httpx.HTTPError as exc:
         logger.warning("fallo al refrescar el token de Google: %s", exc)
+        # Permiso REVOCADO desde la cuenta de Google (invalid_grant): el
+        # refresh_token guardado ya no vale para nada, pero seguía en la base
+        # y el panel decía "Google conectado" mientras cada intento de agendar
+        # fallaba. Se borra para que el estado diga la verdad y el coach vea
+        # el botón de conectar.
+        cuerpo = ""
+        respuesta = getattr(exc, "response", None)
+        if respuesta is not None:
+            try:
+                cuerpo = respuesta.text or ""
+            except Exception:  # noqa: BLE001
+                cuerpo = ""
+        if "invalid_grant" in cuerpo:
+            db.delete(cred)
+            db.flush()
+            raise GoogleCalendarError(
+                "Google ha revocado el permiso: vuelve a conectarlo en Recursos "
+                "para poder agendar videollamadas.") from exc
         raise GoogleCalendarError(
             "Se perdió la conexión con Google (vuelve a conectarlo en Ajustes).") from exc
     cred.access_token = tok.get("access_token")
