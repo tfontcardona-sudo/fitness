@@ -416,6 +416,18 @@ def test_coach_subscription_upsert_and_digest_skips(db, monkeypatch) -> None:
     monkeypatch.setattr(settings, "vapid_public_key", "pub")
     monkeypatch.setattr(settings, "vapid_private_key", "priv")
 
+    # Este test afirma "el coach NO tiene dispositivos", así que no puede
+    # depender de lo que haya en la base: una fila de coach abandonada por otra
+    # ejecución (o por una interrumpida a medias) lo tumbaba con un fallo que
+    # no señalaba a ningún error del código. Se parte de cero a propósito.
+    from app.models import PushSubscription
+
+    previas = list(db.scalars(
+        select(PushSubscription).where(PushSubscription.is_coach.is_(True))))
+    for fila in previas:
+        db.delete(fila)
+    db.flush()
+
     ep = f"https://push.example/coach-{uuid.uuid4().hex}"
     s1 = push_svc.save_coach_subscription(db, ep, "k1", "a1")
     s2 = push_svc.save_coach_subscription(db, ep, "k2", "a2")  # upsert, mismo endpoint

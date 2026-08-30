@@ -86,6 +86,22 @@ def _plan_text(nutrition: dict, training: dict | None = None) -> str:
         opts = [o for o in opts if o]
         if opts:
             lines.append(f"  · Opciones toma {slot.get('slot', '')}: {'; '.join(opts[:4])}.")
+        # EQUIVALENCIAS: cuelgan de LA TOMA (`slot.equivalences.groups`), no de
+        # la raíz del banco. Se leían de `bank["equivalences"]`, una clave que
+        # el esquema no declara y que nadie escribe: era código muerto. Y como
+        # el prompt manda COMIDA y CENA en formato equivalencias —sus `options`
+        # llegan vacías—, las DOS tomas principales no aportaban una sola línea
+        # al texto que ven los 8-10 revisores IA. El coach pagaba la ronda
+        # entera por un juicio cualitativo que no veía sus platos de comer y
+        # cenar. (Los alérgenos y el patrón dietético SÍ estaban cubiertos: el
+        # Revisor 0 determinista recorre las equivalencias por su cuenta.)
+        for grupo in ((slot.get("equivalences") or {}).get("groups") or [])[:6]:
+            items = [str(i.get("food") or "") for i in (grupo.get("items") or [])]
+            items = [i for i in items if i]
+            if items:
+                lines.append(
+                    f"  · Equivalencias toma {slot.get('slot', '')} "
+                    f"({grupo.get('name', '')}): {', '.join(items[:8])}.")
     # MENÚ CERRADO (modo strict): el banco no trae `slots` sino `days`.
     dias = bank.get("days") or []
     for dia in dias[:3]:
@@ -95,13 +111,6 @@ def _plan_text(nutrition: dict, training: dict | None = None) -> str:
             lines.append(f"  · {dia.get('day', 'día')}: {'; '.join(platos[:6])}.")
     if len(dias) > 3:
         lines.append(f"  · (…y {len(dias) - 3} día(s) más con el mismo estilo de menú)")
-    # EQUIVALENCIAS: el cliente las usa a diario, así que también se revisan
-    # (un intercambio con marisco o cerdo se cuela igual que un plato).
-    for grupo in (bank.get("equivalences") or [])[:6]:
-        items = [str(i.get("food") or "") for i in (grupo.get("items") or [])]
-        items = [i for i in items if i]
-        if items:
-            lines.append(f"  · Equivalencias {grupo.get('name', '')}: {', '.join(items[:8])}.")
     # RESUMEN DEL ENTRENO: sin él, los roles que juzgan la coherencia
     # dieta↔entreno opinaban a ciegas (solo veían la dieta).
     if training:
