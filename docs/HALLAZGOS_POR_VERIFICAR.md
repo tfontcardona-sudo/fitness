@@ -211,3 +211,27 @@ fallo que dice cazar).
 - **[media] El estado del email (SMTP) tiene endpoints de diagnóstico y ninguna pantalla**
 - **[baja] El "Enlace de reservas" que el coach guarda no lo lee nadie**
 - **[baja] `AUTO_PILOT_DEFAULT` documentado y sin efecto**
+
+---
+
+## Tanda 2 (pagos, libro de caja y altas) — VERIFICADOS Y ARREGLADOS en paralelo
+
+> Sesión paralela sobre esta misma rama. Cada uno se reprodujo leyendo el
+> código antes de tocarlo, y va con su regresión (`tests/test_auditoria_pagos.py`).
+
+| Hallazgo | Dónde | Qué era de verdad |
+|---|---|---|
+| La fila DIFERENCIA reabre el doble descuento | `services/payments.py` | Real. El guard solo miraba la fila con el id del cargo, no las sintéticas `…_difN`: al llegar después el desglose, el mismo dinero restaba dos veces. Ahora el desglose COMPLETO las sustituye (y si viene corto —Stripe pagina de 10 en 10— se respetan las sintéticas). |
+| Una devolución repescada entra ya marcada como leída | `services/payments.py` | Real, solo estaba arreglado en la vía del desglose. La devolución posterior a lo anotado vuelve a "sin leer". |
+| Borrar un cobro a mano puede marcar como IMPAGADO a quien sí pagó | `routers/payments.py` | Real: el recálculo solo miraba `client_id` y los cobros de Stripe se enlazan por EMAIL. Ahora mira también por correo y nunca degrada a un cliente con suscripción viva. |
+| El "total" de cobros de la ficha se corta en 20 y suma dinero de prueba | `ClientProfilePage.tsx` | Real. El total lo calcula ahora el backend (`neto_de_cliente`) sobre TODOS los movimientos y sin `livemode=false`. |
+| El aviso del barrido cortado pide dos cosas que el coach no puede hacer | `PagosPage.tsx` | Real: no había control de días y repetir el barrido relee lo mismo. Ahora hay selector de ventana y, al cortarse, se repasan solos los últimos 7 días. |
+| El cupo de altas apaga el formulario todo el día | `routers/public_site.py` | Real, y además el lead se perdía entero. Ahora queda anotado (`public_signup_blocked`) y sale un aviso de sistema en "Hoy" con nombre y teléfono para darle el alta a mano. |
+| El test del borrado del cobro a mano pasa sin el recálculo | `tests/test_cobro_manual.py` | Real: comparaba con "no es None". Ahora compara con la fecha del cobro que queda. |
+| El test del cupo pasa aunque el contador esté muerto | `tests/test_public_register.py` | Real (tope 0 → `0 >= 0`). Ahora da un alta real y agota el cupo. |
+
+**No tocado a propósito** (es de otra tanda en marcha): todo `services/stripe_service.py`,
+`PlansPage.tsx` y el embudo self-serve de `/planes`.
+
+**Aviso**: `tests/test_ai_service.py::test_full_pipeline_generates_plan` falla en
+esta rama desde antes de esta tanda (el pipeline hace 2 llamadas y el test espera 3).

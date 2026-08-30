@@ -874,6 +874,9 @@ class PaymentsListOut(BaseModel):
     items: list[PaymentOut]
     count: int          # total que cumple el filtro (para el "Ver más")
     unseen: int
+    # Neto del CLIENTE (cobros − devoluciones, sin dinero de prueba) cuando se
+    # filtra por client_id: la ficha ya no lo suma de la página que pinta.
+    client_total_cents: int | None = None
 
 
 class PaymentsSummaryOut(BaseModel):

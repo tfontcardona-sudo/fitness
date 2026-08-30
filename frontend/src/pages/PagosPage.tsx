@@ -226,10 +226,18 @@ export default function PagosPage() {
     }
   }
 
-  async function sincronizar() {
+  // Ventana del barrido. El aviso "prueba con menos días" pedía algo que la
+  // web no dejaba hacer: no había ningún control de días (auditoría). Ahora
+  // sí, y al cortarse el barrido se propone la ventana corta de un clic.
+  const [diasSync, setDiasSync] = useState<number | null>(null);
+
+  async function sincronizar(dias?: number) {
+    const ventana = dias ?? diasSync ?? undefined;
     setSincronizando(true);
     try {
-      const r = await api.syncPayments();
+      const r = await api.syncPayments(ventana ?? undefined);
+      // Repetir el mismo barrido lee lo mismo: solo estrechar la ventana avanza.
+      const reintenta = !!r.partial && (ventana ?? 0) !== 7;
       if (r.created > 0) {
         // Recarga COMPLETA, no fusión: lo recuperado lleva su fecha real de
         // Stripe, así que entra POR EN MEDIO de la lista (o más abajo de la
@@ -247,12 +255,21 @@ export default function PagosPage() {
         // La sincronización es LA red de seguridad cuando se pierde un
         // webhook: decir "sin cobros pendientes" cuando ni siquiera ha mirado
         // todo el rango deja al coach tranquilo con facturas sin repescar.
-        toast.push("Stripe tiene más movimientos de los que caben en un barrido: prueba con menos días", "error");
+        // Y repetir el MISMO barrido no avanza (vuelve a leer lo mismo): lo
+        // que sirve es estrechar la ventana, así que se hace solo una vez.
+        toast.push(
+          reintenta
+            ? "Stripe tiene más movimientos de los que caben en un barrido: repaso los últimos 7 días"
+            : "Stripe tiene más movimientos de los que caben en un barrido: revisa los cobros de este rango en tu panel de Stripe",
+          "error");
       } else {
         toast.push("Sin cobros pendientes de registrar");
       }
-      if (r.partial && r.created > 0) {
-        toast.push("Quedan movimientos por revisar: vuelve a sincronizar", "error");
+      if (reintenta) {
+        setDiasSync(7);
+        setSincronizando(false);
+        await sincronizar(7);
+        return;
       }
       if (r.errors?.length) {
         toast.push(`Stripe no devolvió todo: ${r.errors[0]}`, "error");
@@ -310,13 +327,25 @@ export default function PagosPage() {
             {exportando ? <Spinner /> : <Download size={15} />} Exportar
           </button>
           <button
-            onClick={sincronizar}
+            onClick={() => sincronizar()}
             disabled={sincronizando}
             className="btn btn-ghost"
             title="Recupera cobros perdidos de Stripe"
           >
             {sincronizando ? <Spinner /> : <RefreshCw size={15} />} Sincronizar
           </button>
+          <select
+            value={diasSync ?? ""}
+            onChange={(e) => setDiasSync(e.target.value ? Number(e.target.value) : null)}
+            disabled={sincronizando}
+            title="Cuántos días atrás mira el barrido"
+            className="input h-9 w-auto text-xs"
+          >
+            <option value="">todo el rango</option>
+            <option value="7">últimos 7 días</option>
+            <option value="30">últimos 30 días</option>
+            <option value="90">últimos 90 días</option>
+          </select>
         </div>
       </header>
 

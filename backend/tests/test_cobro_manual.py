@@ -209,4 +209,9 @@ def test_un_cobro_a_mano_mal_tecleado_se_puede_borrar(client, auth):
         assert db.get(Payment, pago_id) is None
         ficha = db.get(Client, cid)
         # La ficha vuelve a apuntar al cobro que QUEDA, no a una fecha fantasma.
-        assert ficha.payment_status == "paid" and ficha.paid_at is not None
+        # Comparar contra el cobro RESTANTE (y no solo "no es None"): con
+        # `paid_at` ya puesto por el cobro borrado, la comprobación pasaba
+        # igual aunque el recálculo no existiera (auditoría: test flojo).
+        restante = db.get(Payment, stripe_id)
+        assert ficha.payment_status == "paid"
+        assert ficha.paid_at == restante.paid_at

@@ -210,8 +210,10 @@ def test_el_formulario_publico_tiene_cupo_diario(http, monkeypatch):
 
     from app.config import settings
 
-    monkeypatch.setattr(settings, "public_signups_per_day", 0)
-    monkeypatch.setattr(public_site, "MAX_ALTAS_PUBLICAS_DIA", 0)
+    # Tope = altas de hoy + 1 (no 0): con el tope a cero el test pasaba aunque
+    # el CONTADOR estuviera muerto (0 >= 0 siempre). Así hay que dar un alta de
+    # verdad para agotarlo, y el margen se calcula sobre lo que ya lleve la
+    # base del día (los demás tests también dan altas públicas).
     # El límite por IP (5/min) es de MÓDULO y lo comparten todos los tests: sin
     # apagarlo, esta llamada se come una ficha del cubo y el 429 aparece en
     # otro test más tarde (gotcha documentado en CLAUDE.md).
@@ -220,10 +222,41 @@ def test_el_formulario_publico_tiene_cupo_diario(http, monkeypatch):
     monkeypatch.setattr(public_site, "_avisa_cupo_al_coach",
                         lambda db, n: avisos.append(n))
 
+    from app.db import SessionLocal as _SL
+
+    with _SL() as _db:
+        ya_hoy = public_site._altas_publicas_de_hoy(_db)
+    monkeypatch.setattr(settings, "public_signups_per_day", ya_hoy + 1)
+    monkeypatch.setattr(public_site, "MAX_ALTAS_PUBLICAS_DIA", ya_hoy + 1)
+
+    # 1) Un alta legítima: consume el cupo del día.
+    primera = http.post("/api/public/register", json={
+        "full_name": "Primera Alta", "email": f"cupo1-{uuid.uuid4().hex[:8]}@example.com",
+        "phone": "600111000", "tier": "full", "period": "1m",
+    })
+    assert primera.status_code == 200, primera.text
+    assert not avisos, "el cupo no se agota con el alta que aún cabe"
+
+    # 2) La siguiente ya no cabe.
+    email_frenado = f"cupo-{uuid.uuid4().hex[:8]}@example.com"
     r = http.post("/api/public/register", json={
-        "full_name": "Cupo Agotado", "email": f"cupo-{uuid.uuid4().hex[:8]}@example.com",
+        "full_name": "Cupo Agotado", "email": email_frenado,
         "phone": "600111222", "tier": "full", "period": "1m",
     })
     assert r.status_code == 429
     assert "WhatsApp" in r.json()["detail"]
     assert avisos, "el coach tiene que enterarse el mismo día"
+
+    # 3) Y el LEAD no se pierde: queda anotado para darle el alta a mano.
+    from sqlalchemy import select
+
+    from app.db import SessionLocal
+    from app.models import AuditLog
+
+    with SessionLocal() as db:
+        anotado = db.scalar(
+            select(AuditLog).where(AuditLog.event == "public_signup_blocked")
+            .order_by(AuditLog.id.desc()).limit(1))
+        assert anotado is not None
+        assert anotado.detail_json["email"] == email_frenado
+        assert anotado.detail_json["phone"] == "600111222"

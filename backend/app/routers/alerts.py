@@ -13,7 +13,7 @@ atender:
   objetivo    → 45 días en la misma etapa: valorar cambio (posponible)
 """
 
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
@@ -824,6 +824,40 @@ def list_alerts(db: Session = Depends(get_db)) -> dict:
                 "to": "/", "key": "sistema:jobs_parados",
             })
     except Exception:  # noqa: BLE001 — el chequeo no puede tumbar las alertas
+        pass
+
+    # LEADS FRENADOS POR EL CUPO: cuando el formulario público llega al tope del
+    # día, quien intenta darse de alta se va con un "escríbenos". Sus datos se
+    # anotan (`public_signup_blocked`) pero no crean ficha: sin este aviso el
+    # coach no se entera de que hay gente esperando el alta a mano.
+    try:
+        from app.models import AuditLog
+        from app.services.portal import today_local
+
+        hoy = today_local()
+        frenados = list(db.scalars(
+            select(AuditLog).where(
+                AuditLog.event == "public_signup_blocked",
+                AuditLog.created_at >= datetime.combine(hoy, time.min),
+            ).order_by(AuditLog.id.desc()).limit(20)
+        ))
+        if frenados:
+            quienes = ", ".join(
+                f"{(f.detail_json or {}).get('full_name') or '?'} "
+                f"({(f.detail_json or {}).get('phone') or 'sin teléfono'})"
+                for f in frenados[:3])
+            resto = f" y {len(frenados) - 3} más" if len(frenados) > 3 else ""
+            alerts.insert(0, {
+                "client_id": 0, "client_name": "Sistema",
+                "kind": "signups_frenados", "severity": "alta",
+                "message": (f"{len(frenados)} persona(s) se han quedado sin alta hoy "
+                            f"por el tope diario del formulario: {quienes}{resto}."),
+                "tab": "resumen", "action": "Darles el alta a mano",
+                "target": None,
+                "fix": "Escríbeles por WhatsApp y créales la ficha desde Clientes → Nuevo cliente.",
+                "to": "/clientes", "key": f"sistema:signups_frenados:{hoy.isoformat()}",
+            })
+    except Exception:  # noqa: BLE001 — el aviso nunca tumba las alertas
         pass
 
     alerts.sort(key=lambda a: (0 if a["severity"] == "alta" else 1, a["client_name"]))

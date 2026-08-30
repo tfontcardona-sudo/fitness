@@ -782,19 +782,25 @@ function hoyLocal(): string {
 function CobrosDelCliente({ clientId, onCambio }: { clientId: number; onCambio: () => void }) {
   const toast = useToast();
   const [pagos, setPagos] = useState<PaymentsListOut["items"] | null>(null);
+  // Total REAL del cliente: lo calcula el backend sobre TODOS sus movimientos
+  // (y sin el dinero de prueba). Sumar la página de 20 mentía a partir del
+  // movimiento 21 y contaba los cobros con sk_test_ como ingresos.
+  const [totalCents, setTotalCents] = useState<number | null>(null);
   const [abierto, setAbierto] = useState(false);
   const [borrando, setBorrando] = useState<number | null>(null);
 
   const cargar = useCallback(() => {
     api.listPayments({ client_id: clientId, limit: 20 })
-      .then((r) => setPagos(r.items))
+      .then((r) => { setPagos(r.items); setTotalCents(r.client_total_cents ?? null); })
       .catch(() => setPagos([]));
   }, [clientId]);
   useEffect(cargar, [cargar]);
 
   if (!pagos || pagos.length === 0) return null;
   // Los cobros suman y las devoluciones restan: el total es lo que ha entrado.
-  const total = pagos.reduce(
+  // Manda el del backend (todos los movimientos, sin dinero de prueba); la
+  // suma local solo es reserva si la petición no lo trajo.
+  const total = totalCents ?? pagos.reduce(
     (a, p) => a + (p.status === "refunded" ? -p.amount_cents : p.status === "paid" ? p.amount_cents : 0), 0);
   const eur = (c: number) => (c / 100).toLocaleString("es-ES", { minimumFractionDigits: 2 });
 

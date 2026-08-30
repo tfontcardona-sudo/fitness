@@ -114,7 +114,8 @@ def _avisa_cupo_al_coach(db: Session, altas: int) -> None:
         push_svc.send_to_coach(db, {
             "title": "⚠ Altas públicas al tope",
             "body": (f"{altas} registros hoy desde la web: se ha frenado el "
-                     "formulario público para proteger el email. Revísalo."),
+                     "formulario para proteger tu correo. Los que llegan ahora "
+                     "quedan anotados SIN ficha: dales el alta a mano."),
             "count": 1,
             "url": f"{settings.public_base_url.rstrip('/')}/clientes",
             "tag": "dq-cupo-altas",
@@ -144,12 +145,24 @@ def public_register(request: Request, body: PublicRegisterIn,
         tope = getattr(settings, "public_signups_per_day", None) or MAX_ALTAS_PUBLICAS_DIA
         altas = _altas_publicas_de_hoy(db)
         if altas >= tope:
+            # El cupo protege la cuota de correo del coach, pero un tope
+            # alcanzado por una campaña que funciona tiraba el CLIENTE a la
+            # basura: se iba con un 429 y de él no quedaba ni el nombre. El
+            # lead se GUARDA en el registro (sin crear ficha ni mandar correo,
+            # que es lo que hay que frenar) para que el coach lo recupere y lo
+            # dé de alta a mano.
+            log_event(db, "client", 0, "public_signup_blocked", {
+                "full_name": body.full_name.strip(), "email": email,
+                "phone": body.phone.strip(), "tier": body.tier,
+                "period": body.period, "altas_hoy": altas, "tope": tope,
+            })
             _avisa_cupo_al_coach(db, altas)
             db.commit()
             raise HTTPException(
                 status.HTTP_429_TOO_MANY_REQUESTS,
-                "Estamos recibiendo muchas solicitudes ahora mismo. "
-                "Escríbenos por WhatsApp y te damos el alta a mano.")
+                "Estamos recibiendo muchas solicitudes ahora mismo. Ya tenemos "
+                "tus datos: escríbenos por WhatsApp y te damos el alta a mano "
+                "hoy mismo.")
 
     # Solo se reutiliza una ficha en ONBOARDING con pago pendiente (el reintento
     # legítimo del propio interesado). Cualquier otra — pagada O YA EN MARCHA
