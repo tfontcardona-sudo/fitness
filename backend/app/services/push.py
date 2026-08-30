@@ -190,6 +190,16 @@ def dias_registrados(db: Session, logs: list[DailyLog]) -> set[date]:
     con_series = set(db.scalars(
         select(WorkoutLog.daily_log_id).where(
             WorkoutLog.daily_log_id.in_([lg.id for lg in logs]))))
+    return dias_registrados_precargado(logs, con_series)
+
+
+def dias_registrados_precargado(logs: list[DailyLog],
+                                con_series: set[int]) -> set[date]:
+    """La REGLA de "esto cuenta como registro", sin tocar la base.
+
+    Aquí vive la única definición; las dos funciones de arriba solo se
+    encargan de traer las series. El barrido de alertas del panel la usa con
+    los diarios y las series de TODOS los clientes ya cargados de una vez."""
     return {
         lg.log_date for lg in logs
         if lg.id in con_series or lg.chosen_options_json or diary_is_filled(lg)

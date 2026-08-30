@@ -144,18 +144,202 @@ def _renewal_alert(client: Client, today: date) -> dict | None:
     return _alert(client, "renewal_due", sev, msg, "resumen", "Renovar plan")
 
 
+# Columnas de Plan que miran las alertas. Traer el plan ENTERO arrastra el
+# banco de 4×7 recetas con ingredientes, el educativo y los hallazgos del
+# panel de supervisión: megabytes de JSONB por cliente en cada barrido.
+_PLAN_COLS = (Plan.id, Plan.client_id, Plan.month_index, Plan.version, Plan.status,
+              Plan.goal_type, Plan.generated_by, Plan.nutrition_json, Plan.training_json)
+
+
+class _AlVuelo:
+    """De dónde salen los datos que mira cada alerta: consultando por cliente.
+
+    Es lo correcto para UNO solo (el backtest, los tests, cualquier llamador
+    suelto). El listado del panel usa `_EnLote`, que trae exactamente lo mismo
+    de una sola vez: por aquí son SIETE consultas por cliente, y con 60 fichas
+    eso eran 432 consultas y ~400 ms — en un endpoint que el panel refresca
+    cada 20 segundos y que también recorren los avisos programados.
+    """
+
+    def planes(self, db: Session, client: Client) -> tuple[Plan | None, Plan | None]:
+        """(plan publicado, última versión de cualquier estado)."""
+        from sqlalchemy.orm import load_only
+
+        publicado = db.scalar(
+            select(Plan).options(load_only(*_PLAN_COLS))
+            .where(Plan.client_id == client.id, Plan.status == "published")
+            .order_by(Plan.month_index.desc(), Plan.version.desc()).limit(1))
+        ultimo = db.scalar(
+            select(Plan).options(load_only(*_PLAN_COLS))
+            .where(Plan.client_id == client.id)
+            .order_by(Plan.month_index.desc(), Plan.version.desc()).limit(1))
+        return publicado, ultimo
+
+    def periodos(self, db: Session, client: Client) -> list[Period]:
+        """Todos los períodos, del más reciente al más antiguo."""
+        return list(db.scalars(
+            select(Period).where(Period.client_id == client.id)
+            .order_by(Period.period_index.desc())))
+
+    def feedback(self, db: Session, period: Period) -> FeedbackDoc | None:
+        return db.scalar(
+            select(FeedbackDoc).where(FeedbackDoc.period_id == period.id)
+            .order_by(FeedbackDoc.id.desc()).limit(1))
+
+    def dias_con_registro(self, db: Session, period: Period) -> set[date]:
+        from app.services.push import dias_con_registro
+
+        return dias_con_registro(db, period.id)
+
+    def peticiones_abiertas(self, db: Session, client: Client) -> list:
+        from app.models import ChangeRequest
+
+        return list(db.scalars(
+            select(ChangeRequest)
+            .where(ChangeRequest.client_id == client.id,
+                   ChangeRequest.status == "open")
+            .order_by(ChangeRequest.created_at.desc())))
+
+    def videollamadas(self, db: Session, client: Client) -> list:
+        """TODAS las del cliente; quien llama filtra por estado o revisión."""
+        from app.models import VideoCall
+
+        return list(db.scalars(
+            select(VideoCall).where(VideoCall.client_id == client.id)
+            .order_by(VideoCall.id)))
+
+
+class _EnLote(_AlVuelo):
+    """Lo mismo que `_AlVuelo`, pero traído de una vez para muchos clientes.
+
+    Siete consultas en total en lugar de siete POR CLIENTE. Sirve las mismas
+    filas y en el mismo orden, así que las alertas salen idénticas: lo que
+    cambia es cuántas veces se habla con la base."""
+
+    def __init__(self, db: Session, clients: list[Client]) -> None:
+        from collections import defaultdict
+
+        from sqlalchemy.orm import load_only
+
+        from app.models import ChangeRequest, VideoCall
+
+        ids = [c.id for c in clients]
+        self._publicado: dict[int, Plan] = {}
+        self._ultimo: dict[int, Plan] = {}
+        self._periodos: dict[int, list[Period]] = defaultdict(list)
+        self._feedback: dict[int, FeedbackDoc] = {}
+        self._dias: dict[int, set[date]] = {}
+        self._peticiones: dict[int, list] = defaultdict(list)
+        self._videollamadas: dict[int, list] = defaultdict(list)
+        if not ids:
+            return
+
+        # DISTINCT ON: Postgres devuelve UNA fila por cliente, la primera del
+        # orden pedido. Es el mismo "order by … limit 1" de `_AlVuelo`, pero
+        # resuelto para todos los clientes en una sola pasada.
+        base = (select(Plan).options(load_only(*_PLAN_COLS))
+                .where(Plan.client_id.in_(ids)))
+        orden = (Plan.client_id, Plan.month_index.desc(), Plan.version.desc())
+        for p in db.scalars(base.where(Plan.status == "published")
+                            .distinct(Plan.client_id).order_by(*orden)):
+            self._publicado[p.client_id] = p
+        for p in db.scalars(base.distinct(Plan.client_id).order_by(*orden)):
+            self._ultimo[p.client_id] = p
+
+        for per in db.scalars(select(Period).where(Period.client_id.in_(ids))
+                              .order_by(Period.client_id, Period.period_index.desc())):
+            self._periodos[per.client_id].append(per)
+
+        # Feedbacks: solo el último de cada período ANALIZADO, que es el único
+        # que se mira. `content_json` fuera: puede pesar y no se usa aquí.
+        analizados = [p.id for lista in self._periodos.values()
+                      for p in lista if p.status == "analyzed"]
+        if analizados:
+            for fb in db.scalars(
+                    select(FeedbackDoc)
+                    .options(load_only(FeedbackDoc.id, FeedbackDoc.period_id,
+                                       FeedbackDoc.sent_at))
+                    .where(FeedbackDoc.period_id.in_(analizados))
+                    .distinct(FeedbackDoc.period_id)
+                    .order_by(FeedbackDoc.period_id, FeedbackDoc.id.desc())):
+                self._feedback[fb.period_id] = fb
+
+        # Días con registro de los períodos ABIERTOS (los únicos que se miran).
+        abiertos = [lista[0].id for lista in self._periodos.values()
+                    if lista and lista[0].status == "open"]
+        if abiertos:
+            from app.models import WorkoutLog
+            from app.services.push import dias_registrados_precargado
+
+            logs = defaultdict(list)
+            todos: list[DailyLog] = []
+            for lg in db.scalars(select(DailyLog)
+                                 .where(DailyLog.period_id.in_(abiertos))):
+                logs[lg.period_id].append(lg)
+                todos.append(lg)
+            con_series = set(db.scalars(
+                select(WorkoutLog.daily_log_id)
+                .where(WorkoutLog.daily_log_id.in_([lg.id for lg in todos]))
+            )) if todos else set()
+            for pid in abiertos:
+                self._dias[pid] = dias_registrados_precargado(logs.get(pid, []),
+                                                              con_series)
+
+        for cr in db.scalars(
+                select(ChangeRequest)
+                .where(ChangeRequest.client_id.in_(ids),
+                       ChangeRequest.status == "open")
+                .order_by(ChangeRequest.client_id,
+                          ChangeRequest.created_at.desc())):
+            self._peticiones[cr.client_id].append(cr)
+
+        for vc in db.scalars(select(VideoCall)
+                             .where(VideoCall.client_id.in_(ids))
+                             .order_by(VideoCall.client_id, VideoCall.id)):
+            self._videollamadas[vc.client_id].append(vc)
+
+    def planes(self, db: Session, client: Client) -> tuple[Plan | None, Plan | None]:
+        return self._publicado.get(client.id), self._ultimo.get(client.id)
+
+    def periodos(self, db: Session, client: Client) -> list[Period]:
+        return self._periodos.get(client.id, [])
+
+    def feedback(self, db: Session, period: Period) -> FeedbackDoc | None:
+        return self._feedback.get(period.id)
+
+    def dias_con_registro(self, db: Session, period: Period) -> set[date]:
+        # Un período que no estaba abierto al precargar no se precargó: se
+        # consulta al vuelo antes que devolver un conjunto vacío falso.
+        if period.id in self._dias:
+            return self._dias[period.id]
+        return super().dias_con_registro(db, period)
+
+    def peticiones_abiertas(self, db: Session, client: Client) -> list:
+        return self._peticiones.get(client.id, [])
+
+    def videollamadas(self, db: Session, client: Client) -> list:
+        return self._videollamadas.get(client.id, [])
+
+
+_AL_VUELO = _AlVuelo()
+
+
 def client_alerts(db: Session, client: Client, today: date | None = None,
-                  titulos_producto: list[str] | None = None) -> list[dict]:
+                  titulos_producto: list[str] | None = None,
+                  datos: _AlVuelo | None = None) -> list[dict]:
     """Alertas de UN cliente (reutilizado por el listado y el backtest).
 
     `titulos_producto`: la lista de productos de Recursos, que es la MISMA para
     todos los clientes. El caller la pasa una vez; si no, se consulta aquí (los
-    llamadores sueltos y los tests siguen funcionando igual)."""
+    llamadores sueltos y los tests siguen funcionando igual).
+    `datos`: de dónde salen las filas del cliente. Por defecto, consultando una
+    a una; el listado del panel pasa un `_EnLote` con las de todos ya traídas."""
     from app.services.portal import today_local
 
     # Fecha de NEGOCIO (settings.tz): con date.today() en UTC, de madrugada las
     # alertas de "sin registros"/videollamada salían descuadradas un día.
     today = today or today_local()
+    datos = datos or _AL_VUELO
     out: list[dict] = []
     if client.status == "inactive":
         # Antes se devolvía [] y el cliente inactivo desaparecía de TODO el
@@ -184,32 +368,12 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
     if renewal is not None:
         out.append(renewal)
 
-    # Antes se traían TODAS las versiones de TODOS los planes del cliente con
-    # sus cuatro JSONB completos (el banco de 4×7 recetas con ingredientes, el
-    # educativo, los hallazgos del panel) para usar solo dos de ellos — y esto
-    # corre para CADA cliente en cada barrido de alertas, varias veces por
-    # minuto. Dos consultas acotadas y sin los JSON que aquí no se miran.
-    from sqlalchemy.orm import load_only
-
-    _cols = (Plan.id, Plan.client_id, Plan.month_index, Plan.version, Plan.status,
-             Plan.goal_type, Plan.generated_by, Plan.nutrition_json, Plan.training_json)
-    published = db.scalar(
-        select(Plan).options(load_only(*_cols))
-        .where(Plan.client_id == client.id, Plan.status == "published")
-        .order_by(Plan.month_index.desc(), Plan.version.desc()).limit(1))
-    latest = db.scalar(
-        select(Plan).options(load_only(*_cols))
-        .where(Plan.client_id == client.id)
-        .order_by(Plan.month_index.desc(), Plan.version.desc()).limit(1))
-    # Los períodos del cliente, UNA sola vez: antes se consultaba la misma tabla
-    # tres veces por cliente (el último, el último analizado y la última
-    # revisión cerrada) y esta función corre para TODOS los clientes cada vez
-    # que el panel refresca las alertas. Un cliente tiene ~2 períodos al mes:
-    # traerlos enteros sale mucho más barato que tres consultas.
-    periodos = list(db.scalars(
-        select(Period).where(Period.client_id == client.id)
-        .order_by(Period.period_index.desc())
-    ))
+    # El plan publicado y la última versión, sin los JSONB que aquí no se
+    # miran; y los períodos UNA sola vez (antes se consultaba la misma tabla
+    # tres veces por cliente: el último, el último analizado y la última
+    # revisión cerrada). De dónde salen lo decide `datos`.
+    published, latest = datos.planes(db, client)
+    periodos = datos.periodos(db, client)
     last_period = periodos[0] if periodos else None
 
     # --- Arranque: sin planificación aún -----------------------------------
@@ -267,10 +431,7 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
     # con las kcal antiguas sin que nadie lo persiguiera (auditoría del ciclo).
     last_analyzed = next((p for p in periodos if p.status == "analyzed"), None)
     if last_analyzed is not None:
-        fb = db.scalar(
-            select(FeedbackDoc).where(FeedbackDoc.period_id == last_analyzed.id)
-            .order_by(FeedbackDoc.id.desc()).limit(1)
-        )
+        fb = datos.feedback(db, last_analyzed)
         if fb is not None and fb.sent_at is None:
             out.append(_alert(client, "send_feedback", "alta",
                               f"Feedback de la revisión #{last_analyzed.period_index} sin enviar al cliente.",
@@ -315,9 +476,7 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
         # — un cliente que solo ABRÍA la app nunca disparaba la alerta
         # (auditoría crítica). Registro real = diario rellenado, series de
         # entreno o comidas elegidas.
-        from app.services.push import dias_con_registro
-
-        fechas_reales = dias_con_registro(db, last_period.id)
+        fechas_reales = datos.dias_con_registro(db, last_period)
         last_log = max(fechas_reales) if fechas_reales else None
         since = last_log or (last_period.starts_on - date.resolution)
         gap = (today - since).days
@@ -339,13 +498,7 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
     # --- Petición de cambio del cliente sin atender (portal → coach) ---------
     # El cliente escribió una duda/petición desde su portal: el coach debe
     # verlo. Persiste hasta que se marque resuelta.
-    from app.models import ChangeRequest
-
-    open_crs = list(db.scalars(
-        select(ChangeRequest)
-        .where(ChangeRequest.client_id == client.id, ChangeRequest.status == "open")
-        .order_by(ChangeRequest.created_at.desc())
-    ))
+    open_crs = datos.peticiones_abiertas(db, client)
     if open_crs:
         # Con el TEXTO de la petición: el coach debe poder leer QUÉ pide sin
         # depender del email (en dev está apagado y el mensaje se perdía).
@@ -386,16 +539,15 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
     # proposed → accept|modify → scheduled|pending_manual → done. Se ancla a la
     # última revisión CERRADA/ANALIZADA; los agendados salen SIEMPRE (aunque el
     # siguiente período ya se haya abierto): una llamada no puede olvidarse.
-    from app.models import VideoCall
     from app.services.portal import format_when_es
 
+    videollamadas = datos.videollamadas(db, client)
     if pkgs.has_video_call(client.package_tier):
         last_review = next(
             (p for p in periodos if p.status in ("closed", "analyzed")), None)
         if last_review is not None:
-            vc = db.scalar(select(VideoCall).where(
-                VideoCall.client_id == client.id,
-                VideoCall.period_index == last_review.period_index))
+            vc = next((v for v in videollamadas
+                       if v.period_index == last_review.period_index), None)
             if vc is None:
                 out.append(_alert(
                     client, "video_call_wait", "media",
@@ -406,9 +558,8 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
     # ya no sea Pro: una propuesta sin responder o una llamada agendada no puede
     # esfumarse en silencio (antes, al cerrar la revisión siguiente quedaban
     # huérfanas y desaparecían de las alertas para siempre).
-    for vc in db.scalars(select(VideoCall).where(
-            VideoCall.client_id == client.id,
-            VideoCall.status.in_(("proposed", "pending_manual", "scheduled")))):
+    for vc in [v for v in videollamadas
+               if v.status in ("proposed", "pending_manual", "scheduled")]:
         if vc.status == "proposed" and vc.scheduled_at is not None:
             out.append(_alert(
                 client, "video_call_proposed", "alta",
@@ -571,13 +722,17 @@ def list_alerts(db: Session = Depends(get_db)) -> dict:
 
     _titulos = list(db.scalars(
         select(RecommendedProduct.title).where(RecommendedProduct.active.is_(True))))
+    # Todo lo que mira cada alerta, de una vez para TODOS los clientes: siete
+    # consultas en lugar de siete por cliente.
+    _datos = _EnLote(db, clients)
     alerts: list[dict] = []
     for c in clients:
         # Aislamiento por cliente: un solo cliente con datos rotos tumbaba el
         # endpoint ENTERO (500) y el panel se quedaba sin campana ni colas,
         # en silencio. Su fallo se registra y los demás siguen saliendo.
         try:
-            alerts.extend(client_alerts(db, c, titulos_producto=_titulos))
+            alerts.extend(client_alerts(db, c, titulos_producto=_titulos,
+                                        datos=_datos))
         except Exception:  # noqa: BLE001
             import logging
 
