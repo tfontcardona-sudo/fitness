@@ -190,6 +190,32 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
         .order_by(Period.period_index.desc()).limit(1)
     )
 
+    # --- Petición de cambio del cliente sin atender (portal → coach) ---------
+    # El cliente escribió una duda/petición desde su portal: el coach debe
+    # verlo. Persiste hasta que se marque resuelta.
+    # VA ANTES del corte de "sin plan publicado": lo que escribe el cliente no
+    # depende de en qué punto del ciclo esté. Estando después, a quien todavía
+    # no tiene planificación (justo cuando más preguntas hace) su mensaje no le
+    # generaba NINGÚN aviso y se quedaba sin respuesta.
+    from app.models import ChangeRequest
+
+    open_crs = list(db.scalars(
+        select(ChangeRequest)
+        .where(ChangeRequest.client_id == client.id, ChangeRequest.status == "open")
+        .order_by(ChangeRequest.created_at.desc())
+    ))
+    if open_crs:
+        # Con el TEXTO de la petición: el coach debe poder leer QUÉ pide sin
+        # depender del email (en dev está apagado y el mensaje se perdía).
+        extracto = (open_crs[0].message or "").strip()
+        if len(extracto) > 140:
+            extracto = extracto[:137] + "…"
+        prefix = f"{len(open_crs)} peticiones · última: " if len(open_crs) > 1 else ""
+        out.append(_alert(
+            client, "change_request", "alta",
+            f"{prefix}«{extracto}»",
+            "seguimiento", "Ver petición"))
+
     # --- Arranque: sin planificación aún -----------------------------------
     if published is None:
         if latest is not None:  # borrador ANTIGUO sin activar (legado)
@@ -330,28 +356,6 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
                 f"Su revisión quincenal venció hace {overdue} días y no la ha "
                 "enviado: recuérdaselo por WhatsApp.",
                 "feedback", "Cerrar la revisión"))
-
-    # --- Petición de cambio del cliente sin atender (portal → coach) ---------
-    # El cliente escribió una duda/petición desde su portal: el coach debe
-    # verlo. Persiste hasta que se marque resuelta.
-    from app.models import ChangeRequest
-
-    open_crs = list(db.scalars(
-        select(ChangeRequest)
-        .where(ChangeRequest.client_id == client.id, ChangeRequest.status == "open")
-        .order_by(ChangeRequest.created_at.desc())
-    ))
-    if open_crs:
-        # Con el TEXTO de la petición: el coach debe poder leer QUÉ pide sin
-        # depender del email (en dev está apagado y el mensaje se perdía).
-        extracto = (open_crs[0].message or "").strip()
-        if len(extracto) > 140:
-            extracto = extracto[:137] + "…"
-        prefix = f"{len(open_crs)} peticiones · última: " if len(open_crs) > 1 else ""
-        out.append(_alert(
-            client, "change_request", "alta",
-            f"{prefix}«{extracto}»",
-            "seguimiento", "Ver petición"))
 
     # --- Suplementos del plan SIN producto en Recursos ----------------------
     # El portal del cliente destaca los productos de SU planificación (con el

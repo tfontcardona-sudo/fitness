@@ -507,7 +507,11 @@ def _send_videocall_reminder(db: Session, client: Client, vc, brand_name: str,
     })
     n += send_to_coach(db, {
         "title": "Videollamada", "body": coach_body, "count": 1,
-        "url": vc.meet_url or f"{base}/clientes/{client.id}?tab=feedback", "tag": "dq-vc-coach",
+        "url": vc.meet_url or f"{base}/clientes/{client.id}?tab=feedback",
+        # Tag POR VIDEOLLAMADA: con una tag compartida, el aviso de la segunda
+        # videollamada del día sustituía al de la primera y el coach solo veía
+        # una (mismo fallo que ya se corrigió en los cobros).
+        "tag": f"dq-vc-coach-{vc.id}",
     })
     return n
 

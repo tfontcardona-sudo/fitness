@@ -20,7 +20,6 @@ self.addEventListener("push", (event) => {
   }
 
   const title = data.title || "Tu seguimiento";
-  const count = Number(data.count) || 0;
 
   const tasks = [
     self.registration.showNotification(title, {
@@ -33,8 +32,12 @@ self.addEventListener("push", (event) => {
     }),
   ];
 
-  // Badge del icono de la app (Android/desktop instalada e iOS ≥16.4)
-  if ("setAppBadge" in self.navigator) {
+  // Badge del icono de la app (Android/desktop instalada e iOS ≥16.4).
+  // Solo se toca si el aviso TRAE `count`: sin él no sabemos cuántos pendientes
+  // hay, y tratar su ausencia como cero apagaba el contador (p. ej. los "pagos
+  // sin leer" del coach) sin que se hubiera leído nada.
+  if ("setAppBadge" in self.navigator && data.count !== undefined && data.count !== null) {
+    const count = Number(data.count) || 0;
     tasks.push(
       count > 0 ? self.navigator.setAppBadge(count) : self.navigator.clearAppBadge()
     );
