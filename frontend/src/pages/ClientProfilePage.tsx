@@ -456,7 +456,7 @@ export default function ClientProfilePage() {
             portalUrl={portalUrl} anamnesisUrl={anamnesisUrl} />
           <button
             onClick={() => setConfirmRegen(true)}
-            className="w-full text-center text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
+            className="w-full py-1.5 text-center text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
           >
             Regenerar enlace del portal (el actual dejará de funcionar)
           </button>
@@ -715,14 +715,14 @@ function PhoneRow({ client, onSaved }: { client: ClientOut; onSaved: () => void 
             placeholder="612 345 678"
             className="input w-36 px-2 py-1 text-sm"
           />
-          <button onClick={save} disabled={busy} aria-label="Guardar teléfono" className="p-1 text-zinc-500 hover:text-zinc-200">
+          <button onClick={save} disabled={busy} aria-label="Guardar teléfono" className="hit-tap p-1 text-zinc-500 hover:text-zinc-200">
             <Check size={16} />
           </button>
         </dd>
       ) : (
         <dd className="flex items-center gap-1.5 font-medium text-zinc-200">
           {client.phone || <span className="font-normal text-zinc-500">añádelo para WhatsApp</span>}
-          <button onClick={() => setEditing(true)} aria-label="Editar teléfono" className="p-1 text-zinc-500 hover:text-zinc-200">
+          <button onClick={() => setEditing(true)} aria-label="Editar teléfono" className="hit-tap p-1 text-zinc-500 hover:text-zinc-200">
             <Pencil size={13} />
           </button>
         </dd>
@@ -885,7 +885,7 @@ function CobroManual({ client, onDone }: { client: ClientOut; onDone: () => void
     return (
       <button
         onClick={() => setAbierto(true)}
-        className="w-full text-center text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
+        className="w-full py-1.5 text-center text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
       >
         {client.payment_status === "paid"
           ? "Anotar otro cobro (renovación, extra…)"

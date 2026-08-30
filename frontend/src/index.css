@@ -247,6 +247,19 @@ body::before {
     bottom: calc(4.75rem + env(safe-area-inset-bottom)) !important;
   }
 }
+/* Zona de toque decente sin tocar el aspecto. Un botón de icono del panel
+   mide 21×21 px reales: con el dedo se falla más de lo que se acierta (el
+   mínimo cómodo ronda los 40). El pseudo-elemento agranda SOLO lo que
+   responde al toque; el dibujo, el espaciado y el foco no se mueven. */
+.hit-tap {
+  position: relative;
+}
+.hit-tap::after {
+  content: "";
+  position: absolute;
+  inset: -0.5rem;
+}
+
 /* Tiras de pestañas y filtros deslizables en pantallas estrechas.
    Sin esto, lo que no cabe se sale de la pantalla y para alcanzarlo hay que
    arrastrar la PÁGINA ENTERA de lado (el <main> del panel scrollea en
