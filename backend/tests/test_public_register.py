@@ -208,7 +208,14 @@ def test_el_formulario_publico_tiene_cupo_diario(http, monkeypatch):
 
     from app.routers import public_site
 
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "public_signups_per_day", 0)
     monkeypatch.setattr(public_site, "MAX_ALTAS_PUBLICAS_DIA", 0)
+    # El límite por IP (5/min) es de MÓDULO y lo comparten todos los tests: sin
+    # apagarlo, esta llamada se come una ficha del cubo y el 429 aparece en
+    # otro test más tarde (gotcha documentado en CLAUDE.md).
+    monkeypatch.setattr(public_site.limiter, "enabled", False)
     avisos = []
     monkeypatch.setattr(public_site, "_avisa_cupo_al_coach",
                         lambda db, n: avisos.append(n))

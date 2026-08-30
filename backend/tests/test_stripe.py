@@ -835,12 +835,17 @@ def test_reintento_de_factura_no_duplica_avisos(monkeypatch):
         db.close()
 
 
-def test_registro_publico_rechaza_oferta_sin_full():
+def test_registro_publico_rechaza_oferta_sin_full(monkeypatch):
     """REGRESIÓN: el 422 oferta⇒Full también en POST /api/public/register (se
     colaba un train+oferta cuyo enlace cobraría un plan inexistente)."""
     from fastapi.testclient import TestClient
 
     from app.main import app
+    from app.routers import public_site
+
+    # El límite por IP (5/min) vive en el módulo y lo comparte toda la suite:
+    # al correrla entera, este test tardío se comía un 429 ajeno.
+    monkeypatch.setattr(public_site.limiter, "enabled", False)
 
     with TestClient(app) as http:
         r = http.post("/api/public/register", json={

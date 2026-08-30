@@ -87,6 +87,7 @@ def public_plan_prices(request: Request) -> dict:
 # dirección que eligiera el que llama. Con la cuota de Gmail (~500/día) agotada
 # no salen NI los accesos al portal, NI los planes, NI los informes de los
 # clientes de verdad — y la cuenta puede acabar restringida por spam.
+# Configurable (PUBLIC_SIGNUPS_PER_DAY) para poder subirlo en una campaña.
 MAX_ALTAS_PUBLICAS_DIA = 25
 
 
@@ -140,8 +141,9 @@ def public_register(request: Request, body: PublicRegisterIn,
     # Cupo diario: solo para ALTAS NUEVAS (un cliente que reintenta su propio
     # pago nunca se queda fuera).
     if client is None:
+        tope = getattr(settings, "public_signups_per_day", None) or MAX_ALTAS_PUBLICAS_DIA
         altas = _altas_publicas_de_hoy(db)
-        if altas >= MAX_ALTAS_PUBLICAS_DIA:
+        if altas >= tope:
             _avisa_cupo_al_coach(db, altas)
             db.commit()
             raise HTTPException(

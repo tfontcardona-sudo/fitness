@@ -4,6 +4,7 @@ Los trabajos programados abren períodos, persiguen a quien no registra, cortan
 las suscripciones de la oferta ya cobradas y avisan al coach. Si se paran, el
 coach tiene que enterarse por el panel, no por el log del contenedor.
 """
+import uuid
 import warnings
 from datetime import datetime, timedelta, timezone
 
@@ -156,6 +157,7 @@ def test_el_resumen_del_coach_no_se_repite_cada_tres_horas(sidecar, monkeypatch)
     monkeypatch.setattr("app.routers.alerts.client_alerts",
                         lambda db, c, hoy=None: alertas)
 
+    creada = None
     db = SessionLocal()
     try:
         from sqlalchemy import select
@@ -165,9 +167,11 @@ def test_el_resumen_del_coach_no_se_repite_cada_tres_horas(sidecar, monkeypatch)
         tenia = db.scalar(select(PushSubscription.id).where(
             PushSubscription.is_coach.is_(True)).limit(1))
         if not tenia:
-            db.add(PushSubscription(client_id=None, is_coach=True,
-                                    endpoint=f"https://push.test/coach-{datetime.now().timestamp()}",
-                                    p256dh="k", auth="a"))
+            creada = PushSubscription(
+                client_id=None, is_coach=True,
+                endpoint=f"https://push.test/coach-{uuid.uuid4().hex}",
+                p256dh="k", auth="a")
+            db.add(creada)
             db.commit()
 
         # Hora fija DENTRO del horario activo (el job no envía de madrugada).
@@ -183,4 +187,9 @@ def test_el_resumen_del_coach_no_se_repite_cada_tres_horas(sidecar, monkeypatch)
         push_svc.run_coach_digest(db, now=cuando)
         assert len(enviados) == 2
     finally:
+        # La suscripción de prueba NO puede quedarse: otro test comprueba que
+        # sin dispositivos del coach el resumen se salta.
+        if creada is not None:
+            db.delete(creada)
+            db.commit()
         db.close()

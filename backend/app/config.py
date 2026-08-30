@@ -141,6 +141,11 @@ class Settings(BaseSettings):
     tz: str = "Europe/Madrid"
     # Apaga TODOS los jobs (recordatorios, cierres, resúmenes): tests/CI.
     scheduler_enabled: bool = True
+    # Tope diario de ALTAS por el formulario público. El límite por IP no frena
+    # a quien rota IPs y direcciones, y cada alta manda un email desde el buzón
+    # del coach: con la cuota diaria agotada no salen ni los accesos al portal
+    # ni los planes de los clientes reales. Se puede subir para una campaña.
+    public_signups_per_day: int = 25
     # Caché del contenido educativo por split (sidecar): el mismo split reutiliza
     # las píldoras/técnica/FAQ ya generadas → 0 créditos. false en tests.
     education_cache_enabled: bool = True

@@ -18,6 +18,19 @@ _TEST_EMAIL_PATTERNS = ("%@example.com", "%@example.org", "%@test.local", "%@x.c
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _sin_cupo_de_altas():
+    """El tope diario de altas públicas (protección anti-abuso del formulario)
+    es GLOBAL por día: la suite crea muchos clientes y, al ejecutarla entera,
+    los últimos tests se topaban con el 429. En producción sigue en su valor."""
+    from app.config import settings
+
+    previo = getattr(settings, "public_signups_per_day", 25)
+    settings.public_signups_per_day = 100000
+    yield
+    settings.public_signups_per_day = previo
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _cleanup_test_clients():
     yield
     try:
