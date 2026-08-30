@@ -364,6 +364,53 @@ def test_las_fotos_subidas_en_el_cierre_no_se_vuelven_a_pedir(client, auth):
         assert per.photos_confirmed is True, "no se le pueden volver a pedir"
 
 
+def test_el_portal_puede_preguntar_cuantas_fotos_de_cierre_lleva_subidas(client, auth):
+    """El contador vivía SOLO en la pantalla: al volver o recargar arrancaba de
+    cero, así que las fotos siguientes se etiquetaban otra vez desde "frontal"
+    —el "antes y ahora" del informe comparaba ángulos distintos— y se ofrecían
+    cuatro huecos que el servidor ya no tenía."""
+    import io
+    import uuid
+    from datetime import date, timedelta
+
+    from PIL import Image
+
+    from app.db import SessionLocal
+    from app.models import Period, Plan
+
+    body = client.post("/api/clients", headers=auth, json={
+        "full_name": "Contador Fotos",
+        "email": f"contafotos-{uuid.uuid4().hex[:8]}@example.com",
+    }).json()
+    cid = body["client"]["id"]
+    token = body["links"]["portal_token"]
+
+    # Sin período abierto responde 0, no un error.
+    r = client.get(f"/api/p/{token}/close/photos")
+    assert r.status_code == 200 and r.json()["count"] == 0
+
+    with SessionLocal() as db:
+        plan = Plan(client_id=cid, month_index=1, version=1, status="published")
+        db.add(plan)
+        db.flush()
+        hoy = date.today()
+        db.add(Period(client_id=cid, plan_id=plan.id, period_index=1,
+                      starts_on=hoy - timedelta(days=14), ends_on=hoy, status="open"))
+        db.commit()
+
+    tope = client.get(f"/api/p/{token}/close/photos").json()["max"]
+    buf = io.BytesIO()
+    Image.new("RGB", (60, 90), (120, 120, 120)).save(buf, format="JPEG")
+    for i in range(2):
+        r = client.post(f"/api/p/{token}/close/photos?kind=front",
+                        files={"files": (f"f{i}.jpg", buf.getvalue(), "image/jpeg")})
+        assert r.status_code == 200, r.text
+
+    # Lo que ve una pantalla recién abierta: van dos, quedan `tope - 2`.
+    estado = client.get(f"/api/p/{token}/close/photos").json()
+    assert estado["count"] == 2 and estado["max"] == tope
+
+
 def test_un_ejercicio_incompleto_no_tumba_la_pantalla_de_entreno():
     """El plan puede llegar con una clave menos (editado a mano por el coach,
     importado del Word, copiado de la biblioteca): se leían con corchete y el

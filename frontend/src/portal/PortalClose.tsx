@@ -112,19 +112,35 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
   // pantalla lo llamaba, así que las fotos acababan sueltas en el WhatsApp del
   // coach y el "antes y ahora" del portal y del informe no se llenaba NUNCA.
   const [fotos, setFotos] = useState(0);
+  const [maxFotos, setMaxFotos] = useState(4);
   const [subiendoFotos, setSubiendoFotos] = useState(false);
   const [errorFotos, setErrorFotos] = useState<string | null>(null);
 
-  /** Sube hasta 4 fotos del período (el backend valida formato, 10 MB y tope).
+  // Cuántas lleva subidas, PREGUNTÁNDOSELO AL SERVIDOR. Vivía solo aquí, así
+  // que al volver a la pantalla (o recargar) arrancaba de cero: las fotos
+  // siguientes se etiquetaban otra vez desde "frontal" —y el "antes y ahora"
+  // del informe acababa comparando ángulos distintos— y la pantalla ofrecía
+  // cuatro huecos que el servidor ya no tenía, con un error que contradecía
+  // lo que el cliente veía.
+  useEffect(() => {
+    let vivo = true;
+    api.closePhotosCount()
+      .then((r) => { if (vivo) { setFotos(r.count); setMaxFotos(r.max); } })
+      .catch(() => { /* si falla, el servidor sigue siendo quien pone el tope */ });
+    return () => { vivo = false; };
+  }, [api]);
+
+  /** Sube las fotos del período (el backend valida formato, 10 MB y tope).
    *  El `kind` va por orden: frontal, lateral, espalda y una extra de detalle,
-   *  que es como las pide el propio cuestionario. */
+   *  que es como las pide el propio cuestionario — CONTINUANDO por donde se
+   *  quedó, no desde el principio. */
   async function subirFotos(files: FileList | null) {
     if (!files || !files.length || subiendoFotos) return;
     const tipos = ["front", "side", "back", "detail"];
-    const restantes = Math.max(0, 4 - fotos);
+    const restantes = Math.max(0, maxFotos - fotos);
     const lote = Array.from(files).slice(0, restantes);
     if (!lote.length) {
-      setErrorFotos("Ya has subido el máximo de 4 fotos.");
+      setErrorFotos(`Ya has subido el máximo de ${maxFotos} fotos.`);
       return;
     }
     setSubiendoFotos(true);
@@ -132,14 +148,17 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
     let subidas = 0;
     try {
       for (const f of lote) {
-        await api.closePhotos([f], tipos[Math.min(fotos + subidas, 3)]);
+        await api.closePhotos([f], tipos[Math.min(fotos + subidas, tipos.length - 1)]);
         subidas += 1;
         setFotos(fotos + subidas);
       }
       toast.push(`${subidas} foto${subidas === 1 ? "" : "s"} subida${subidas === 1 ? "" : "s"} 📸`);
     } catch (e: any) {
-      // Lo ya subido SE QUEDA: se dice cuántas entraron y qué falló.
+      // Lo ya subido SE QUEDA: se dice cuántas entraron y qué falló, y se
+      // vuelve a preguntar el total (por si otra pestaña o un envío a medias
+      // dejaron el número de la pantalla por detrás del real).
       setErrorFotos(e?.message ?? "No se pudieron subir. Inténtalo de nuevo.");
+      api.closePhotosCount().then((r) => setFotos(r.count)).catch(() => {});
     } finally {
       setSubiendoFotos(false);
     }
@@ -369,13 +388,13 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
           onChange={(e) => { subirFotos(e.target.files); e.target.value = ""; }} />
         <button
           onClick={() => document.getElementById("fotos-cierre")?.click()}
-          disabled={subiendoFotos || fotos >= 4}
+          disabled={subiendoFotos || fotos >= maxFotos}
           className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-3 text-sm font-medium disabled:opacity-60"
           style={{ borderColor: `${brand.color_secondary}77` }}
         >
           {subiendoFotos ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />}
           {fotos > 0
-            ? `${fotos} foto${fotos === 1 ? "" : "s"} subida${fotos === 1 ? "" : "s"}${fotos >= 4 ? "" : " · añadir más"}`
+            ? `${fotos} foto${fotos === 1 ? "" : "s"} subida${fotos === 1 ? "" : "s"}${fotos >= maxFotos ? "" : " · añadir más"}`
             : "Subir mis fotos aquí"}
         </button>
         {errorFotos && (

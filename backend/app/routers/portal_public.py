@@ -71,6 +71,8 @@ router = APIRouter(prefix="/api/p", tags=["portal-public"])
 limiter = Limiter(key_func=client_key)
 
 MAX_INITIAL_PHOTOS = 4
+# Tope de fotos de la revisión quincenal: frontal, lateral, espalda y detalle.
+MAX_FOTOS_CIERRE = 4
 
 # Hash fijo para igualar el tiempo del login cuando el email no existe/sin clave.
 _DUMMY_HASH = hash_password("timing-equalizer-not-a-real-password")
@@ -1231,6 +1233,31 @@ def portal_confirm_photos(
     return {"confirmed": True}
 
 
+@router.get("/{token}/close/photos")
+def portal_close_photos_count(
+    request: Request,
+    client: Client = Depends(get_client_by_token),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Cuántas fotos lleva subidas ya en ESTE período.
+
+    El contador vivía solo en la memoria de la pantalla, así que arrancaba de
+    cero cada vez que el cliente volvía o recargaba. Con dos fotos ya subidas
+    eso hacía dos cosas mal: etiquetaba las siguientes otra vez desde
+    "frontal" —y el "antes y ahora" del informe acababa comparando ángulos
+    distintos— y le dejaba intentar cuatro más para que el servidor le
+    respondiera un error que contradecía lo que tenía delante."""
+    period = portal_svc.active_period(db, client.id)
+    if period is None:
+        return {"count": 0, "max": MAX_FOTOS_CIERRE}
+    n = db.scalar(
+        select(func.count()).select_from(ProgressPhoto)
+        .where(ProgressPhoto.client_id == client.id,
+               ProgressPhoto.period_id == period.id)
+    ) or 0
+    return {"count": int(n), "max": MAX_FOTOS_CIERRE}
+
+
 @router.post("/{token}/close/photos")
 @limiter.limit("20/minute")
 def portal_close_photos(
@@ -1248,10 +1275,10 @@ def portal_close_photos(
         select(func.count()).select_from(ProgressPhoto)
         .where(ProgressPhoto.client_id == client.id, ProgressPhoto.period_id == period.id)
     ) or 0
-    if existing + len(files) > 4:
+    if existing + len(files) > MAX_FOTOS_CIERRE:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
-            f"Máximo 4 fotos por cierre (ya hay {existing})",
+            f"Máximo {MAX_FOTOS_CIERRE} fotos por cierre (ya hay {existing})",
         )
 
     created: list[ProgressPhoto] = []

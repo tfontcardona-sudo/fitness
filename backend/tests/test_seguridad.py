@@ -190,6 +190,13 @@ def test_el_token_del_portal_no_acaba_en_los_logs():
     assert enmascara_tokens("GET /api/p/AbC.123-xyz/state HTTP/1.1 200") == \
         "GET /api/p/***/state HTTP/1.1 200"
     assert enmascara_tokens("/api/clients/7?tab=anamnesis") == "/api/clients/7?tab=anamnesis"
+    # El enlace de COBRO lleva el mismo token (es el que el coach manda por
+    # WhatsApp) y se quedaba en claro aunque el del portal ya no.
+    assert enmascara_tokens("GET /api/pay/AbC.123-xyz HTTP/1.1 302") == \
+        "GET /api/pay/*** HTTP/1.1 302"
+    # Y no se pasa de listo con rutas que solo EMPIEZAN por esas letras.
+    assert enmascara_tokens("/api/payments/summary") == "/api/payments/summary"
+    assert enmascara_tokens("/api/plans/12/document") == "/api/plans/12/document"
 
     registro = logging.LogRecord(
         "uvicorn.access", logging.INFO, __file__, 1,

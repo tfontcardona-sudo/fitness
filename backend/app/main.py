@@ -34,7 +34,9 @@ APP_VERSION = "0.2.0"
 # en la RUTA, así que el access log de uvicorn lo escribía EN CLARO en cada
 # línea: `GET /api/p/<TOKEN>/state 200`. Cualquiera con acceso a los logs del
 # contenedor —o una copia de seguridad de ellos— entraba al portal de todos.
-_RE_TOKEN_PORTAL = re.compile(r"(/api/p/)[^/\s\"']+")
+# `/api/pay/` lleva EL MISMO token (es el enlace de cobro que el coach manda
+# por WhatsApp), así que quedaba en claro en el log aunque el del portal ya no.
+_RE_TOKEN_PORTAL = re.compile(r"(/api/p(?:ay)?/)[^/\s\"']+")
 
 
 def enmascara_tokens(texto: str) -> str:
