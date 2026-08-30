@@ -29,6 +29,17 @@
 >   "Descargar todo", ZIP de portabilidad), `tests/test_borrado_rgpd.py:74` y
 >   `frontend/Caddyfile:43` (el tope de subida contra los vídeos de ejercicio).
 >   La mitad "documentos" de esta tanda es de la 4: no la toco.
+> - **Tanda 7 (optimización backend + frontend) — sesión "rutina y dieta quice"
+>   (`claude/continue-previous-n6layq`), EN CURSO.** Alcance: `clients.py`
+>   1233/1242 (ficha e historial), `plan_library.py:426`, `plans.py` 477/721,
+>   `exercises.py:58`, `portal.py:412`, `ClientPlanEditor.tsx:102`,
+>   `ClientFeedbackTab.tsx:1129`, `DashboardPage.tsx:145`, `RecursosPage.tsx:1087`
+>   y `AppShell.tsx:127`. NO toco nada del portal ni de la anamnesis (tanda 6).
+>
+> ⚠️ **Ojo con `main`**: va POR DETRÁS de esta rama (no tiene la caché del PDF ni
+> la rejilla de la gráfica de perímetros). Las tandas 2 y 4 se apilan sobre esta
+> rama a propósito: llevadas a `main` por separado, se aplicarían sobre una base
+> que no tiene sus prerrequisitos.
 
 > **Qué es esto.** El inventario en crudo de dos barridos automáticos: una
 > verificación adversarial de los 27 commits de la auditoría anterior, y los dos
