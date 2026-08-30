@@ -535,12 +535,19 @@ export const api = {
   markPaymentsSeen: (ids?: number[]) =>
     request<{ marked: number; unseen: number }>("POST", "/payments/seen", ids ? { ids } : {}),
   /** Repesca de Stripe lo que falte (histórico + webhooks perdidos). */
+  // `partial` = el barrido se cortó por el freno de objetos: NO cubre todo el
+  // rango pedido y la pantalla no puede decir "sin cobros pendientes".
   syncPayments: (days?: number) =>
-    request<{ created: number; scanned: number; errors: string[] }>(
+    request<{ created: number; scanned: number; errors: string[]; partial?: boolean }>(
       "POST", `/payments/sync${days ? `?days=${days}` : ""}`),
 
   /** Cobro FUERA de Stripe (efectivo, transferencia, Bizum) con su importe:
    *  sin él, el total del mes solo contaba la pasarela. */
+  /** Borra un cobro anotado A MANO (los de Stripe son el extracto: no se
+   *  tocan). Sin esto, un importe mal tecleado se quedaba para siempre en el
+   *  total del mes, en la gráfica y en el CSV de la gestoría. */
+  borrarCobro: (paymentId: number) =>
+    request<void>("DELETE", `/payments/${paymentId}`),
   registrarCobroManual: (body: {
     client_id: number; amount_eur: number;
     method: "efectivo" | "transferencia" | "bizum" | "otro";

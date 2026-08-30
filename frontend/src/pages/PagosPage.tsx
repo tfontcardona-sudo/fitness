@@ -243,8 +243,16 @@ export default function PagosPage() {
       }
       if (r.created > 0) {
         toast.push(`${r.created} movimiento${r.created === 1 ? "" : "s"} recuperado${r.created === 1 ? "" : "s"} de Stripe`);
+      } else if (r.partial) {
+        // La sincronización es LA red de seguridad cuando se pierde un
+        // webhook: decir "sin cobros pendientes" cuando ni siquiera ha mirado
+        // todo el rango deja al coach tranquilo con facturas sin repescar.
+        toast.push("Stripe tiene más movimientos de los que caben en un barrido: prueba con menos días", "error");
       } else {
         toast.push("Sin cobros pendientes de registrar");
+      }
+      if (r.partial && r.created > 0) {
+        toast.push("Quedan movimientos por revisar: vuelve a sincronizar", "error");
       }
       if (r.errors?.length) {
         toast.push(`Stripe no devolvió todo: ${r.errors[0]}`, "error");

@@ -555,12 +555,25 @@ def sync_from_stripe(db: Session, *, days: int = SYNC_DEFAULT_DAYS) -> dict:
     revisados = 0
     errores: list[str] = []
 
-    def _limitado(iterador):
-        """Corta el barrido: ni la cuenta más movida de un coach pasa de aquí."""
-        nonlocal revisados
+    cortado = False
+
+    def _limitado(iterador, cupo: int = SYNC_MAX_OBJECTS // 3):
+        """Corta el barrido: ni la cuenta más movida de un coach pasa de aquí.
+
+        CUPO POR FUENTE. Con un presupuesto único, las Checkout Sessions
+        abandonadas —cada apertura de un enlace de pago crea una de verdad— se
+        lo comían entero en el primer bucle y las FACTURAS y las DEVOLUCIONES,
+        que son las que importan para la oferta, no llegaban a dar ni una
+        vuelta. Y el corte se ANOTA (`partial`) para que la web no diga "sin
+        cobros pendientes" cuando ni siquiera ha mirado.
+        """
+        nonlocal revisados, cortado
+        usados = 0
         for obj in iterador:
-            if revisados >= SYNC_MAX_OBJECTS:
+            if usados >= cupo or revisados >= SYNC_MAX_OBJECTS:
+                cortado = True
                 break
+            usados += 1
             revisados += 1
             yield obj
 
@@ -670,7 +683,7 @@ def sync_from_stripe(db: Session, *, days: int = SYNC_DEFAULT_DAYS) -> dict:
     # `partial`: el freno duro cortó el barrido — el resultado NO cubre todo el
     # rango pedido y el caller/UI no debe darlo por completo en silencio.
     return {"created": creados, "scanned": revisados, "errors": errores,
-            "partial": revisados >= SYNC_MAX_OBJECTS}
+            "partial": cortado}
 
 
 # ------------------------------------------------- cobros FUERA de Stripe ----

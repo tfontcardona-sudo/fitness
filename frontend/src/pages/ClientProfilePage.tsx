@@ -3,7 +3,7 @@ import { Link, useParams, useSearchParams, useNavigate } from "react-router-dom"
 import { ArrowLeft, Check, BellRing, ChevronRight, MessageCircle, Pencil, Smartphone, ClipboardCheck, Trash2, CreditCard } from "lucide-react";
 import { api, keepIfSame, REFRESH_MS } from "../lib/api";
 import { openWhatsApp, waPhone } from "../lib/whatsapp";
-import type { ClientOut } from "../types";
+import type { PaymentsListOut, ClientOut } from "../types";
 import {
   ConfirmDialog,
   PageLoader,
@@ -339,6 +339,10 @@ export default function ClientProfilePage() {
                 <Row label="Último pago" value={formatDate(client.paid_at)} />
               )}
             </dl>
+            {/* CUÁNTO ha pagado este cliente: el backend ya filtraba el feed
+                por cliente y ninguna pantalla lo pedía, así que "¿le cobré la
+                renovación de julio?" solo se respondía bajándose el CSV. */}
+            <CobrosDelCliente clientId={client.id} onCambio={reload} />
           </div>
 
           {/* DIARIO DEL CLIENTE (su app del móvil): botón destacado y distinto. */}
@@ -551,6 +555,23 @@ function PlanRow({ client, onSaved }: { client: ClientOut; onSaved: () => void }
 
   async function change(next: string) {
     if (busy || next === client.package_tier) return;
+    // Un select suelto que guardaba al primer cambio de valor: pasar de Full a
+    // Nutri deja al cliente sin entrenamiento en su portal y en su PDF, sin
+    // avisar a nadie y sin forma de deshacer. Todo lo demás peligroso de la
+    // app pregunta antes; esto también. Un cambio que AÑADE servicio sigue
+    // siendo directo.
+    const antes = pkg(client.package_tier);
+    const ahora = pkg(next);
+    const pierdeEntreno = antes.hasTraining && !ahora.hasTraining;
+    const pierdeDieta = antes.hasNutrition && !ahora.hasNutrition;
+    if (pierdeEntreno || pierdeDieta) {
+      const que = pierdeEntreno && pierdeDieta
+        ? "su dieta y su entrenamiento"
+        : pierdeEntreno ? "su entrenamiento" : "su dieta";
+      if (!window.confirm(
+        `${client.full_name} pasa a ${PACKAGES[next as keyof typeof PACKAGES].label}: `
+        + `dejará de ver ${que} en su portal y en su PDF. ¿Seguro?`)) return;
+    }
     setBusy(true);
     try {
       await api.updateClient(client.id, { package_tier: next as ClientOut["package_tier"] });
@@ -598,6 +619,11 @@ function BillingRow({ client, onSaved }: { client: ClientOut; onSaved: () => voi
 
   async function change(next: string) {
     if (busy || next === client.billing_period) return;
+    // Cambia lo que COBRARÁ su enlace de pago: no puede pasar por un roce en
+    // el select (en móvil son lo primero bajo el nombre del cliente).
+    if (!window.confirm(
+      `${client.full_name} pasa a ${billingLabel(next)}: su enlace de pago `
+      + "cobrará ese importe a partir de ahora. ¿Seguro?")) return;
     setBusy(true);
     try {
       await api.updateClient(client.id, { billing_period: next as ClientOut["billing_period"] });
@@ -745,12 +771,82 @@ function hoyLocal(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+function CobrosDelCliente({ clientId, onCambio }: { clientId: number; onCambio: () => void }) {
+  const toast = useToast();
+  const [pagos, setPagos] = useState<PaymentsListOut["items"] | null>(null);
+  const [abierto, setAbierto] = useState(false);
+  const [borrando, setBorrando] = useState<number | null>(null);
+
+  const cargar = useCallback(() => {
+    api.listPayments({ client_id: clientId, limit: 20 })
+      .then((r) => setPagos(r.items))
+      .catch(() => setPagos([]));
+  }, [clientId]);
+  useEffect(cargar, [cargar]);
+
+  if (!pagos || pagos.length === 0) return null;
+  // Los cobros suman y las devoluciones restan: el total es lo que ha entrado.
+  const total = pagos.reduce(
+    (a, p) => a + (p.status === "refunded" ? -p.amount_cents : p.status === "paid" ? p.amount_cents : 0), 0);
+  const eur = (c: number) => (c / 100).toLocaleString("es-ES", { minimumFractionDigits: 2 });
+
+  async function borrar(id: number) {
+    if (!window.confirm("¿Borrar este cobro anotado a mano? El total del mes se recalcula.")) return;
+    setBorrando(id);
+    try {
+      await api.borrarCobro(id);
+      toast.push("Cobro borrado");
+      cargar();
+      onCambio();
+    } catch (e: any) {
+      toast.push(e?.message ?? "No se pudo borrar", "error");
+    } finally {
+      setBorrando(null);
+    }
+  }
+
+  return (
+    <details className="mt-2" onToggle={(e) => setAbierto((e.target as HTMLDetailsElement).open)}>
+      <summary className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-300">
+        Cobros ({pagos.length}) · {eur(total)} €
+      </summary>
+      {abierto && (
+        <ul className="mt-2 space-y-1">
+          {pagos.map((p) => (
+            <li key={p.id} className="flex items-center justify-between gap-2 text-xs">
+              <span className="min-w-0 flex-1 truncate text-zinc-400" title={p.description ?? ""}>
+                {new Date(p.paid_at).toLocaleDateString("es-ES", { day: "2-digit", month: "short" })}
+                {" · "}{p.description || p.kind}
+              </span>
+              <span className="tabular-nums font-medium"
+                style={{ color: p.status === "refunded" ? "#C2453A" : p.status === "paid" ? "var(--brand-accent)" : "var(--text-faint)" }}>
+                {p.status === "refunded" ? "−" : ""}{eur(p.amount_cents)} €
+              </span>
+              {p.kind === "manual" && (
+                <button onClick={() => borrar(p.id)} disabled={borrando === p.id}
+                  className="shrink-0 text-zinc-600 hover:text-red-400" title="Borrar este cobro a mano">
+                  <Trash2 size={12} />
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </details>
+  );
+}
+
+
 function CobroManual({ client, onDone }: { client: ClientOut; onDone: () => void }) {
   const toast = useToast();
   const [abierto, setAbierto] = useState(false);
   const [importe, setImporte] = useState("");
   const [metodo, setMetodo] = useState<"efectivo" | "transferencia" | "bizum" | "otro">("transferencia");
   const [fecha, setFecha] = useState(hoyLocal);
+  // El 409 de duplicado pide "añádele una nota que los distinga" y el
+  // formulario no tenía dónde escribirla: la instrucción era imposible de
+  // seguir (el campo ya viajaba en el schema).
+  const [nota, setNota] = useState("");
   const [guardando, setGuardando] = useState(false);
 
   // Coma o punto: en España se teclea "129,50".
@@ -763,10 +859,12 @@ function CobroManual({ client, onDone }: { client: ClientOut; onDone: () => void
     try {
       await api.registrarCobroManual({
         client_id: client.id, amount_eur: eur, method: metodo, paid_on: fecha,
+        note: nota.trim() || undefined,
       });
       toast.push(`Cobro de ${eur.toLocaleString("es-ES", { minimumFractionDigits: 2 })} € anotado`);
       setAbierto(false);
       setImporte("");
+      setNota("");
       onDone();
     } catch (e: any) {
       toast.push(e?.message ?? "No se pudo anotar el cobro", "error");
@@ -815,6 +913,12 @@ function CobroManual({ client, onDone }: { client: ClientOut; onDone: () => void
         <span className="mb-1 block text-[11px] text-zinc-500">Fecha del cobro</span>
         <input type="date" value={fecha} max={hoyLocal()}
           onChange={(e) => setFecha(e.target.value)} className="input w-full" />
+      </label>
+      <label className="mt-2 block">
+        <span className="mb-1 block text-[11px] text-zinc-500">Nota (opcional)</span>
+        <input type="text" value={nota} maxLength={120}
+          onChange={(e) => setNota(e.target.value)}
+          placeholder="Ej.: segunda mensualidad" className="input w-full" />
       </label>
       <div className="mt-3 flex justify-end gap-2">
         <button onClick={() => setAbierto(false)} className="btn btn-ghost !py-1.5 text-xs">Cancelar</button>

@@ -18,7 +18,7 @@ GOTCHA: sin `from __future__ import annotations` (gotcha §5.1 — rompe la
 resolución de tipos de FastAPI/Pydantic en los routers).
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -33,6 +33,7 @@ from app.schemas.entities import (
     PaymentsSummaryOut,
 )
 from app.services import payments as pay_svc
+from app.services.audit import log_event
 
 router = APIRouter(prefix="/api/payments", tags=["payments"],
                    dependencies=[Depends(get_current_user)])
@@ -178,6 +179,46 @@ def sync_payments(days: int = Query(default=pay_svc.SYNC_DEFAULT_DAYS, ge=1, le=
         return pay_svc.sync_from_stripe(db, days=days)
     except StripeError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+
+@router.delete("/{payment_id}", status_code=status.HTTP_204_NO_CONTENT)
+def borrar_cobro_manual(payment_id: int, db: Session = Depends(get_db)) -> Response:
+    """Borra un cobro anotado A MANO (solo esos: lo de Stripe es el extracto).
+
+    Un 1290 tecleado en vez de 129 entraba en el total del mes, en la gráfica,
+    en el CSV de la gestoría y reescribía la ventana de renovación… y no había
+    NINGÚN camino en la web para arreglarlo. Al borrarlo, la ficha vuelve a
+    apuntar al cobro anterior del cliente.
+    """
+    from app.models import Payment
+
+    pago = db.get(Payment, payment_id)
+    if pago is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Cobro no encontrado")
+    if pago.kind != "manual":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Solo se pueden borrar los cobros anotados a mano: los de Stripe "
+            "son el extracto real de la pasarela.")
+    client_id = pago.client_id
+    db.delete(pago)
+    db.flush()
+    # La ficha se recalcula con lo que QUEDA: si se borra el último cobro, el
+    # cliente no puede quedarse con esa fecha de pago fantasma.
+    if client_id:
+        cliente = db.get(Client, client_id)
+        if cliente is not None:
+            ultimo = db.scalar(
+                select(Payment).where(Payment.client_id == client_id,
+                                      Payment.status == "paid")
+                .order_by(Payment.paid_at.desc()).limit(1))
+            cliente.paid_at = ultimo.paid_at if ultimo else None
+            if ultimo is None:
+                cliente.payment_status = "pending"
+    log_event(db, "client", client_id or 0, "manual_payment_deleted",
+              {"payment_id": payment_id, "amount_cents": pago.amount_cents})
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/manual", response_model=PaymentOut, status_code=status.HTTP_201_CREATED)
