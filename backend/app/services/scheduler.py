@@ -49,7 +49,11 @@ def _daily_job() -> None:
     try:
         summary = run_daily_maintenance(db)
         logger.info("mantenimiento diario: %s", summary)
-        record_job("daily_maintenance", ok=True, detalle=str(summary)[:200])
+        # Un cliente caído NO es un trabajo correcto: si su fallo es
+        # determinista (sus datos), se queda sin recordatorios ni transiciones
+        # todos los días y nadie se entera.
+        record_job("daily_maintenance", ok=not summary.get("failed"),
+                   detalle=str(summary)[:200])
     except Exception as exc:  # nunca tumbar el scheduler por un fallo puntual
         logger.exception("fallo en el mantenimiento diario")
         record_job("daily_maintenance", ok=False, detalle=f"{type(exc).__name__}: {exc}")

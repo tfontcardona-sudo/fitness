@@ -839,7 +839,8 @@ def _notify_coach_payment_failed(db: Session, client: Client) -> None:
                      "reintentará; si no entra, escríbele o revisa Stripe."),
             "count": 1,
             "url": f"{base}/clientes/{client.id}",
-            "tag": "dq-pago-fallido",
+            # Por cliente: dos impagos el mismo día no pueden verse como uno.
+            "tag": f"dq-pago-fallido-{client.id}",
         })
     except Exception:  # noqa: BLE001
         pass
@@ -1331,7 +1332,7 @@ def _handle_subscription_deleted(db: Session, event: dict) -> dict:
                      "más cobros mensuales. Revisa su ficha."),
             "count": 1,
             "url": f"{base}/clientes/{client.id}",
-            "tag": "dq-sub-cancelada",
+            "tag": f"dq-sub-cancelada-{client.id}",
         })
     except Exception:  # noqa: BLE001
         pass

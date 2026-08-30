@@ -1175,7 +1175,9 @@ def portal_close_period(
             "body": f"{first} ha cerrado su revisión #{period.period_index}. Genera su feedback.",
             "count": 1,
             "url": f"{base}/clientes/{client.id}?tab=feedback",
-            "tag": "dq-revision",
+            # Por cliente: si dos cierran la misma tarde, el coach veía UNA
+            # sola notificación — y el cierre es "el evento central del ciclo".
+            "tag": f"dq-revision-{client.id}",
         })
     except Exception:
         pass

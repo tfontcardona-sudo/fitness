@@ -102,6 +102,14 @@ def automatismos_parados(ahora: datetime | None = None) -> str | None:
         e = datos.get(nombre)
         if not e:
             continue
+        # La última ejecución terminó MAL (reventó entera, o se dejó clientes
+        # por el camino): eso hay que decirlo hoy, no dentro de 36 h. Un fallo
+        # por cliente suele ser determinista —sus datos—, así que ese cliente
+        # se queda sin recordatorios ni transiciones día tras día.
+        if e.get("last_ok") is False:
+            detalle = str(e.get("detail") or "")[:160]
+            return ("El mantenimiento diario terminó con errores: hay clientes "
+                    f"sin atender (sin recordatorios ni cambios de estado). {detalle}")
         exito = e.get("last_success_at")
         if not exito:
             return ("El mantenimiento diario no ha llegado a terminar nunca: "

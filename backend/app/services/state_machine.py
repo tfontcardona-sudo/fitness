@@ -128,7 +128,11 @@ def evaluate_transition(facts: ClientFacts, today: date) -> TransitionDecision:
         status in ("active", "at_risk")
         and facts.period_start is not None
         and not facts.period_closed
-        and _period_day(today, facts.period_start) == REMINDER_DAY
+        # UMBRAL, no igualdad: si el job no corría ESE día exacto (un reinicio
+        # del contenedor antes de las 06:30, un fallo con ese cliente), el
+        # empujón del día 12 —el que evita que la quincena salga coja— se
+        # perdía para siempre. La dedup del envío es por PERÍODO (jobs.py).
+        and _period_day(today, facts.period_start) >= REMINDER_DAY
         and facts.days_logged_in_period < REMINDER_DAY // 2
     ):
         return TransitionDecision(None, "recordatorio día 12", send_reminder=True)

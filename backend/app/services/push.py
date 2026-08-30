@@ -196,12 +196,39 @@ def dias_registrados(db: Session, logs: list[DailyLog]) -> set[date]:
     }
 
 
+# Los pendientes de la revisión CADUCAN. Sin tope, "Pendiente hoy · Fotos"
+# salía a las 09, 12, 15, 18 y 21 TODOS los días, para siempre, aunque esa
+# revisión se cerrara hace semanas y el cliente ya estuviera en el ciclo
+# siguiente: la vía más rápida a que silencie las notificaciones de la app (y
+# con ellas los avisos que sí importan: plan nuevo, informe listo).
+CADUCIDAD_FOTOS_DIAS = 7
+CADUCIDAD_AVISO_CIERRE_DIAS = 7
+CADUCIDAD_VIDEOLLAMADA_DIAS = 10
+
+
+def _ciclo_superado(db: Session, client: Client, period) -> bool:
+    """¿La revisión ya quedó atrás? (informe enviado o período posterior)."""
+    from app.models import FeedbackDoc, Period
+
+    enviado = db.scalar(
+        select(FeedbackDoc.id).where(FeedbackDoc.period_id == period.id,
+                                     FeedbackDoc.sent_at.is_not(None)).limit(1))
+    if enviado:
+        return True
+    return bool(db.scalar(
+        select(Period.id).where(Period.client_id == client.id,
+                                Period.period_index > period.period_index).limit(1)))
+
+
 def photos_pending(db: Session, client: Client, *, now: datetime | None = None,
                    min_minutes: int = 0) -> bool:
     """¿Falta que el cliente confirme el envío de sus fotos de progreso?
     True si su última revisión (cerrada/analizada) no está confirmada y han
     pasado al menos `min_minutes` desde que la envió (para el push: ~15 min;
-    para el banner del portal: 0, se muestra ya)."""
+    para el banner del portal: 0, se muestra ya).
+
+    Deja de pedirlas cuando la revisión queda atrás (informe enviado o período
+    nuevo) o cuando pasa la ventana: son fotos PARA ese informe."""
     from datetime import timedelta
 
     from app.models import Period
@@ -218,6 +245,10 @@ def photos_pending(db: Session, client: Client, *, now: datetime | None = None,
     submitted = p.closing_submitted_at
     if submitted.tzinfo is None:
         submitted = submitted.replace(tzinfo=timezone.utc)
+    if now > submitted + timedelta(days=CADUCIDAD_FOTOS_DIAS):
+        return False
+    if _ciclo_superado(db, client, p):
+        return False
     return now >= submitted + timedelta(minutes=min_minutes)
 
 
@@ -243,6 +274,17 @@ def videocall_pending(db: Session, client: Client) -> bool:
         VideoCall.period_index == p.period_index))
     # Sin videollamada, o propuesta sin fecha (estado 'book' del portal): toca
     # que el cliente la agende. Con propuesta/agendada/manual/hecha, no.
+    # CADUCA: pasada la ventana, esa videollamada ya no tiene sentido — y el
+    # cliente llevaría 5 avisos al día indefinidamente.
+    from datetime import timedelta
+
+    referencia = p.closing_submitted_at
+    if referencia is not None:
+        if referencia.tzinfo is None:
+            referencia = referencia.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > referencia + timedelta(
+                days=CADUCIDAD_VIDEOLLAMADA_DIAS):
+            return False
     if vc is None:
         return True
     return vc.status == "proposed" and vc.scheduled_at is None
@@ -269,7 +311,12 @@ def pending_for_client(db: Session, client: Client, today: date,
         return out
 
     info = portal_svc.period_info(period, today) or {}
-    out["quincenal"] = bool(info.get("can_close"))
+    # El aviso de cerrar la revisión CADUCA: sin tope salían 5 push al día
+    # mientras el período siguiera abierto (y solo paraba al pasar a inactivo,
+    # 30 días después). Una semana insistiendo es suficiente; a partir de ahí
+    # el problema lo resuelve el coach, que ve el período vencido en su panel.
+    out["quincenal"] = bool(info.get("can_close")) and (
+        (today - period.ends_on).days <= CADUCIDAD_AVISO_CIERRE_DIAS)
 
     if period.starts_on <= today <= period.ends_on:
         log = db.scalar(
@@ -439,7 +486,10 @@ def notify_coach_video_call_proposed(db: Session, client: Client, when_label: st
         "body": f"{name} propuso videollamada: {when_label}. Acéptala o modifícala.",
         "count": 1,
         "url": f"{base}/clientes/{client.id}?tab=feedback",
-        "tag": "dq-vc-propuesta",
+        # Tag POR CLIENTE: con una tag compartida, la propuesta del segundo
+        # cliente sustituía en la bandeja a la del primero y esa desaparecía
+        # sin dejar rastro (mismo problema que ya se corrigió en los cobros).
+        "tag": f"dq-vc-propuesta-{client.id}",
     }
     return send_to_coach(db, payload)
 
@@ -457,7 +507,7 @@ def notify_coach_video_call_rescheduled(db: Session, client: Client, when_label:
         "body": f"{name} no puede a la hora agendada y propone: {when_label}. Acéptala o modifícala.",
         "count": 1,
         "url": f"{base}/clientes/{client.id}?tab=feedback",
-        "tag": "dq-vc-propuesta",
+        "tag": f"dq-vc-propuesta-{client.id}",
     }
     return send_to_coach(db, payload)
 
@@ -677,6 +727,35 @@ def run_coach_digest(db: Session, now: datetime | None = None) -> dict:
     ]
     if len(alerts) > 3:
         lines.append(f"…y {len(alerts) - 3} más")
+
+    # NO REPETIRSE: el móvil del coach vibraba 5 veces al día con EXACTAMENTE
+    # el mismo texto mientras hubiera una alerta abierta (y `renewal_due`,
+    # `payment_pending` o `goal_review` duran días o semanas). Así se acaba
+    # silenciando la app — y con ella los avisos inmediatos que sí valen
+    # dinero. Se envía cuando hay algo NUEVO, y una vez al día de cortesía si
+    # todo sigue igual.
+    huella = "|".join(sorted(str(a.get("key") or a.get("kind")) for a in alerts))
+    try:
+        from app.services.job_state import estado_de_los_trabajos, record_job
+
+        previo = (estado_de_los_trabajos().get("coach_digest_huella") or {})
+        misma = previo.get("detail") == huella
+        ultimo = previo.get("last_run_at")
+        de_cortesia = True
+        if misma and ultimo:
+            try:
+                cuando = datetime.fromisoformat(ultimo)
+                if cuando.tzinfo is None:
+                    cuando = cuando.replace(tzinfo=timezone.utc)
+                de_cortesia = (datetime.now(timezone.utc) - cuando).total_seconds() >= 20 * 3600
+            except ValueError:
+                de_cortesia = True
+        if misma and not de_cortesia:
+            return {"alerts": len(alerts), "devices": 0, "skipped": "sin novedades"}
+        record_job("coach_digest_huella", ok=True, detalle=huella)
+    except Exception:  # noqa: BLE001 — el registro nunca frena el aviso
+        pass
+
     payload = {
         "title": f"{len(alerts)} pendiente{'s' if len(alerts) != 1 else ''} de tus clientes",
         "body": "\n".join(lines),
