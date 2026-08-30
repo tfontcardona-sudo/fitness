@@ -134,7 +134,16 @@ def current_training_week(db: Session, plan: Plan | None, today: date) -> dict |
     """
     if plan is None:
         return None
+    # El esquema dice `list[WeeklyProgressionWeek]`, pero a `training_json` le
+    # llegan planes editados a mano, importados del Word y copiados de un
+    # modelo: si ahí viene un objeto (o una lista de cualquier cosa), el
+    # `weeks[idx]` de abajo reventaba con un KeyError y el cliente se quedaba
+    # con un 500 y la pantalla de Entreno EN BLANCO. Mismo criterio que el
+    # resto de la pantalla: lo que no se entiende se ignora, no se cae.
     weeks = (plan.training_json or {}).get("weekly_progression") or []
+    if not isinstance(weeks, list):
+        return None
+    weeks = [w for w in weeks if isinstance(w, dict)]
     if not weeks:
         return None
     start_dt = db.scalar(

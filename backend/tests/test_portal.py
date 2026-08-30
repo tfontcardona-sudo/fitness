@@ -454,3 +454,39 @@ def test_un_periodo_mas_corto_de_14_dias_se_puede_cerrar_su_ultimo_dia():
                     starts_on=hoy - timedelta(days=13), ends_on=hoy)
     assert period_info(normal, hoy)["can_close"] is True
     assert period_info(normal, hoy - timedelta(days=1))["can_close"] is False
+
+
+def test_una_progresion_semanal_malformada_no_tumba_la_pantalla_de_entreno():
+    """`training_json` recibe planes editados a mano, importados del Word y
+    copiados de un modelo. Si `weekly_progression` llegaba como objeto en vez
+    de lista, el índice de la semana reventaba con KeyError y el cliente se
+    quedaba con un 500 y la pantalla de Entreno EN BLANCO."""
+    from datetime import date
+
+    from app.models import Plan
+    from app.services.portal import current_training_week
+
+    class _DbFalsa:
+        def scalar(self, *a, **kw):
+            return None
+
+    hoy = date.today()
+    for basura in (
+        {"intent": "Subir 2,5 kg"},            # objeto en vez de lista
+        ["semana 1", "semana 2"],              # lista de textos
+        [None, None],                          # lista de nada
+        "progresivo",                          # texto suelto
+        123,                                   # número
+    ):
+        plan = Plan(client_id=1, month_index=1, version=1, status="published",
+                    training_json={"weekly_progression": basura})
+        assert current_training_week(_DbFalsa(), plan, hoy) is None, basura
+
+    # Y con la forma buena sigue funcionando igual.
+    plan = Plan(client_id=1, month_index=1, version=1, status="published",
+                training_json={"weekly_progression": [
+                    {"week": 1, "load_pct": 100, "intent": "Base"},
+                    {"week": 2, "load_pct": 110, "intent": "Subir carga"},
+                ]})
+    semana = current_training_week(_DbFalsa(), plan, hoy)
+    assert semana is not None and semana["total_weeks"] == 2
