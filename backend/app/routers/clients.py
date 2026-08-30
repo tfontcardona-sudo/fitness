@@ -104,12 +104,20 @@ def _feelings_score_10(feelings: dict | None) -> float | None:
     return round(statistics.median(vals) * 2, 1)
 
 
+# Cuántas revisiones cerradas viajan en el seguimiento (se pide cada 3 s). El
+# archivo completo está en la pestaña Historial.
+MAX_REVISIONES_EN_SEGUIMIENTO = 4
+
+
 def _quincenal_entry(db: Session, period: Period, prev: Period | None) -> dict:
     """Datos completos de una revisión quincenal con ANTES/DESPUÉS (día 1 vs 15)."""
-    logs = list(db.scalars(
-        select(DailyLog).where(DailyLog.period_id == period.id).order_by(DailyLog.log_date)
-    ))
-    first_w = next((lg.weight_kg for lg in logs if lg.weight_kg is not None), None)
+    # Solo hace falta el PRIMER peso: traerse todos los diarios de la revisión
+    # (~14 filas con sus campos) para leer uno era la consulta más cara de esta
+    # respuesta, multiplicada por cada revisión del cliente.
+    first_w = db.scalar(
+        select(DailyLog.weight_kg)
+        .where(DailyLog.period_id == period.id, DailyLog.weight_kg.is_not(None))
+        .order_by(DailyLog.log_date).limit(1))
     before_w = first_w if first_w is not None else (prev.closing_weight_kg if prev else None)
     # Primera revisión sin período previo: el "antes" de los perímetros son los
     # INICIALES de la anamnesis (mig. 0041) — antes ese delta no existía.
@@ -184,11 +192,20 @@ def client_tracking(client_id: int, db: Session = Depends(get_db)) -> dict:
         .where(DailyLog.period_id == period.id)
         .order_by(DailyLog.log_date.desc())
     ).all()
+    # Series por día en UNA consulta agrupada: antes era un COUNT por CADA día
+    # registrado (hasta 14) y esta respuesta se pide cada 3 s mientras la
+    # pestaña Seguimiento esté abierta.
+    series_por_dia: dict[int, int] = {}
+    if logs:
+        series_por_dia = {
+            fila[0]: int(fila[1]) for fila in db.execute(
+                select(WorkoutLog.daily_log_id, func.count())
+                .where(WorkoutLog.daily_log_id.in_([lg.id for lg in logs]))
+                .group_by(WorkoutLog.daily_log_id))
+        }
     daily = []
     for lg in logs:
-        n_sets = db.scalar(
-            select(func.count()).select_from(WorkoutLog).where(WorkoutLog.daily_log_id == lg.id)
-        ) or 0
+        n_sets = series_por_dia.get(lg.id, 0)
         daily.append({
             "date": lg.log_date.isoformat(),
             "weight_kg": lg.weight_kg, "sleep_hours": lg.sleep_hours,
@@ -217,11 +234,15 @@ def client_tracking(client_id: int, db: Session = Depends(get_db)) -> dict:
     days_elapsed = (min(today, period.ends_on) - period.starts_on).days + 1
 
     # Revisiones quincenales acumuladas (más reciente primero), con antes/después
+    # Solo las ÚLTIMAS revisiones: el histórico completo (que crece sin tope,
+    # ~24 al año) se recalculaba y se reenviaba entero 20 veces por minuto,
+    # leyendo TODOS los diarios de cada revisión cerrada para sacar un peso.
+    # El archivo completo vive en la pestaña Historial.
     quincenals = []
-    for i in range(len(periods) - 1, -1, -1):
-        pr = periods[i]
-        if pr.status in ("closed", "analyzed"):
-            quincenals.append(_quincenal_entry(db, pr, periods[i - 1] if i > 0 else None))
+    cerrados = [i for i in range(len(periods) - 1, -1, -1)
+                if periods[i].status in ("closed", "analyzed")]
+    for i in cerrados[:MAX_REVISIONES_EN_SEGUIMIENTO]:
+        quincenals.append(_quincenal_entry(db, periods[i], periods[i - 1] if i > 0 else None))
 
     return {
         "has_period": True,

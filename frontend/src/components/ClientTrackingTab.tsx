@@ -92,7 +92,13 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
         .then((d) => alive && (setErr(null), setData((prev) => keepIfSame(prev, d))))
         .catch((e) => alive && setErr(e?.message ?? "Error"));
     load();
-    timer.current = window.setInterval(load, REFRESH_MS); // polling → tiempo real
+    // Con la pestaña del navegador OCULTA no se pide nada: es el único
+    // intervalo del panel que no lo comprobaba, y esta respuesta es la más
+    // cara del backend (se recalculaba el seguimiento entero cada 3 s aunque
+    // el coach estuviera en otra ventana).
+    timer.current = window.setInterval(() => {
+      if (!document.hidden) load();
+    }, REFRESH_MS);
     return () => {
       alive = false;
       if (timer.current) window.clearInterval(timer.current);

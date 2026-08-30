@@ -144,8 +144,13 @@ def _renewal_alert(client: Client, today: date) -> dict | None:
     return _alert(client, "renewal_due", sev, msg, "resumen", "Renovar plan")
 
 
-def client_alerts(db: Session, client: Client, today: date | None = None) -> list[dict]:
-    """Alertas de UN cliente (reutilizado por el listado y el backtest)."""
+def client_alerts(db: Session, client: Client, today: date | None = None,
+                  titulos_producto: list[str] | None = None) -> list[dict]:
+    """Alertas de UN cliente (reutilizado por el listado y el backtest).
+
+    `titulos_producto`: la lista de productos de Recursos, que es la MISMA para
+    todos los clientes. El caller la pasa una vez; si no, se consulta aquí (los
+    llamadores sueltos y los tests siguen funcionando igual)."""
     from app.services.portal import today_local
 
     # Fecha de NEGOCIO (settings.tz): con date.today() en UTC, de madrugada las
@@ -179,12 +184,23 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
     if renewal is not None:
         out.append(renewal)
 
-    plans = list(db.scalars(
-        select(Plan).where(Plan.client_id == client.id)
-        .order_by(Plan.month_index.desc(), Plan.version.desc())
-    ))
-    published = next((p for p in plans if p.status == "published"), None)
-    latest = plans[0] if plans else None
+    # Antes se traían TODAS las versiones de TODOS los planes del cliente con
+    # sus cuatro JSONB completos (el banco de 4×7 recetas con ingredientes, el
+    # educativo, los hallazgos del panel) para usar solo dos de ellos — y esto
+    # corre para CADA cliente en cada barrido de alertas, varias veces por
+    # minuto. Dos consultas acotadas y sin los JSON que aquí no se miran.
+    from sqlalchemy.orm import load_only
+
+    _cols = (Plan.id, Plan.client_id, Plan.month_index, Plan.version, Plan.status,
+             Plan.goal_type, Plan.generated_by, Plan.nutrition_json, Plan.training_json)
+    published = db.scalar(
+        select(Plan).options(load_only(*_cols))
+        .where(Plan.client_id == client.id, Plan.status == "published")
+        .order_by(Plan.month_index.desc(), Plan.version.desc()).limit(1))
+    latest = db.scalar(
+        select(Plan).options(load_only(*_cols))
+        .where(Plan.client_id == client.id)
+        .order_by(Plan.month_index.desc(), Plan.version.desc()).limit(1))
     # Los períodos del cliente, UNA sola vez: antes se consultaba la misma tabla
     # tres veces por cliente (el último, el último analizado y la última
     # revisión cerrada) y esta función corre para TODOS los clientes cada vez
@@ -351,9 +367,10 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
 
     sups = plan_supplement_names(published.nutrition_json)
     if sups:
-        titles = list(db.scalars(
-            select(RecommendedProduct.title).where(RecommendedProduct.active.is_(True))
-        ))
+        titles = (titulos_producto if titulos_producto is not None
+                  else list(db.scalars(
+                      select(RecommendedProduct.title)
+                      .where(RecommendedProduct.active.is_(True)))))
         missing = match_products(sups, titles)["missing"]
         if missing:
             listado = ", ".join(missing[:4]) + ("…" if len(missing) > 4 else "")
@@ -548,13 +565,19 @@ def client_alerts(db: Session, client: Client, today: date | None = None) -> lis
 def list_alerts(db: Session = Depends(get_db)) -> dict:
     """Todas las alertas pendientes, más graves primero."""
     clients = db.scalars(select(Client).order_by(Client.full_name)).all()
+    # La lista de productos de Recursos es la MISMA para todos los clientes: se
+    # consultaba una vez POR CLIENTE en cada barrido.
+    from app.models import RecommendedProduct
+
+    _titulos = list(db.scalars(
+        select(RecommendedProduct.title).where(RecommendedProduct.active.is_(True))))
     alerts: list[dict] = []
     for c in clients:
         # Aislamiento por cliente: un solo cliente con datos rotos tumbaba el
         # endpoint ENTERO (500) y el panel se quedaba sin campana ni colas,
         # en silencio. Su fallo se registra y los demás siguen saliendo.
         try:
-            alerts.extend(client_alerts(db, c))
+            alerts.extend(client_alerts(db, c, titulos_producto=_titulos))
         except Exception:  # noqa: BLE001
             import logging
 
