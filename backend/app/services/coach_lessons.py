@@ -274,8 +274,23 @@ def vetos_reference() -> str:
         if not p.exists():
             return ""
         conteo = (json.loads(p.read_text(encoding="utf-8")) or {}).get("conteo") or {}
+        # SANEAR TAMBIÉN AL LEER. El filtro se aplicaba solo al escribir, así
+        # que cualquier clave que ya estuviera en el sidecar —guardada antes
+        # de que el filtro existiera, o metida a mano— viajaba tal cual al
+        # prompt de TODOS los clientes, con las cifras y los alimentos de uno
+        # solo. El fichero es de larga vida: la memoria de vetos se acumula
+        # durante meses, y el saneado de entrada no lo alcanza nunca.
+        # Re-agrupa, además, las claves que colapsan en la misma lección.
+        limpio: dict[str, int] = {}
+        for clave, veces in conteo.items():
+            if not isinstance(clave, str):
+                continue
+            k = _sin_cifras(clave).strip()[:180]
+            if len(k) <= 12:
+                continue
+            limpio[k] = limpio.get(k, 0) + int(veces or 0)
         repetidos = sorted(
-            ((k, int(v)) for k, v in conteo.items() if int(v) >= 2),
+            ((k, v) for k, v in limpio.items() if v >= 2),
             key=lambda kv: -kv[1],
         )
         if not repetidos:

@@ -596,3 +596,34 @@ def test_la_memoria_de_vetos_no_lleva_datos_del_cliente(tmp_path, monkeypatch):
     assert "alérgeno declarado" in bloque
     assert "por debajo del mínimo" in bloque
 
+
+def test_los_vetos_ya_guardados_tambien_se_sanean_al_leerlos(tmp_path, monkeypatch):
+    """El filtro se aplicaba SOLO al escribir. El sidecar es de larga vida —la
+    memoria se acumula durante meses—, así que cualquier clave guardada antes
+    de que el filtro existiera (o metida a mano) viajaba tal cual al prompt de
+    TODOS los clientes, con las cifras y los alimentos de uno solo."""
+    import json
+
+    from app.config import settings
+    from app.services.coach_lessons import _vetos_path, vetos_reference
+
+    monkeypatch.setattr(settings, "storage_path", str(tmp_path))
+
+    # Sidecar "antiguo": escrito sin pasar por el filtro.
+    p = _vetos_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps({"conteo": {
+        "violation: kcal objetivo 1450 por debajo del mínimo 1600": 4,
+        "violation: ⚠ ALÉRGENO lactosa en «yogur griego» (opción 2 del slot 3)": 3,
+        "violation: aversión declarada: pescado en «merluza al horno»": 2,
+    }}, ensure_ascii=False), encoding="utf-8")
+
+    bloque = vetos_reference()
+    assert bloque, "los vetos repetidos deberían entrar en el prompt"
+    assert not any(ch.isdigit() for ch in bloque), bloque
+    for dato in ("lactosa", "yogur", "merluza", "pescado", "1450", "1600"):
+        assert dato not in bloque, f"se filtró «{dato}» al prompt de otro cliente"
+    # La lección sobrevive, en genérico.
+    assert "alérgeno declarado" in bloque
+    assert "por debajo del mínimo" in bloque
+
