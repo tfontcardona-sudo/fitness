@@ -545,19 +545,33 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
         # se perdía para siempre: del mes 2 en adelante ningún cliente volvía a
         # leer por qué su plan es como es.
         # El detalle de la adaptación YA viaja por `applied_adjustments`.
+        # Y NO SE ACUMULA: la marca lleva el número de la revisión, así que
+        # cada quincena añadía OTRO párrafo idéntico. En el mes 4 el cliente
+        # abría "Por qué este enfoque" y encontraba ocho veces la misma frase.
+        # Se retira la coletilla de las revisiones anteriores y se pone la de
+        # esta — el argumentario original (lo que de verdad explica su plan)
+        # queda intacto delante.
         base_rationale = (nut.get("rationale") or "").strip()
+        base_rationale = re.sub(
+            r"\n*Ajustado tras tu revisión #\d+:[^\n]*", "", base_rationale).strip()
         marca = f"Ajustado tras tu revisión #{period.period_index}"
-        if marca not in base_rationale:
-            nut["rationale"] = (
-                f"{base_rationale}\n\n{marca}: mantenemos el enfoque y afinamos "
-                "las cifras con lo que has registrado estas dos semanas."
-                if base_rationale else
-                f"{marca}: afinamos las cifras con lo que has registrado estas "
-                "dos semanas."
-            )
+        nut["rationale"] = (
+            f"{base_rationale}\n\n{marca}: mantenemos el enfoque y afinamos "
+            "las cifras con lo que has registrado estas dos semanas."
+            if base_rationale else
+            f"{marca}: afinamos las cifras con lo que has registrado estas "
+            "dos semanas."
+        )
     if tiene_entreno:
-        tr["split_rationale"] = (tr.get("split_rationale", "") or "") + \
-            f" · Adaptado a la revisión quincenal #{period.period_index}."
+        # Misma regla que el rationale: la coletilla SUSTITUYE a la de la
+        # revisión anterior en vez de encadenarse. Esto se imprime en el PDF
+        # bajo "Estructura ·", y a la sexta quincena era una ristra de
+        # "· Adaptado a la revisión quincenal #1. · … #2. · … #3." que tapaba
+        # la razón real del split.
+        _split = re.sub(r"\s*·\s*Adaptado a la revisión quincenal #\d+\.", "",
+                        tr.get("split_rationale", "") or "").rstrip()
+        tr["split_rationale"] = (
+            _split + f" · Adaptado a la revisión quincenal #{period.period_index}.")
 
     if existing_draft is not None:
         # Rehacer el borrador existente (mismo número de versión): los ajustes

@@ -317,11 +317,17 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
       // que la SIGUIENTE edición muera con un 409 falso de "otra pestaña"
       // (auditoría crítica). Mismo patrón que el save del editor.
       const r = await api.updatePlan(plan.id, cuerpo as any);
+      // OJO: las claves son `nutrition`/`training`, NO `nutrition_json`.
+      // `normalize` lee `p.nutrition ?? p.nutrition_json`, así que con el
+      // spread de `plan` delante el valor VIEJO ganaba y la respuesta del
+      // backend se tiraba entera — incluido el `rev` recién incrementado, que
+      // es justo lo que este bloque decía guardar: la siguiente edición moría
+      // con un 409 falso de "otra pestaña" (auditoría).
       setPlan(normalize({
         ...plan,
-        nutrition_json: tieneDieta
+        nutrition: tieneDieta
           ? (r.nutrition_json ?? (cuerpo as any).nutrition_json) : plan.nutrition,
-        training_json: tieneDieta
+        training: tieneDieta
           ? plan.training : (r.training_json ?? (cuerpo as any).training_json),
       }));
       setAdjDraft(null);
@@ -561,10 +567,15 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
       // solo viaja si el importador detectó cambios en sus cajas.
       if (importPreview.education_json) patch.education_json = importPreview.education_json;
       const r = await api.updatePlan(plan.id, patch);
+      // Mismas claves que lee `normalize` (ver arriba): con `*_json` el plan
+      // seguía mostrando lo de ANTES del Word — el coach veía "Word aplicado"
+      // y las cifras viejas en pantalla — y el rev rancio hacía fallar la
+      // siguiente edición. El educativo también vuelve del backend.
       setPlan(normalize({
         ...plan,
-        nutrition_json: r.nutrition_json ?? importPreview.nutrition_json ?? plan.nutrition,
-        training_json: r.training_json ?? importPreview.training_json ?? plan.training,
+        nutrition: r.nutrition_json ?? importPreview.nutrition_json ?? plan.nutrition,
+        training: r.training_json ?? importPreview.training_json ?? plan.training,
+        education: r.education_json ?? importPreview.education_json ?? plan.education,
       }));
       setImportPreview(null);
       setNeedsDownload(true); // el documento cambió: toca re-descargar el PDF

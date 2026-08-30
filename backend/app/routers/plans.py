@@ -569,11 +569,21 @@ def generate_education(plan_id: int, db: Session = Depends(get_db)) -> PlanOut:
 
     split = (plan.training_json or {}).get("split_name") or ""
     tr_ns = SimpleNamespace(split_name=split)
+    # Las RESTRICCIONES del cliente viajan en el prompt (y por eso separan la
+    # caché): sin ellas, este atajo devolvía el educativo genérico del split y
+    # a un alérgico o a un vegano le llegaban píldoras y FAQ con sus alimentos
+    # vetados — el documento las filtra al imprimir, así que además se quedaba
+    # con menos contenido del que ha pagado.
+    cliente = db.get(Client, plan.client_id) if plan.client_id else None
+    ctx_rest = SimpleNamespace(
+        diet_pattern=getattr(cliente, "diet_pattern", None),
+        food_allergies=list(getattr(cliente, "food_allergies", None) or []),
+    )
     try:
         if plan.nutrition_json:
             edu = _education_with_cache(
                 AIClient(), split_name=split, variant="full",
-                user=_education_user_prompt(SimpleNamespace(training=tr_ns)))
+                user=_education_user_prompt(SimpleNamespace(training=tr_ns), ctx_rest))
         else:
             edu = _education_with_cache(
                 AIClient(), split_name=split, variant="train",

@@ -1842,9 +1842,15 @@ def generate_client_plan(
     # La regeneración YA incorpora los ajustes de la última revisión analizada
     # (van en el prompt): se SELLA applied_adjustments para que la alerta
     # "sin adaptar" se apague y "Adaptar" no vuelva a aplicarlos encima.
-    if (nutrition is not None and last_analyzed
+    # En un plan SOLO-ENTRENO (DQR Train) no hay nutrición donde sellarlo: el
+    # sello va a `training_json`, que es donde lo busca la alerta (y donde lo
+    # escribe la adaptación). Sin esto, a un cliente Train el aviso
+    # "planificación sin adaptar" no se le apagaba NUNCA por mucho que el coach
+    # regenerara, y "Adaptar" volvía a aplicarle encima los mismos ajustes.
+    _sello_destino = nutrition if nutrition is not None else training
+    if (_sello_destino is not None and last_analyzed
             and (last_analyzed.ai_analysis_json or {}).get("plan_adjustments")):
-        nutrition["applied_adjustments"] = {
+        _sello_destino["applied_adjustments"] = {
             "period_index": last_analyzed.period_index,
             "items": [{
                 "area": a.get("area") or "general",

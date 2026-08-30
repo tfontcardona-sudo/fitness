@@ -31,6 +31,28 @@ def _sin_cupo_de_altas():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _sin_cache_del_educativo():
+    """La caché del contenido educativo se apaga durante la suite.
+
+    Con ella encendida los tests que CUENTAN llamadas a la IA (el pipeline
+    completo, el plan solo-entreno) fallaban sin que nada estuviera roto: la
+    caché es un sidecar en disco, así que una ejecución real anterior —o
+    simplemente un test anterior de la misma suite, que la rellena— servía el
+    educativo de vuelta y la cuenta salía en 2 en vez de 3. Un rojo que no
+    corresponde a ningún fallo es peor que no tener test: se acaba ignorando.
+
+    CLAUDE.md ya decía "EDUCATION_CACHE_ENABLED=false en tests"; lo que faltaba
+    era imponerlo aquí en vez de depender de que cada quien lo exporte.
+    """
+    from app.config import settings
+
+    previo = getattr(settings, "education_cache_enabled", True)
+    settings.education_cache_enabled = False
+    yield
+    settings.education_cache_enabled = previo
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _cleanup_test_clients():
     yield
     try:
