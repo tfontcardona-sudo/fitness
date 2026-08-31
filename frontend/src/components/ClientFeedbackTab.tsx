@@ -6,6 +6,7 @@ import { Sparkles, AlertTriangle, MessageSquare, MessageCircle, Mail, Video, Tar
 import { selloAdaptacion } from "./ClientPlanPanel";
 import { api, getToken } from "../lib/api";
 import { feedbackBody, feedbackMessage, openWhatsApp, videoCallModifyMessage, videoCallScheduledMessage, waPhone } from "../lib/whatsapp";
+import { copiarConAviso } from "../lib/clipboard";
 import { pkg } from "../lib/packages";
 import { useBrand } from "../hooks/useBrand";
 import { ExpandableArea, Spinner, useToast } from "./ui";
@@ -203,9 +204,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
   }
 
   function copyAll(content: any) {
-    navigator.clipboard.writeText(feedbackBody(content))
-      .then(() => toast.push("Feedback copiado al portapapeles"))
-      .catch(() => toast.push("No se pudo copiar", "error"));
+    void copiarConAviso(feedbackBody(content), toast, "Feedback copiado al portapapeles");
   }
 
   /** Entrega el feedback al cliente según su paquete:
@@ -723,12 +722,7 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
   }
 
   async function copyLink(url: string) {
-    try {
-      await navigator.clipboard.writeText(url);
-      toast.push("Enlace de Meet copiado");
-    } catch {
-      toast.push("No se pudo copiar el enlace", "error");
-    }
+    await copiarConAviso(url, toast, "Enlace de Meet copiado");
   }
 
   const cuando = call?.scheduled_at

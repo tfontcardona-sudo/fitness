@@ -20,11 +20,31 @@ function badge(s: string): React.CSSProperties {
  */
 export function ClientHistoryTab({ client }: { client: ClientOut }) {
   const [h, setH] = useState<Hist | null>(null);
+  // Un fallo de carga dejaba el estado en null, que es EXACTAMENTE lo mismo
+  // que "aún cargando": la pestaña se quedaba girando para siempre y no había
+  // forma de reintentar salvo recargar la página entera.
+  const [error, setError] = useState(false);
+  const [intento, setIntento] = useState(0);
 
   useEffect(() => {
-    api.getClientHistory(client.id).then(setH).catch(() => setH(null));
-  }, [client.id]);
+    let vivo = true;
+    setError(false);
+    api.getClientHistory(client.id)
+      .then((d) => { if (vivo) setH(d); })
+      .catch(() => { if (vivo) setError(true); });
+    return () => { vivo = false; };
+  }, [client.id, intento]);
 
+  if (error && !h) {
+    return (
+      <div className="card flex flex-col items-center gap-3 p-8 text-sm text-zinc-400">
+        No se pudo cargar el historial.
+        <button className="btn btn-ghost" onClick={() => setIntento((n) => n + 1)}>
+          Reintentar
+        </button>
+      </div>
+    );
+  }
   if (!h) {
     return <div className="card flex items-center justify-center gap-2 p-8 text-sm text-zinc-500"><Spinner /> Cargando historial…</div>;
   }

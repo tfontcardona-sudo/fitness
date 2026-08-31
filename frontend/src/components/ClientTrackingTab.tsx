@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ancla } from "../lib/anchors";
 import { api, keepIfSame, REFRESH_MS } from "../lib/api";
+import { formatDayShort } from "../lib/format";
 import { pkg } from "../lib/packages";
 import type { ClientOut } from "../types";
 import { useToast } from "./ui";
@@ -215,7 +216,11 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
                   // La fila de HOY se resalta: es la que el coach mira primero.
                   <tr key={d.date} className="border-t border-white/5"
                     style={d.date === hoyISO ? { background: "var(--surface-raised)" } : undefined}>
-                    <td className="px-3 py-2">{d.date}</td>
+                    {/* En español, como en el resto del panel: el crudo
+                        "2026-08-17" era el único sitio donde asomaba el ISO. */}
+                    <td className="px-3 py-2 whitespace-nowrap" title={d.date}>
+                      {formatDayShort(d.date)}
+                    </td>
                     <td>{fmt1(d.weight_kg)}</td>
                     <td>{fmt1(d.sleep_hours)}</td>
                     <td className="max-w-[130px] truncate">{d.steps ?? "—"}</td>

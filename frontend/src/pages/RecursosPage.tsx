@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
+import { copiarConAviso } from "../lib/clipboard";
 import { formatDate } from "../lib/format";
 import { youtubeId } from "../lib/video";
 import type {
@@ -101,10 +102,20 @@ function LearningManager() {
   const toast = useToast();
   const [data, setData] = useState<Awaited<ReturnType<typeof api.learningLessons>> | null>(null);
   const [refrescando, setRefrescando] = useState(false);
+  // Mismo fallo que en la pestaña Historial: al fallar la carga el estado se
+  // quedaba en null, que aquí significa "cargando", y el PageLoader giraba
+  // para siempre sin salida.
+  const [error, setError] = useState(false);
+  const [intento, setIntento] = useState(0);
 
   useEffect(() => {
-    api.learningLessons().then(setData).catch(() => setData(null));
-  }, []);
+    let vivo = true;
+    setError(false);
+    api.learningLessons()
+      .then((d) => { if (vivo) setData(d); })
+      .catch(() => { if (vivo) setError(true); });
+    return () => { vivo = false; };
+  }, [intento]);
 
   async function refrescar() {
     setRefrescando(true);
@@ -124,6 +135,16 @@ function LearningManager() {
     }
   }
 
+  if (data === null && error) {
+    return (
+      <div className="card flex flex-col items-center gap-3 p-8 text-sm text-zinc-400">
+        No se pudieron cargar las lecciones.
+        <button className="btn btn-ghost" onClick={() => setIntento((n) => n + 1)}>
+          Reintentar
+        </button>
+      </div>
+    );
+  }
   if (data === null) return <PageLoader />;
   return (
     <div className="space-y-4">
@@ -344,8 +365,7 @@ function LinksPageManager() {
           <button
             className="btn btn-primary shrink-0"
             onClick={() => {
-              navigator.clipboard.writeText(publicUrl).catch(() => {});
-              toast.push("Enlace copiado · pégalo en Instagram");
+              void copiarConAviso(publicUrl, toast, "Enlace copiado · pégalo en Instagram");
             }}
           >
             Copiar

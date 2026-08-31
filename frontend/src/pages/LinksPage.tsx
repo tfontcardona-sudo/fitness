@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Copy, Dumbbell, Search, ShoppingBag } from "lucide-react";
 import { api } from "../lib/api";
 import type { LandingOut } from "../types";
+import { copiar } from "../lib/clipboard";
 
 /**
  * Página PÚBLICA de enlaces (/dq) — el link del perfil de Instagram del coach.
@@ -33,11 +34,17 @@ export default function LinksPage() {
   const secondary = data?.color_secondary ?? "#2E5E8C";
   const bg = data?.color_bg ?? "#0B111C";
 
-  function copyCode() {
+  async function copyCode() {
     if (!data?.partner_discount_code) return;
-    navigator.clipboard.writeText(data.partner_discount_code).catch(() => {});
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    // El "Copiado ✓" salía aunque la copia fallara (esta página se ve mucho
+    // desde el navegador de Instagram, donde el portapapeles es caprichoso):
+    // ahora solo se canta si de verdad se copió.
+    if (await copiar(data.partner_discount_code)) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } else {
+      window.prompt("Copia el código a mano:", data.partner_discount_code);
+    }
   }
 
   return (

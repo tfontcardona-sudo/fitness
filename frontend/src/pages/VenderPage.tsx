@@ -8,6 +8,7 @@ import { PACKAGES } from "../lib/packages";
 import { openWhatsApp, waPhone } from "../lib/whatsapp";
 import { useToast, PageLoader } from "../components/ui";
 import type { PackageTier, SalesCatalogOut, SalesItem } from "../types";
+import { copiar as alPortapapelesDeVerdad } from "../lib/clipboard";
 
 /**
  * VENDER — la pantalla desde la que el coach manda el enlace de pago.
@@ -233,22 +234,9 @@ export default function VenderPage() {
     }, 60);
   }
 
-  async function alPortapapeles(valor: string): Promise<boolean> {
-    try {
-      await navigator.clipboard.writeText(valor);
-      return true;
-    } catch {
-      // Safari antiguo / http: selección manual, comprobando el resultado real
-      // (un "Copiado" en falso haría pegar un chat vacío).
-      const ta = document.createElement("textarea");
-      ta.value = valor;
-      document.body.appendChild(ta);
-      ta.focus(); ta.select(); ta.setSelectionRange(0, valor.length);
-      const ok = document.execCommand("copy");
-      ta.remove();
-      return ok;
-    }
-  }
+  // Copiar de verdad (moderno → clásico) vive en `lib/clipboard`: esta
+  // pantalla llevaba su propia copia del mismo apaño.
+  const alPortapapeles = alPortapapelesDeVerdad;
 
   /** Copia y CONFIRMA qué se ha copiado (nombre + dinero): así se pilla el
    *  clic equivocado antes de pegarlo en el chat del cliente. */

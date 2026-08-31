@@ -10,7 +10,8 @@
     "check:avisos": "node scripts/check-avisos.mjs",
     "check:anclas": "node scripts/check-anclas.mjs",
     "lint:hooks": "eslint src",
-    "check:claves": "node scripts/check-claves.mjs"
+    "check:claves": "node scripts/check-claves.mjs",
+    "check:portapapeles": "node scripts/check-portapapeles.mjs"
   },
   "dependencies": {
     "date-fns": "^3.6.0",
