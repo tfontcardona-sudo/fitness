@@ -203,7 +203,8 @@ def _es_desvio_de_escala(mac: dict, t: dict) -> bool:
     return (max(ratios) / min(ratios)) <= _RATIO_ESCALA_MAX
 
 
-def _repara_desvios_del_banco(bank: dict, targets: dict[int, dict]) -> int:
+def _repara_desvios_del_banco(bank: dict, targets: dict[int, dict],
+                              foods_by_id: dict | None = None) -> int:
     """Ajusta al objetivo de SU toma los platos que se salen de la tolerancia.
 
     Principio del sistema: la IA SELECCIONA alimentos, el backend FIJA los
@@ -255,6 +256,28 @@ def _repara_desvios_del_banco(bank: dict, targets: dict[int, dict]) -> int:
 
         if not _es_desvio_de_escala(mac, t):
             continue     # de composición: que lo vea el coach, no se maquilla
+
+        # PRIMERO EL SOLVER. `_scale_dish` mueve todos los gramos por un único
+        # factor y no conoce el catálogo: se salta `min_grams`/`max_grams` (365 g
+        # de calabacín con tope de 350) y deja la medida casera mintiendo
+        # («4 ud (165 g)» con la unidad a 55 g). El solver hace justo lo que hay
+        # que hacer —cotas respetadas, ración cocinable y casera REGENERADA— y es
+        # determinista y gratis. Solo si no puede (algún ingrediente sin
+        # `food_id` del catálogo) se cae al escalado de siempre.
+        if foods_by_id:
+            try:
+                from app.services.portion_solver import snap_option_ingredients
+
+                fijado = snap_option_ingredients(
+                    plato.get("ingredients") or [], t, foods_by_id)
+            except Exception:  # noqa: BLE001 — el solver nunca rompe el cuadre
+                fijado = None
+            if fijado:
+                nuevos, macros = fijado
+                plato["ingredients"] = nuevos
+                plato["macros"] = macros
+                cuadrados += 1
+                continue
 
         def _r(eje: str, _mac=mac, _t=t) -> float:
             val, tgt = float(_mac.get(eje) or 0), float(_t.get(eje) or 0)
@@ -1125,14 +1148,22 @@ def generate_monthly_plan(
     # CUADRE: la IA elige los alimentos, los gramos los fija el backend.
     try:
         bank_dict = meals.model_dump()
-        cuadrados = _repara_desvios_del_banco(bank_dict, targets)
+        cuadrados = _repara_desvios_del_banco(
+            bank_dict, targets,
+            {f["id"]: f for f in (food_catalog or []) if f.get("id") is not None})
         if cuadrados:
             meals = schema.model_validate(bank_dict)
             flags.append(
                 f"cuadre: {cuadrados} plato(s) ajustados al objetivo de su toma "
                 "(corregido automáticamente)")
-    except Exception:  # noqa: BLE001 — el cuadre nunca rompe la generación
-        pass
+    except Exception as exc:  # noqa: BLE001 — el cuadre nunca rompe la generación
+        # PERO NO EN SILENCIO. Si la revalidación falla (bastaba un ingrediente
+        # que cayera a 0 g), se perdían TODAS las reparaciones y el plan salía
+        # retenido por desvíos que el backend acababa de corregir, sin que nada
+        # dijera por qué. El coach se iba al editor a buscar un aviso fantasma.
+        flags.append(
+            "aviso: el cuadre automático del banco no se pudo aplicar "
+            f"({type(exc).__name__}) — revisa las cantidades a mano")
 
     if isinstance(meals, MealsFlexibleOutput):
         meal_report = gr.check_meal_options(

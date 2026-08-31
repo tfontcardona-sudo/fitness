@@ -91,16 +91,36 @@ def filter_foods(
 
 # ------------------------------------------------------------------ solver ----
 
-def _round_practical(grams: float, unit_grams: float | None) -> float:
+def _round_practical(grams: float, unit_grams: float | None,
+                     min_grams: float | None = None,
+                     max_grams: float | None = None) -> float:
     """Redondea a una ración cocinable: a la unidad práctica si la hay
-    (1 huevo, 1 rebanada), si no a múltiplos de 5 g."""
+    (1 huevo, 1 rebanada), si no a múltiplos de 5 g.
+
+    Y VUELVE A ACOTAR. El solver respeta `min_grams`/`max_grams`, pero el
+    redondeo posterior se los saltaba: 4 rebanadas de 40 g daban 160 g de pan
+    integral con un tope de 150. Las cotas del catálogo son el criterio del
+    coach sobre lo que es una ración sensata; no puede saltárselas el último
+    paso. Se recorta a la unidad práctica que sí cabe."""
     if grams <= 0:
         return 0.0
     from app.services.nutrition_scale import _rhu  # half-up: convención del sistema
     if unit_grams and unit_grams > 0:
         n = max(0, _rhu(grams / unit_grams))
-        return round(n * unit_grams, 1)
-    return float(max(0, _rhu(grams / 5.0)) * 5)
+        if max_grams is not None and n * unit_grams > max_grams:
+            n = int(max_grams // unit_grams)
+        if min_grams is not None and n * unit_grams < min_grams:
+            # Redondeo hacia ARRIBA hasta cubrir el suelo (si el suelo no es
+            # múltiplo de la unidad, el suelo manda: es el mínimo del catálogo).
+            import math
+            n = max(n, math.ceil(min_grams / unit_grams))
+        return round(max(0, n) * unit_grams, 1)
+    g = float(max(0, _rhu(grams / 5.0)) * 5)
+    if max_grams is not None:
+        g = min(g, float(max_grams))
+    if min_grams is not None:
+        g = max(g, float(min_grams))
+    return g
 
 
 def solve_portions(foods: list[dict], target: dict) -> SolvedPortion:
@@ -132,7 +152,8 @@ def solve_portions(foods: list[dict], target: dict) -> SolvedPortion:
     items: list[SolvedFood] = []
     totals = {"kcal": 0.0, "protein_g": 0.0, "carbs_g": 0.0, "fat_g": 0.0}
     for f, g in zip(foods, grams):
-        gr = _round_practical(float(g), f.get("unit_grams"))
+        gr = _round_practical(float(g), f.get("unit_grams"),
+                              f.get("min_grams"), f.get("max_grams"))
         if gr <= 0:
             continue
         factor = gr / 100.0
@@ -254,4 +275,5 @@ def equivalent_portion(base_food: dict, base_grams: float, alt_food: dict,
     if per_g <= 0:
         return 0.0
     grams = base_axis / per_g
-    return _round_practical(grams, alt_food.get("unit_grams"))
+    return _round_practical(grams, alt_food.get("unit_grams"),
+                            alt_food.get("min_grams"), alt_food.get("max_grams"))

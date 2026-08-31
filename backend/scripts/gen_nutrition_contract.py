@@ -62,6 +62,13 @@ _PLAN_FLEX = {
                  "macros": {"kcal": 500, "protein_g": 35, "carbs_g": 55, "fat_g": 15},
                  "ingredients": [
                      {"name": "Avena", "grams": 80, "household": "8 cucharadas ≈ 80 g"},
+                     # Medida casera del SOLVER ("N ud (M g)"): al reescalar hay
+                     # que recalcular también las unidades, o el plato acaba
+                     # diciendo "4 ud (165 g)" con una unidad de 55 g.
+                     {"name": "Huevo entero", "grams": 110, "household": "2 ud (110 g)"},
+                     # Ingrediente pequeño: con un factor a la baja, el redondeo
+                     # lo dejaba en 0 g y el esquema (grams > 0) lo rechazaba.
+                     {"name": "Semillas de chía", "grams": 6, "household": "1 cucharadita (6 g)"},
                      {"name": "Plátano", "grams": 120}]},
                 {"name": "Tostadas con pavo",
                  "macros": {"kcal": 495, "protein_g": 36, "carbs_g": 52, "fat_g": 16},
