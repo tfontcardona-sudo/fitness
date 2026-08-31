@@ -118,3 +118,75 @@ def test_la_renovacion_no_promete_un_cuestionario_que_no_se_manda():
     assert _es_primera_compra(Client(status="onboarding")) is True  # alta manual
     for estado in ("active", "review_pending", "at_risk", "inactive"):
         assert _es_primera_compra(Client(status=estado)) is False, estado
+
+
+# ---------------------------------------------------------------------------
+# Un dato LEGADO en la base no puede tumbar la pantalla del coach
+# ---------------------------------------------------------------------------
+
+import pytest
+
+
+@pytest.fixture()
+def http():
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    with TestClient(app) as c:
+        yield c
+
+
+def test_un_cliente_con_el_tier_antiguo_no_tumba_la_lista_entera(http):
+    """Los paquetes se llamaron "start"/"pro" antes de "nutri"/"full", y la
+    traducción existía SOLO en el checkout público. Un cliente dado de alta
+    entonces hacía que `ClientOut` no validara, y con eso se caían con un 500 la
+    lista de clientes, la pantalla "Hoy" y su propia ficha: la pantalla
+    principal del coach entera, por un dato viejo en una fila."""
+    import os
+    import uuid
+
+    from sqlalchemy import delete, select
+
+    from app.db import SessionLocal
+    from app.models import Client, User
+    from app.schemas.entities import _tier_legado
+    from app.security import create_access_token, hash_password
+    from app.services.packages import LEGACY_TIERS
+
+    assert LEGACY_TIERS == {"start": "nutri", "pro": "full"}
+    for viejo, actual in LEGACY_TIERS.items():
+        assert _tier_legado(viejo) == actual
+    for tier in ("nutri", "train", "full"):
+        assert _tier_legado(tier) == tier      # lo actual pasa tal cual
+
+    usuario = os.environ.get("ADMIN_1_USER", "coach1")
+    db = SessionLocal()
+    marca = uuid.uuid4().hex[:8]
+    try:
+        if not db.scalar(select(User).where(User.username == usuario)):
+            db.add(User(username=usuario, password_hash=hash_password("test")))
+        c = Client(full_name=f"Legado {marca}", email=f"legado-{marca}@test.local",
+                   package_tier="pro", billing_period="1m", status="active",
+                   portal_token=f"tok{marca}", payment_status="paid")
+        db.add(c)
+        db.commit()
+        cid = c.id
+    finally:
+        db.close()
+
+    cab = {"Authorization": f"Bearer {create_access_token(usuario)}"}
+    try:
+        r = http.get("/api/clients", headers=cab)
+        assert r.status_code == 200, f"la lista entera se cae por un tier legado: {r.text[:200]}"
+        fila = {x["id"]: x for x in r.json()}[cid]
+        assert fila["package_tier"] == "full"          # traducido, no roto
+        # Y su ficha tampoco se cae.
+        r = http.get(f"/api/clients/{cid}", headers=cab)
+        assert r.status_code == 200, r.text
+        assert r.json()["package_tier"] == "full"
+    finally:
+        db = SessionLocal()
+        db.execute(delete(Client).where(Client.id == cid))
+        db.commit()
+        db.close()

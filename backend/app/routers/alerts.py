@@ -208,15 +208,6 @@ class _AlVuelo:
 
         Es el dato que el motor quincenal necesita para ajustar las kcal: sin
         él responde `dato_insuficiente` y la revisión no sirve de nada."""
-        from app.models import DailyLog
-
-        return int(db.scalar(
-            select(func.count(DailyLog.id)).where(
-                DailyLog.period_id == period.id,
-                DailyLog.weight_kg.is_not(None))) or 0)
-
-    def pesajes(self, db: Session, period: Period) -> int:
-        """Cuántos días se pesó el cliente en ese período."""
         return int(db.scalar(
             select(func.count()).select_from(DailyLog).where(
                 DailyLog.period_id == period.id,

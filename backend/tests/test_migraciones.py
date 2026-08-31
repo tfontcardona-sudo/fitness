@@ -73,6 +73,21 @@ def test_una_base_vacia_llega_hasta_la_ultima_migracion(tmp_path):
         eng.dispose()
     finally:
         settings.database_url = original
+        # Y SE REHACE EL ENGINE. `app.db` crea el suyo al importarse, leyendo
+        # `settings.database_url` en ese instante: si este test corre ANTES de
+        # que nadie haya importado `app.db` (el orden alfabético no lo garantiza,
+        # y `alembic upgrade` importa los modelos), el engine del proceso queda
+        # apuntando a la base TEMPORAL — que dos líneas más abajo se borra. A
+        # partir de ahí, todo lo que corriera después moría con "database
+        # fitness_migra_… does not exist". Restaurar el ajuste no basta.
+        import app.db as _db
+
+        _db.engine.dispose()
+        _db.engine = create_engine(original, pool_pre_ping=True)
+        from sqlalchemy.orm import sessionmaker as _sm
+
+        _db.SessionLocal = _sm(bind=_db.engine, autoflush=False,
+                               expire_on_commit=False)
         with admin.connect() as con:
             con.execute(text(
                 "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "

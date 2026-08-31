@@ -37,6 +37,22 @@ def _http_url_required(v: str | None) -> str | None:
     return v
 
 # Literales compartidos
+def _tier_legado(v):
+    """Traduce los nombres ANTIGUOS de paquete ("start"/"pro") a los de ahora.
+
+    La tabla vive en `services.packages.LEGACY_TIERS`; aquí solo se aplica. Sin
+    esto, un cliente dado de alta antes del cambio de nombres reventaba con un
+    500 la lista ENTERA de clientes —y con ella "Hoy" y su propia ficha—, porque
+    el esquema de salida declara los tres tiers actuales y nada más. Un dato
+    legado en la base no puede tumbar la pantalla principal del coach.
+    """
+    if isinstance(v, str):
+        from app.services.packages import LEGACY_TIERS
+
+        return LEGACY_TIERS.get(v.strip().lower(), v)
+    return v
+
+
 Sex = Literal["male", "female"]
 GoalType = Literal["fat_loss", "muscle_gain", "recomp", "maintenance", "injury_recovery"]
 Level = Literal["beginner", "intermediate", "advanced"]
@@ -93,6 +109,7 @@ class ClientCreate(BaseModel):
     # corregirlo después (la anamnesis manda).
     level: Level | None = None
 
+    _v_tier_legado = field_validator("package_tier", mode="before")(_tier_legado)
 
 class AnamnesisSubmit(BaseModel):
     """Wizard público del cliente (vía portal_token). Recoge TODO (G.3)."""
@@ -200,6 +217,7 @@ class ClientUpdate(BaseModel):
     strict_free_meal_enabled: bool | None = None
     emails_enabled: bool | None = None
 
+    _v_tier_legado = field_validator("package_tier", mode="before")(_tier_legado)
 
 class ClientOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -274,6 +292,9 @@ class ClientOut(BaseModel):
 
 
 # ------------------------------------------------------------ exercises ----
+
+    _v_tier_legado = field_validator("package_tier", mode="before")(_tier_legado)
+
 class ExerciseIn(BaseModel):
     canonical_name: str = Field(min_length=3, max_length=160)
     aliases: list[str] = Field(default_factory=list)
@@ -685,6 +706,7 @@ class PortalState(BaseModel):
     # sin rellenar no la rompe (se rompe al acabar el día vacío).
     streak_days: int = 0
 
+    _v_tier_legado = field_validator("package_tier", mode="before")(_tier_legado)
 
 class PushKeyOut(BaseModel):
     """GET /api/p/{token}/push/public-key — clave pública VAPID para subscribe."""
