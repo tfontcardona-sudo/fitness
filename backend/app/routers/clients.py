@@ -244,6 +244,8 @@ def client_tracking(client_id: int, db: Session = Depends(get_db)) -> dict:
     for i in cerrados[:MAX_REVISIONES_EN_SEGUIMIENTO]:
         quincenals.append(_quincenal_entry(db, periods[i], periods[i - 1] if i > 0 else None))
 
+    from app.services.push import dias_registrados
+
     return {
         "has_period": True,
         "period": {
@@ -256,7 +258,13 @@ def client_tracking(client_id: int, db: Session = Depends(get_db)) -> dict:
         },
         "daily": daily,
         "daily_averages": averages,
-        "days_logged": len(logs),
+        # UNA SOLA REGLA de "día registrado" en todo el sistema. Aquí se
+        # contaban las FILAS: el autosave del portal crea la del día ANTES de
+        # que el cliente teclee nada, así que Seguimiento decía "8 días
+        # registrados" mientras el resto del panel —que usa
+        # `push.dias_registrados`— contaba 5 y el aviso de "sin registros"
+        # saltaba. El mismo dato con dos respuestas distintas.
+        "days_logged": len(dias_registrados(db, list(logs))),
         "today_logged": any(lg.log_date == today for lg in logs),
         "quincenals": quincenals,
         "quincenal_pending": period.status == "open",

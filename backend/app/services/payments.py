@@ -655,7 +655,15 @@ def sync_from_stripe(db: Session, *, days: int = SYNC_DEFAULT_DAYS) -> dict:
 
     cortado = False
 
-    def _limitado(iterador, cupo: int = SYNC_MAX_OBJECTS // 3):
+    # Cinco pasadas: checkout, facturas pagadas, `open` intentadas,
+    # `uncollectible` y cargos con devolución. El cupo se repartía entre TRES
+    # (lo que había cuando se escribió) y con cinco el barrido podía irse a
+    # 5×(2000/3) — por encima del tope global que este freno existe para
+    # respetar. El tope de verdad lo pone `revisados >= SYNC_MAX_OBJECTS`, pero
+    # el reparto por fuente tiene que cuadrar con las fuentes que hay.
+    FUENTES = 5
+
+    def _limitado(iterador, cupo: int = SYNC_MAX_OBJECTS // FUENTES):
         """Corta el barrido: ni la cuenta más movida de un coach pasa de aquí.
 
         CUPO POR FUENTE. Con un presupuesto único, las Checkout Sessions

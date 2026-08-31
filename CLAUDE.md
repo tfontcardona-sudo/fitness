@@ -406,7 +406,10 @@ GET  /api/p/{token}/feedback               (Portal) feedbacks ENVIADOS (sent_at)
 cd backend && python -m pytest tests/ -q
 ```
 
-- **627 tests en verde** en base de datos limpia y migrada a head.
+- **749 tests en verde** en base de datos limpia y migrada a head, y también
+  **en orden inverso** (`ls tests/test_*.py | sort -r`): correrlos al revés es
+  la forma barata de destapar tests que solo pasan por lo que corrió antes
+  (destapó dos fallos reales de aislamiento).
 - `tests/test_migraciones.py` comprueba el arranque DESDE CERO: crea una base
   temporal y corre `alembic upgrade head` entera (el camino del día que se
   pierda el VPS, que estaba roto y nadie veía).
@@ -426,6 +429,18 @@ cd backend && python -m pytest tests/ -q
   todas sus filas dependientes y archivos: `pytest` ya no deja rastro en el
   panel. No uses esos dominios para clientes reales.
 
+**Y el frontend** (obligatorio antes de fusionar nada de `frontend/`):
+
+```bash
+cd frontend && npx tsc --noEmit && npm run build
+npm run lint:hooks          # Rules of Hooks: un hook tras un return temprano
+                            # deja la app EN BLANCO en runtime. Debe dar 0/0.
+npm run check:anclas        # cada destino del backend tiene su ancla en la web
+npm run check:avisos        # los avisos del panel, en español y sin duplicar
+npm run check:claves        # toda clave guardada del portal lleva el token
+npm run check:portapapeles  # una sola puerta al portapapeles (`lib/clipboard`)
+```
+
 ---
 
 ## 8. Convenciones
@@ -444,6 +459,50 @@ cd backend && python -m pytest tests/ -q
 ---
 
 ## 9. Trabajo pendiente / próximos pasos
+
+000000000000000000000. ✅ **FUSIÓN DE LAS CINCO SESIONES + VERIFICACIÓN
+   ADVERSARIAL DEL RESULTADO (31-08-2026). INVENTARIO A CERO.** Las ocho tandas
+   de `docs/HALLAZGOS_POR_VERIFICAR.md` se repartieron entre cinco sesiones
+   paralelas; esta las fusionó TODAS en una sola rama, reconcilió a mano lo que
+   dos sesiones habían escrito por separado y verificó el conjunto.
+   - **Reconciliaciones de la fusión** (misma necesidad, dos soluciones): la
+     tanda 7 estaba hecha por partida doble — se quedó `ExerciseListOut` con su
+     exclusión extra, el endpoint de RESUMEN de planes por encima del recorte
+     por parámetro, las DOS mitades de la optimización de fotos, UNA sola
+     corrección del N+1 y los DOS avisos del cliente que no se pesa combinados
+     en uno (`no_diet_logs` bajo su guarda de nutrición, `sin_pesajes` para
+     todos los paquetes, sin duplicar el mensaje).
+   - **Las dos decisiones que quedaban, aplicadas**: el panel de supervisión §9
+     ya revisa también la REVISIÓN QUINCENAL (`adapt_plan`), y solo paga los
+     8-10 roles cuando el Revisor 0 —que es gratis— encuentra algo; y el embudo
+     self-serve de `/planes` se CONECTÓ en vez de retirarse: "Contratar ahora"
+     abre Stripe directamente, con el precio real a la vista.
+   - **Verificación adversarial de 46 agentes** sobre el árbol ya fusionado, dos
+     lentes por hallazgo (reproducir / refutar): 19 en crudo → **11 confirmados
+     y 6 disputados, los 17 resueltos**. TRES de los confirmados eran errores
+     MÍOS al fusionar: la repesca de Stripe anotaba las facturas sin su
+     suscripción (el programa de la oferta no se cerraba y Stripe cobraba un mes
+     de más), el aviso `sin_pesajes` quedó encerrado en la guarda de nutrición y
+     perdió justo al DQR Train, y el contracargo se guardaba con un tipo que no
+     existía en `KINDS` (en el libro parecía un cobro más).
+   - **Y los seis disputados** (hechos ciertos en los seis, ver el último
+     apartado de `docs/HALLAZGOS_POR_VERIFICAR.md`): una sola regla de "día
+     registrado" en Seguimiento (`push.dias_registrados`, contaba filas y el
+     autosave las crea vacías), biblioteca de ejercicios montada una sola vez
+     (viaja en el system cacheado), `exercise_id` no entero ya no tumba la
+     pantalla de Entreno, cupo de la repesca repartido entre las CINCO fuentes
+     que hay, rótulo real en las fotos iniciales de la anamnesis y
+     `?ligero` RETIRADO del listado de planes (quedan dos formas: la de por
+     defecto y `todo=true`).
+   - **Cómo se verificó**: suite completa **en los dos órdenes** (el inverso
+     destapó dos fallos reales de aislamiento), `tsc`, build, arranque desde una
+     base VACÍA hasta la última migración y las cinco guardas —`check:anclas`,
+     `check:avisos`, `check:claves`, `check:portapapeles` y `lint:hooks`, esta
+     última ahora en 0/0 (el guardián enciende UNA regla a propósito, así que ya
+     no marca como "sin usar" los `eslint-disable` de `exhaustive-deps`).
+   - ⚠️ **NO fusionada a propósito**: la rama `claude/dqr-white-label-*` es otro
+     producto (marca blanca) y borra los materiales de venta de DQ. Es una
+     decisión del dueño, no un descuido.
 
 00000000000000000000. ✅ **LA TANDA 3 DE `HALLAZGOS_POR_VERIFICAR`: EL CICLO —
    AUTOMATISMOS, AVISOS Y RECORDATORIOS (30-08-2026).** Trabajo en PARALELO con
@@ -1611,7 +1670,10 @@ cd backend && python -m pytest tests/ -q
      tipo) + su exclusión extra; el endpoint de RESUMEN de planes en vez del
      `?ligero=true`; las fotos del período con las DOS mitades (una petición
      compartida Y miniatura del backend); y los dos avisos del cliente que no
-     se pesa combinados en uno (`sin_pesajes` es el `else` de `no_diet_logs`).
+     se pesa combinados en uno. ⚠️ CORREGIDO DESPUÉS: los dejé anidados
+     (`sin_pesajes` como `else` de `no_diet_logs`) y eso encerró el de pesajes
+     dentro de la guarda de nutrición, perdiendo al DQR Train. Ahora el de
+     dieta va bajo su guarda y el de pesajes vale para todos, sin duplicar.
    - **Daño de fusión, corregido**: siete ficheros se commitearon con las
      marcas de conflicto dentro; la racha del portal se quedó con media función
      de cada versión (ahora usa la ÚNICA definición de "día registrado" del

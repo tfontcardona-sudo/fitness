@@ -17,8 +17,13 @@
 >
 > Verificado con todo junto: suite completa **en los dos órdenes** (normal e
 > inverso: ya no depende de qué corra antes), `tsc`, build, arranque desde una
-> base VACÍA hasta la última migración, y las cuatro guardas (anclas, avisos,
-> claves del portal, portapapeles).
+> base VACÍA hasta la última migración, y las cinco guardas (anclas, avisos,
+> claves del portal, portapapeles y las Rules of Hooks, esta última en 0/0).
+>
+> Y sobre el árbol ya fusionado se pasó una **verificación adversarial de 46
+> agentes** con dos lentes por hallazgo: 19 en crudo → 11 confirmados y 6
+> disputados, TODOS resueltos (los dos últimos apartados de este documento).
+> Tres de los confirmados eran errores míos al fusionar, no de las sesiones.
 
 > **REPARTO ENTRE SESIONES PARALELAS.** Añade tu reclamo aquí antes de tocar
 > nada: tres sesiones hicimos la tanda 3 a la vez y hubo que reconciliar a mano
@@ -497,3 +502,54 @@ cabeza de Alembic y arranque desde cero en verde; suite completa, `tsc`, build,
 `check:anclas`, `check:avisos` y `lint:hooks` (0 errores) sobre el código de las
 tres sesiones junto.
 
+
+
+---
+
+## Cierre · los seis DISPUTADOS de la verificación de la fusión
+
+> De los 19 hallazgos en crudo, 11 se confirmaron (ya arreglados, ver el commit
+> "Los 11 hallazgos que confirmó la verificación adversarial de la fusión") y 6
+> quedaron DISPUTADOS: la lente que reproducía y la que refutaba coincidían en
+> los HECHOS y discrepaban en si eso era un fallo. Repasados uno a uno: los
+> hechos eran ciertos en los seis, y en los seis dejaban un resto de la fusión
+> que no debía quedarse. Van todos arreglados; el inventario queda a cero.
+
+- **`days_logged` de Seguimiento contaba FILAS de diario.** El autosave del
+  portal crea la fila del día antes de que el cliente escriba nada, así que esa
+  pantalla decía "8 días registrados" mientras el resto del panel —que usa
+  `push.dias_registrados`— contaba 5 y el aviso de "sin registros" saltaba. Una
+  sola regla de "día registrado" en todo el sistema.
+
+- **La biblioteca de ejercicios se montaba DOS veces en cada generación.** Al
+  moverla al bloque de system cacheado se quedó viva la construcción del user
+  prompt: trabajo tirado en cada plan, y la mitad vieja del refactor a la
+  vista de quien lea el prompt.
+
+- **`_biblioteca_de` (portal) metía en el `IN(...)` lo que hubiera.** A
+  `training_json` le llegan planes editados a mano, importados del Word y
+  copiados de un modelo: un `exercise_id` con comillas tumbaba la consulta —y
+  con ella la pantalla de Entreno— en vez de quedarse sin nombre. Enteros y
+  nada más, misma regla que el resto del portal.
+
+- **El cupo por fuente de la repesca de Stripe seguía dividiendo entre TRES**
+  cuando ya hay cinco pasadas (checkout, facturas pagadas, `open`,
+  `uncollectible` y cargos con devolución).
+
+- **La prop `label` de las fotos estaba puesta y sin usar**: con `periodId`
+  nulo son las fotos INICIALES de la anamnesis, y el rótulo decía igualmente
+  "Fotos de progreso del período".
+
+- **`GET /clients/{id}/plans?ligero=true` sobrevivió a su propia retirada.** La
+  fusión declaró que se quedaba el endpoint de RESUMEN (una línea por versión)
+  en vez del recorte por parámetro, y el parámetro se quedó vivo y sin ningún
+  llamador: tres formas de pedir lo mismo. Retirado; quedan dos, la de por
+  defecto (recorta el histórico, deja enteros el vigente y el borrador) y
+  `todo=true`. Su regresión pasa a probar el camino REAL —el de por defecto—
+  sobre una versión `superseded`, que es la que el panel nunca pinta entera.
+
+**De paso**: `lint:hooks` escupía 12 avisos de "directiva sin usar" porque el
+guardián enciende a propósito UNA sola regla (`rules-of-hooks`, la que deja la
+app en blanco) y los `eslint-disable` de `exhaustive-deps` documentan una
+decisión deliberada para el editor. Silenciado en la config del guardián: su
+salida vuelve a ser 0/0, que es lo que hace que se lea.

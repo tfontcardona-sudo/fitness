@@ -394,6 +394,17 @@ def test_la_lista_ligera_de_planes_no_arrastra_el_banco_ni_el_educativo():
         "applied_adjustments": {"period_index": 3, "items": []},
     }
     plan.education_json = {"pills": [{"topic": "Sueño", "for_client": "Duerme 8 h"}]}
+    # La versión GORDA pasa a ser HISTÓRICA (llega el plan del mes siguiente):
+    # es justo la que el panel no pinta nunca entera y la que arrastraba los
+    # megas. El recorte se prueba por el camino REAL —el de por defecto—, que
+    # es el único que quedó tras la fusión.
+    plan.status = "superseded"
+    from app.models import Plan as _Plan
+
+    vigente = _Plan(client_id=c.id, month_index=2, version=1, status="published",
+                    goal_type="fat_loss", nutrition_json={"target_kcal": 1800},
+                    training_json=None, education_json=None)
+    db.add(vigente)
     db.commit()
     cid = c.id
     db.close()
@@ -411,14 +422,19 @@ def test_la_lista_ligera_de_planes_no_arrastra_el_banco_ni_el_educativo():
     auth = {"Authorization": f"Bearer {create_access_token(usuario)}"}
 
     with TestClient(app) as http:
-        completo = http.get(f"/api/clients/{cid}/plans", headers=auth).json()
-        ligero = http.get(f"/api/clients/{cid}/plans?ligero=true", headers=auth).json()
+        lista = http.get(f"/api/clients/{cid}/plans", headers=auth).json()
+        completo = http.get(f"/api/clients/{cid}/plans?todo=true", headers=auth).json()
 
-    assert completo[0]["nutrition_json"]["meal_bank"]["slots"], "el completo sigue entero"
-    assert completo[0]["education_json"]
+    # `todo=true` devuelve el histórico TAL CUAL (importar/exportar, depurar).
+    viejo = next(p for p in completo if p["month_index"] == 1)
+    assert viejo["nutrition_json"]["meal_bank"]["slots"], "el completo sigue entero"
+    assert viejo["education_json"]
+    # El plan VIGENTE nunca se recorta: el panel lo pinta entero.
+    assert next(p for p in lista if p["month_index"] == 2)["nutrition_json"]
 
-    n = ligero[0]["nutrition_json"]
-    assert "meal_bank" not in n and ligero[0]["education_json"] is None
+    n = next(p for p in lista if p["month_index"] == 1)
+    assert "meal_bank" not in n["nutrition_json"] and n["education_json"] is None
+    n = n["nutrition_json"]
     assert n["target_kcal"] == 1800 and n["macros"]["protein_g"] == 160
     assert len(n["meals"]) == 1 and n["meals"][0]["name"] == "Desayuno"
     assert n["applied_adjustments"]["period_index"] == 3

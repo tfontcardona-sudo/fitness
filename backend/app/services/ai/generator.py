@@ -451,11 +451,9 @@ def _system_con_biblioteca(base: str, ctx: ClientContext) -> list[dict]:
 
 
 def _core_user_prompt(ctx: ClientContext) -> str:
-    library = [
-        {"id": e["id"], "nombre": e["canonical_name"],
-         "patron": e["movement_pattern"], "musculo": e["muscle_primary"]}
-        for e in ctx.exercise_library
-    ]
+    # (La biblioteca ya NO se monta aquí: viaja en el bloque de system
+    #  cacheado, `_biblioteca_block`. Construirla también aquí era trabajo
+    #  tirado en cada generación — y la mitad vieja del refactor.)
     max_sets = max(
         1,
         (ctx.session_max_min - gr.SESSION_MINUTES_FIXED_OVERHEAD)
@@ -549,11 +547,7 @@ def _core_user_prompt_training_only(ctx: ClientContext) -> str:
     contexto que el completo, pero se pide EXCLUSIVAMENTE el entrenamiento (sin
     dieta, macros ni comidas). La metodología de entreno viaja en el system
     prompt (`system_prompt_training_only`), así que aquí van datos y forma."""
-    lib = [
-        {"id": e["id"], "nombre": e["canonical_name"],
-         "patron": e["movement_pattern"], "musculo": e["muscle_primary"]}
-        for e in ctx.exercise_library
-    ]
+    # (Igual que en el núcleo completo: la biblioteca va en el system.)
     max_sets = max(
         1,
         (ctx.session_max_min - gr.SESSION_MINUTES_FIXED_OVERHEAD)

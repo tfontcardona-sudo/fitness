@@ -335,8 +335,14 @@ def _biblioteca_de(db: Session, sesiones: list[dict]) -> dict[int, Exercise]:
     (4-6 consultas por carga, con los mismos ejercicios repetidos entre días) y
     es de las pantallas más visitadas del sistema: la abre cada cliente cada día
     que entrena."""
+    # ENTEROS Y NADA MÁS. A `training_json` le llegan planes editados a mano,
+    # importados del Word y copiados de un modelo: un `exercise_id` con un "12"
+    # entre comillas (o un null colado) entraba en el IN(...) y tumbaba la
+    # consulta —y con ella la pantalla de Entreno de ese cliente— en vez de
+    # quedarse sin nombre. Misma regla que el resto del portal: mejor un hueco
+    # que un portal roto.
     ids = {e.get("exercise_id") for s in sesiones for e in (s.get("exercises") or [])
-           if e.get("exercise_id") is not None}
+           if isinstance(e.get("exercise_id"), int) and not isinstance(e.get("exercise_id"), bool)}
     if not ids:
         return {}
     return {ex.id: ex for ex in db.scalars(select(Exercise).where(Exercise.id.in_(ids)))}

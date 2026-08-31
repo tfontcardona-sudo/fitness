@@ -466,14 +466,12 @@ def _plan_ligero(p: Plan) -> Plan:
 
 
 @router.get("/api/clients/{client_id}/plans", response_model=list[PlanOut])
-def list_plans(client_id: int, ligero: bool = False, todo: bool = False,
+def list_plans(client_id: int, todo: bool = False,
                db: Session = Depends(get_db)) -> list[PlanOut]:
     """Planes del cliente, del más reciente al más antiguo.
 
-    Tres modos, de menos a más peso:
+    Dos modos:
 
-    · `ligero=true` — TODOS recortados (kcal, macros, tomas, sello). Lo que
-      necesitan las pantallas que solo LEEN una línea de resumen.
     · por defecto — recortados MENOS los dos que el panel puede llegar a
       pintar: el plan vigente (publicado) y el borrador más nuevo. El resto de
       versiones históricas no se pintan nunca enteras, y arrastraban su banco
@@ -482,6 +480,12 @@ def list_plans(client_id: int, ligero: bool = False, todo: bool = False,
       12-20 y son cientos de KB, y el panel lo repide tras CADA acción).
     · `todo=true` — todos completos, tal cual estaban. Para quien de verdad
       necesite el histórico entero (importar/exportar, depurar).
+
+    Para pintar UNA LÍNEA por versión (el archivo de planificaciones
+    anteriores, el chip de dieta, el selector) está el endpoint de RESUMEN de
+    aquí abajo, que ni siquiera devuelve los JSONB. Al fusionar las dos
+    sesiones que atacaron esto se quedó ese resumen y se retiró el parámetro
+    `ligero`, que hacía el mismo recorte a medias y sin ningún consumidor.
     """
     _client_or_404(db, client_id)
     plans = db.scalars(
@@ -490,8 +494,6 @@ def list_plans(client_id: int, ligero: bool = False, todo: bool = False,
     ).all()
     if todo:
         return [PlanOut.model_validate(p) for p in plans]
-    if ligero:
-        return [PlanOut.model_validate(_plan_ligero(p)) for p in plans]
     # Los que el panel SÍ pinta enteros: el publicado y el borrador más nuevo
     # (la banda de "borrador retenido" lo enseña y permite activarlo).
     completos = {p.id for p in plans if p.status == "published"}

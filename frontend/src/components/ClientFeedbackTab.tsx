@@ -1189,12 +1189,14 @@ export function PeriodPhotosFolded({ clientId, periodId, label }: {
       <summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-zinc-300">
         {label ?? "Fotos del período"} ({count})
       </summary>
-      {open && <PeriodPhotos clientId={clientId} periodId={periodId} />}
+      {open && <PeriodPhotos clientId={clientId} periodId={periodId} label={label} />}
     </details>
   );
 }
 
-function PeriodPhotos({ clientId, periodId }: { clientId: number; periodId: number | null }) {
+function PeriodPhotos({ clientId, periodId, label }: {
+  clientId: number; periodId: number | null; label?: string;
+}) {
   const [photos, setPhotos] = useState<{ id: number; kind: string; url: string }[] | null>(null);
   const [total, setTotal] = useState(0);
   const toast = useToast();
@@ -1252,8 +1254,11 @@ function PeriodPhotos({ clientId, periodId }: { clientId: number; periodId: numb
   if (!photos || photos.length === 0) return null;
   return (
     <div className="mt-3">
+      {/* El rótulo lo pone quien monta el componente: con `periodId` nulo son
+          las fotos INICIALES de la anamnesis, no las "del período". La mitad
+          del soporte para eso (la prop `label`) estaba puesta y no se usaba. */}
       <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-        Fotos de progreso del período
+        {label ?? "Fotos de progreso del período"}
       </p>
       <div className="flex flex-wrap gap-2">
         {photos.map((p) => (
