@@ -18,7 +18,7 @@
 >   `charts.py:146`, `word_import.py:722`, `adapt_plan.py:548`,
 >   `pdf_convert.py:55`, `plans.py:576` y `plan_doc.py:637`.
 > - **Tanda 5 (RGPD, borrado y portabilidad) — sesión "DQR asesories"
->   (`claude/stripe-integration-steps-somce4`), EN CURSO.** Alcance acotado a lo
+>   (`claude/stripe-integration-steps-somce4`). HECHA.** Alcance acotado a lo
 >   que la tanda 4 no lleva: `clients.py` 618/626/702/730/751 (borrado RGPD,
 >   "Descargar todo", ZIP de portabilidad), `tests/test_borrado_rgpd.py:74` y
 >   `frontend/Caddyfile:43` (el tope de subida contra los vídeos de ejercicio).
@@ -71,6 +71,13 @@
 | Un `weekly_progression` malformado tumbaba la pantalla de Entreno (500) | `backend/app/services/portal.py` | `91d5f39` |
 | Un `day` no textual tumbaba "Hoy" y los recordatorios de todos (500) | `backend/app/services/portal.py` | `3c6a561` |
 | El cliente no podía subir fotos tras enviar la revisión | `frontend/src/portal/PortalApp.tsx` | `2ea541f` |
+| Una baja fallida se llevaba los ficheros (borrado antes del commit) | `backend/app/routers/clients.py` | `7a3b3c4` |
+| La baja RGPD no cancelaba el evento en Google Calendar | `backend/app/routers/clients.py` | `7a3b3c4` |
+| "Descargar todo" no llevaba informes ni mensajes al coach | `backend/app/routers/clients.py` | `7a3b3c4` |
+| El ZIP de portabilidad se armaba en memoria sin tope | `backend/app/routers/clients.py` | `7a3b3c4` |
+| Caddy cortaba a 30 MB los vídeos que el backend admite hasta 300 | `frontend/Caddyfile` | `7a3b3c4` |
+| El nombre del borrado sobrevivía en los planes de otros clientes | `backend/app/routers/clients.py` | `d65b343` |
+| La red de seguridad del borrado no miraba si el cobro se anonimizó | `backend/tests/test_borrado_rgpd.py` | (esta tanda) |
 
 ---
 
@@ -100,14 +107,9 @@ fallo que dice cazar).
 - **[media] La fila DIFERENCIA reabre el doble descuento que el commit venía a cerrar** — `backend/app/services/payments.py:258` · `regresion`
 - **[media] Borrar un cobro a mano puede marcar como IMPAGADO a un cliente que sí pagó** — `backend/app/routers/payments.py:215` · `suposicion_falsa`
 - **[media] La baja RGPD puede quedar bloqueada por un error de Stripe que el filtro no reconoce** — `backend/app/services/stripe_service.py:1091` · `arreglo_incompleto`
-- **[media] La baja RGPD no cancela el evento de Google Calendar del cliente** — `backend/app/routers/clients.py:702` · `arreglo_incompleto`
-- **[media] El nombre del cliente borrado sobrevive en los planes copiados a otros clientes** — `backend/app/routers/clients.py:730` · `arreglo_incompleto`
-- **[media] "Descargar todo" sigue sin llevar los informes quincenales ni lo que el cliente escribió a su coach** — `backend/app/routers/clients.py:626` · `arreglo_incompleto`
-- **[media] Los archivos se borran ANTES del commit: una baja fallida deja al cliente sin sus ficheros** — `backend/app/routers/clients.py:751` · `arreglo_incompleto`
 - **[media] La gráfica de perímetros invierte las series cuando las etiquetas no coinciden** — `backend/app/services/docs/charts.py:146` · `regresion`
 - **[media] El Word del educativo deja de importarse en cuanto el cliente tiene alergias o patrón dietético** — `backend/app/services/word_import.py:722` · `regresion`
 - **[media] "Por qué este enfoque" hereda el volcado interno viejo y suma una frase en cada revisión** — `backend/app/services/adapt_plan.py:548` · `arreglo_incompleto`
-- **[media] El tope de 30 MB de Caddy rompe la subida de vídeos de ejercicio (el backend admite 300 MB)** — `frontend/Caddyfile:43` · `regresion`
 - **[media] La caché por contenido del PDF nunca acierta con el plan: cada descarga arranca LibreOffice** — `backend/app/services/docs/pdf_convert.py:55` · `suposicion_falsa`
 - **[media] El cupo global de altas apaga el formulario todo el día con 25 peticiones, y el único aviso es un push best-effort** — `backend/app/routers/public_site.py:146` · `arreglo_incompleto`
 
@@ -122,8 +124,6 @@ fallo que dice cazar).
 - **[baja] El test del borrado del cobro a mano pasa igual sin el recálculo de la ficha** — `backend/tests/test_cobro_manual.py:211`
 - **[baja] El "total" de cobros de la ficha se corta en 20 movimientos y suma dinero de prueba** — `frontend/src/pages/ClientProfilePage.tsx:789`
 - **[baja] Una devolución repescada por la sincronización entra ya marcada como leída** — `backend/app/services/payments.py:219`
-- **[baja] Las dos redes de seguridad del borrado no cubren lo que dicen cubrir** — `backend/tests/test_borrado_rgpd.py:74`
-- **[baja] El ZIP de portabilidad se construye entero en memoria, sin tope** — `backend/app/routers/clients.py:618`
 - **[baja] Regenerar solo el educativo vuelve a pedirlo sin alergias ni patrón dietético** — `backend/app/routers/plans.py:576`
 - **[baja] La lista de la compra va en una caja marcada como no divisible entre páginas** — `backend/app/services/docs/plan_doc.py:637`
 - **[baja] El test del cupo pasa aunque el contador de altas esté muerto** — `backend/tests/test_public_register.py:213`

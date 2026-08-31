@@ -140,16 +140,20 @@ def test_borrar_un_cliente_con_de_todo(http, auth):
         from app.models import Client
 
         cliente = db.get(Client, cid)
-        pay_svc.record_payment(
+        pago = pay_svc.record_payment(
             db, object_id=f"ch_rgpd_{uuid.uuid4().hex[:8]}", kind="charge",
             status="paid", amount_cents=12900, livemode=False, client=cliente,
             billing_period="1m", description="Pago de prueba",
             paid_at=datetime.now(timezone.utc),
         )
         db.commit()
+        assert pago is not None and pago.customer_name, (
+            "el cobro tiene que nacer CON el nombre, si no la prueba no dice nada")
         pid = plan.id
         perid = period.id
         ex_id = ex.id
+        log_id = dl.id
+        pago_id = pago.id
     finally:
         db.close()
 
@@ -168,9 +172,30 @@ def test_borrar_un_cliente_con_de_todo(http, auth):
         assert not list(db.scalars(select(VideoCall).where(VideoCall.client_id == cid)))
         assert not list(db.scalars(select(ChangeRequest).where(ChangeRequest.client_id == cid)))
         assert not list(db.scalars(select(PushSubscription).where(PushSubscription.client_id == cid)))
-        # El COBRO se conserva (los ingresos del mes no cambian) pero sin ficha.
-        movimientos = list(db.scalars(select(Payment).where(Payment.client_id == cid)))
-        assert not movimientos, "el cobro sigue apuntando al cliente borrado"
+        # Lo que cuelga de los períodos y los planes, también fuera. Estaba en
+        # `TABLAS_QUE_CUELGAN` pero el test no lo miraba: bastaba con que
+        # alguien quitara una línea del borrado para que quedaran huérfanas —
+        # con el peso diario, las series y el informe del cliente dentro— y
+        # esta red de seguridad seguía en verde.
+        from app.models import DailyLog, FeedbackDoc, WorkoutLog
+
+        assert not list(db.scalars(select(DailyLog).where(DailyLog.period_id == perid)))
+        assert not list(db.scalars(select(FeedbackDoc).where(FeedbackDoc.period_id == perid)))
+        assert not list(db.scalars(
+            select(WorkoutLog).where(WorkoutLog.daily_log_id == log_id)))
+
+        # El COBRO se conserva (los ingresos del mes no cambian) pero ANONIMIZADO.
+        # Antes solo se comprobaba que ya no apuntara a la ficha: una fila con
+        # `client_id=None` y el nombre y el email del cliente todavía dentro
+        # pasaba el test, y eso es exactamente el dato personal que la
+        # supresión tiene que llevarse.
+        assert not list(db.scalars(select(Payment).where(Payment.client_id == cid)))
+        cobro = db.get(Payment, pago_id)
+        assert cobro is not None, "el dinero del mes no puede desaparecer"
+        assert cobro.customer_name is None, "el nombre sigue en el libro de caja"
+        assert cobro.customer_email is None, "el email sigue en el libro de caja"
+        assert cobro.anonymized_at is not None, "sin sello, sale como cobro huérfano"
+
         # El histórico de envíos se conserva pero DESLIGADO del cliente.
         assert not list(db.scalars(select(EmailLog).where(EmailLog.client_id == cid)))
         # Limpieza del ejercicio de prueba (no es del cliente).
