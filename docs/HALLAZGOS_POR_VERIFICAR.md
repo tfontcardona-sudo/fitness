@@ -45,6 +45,16 @@
 >   (`generator.py` 1079/1086/1088, `coach_lessons.py:219`,
 >   `stripe_service.py:1091`). NO toco nada de optimización (tanda 7).
 >
+> - **INTEGRACIÓN Y VERIFICACIÓN DEL CONJUNTO — sesión "rutina y dieta quice"
+>   (`claude/continue-previous-n6layq`), EN CURSO.** Con las ocho tandas
+>   repartidas ya no queda hallazgo libre, así que esta sesión pasa a lo que
+>   ninguna estaba haciendo: comprobar que las TRES fuentes juntas no se hayan
+>   roto entre ellas. NO toca hallazgos de la 6 ni de la 8. Cubre: arranque de
+>   la base DESDE CERO, suite completa sobre el código combinado, `tsc`/build/
+>   guardas, navegador real sobre el panel y el portal (§10 de CLAUDE.md), y
+>   búsqueda de arreglos DUPLICADOS o contradictorios entre sesiones. Lo que
+>   encuentre se arregla aquí o se avisa a quien tenga ese fichero abierto.
+>
 > ⚠️ **Ojo con `main`**: va POR DETRÁS de esta rama (no tiene la caché del PDF ni
 > la rejilla de la gráfica de perímetros). Las tandas 2 y 4 se apilan sobre esta
 > rama a propósito: llevadas a `main` por separado, se aplicarían sobre una base
