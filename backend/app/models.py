@@ -127,6 +127,11 @@ class Client(Base):
 
     # Gestión
     status: Mapped[str] = mapped_column(String(30), default="onboarding", index=True)
+    # INERTE. Nunca se leyó en ninguna parte: venía de un `AUTO_PILOT_DEFAULT`
+    # documentado en el .env que prometía un "piloto automático" inexistente (y
+    # que iría contra el criterio del sistema: el coach revisa antes de
+    # generar). Se retiraron el ajuste y la superficie de API; la columna se
+    # queda porque quitarla pide una migración a cambio de nada.
     auto_pilot: Mapped[bool] = mapped_column(Boolean, default=False)
     emails_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     # Estado del pago del plan (Stripe): "pending" | "paid". Se marca "paid"
@@ -720,12 +725,24 @@ class Payment(Base):
     # pi_… del cobro: ata checkout/factura/cargo/devolución entre sí aunque la
     # ficha se borre (RGPD) — la pertenencia no depende solo del email.
     payment_intent: Mapped[str | None] = mapped_column(String(80), index=True)
+    # sub_… de la factura (mig. 0042). Sin esto, "¿cuántas facturas de la
+    # oferta lleva pagadas?" contaba TODAS las suyas de siempre: un cliente que
+    # vuelve y contrata por segunda vez arrastraba las tres del programa
+    # anterior, y al pagar la primera de 1 € el sistema daba el programa por
+    # cobrado entero y cancelaba la suscripción.
+    subscription_id: Mapped[str | None] = mapped_column(String(80), index=True)
     currency: Mapped[str] = mapped_column(String(8), default="eur")
     # Pago en modo PRUEBA de Stripe (clave sk_test_): no es dinero real y no
     # puede sumar en los totales del coach sin avisar.
     livemode: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default=text("true"), nullable=False
     )
+    # El coach declaró que este movimiento NO es de la asesoría (mig. 0043).
+    # El aviso "N sin ficha" no tenía forma de apagarse: un cobro de otro
+    # producto de la cuenta, o uno con el email mal escrito en el checkout,
+    # contaba para siempre — y un aviso que no se puede resolver se ignora, y
+    # con él se ignoran los que sí importan.
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # SET NULL: borrar una ficha (RGPD) no puede tumbar el commit ni borrar el
     # movimiento; el borrado además anonimiza nombre y email de esta fila.
     client_id: Mapped[int | None] = mapped_column(

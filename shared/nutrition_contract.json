@@ -506,6 +506,16 @@
                         "household": "8 cucharadas ≈ 80 g"
                       },
                       {
+                        "name": "Huevo entero",
+                        "grams": 110,
+                        "household": "2 ud (110 g)"
+                      },
+                      {
+                        "name": "Semillas de chía",
+                        "grams": 6,
+                        "household": "1 cucharadita (6 g)"
+                      },
+                      {
                         "name": "Plátano",
                         "grams": 120
                       }
@@ -658,6 +668,16 @@
                       "household": "8 cucharadas ≈ 90 g"
                     },
                     {
+                      "name": "Huevo entero",
+                      "grams": 125,
+                      "household": "125 g"
+                    },
+                    {
+                      "name": "Semillas de chía",
+                      "grams": 5,
+                      "household": "1 cucharadita (7 g)"
+                    },
+                    {
                       "name": "Plátano",
                       "grams": 140
                     }
@@ -805,6 +825,16 @@
                         "name": "Avena",
                         "grams": 80,
                         "household": "8 cucharadas ≈ 80 g"
+                      },
+                      {
+                        "name": "Huevo entero",
+                        "grams": 110,
+                        "household": "2 ud (110 g)"
+                      },
+                      {
+                        "name": "Semillas de chía",
+                        "grams": 6,
+                        "household": "1 cucharadita (6 g)"
                       },
                       {
                         "name": "Plátano",
@@ -957,6 +987,16 @@
                       "name": "Avena",
                       "grams": 65,
                       "household": "8 cucharadas ≈ 65 g"
+                    },
+                    {
+                      "name": "Huevo entero",
+                      "grams": 90,
+                      "household": "90 g"
+                    },
+                    {
+                      "name": "Semillas de chía",
+                      "grams": 5,
+                      "household": "1 cucharadita (5 g)"
                     },
                     {
                       "name": "Plátano",

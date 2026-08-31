@@ -17,11 +17,15 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Idempotente: la 0001 crea el esquema con `create_all` desde los modelos,
-    # así que en una instalación NUEVA la columna ya nace puesta y este ALTER
-    # reventaba la cadena entera (el contenedor no llegaba a arrancar).
+    # Guarda de idempotencia: en una base NUEVA, 0001 crea el esquema
+    # completo con `create_all`, así que estas columnas YA existen y el
+    # add_column reventaba — y como Alembic corre toda la cadena en una
+    # transacción, la base quedaba VACÍA (ni alembic_version) y el
+    # contenedor en crashloop. Sin esto no había forma de arrancar de cero
+    # ni de recuperarse ante un desastre.
     insp = sa.inspect(op.get_bind())
-    if "stripe_subscription_id" not in {c["name"] for c in insp.get_columns("clients")}:
+    existentes = {c["name"] for c in insp.get_columns("clients")}
+    if "stripe_subscription_id" not in existentes:
         op.add_column("clients", sa.Column("stripe_subscription_id", sa.String(64), nullable=True))
 
 

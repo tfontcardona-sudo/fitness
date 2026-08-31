@@ -58,6 +58,7 @@ def generate_feedback_doc(
     plan_adjustments: list[dict] | None = None,
     period_label: str | None = None,
     goal_label: str | None = None,
+    has_nutrition: bool = True,
 ) -> bytes:
     doc = init_document(brand)
     accent = brand.color_primary
@@ -77,11 +78,22 @@ def generate_feedback_doc(
     add_section_heading(doc, brand, "Tu período en datos")
     adh = metrics.get("adherence", {})
     weight = metrics.get("weight", {})
-    add_cards_row(doc, brand, [
-        ("Cambio de peso", _fmt_delta(weight.get("delta_kg"), "kg")),
-        ("Adherencia dieta", f"{round(adh.get('diet_adherence_ratio', 0) * 100)}%"),
-        ("Días registrados", f"{adh.get('days_logged', 0)}/{adh.get('period_days', 0)}"),
-    ])
+    # "Adherencia dieta 0%" era una acusación falsa en dos casos muy comunes:
+    # el cliente de solo ENTRENAMIENTO (que ni ve el campo en su portal) y el
+    # que registró peso y entreno pero no tocó el selector de dieta. Ausencia
+    # de dato no es incumplimiento: si no hay registros, no se enseña.
+    registros_dieta = (int(adh.get("diet_yes") or 0) + int(adh.get("diet_partial") or 0)
+                       + int(adh.get("diet_no") or 0))
+    hay_dieta = bool(has_nutrition) and registros_dieta > 0
+    tarjetas = [("Cambio de peso", _fmt_delta(weight.get("delta_kg"), "kg"))]
+    if hay_dieta:
+        tarjetas.append(
+            ("Adherencia dieta", f"{round(adh.get('diet_adherence_ratio', 0) * 100)}%"))
+    elif has_nutrition:
+        tarjetas.append(("Adherencia dieta", "Sin datos"))
+    tarjetas.append(
+        ("Días registrados", f"{adh.get('days_logged', 0)}/{adh.get('period_days', 0)}"))
+    add_cards_row(doc, brand, tarjetas)
     doc.add_paragraph()
 
     if weight_points:
@@ -89,7 +101,7 @@ def generate_feedback_doc(
         _add_chart(doc, charts.weight_trend_chart(weight_points, goal_kg, accent))
 
     doc.add_heading("Adherencia", level=2)
-    diet_pct = adh.get("diet_adherence_ratio", 0) * 100
+    diet_pct = adh.get("diet_adherence_ratio", 0) * 100 if hay_dieta else None
     train_pct = min(100, adh.get("log_ratio", 0) * 100)
     _add_chart(doc, charts.adherence_chart(diet_pct, train_pct, accent), width_in=5.5)
 

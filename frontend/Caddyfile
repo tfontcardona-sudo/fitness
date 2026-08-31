@@ -25,13 +25,39 @@
 		# fuentes de Google y los reproductores de vídeo de los ejercicios
 		# (YouTube-nocookie y Vimeo van EN iframe DENTRO de la web; que la web no
 		# pueda ser enmarcada lo controla frame-ancestors, aparte de frame-src).
-		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: blob: https:; font-src 'self' https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self'; connect-src 'self'; frame-src https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com; media-src 'self' blob:; form-action 'self'"
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: blob: https:; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-src https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com; media-src 'self' blob:; form-action 'self'"
 		# No anunciar qué servidor corre por debajo (menos pistas a un atacante).
 		-Server
 		-X-Powered-By
 	}
 
+	# VÍDEOS DE EJERCICIO: el backend los admite hasta 300 MB
+	# (`storage.MAX_VIDEO_MB`) y el tope general de 30 MB de abajo los cortaba
+	# aquí, con un 413 pelado de Caddy que no explica nada y sin llegar nunca al
+	# mensaje del backend. Va ANTES del `handle /api/*` porque Caddy resuelve
+	# por orden. Solo esta ruta, que es la única que sube ficheros grandes.
+	handle /api/exercises/*/video {
+		request_body {
+			max_size 310MB
+		}
+		reverse_proxy api:8000 {
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
 	handle /api/* {
+		# TOPE DE TAMAÑO donde no cuesta nada: Caddy corta con 413 sin que el
+		# cuerpo llegue a Python. Sin esto no había límite en ningún punto —
+		# ni en Caddy, ni en uvicorn, ni en Starlette, que escribe cada parte
+		# del multipart en DISCO antes de ejecutar el endpoint (así que el
+		# "lectura acotada a 10 MB" del código llegaba tarde) y el 429 del
+		# rate limit también se evalúa DESPUÉS de recibirlo entero.
+		# 30 MB deja holgura a la anamnesis en PDF y a las fotos de progreso.
+		# (Los vídeos de ejercicio tienen su propio bloque arriba: son el único
+		# caso legítimo de subida grande y no deben ensanchar este tope.)
+		request_body {
+			max_size 30MB
+		}
 		# X-Real-IP = IP real del cliente que ve Caddy ({remote_host}); no es
 		# falseable por el cliente. El backend la usa para limitar por IP en
 		# lugar de un cubo global compartido (un pico dejaría sin login a todos).
@@ -50,6 +76,18 @@
 		root * /srv
 		@existe file
 		header @existe Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# FUENTES E ICONOS: nombre estable y contenido que no cambia salvo que se
+	# sustituya el fichero a mano. Sin esto caían en el `handle` de abajo con
+	# no-cache y el navegador revalidaba las dos .woff2 (133 KB) y los iconos de
+	# la PWA en CADA carga — un viaje de ida y vuelta de más en cada pantalla
+	# del portal, que se usa desde el móvil y con datos.
+	@estaticos path /fonts/* /icons/*
+	handle @estaticos {
+		root * /srv
+		header Cache-Control "public, max-age=2592000"
 		file_server
 	}
 

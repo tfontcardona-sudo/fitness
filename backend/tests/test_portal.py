@@ -312,3 +312,271 @@ def test_racha_de_dias_del_portal():
         assert streak_days(db, c.id, hoy) == 3
     finally:
         db.close()
+
+
+def test_las_fotos_subidas_en_el_cierre_no_se_vuelven_a_pedir(client, auth):
+    """Si el cliente sube sus fotos desde la pantalla de cierre, el sistema no
+    puede seguir persiguiéndolas: `photos_confirmed` queda puesto al cerrar.
+
+    Antes el endpoint de fotos existía y NINGUNA pantalla lo llamaba, así que
+    las fotos acababan sueltas en el WhatsApp del coach y el recordatorio
+    ("¿Ya enviaste tus fotos?") era una confirmación a ciegas.
+    """
+    import io
+    from datetime import date, timedelta
+
+    from app.db import SessionLocal
+    from app.models import Period, Plan
+
+    body = client.post("/api/clients", headers=auth, json={
+        "full_name": "Fotos Cierre",
+        "email": f"fotos-{uuid.uuid4().hex[:8]}@example.com",
+    }).json()
+    cid = body["client"]["id"]
+    token = body["links"]["portal_token"]
+
+    with SessionLocal() as db:
+        plan = Plan(client_id=cid, month_index=1, version=1, status="published")
+        db.add(plan)
+        db.flush()
+        hoy = date.today()
+        per = Period(client_id=cid, plan_id=plan.id, period_index=1,
+                     starts_on=hoy - timedelta(days=14), ends_on=hoy, status="open")
+        db.add(per)
+        db.commit()
+        per_id = per.id
+
+    buf = io.BytesIO()
+    Image.new("RGB", (60, 90), (120, 120, 120)).save(buf, format="JPEG")
+    r = client.post(f"/api/p/{token}/close/photos?kind=front",
+                    files={"files": ("frontal.jpg", buf.getvalue(), "image/jpeg")})
+    assert r.status_code == 200, r.text
+
+    cierre = client.post(f"/api/p/{token}/close", json={
+        "closing_weight_kg": 80.0, "closing_rating": 4,
+        "adherence_diet_0_10": 8, "adherence_training_0_10": 9,
+    })
+    assert cierre.status_code == 200, cierre.text
+
+    with SessionLocal() as db:
+        per = db.get(Period, per_id)
+        assert per.status == "closed"
+        assert per.photos_confirmed is True, "no se le pueden volver a pedir"
+
+
+def test_el_portal_puede_preguntar_cuantas_fotos_de_cierre_lleva_subidas(client, auth):
+    """El contador vivía SOLO en la pantalla: al volver o recargar arrancaba de
+    cero, así que las fotos siguientes se etiquetaban otra vez desde "frontal"
+    —el "antes y ahora" del informe comparaba ángulos distintos— y se ofrecían
+    cuatro huecos que el servidor ya no tenía."""
+    import io
+    import uuid
+    from datetime import date, timedelta
+
+    from PIL import Image
+
+    from app.db import SessionLocal
+    from app.models import Period, Plan
+
+    body = client.post("/api/clients", headers=auth, json={
+        "full_name": "Contador Fotos",
+        "email": f"contafotos-{uuid.uuid4().hex[:8]}@example.com",
+    }).json()
+    cid = body["client"]["id"]
+    token = body["links"]["portal_token"]
+
+    # Sin período abierto responde 0, no un error.
+    r = client.get(f"/api/p/{token}/close/photos")
+    assert r.status_code == 200 and r.json()["count"] == 0
+
+    with SessionLocal() as db:
+        plan = Plan(client_id=cid, month_index=1, version=1, status="published")
+        db.add(plan)
+        db.flush()
+        hoy = date.today()
+        db.add(Period(client_id=cid, plan_id=plan.id, period_index=1,
+                      starts_on=hoy - timedelta(days=14), ends_on=hoy, status="open"))
+        db.commit()
+
+    tope = client.get(f"/api/p/{token}/close/photos").json()["max"]
+    buf = io.BytesIO()
+    Image.new("RGB", (60, 90), (120, 120, 120)).save(buf, format="JPEG")
+    for i in range(2):
+        r = client.post(f"/api/p/{token}/close/photos?kind=front",
+                        files={"files": (f"f{i}.jpg", buf.getvalue(), "image/jpeg")})
+        assert r.status_code == 200, r.text
+
+    # Lo que ve una pantalla recién abierta: van dos, quedan `tope - 2`.
+    estado = client.get(f"/api/p/{token}/close/photos").json()
+    assert estado["count"] == 2 and estado["max"] == tope
+
+
+def test_un_ejercicio_incompleto_no_tumba_la_pantalla_de_entreno():
+    """El plan puede llegar con una clave menos (editado a mano por el coach,
+    importado del Word, copiado de la biblioteca): se leían con corchete y el
+    cliente se quedaba con un 500 y la pantalla de Entreno EN BLANCO."""
+    from app.db import SessionLocal
+    from app.services.portal import _resolve_session
+
+    db = SessionLocal()
+    try:
+        sesion = {"day": "Lunes", "name": "Torso", "exercises": [
+            {"exercise_id": None},                       # sin ejercicio
+            {"sets": 3},                                 # sin id ni rep_range
+            {"exercise_id": 999999, "sets": 4, "rep_range": "8-10"},
+        ]}
+        salida = _resolve_session(db, sesion)
+        assert len(salida["exercises"]) == 3
+        assert salida["exercises"][0]["rep_range"] == ""
+        assert salida["exercises"][2]["rep_range"] == "8-10"
+    finally:
+        db.close()
+
+
+def test_un_periodo_mas_corto_de_14_dias_se_puede_cerrar_su_ultimo_dia():
+    """Con el día 14 fijo, un período de 13 días dejaba al cliente atascado: el
+    anillo decía "¡toca revisión!" y la pantalla "disponible al día 14 · se
+    activa el <fecha ya pasada>". Solo lo desbloqueaba el coach."""
+    from datetime import date, timedelta
+
+    from app.models import Period
+    from app.services.portal import period_info
+
+    hoy = date.today()
+    corto = Period(client_id=1, plan_id=1, period_index=1, status="open",
+                   starts_on=hoy - timedelta(days=12), ends_on=hoy)   # 13 días
+    info = period_info(corto, hoy)
+    assert info["days_total"] == 13 and info["days_elapsed"] == 13
+    assert info["can_close"] is True
+
+    # El de 14 días sigue abriéndose el día 14, ni antes ni después.
+    normal = Period(client_id=1, plan_id=1, period_index=1, status="open",
+                    starts_on=hoy - timedelta(days=13), ends_on=hoy)
+    assert period_info(normal, hoy)["can_close"] is True
+    assert period_info(normal, hoy - timedelta(days=1))["can_close"] is False
+
+
+def test_una_progresion_semanal_malformada_no_tumba_la_pantalla_de_entreno():
+    """`training_json` recibe planes editados a mano, importados del Word y
+    copiados de un modelo. Si `weekly_progression` llegaba como objeto en vez
+    de lista, el índice de la semana reventaba con KeyError y el cliente se
+    quedaba con un 500 y la pantalla de Entreno EN BLANCO."""
+    from datetime import date
+
+    from app.models import Plan
+    from app.services.portal import current_training_week
+
+    class _DbFalsa:
+        def scalar(self, *a, **kw):
+            return None
+
+    hoy = date.today()
+    for basura in (
+        {"intent": "Subir 2,5 kg"},            # objeto en vez de lista
+        ["semana 1", "semana 2"],              # lista de textos
+        [None, None],                          # lista de nada
+        "progresivo",                          # texto suelto
+        123,                                   # número
+    ):
+        plan = Plan(client_id=1, month_index=1, version=1, status="published",
+                    training_json={"weekly_progression": basura})
+        assert current_training_week(_DbFalsa(), plan, hoy) is None, basura
+
+    # Y con la forma buena sigue funcionando igual.
+    plan = Plan(client_id=1, month_index=1, version=1, status="published",
+                training_json={"weekly_progression": [
+                    {"week": 1, "load_pct": 100, "intent": "Base"},
+                    {"week": 2, "load_pct": 110, "intent": "Subir carga"},
+                ]})
+    semana = current_training_week(_DbFalsa(), plan, hoy)
+    assert semana is not None and semana["total_weeks"] == 2
+
+
+def test_un_dia_de_sesion_que_no_es_texto_no_tumba_hoy_ni_los_recordatorios():
+    """`training_json` llega editado a mano, importado del Word y copiado de un
+    modelo. Con un `day` numérico el `.strip()` reventaba en DOS sitios: la
+    pantalla "Hoy" del cliente (la más visitada del portal, 500 y pantalla
+    rota) y `has_session_on`, que corre DENTRO del trabajo de recordatorios y
+    se llevaba por delante el aviso de todos los clientes, no solo el del plan
+    roto."""
+    from datetime import date
+
+    from app.services.portal import DAY_LABELS, dia_de_sesion
+    from app.services.push import has_session_on
+
+    etiquetas = {e.lower() for e in DAY_LABELS}
+    for basura in (1, None, 0, [], {}, 3.5, True):
+        salida = dia_de_sesion({"day": basura})     # lo que NO puede es reventar
+        assert isinstance(salida, str)
+        assert salida not in etiquetas, f"{basura!r} no es un día de la semana"
+    assert dia_de_sesion({"day": "  Lunes  "}) == "lunes"
+    assert dia_de_sesion({}) == ""
+
+    hoy = date.today()
+    etiqueta = DAY_LABELS[hoy.weekday()]
+    # Un plan con basura no puede tumbar el recordatorio: responde False.
+    assert has_session_on({"sessions": [{"day": 3, "name": "Torso"}]}, hoy) is False
+    assert has_session_on({"sessions": ["Lunes", None]}, hoy) is False
+    assert has_session_on({"sessions": None}, hoy) is False
+    # Y el plan bueno sigue detectándose igual.
+    assert has_session_on({"sessions": [{"day": etiqueta, "name": "Torso"}]}, hoy) is True
+
+
+def test_la_racha_no_cuenta_un_dia_que_el_motor_descarta():
+    """La racha del portal se calcula con SQL propio y el motor de "sin
+    registros" con `diary_is_filled`. El SQL solo miraba el NULO, así que una
+    nota escrita y borrada (cadena vacía) contaba para la racha y no para el
+    motor: el portal decía "🔥 5 días" mientras el panel del coach avisaba de
+    "sin registros desde hace 5 días"."""
+    import uuid
+    from datetime import date, timedelta
+
+    from sqlalchemy import delete
+
+    from app.db import SessionLocal
+    from app.models import Client, DailyLog, Period, Plan
+    from app.services.portal import streak_days
+    from app.services.push import diary_is_filled
+
+    db = SessionLocal()
+    hoy = date.today()
+    marca = uuid.uuid4().hex[:8]
+    try:
+        c = Client(full_name=f"Racha {marca}", email=f"racha-{marca}@test.local",
+                   package_tier="full", billing_period="1m", status="active",
+                   portal_token=f"tok-{marca}", payment_status="paid")
+        db.add(c)
+        db.flush()
+        plan = Plan(client_id=c.id, month_index=1, version=1, status="published")
+        db.add(plan)
+        db.flush()
+        per = Period(client_id=c.id, plan_id=plan.id, period_index=1, status="open",
+                     starts_on=hoy - timedelta(days=5), ends_on=hoy + timedelta(days=8))
+        db.add(per)
+        db.flush()
+        # Tres días seguidos con SOLO cadenas vacías: el autosave las deja así
+        # cuando el cliente escribe y borra.
+        vacios = [DailyLog(period_id=per.id, log_date=hoy - timedelta(days=d),
+                           free_notes="", steps="", diet_adherence="")
+                  for d in range(3)]
+        for lg in vacios:
+            db.add(lg)
+        db.commit()
+
+        for lg in vacios:
+            assert diary_is_filled(lg) is False, "el motor no los cuenta"
+        assert streak_days(db, c.id, hoy) == 0, "la racha tampoco puede contarlos"
+
+        # Y con contenido de verdad, la racha sí corre.
+        vacios[0].free_notes = "Hoy me he encontrado bien"
+        db.commit()
+        assert streak_days(db, c.id, hoy) == 1
+    finally:
+        per_ids = [p.id for p in db.query(Period).filter(Period.client_id == c.id)]
+        if per_ids:
+            db.execute(delete(DailyLog).where(DailyLog.period_id.in_(per_ids)))
+        db.execute(delete(Period).where(Period.client_id == c.id))
+        db.execute(delete(Plan).where(Plan.client_id == c.id))
+        db.execute(delete(Client).where(Client.id == c.id))
+        db.commit()
+        db.close()

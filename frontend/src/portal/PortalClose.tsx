@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ancla, irYMarcar } from "../lib/anchors";
-import { Check, Mail, MessageCircle } from "lucide-react";
+import { Camera, Check, Loader2, Mail, MessageCircle } from "lucide-react";
 import type { PortalBrand } from "../types";
 import { usePortalToast } from "./PortalToast";
 import type { portalApi } from "./portalApi";
@@ -47,7 +47,8 @@ const FEELINGS_NUTRITION: { key: string; label: string }[] = [
  * REVISIÓN QUINCENAL (cierre de período, desde el día 14). Réplica del documento
  * del coach: medidas, sensaciones (1-5), adherencia (0-10), comidas libres,
  * cambios, qué cuesta, objetivo. Al enviar dispara el feedback de adaptación IA.
- * Las fotos de progreso se envían por WhatsApp (no se suben aquí).
+ * Las fotos de progreso se suben AQUÍ (sección 7); mandarlas por WhatsApp
+ * sigue valiendo para quien lo prefiera.
  */
 export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, closeDate, periodStatus, hasTraining = true, hasNutrition = true, directContact = true }: {
   api: Api; token: string; brand: PortalBrand; onClosed: () => void; canClose: boolean;
@@ -55,7 +56,8 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
   // Paquete solo-nutrición (Start): sin adherencia ni sensaciones de entreno.
   hasTraining?: boolean;
   hasNutrition?: boolean;
-  // Contacto directo (Pro): las fotos van por WhatsApp; si no, por email.
+  // Contacto directo (Pro): la vía alternativa de las fotos es WhatsApp; si
+  // no, el email. (Lo normal es subirlas en la sección 7.)
   directContact?: boolean;
 }) {
   const FEELINGS = hasTraining ? FEELINGS_TRAINING : FEELINGS_NUTRITION;
@@ -106,6 +108,61 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
       changes, hardest, nextGoal, questions, token, closeDate, done]);
 
   const [confirmSend, setConfirmSend] = useState(false);
+  // FOTOS de la revisión: el endpoint existía desde el principio y ninguna
+  // pantalla lo llamaba, así que las fotos acababan sueltas en el WhatsApp del
+  // coach y el "antes y ahora" del portal y del informe no se llenaba NUNCA.
+  const [fotos, setFotos] = useState(0);
+  const [maxFotos, setMaxFotos] = useState(4);
+  const [subiendoFotos, setSubiendoFotos] = useState(false);
+  const [errorFotos, setErrorFotos] = useState<string | null>(null);
+
+  // Cuántas lleva subidas, PREGUNTÁNDOSELO AL SERVIDOR. Vivía solo aquí, así
+  // que al volver a la pantalla (o recargar) arrancaba de cero: las fotos
+  // siguientes se etiquetaban otra vez desde "frontal" —y el "antes y ahora"
+  // del informe acababa comparando ángulos distintos— y la pantalla ofrecía
+  // cuatro huecos que el servidor ya no tenía, con un error que contradecía
+  // lo que el cliente veía.
+  useEffect(() => {
+    let vivo = true;
+    api.closePhotosCount()
+      .then((r) => { if (vivo) { setFotos(r.count); setMaxFotos(r.max); } })
+      .catch(() => { /* si falla, el servidor sigue siendo quien pone el tope */ });
+    return () => { vivo = false; };
+  }, [api]);
+
+  /** Sube las fotos del período (el backend valida formato, 10 MB y tope).
+   *  El `kind` va por orden: frontal, lateral, espalda y una extra de detalle,
+   *  que es como las pide el propio cuestionario — CONTINUANDO por donde se
+   *  quedó, no desde el principio. */
+  async function subirFotos(files: FileList | null) {
+    if (!files || !files.length || subiendoFotos) return;
+    const tipos = ["front", "side", "back", "detail"];
+    const restantes = Math.max(0, maxFotos - fotos);
+    const lote = Array.from(files).slice(0, restantes);
+    if (!lote.length) {
+      setErrorFotos(`Ya has subido el máximo de ${maxFotos} fotos.`);
+      return;
+    }
+    setSubiendoFotos(true);
+    setErrorFotos(null);
+    let subidas = 0;
+    try {
+      for (const f of lote) {
+        await api.closePhotos([f], tipos[Math.min(fotos + subidas, tipos.length - 1)]);
+        subidas += 1;
+        setFotos(fotos + subidas);
+      }
+      toast.push(`${subidas} foto${subidas === 1 ? "" : "s"} subida${subidas === 1 ? "" : "s"} 📸`);
+    } catch (e: any) {
+      // Lo ya subido SE QUEDA: se dice cuántas entraron y qué falló, y se
+      // vuelve a preguntar el total (por si otra pestaña o un envío a medias
+      // dejaron el número de la pantalla por detrás del real).
+      setErrorFotos(e?.message ?? "No se pudieron subir. Inténtalo de nuevo.");
+      api.closePhotosCount().then((r) => setFotos(r.count)).catch(() => {});
+    } finally {
+      setSubiendoFotos(false);
+    }
+  }
   const allFeelings = FEELINGS.every((f) => feelings[f.key] > 0);
   // Coma o punto valen ("82,5"): el número se normaliza en un único sitio.
   const num = (v: string): number => Number(v.trim().replace(",", "."));
@@ -323,13 +380,34 @@ export function PortalClose({ api, token, brand, onClosed, canClose, daysLeft, c
       {/* 7 · Fotos — banner informativo en azul de marca; icono y canal según
           cómo recibe este cliente sus entregas (Pro → WhatsApp; resto → email). */}
       <Section n={7} title="Fotos de progreso">
-        <div className="flex items-start gap-2 rounded-xl border p-3 text-sm" style={{ borderColor: `${brand.color_secondary}55`, background: `${brand.color_secondary}10` }}>
+        <p className="text-sm opacity-80">
+          3 fotos: <b>frontal · lateral · espalda</b>
+          <span className="mt-0.5 block opacity-70">Fondo neutro · sin filtros · mismo sitio</span>
+        </p>
+        <input id="fotos-cierre" type="file" accept="image/*" multiple className="hidden"
+          onChange={(e) => { subirFotos(e.target.files); e.target.value = ""; }} />
+        <button
+          onClick={() => document.getElementById("fotos-cierre")?.click()}
+          disabled={subiendoFotos || fotos >= maxFotos}
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-3 text-sm font-medium disabled:opacity-60"
+          style={{ borderColor: `${brand.color_secondary}77` }}
+        >
+          {subiendoFotos ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />}
+          {fotos > 0
+            ? `${fotos} foto${fotos === 1 ? "" : "s"} subida${fotos === 1 ? "" : "s"}${fotos >= maxFotos ? "" : " · añadir más"}`
+            : "Subir mis fotos aquí"}
+        </button>
+        {errorFotos && (
+          <p role="alert" className="mt-2 text-sm" style={{ color: "var(--p-danger)" }}>{errorFotos}</p>
+        )}
+        {/* La vía de siempre sigue disponible: quien prefiera mandarlas por su
+            canal habitual no se queda fuera. */}
+        <div className="mt-3 flex items-start gap-2 rounded-xl border p-3 text-sm" style={{ borderColor: `${brand.color_secondary}55`, background: `${brand.color_secondary}10` }}>
           {directContact
             ? <MessageCircle size={18} style={{ color: brand.color_secondary }} className="mt-0.5 shrink-0" />
             : <Mail size={18} style={{ color: brand.color_secondary }} className="mt-0.5 shrink-0" />}
           <p className="opacity-80">
-            3 fotos por <b>{directContact ? "WhatsApp" : "email"}</b>: frontal · lateral · espalda
-            <span className="mt-0.5 block opacity-70">Fondo neutro · sin filtros · mismo sitio</span>
+            ¿Prefieres mandarlas por <b>{directContact ? "WhatsApp" : "email"}</b>? También vale.
           </p>
         </div>
       </Section>

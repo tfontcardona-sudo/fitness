@@ -22,7 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import Client, DailyLog, EmailLog, Period
+from app.models import Client, EmailLog, Period
 from app.services import email_templates as tpl
 from app.services.audit import log_event
 from app.services.email_service import EmailService, brand_from_config
@@ -40,6 +40,25 @@ def _first_name(client: Client) -> str:
     TODAS las transiciones y recordatorios de esa ejecución."""
     parts = (client.full_name or "").split()
     return parts[0] if parts else (client.email or "").split("@")[0] or "hola"
+
+
+# Tope de recordatorios de cierre por período (ver 1b).
+MAX_AVISOS_DE_CIERRE = 3
+
+
+# `EmailLog` anota los TRES desenlaces: `sent`, `failed` (SMTP caído, dirección
+# rechazada…) y `disabled` (los correos están apagados, del cliente o del
+# servidor). Los contadores de abajo descartan los FALLIDOS: contarlos hacía que
+# un correo que ni salió consumiera su intento — un fallo puntual de SMTP dejaba
+# el recordatorio sin reintentar JAMÁS, y tres días de SMTP caído agotaban el
+# tope de avisos de cierre para toda la quincena (el cliente no recibía ninguno
+# y nadie lo notaba, porque en el libro constaban tres).
+#
+# Los `disabled` SÍ cuentan, y a propósito: ahí no ha fallado nada, es que ese
+# cliente —o el servidor entero, como en desarrollo— tiene los correos
+# apagados. Reintentarlo cada día solo llenaría el registro de filas sin enviar
+# un solo correo.
+_NO_FALLIDO = EmailLog.status != "failed"
 
 
 def _already_sent_today(db: Session, client_id: int, kind: str, today: date) -> bool:
@@ -64,10 +83,31 @@ def _already_sent_today(db: Session, client_id: int, kind: str, today: date) -> 
             EmailLog.client_id == client_id,
             EmailLog.kind == kind,
             EmailLog.sent_at >= start,
-            EmailLog.status != "failed",
+            _NO_FALLIDO,
         )
     )
     return bool(n)
+
+
+def _enviados_desde(db: Session, client_id: int, kind: str, desde: date) -> int:
+    """Cuántas veces se ha mandado ese aviso desde una fecha (inicio de período
+    o alta del cliente). Un envío FALLIDO no gasta cupo."""
+    inicio = datetime(desde.year, desde.month, desde.day, tzinfo=timezone.utc)
+    return int(db.scalar(
+        select(func.count()).select_from(EmailLog).where(
+            EmailLog.client_id == client_id, EmailLog.kind == kind,
+            EmailLog.sent_at >= inicio,
+            _NO_FALLIDO,
+        )
+    ) or 0)
+
+
+def _ya_enviado_desde(db: Session, client_id: int, kind: str, desde: date) -> bool:
+    """¿Se envió ya ese aviso en ESTE ciclo (desde el alta o el inicio del
+    período)? Con la dedup por DÍA, los avisos de día exacto no se podían
+    relajar a ">=" sin repetirlos; con esta, se envían en cuanto el job vuelva
+    a correr y solo una vez."""
+    return _enviados_desde(db, client_id, kind, desde) > 0
 
 
 def _active_period(db: Session, client_id: int) -> Period | None:
@@ -87,18 +127,15 @@ def _facts_for(db: Session, client: Client) -> ClientFacts:
 
     # Solo cuentan los días con contenido REAL: el autosave del portal crea la
     # fila vacía con solo abrir la pantalla, y contarla inflaba la adherencia
-    # (el disparador de "en riesgo" y el % que ve el coach mentían).
-    from app.services.push import diary_is_filled
+    # (el disparador de "en riesgo" y el % que ve el coach mentían). Y cuenta
+    # TODO lo que el cliente registra —diario, series de entreno o comidas
+    # elegidas—, no solo el diario: un DQR Train registra sus series y nada
+    # más, y salía con 0 días → "en riesgo" con adherencia 0 %.
+    from app.services.push import dias_con_registro
 
-    logs = list(db.scalars(
-        select(DailyLog).where(DailyLog.period_id == period.id)
-    ))
-    days_logged = sum(1 for lg in logs if diary_is_filled(lg))
-
-    last_log_date = db.scalar(
-        select(func.max(DailyLog.log_date)).where(DailyLog.period_id == period.id)
-    )
-    last_activity = last_log_date or period.starts_on
+    dias = dias_con_registro(db, period.id)
+    days_logged = len(dias)
+    last_activity = max(dias) if dias else period.starts_on
 
     return ClientFacts(
         status=client.status,
@@ -119,7 +156,13 @@ def run_daily_maintenance(db: Session, today: date | None = None) -> dict:
 
     today = today or today_local()
     summary = {"evaluated": 0, "transitions": 0, "reminders": 0, "at_risk_alerts": 0,
-               "periods_opened": 0}
+               "periods_opened": 0,
+               # Clientes que reventaron: sin esto el trabajo se anotaba como
+               # correcto y ese cliente se quedaba sin recordatorios, sin
+               # cierre vencido y sin transición de estado — cada día, en
+               # silencio. `automatismos_parados()` solo ve el job entero
+               # caído, no un cliente caído.
+               "failed": 0, "failed_ids": []}
 
     clients = db.scalars(
         select(Client).where(Client.status.notin_(["inactive"]))
@@ -159,6 +202,9 @@ def run_daily_maintenance(db: Session, today: date | None = None) -> dict:
             logging.getLogger("jobs").exception(
                 "mantenimiento fallido del cliente %s; se continúa", client.id)
             db.rollback()
+            summary["failed"] += 1
+            if len(summary["failed_ids"]) < 20:
+                summary["failed_ids"].append(client.id)
 
     # Aprendizaje del coach (§13 en vivo): si hay suficientes ediciones nuevas
     # de planes, se re-destilan las lecciones (modelo ligero, best-effort).
@@ -209,7 +255,12 @@ def _maintain_client(db: Session, client: Client, today: date,
     decision = evaluate_transition(facts, today)
 
     # 1) Recordatorio día 12 (no cambia estado)
-    if decision.send_reminder and not _already_sent_today(db, client.id, "reminder_no_logs", today):
+    # Dedup por PERÍODO (no por día): con el umbral del día 12, la dedup diaria
+    # habría mandado el mismo aviso los días 12, 13, 14…
+    _periodo = _active_period(db, client.id)
+    _desde = _periodo.starts_on if _periodo is not None else today
+    if decision.send_reminder and not _ya_enviado_desde(
+            db, client.id, "reminder_no_logs", _desde):
         period = _active_period(db, client.id)
         days_left = max(0, (period.ends_on - today).days) if period else 0
         subject, html = tpl.reminder_no_logs(
@@ -221,11 +272,19 @@ def _maintain_client(db: Session, client: Client, today: date,
                      kind="reminder_no_logs", client=client)
         summary["reminders"] += 1
 
-    # 1b) Día 14+: recordatorio de CERRAR la revisión quincenal (uno al
-    # día mientras el período siga abierto y vencido).
+    # 1b) Día 14+: recordatorio de CERRAR la revisión quincenal.
+    # CON TOPE: era uno al día SIN LÍMITE mientras el período siguiera abierto,
+    # y el freno solo llegaba al pasar a `inactive` (30 días sin registros). Un
+    # cliente que abandona el día 14 recibía ~31 emails y ~150 push por UNA
+    # quincena: la vía rápida a que marque el remitente como spam y desinstale
+    # la app. Tres avisos por período es insistir; treinta es acoso.
     closing_period = _active_period(db, client.id)
+    _avisos_cierre = (
+        _enviados_desde(db, client.id, "closing_due", closing_period.starts_on)
+        if closing_period is not None else 0)
     if (closing_period is not None and closing_period.status == "open"
             and today >= closing_period.ends_on
+            and _avisos_cierre < MAX_AVISOS_DE_CIERRE
             and not _already_sent_today(db, client.id, "closing_due", today)):
         subject, html = tpl.closing_due(
             brand, _first_name(client),
@@ -263,7 +322,13 @@ def _maintain_client(db: Session, client: Client, today: date,
     # envía la anamnesis no recibía NINGÚN recordatorio nunca más. D+3 y D+7.
     if client.status == "onboarding" and getattr(client, "created_at", None):
         days_onb = (today - client.created_at.date()).days
-        if days_onb in (3, 7):
+        # UMBRAL, no igualdad: era el ÚNICO empujón automático a quien pagó y
+        # no manda su anamnesis, y se disparaba solo si el job corría ESE día
+        # exacto. Un reinicio del contenedor antes de las 06:30 (o un fallo con
+        # ese cliente) y el aviso se perdía para siempre. La dedup ya no es por
+        # día sino desde el ALTA: se manda una sola vez, cuando toque.
+        hito = 7 if days_onb >= 7 else (3 if days_onb >= 3 else 0)
+        if hito:
             try:
                 from app.services.storage import anamnesis_documents
                 has_doc = bool(anamnesis_documents(client.id))
@@ -272,11 +337,12 @@ def _maintain_client(db: Session, client: Client, today: date,
             # El formulario digital del portal también cuenta como enviada.
             if getattr(client, "consent_signed_at", None) is not None:
                 has_doc = True
-            kind = f"onboarding_reminder_d{days_onb}"
-            if not has_doc and not _already_sent_today(db, client.id, kind, today):
+            kind = f"onboarding_reminder_d{hito}"
+            if not has_doc and not _ya_enviado_desde(
+                    db, client.id, kind, client.created_at.date()):
                 anamnesis_url = f"{base}/anamnesis/{client.portal_token}"
                 subject, html = tpl.onboarding_reminder(
-                    brand, _first_name(client), anamnesis_url, days_onb)
+                    brand, _first_name(client), anamnesis_url, hito)
                 emailer.send(to=client.email, subject=subject, html=html,
                              kind=kind, client=client)
                 summary["reminders"] += 1
@@ -326,6 +392,7 @@ def _maintain_client(db: Session, client: Client, today: date,
                     push_svc.send_to_coach(db, {
                         "title": f"💤 {client.full_name} ha pasado a inactivo",
                         "body": decision.reason or "30 días sin actividad.",
+                        "count": 1,  # sin count, el sw apagaba el badge de otros avisos
                         "url": f"/clientes/{client.id}",
                         "tag": f"inactive-{client.id}",
                     })

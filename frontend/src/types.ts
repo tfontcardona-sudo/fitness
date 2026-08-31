@@ -322,7 +322,6 @@ export interface ClientOut {
   renewal_due?: boolean;
   strict_free_meal_enabled: boolean;
   status: ClientStatus;
-  auto_pilot: boolean;
   emails_enabled: boolean;
   consent_signed_at: string | null;
   portal_access_sent_at?: string | null;
@@ -347,6 +346,9 @@ export interface ExerciseOut {
   // Vídeo SUBIDO como archivo (media/…): tiene prioridad sobre video_url.
   video_path: string | null;
   image_url: string | null;
+  // OJO: la LISTA de la biblioteca (`GET /api/exercises`) NO trae estas dos
+  // notas — son 36 KB que ninguna pantalla del panel pinta y la lista viaja dos
+  // veces por visita. Llegan en la ficha individual (`GET /api/exercises/{id}`).
   technique_notes: string | null;
   biomechanics_notes: string | null;
   contraindications: string[];
@@ -853,6 +855,9 @@ export interface PaymentsListOut {
   items: PaymentOut[];
   count: number;
   unseen: number;
+  /** Neto del CLIENTE (cobros − devoluciones, sin dinero de prueba) cuando se
+   *  filtra por client_id: la ficha ya no suma la página que pinta. */
+  client_total_cents?: number | null;
 }
 
 export interface PaymentsSummaryOut {

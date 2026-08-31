@@ -537,15 +537,41 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
         tr.pop("applied_adjustments", None)
 
     if tiene_dieta:
-        if adjustments:
-            grid = "\n".join(f"- [{a.get('area')}] {a.get('change')} — {a.get('reason')}" for a in adjustments)
-            nut["rationale"] = f"Adaptación a la revisión quincenal #{period.period_index}:\n{grid}"
-        else:
-            nut["rationale"] = (f"Copia para adaptar a la revisión quincenal #{period.period_index} "
-                                "(la revisión no incluía ajustes automáticos: edita manualmente).")
+        # OJO: `rationale` LO LEE EL CLIENTE (sale en el PDF como "Por qué este
+        # enfoque"). Aquí se machacaba con texto interno —un volcado con
+        # etiquetas de máquina "- [dieta] … — …", que además repite la tabla
+        # "Cambios de tu plan" de justo debajo, o directamente una instrucción
+        # para el coach ("edita manualmente")— y el argumentario real del plan
+        # se perdía para siempre: del mes 2 en adelante ningún cliente volvía a
+        # leer por qué su plan es como es.
+        # El detalle de la adaptación YA viaja por `applied_adjustments`.
+        # Y NO SE ACUMULA: la marca lleva el número de la revisión, así que
+        # cada quincena añadía OTRO párrafo idéntico. En el mes 4 el cliente
+        # abría "Por qué este enfoque" y encontraba ocho veces la misma frase.
+        # Se retira la coletilla de las revisiones anteriores y se pone la de
+        # esta — el argumentario original (lo que de verdad explica su plan)
+        # queda intacto delante.
+        base_rationale = (nut.get("rationale") or "").strip()
+        base_rationale = re.sub(
+            r"\n*Ajustado tras tu revisión #\d+:[^\n]*", "", base_rationale).strip()
+        marca = f"Ajustado tras tu revisión #{period.period_index}"
+        nut["rationale"] = (
+            f"{base_rationale}\n\n{marca}: mantenemos el enfoque y afinamos "
+            "las cifras con lo que has registrado estas dos semanas."
+            if base_rationale else
+            f"{marca}: afinamos las cifras con lo que has registrado estas "
+            "dos semanas."
+        )
     if tiene_entreno:
-        tr["split_rationale"] = (tr.get("split_rationale", "") or "") + \
-            f" · Adaptado a la revisión quincenal #{period.period_index}."
+        # Misma regla que el rationale: la coletilla SUSTITUYE a la de la
+        # revisión anterior en vez de encadenarse. Esto se imprime en el PDF
+        # bajo "Estructura ·", y a la sexta quincena era una ristra de
+        # "· Adaptado a la revisión quincenal #1. · … #2. · … #3." que tapaba
+        # la razón real del split.
+        _split = re.sub(r"\s*·\s*Adaptado a la revisión quincenal #\d+\.", "",
+                        tr.get("split_rationale", "") or "").rstrip()
+        tr["split_rationale"] = (
+            _split + f" · Adaptado a la revisión quincenal #{period.period_index}.")
 
     if existing_draft is not None:
         # Rehacer el borrador existente (mismo número de versión): los ajustes
@@ -588,9 +614,9 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
     from app.services.guardrails import check_nutrition
 
     violations: list[str] = []
+    _c = db.get(Client, client_id)
     if tiene_dieta:
         try:
-            _c = db.get(Client, client_id)
             rep = check_nutrition(
                 nut,
                 sex=(_c.sex if _c else None) or "male",
@@ -605,6 +631,51 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
             violations = [f"violation: {v}" for v in rep.violations]
         except Exception:  # noqa: BLE001 — el chequeo nunca rompe la adaptación
             violations = []
+
+    # PANEL §9 EN LA REVISIÓN QUINCENAL. `review_panel` tiene desde hace tandas
+    # un modo `is_checkin` con roles propios —los que juzgan si el AJUSTE tiene
+    # sentido para lo que ha pasado estas dos semanas— y no lo activaba nadie:
+    # la adaptación, que es la que decide con qué calorías vive el cliente los
+    # siguientes catorce días, salía sin más revisión que el Revisor 0.
+    #
+    # SE PAGA SOLO CUANDO HAY ALGO QUE MIRAR. La adaptación es un cambio
+    # NUMÉRICO y acotado (el motor quincenal decide el %, la proteína queda
+    # bloqueada), así que con el validador determinista limpio no hay nada
+    # cualitativo nuevo que juzgar: cobrar 8-10 roles a cada cliente cada
+    # quincena sería justo lo contrario de lo que se buscaba al recortar
+    # créditos. Si el Revisor 0 encuentra algo, entonces sí entra el panel
+    # completo, que es cuando su criterio vale lo que cuesta.
+    review_summary = None
+    if tiene_dieta and violations:
+        try:
+            from app.services.ai.client import AIClient
+            from app.services.plan_review import ctx_desde_cliente, review_generated_plan
+
+            try:
+                _ai = AIClient()
+            except Exception:  # noqa: BLE001 — sin clave, solo el Revisor 0
+                _ai = None
+            nut, review_summary = review_generated_plan(
+                nut, client=_c, ctx=ctx_desde_cliente(_c, nut, db), ai=_ai,
+                training=(plan.training_json or None))
+            plan.nutrition_json = nut
+            plan.review_json = review_summary
+            # El panel puede haber REPARADO el desvío: se vuelve a preguntar
+            # antes de retener el plan por algo que ya no pasa.
+            rep2 = check_nutrition(
+                nut, sex=(_c.sex if _c else None) or "male",
+                weight_kg=float((_c.current_weight_kg or _c.start_weight_kg or 0) if _c else 0) or 70.0,
+                bmr=0.0, tdee=float(nut.get("tdee_kcal") or 0),
+                is_recalibration=True,
+                previous_target_kcal=(
+                    None if kcal_salto_por_diseno
+                    else float((base.nutrition_json or {}).get("target_kcal") or 0) or None))
+            violations = [f"violation: {v}" for v in rep2.violations]
+        except Exception:  # noqa: BLE001 — el panel jamás bloquea la adaptación
+            pass
+    if review_summary and review_summary.get("color") == "rojo" and not violations:
+        violations = ["violation: revisión ROJO — el panel encontró puntos a "
+                      "corregir en la adaptación"]
     if violations:
         plan.guardrail_flags = violations + [
             "retenido: adaptación guardada como BORRADOR — revisa y activa tú "

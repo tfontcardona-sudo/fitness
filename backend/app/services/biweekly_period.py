@@ -123,7 +123,17 @@ def checkin_inputs_from_period(db: Session, period: Period, client: Client) -> C
 
     raw_points = [(dl.log_date, dl.weight_kg) for dl in logs if dl.weight_kg is not None]
     if period.closing_weight_kg is not None:
-        raw_points.append((period.ends_on, period.closing_weight_kg))
+        ultimo = max(raw_points, key=lambda x: x[0]) if raw_points else None
+        # El peso de cierre solo cuenta como MEDICIÓN NUEVA si de verdad lo es.
+        # Cuando el coach cierra la quincena por el cliente, el peso de cierre
+        # se COPIA de su último pesaje del diario: añadirlo como punto aparte
+        # fabricaba una segunda medición inexistente, anulaba el guardarraíl de
+        # "un solo pesaje → no se ajusta sobre ruido" y la regresión daba
+        # 0,00 %/semana → el motor recortaba un −6 % de calorías REAL a partir
+        # de un dato inventado por el propio sistema. Justo en los clientes
+        # para los que ese guardarraíl se diseñó.
+        if ultimo is None or abs(float(ultimo[1]) - float(period.closing_weight_kg)) > 1e-6:
+            raw_points.append((period.ends_on, period.closing_weight_kg))
     raw_points.sort()
 
     adh = M.adherence_summary([{

@@ -20,6 +20,13 @@ self.addEventListener("push", (event) => {
   }
 
   const title = data.title || "Tu seguimiento";
+  // `count` AUSENTE ≠ `count: 0`. Un aviso que no dice cuántas cosas hay
+  // pendientes (la anamnesis que acaba de llegar, una petición del cliente,
+  // alguien que pasa a inactivo) no sabe nada del badge y no puede APAGARLO:
+  // hacerlo borraba el numerito de "pagos sin leer" del coach sin que hubiera
+  // leído nada. Solo un `count: 0` explícito lo limpia.
+  const tieneCount = data.count !== undefined && data.count !== null && data.count !== "";
+  const count = tieneCount ? Number(data.count) || 0 : null;
 
   const tasks = [
     self.registration.showNotification(title, {
@@ -33,11 +40,7 @@ self.addEventListener("push", (event) => {
   ];
 
   // Badge del icono de la app (Android/desktop instalada e iOS ≥16.4).
-  // Solo se toca si el aviso TRAE `count`: sin él no sabemos cuántos pendientes
-  // hay, y tratar su ausencia como cero apagaba el contador (p. ej. los "pagos
-  // sin leer" del coach) sin que se hubiera leído nada.
-  if ("setAppBadge" in self.navigator && data.count !== undefined && data.count !== null) {
-    const count = Number(data.count) || 0;
+  if ("setAppBadge" in self.navigator && count !== null) {
     tasks.push(
       count > 0 ? self.navigator.setAppBadge(count) : self.navigator.clearAppBadge()
     );

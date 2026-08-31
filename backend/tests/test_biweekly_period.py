@@ -132,3 +132,33 @@ def test_serializable_y_con_snapshot():
         assert set(js) >= {"action", "rule", "rationale", "inputs_snapshot", "protein_locked"}
         assert js["inputs_snapshot"]["n_weigh_ins"] >= 3
         db.rollback()
+
+
+def test_cerrar_por_el_coach_no_inventa_un_segundo_pesaje():
+    """Un cliente que solo se pesó UNA vez y no envió la revisión: el coach la
+    cierra y el peso de cierre se COPIA de ese mismo pesaje.
+
+    Contarlo como medición nueva anulaba el guardarraíl de "un solo pesaje" y
+    la regresión salía a 0,00 %/semana → el motor recortaba un −6 % de calorías
+    de verdad sobre un dato que se había inventado el propio sistema.
+    """
+    from app.db import SessionLocal
+    from app.services.biweekly_period import checkin_inputs_from_period, decision_for_period
+
+    with SessionLocal() as db:
+        c = _mk_client(db)
+        p = _mk_period(db, c.id, 1, date(2026, 3, 1), closing_weight=82.0)
+        _add_weighins(db, p, [(3, 82.0)])
+
+        inputs = checkin_inputs_from_period(db, p, c)
+        assert len(inputs.weight_points) == 1
+        assert inputs.single_measurement is True
+        dec = decision_for_period(db, p, c)
+        assert dec.action == "request_data" and dec.kcal_delta_pct == 0.0
+
+        # Con un peso de cierre DISTINTO sí hay dos mediciones de verdad.
+        p.closing_weight_kg = 81.2
+        db.flush()
+        inputs = checkin_inputs_from_period(db, p, c)
+        assert len(inputs.weight_points) == 2 and inputs.single_measurement is False
+        db.rollback()

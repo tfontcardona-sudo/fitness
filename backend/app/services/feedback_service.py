@@ -64,16 +64,28 @@ def _perimeters(prev: Period | None, cur: Period,
     fields = [("Cintura", "closing_waist_cm"), ("Cadera", "closing_hip_cm"),
               ("Brazo", "closing_arm_cm"), ("Muslo", "closing_thigh_cm")]
     out: dict[str, list[tuple[str, float]]] = {}
+    fuentes: set[str] = set()
+    crudo: dict[str, tuple[float | None, float]] = {}
     for label, attr in fields:
         cur_v = getattr(cur, attr, None)
         if cur_v is None:
             continue
-        series: list[tuple[str, float]] = []
         prev_v = getattr(prev, attr, None) if prev else None
-        etiqueta_prev = "Anterior"
-        if prev_v is None and client is not None:
+        if prev_v is not None:
+            fuentes.add("Anterior")
+        elif client is not None:
             prev_v = getattr(client, attr.replace("closing_", "initial_"), None)
-            etiqueta_prev = "Inicio"
+            if prev_v is not None:
+                fuentes.add("Inicio")
+        crudo[label] = (prev_v, cur_v)
+    # UNA sola etiqueta para la columna del "antes". Si unas medidas vienen del
+    # cierre anterior y otras de la anamnesis, dos etiquetas distintas parten
+    # la rejilla en tres columnas y descolocan las series (la gráfica acababa
+    # pintando el antes de una medida sobre el ahora de otra).
+    etiqueta_prev = ("Antes" if len(fuentes) > 1
+                     else (fuentes.pop() if fuentes else "Anterior"))
+    for label, (prev_v, cur_v) in crudo.items():
+        series: list[tuple[str, float]] = []
         if prev_v is not None:
             series.append((etiqueta_prev, prev_v))
         series.append(("Actual", cur_v))
@@ -82,23 +94,37 @@ def _perimeters(prev: Period | None, cur: Period,
 
 
 def _photo_pairs(db: Session, prev: Period | None, cur: Period) -> list[tuple[str, str]] | None:
-    """Empareja fotos por ángulo: período anterior vs actual."""
+    """Empareja fotos por ángulo: el "antes" contra las de este período.
+
+    En la PRIMERA revisión el "antes" son las fotos INICIALES de la anamnesis
+    (las que el cliente sube al terminar el cuestionario, guardadas sin
+    período): mismo criterio que los perímetros iniciales. Antes se devolvía
+    None y el primer informe —el que más necesita enseñar el cambio— salía sin
+    comparativa aunque las fotos existieran.
+    """
     from app.models import ProgressPhoto
 
-    if not prev:
-        return None
-    def by_kind(pid: int) -> dict[str, str]:
-        rows = db.scalars(select(ProgressPhoto).where(ProgressPhoto.period_id == pid))
+    def _por_angulo(consulta) -> dict[str, str]:
         d: dict[str, str] = {}
-        for ph in rows:
+        for ph in db.scalars(consulta):
             try:
                 p = abs_path(ph.file_path)
                 if p.exists():
                     d[ph.kind] = str(p)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 pass
         return d
-    before, after = by_kind(prev.id), by_kind(cur.id)
+
+    after = _por_angulo(select(ProgressPhoto).where(ProgressPhoto.period_id == cur.id))
+    if not after:
+        return None
+    if prev is not None:
+        before = _por_angulo(
+            select(ProgressPhoto).where(ProgressPhoto.period_id == prev.id))
+    else:
+        before = _por_angulo(
+            select(ProgressPhoto).where(ProgressPhoto.client_id == cur.client_id,
+                                        ProgressPhoto.period_id.is_(None)))
     pairs = [(before[k], after[k]) for k in after if k in before]
     return pairs or None
 
@@ -112,10 +138,38 @@ def _workout_sets_for_logs(db: Session, log_ids: list[int]) -> list[dict]:
     ]
 
 
-def compute_period_summary(db: Session, period_id: int) -> dict:
+def sets_por_periodo(db: Session, period_ids: list[int]) -> dict[int, list[dict]]:
+    """Series de entreno de VARIOS períodos en UNA consulta, agrupadas por período.
+
+    La usa quien va a resumir varios períodos seguidos (la pestaña Historial):
+    `compute_period_summary` compara cada período con TODOS los anteriores, así
+    que llamarlo en bucle releía las mismas series una y otra vez —coste
+    cuadrático— aunque cada llamada suelta esté bien optimizada.
+    """
+    if not period_ids:
+        return {}
+    filas = db.execute(
+        select(DailyLog.period_id, WorkoutLog.exercise_id, WorkoutLog.weight_kg,
+               WorkoutLog.reps, WorkoutLog.daily_log_id)
+        .join(WorkoutLog, WorkoutLog.daily_log_id == DailyLog.id)
+        .where(DailyLog.period_id.in_(period_ids))
+    ).all()
+    out: dict[int, list[dict]] = {pid: [] for pid in period_ids}
+    for pid, ex_id, w, reps, dlid in filas:
+        out.setdefault(pid, []).append(
+            {"exercise_id": ex_id, "weight_kg": w, "reps": reps, "daily_log_id": dlid})
+    return out
+
+
+def compute_period_summary(db: Session, period_id: int, *,
+                           cache_sets: dict[int, list[dict]] | None = None) -> dict:
     """Resumen de métricas del período SIN IA, a partir de lo que el cliente
     registró: cambio de peso corporal, adherencia, fuerza ganada (e1RM vs período
-    anterior) y distancia al objetivo. Para el botón de feedback rápido del coach."""
+    anterior) y distancia al objetivo. Para el botón de feedback rápido del coach.
+
+    `cache_sets` (opcional): series YA cargadas por período (ver
+    `sets_por_periodo`). Quien resume varios períodos seguidos las trae de una
+    vez y evita releerlas en cada iteración; el resultado es idéntico."""
     period = db.get(Period, period_id)
     if not period:
         raise FeedbackError("Período no encontrado")
@@ -140,7 +194,8 @@ def compute_period_summary(db: Session, period_id: int) -> dict:
     # e1RM), con kg medios levantados y repes medias, comparado con la última
     # revisión ANTERIOR que tenga datos de ese ejercicio (no solo la inmediata):
     # kg subidos/bajados reales, Δe1RM y % de ganancia o pérdida de fuerza.
-    sets = _workout_sets_for_logs(db, [dl.id for dl in logs])
+    sets = (cache_sets.get(period_id, []) if cache_sets is not None
+            else _workout_sets_for_logs(db, [dl.id for dl in logs]))
     progress_all = M.exercise_e1rm_progress(sets)
 
     def _avg_by_ex(ss: list[dict]) -> dict[int, tuple[float, float]]:
@@ -163,17 +218,20 @@ def compute_period_summary(db: Session, period_id: int) -> dict:
         .order_by(Period.period_index.desc())
     ))
     if earlier_ids:
-        rows = db.execute(
-            select(DailyLog.period_id, WorkoutLog.exercise_id,
-                   WorkoutLog.weight_kg, WorkoutLog.reps, WorkoutLog.daily_log_id)
-            .join(WorkoutLog, WorkoutLog.daily_log_id == DailyLog.id)
-            .where(DailyLog.period_id.in_(earlier_ids))
-        ).all()
-        sets_by_period: dict[int, list[dict]] = {}
-        for pid, ex_id, w, reps, dlid in rows:
-            sets_by_period.setdefault(pid, []).append(
-                {"exercise_id": ex_id, "weight_kg": w, "reps": reps, "daily_log_id": dlid}
-            )
+        if cache_sets is not None:
+            sets_by_period = {pid: cache_sets.get(pid, []) for pid in earlier_ids}
+        else:
+            rows = db.execute(
+                select(DailyLog.period_id, WorkoutLog.exercise_id,
+                       WorkoutLog.weight_kg, WorkoutLog.reps, WorkoutLog.daily_log_id)
+                .join(WorkoutLog, WorkoutLog.daily_log_id == DailyLog.id)
+                .where(DailyLog.period_id.in_(earlier_ids))
+            ).all()
+            sets_by_period = {}
+            for pid, ex_id, w, reps, dlid in rows:
+                sets_by_period.setdefault(pid, []).append(
+                    {"exercise_id": ex_id, "weight_kg": w, "reps": reps, "daily_log_id": dlid}
+                )
         for prev_id in earlier_ids:  # ya en orden descendente
             prev_sets = sets_by_period.get(prev_id) or []
             for p in M.exercise_e1rm_progress(prev_sets):
@@ -234,7 +292,11 @@ def compute_period_summary(db: Session, period_id: int) -> dict:
         "goal_weight_kg": goal,
         "distance_to_goal_kg": distance,
         "adherence": {
-            "diet_pct": round(adh.diet_adherence_ratio * 100),
+            # None = SIN registros de dieta (no es un 0 % de incumplimiento):
+            # la pantalla lo dice con "Sin datos" en vez de acusar al cliente.
+            "diet_pct": (round(adh.diet_adherence_ratio * 100)
+                         if (adh.diet_yes + adh.diet_partial + adh.diet_no) > 0
+                         else None),
             "log_pct": round(min(1.0, adh.log_ratio) * 100),
             "days_logged": adh.days_logged, "period_days": adh.period_days,
             # Días que SIGUIÓ el plan (dieta): completos y a medias, para poder
@@ -337,6 +399,10 @@ def _write_feedback_doc(db: Session, client: Client, period: Period, inputs: dic
     docx = generate_feedback_doc(
         brand=_doc_brand(db), client_name=client.full_name, period_index=period.period_index,
         period_label=_period_label(period), goal_label=_goal_label_es(client.goal_type),
+        # Lo contratado manda también en el DOCUMENTO (ya mandaba en el prompt
+        # de la IA): a un cliente de solo entrenamiento no se le puede reprochar
+        # por escrito una "adherencia dieta 0 %".
+        has_nutrition=pkgs.has_nutrition(client.package_tier),
         metrics=inputs["metrics_json"], weight_points=inputs["weight_points"],
         goal_kg=client.goal_weight_kg, e1rm_exercises=inputs["e1rm_exercises"],
         perimeters=inputs["perimeters"], volume_by_group=inputs["volume_by_group"],
@@ -368,8 +434,11 @@ def build_period_feedback(db: Session, period_id: int, ai=None) -> FeedbackDoc:
     if period.status == "open":
         raise FeedbackError("El período aún no está cerrado por el cliente")
     client = db.get(Client, period.client_id)
-    # Paquete solo-nutrición (Start): el feedback no habla de entreno.
+    # Paquete solo-nutrición (Nutri): el feedback no habla de entreno.
     nutrition_only = not pkgs.has_training(getattr(client, "package_tier", None))
+    # Y el simétrico (Train): no habla de dieta. Sin esto, el informe le
+    # hablaba de calorías y adherencia a la dieta a quien no la ha contratado.
+    training_only = not pkgs.has_nutrition(getattr(client, "package_tier", None))
 
     inputs = _gather_doc_inputs(db, period, client)
     logs_q = list(db.scalars(
@@ -390,10 +459,13 @@ def build_period_feedback(db: Session, period_id: int, ai=None) -> FeedbackDoc:
             "medidas_cm": {"cintura": period.closing_waist_cm, "cadera": period.closing_hip_cm,
                            "brazo": period.closing_arm_cm, "muslo": period.closing_thigh_cm},
             "sensaciones_1_5": period.closing_feelings_json,
-            "adherencia_dieta_0_10": period.adherence_diet_0_10,
+            # En solo-entreno no hay dieta que reportar (ni el cliente ve
+            # esos campos en su portal: irían siempre a null).
+            **({} if training_only else {
+                "adherencia_dieta_0_10": period.adherence_diet_0_10}),
             # En solo-nutrición no hay adherencia de entreno que reportar.
             **({} if nutrition_only else {"adherencia_entreno_0_10": period.adherence_training_0_10}),
-            "comidas_libres": period.free_meals_count,
+            **({} if training_only else {"comidas_libres": period.free_meals_count}),
             "cambios_importantes": period.closing_changes,
             "lo_mas_dificil": period.closing_hardest,
             "objetivo_proximo": period.closing_next_goal,
@@ -418,7 +490,8 @@ def build_period_feedback(db: Session, period_id: int, ai=None) -> FeedbackDoc:
         ),
     }
     try:
-        ai_out = generate_feedback_analysis(payload, ai, nutrition_only=nutrition_only)
+        ai_out = generate_feedback_analysis(payload, ai, nutrition_only=nutrition_only,
+                                            training_only=training_only)
     except AIGenerationError as exc:
         raise FeedbackError(f"La IA no devolvió un feedback válido: {exc}") from exc
 

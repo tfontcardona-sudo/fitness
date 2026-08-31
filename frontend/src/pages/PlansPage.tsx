@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { MessageCircle } from "lucide-react";
 import { api } from "../lib/api";
+import type { PlanPricesOut } from "../types";
 import { BILLING_PERIODS, PACKAGES, PACKAGE_ORDER, billingLabel } from "../lib/packages";
 import { waPhone, waUrl } from "../lib/whatsapp";
 import type { PackageTier, PublicBillingPeriod } from "../types";
@@ -75,6 +76,48 @@ const GENERIC_MESSAGE =
   "¿Te cuento mi caso y me dices qué plan me encaja y su precio?";
 
 export default function PlansPage() {
+  // CONTRATAR AHORA. El embudo estaba construido entero en el backend
+  // (`/api/public/checkout` crea la sesión de pago) y no lo llamaba ninguna
+  // pantalla: quien entraba decidido a pagar solo encontraba un "escríbeme".
+  // El botón lleva DIRECTO a la pasarela de Stripe, que es como tienen que ir
+  // los enlaces de pago; el contacto por WhatsApp se queda como alternativa
+  // para quien prefiere preguntar antes.
+  const [comprando, setComprando] = useState<string | null>(null);
+  const [errorPago, setErrorPago] = useState(false);
+  // LOS IMPORTES REALES, leídos de Stripe por el backend. La página nacía sin
+  // precios a propósito ("se habla en la conversación"), y con el contacto por
+  // WhatsApp como única salida tenía sentido. Con un botón que lleva a pagar,
+  // no: mandar a alguien a la pasarela sin decirle cuánto va a pagar no se
+  // hace. Si el endpoint no responde, la tarjeta se queda sin cifra y el botón
+  // sigue funcionando — la pasarela la enseña igual.
+  const [precios, setPrecios] = useState<PlanPricesOut | null>(null);
+  useEffect(() => {
+    api.publicPlanPrices().then(setPrecios).catch(() => setPrecios(null));
+  }, []);
+  const eur = (n: number) => n.toLocaleString("es-ES", {
+    style: "currency", currency: precios?.currency?.toUpperCase() || "EUR",
+    minimumFractionDigits: n % 1 ? 2 : 0,
+  });
+  async function contratar(tier: string, periodo: string) {
+    if (comprando) return;
+    setComprando(tier);
+    setErrorPago(false);
+    // La pestaña se abre DENTRO del gesto de clic: si se esperara a la
+    // respuesta, Safari e iOS bloquearían el window.open y el botón no haría
+    // nada (mismo motivo que en el panel del coach).
+    const win = window.open("", "_blank");
+    try {
+      const { url } = await api.publicCheckout(tier, periodo);
+      if (win) win.location.href = url;
+      else window.location.href = url;
+    } catch {
+      if (win) win.close();
+      setErrorPago(true);
+    } finally {
+      setComprando(null);
+    }
+  }
+
   const [period, setPeriod] = useState<PublicBillingPeriod>("3m");
   // Marca pública: foto de fondo + teléfono de contacto del coach (WhatsApp).
   const [landing, setLanding] = useState<import("../types").LandingOut | null>(null);
@@ -185,6 +228,14 @@ export default function PlansPage() {
           Trimestral y semestral con condiciones especiales — pregúntame sin compromiso.
         </p>
 
+        {errorPago && (
+          <p role="alert" className="mb-4 rounded-xl border px-4 py-3 text-center text-sm font-semibold"
+            style={{ borderColor: "#C2453A", background: "#fff", color: "#C2453A" }}>
+            No se ha podido abrir la pasarela de pago. Vuelve a intentarlo o
+            escríbeme y te paso el enlace directo.
+          </p>
+        )}
+
         <div className="grid gap-4 sm:grid-cols-3">
           {PACKAGE_ORDER.map((t) => {
             const p = PACKAGES[t];
@@ -213,6 +264,20 @@ export default function PlansPage() {
                 <p className="mt-2 text-[13px] font-medium italic opacity-75">
                   {PLAN_FOR_YOU[t]}
                 </p>
+                {(() => {
+                  const pr = precios?.tiers?.[t]?.[period as keyof typeof precios.tiers[typeof t]];
+                  if (!pr) return null;
+                  return (
+                    <p className="mt-2 text-2xl font-extrabold leading-none" style={{ color: p.color }}>
+                      {eur(pr.total)}
+                      {pr.months > 1 && (
+                        <span className="ml-1.5 text-xs font-semibold opacity-70">
+                          · {eur(pr.per_month)}/mes
+                        </span>
+                      )}
+                    </p>
+                  );
+                })()}
                 {/* La descripción de ESTA duración: el gancho de la combinación. */}
                 <p className="mt-2 text-sm font-semibold leading-snug" style={{ color: p.color }}>
                   {DURATION_PITCH[t][period]}
@@ -225,19 +290,26 @@ export default function PlansPage() {
                     </li>
                   ))}
                 </ul>
+                <button
+                  onClick={() => contratar(t, period)}
+                  disabled={comprando !== null}
+                  className="mt-4 flex items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-sm font-bold text-white shadow-md transition-transform hover:brightness-110 active:scale-[0.98] disabled:opacity-60"
+                  style={{ background: p.color }}
+                >
+                  {comprando === t ? "Abriendo el pago…" : "Contratar ahora"}
+                </button>
                 {href ? (
                   <a
                     href={href}
                     target="_blank"
                     rel="noopener"
-                    className="mt-4 flex items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-sm font-bold text-white shadow-md transition-transform hover:brightness-110 active:scale-[0.98]"
-                    style={{ background: p.color }}
+                    className="mt-2 flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-semibold transition-colors hover:bg-black/[0.03]"
+                    style={{ borderColor: `color-mix(in srgb, ${p.color} 45%, #e6ddca)`, color: p.color }}
                   >
-                    <MessageCircle size={16} /> Contacta conmigo
+                    <MessageCircle size={15} /> ¿Dudas? Escríbeme
                   </a>
                 ) : (
-                  <p className="mt-4 rounded-xl border p-3 text-center text-xs opacity-70"
-                    style={{ borderColor: "#e6ddca" }}>
+                  <p className="mt-2 text-center text-xs opacity-70">
                     Escríbeme por redes para saber más.
                   </p>
                 )}
@@ -301,17 +373,23 @@ export default function PlansPage() {
   );
 }
 
-/** Página de gracias tras un pago correcto (success_url de Stripe). */
+/** Página de gracias tras un pago correcto (success_url de Stripe).
+ *
+ *  El texto DEPENDE de si es un alta o una RENOVACIÓN (`?r=1`, que pone el
+ *  propio backend al crear la sesión de pago): a quien renueva no se le manda
+ *  ningún cuestionario —ya hizo su anamnesis— y este cartel le mandaba a
+ *  esperar, y a rebuscar en el spam, un correo que no existe. */
 export function PaymentOkPage() {
+  const renovacion = new URLSearchParams(window.location.search).get("r") === "1";
   return (
     <div style={{ minHeight: "100vh", background: "#f6f1e7", color: "#26211a" }}
       className="flex flex-col items-center justify-center px-8 text-center">
       <img src="/dq-logo.png" alt="" className="h-14 w-auto rounded-xl shadow-sm" />
       <h1 className="mt-5 text-2xl font-bold">¡Pago recibido!</h1>
       <p className="mt-2 max-w-md text-sm opacity-75">
-        Gracias. Ya tienes en tu correo tu cuestionario inicial (anamnesis):
-        rellénalo y súbelo desde el enlace del email para que preparemos tu plan.
-        Revisa también la carpeta de spam.
+        {renovacion
+          ? "Gracias. Tu asesoría sigue en marcha: entra en tu portal como siempre, ahí tienes tu plan y tu seguimiento."
+          : "Gracias. Te llega por correo tu cuestionario inicial (anamnesis): rellénalo para que preparemos tu plan. Revisa también la carpeta de spam; si en unos minutos no lo ves, escríbenos y te lo reenviamos."}
       </p>
     </div>
   );

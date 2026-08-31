@@ -9,7 +9,12 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.deps import get_current_user
 from app.models import Exercise
-from app.schemas.entities import ExerciseIn, ExerciseOut, ExerciseUpdate
+from app.schemas.entities import (
+    ExerciseIn,
+    ExerciseListOut,
+    ExerciseOut,
+    ExerciseUpdate,
+)
 from app.services.audit import log_event
 from app.services.storage import (
     VideoValidationError,
@@ -29,7 +34,7 @@ def _get_or_404(db: Session, exercise_id: int) -> Exercise:
     return ex
 
 
-@router.get("", response_model=list[ExerciseOut])
+@router.get("", response_model=list[ExerciseListOut])
 def list_exercises(
     db: Session = Depends(get_db),
     pattern: str | None = Query(default=None, description="movement_pattern exacto"),
@@ -38,7 +43,7 @@ def list_exercises(
     level_max: int | None = Query(default=None, ge=1, le=3, description="nivel mínimo ≤"),
     q: str | None = Query(default=None, min_length=2, description="busca en nombre/aliases"),
     include_archived: bool = Query(default=False),
-) -> list[ExerciseOut]:
+) -> list[ExerciseListOut]:
     stmt = select(Exercise).order_by(Exercise.muscle_primary, Exercise.canonical_name)
     if not include_archived:
         stmt = stmt.where(Exercise.archived.is_(False))
@@ -55,7 +60,7 @@ def list_exercises(
         stmt = stmt.where(
             Exercise.canonical_name.ilike(like) | Exercise.aliases.any(q.strip())
         )
-    return [ExerciseOut.model_validate(e) for e in db.scalars(stmt)]
+    return [ExerciseListOut.model_validate(e) for e in db.scalars(stmt)]
 
 
 @router.get("/{exercise_id}", response_model=ExerciseOut)

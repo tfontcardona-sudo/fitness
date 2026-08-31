@@ -206,18 +206,53 @@ export function macrosScaledToKcal(baseNut: any, kcal: number): MacroTargets {
 }
 
 const scale = (v: any, f: number): any => (typeof v === "number" ? Math.round(v * f) : v);
-const scaleG = (v: any, f: number): any => (typeof v === "number" ? Math.max(0, Math.round((v * f) / 5) * 5) : v); // gramos a múltiplos de 5
+// Gramos a múltiplos de 5, con SUELO de 5 g para lo que ya pesaba algo: por
+// debajo de 2,5 g el redondeo lo dejaba en 0, y un ingrediente de 0 g no es un
+// ingrediente (en el backend además rompe el esquema `grams > 0`).
+// Espejo de `_scale_g` en services/nutrition_scale.py.
+const scaleG = (v: any, f: number): any => {
+  if (typeof v !== "number") return v;
+  const escalado = Math.round((v * f) / 5) * 5;
+  return v > 0 ? Math.max(5, escalado) : Math.max(0, escalado);
+};
 
 /** Reescala las cantidades DENTRO de un texto de equivalencias ("140 g crudo =
  *  380 g cocido"). Solo números con unidad g/gr/ml; "2 huevos" queda igual.
+ *
+ *  CASO "N ud (M g)": la medida casera del solver de porciones lleva las
+ *  unidades delante. Tocando solo los gramos, el plato salía como
+ *  «4 ud (165 g)» con una unidad de 55 g — cuatro huevos que pesan tres. Se
+ *  recalculan las unidades; si no dan un entero razonable, se deja solo el peso.
  *  Espejo de `_scale_amount_text` en services/nutrition_scale.py. */
 function scaleAmountText(text: any, f: number): any {
   if (typeof text !== "string" || f === 1) return text;
-  return text.replace(/(\d+(?:[.,]\d+)?)\s*(g|gr|ml)\b/g, (_m, num: string, unit: string) => {
-    const v = parseFloat(num.replace(",", ".")) * f;
-    const scaled = v >= 25 ? Math.round(v / 5) * 5 : Math.max(1, Math.round(v));
-    return `${scaled} ${unit}`;
-  });
+  const peso = (v: number): number =>
+    v >= 25 ? Math.round(v / 5) * 5 : Math.max(1, Math.round(v));
+
+  // La forma compuesta se resuelve primero y se aparta: dejarla en el texto
+  // haría que el barrido de abajo volviera a escalar sus gramos.
+  const apartados: string[] = [];
+  let out = text.replace(
+    /(\d+)\s*ud\s*\(\s*(\d+(?:[.,]\d+)?)\s*(g|gr|ml)\s*\)/g,
+    (_m, uds: string, num: string, unit: string) => {
+      const val = parseFloat(num.replace(",", "."));
+      const n0 = parseFloat(uds);
+      const nuevo = peso(val * f);
+      const porUnidad = n0 > 0 ? val / n0 : 0;
+      let texto = `${nuevo} ${unit}`;
+      if (porUnidad > 0) {
+        const n = Math.round(nuevo / porUnidad);
+        if (n >= 1 && Math.abs(n * porUnidad - nuevo) <= Math.max(1, 0.15 * porUnidad)) {
+          texto = `${n} ud (${nuevo} ${unit})`;
+        }
+      }
+      apartados.push(texto);
+      return `\u0000${apartados.length - 1}\u0000`;
+    },
+  );
+  out = out.replace(/(\d+(?:[.,]\d+)?)\s*(g|gr|ml)\b/g, (_m, num: string, unit: string) =>
+    `${peso(parseFloat(num.replace(",", ".")) * f)} ${unit}`);
+  return out.replace(/\u0000(\d+)\u0000/g, (_m, i: string) => apartados[Number(i)]);
 }
 
 /** Ratio del eje que corresponde a un grupo de equivalencias por su nombre. */

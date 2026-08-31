@@ -237,6 +237,18 @@ def copiar_a_cliente(db: Session, client: Client, *, nutrition: dict | None,
 
     avisos: list[str] = []
 
+    # Lo del CICLO del origen tampoco puede viajar dentro del entreno. En un
+    # plan solo-entreno (o en cualquiera cuyo sello acabara ahí) el bloque
+    # `applied_adjustments` vive en training_json: al copiarlo, el destino
+    # aparecía "adaptado a la revisión #N" de una revisión que no es suya —con
+    # las CIFRAS del cliente de origen dentro de sus Novedades— y su aviso de
+    # "sin adaptar" se apagaba solo. La limpieza existía únicamente para la
+    # nutrición (auditoría).
+    for _bloque in (training, education):
+        if _bloque:
+            for clave in ("applied_adjustments", "rev", "gen_inputs", "manual_changes"):
+                _bloque.pop(clave, None)
+
     # El paquete del DESTINO manda: pegar entreno a un cliente Start (solo
     # nutrición) publicaría en su portal algo que no ha contratado.
     if training and not pkgs.has_training(client.package_tier):
@@ -402,16 +414,21 @@ def guardar_modelo(db: Session, plan: Plan, titulo: str) -> PlanTemplate:
     if not titulo:
         raise PlanLibraryError("Ponle un título al modelo (p. ej. «Planificación base»).")
     nutrition = _copy.deepcopy(plan.nutrition_json) if plan.nutrition_json else None
-    if nutrition:
-        # El modelo tampoco arrastra el ciclo de nadie.
-        for clave in ("applied_adjustments", "rev", "gen_inputs", "manual_changes"):
-            nutrition.pop(clave, None)
+    training = _copy.deepcopy(plan.training_json) if plan.training_json else None
+    education = _copy.deepcopy(plan.education_json) if plan.education_json else None
+    # El modelo tampoco arrastra el ciclo de nadie — NI POR EL ENTRENO: el
+    # sello de la adaptación vive ahí en los planes solo-entreno, así que el
+    # modelo lo repartía a todos los clientes a los que se aplicara.
+    for _bloque in (nutrition, training, education):
+        if _bloque:
+            for clave in ("applied_adjustments", "rev", "gen_inputs", "manual_changes"):
+                _bloque.pop(clave, None)
     tpl = PlanTemplate(
         title=titulo[:120],
-        summary=resumen_plan(nutrition, plan.training_json, plan.goal_type)[:200],
+        summary=resumen_plan(nutrition, training, plan.goal_type)[:200],
         nutrition_json=nutrition,
-        training_json=_copy.deepcopy(plan.training_json) if plan.training_json else None,
-        education_json=_copy.deepcopy(plan.education_json) if plan.education_json else None,
+        training_json=training,
+        education_json=education,
     )
     db.add(tpl)
     db.flush()
@@ -423,28 +440,44 @@ def guardar_modelo(db: Session, plan: Plan, titulo: str) -> PlanTemplate:
 def pool_de_planes(db: Session) -> list[dict]:
     """El plan VIGENTE de cada cliente (o su último borrador si no hay activo),
     con su resumen: es la lista de "copiar de este cliente"."""
+    # DOS pasos a propósito. El primero elige UN plan por cliente leyendo solo
+    # escalares; el segundo trae el contenido únicamente de los elegidos. Antes
+    # se pedía la fila entera de TODOS los planes vivos de TODOS los clientes
+    # —los cuatro JSONB, banco de comidas incluido— para acabar tirando casi
+    # todos y pintar una línea de cada uno.
     filas = list(db.execute(
-        select(Plan, Client.full_name)
+        select(Plan.id, Plan.client_id, Plan.status, Plan.published_at,
+               Plan.created_at, Client.full_name)
         .join(Client, Client.id == Plan.client_id)
         .where(Plan.status.in_(("published", "draft")))
         .order_by(Plan.client_id, Plan.id.desc())
     ))
-    mejores: dict[int, tuple[Plan, str]] = {}
-    for plan, nombre in filas:
-        actual = mejores.get(plan.client_id)
+    mejores: dict[int, tuple] = {}
+    for fila in filas:
+        actual = mejores.get(fila.client_id)
         # Preferencia: publicado > borrador; a igualdad, el más nuevo (la
         # consulta ya viene de nuevo a viejo).
-        if actual is None or (plan.status == "published" and actual[0].status != "published"):
-            mejores[plan.client_id] = (plan, nombre)
+        if actual is None or (fila.status == "published" and actual.status != "published"):
+            mejores[fila.client_id] = fila
+    contenidos = {}
+    if mejores:
+        contenidos = {
+            c.id: c for c in db.execute(
+                select(Plan.id, Plan.nutrition_json, Plan.training_json, Plan.goal_type)
+                .where(Plan.id.in_([f.id for f in mejores.values()]))
+            )
+        }
     out = []
-    for plan, nombre in mejores.values():
+    for fila in mejores.values():
+        cont = contenidos.get(fila.id)
         out.append({
-            "plan_id": plan.id, "client_id": plan.client_id, "client_name": nombre,
-            "status": plan.status,
-            "summary": resumen_plan(plan.nutrition_json, plan.training_json,
-                                    plan.goal_type),
-            "updated_at": (plan.published_at or plan.created_at).isoformat()
-            if (plan.published_at or plan.created_at) else None,
+            "plan_id": fila.id, "client_id": fila.client_id, "client_name": fila.full_name,
+            "status": fila.status,
+            "summary": resumen_plan(cont.nutrition_json if cont else None,
+                                    cont.training_json if cont else None,
+                                    cont.goal_type if cont else None),
+            "updated_at": (fila.published_at or fila.created_at).isoformat()
+            if (fila.published_at or fila.created_at) else None,
         })
     out.sort(key=lambda x: x["client_name"].lower())
     return out

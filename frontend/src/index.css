@@ -1,3 +1,34 @@
+/* ---------------------------------------------------------------------------
+   INTER SERVIDA POR NOSOTROS (no desde Google).
+   El <head> traía una hoja de estilo de fonts.googleapis.com: eso mandaba la
+   IP de cada visitante —incluidos los clientes del portal, que firman un
+   consentimiento RGPD para tratar datos de SALUD— a un tercero en cada carga,
+   y metía una petición externa BLOQUEANTE antes del primer pintado (si Google
+   tarda, la web espera). Ahora los dos ficheros salen del propio dominio.
+
+   Es la MISMA fuente variable que servía Google: un solo archivo por
+   subconjunto cubre 400/500/600/700 (por eso `font-weight: 100 900`), así que
+   son 2 descargas en total, no 8. Subconjuntos latin y latin-ext: castellano,
+   catalán y el símbolo del euro. Para actualizarla, baja de nuevo el CSS de
+   Google con user-agent de Chrome y sustituye los .woff2 de public/fonts/.
+   --------------------------------------------------------------------------- */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/inter-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/inter-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -216,16 +247,37 @@ body::before {
     bottom: calc(4.75rem + env(safe-area-inset-bottom)) !important;
   }
 }
-/* Pestañas del perfil deslizables en pantallas estrechas (sin cortar) */
-.profile-tabs {
+/* Zona de toque decente sin tocar el aspecto. Un botón de icono del panel
+   mide 21×21 px reales: con el dedo se falla más de lo que se acierta (el
+   mínimo cómodo ronda los 40). El pseudo-elemento agranda SOLO lo que
+   responde al toque; el dibujo, el espaciado y el foco no se mueven. */
+.hit-tap {
+  position: relative;
+}
+.hit-tap::after {
+  content: "";
+  position: absolute;
+  inset: -0.5rem;
+}
+
+/* Tiras de pestañas y filtros deslizables en pantallas estrechas.
+   Sin esto, lo que no cabe se sale de la pantalla y para alcanzarlo hay que
+   arrastrar la PÁGINA ENTERA de lado (el <main> del panel scrollea en
+   horizontal), con las cabeceras desplazándose de paso. Así la tira se
+   desliza sola y el resto se queda quieto. */
+.profile-tabs,
+.tab-strip {
   overflow-x: auto;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
 }
-.profile-tabs::-webkit-scrollbar {
+.profile-tabs::-webkit-scrollbar,
+.tab-strip::-webkit-scrollbar {
   display: none;
 }
-.profile-tabs > button {
+.profile-tabs > button,
+.tab-strip > * {
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -553,4 +605,13 @@ a.portal-note:active{transform:translateY(1px)}
    cambiar — el avance se VE avanzar. */
 .portal-root .progress-fill, .card .progress-fill {
   transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Listas MUY largas (los 279 ejercicios de "Vídeos de ejercicios"): el
+   navegador se salta el maquetado y el pintado de las filas que quedan fuera de
+   pantalla. `contain-intrinsic-size` reserva su alto aproximado para que la
+   barra de desplazamiento no dé saltos. Sin virtualizar y sin librerías. */
+.fila-diferida {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 86px;
 }

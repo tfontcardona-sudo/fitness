@@ -406,7 +406,13 @@ GET  /api/p/{token}/feedback               (Portal) feedbacks ENVIADOS (sent_at)
 cd backend && python -m pytest tests/ -q
 ```
 
-- **~370 tests en verde** en base de datos limpia y migrada a head.
+- **749 tests en verde** en base de datos limpia y migrada a head, y también
+  **en orden inverso** (`ls tests/test_*.py | sort -r`): correrlos al revés es
+  la forma barata de destapar tests que solo pasan por lo que corrió antes
+  (destapó dos fallos reales de aislamiento).
+- `tests/test_migraciones.py` comprueba el arranque DESDE CERO: crea una base
+  temporal y corre `alembic upgrade head` entera (el camino del día que se
+  pierda el VPS, que estaba roto y nadie veía).
 - ⚠️ En un entorno nuevo exporta `ADMIN_1_USER`/`ADMIN_1_PASS` y corre los seeds
   antes: varios tests de integración hacen login real del coach (sin admin
   sembrado fallan con 401, y no es un bug del código).
@@ -422,6 +428,18 @@ cd backend && python -m pytest tests/ -q
   clientes de dominios de prueba (`@example.com`, `@test.local`, `@x.com`) con
   todas sus filas dependientes y archivos: `pytest` ya no deja rastro en el
   panel. No uses esos dominios para clientes reales.
+
+**Y el frontend** (obligatorio antes de fusionar nada de `frontend/`):
+
+```bash
+cd frontend && npx tsc --noEmit && npm run build
+npm run lint:hooks          # Rules of Hooks: un hook tras un return temprano
+                            # deja la app EN BLANCO en runtime. Debe dar 0/0.
+npm run check:anclas        # cada destino del backend tiene su ancla en la web
+npm run check:avisos        # los avisos del panel, en español y sin duplicar
+npm run check:claves        # toda clave guardada del portal lleva el token
+npm run check:portapapeles  # una sola puerta al portapapeles (`lib/clipboard`)
+```
 
 ---
 
@@ -441,6 +459,371 @@ cd backend && python -m pytest tests/ -q
 ---
 
 ## 9. Trabajo pendiente / próximos pasos
+
+000000000000000000000. ✅ **FUSIÓN DE LAS CINCO SESIONES + VERIFICACIÓN
+   ADVERSARIAL DEL RESULTADO (31-08-2026). INVENTARIO A CERO.** Las ocho tandas
+   de `docs/HALLAZGOS_POR_VERIFICAR.md` se repartieron entre cinco sesiones
+   paralelas; esta las fusionó TODAS en una sola rama, reconcilió a mano lo que
+   dos sesiones habían escrito por separado y verificó el conjunto.
+   - **Reconciliaciones de la fusión** (misma necesidad, dos soluciones): la
+     tanda 7 estaba hecha por partida doble — se quedó `ExerciseListOut` con su
+     exclusión extra, el endpoint de RESUMEN de planes por encima del recorte
+     por parámetro, las DOS mitades de la optimización de fotos, UNA sola
+     corrección del N+1 y los DOS avisos del cliente que no se pesa combinados
+     en uno (`no_diet_logs` bajo su guarda de nutrición, `sin_pesajes` para
+     todos los paquetes, sin duplicar el mensaje).
+   - **Las dos decisiones que quedaban, aplicadas**: el panel de supervisión §9
+     ya revisa también la REVISIÓN QUINCENAL (`adapt_plan`), y solo paga los
+     8-10 roles cuando el Revisor 0 —que es gratis— encuentra algo; y el embudo
+     self-serve de `/planes` se CONECTÓ en vez de retirarse: "Contratar ahora"
+     abre Stripe directamente, con el precio real a la vista.
+   - **Verificación adversarial de 46 agentes** sobre el árbol ya fusionado, dos
+     lentes por hallazgo (reproducir / refutar): 19 en crudo → **11 confirmados
+     y 6 disputados, los 17 resueltos**. TRES de los confirmados eran errores
+     MÍOS al fusionar: la repesca de Stripe anotaba las facturas sin su
+     suscripción (el programa de la oferta no se cerraba y Stripe cobraba un mes
+     de más), el aviso `sin_pesajes` quedó encerrado en la guarda de nutrición y
+     perdió justo al DQR Train, y el contracargo se guardaba con un tipo que no
+     existía en `KINDS` (en el libro parecía un cobro más).
+   - **Y los seis disputados** (hechos ciertos en los seis, ver el último
+     apartado de `docs/HALLAZGOS_POR_VERIFICAR.md`): una sola regla de "día
+     registrado" en Seguimiento (`push.dias_registrados`, contaba filas y el
+     autosave las crea vacías), biblioteca de ejercicios montada una sola vez
+     (viaja en el system cacheado), `exercise_id` no entero ya no tumba la
+     pantalla de Entreno, cupo de la repesca repartido entre las CINCO fuentes
+     que hay, rótulo real en las fotos iniciales de la anamnesis y
+     `?ligero` RETIRADO del listado de planes (quedan dos formas: la de por
+     defecto y `todo=true`).
+   - **Cómo se verificó**: suite completa **en los dos órdenes** (el inverso
+     destapó dos fallos reales de aislamiento), `tsc`, build, arranque desde una
+     base VACÍA hasta la última migración y las cinco guardas —`check:anclas`,
+     `check:avisos`, `check:claves`, `check:portapapeles` y `lint:hooks`, esta
+     última ahora en 0/0 (el guardián enciende UNA regla a propósito, así que ya
+     no marca como "sin usar" los `eslint-disable` de `exhaustive-deps`).
+   - ⚠️ **NO fusionada a propósito**: la rama `claude/dqr-white-label-*` es otro
+     producto (marca blanca) y borra los materiales de venta de DQ. Es una
+     decisión del dueño, no un descuido.
+
+00000000000000000000. ✅ **LA TANDA 3 DE `HALLAZGOS_POR_VERIFICAR`: EL CICLO —
+   AUTOMATISMOS, AVISOS Y RECORDATORIOS (30-08-2026).** Trabajo en PARALELO con
+   otras dos sesiones (tanda 1: los graves + Stripe · tanda 2: pagos y altas);
+   el reparto está escrito en la cabecera de `docs/HALLAZGOS_POR_VERIFICAR.md`
+   para que nadie pise a nadie. Cada hallazgo se verificó de forma adversarial
+   (un refutador + un reproductor) ANTES de tocar nada, y cada arreglo lleva su
+   regresión, comprobada de la única forma que vale: **falla sin el arreglo**.
+   - **Un correo que FALLA contaba como enviado.** La dedup y el cupo miraban
+     `email_log` sin su `status`: con el SMTP caído, los intentos fallidos
+     gastaban el tope de 3 avisos y el cliente se quedaba sin recordatorio de
+     cierre el resto de la quincena —y sin el del día 12 para siempre— aunque el
+     correo volviera esa misma tarde. Ahora solo cuentan `sent` y `disabled`.
+     ⚠️ Esto destapó que el fixture `_no_real_email` sustituía el transporte pero
+     NO configuraba el SMTP: `EmailService` cortaba antes y **en los tests todos
+     los correos se registraban como fallidos**, lo contrario de lo que el
+     fixture simulaba.
+   - **La vigilancia de automatismos solo miraba el mantenimiento diario**: los
+     recordatorios del cliente, el resumen del coach y los avisos de
+     videollamada podían llevar días muertos con el panel diciendo que todo iba
+     bien. Ahora se vigilan todos, con margen ancho para los secundarios (una
+     vuelta perdida no alarma). Y la rama de "terminó con errores" devolvía
+     ANTES de mirar la antigüedad, así que un trabajo que falló y además se paró
+     se quedaba para siempre en un mensaje que suena a que sigue corriendo.
+   - **El resumen del coach se silenciaba justo cuando había novedades**: su
+     huella de dedup se guardaba en crudo y `record_job` la recorta a 300
+     caracteres; con ~10 alertas abiertas, dos conjuntos DISTINTOS se leían como
+     iguales. Ahora se guarda un sha256.
+   - **Dos videollamadas el mismo día se veían como una** en el móvil del coach
+     (tag fija `dq-vc-coach`) — el mismo fallo de tags compartidas que ya se
+     había corregido en otros avisos.
+   - **"Escribir a mi coach" caía en un agujero**: la alerta vivía detrás de los
+     `return` de "sin plan publicado" e "inactivo", justo los dos clientes que
+     más escriben. Ahora se evalúa lo PRIMERO, antes de cualquier salida.
+   - **La racha del portal no consumía la "única verdad"** que su propio
+     comentario prometía: su predicado en SQL (`is_not(None)`) daba por bueno lo
+     que el motor descarta (`free_notes` vacío, `chosen_options_json` sin elegir
+     — filas que el autosave crea al abrir la pantalla) y premiaba días que para
+     el coach no existían.
+   - **Un push sin `count` APAGABA el badge del coach**: `Number(undefined)||0`
+     llamaba a `clearAppBadge()`, así que el resumen semanal y el aviso de
+     cliente inactivo —los dos emisores que no lo mandaban— borraban el "N pagos
+     sin leer" sin que se leyera nada. "Sin count" ya no es "count 0".
+   - **El punto ciego de "día registrado" (aviso `sin_pesajes` NUEVO).** Contar
+     las series y las comidas como registro es DELIBERADO y está blindado con
+     test (un DQR Train que entrena a diario no puede salir "en riesgo"): **no se
+     tocó**. Pero detrás había un hueco real: quien elige su comida cada día
+     cuenta como registrado, va verde en todas las pantallas, y al cerrar la
+     quincena el motor determinista se encuentra con 0-1 pesajes, responde
+     `dato_insuficiente` y no hay con qué ajustar — catorce días perdidos que el
+     coach descubría tarde. Ahora se avisa pasada la mitad del período, sin una
+     sola consulta extra en el barrido (sale de las filas que el lote ya trae).
+   - ⚠️ **La suite era dependiente del estado**: `pytest` dos veces seguidas daba
+     resultados distintos. La caché del contenido educativo vive en un sidecar
+     del storage y SOBREVIVE entre ejecuciones: el primer pase la poblaba y el
+     siguiente se saltaba la llamada de IA que los tests del pipeline cuentan.
+     Se apaga en los tests (lo que este documento ya daba por hecho). Con eso
+     desaparecen los dos fallos que arrastraba `test_ai_service`.
+   - **652 tests en verde** (dos pases seguidos, reproducible), `tsc` limpio,
+     build OK, `check:anclas` y `check:avisos` OK.
+
+0000000000000000000. ⚠️ **SEGUNDA VUELTA A LA AUDITORÍA (30-08-2026): lo que
+   la primera NO hizo.** Al preguntarle el dueño si de verdad no quedaba nada
+   por mejorar, la respuesta honesta fue que no: la auditoría anterior había
+   dejado cuatro huecos. Esto es lo que se hizo con cada uno.
+
+   - **PRUEBAS EN NAVEGADOR DE VERDAD (hecho).** Cero navegador en la ronda
+     anterior, pese a que el §10 lo exige. Montado un banco real (uvicorn +
+     Vite + cliente demo sembrado + Playwright/Chromium) y recorridos el panel
+     (escritorio y móvil 390 px), el portal, el cuestionario y el editor del
+     plan. Encontró y se arregló lo que ningún test veía:
+     · **dos 500 que rompían pantallas enteras**: un `kind` de movimiento
+       inesperado tumbaba el feed de pagos COMPLETO (`PaymentOut` validaba la
+       salida como enum), y un ejercicio con una clave de menos dejaba la
+       pantalla de Entreno del cliente EN BLANCO (se leía con corchete);
+     · un período de menos de 14 días dejaba al cliente sin poder enviar nunca
+       su revisión ("se activa el <fecha que ya pasó>");
+     · `/pagos` pintaba "0,00 € · 0 cobros" mientras cargaba, con la autoridad
+       de una cifra real;
+     · en el MÓVIL del coach: dos pestañas de Recursos y los chips de filtro de
+       Pagos fuera de la pantalla (solo alcanzables arrastrando la página
+       entera de lado), el menú "Más" de Planificación empezando 44 px fuera
+       del borde izquierdo, y botones de 21×21 px y enlaces de 16 px de alto;
+     · el login sin `name`/`autocomplete` (los gestores de contraseñas no lo
+       reconocían) y la marca del coach sin cargar en la pantalla de login.
+     Guiones en el scratchpad; se pueden rehacer.
+   - **OPTIMIZACIÓN MEDIDA (hecho, parcial).** Con 60 fichas sintéticas,
+     `/api/alerts` hacía **431 consultas y 355 ms** por refresco —siete por
+     cliente, y el panel lo pide cada 20 s—: ahora **8 consultas y 85 ms**, con
+     el mismo resultado exacto y dos regresiones que lo vigilan. La tipografía
+     Inter deja de venir de Google (la IP de cada cliente del portal viajaba a
+     un tercero en cada carga, y era una hoja de estilo externa BLOQUEANTE
+     antes del primer pintado): se sirve del propio dominio, la CSP se estrecha
+     y Caddy cachea `/fonts` e `/icons` 30 días. Quedan medidos y sin tocar
+     varios N+1 más (ver el documento de hallazgos).
+   - **VERIFICACIÓN ADVERSARIAL Y LOS DOS DOMINIOS QUE FALTABAN (a medias —
+     LEER ESTO).** Se lanzaron los dos barridos, pero de 146 agentes
+     terminaron 25: el resto murió contra el límite de sesión y con ellos casi
+     toda la fase de verificación. Lo que sí llegó a comprobarse en firme, más
+     lo que verifiqué a mano, está arreglado (abajo). El resto —**~85 pistas
+     con fichero y línea, SIN verificar**— está en
+     **`docs/HALLAZGOS_POR_VERIFICAR.md`**. No son hechos: hay falsos positivos
+     garantizados. **El siguiente paso natural del proyecto es volver a lanzar
+     esa verificación con presupuesto suficiente** y arreglar lo que sobreviva.
+   - **Arreglado de esa cosecha, todo comprobado a mano antes de tocar nada:**
+     · **la segunda contratación de la oferta se cancelaba tras cobrar 1 €** —
+       el recuento de "¿está cobrado entero?" miraba TODAS las facturas del
+       cliente de siempre, así que las tres del programa anterior ya sumaban:
+       tres meses de asesoría por un euro. Cada factura queda sellada con SU
+       suscripción (mig. 0042, con relleno de las que están en curso);
+     · **los 8-10 revisores IA no veían la comida ni la cena**: las
+       equivalencias se leían de `meal_bank["equivalences"]`, una clave que el
+       esquema no declara — código muerto. Y en flexible_7 el prompt manda
+       COMIDA y CENA como equivalencias (sus `options` llegan vacías), así que
+       las dos tomas principales no aportaban una línea al texto del panel. La
+       seguridad dura nunca estuvo comprometida (el Revisor 0 determinista las
+       recorre por su cuenta); lo ciego era el juicio cualitativo de pago. El
+       test que lo blindaba fabricaba una forma de banco que el sistema no
+       produce: validaba el bug. Reescrito con la forma real;
+     · **el token del portal seguía en claro en el log** en `/api/pay/{token}`
+       (el enlace de cobro lleva el mismo token que el portal);
+     · **el contador de fotos del cierre** vivía solo en memoria: al volver a la
+       pantalla reetiquetaba desde "frontal" —el "antes y ahora" del informe
+       comparaba ángulos distintos— y ofrecía huecos que el servidor no tenía;
+     · **videollamadas**: sin Google conectado, una propuesta no tenía NINGUNA
+       salida (el endpoint `done` lo admitía desde siempre, pero ningún botón lo
+       llamaba) y su alerta alta sonaba para siempre; y el `db.rollback()` del
+       endpoint de agendar resucitaba la credencial que Google acababa de
+       revocar, dejando el sistema atascado en "conectado" con todo fallando.
+   - Suite completa en verde (~640), `tsc` limpio, build OK, `check:anclas` y
+     `check:avisos` OK. Migración nueva: **0042** (`payments.subscription_id`).
+   - ⚠️ **Aviso de entorno**: el contenedor de esta sesión se restauró a una
+     instantánea vieja CUATRO veces, llevándose el árbol de trabajo y la base de
+     pruebas. Si algo no cuadra, `git log --oneline -1` primero; se recupera con
+     `git fetch origin <rama> && git reset --hard origin/<rama>` y
+     `alembic upgrade head` contra la base de pruebas.
+
+000000000000000000. ✅ **AUDITORÍA INTEGRAL DE TODO EL SISTEMA (30-08-2026).**
+   Petición del dueño: "una auditoría de absolutamente todo el sistema DQR…
+   que todo funcione en orden, optimizado, sin ningún error ni bug, en ningún
+   aspecto". 14 dominios auditados en paralelo (ciclo, IA/planes, revisión,
+   portal, panel, anamnesis, pagos, documentos, avisos, datos, seguridad,
+   rendimiento) con ~50 hallazgos; TODOS los confirmados corregidos y con
+   regresión. 627 tests + tsc + build + `check:anclas` + `check:avisos` +
+   `lint:hooks` en verde. Lo importante, por bloques:
+   - **LA IA REVISABA A CIEGAS**: el texto que reciben los 8-10 revisores del
+     panel §9 (incluido el clínico CON VETO) no llevaba NI UN PLATO —
+     `_plan_text` leía `option["name"]` y el esquema usa `title`, y el menú
+     strict (`bank["days"]`) ni se miraba. Ahora ven platos, ingredientes,
+     menú cerrado y equivalencias. Y el **patrón dietético** (vegano, halal,
+     kosher…) por fin viaja al prompt que ELIGE los alimentos: antes se
+     proponía pollo a un vegano y el Revisor 0 vetaba el plan entero DESPUÉS
+     de pagarlo. ⚠️ Los revisores corren ahora EN PARALELO (mismo orden, mismo
+     veredicto, ni un crédito más): eran 8-24 llamadas encadenadas dentro de
+     la petición que espera el coach.
+   - **PRIMERO REPARAR, DESPUÉS JUZGAR** (`generator`): el informe del banco se
+     calculaba ANTES de retirar alérgenos y de cuadrar los platos, así que el
+     plan se retenía por un aviso fantasma ("contiene leche" en una opción que
+     ya se había quitado) y por desvíos que el propio backend sabe corregir.
+   - **"DÍA REGISTRADO" ES LO MISMO EN TODO EL SISTEMA** (`push.dias_con_registro`):
+     el motor de "en riesgo" solo miraba el diario, así que un DQR Train que
+     registraba TODAS sus series salía con 0 días, se marcaba `at_risk` con
+     "adherencia 0 %" y la racha del portal le decía 0. Lo consumen el job
+     diario, la alerta del panel, el resumen semanal y la racha.
+   - **EL CANAL CLIENTE→COACH ESTABA MUERTO**: "Solicitar ajuste" existía
+     entero en el backend (push ✋, email, alerta, tarjeta en Seguimiento) y no
+     había pantalla que lo llamara. Ahora hay "Escribir a mi coach" en el
+     portal. Además: el Diario ya no pierde lo tecleado sin cobertura
+     (sessionStorage + reintento al volver la conexión, como Entreno), el
+     cuestionario de 6 pasos guarda BORRADOR, las fotos de la revisión se
+     suben desde el propio cierre (el endpoint existía y nadie lo usaba) y las
+     notas diarias del cliente por fin se ven en la tabla del coach.
+   - **DINERO**: la baja RGPD no cancelaba la suscripción de Stripe (se seguía
+     cobrando a alguien que ya no existe, con el cargo entrando como
+     huérfano); una devolución podía restar DOS veces (el guard solo cubría un
+     sentido y las versiones nuevas de la API ya no mandan `charge.refunds`);
+     un cobro a mano mal tecleado no se podía borrar; y "Sincronizar" decía
+     "sin cobros pendientes" aunque el barrido se hubiera cortado (ahora hay
+     cupo por fuente: las sesiones abandonadas ya no se comen el presupuesto
+     de facturas y devoluciones).
+   - **RECUPERACIÓN ANTE DESASTRE**: `alembic upgrade head` sobre una base
+     VACÍA moría en 0036 y 0041 y dejaba la base sin una sola tabla (Alembic
+     corre la cadena en una transacción) → el contenedor en crashloop. Nadie
+     lo veía porque en producción la cadena ya estaba sellada. Guarda de
+     idempotencia + `tests/test_migraciones.py`, que crea una base temporal y
+     corre la cadena entera (verificado: falla sin el arreglo).
+   - **RGPD DE VERDAD**: el borrado dejaba intacto `audit_log`, donde cada
+     PATCH guarda el antes/después de lesiones, patologías, medicación y
+     alergias (art. 9), y "Descargar todo" no incluía ni el diario ni una sola
+     serie de entreno — con el flujo natural (exportar → borrar), ese
+     historial se perdía para siempre.
+   - **AVISOS QUE INSISTEN SIN ACOSAR**: "Pendiente hoy · Fotos" salía 5 veces
+     al día PARA SIEMPRE (ahora caduca y se apaga al enviarse el informe); una
+     quincena sin cerrar mandaba ~31 emails y ~150 push (tope de 3 avisos y
+     una semana); el resumen del coach sonaba cada 3 h con el mismo texto
+     (ahora solo con novedades + uno de cortesía al día); y las tags
+     compartidas hacían que dos clientes que cerraban la misma tarde se vieran
+     como UNA sola notificación.
+   - **DOCUMENTO DEL CLIENTE**: la adaptación quincenal machacaba "Por qué
+     este enfoque" con texto interno (del mes 2 en adelante el cliente no
+     volvía a leer el argumentario); "Adherencia dieta 0 %" se le reprochaba a
+     quien no ha contratado dieta; la lista de la compra del menú cerrado
+     estaba hecha y con tests y no la recibía nadie; la fecha de la cabecera
+     era la de DESCARGA; y el educativo era la única sección sin filtro de
+     alérgenos (y con contenido cacheado por split, o sea compartido).
+   - **SEGURIDAD**: los tokens del portal —credencial permanente al historial
+     clínico— se escribían EN CLARO en el access log de uvicorn, con logs sin
+     rotar en el VPS; no había tope de tamaño de cuerpo en ningún punto; el
+     formulario público podía vaciar la cuota diaria de email del coach
+     (cupo `PUBLIC_SIGNUPS_PER_DAY`); y cada PDF del portal arrancaba un
+     LibreOffice de ~300 MB sin caché ni cola (10-30/min permitidos).
+   - **RENDIMIENTO**: las alertas cargaban TODAS las versiones de TODOS los
+     planes con sus 4 JSONB por cliente y por barrido; Seguimiento rehacía el
+     histórico entero cada 3 s (y sin comprobar `document.hidden`); la ficha
+     pedía dos veces todos los planes completos (nuevo `?ligero=true`); y
+     recharts (~106 KB gzip) viajaba en la primera carga del portal.
+   - **Y ADEMÁS**: el cuestionario ya no se puede reescribir una vez recibido
+     (por PDF o con el plan en marcha); las contradicciones de la anamnesis se
+     ven sin volver a pagar la lectura; los adjuntos (analítica) ya no cuentan
+     como anamnesis; las fotos iniciales son el "antes" del primer informe; el
+     cierre por el coach no inventa un segundo pesaje (anulaba el guardarraíl
+     y aplicaba un −6 % real); el informe de un DQR Train no habla de dieta;
+     el aviso de sistema "automatismos parados" se ve en Hoy (y no lleva a
+     /clientes/0); un cliente caído en el mantenimiento ya no cuenta como
+     ejecución correcta; los avisos de día exacto (día 12, D+3/D+7) son
+     umbrales y no se pierden si el job se salta un día; y cambiar el plan o
+     la duración de un cliente pide confirmación.
+0000000000000000000000. ✅ **TANDA 7 DEL INVENTARIO: OPTIMIZACIÓN — LO QUE EL
+   PANEL PEDÍA DE MÁS (31-08-2026).** Trabajo en PARALELO con la sesión de
+   Stripe (que lleva la tanda 6, portal y anamnesis): el reparto está escrito en
+   `docs/HALLAZGOS_POR_VERIFICAR.md` con los ficheros que toca cada uno. Todos
+   los hallazgos se abrieron y se reprodujeron antes de tocar nada; cada
+   arreglo lleva su regresión en `tests/test_optimizacion.py` (11), y las 11
+   FALLAN con el código anterior. 613 tests en verde, `tsc` limpio, build,
+   `lint:hooks` sin errores, `check:anclas` y `check:avisos` OK.
+   - **La lista de versiones del plan era el agujero grande.** El panel de
+     Planificación pedía `GET /clients/{id}/plans` — TODAS las versiones con sus
+     cuatro JSONB, banco de comidas incluido — en el montaje **y otra vez tras
+     cada acción** (generar, adaptar, activar, descartar, copiar, aplicar el
+     Word…), para pintar cuatro cifras por versión. Ahora hay
+     `GET /clients/{id}/plans/summary` (una línea por versión: kcal, macros,
+     split, nº de sesiones, por qué cambió) y `GET /plans/{id}` para la ÚNICA
+     versión que se enseña y se edita. En el panel todo pasa por un solo
+     `recargarPlanes(preferido?)`. La ficha (chip de dieta) y la pestaña
+     Feedback (nº de revisión ya adaptada) también usan el resumen.
+     ⚠️ Si añades un dato del plan al archivo de "Planificaciones anteriores",
+     añádelo a `PlanSummaryOut` — el archivo ya NO tiene los JSON.
+   - **Cazado al refactorizar (no estaba en el inventario)**: `normalize()`
+     prefiere la clave `nutrition` a `nutrition_json`, y dos sitios le pasaban
+     `{...plan, nutrition_json: nuevo}` — como `plan` YA trae `nutrition`
+     (la vieja), lo recién guardado NO se veía: editar los "Cambios de tu plan"
+     o aplicar el Word decía "guardado" y la pantalla seguía con lo anterior
+     hasta recargar. El backend sí lo tenía. Corregido en los dos (y el Word
+     refresca también el educativo).
+   - **Historial cuadrático**: `compute_period_summary` compara cada revisión
+     con las anteriores, así que calcular el historial releía las series de las
+     previas una vez por revisión (doce revisiones = 78 barridos). Nuevo
+     `sets_por_periodo_de_cliente` (UNA consulta) que se pasa como caché
+     opcional; sin ella el comportamiento es el de siempre. De paso, el
+     historial dejó de traer los cuatro JSONB de todos los planes para imprimir
+     cuatro escalares, y los feedbacks van en una consulta y no una por período.
+   - **N+1 sueltos**: `GET /clients/{id}/periods` hacía una consulta de feedback
+     POR revisión; la pantalla de Entreno del portal resolvía el plan DOS veces
+     (el endpoint y `build_training_sessions`) y consultaba la biblioteca una
+     vez POR SESIÓN; "Elegir base" leía el plan ENTERO de todos los clientes
+     para pintar una línea de cada uno (ahora dos pasos: escalares para elegir,
+     contenido solo de los elegidos).
+   - **Peso por la red**: la biblioteca de ejercicios ya no manda
+     `technique_notes`/`biomechanics_notes` en la LISTA (36 de sus ~141 KB, y
+     ninguna pantalla del panel las pinta; la ficha individual las conserva) y
+     el editor la recibe del panel en vez de volver a descargarla al abrirse;
+     `GET /clients?light=1` deja fuera las notas largas de la anamnesis en Hoy y
+     Clientes, que se refrescan solas cada 3 s y no leen ninguna (la FICHA nunca
+     se recorta); las fotos del período se piden UNA vez por cliente (cada
+     tarjeta pedía la lista entera), se bajan EN PARALELO y en miniatura
+     (`?w=` con Pillow y `draft()`), y al pulsar una se abre la original.
+   - **Vídeos de ejercicio (279 filas)**: portada de YouTube `mqdefault` en vez
+     de `hqdefault` para un hueco de 56 px, `loading="lazy"`, fila memoizada
+     (se repintaban las 279 con cada tecla), buscador con `useDeferredValue` y
+     `content-visibility` (`.fila-diferida`) para no maquetar lo que no se ve.
+   - **Un clásico**: el aviso de "Sin conexión" del panel móvil estaba montado
+     DOS veces (líneas seguidas, copia y pega).
+
+000000000000000000000. ✅ **TANDA 3 (SEGUNDA MANO): LO QUE QUEDABA DEL CICLO, Y
+   LA SUITE QUE MENTÍA (30-08-2026).** Trabajo en PARALELO con otras dos
+   sesiones sobre el inventario `docs/HALLAZGOS_POR_VERIFICAR.md` (que vive en
+   la rama de la tanda 1). El PR #113 cerró cuatro de esta tanda mientras yo
+   verificaba; esto es lo que quedaba. Cada hallazgo se verificó de forma
+   adversarial (un refutador + un reproductor) ANTES de tocar nada.
+   - ⚠️ **LOS DOS FALLOS DE `test_ai_service` NO ERAN "PREEXISTENTES DE MAIN":
+     era la suite, que dependía del estado.** `pytest` dos veces seguidas daba
+     resultados distintos. La caché del contenido educativo se guarda en un
+     sidecar del storage y SOBREVIVE entre ejecuciones: el primer pase la
+     poblaba y el siguiente se saltaba la llamada de IA que los tests del
+     pipeline están CONTANDO (`assert len(client.calls) == 3` → 2). Las tres
+     sesiones lo estaban dando por bueno como "ya venía roto". Se apaga en los
+     tests (lo que este documento ya daba por hecho) y **la suite queda entera
+     en verde, dos pases seguidos**. Si añades un caché con sidecar, apágalo en
+     `tests/conftest.py` o volverás a envenenar la suite.
+   - **Aviso NUEVO `sin_pesajes` — el punto ciego de "día registrado".** Contar
+     las series y las comidas elegidas como registro es DELIBERADO y está
+     blindado con test (quien entrena a diario no puede salir "en riesgo"): NO
+     se toca. Pero detrás había un hueco real: el cliente que elige su comida
+     cada día cuenta como registrado, va verde en todas las pantallas y no
+     dispara nada… y al cerrar la quincena el motor determinista se encuentra
+     con 0-1 pesajes, responde `dato_insuficiente` y no hay con qué ajustar el
+     plan. Catorce días perdidos que el coach descubría cuando ya no tenían
+     arreglo. Ahora se avisa pasada la mitad del período, y sale de las filas
+     que el bloque de `no_logs` ya carga: ni una consulta más en el barrido.
+   - ⏸️ **HECHO Y ESPERANDO A LA TANDA 1** (rama
+     `claude/tanda3-pendiente-de-tanda1`): la vigilancia de automatismos que
+     solo miraba el mantenimiento diario, la escalada a "lleva N horas" que era
+     inalcanzable tras un fallo, la huella del resumen del coach truncada a 300
+     caracteres (silenciaba el aviso justo cuando había novedades), el cupo de
+     avisos de cierre que contaba los correos FALLIDOS y la racha del portal que
+     no consume la "única verdad". Todo ello vive en código que aún no está en
+     `main` (`job_state.py`, `_enviados_desde`, la dedup del resumen,
+     `dias_registrados`): arreglarlo aquí a medias solo crearía un conflicto con
+     su fusión. **Cuando la tanda 1 entre en `main`, fusiona esa rama.**
+   - 602 tests en verde (dos pases), `tsc` limpio, `check:anclas` y
+     `check:avisos` OK.
 
 00000000000000000. ✅ **OFERTA = PROGRAMA CERRADO DE 3 MESES (28-08-2026).**
    Decisión del dueño: la oferta es UNA — 3 meses de DQR Full con permanencia
@@ -1277,6 +1660,143 @@ cd backend && python -m pytest tests/ -q
      fantasma, diet break aplicado, calibración con registros reales, Novedades
      sin jerga, memoria de vetos, panel caído en ámbar, resumen de entreno para
      los revisores y no-aviso con feedback sin enviar.
+
+0000000. ✅ **CIERRE: todo fusionado y a cero (agosto 2026).** El trabajo vivía
+   en CINCO ramas de cinco sesiones distintas; esta rama iba 96 commits por
+   detrás de `main` y dos sesiones habían hecho la MISMA tanda 7 en paralelo.
+   Todo fusionado en `claude/stripe-integration-steps-somce4` (PR #112).
+   - **Reconciliación de la tanda 7 duplicada**, quedándose con lo mejor de
+     cada versión: el esquema `ExerciseListOut` (la exclusión forma parte del
+     tipo) + su exclusión extra; el endpoint de RESUMEN de planes en vez del
+     `?ligero=true`; las fotos del período con las DOS mitades (una petición
+     compartida Y miniatura del backend); y los dos avisos del cliente que no
+     se pesa combinados en uno. ⚠️ CORREGIDO DESPUÉS: los dejé anidados
+     (`sin_pesajes` como `else` de `no_diet_logs`) y eso encerró el de pesajes
+     dentro de la guarda de nutrición, perdiendo al DQR Train. Ahora el de
+     dieta va bajo su guarda y el de pesajes vale para todos, sin duplicar.
+   - **Daño de fusión, corregido**: siete ficheros se commitearon con las
+     marcas de conflicto dentro; la racha del portal se quedó con media función
+     de cada versión (ahora usa la ÚNICA definición de "día registrado" del
+     sistema); y había un accesor `pesajes` duplicado del que Python se quedaba
+     con el roto.
+   - **Dos fallos que solo aparecieron al correr la suite en orden INVERSO**
+     (para comprobar que nada dependía del orden): un cliente con el paquete
+     antiguo (`pro`/`start`) tumbaba con un 500 la lista ENTERA de clientes,
+     "Hoy" y su ficha —la tabla de equivalencias existía y no se aplicaba a la
+     salida—; y el test de migraciones dejaba el engine atado a una base
+     temporal que después borraba, envenenando todo lo que corriera detrás.
+   - **Lo último que quedaba construido y sin conectar, conectado**: el panel
+     §9 revisa la revisión quincenal (pagando solo si el Revisor 0 veta); el
+     embudo self-serve de `/planes` con "Contratar ahora" directo a Stripe y el
+     precio real a la vista; archivar/restaurar ejercicios; subir el logo de la
+     marca; y descargar el informe de la revisión.
+   - **NO fusionada a propósito**: `claude/dqr-white-label-4ojp01` es otro
+     producto (white-label para otro gimnasio, con su kit de demo) y borra el
+     material de marketing de DQ. Es una decisión del dueño.
+   - Verificado con todo junto: suite completa **en los dos órdenes**, `tsc`,
+     build, arranque desde base VACÍA a la última migración (0043), una sola
+     cabeza de Alembic, la app levanta sus 165 rutas, y las cuatro guardas
+     (`check:anclas`, `check:avisos`, `check:claves`, `check:portapapeles`).
+
+000000. ✅ **TANDAS 7–8: el cierre del inventario (agosto 2026).** La 7
+   (optimización) la llevó la sesión paralela. La **8**, la última, barrió lo
+   que quedaba: créditos de IA, código construido y sin conectar, UX del panel
+   e integraciones.
+   - **Construido y sin puerta**: la PORTABILIDAD RGPD (ZIP con todo lo del
+     cliente) existía y no tenía botón — ahora está en el perfil, encima del de
+     borrar; el atajo para recuperar SOLO el contenido educativo que falló (sin
+     repagar núcleo + comidas + panel) tampoco tenía botón; el diagnóstico del
+     correo (`/api/email/status|test`) no tenía pantalla — está en Recursos, con
+     el estado, lo que falta en el `.env`, envío de prueba y los últimos
+     intentos; el "enlace de reservas" se guardaba y no lo leía nadie — ahora va
+     en el WhatsApp de reprogramar la videollamada, que es lo que su propio
+     campo promete; y `AUTO_PILOT_DEFAULT` prometía un modo que no existe (y que
+     iría contra el criterio del sistema): fuera el ajuste y su superficie de
+     API, la columna queda inerte y anotada.
+   - **Dinero**: los CONTRACARGOS (`charge.dispute.*`) eran el único movimiento
+     que el sistema no escuchaba —el banco retira el dinero y hay PLAZO para
+     responder con pruebas—; la baja de la oferta cancelaba en Stripe y dejaba
+     el `stripe_subscription_id` puesto, con lo que ese cliente no volvía a
+     entrar NUNCA en la ventana de renovación; la repesca no miraba las facturas
+     FALLIDAS (lo más caro de perder); y una referencia de checkout no numérica
+     reventaba el `int()` del webhook con un 500 que Stripe reintenta durante
+     días.
+   - **Créditos**: una respuesta cortada por `max_tokens` se trataba como "JSON
+     mal formado" y se reintentaba idéntica —dos llamadas caras para un fallo
+     seguro—; los revisores del panel juzgaban el entreno por un RECUENTO
+     ("6 ejercicios, 18 series") teniendo por rúbrica "selección y orden de
+     ejercicios"; y la biblioteca de ejercicios viajaba en el user prompt, sin
+     cachear, repagándose entera en cada reintento (ahora es un segundo bloque
+     de system con `cache_control`).
+   - **El cuadre del banco**: deshacía lo que el solver acababa de fijar
+     (gramos fuera de las cotas del catálogo y caseras que mienten,
+     «4 ud (165 g)» con la unidad a 55 g). Ahora intenta primero el solver, y la
+     medida casera recalcula sus unidades — espejado en el editor TS y cubierto
+     por el contrato de paridad. Un ingrediente que caía a 0 g tumbaba el
+     `model_validate` y el `except` tiraba EN SILENCIO todas las reparaciones.
+   - **La memoria de vetos (§13) dejó de aprender**: desde que se repara antes
+     de juzgar, el alérgeno colado y el desvío de la toma emiten `seguridad:` y
+     `cuadre:`, no `violation:`, y la memoria solo miraba el primer prefijo.
+   - **Avisos sin salida**: la baja RGPD podía quedar bloqueada para siempre si
+     Stripe fallaba con un error que el filtro no reconoce (ahora el coach puede
+     declarar que la canceló él, y queda en la auditoría); "N sin ficha" no se
+     podía apagar (mig. 0043, `payments.dismissed_at`); Historial y Aprendizaje
+     se quedaban girando para siempre al fallar su carga.
+   - **Guardas nuevas**: `npm run check:portapapeles` (una sola puerta al
+     portapapeles: había ocho `writeText` a pelo, tres con un "Copiado ✓"
+     incondicional detrás de un catch mudo) y `tests/test_ajustes_vivos.py`
+     (toda clave de `.env.example` existe en Settings y la menciona alguien).
+   - **Dos verificados y NO arreglados a propósito**, por ser decisión del
+     dueño: enchufar el panel §9 a la revisión quincenal (pagar 8-10 roles cada
+     quincena va contra el recorte de créditos que él pidió) y retirar el embudo
+     self-serve de `/planes` (tres endpoints públicos sin consumidor que pueden
+     estar enlazados desde fuera). Los dos quedan anotados en el código y en el
+     inventario.
+
+00000. ✅ **TANDAS 1–6 (agosto 2026): el inventario de hallazgos, arreglado por
+   prioridad.** Tras la ronda 3 quedó `docs/HALLAZGOS_POR_VERIFICAR.md`: la
+   salida en crudo de dos barridos automáticos cuya verificación adversarial
+   murió contra el límite de sesión (**pistas con fichero y línea, NO hechos**).
+   Se atacó en tandas, ordenadas de más grave a menos, por VARIAS sesiones en
+   paralelo — el reparto vive en la cabecera de ese documento y hay que
+   reclamar la tanda ANTES de tocar nada (tres sesiones hicieron la 3 a la vez
+   y hubo que reconciliar a mano un aviso duplicado y un N+1 reintroducido).
+   - **Tanda 1** (graves): progresión semanal o día de sesión malformados
+     tumbaban "Hoy"/Entreno de TODOS los clientes; el plan declaraba macros que
+     su propia lista de la compra no daba; la memoria de vetos se sanea también
+     al LEERLA.
+   - **Tanda 2** (pagos): devoluciones descontadas dos veces (la fila sintética
+     de cuadre + el desglose `re_…`), la devolución posterior entraba "vista",
+     y borrar un cobro a mano dejaba al cliente en "pago pendiente".
+   - **Tanda 3** (el ciclo): cuatro de los cinco automatismos podían morir en
+     silencio → `services/job_state.py` (los cinco vigilados, con escalado por
+     horas sin éxito) enchufado al scheduler, a las alertas del panel y al push;
+     el badge del coach se apagaba solo; el gasto de IA se anotaba por debajo
+     del real; un correo que no llegó a salir consumía su intento.
+   - **Tanda 4** (IA y planes): copiar un plan arrastraba el sello de adaptación
+     de OTRO cliente; a un DQR Train regenerar no le apagaba el aviso "sin
+     adaptar"; la gráfica de perímetros pintaba el "antes" en la columna del
+     "ahora"; la caché del PDF no acertaba NUNCA (python-docx sella la hora en
+     el zip) y cada descarga levantaba un LibreOffice.
+   - **Tanda 5** (RGPD): la baja dejaba cabos sueltos y el nombre del borrado
+     sobrevivía en las fichas de otros; Caddy cortaba a 30 MB los vídeos que el
+     backend admite hasta 300.
+   - **Tanda 6** (portal y anamnesis): en un móvil COMPARTIDO el borrador de un
+     cliente acababa en la ficha de otro (claves de `sessionStorage` sin token →
+     guarda nueva `npm run check:claves`, que encontró sola el mismo fallo en
+     Entreno); un guardado viejo podía BORRAR las series recién registradas (el
+     PUT del diario reemplaza la lista entera → número de envío monotónico
+     compartido por los dos escritores, en Diario y en Entreno); las
+     contradicciones y el retrato de la anamnesis se servían congelados del
+     sidecar y dejaban de seguir a las correcciones del coach (son funciones
+     DETERMINISTAS de la ficha: se recalculan en vivo); quien ya envió el
+     formulario podía reescribir su ficha subiendo un PDF por detrás.
+   - **Comprobación transversal de las seis**: todas las tandas fusionadas en
+     una rama (la 2 y la 4 vivían solo en la otra), una sola cabeza de Alembic
+     con el arranque desde cero probado, cero funciones huérfanas, cero TODO
+     nuevos, suite + `tsc` + build + las tres guardas en verde — y, una a una,
+     **cada regresión comprobada quitando su arreglo**: las 16 caen sin él (las
+     otras tres son de front o de test, sin código que revertir).
 
 0000. ✅ **RONDA 3 (agosto 2026): Word de ida y vuelta + créditos al mínimo +
    pulido integral.** Todo en verde (suite completa, tsc, build).

@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSinConexion } from "../lib/offline";
 import { activarAcordeon } from "../lib/accordion";
 import { useSearchParams } from "react-router-dom";
-import { Bell, BellOff, CalendarCheck, Camera, Check, ChevronDown, Dumbbell, FileText, LineChart, Library, LogOut, NotebookPen, Share, Smartphone, Video, X } from "lucide-react";
+import { Bell, BellOff, CalendarCheck, Camera, Check, ChevronDown, Dumbbell, FileText, LineChart, Library, LogOut, MessageSquare, NotebookPen, Share, Smartphone, Video, X } from "lucide-react";
 import { portalApi, portalSession, PortalError } from "./portalApi";
 import type { VideoCallStatus } from "./portalApi";
 import { pkg } from "../lib/packages";
@@ -233,7 +233,11 @@ export default function PortalApp({ token }: { token: string }) {
                 })()}
                 {/* Concordancia y momento clave: "1 día restante" (no "1 días")
                     y, a 0, la llamada a la acción de la quincena. */}
-                <p className="p-micro mt-1">
+                {/* La etiqueta se ciñe al ancho del anillo y parte en dos
+                    líneas: en una sola, "días restantes" empujaba la cabecera
+                    y el saludo salía cortado ("Hola, M…") en un móvil de
+                    390 px, que es donde vive el cliente. */}
+                <p className="p-micro mt-1 w-14 text-center leading-tight">
                   {Math.max(0, state.period.days_left) === 0
                     ? "¡toca revisión!"
                     : Math.max(0, state.period.days_left) === 1
@@ -283,7 +287,12 @@ export default function PortalApp({ token }: { token: string }) {
                   Ver mi plan (PDF)
                 </span>
                 <span className="p-sub mt-0.5 block">
-                  {isStart ? "Dieta · pautas" : "Dieta · rutina · pautas"}
+                  {/* Lo que el cliente TIENE, no lo que tiene el paquete Full.
+                      La condición solo distinguía Start (sin entreno), así que
+                      a un DQR Train —que no lleva nutrición— el portal le
+                      anunciaba una dieta que su PDF no contiene. */}
+                  {[caps.hasNutrition && "Dieta", caps.hasTraining && "rutina", "pautas"]
+                    .filter(Boolean).join(" · ")}
                 </span>
               </span>
             </a>
@@ -296,6 +305,7 @@ export default function PortalApp({ token }: { token: string }) {
           )}
           <WelcomeSetup api={apiClient} token={token} accent={state.brand.color_primary}
             secondary={state.brand.color_secondary} />
+          <EscribirAlCoach api={apiClient} accent={state.brand.color_primary} />
           {/* key={effTab+fecha}: transición suave al cambiar de pestaña Y
               remontaje si cambia la FECHA DE NEGOCIO — una PWA resucitada días
               después registraba en el día viejo, pisándolo en silencio
@@ -304,9 +314,9 @@ export default function PortalApp({ token }: { token: string }) {
               visibilitychange antes del remontaje. */}
           <div key={`${effTab}-${state.today ?? ""}`} className="animate-rise"
             ref={(el) => { if (el) window.scrollTo({ top: 0 }); }}>
-            {effTab === "entreno" && <PortalWorkout api={apiClient} brand={state.brand} periodStatus={periodStatus} businessToday={state.today ?? null} hasPeriod={state.period != null || state.status === "review_pending"} />}
+            {effTab === "entreno" && <PortalWorkout api={apiClient} token={token} brand={state.brand} periodStatus={periodStatus} businessToday={state.today ?? null} hasPeriod={state.period != null || state.status === "review_pending"} />}
             {effTab === "recursos" && <PortalResources api={apiClient} brand={state.brand} hasTraining={!isStart} />}
-            {effTab === "diario" && <PortalDiary api={apiClient} brand={state.brand} periodStatus={periodStatus} businessToday={state.today ?? null} hasPeriod={state.period != null || state.status === "review_pending"} hasNutrition={caps.hasNutrition} hasTraining={!isStart} />}
+            {effTab === "diario" && <PortalDiary api={apiClient} token={token} brand={state.brand} periodStatus={periodStatus} businessToday={state.today ?? null} hasPeriod={state.period != null || state.status === "review_pending"} hasNutrition={caps.hasNutrition} hasTraining={!isStart} />}
             {effTab === "progreso" && <PortalProgress api={apiClient} brand={state.brand} hasTraining={!isStart} token={token} />}
             {effTab === "cierre" && (
               <PortalClose
@@ -613,10 +623,126 @@ function PushToggle({ api }: { api: ReturnType<typeof portalApi> }) {
   );
 }
 
-/** Recordatorio de FOTOS DE PROGRESO: tras enviar la revisión quincenal, el
- *  cliente confirma aquí si ya envió sus 3 fotos al coach. "Sí" apaga el aviso
- *  (portal y push); "Todavía no" lo pliega y el push seguirá recordándoselo cada
- *  3 h hasta que confirme. */
+/** ESCRIBIR AL COACH desde el portal (petición de ajuste).
+ *
+ *  Entre revisión y revisión el cliente no tenía NINGUNA forma de avisar: si se
+ *  lesionaba el día 3, se iba de viaje o un alimento le sentaba mal, su única
+ *  casilla de texto era "Dudas para tu coach"… que solo se abre el día 14. El
+ *  circuito entero ya estaba construido en el backend (push inmediato ✋, email,
+ *  alerta del panel y tarjeta "Peticiones sin responder" en Seguimiento) y
+ *  nadie lo disparaba: no había pantalla. Esto lo enciende.
+ *
+ *  Cerrado por defecto para no competir con el registro del día. */
+function EscribirAlCoach({ api, accent }: {
+  api: ReturnType<typeof portalApi>; accent: string;
+}) {
+  const toast = usePortalToast();
+  const [abierto, setAbierto] = useState(false);
+  const [texto, setTexto] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [enviado, setEnviado] = useState(false);
+
+  const MIN = 5;      // el backend exige 5 caracteres…
+  const MAX = 2000;   // …y admite 2000: se avisa AQUÍ, no con un 422 críptico.
+  const limpio = texto.trim();
+
+  const enviar = async () => {
+    if (enviando || limpio.length < MIN) return;
+    setEnviando(true);
+    try {
+      await api.changeRequest(limpio.slice(0, MAX));
+      setTexto("");
+      setEnviado(true);
+      setAbierto(false);
+      toast.push("Enviado · tu coach lo verá hoy ✅");
+    } catch {
+      // El mensaje NO se borra: el cliente puede reintentar sin reescribirlo.
+      toast.push("No se pudo enviar · inténtalo de nuevo");
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  if (!abierto) {
+    return (
+      <button
+        onClick={() => { setAbierto(true); setEnviado(false); }}
+        className="portal-note portal-note--info mb-4 w-full items-center text-left"
+      >
+        <MessageSquare size={18} style={{ color: accent }} />
+        <span className="min-w-0">
+          <span className="p-head block" style={{ color: accent }}>
+            {enviado ? "Mensaje enviado ✅" : "Escribir a mi coach"}
+          </span>
+          <span className="p-sub mt-0.5 block">
+            {enviado
+              ? "Te responderá en cuanto lo vea · toca para escribir otro"
+              : "Una duda, una molestia, un viaje… lo que necesites"}
+          </span>
+        </span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="portal-card mb-4 p-3.5">
+      <div className="flex items-start gap-2.5">
+        <span className="mt-0.5 shrink-0" style={{ color: accent }}><MessageSquare size={18} /></span>
+        <div className="min-w-0 flex-1">
+          <label htmlFor="mensaje-coach" className="text-sm font-semibold">
+            Escribir a mi coach
+          </label>
+          <p className="mt-0.5 text-[11px] opacity-60">
+            Le llega al momento. Cuéntale qué pasa y qué necesitas.
+          </p>
+          <textarea
+            id="mensaje-coach"
+            autoFocus
+            rows={4}
+            value={texto}
+            maxLength={MAX}
+            onChange={(e) => setTexto(e.target.value)}
+            placeholder="Ej.: me molesta el hombro derecho en el press y esta semana estoy de viaje…"
+            className="mt-2 min-h-[92px] w-full resize-y rounded-xl border bg-transparent p-3 text-sm"
+            style={{ borderColor: "rgba(128,128,128,0.2)" }}
+          />
+          <div className="mt-1 text-right text-[11px] opacity-50">
+            {limpio.length}/{MAX}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              onClick={enviar}
+              disabled={enviando || limpio.length < MIN}
+              className="portal-btn3d min-h-[36px] px-4 py-1.5 text-xs font-semibold disabled:opacity-50"
+              style={{ background: accent, color: "var(--p-on-accent)" }}
+            >
+              {enviando ? "Enviando…" : "Enviar a mi coach"}
+            </button>
+            <button
+              onClick={() => setAbierto(false)}
+              disabled={enviando}
+              className="tap min-h-[36px] rounded-xl px-3 py-1.5 text-xs font-medium opacity-60 hover:opacity-90"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+/** FOTOS DE PROGRESO: tras enviar la revisión quincenal, el cliente puede
+ *  SUBIRLAS aquí mismo, o confirmar que ya se las mandó al coach por otra vía.
+ *  "Todavía no" lo pliega y el push se lo recuerda cada 3 h.
+ *
+ *  El botón de subir vive aquí porque, una vez enviada la revisión, la pantalla
+ *  Quincenal pasa a "Revisión enviada · analizando" y pierde su sección de
+ *  fotos — era la ÚNICA de toda la app que permitía subirlas. El cliente
+ *  quedaba con un aviso cada 3 h que solo podía quitarse mintiendo ("sí, ya las
+ *  envié") o posponiéndolo para siempre. El endpoint del backend siempre lo
+ *  admitió: el período cerrado sigue siendo el activo. */
 function PhotosReminder({ api, accent, onConfirmed }: {
   api: ReturnType<typeof portalApi>; accent: string; onConfirmed: () => void;
 }) {
@@ -625,6 +751,19 @@ function PhotosReminder({ api, accent, onConfirmed }: {
   // "Todavía no": se pliega en ESTA sesión; el aviso vuelve al recargar (sigue
   // pendiente) y el push lo recuerda cada 3 h.
   const [snoozed, setSnoozed] = useState(false);
+  const [fotos, setFotos] = useState(0);
+  const [maxFotos, setMaxFotos] = useState(4);
+  const [subiendo, setSubiendo] = useState(false);
+  const entrada = useRef<HTMLInputElement | null>(null);
+
+  // Cuántas lleva ya, según el SERVIDOR (que es quien pone el tope).
+  useEffect(() => {
+    let vivo = true;
+    api.closePhotosCount()
+      .then((r) => { if (vivo) { setFotos(r.count); setMaxFotos(r.max); } })
+      .catch(() => { /* sin dato, el servidor sigue mandando */ });
+    return () => { vivo = false; };
+  }, [api]);
 
   if (snoozed) return null;
 
@@ -641,21 +780,69 @@ function PhotosReminder({ api, accent, onConfirmed }: {
     }
   };
 
+  /** Sube las que falten. El `kind` continúa por donde se quedó (frontal,
+   *  lateral, espalda, detalle): si se reiniciara, el "antes y ahora" del
+   *  informe compararía ángulos distintos. */
+  const subir = async (files: FileList | null) => {
+    if (!files || !files.length || subiendo) return;
+    const tipos = ["front", "side", "back", "detail"];
+    const lote = Array.from(files).slice(0, Math.max(0, maxFotos - fotos));
+    if (!lote.length) { toast.push(`Ya has subido el máximo de ${maxFotos} fotos`); return; }
+    setSubiendo(true);
+    let subidas = 0;
+    try {
+      for (const f of lote) {
+        await api.closePhotos([f], tipos[Math.min(fotos + subidas, tipos.length - 1)]);
+        subidas += 1;
+        setFotos(fotos + subidas);
+      }
+      toast.push(`${subidas} foto${subidas === 1 ? "" : "s"} subida${subidas === 1 ? "" : "s"} 📸`);
+      // Con las fotos YA en el sistema el aviso sobra: el coach las tiene.
+      await api.confirmPhotos().catch(() => {});
+      onConfirmed();
+    } catch (e: any) {
+      toast.push(e?.message ?? "No se pudieron subir. Inténtalo de nuevo.");
+      api.closePhotosCount().then((r) => setFotos(r.count)).catch(() => {});
+    } finally {
+      setSubiendo(false);
+    }
+  };
+
   return (
     <div className="portal-card mb-4 p-3.5">
       <div className="flex items-start gap-2.5">
         <span className="mt-0.5 shrink-0" style={{ color: accent }}><Camera size={18} /></span>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold">¿Ya enviaste tus fotos?</p>
-          <p className="mt-0.5 text-[11px] opacity-60">Frontal · lateral · espalda</p>
+          <p className="text-sm font-semibold">Tus fotos de progreso</p>
+          <p className="mt-0.5 text-[11px] opacity-60">
+            Frontal · lateral · espalda
+            {fotos > 0 ? ` · llevas ${fotos} de ${maxFotos}` : ""}
+          </p>
+          <input
+            ref={entrada}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(e) => { subir(e.target.files); e.target.value = ""; }}
+          />
           <div className="mt-2.5 flex flex-wrap gap-2">
             <button
-              onClick={confirm}
-              disabled={busy}
+              onClick={() => entrada.current?.click()}
+              disabled={busy || subiendo || fotos >= maxFotos}
               className="portal-btn3d min-h-[36px] px-4 py-1.5 text-xs font-semibold"
               style={{ background: accent, color: "var(--p-on-accent)" }}
             >
-              <span className="inline-flex items-center gap-1"><Check size={13} /> Sí, ya las envié</span>
+              <span className="inline-flex items-center gap-1">
+                <Camera size={13} /> {subiendo ? "Subiendo…" : fotos > 0 ? "Añadir más" : "Subir mis fotos"}
+              </span>
+            </button>
+            <button
+              onClick={confirm}
+              disabled={busy || subiendo}
+              className="tap min-h-[36px] rounded-xl px-3 py-1.5 text-xs font-medium opacity-70 hover:opacity-100"
+            >
+              <span className="inline-flex items-center gap-1"><Check size={13} /> Ya se las mandé</span>
             </button>
             <button
               onClick={() => { setSnoozed(true); toast.push("Te aviso cada 3 h"); }}

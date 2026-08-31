@@ -9,7 +9,7 @@ página de recarga de la consola de Anthropic.
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import AiCreditState
@@ -65,9 +65,21 @@ def record_usage(model: str, input_tokens: int, output_tokens: int) -> None:
         from app.db import SessionLocal
         from app.models import AiUsageEvent
 
+        from sqlalchemy import update
+
         with SessionLocal() as db:
-            state = get_state(db)
-            state.spent_usd = (state.spent_usd or 0.0) + cost
+            state = get_state(db)   # get-or-create de la fila única
+            # SUMA EN LA BASE, no leer-modificar-escribir. Los 8-10 revisores
+            # del panel corren EN PARALELO, cada uno con su sesión: con el
+            # patrón anterior todos leían el mismo saldo y el último en
+            # escribir se llevaba por delante lo que habían sumado los otros.
+            # El gasto anotado salía por debajo del real y el coach veía un
+            # saldo optimista justo en la operación que más créditos consume.
+            db.execute(
+                update(AiCreditState)
+                .where(AiCreditState.id == state.id)
+                .values(spent_usd=func.coalesce(AiCreditState.spent_usd, 0.0) + cost)
+            )
             db.add(AiUsageEvent(
                 model=model or "?", input_tokens=input_tokens or 0,
                 output_tokens=output_tokens or 0, cost_usd=cost,
@@ -119,9 +131,16 @@ def usage_summary(db: Session) -> dict:
             .where(AiUsageEvent.created_at >= start_today)
         ) or 0.0), 4)
 
-        # Planes generados con IA en la misma ventana → coste medio por plan.
+        # Planes generados con IA en la misma ventana → gasto POR PLAN GENERADO.
         # "coach" (manual) y "scaffold" (base sin IA del avanzado) NO cuentan:
-        # cuestan 0 y meterlos en el denominador falsearía el coste medio.
+        # cuestan 0 y meterlos en el denominador falsearía la cifra.
+        #
+        # OJO CON EL NOMBRE: el numerador es TODO el gasto de la ventana —
+        # también la lectura de anamnesis, el panel de revisión, los feedbacks y
+        # los borradores de WhatsApp—, así que esto NO es lo que cuesta generar
+        # un plan: es más. La consecuencia es que `plans_left` sale CORTO, que
+        # es el lado seguro para un presupuesto; separar el gasto por tipo de
+        # llamada pediría anotar el motivo en `ai_usage_events` (no lo lleva).
         plans = int(db.scalar(
             select(func.count(Plan.id))
             .where(Plan.created_at >= since, Plan.generated_by.isnot(None),

@@ -174,6 +174,23 @@ export default function PagosPage() {
     return () => window.clearInterval(t);
   }, [cargar]);
 
+  /** Le da salida a un cobro SIN FICHA. El aviso "N sin ficha" no tenía forma
+   *  de apagarse: `adopt_orphans` solo reasocia por email y dentro de 30 días,
+   *  así que un cobro de otro producto de la cuenta —o uno con el email mal
+   *  escrito en el checkout— contaba para siempre. Un aviso que no se puede
+   *  resolver se acaba ignorando, y con él los que sí importan. */
+  async function descartarHuerfano(id: number) {
+    try {
+      await api.resolverHuerfano(id);
+      setItems((prev) => (prev ? prev.filter((p) => p.id !== id) : prev));
+      setTotal((n) => Math.max(0, n - 1));
+      setResumen((s) => (s ? { ...s, orphan_count: Math.max(0, s.orphan_count - 1) } : s));
+      toast.push("Marcado como ajeno a la asesoría");
+    } catch (e) {
+      toast.push(e instanceof ApiError ? e.message : "No se pudo marcar", "error");
+    }
+  }
+
   async function verMas() {
     if (!items) return;
     setCargando(true);
@@ -226,10 +243,18 @@ export default function PagosPage() {
     }
   }
 
-  async function sincronizar() {
+  // Ventana del barrido. El aviso "prueba con menos días" pedía algo que la
+  // web no dejaba hacer: no había ningún control de días (auditoría). Ahora
+  // sí, y al cortarse el barrido se propone la ventana corta de un clic.
+  const [diasSync, setDiasSync] = useState<number | null>(null);
+
+  async function sincronizar(dias?: number) {
+    const ventana = dias ?? diasSync ?? undefined;
     setSincronizando(true);
     try {
-      const r = await api.syncPayments();
+      const r = await api.syncPayments(ventana ?? undefined);
+      // Repetir el mismo barrido lee lo mismo: solo estrechar la ventana avanza.
+      const reintenta = !!r.partial && (ventana ?? 0) !== 7;
       if (r.created > 0) {
         // Recarga COMPLETA, no fusión: lo recuperado lleva su fecha real de
         // Stripe, así que entra POR EN MEDIO de la lista (o más abajo de la
@@ -243,8 +268,25 @@ export default function PagosPage() {
       }
       if (r.created > 0) {
         toast.push(`${r.created} movimiento${r.created === 1 ? "" : "s"} recuperado${r.created === 1 ? "" : "s"} de Stripe`);
+      } else if (r.partial) {
+        // La sincronización es LA red de seguridad cuando se pierde un
+        // webhook: decir "sin cobros pendientes" cuando ni siquiera ha mirado
+        // todo el rango deja al coach tranquilo con facturas sin repescar.
+        // Y repetir el MISMO barrido no avanza (vuelve a leer lo mismo): lo
+        // que sirve es estrechar la ventana, así que se hace solo una vez.
+        toast.push(
+          reintenta
+            ? "Stripe tiene más movimientos de los que caben en un barrido: repaso los últimos 7 días"
+            : "Stripe tiene más movimientos de los que caben en un barrido: revisa los cobros de este rango en tu panel de Stripe",
+          "error");
       } else {
         toast.push("Sin cobros pendientes de registrar");
+      }
+      if (reintenta) {
+        setDiasSync(7);
+        setSincronizando(false);
+        await sincronizar(7);
+        return;
       }
       if (r.errors?.length) {
         toast.push(`Stripe no devolvió todo: ${r.errors[0]}`, "error");
@@ -302,13 +344,25 @@ export default function PagosPage() {
             {exportando ? <Spinner /> : <Download size={15} />} Exportar
           </button>
           <button
-            onClick={sincronizar}
+            onClick={() => sincronizar()}
             disabled={sincronizando}
             className="btn btn-ghost"
             title="Recupera cobros perdidos de Stripe"
           >
             {sincronizando ? <Spinner /> : <RefreshCw size={15} />} Sincronizar
           </button>
+          <select
+            value={diasSync ?? ""}
+            onChange={(e) => setDiasSync(e.target.value ? Number(e.target.value) : null)}
+            disabled={sincronizando}
+            title="Cuántos días atrás mira el barrido"
+            className="input h-9 w-auto text-xs"
+          >
+            <option value="">todo el rango</option>
+            <option value="7">últimos 7 días</option>
+            <option value="30">últimos 30 días</option>
+            <option value="90">últimos 90 días</option>
+          </select>
         </div>
       </header>
 
@@ -324,18 +378,25 @@ export default function PagosPage() {
         <p className="text-xs uppercase tracking-widest text-zinc-500">
           Cobrado en {mesActual}
         </p>
+        {/* SIN RESUMEN no se inventa un 0: mientras carga (o si falla) decía
+            "0,00 € · 0 cobros" con toda la autoridad de una cifra real, y lo
+            primero que mira el coach al abrir Pagos es justo ese número. */}
         <p className="mt-1 text-3xl font-semibold text-zinc-100">
-          {fmtMoney(mes, resumen?.currency ?? "eur")}
+          {resumen ? fmtMoney(mes, resumen.currency ?? "eur") : "—"}
         </p>
         <p className="mt-1 text-sm text-zinc-500">
-          {resumen?.month_count ?? 0} cobro{(resumen?.month_count ?? 0) === 1 ? "" : "s"}
-          {" · mes anterior "}
-          {fmtMoney(prev, resumen?.currency ?? "eur")}
-          {variacion !== null && (
-            <span style={{ color: variacion >= 0 ? "#2E7D46" : "#C2453A" }}>
-              {" "}({variacion >= 0 ? "+" : ""}{variacion}%)
-            </span>
-          )}
+          {resumen ? (
+            <>
+              {resumen.month_count} cobro{resumen.month_count === 1 ? "" : "s"}
+              {" · mes anterior "}
+              {fmtMoney(prev, resumen.currency ?? "eur")}
+              {variacion !== null && (
+                <span style={{ color: variacion >= 0 ? "#2E7D46" : "#C2453A" }}>
+                  {" "}({variacion >= 0 ? "+" : ""}{variacion}%)
+                </span>
+              )}
+            </>
+          ) : falloCarga ? "no se pudo cargar el resumen" : "cargando…"}
         </p>
         {/* Neto real tras comisiones de Stripe (solo si hay fee consultado). */}
         {(resumen?.month_fee_cents ?? 0) > 0 && (
@@ -413,6 +474,9 @@ export default function PagosPage() {
 
       {/* Filtros + marcar leído */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        {/* Con el filtro "Sin ficha" a la vista son cinco chips: en un móvil el
+            último quedaba fuera de la pantalla. La tira se desliza sola. */}
+        <div className="tab-strip min-w-0">
         <div className="inline-flex rounded-xl border p-1" style={{ borderColor: "var(--line-strong)" }}>
           {[...FILTROS, ...(((resumen?.orphan_count ?? 0) > 0 || filtro === "orphan")
               ? [{ id: "orphan" as Filtro, label: "Sin ficha" }] : [])].map((f) => (
@@ -432,6 +496,7 @@ export default function PagosPage() {
               {f.label}
             </button>
           ))}
+        </div>
         </div>
         {(resumen?.unseen ?? 0) > 0 && (
           <button onClick={marcarLeidos} className="btn btn-ghost">
@@ -463,6 +528,11 @@ export default function PagosPage() {
                     pago={p}
                     nuevo={nuevos.has(p.id)}
                     onClick={() => p.client_id && navigate(`/clientes/${p.client_id}`)}
+                    // Solo en la vista de huérfanos: ahí es donde el aviso
+                    // "N sin ficha" necesita una salida.
+                    onDescartar={filtro === "orphan"
+                      ? () => descartarHuerfano(p.id)
+                      : undefined}
                   />
                 ))}
               </div>
@@ -504,8 +574,9 @@ function Chip({ tone, icon: Icon, children, onClick, title }: {
 }
 
 /** Una línea del feed: quién, qué plan, a qué hora y cuánto. */
-function Movimiento({ pago, nuevo, onClick }: {
+function Movimiento({ pago, nuevo, onClick, onDescartar }: {
   pago: PaymentOut; nuevo: boolean; onClick: () => void;
+  onDescartar?: () => void;
 }) {
   const cobrado = pago.status === "paid";
   const devuelto = pago.status === "refunded";
@@ -516,7 +587,7 @@ function Movimiento({ pago, nuevo, onClick }: {
   const Icono = cobrado ? ArrowUpRight : devuelto ? ArrowDownLeft : AlertTriangle;
   const sinFicha = pago.client_id === null;
 
-  return (
+  const fila = (
     <button
       onClick={onClick}
       disabled={sinFicha}
@@ -565,5 +636,21 @@ function Movimiento({ pago, nuevo, onClick }: {
         </span>
       </span>
     </button>
+  );
+
+  // El botón de descartar no puede ir DENTRO del <button> de la fila (un botón
+  // dentro de otro no es HTML válido y el clic se lo come el de fuera).
+  if (!onDescartar) return fila;
+  return (
+    <div className="flex items-center gap-2 pr-3">
+      <span className="min-w-0 flex-1">{fila}</span>
+      <button
+        onClick={onDescartar}
+        className="btn btn-ghost shrink-0 !px-2 !py-1 text-xs"
+        title="Este cobro no es de la asesoría: deja de contar en el aviso"
+      >
+        No es mío
+      </button>
+    </div>
   );
 }

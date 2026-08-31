@@ -45,7 +45,7 @@ from docx.oxml.ns import qn
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Exercise, Food, Plan
+from app.models import Client, Exercise, Food, Plan
 
 MAX_DOCX_BYTES = 15 * 1024 * 1024
 
@@ -525,6 +525,13 @@ def parse_word_edits(db: Session, plan: Plan, docx_bytes: bytes) -> dict:
 
     avisos: list[str] = []
     frases: list[str] = []      # cambios que plan_diff no sabe describir
+    # Restricciones del cliente: el educativo del Word se compara contra las
+    # entradas que el documento IMPRIME, y plan_doc filtra por alérgenos y
+    # patrón dietético.
+    _cli = db.get(Client, plan.client_id) if plan.client_id else None
+    bloqueados = list(getattr(_cli, "food_allergies", None) or []) + \
+        list(getattr(_cli, "food_dislikes", None) or [])
+    patron = getattr(_cli, "diet_pattern", None)
     id_a_nombre, nombre_a_id = _exercise_maps(db, training)
     edu_cambiado = False
 
@@ -719,17 +726,26 @@ def parse_word_edits(db: Session, plan: Plan, docx_bytes: bytes) -> dict:
                     training["split_rationale"] = valor
                     frases.append("Razón de la estructura (split) actualizada")
             elif barra.startswith("aprende con tu plan") and education is not None:
-                # mismo filtro que plan_doc: solo se imprimen las píldoras con
-                # texto para el cliente → se compara contra ESAS
+                # MISMO filtro que plan_doc: no basta con "tiene texto", el
+                # documento descarta además las píldoras con un alérgeno o
+                # contrarias al patrón dietético. Sin esa segunda mitad, en
+                # cuanto el cliente tenía alergias el Word traía 2 píldoras y el
+                # plan 3, no cuadraba el recuento y la caja entera se descartaba:
+                # el educativo dejaba de importarse justo para esos clientes.
                 pills = [p for p in education.get("pills") or []
-                         if str(p.get("for_client") or "").strip()]
+                         if str(p.get("for_client") or "").strip()
+                         and not _edu_bloqueado(
+                             (p.get("topic", ""), p.get("for_client", "")),
+                             bloqueados, patron)]
                 edu_cambiado |= _aplicar_educativo(
                     texto, pills, "topic", "for_client", "píldora", frases, avisos)
             elif barra.startswith("tecnica") and education is not None:
                 edu_cambiado |= _aplicar_biomech(texto, education, frases, avisos)
             elif barra.startswith("preguntas frecuentes") and education is not None:
                 faq = [f for f in education.get("faq") or []
-                       if str(f.get("q") or "").strip()]
+                       if str(f.get("q") or "").strip()
+                       and not _edu_bloqueado((f.get("q", ""), f.get("a", "")),
+                                              bloqueados, patron)]
                 edu_cambiado |= _aplicar_educativo(
                     texto, faq, "q", "a", "pregunta", frases, avisos)
             elif barra in barras_comida and nutrition is not None:
@@ -992,6 +1008,17 @@ def _aplicar_caja_sesion(texto: str, barra: str, training: dict, frases: list) -
         if valor and valor != (sesion.get("cooldown") or "").strip():
             sesion["cooldown"] = valor
             frases.append(f"{etiqueta}: vuelta a la calma actualizada")
+
+
+def _edu_bloqueado(item, bloqueados: list[str], patron: str | None) -> bool:
+    """¿plan_doc descartaría esta píldora/FAQ? Se delega en SU criterio para que
+    el recuento del importador y el del documento no puedan divergir."""
+    try:
+        from app.services.docs.plan_doc import _blocked_line
+
+        return bool(_blocked_line(item, bloqueados, patron))
+    except Exception:  # noqa: BLE001 — ante la duda, se importa (no se pierde)
+        return False
 
 
 def _aplicar_educativo(texto: str, items: list, campo_lbl: str, campo_val: str,

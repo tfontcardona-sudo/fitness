@@ -50,7 +50,31 @@ _STATE_MAX_AGE = 600  # 10 min para completar el consentimiento
 
 
 class GoogleCalendarError(Exception):
-    """Error legible de la integración (config, conexión o API de Google)."""
+    """Error legible de la integración (config, conexión o API de Google).
+
+    `revocado` marca el caso especial en el que Google ya no acepta el permiso
+    guardado: quien lo capture tiene que asegurarse de que la credencial se
+    borra de verdad (ver `olvidar_credencial`), o el panel seguirá diciendo
+    "Google conectado" mientras cada intento falla igual."""
+
+    def __init__(self, *args, revocado: bool = False) -> None:
+        super().__init__(*args)
+        self.revocado = revocado
+
+
+def olvidar_credencial(db: Session) -> bool:
+    """Borra la credencial de Google guardada. Devuelve True si había una.
+
+    Existe porque un `db.rollback()` del que captura el error deshace también
+    el borrado que hace `_access_token` al ver un `invalid_grant`: la fila
+    revocada volvía, el estado seguía diciendo "conectado" y el coach no veía
+    el botón de reconectar."""
+    cred = db.scalar(select(GoogleCredential).limit(1))
+    if cred is None:
+        return False
+    db.delete(cred)
+    db.flush()
+    return True
 
 
 def _google_error(exc: Exception, fallback: str) -> GoogleCalendarError:
@@ -230,6 +254,24 @@ def _valid_access_token(db: Session) -> str:
         tok = resp.json()
     except httpx.HTTPError as exc:
         logger.warning("fallo al refrescar el token de Google: %s", exc)
+        # Permiso REVOCADO desde la cuenta de Google (invalid_grant): el
+        # refresh_token guardado ya no vale para nada, pero seguía en la base
+        # y el panel decía "Google conectado" mientras cada intento de agendar
+        # fallaba. Se borra para que el estado diga la verdad y el coach vea
+        # el botón de conectar.
+        cuerpo = ""
+        respuesta = getattr(exc, "response", None)
+        if respuesta is not None:
+            try:
+                cuerpo = respuesta.text or ""
+            except Exception:  # noqa: BLE001
+                cuerpo = ""
+        if "invalid_grant" in cuerpo:
+            db.delete(cred)
+            db.flush()
+            raise GoogleCalendarError(
+                "Google ha revocado el permiso: vuelve a conectarlo en Recursos "
+                "para poder agendar videollamadas.", revocado=True) from exc
         raise GoogleCalendarError(
             "Se perdió la conexión con Google (vuelve a conectarlo en Ajustes).") from exc
     cred.access_token = tok.get("access_token")

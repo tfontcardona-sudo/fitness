@@ -11,5 +11,11 @@ export default [
     languageOptions: { parser: tsParser, parserOptions: { ecmaFeatures: { jsx: true } } },
     plugins: { "react-hooks": reactHooks },
     rules: { "react-hooks/rules-of-hooks": "error" },
+    // Este guardián enciende UNA regla a propósito (la que deja la app en
+    // blanco). Los `eslint-disable` de `exhaustive-deps` repartidos por el
+    // código documentan una decisión deliberada y valen para el editor, pero
+    // aquí esa regla no corre: sin esto salían 12 avisos de "directiva sin
+    // usar" que solo enseñan a ignorar la salida del guardián.
+    linterOptions: { reportUnusedDisableDirectives: "off" },
   },
 ];

@@ -71,6 +71,8 @@ router = APIRouter(prefix="/api/p", tags=["portal-public"])
 limiter = Limiter(key_func=client_key)
 
 MAX_INITIAL_PHOTOS = 4
+# Tope de fotos de la revisión quincenal: frontal, lateral, espalda y detalle.
+MAX_FOTOS_CIERRE = 4
 
 # Hash fijo para igualar el tiempo del login cuando el email no existe/sin clave.
 _DUMMY_HASH = hash_password("timing-equalizer-not-a-real-password")
@@ -119,26 +121,37 @@ def _photos_count(db: Session, client_id: int) -> int:
     )
 
 
-def _needs_anamnesis(client: Client) -> bool:
-    """Onboarding sin anamnesis: el portal debe señalar el camino. Cuenta como
-    recibida por CUALQUIERA de las dos vías: el formulario digital (sello de
-    consentimiento) o el PDF subido."""
-    if client.status != "onboarding":
-        return False
+def _anamnesis_recibida(client: Client) -> bool:
+    """¿Tenemos su anamnesis? Cuenta CUALQUIERA de las dos vías: el formulario
+    digital (sello de consentimiento) o el PDF subido.
+
+    Una sola verdad: con dos criterios distintos, el cliente que la mandó en
+    PDF volvía a su enlace, veía el cuestionario en blanco y podía reescribir
+    de arriba abajo la ficha que el coach ya había revisado."""
     if client.consent_signed_at is not None:
-        return False
+        return True
     try:
         from app.services.storage import anamnesis_documents
-        return not anamnesis_documents(client.id)
+        return bool(anamnesis_documents(client.id))
     except Exception:  # noqa: BLE001
         return False
+
+
+def _needs_anamnesis(client: Client) -> bool:
+    """Onboarding sin anamnesis: el portal debe señalar el camino."""
+    return client.status == "onboarding" and not _anamnesis_recibida(client)
 
 
 def _state(db: Session, client: Client) -> AnamnesisStateOut:
     brand = db.scalar(select(BrandConfig).limit(1)) or BrandConfig()
     return AnamnesisStateOut(
         first_name=_first_name(client),
-        anamnesis_done=client.consent_signed_at is not None,
+        anamnesis_done=_anamnesis_recibida(client),
+        # Las fotos iniciales EXIGEN consentimiento firmado (datos de salud), y
+        # solo lo firma quien pasa por el FORMULARIO. Sin decirlo aquí, la
+        # pantalla ofrecía subirlas también a quien entregó su anamnesis en PDF
+        # y el backend le respondía 403: una petición imposible de satisfacer.
+        consent_signed=client.consent_signed_at is not None,
         photos_count=_photos_count(db, client.id),
         brand_name=brand.name,
         color_primary=brand.color_primary,
@@ -168,7 +181,12 @@ def submit_anamnesis(
 ) -> AnamnesisStateOut:
     """Recibe el wizard completo. Idempotencia: una vez firmada, 409 (las
     correcciones posteriores las hace el coach con audit trail)."""
-    if client.consent_signed_at is not None:
+    # Ya recibida (formulario O PDF) o cliente en marcha: no se reescribe la
+    # ficha. Sin el segundo guard, un cliente con meses de plan activo podía
+    # volver a su enlace y machacar en silencio el peso, el objetivo, las
+    # lesiones y las alergias que el coach había revisado — sin diff, sin
+    # historial y sin que nadie se enterara.
+    if _anamnesis_recibida(client) or client.status != "onboarding":
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "La anamnesis ya fue enviada; contacta con tu coach para cambios",
@@ -216,13 +234,14 @@ def submit_anamnesis(
 
     # Acceso al portal: en el alta MANUAL del coach el email de credenciales
     # salía al subir el PDF — con el formulario digital también debe salir.
+    acceso = "no_intentado"
     if client.portal_access_sent_at is None:
         try:
             from app.services.portal_access import send_portal_access
 
-            send_portal_access(db, client)
+            acceso = (send_portal_access(db, client) or {}).get("status") or "desconocido"
         except Exception:  # noqa: BLE001 — el acceso se puede reenviar a mano
-            pass
+            acceso = "failed"
 
     db.commit()
     db.refresh(client)
@@ -245,10 +264,41 @@ def submit_anamnesis(
             if contras:
                 cuerpo = (f"⚠ {len(contras)} posible(s) contradicción(es): "
                           f"{contras[0].detail}. Revisa la ficha antes de generar.")
+            # …y se GUARDAN donde la ficha las lee: por esta vía se calculaban
+            # solo para el push y el coach no volvía a verlas nunca.
+            try:
+                import json as _json
+
+                from app.routers.clients import _anamnesis_analysis_path
+
+                # SIN congelar el retrato. Por esta vía el retrato lo hace
+                # `client_portrait`, que es una función DETERMINISTA de la
+                # ficha: no cuesta créditos y se puede rehacer cuando haga
+                # falta. Guardarlo aquí lo dejaba clavado en el momento del
+                # envío y ganaba siempre al recálculo en vivo, así que las
+                # correcciones del coach —la razón de que revise la ficha
+                # antes de generar— NO llegaban al prompt: el plan se hacía
+                # con el retrato equivocado. Quien lo lee (el prompt de
+                # generación y la pestaña del coach) lo compone al vuelo.
+                # El sidecar solo guarda el sello temporal; las
+                # contradicciones también se recalculan al leerlas.
+                _anamnesis_analysis_path(client.id).write_text(
+                    _json.dumps({
+                        "at": datetime.now(timezone.utc).isoformat(),
+                        "origen": "formulario",
+                    }, ensure_ascii=False), encoding="utf-8")
+            except Exception:  # noqa: BLE001 — el sidecar nunca rompe el envío
+                pass
         except Exception:  # noqa: BLE001
             pass
+        # El cliente lee "te hemos enviado el acceso por email": si NO salió,
+        # el coach tiene que enterarse ahora — por esta vía el reintento
+        # automático (que vive en la subida del PDF) ya no puede ocurrir.
+        if acceso in ("failed", "no_email", "desconocido"):
+            cuerpo += " ⚠ El email de acceso al portal no salió: reenvíaselo desde su ficha."
         push_svc.send_to_coach(db, {
             "title": f"📋 {client.full_name} ha enviado su anamnesis",
+                "count": 1,
             "body": cuerpo,
             "url": f"/clientes/{client.id}?tab=anamnesis",
             "tag": f"anamnesis-{client.id}",
@@ -268,7 +318,7 @@ def anamnesis_prefill(
     """Valores actuales de la ficha para PRE-RELLENAR el formulario digital
     (el coach pudo apuntar ya algunos datos en el alta). Solo mientras la
     anamnesis no esté enviada; después, los cambios son cosa del coach."""
-    if client.consent_signed_at is not None:
+    if _anamnesis_recibida(client) or client.status != "onboarding":
         raise HTTPException(status.HTTP_409_CONFLICT, "La anamnesis ya fue enviada")
     campos = ("sex", "birth_date", "height_cm", "start_weight_kg", "body_fat_pct",
               "initial_waist_cm", "initial_hip_cm", "initial_arm_cm",
@@ -295,7 +345,10 @@ def anamnesis_prefill(
 @limiter.limit("20/minute")
 def upload_initial_photos(
     request: Request,
-files: Annotated[List[UploadFile], File(description="1–4 fotos corporales")],    kind: str = Query(default="front", pattern="^(front|side|back|detail)$"),
+    files: Annotated[List[UploadFile], File(description="1–4 fotos corporales")],
+    # El ÁNGULO de la foto. Sin él todas nacían "front" y el primer informe
+    # emparejaba el frontal de hoy con el lateral de la línea base.
+    kind: str = Query(default="front", pattern="^(front|side|back|detail)$"),
     client: Client = Depends(get_client_by_token),
     db: Session = Depends(get_db),
 ) -> list[PhotoOut]:
@@ -370,6 +423,16 @@ def portal_upload_anamnesis_pdf(
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "Tu anamnesis ya está registrada; escribe a tu coach para cambios.")
+    # Quien YA envió el formulario digital no puede reescribir su ficha por PDF.
+    # La lectura con IA pisa los campos con lo que extrae, así que este camino
+    # borraba en silencio las CORRECCIONES del coach (el criterio del sistema es
+    # que la ficha se revisa antes de generar: seguridad > automatización ciega).
+    # Mismo corte que el formulario, que responde 409 tras enviarse una vez.
+    # Sustituir un PDF por otro sigue permitido: ahí no hay revisión que perder.
+    if client.consent_signed_at is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Ya enviaste tu cuestionario; escribe a tu coach para cambios.")
 
     from app.routers.clients import ingest_anamnesis_pdf
     from app.services.storage import DocumentValidationError
@@ -673,9 +736,9 @@ def portal_training(
         changes = ((plan.nutrition_json or {}).get("applied_adjustments")
                    or (plan.training_json or {}).get("applied_adjustments")
                    or None)
-    week = portal_svc.current_training_week(db, plan, portal_svc.today_local())
-    if week:
-        week = {**week, "started_on": week["started_on"].isoformat()}
+    semana_cruda = portal_svc.current_training_week(db, plan, portal_svc.today_local())
+    week = ({**semana_cruda, "started_on": semana_cruda["started_on"].isoformat()}
+            if semana_cruda else semana_cruda)
     # El cliente ha abierto su rutina: si tenía un plan nuevo sin ver, apaga el
     # aviso (y con él el badge del icono de la PWA en la próxima sincronización).
     if plan is not None and client.plan_notice_pending:
@@ -691,7 +754,9 @@ def portal_training(
             cardio = {"daily_steps": c.get("daily_steps"),
                       "sessions": c.get("sessions") or []}
     return {
-        "sessions": portal_svc.build_training_sessions(db, client),
+        # El plan y la semana ya están resueltos arriba: se pasan para no
+        # repetir dentro las mismas tres consultas.
+        "sessions": portal_svc.build_training_sessions(db, client, plan=plan, week=semana_cruda),
         "plan_changes": changes,
         "week": week,
         "cardio": cardio,
@@ -739,7 +804,9 @@ def portal_plan(
 
 
 @router.get("/{token}/plan.pdf")
-@limiter.limit("10/minute")
+# Cada descarga puede arrancar un LibreOffice: se acota (con la caché por
+# contenido, reabrir el mismo plan ya no convierte nada).
+@limiter.limit("6/minute")
 def portal_plan_pdf(
     request: Request,
     client: Client = Depends(get_client_by_token),
@@ -1126,7 +1193,14 @@ def portal_close_period(
     # Arranca el recordatorio de fotos: se enviará ~15 min después y luego cada
     # 3 h hasta que el cliente confirme en el portal que las envió al coach.
     period.closing_submitted_at = datetime.now(timezone.utc)
-    period.photos_confirmed = False
+    # …salvo que ya haya subido sus fotos DESDE la propia pantalla de cierre:
+    # perseguirlas entonces sería pedirle algo que ya ha hecho.
+    ya_subidas = db.scalar(
+        select(func.count()).select_from(ProgressPhoto)
+        .where(ProgressPhoto.client_id == client.id,
+               ProgressPhoto.period_id == period.id)
+    ) or 0
+    period.photos_confirmed = bool(ya_subidas)
 
     # El cliente pasa a esperar la revisión del coach (review_pending). También
     # desde `inactive`: cerrar la revisión ES actividad (antes el cierre de un
@@ -1151,7 +1225,9 @@ def portal_close_period(
             "body": f"{first} ha cerrado su revisión #{period.period_index}. Genera su feedback.",
             "count": 1,
             "url": f"{base}/clientes/{client.id}?tab=feedback",
-            "tag": "dq-revision",
+            # Por cliente: si dos cierran la misma tarde, el coach veía UNA
+            # sola notificación — y el cierre es "el evento central del ciclo".
+            "tag": f"dq-revision-{client.id}",
         })
     except Exception:
         pass
@@ -1183,6 +1259,31 @@ def portal_confirm_photos(
     return {"confirmed": True}
 
 
+@router.get("/{token}/close/photos")
+def portal_close_photos_count(
+    request: Request,
+    client: Client = Depends(get_client_by_token),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Cuántas fotos lleva subidas ya en ESTE período.
+
+    El contador vivía solo en la memoria de la pantalla, así que arrancaba de
+    cero cada vez que el cliente volvía o recargaba. Con dos fotos ya subidas
+    eso hacía dos cosas mal: etiquetaba las siguientes otra vez desde
+    "frontal" —y el "antes y ahora" del informe acababa comparando ángulos
+    distintos— y le dejaba intentar cuatro más para que el servidor le
+    respondiera un error que contradecía lo que tenía delante."""
+    period = portal_svc.active_period(db, client.id)
+    if period is None:
+        return {"count": 0, "max": MAX_FOTOS_CIERRE}
+    n = db.scalar(
+        select(func.count()).select_from(ProgressPhoto)
+        .where(ProgressPhoto.client_id == client.id,
+               ProgressPhoto.period_id == period.id)
+    ) or 0
+    return {"count": int(n), "max": MAX_FOTOS_CIERRE}
+
+
 @router.post("/{token}/close/photos")
 @limiter.limit("20/minute")
 def portal_close_photos(
@@ -1200,10 +1301,10 @@ def portal_close_photos(
         select(func.count()).select_from(ProgressPhoto)
         .where(ProgressPhoto.client_id == client.id, ProgressPhoto.period_id == period.id)
     ) or 0
-    if existing + len(files) > 4:
+    if existing + len(files) > MAX_FOTOS_CIERRE:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
-            f"Máximo 4 fotos por cierre (ya hay {existing})",
+            f"Máximo {MAX_FOTOS_CIERRE} fotos por cierre (ya hay {existing})",
         )
 
     created: list[ProgressPhoto] = []
@@ -1247,7 +1348,7 @@ def portal_feedback(
 
 
 @router.get("/{token}/feedback/{doc_id}.pdf")
-@limiter.limit("30/minute")
+@limiter.limit("6/minute")
 def portal_feedback_document(
     request: Request,
     doc_id: int,
@@ -1321,6 +1422,7 @@ def portal_change_request(
         extracto = cr.message if len(cr.message) <= 120 else cr.message[:117] + "…"
         push_svc.send_to_coach(db, {
             "title": f"✋ {client.full_name} pide un ajuste",
+                "count": 1,
             "body": extracto,
             "url": f"/clientes/{client.id}?tab=seguimiento",
             "tag": f"change-request-{client.id}",

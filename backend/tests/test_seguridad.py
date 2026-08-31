@@ -176,3 +176,30 @@ def test_login_usuario_inexistente_devuelve_401_generico():
                         json={"username": "no-existe-xyz", "password": "loquesea"})
         assert r.status_code == 401
         assert "incorrectas" in r.json()["detail"].lower()
+
+
+def test_el_token_del_portal_no_acaba_en_los_logs():
+    """El token del portal es una credencial PERMANENTE al historial clínico
+    completo del cliente y viaja en la RUTA: el access log de uvicorn lo
+    escribía en claro en cada línea, y esos logs se guardaban sin rotación en
+    el VPS. Cualquiera con acceso a ellos entraba al portal de todos."""
+    import logging
+
+    from app.main import _FiltroTokens, enmascara_tokens
+
+    assert enmascara_tokens("GET /api/p/AbC.123-xyz/state HTTP/1.1 200") == \
+        "GET /api/p/***/state HTTP/1.1 200"
+    assert enmascara_tokens("/api/clients/7?tab=anamnesis") == "/api/clients/7?tab=anamnesis"
+    # El enlace de COBRO lleva el mismo token (es el que el coach manda por
+    # WhatsApp) y se quedaba en claro aunque el del portal ya no.
+    assert enmascara_tokens("GET /api/pay/AbC.123-xyz HTTP/1.1 302") == \
+        "GET /api/pay/*** HTTP/1.1 302"
+    # Y no se pasa de listo con rutas que solo EMPIEZAN por esas letras.
+    assert enmascara_tokens("/api/payments/summary") == "/api/payments/summary"
+    assert enmascara_tokens("/api/plans/12/document") == "/api/plans/12/document"
+
+    registro = logging.LogRecord(
+        "uvicorn.access", logging.INFO, __file__, 1,
+        '%s - "%s %s HTTP/1.1" %d', ("1.2.3.4", "GET", "/api/p/SECRETO/diary", 200), None)
+    _FiltroTokens().filter(registro)
+    assert "SECRETO" not in (registro.getMessage())

@@ -10,12 +10,12 @@
     <meta name="theme-color" content="#0B111C" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <!-- Inter la servimos NOSOTROS (ver el @font-face de src/index.css): ni la
+         IP del cliente sale hacia Google, ni el primer pintado depende de que
+         un tercero responda. El preload adelanta el subconjunto latino —el que
+         usa el 99% del texto— para que no espere a que el CSS lo descubra. -->
+    <link rel="preload" as="font" type="font/woff2"
+          href="/fonts/inter-latin.woff2" crossorigin />
   </head>
   <body>
     <div id="root"></div>

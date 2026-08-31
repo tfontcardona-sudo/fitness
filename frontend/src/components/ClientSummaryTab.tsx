@@ -1,14 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ReferenceLine,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+
+// recharts (~106 KB gzip) solo baja cuando hay gráfica que pintar: como import
+// estático viajaba al abrir cualquier ficha, se mirara el Resumen o no.
+const GraficaPesoCoach = lazy(() => import("./GraficaPesoCoach"));
 import { api } from "../lib/api";
 import type { ClientOut } from "../types";
 import { EmptyState } from "./ui";
@@ -87,38 +81,9 @@ export function ClientSummaryTab({ client }: { client: ClientOut }) {
           />
         ) : (
           <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={series} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="pesoFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={accent} stopOpacity={0.25} />
-                    <stop offset="100%" stopColor={accent} stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid stroke="rgba(38,33,26,0.08)" vertical={false} />
-                <XAxis dataKey="label" stroke="#8B8172" fontSize={12} tickLine={false} axisLine={false} />
-                <YAxis stroke="#8B8172" fontSize={12} tickLine={false} axisLine={false} domain={["dataMin - 2", "dataMax + 2"]} />
-                <Tooltip
-                  contentStyle={{
-                    background: "#fffdf9",
-                    border: "1px solid rgba(38,33,26,0.15)",
-                    borderRadius: 12,
-                    fontSize: 13,
-                  }}
-                  labelStyle={{ color: "#6E6455" }}
-                />
-                {client.goal_weight_kg != null && (
-                  <ReferenceLine
-                    y={client.goal_weight_kg}
-                    stroke={accent}
-                    strokeDasharray="4 4"
-                    strokeOpacity={0.5}
-                    label={{ value: "Objetivo", fill: "#6E6455", fontSize: 11, position: "right" }}
-                  />
-                )}
-                <Area type="monotone" dataKey="peso" stroke={accent} strokeWidth={2} fill="url(#pesoFill)" />
-              </AreaChart>
-            </ResponsiveContainer>
+            <Suspense fallback={<div className="h-full w-full animate-pulse rounded-xl bg-black/5" />}>
+              <GraficaPesoCoach series={series} accent={accent} goalKg={client.goal_weight_kg} />
+            </Suspense>
           </div>
         )}
       </div>

@@ -1,14 +1,8 @@
-import { useEffect, useRef, useState } from "react";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ReferenceLine,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+
+// recharts (~106 KB gzip) solo baja al abrir esta pantalla: como import
+// estático viajaba en la primera carga del portal de TODOS los clientes.
+const GraficaPeso = lazy(() => import("./GraficaPeso"));
 import { CameraOff, Dumbbell, FileText, LineChart, Ruler, Sparkles } from "lucide-react";
 import type { FeedbackDocOut, PortalBrand, PortalProgress as Progress } from "../types";
 import { portalApi, PortalError } from "./portalApi";
@@ -120,29 +114,9 @@ export function PortalProgress({ api, brand, hasTraining = true, token }: { api:
         <section className="portal-card p-3">
           <Header icon={LineChart} title="Tu peso" />
           <div className="h-52">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={series} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="pesoPortal" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={accent} stopOpacity={0.35} />
-                    <stop offset="100%" stopColor={accent} stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid stroke="var(--p-line)" vertical={false} />
-                <XAxis dataKey="label" stroke="var(--p-ink-soft)" fontSize={11} tickLine={false} axisLine={false} minTickGap={24} interval="preserveStartEnd" />
-                <YAxis stroke="var(--p-ink-soft)" fontSize={11} tickLine={false} axisLine={false} domain={["dataMin - 1", "dataMax + 1"]} width={30} allowDecimals={false} tickFormatter={(v) => `${Math.round(Number(v))}`} />
-                <Tooltip
-                  formatter={(v: number | string) => [`${v} kg`, "Peso"]}
-                  contentStyle={{ background: "var(--p-card-top)", border: "1px solid var(--p-line)", borderRadius: 12, fontSize: 13, color: "var(--p-ink)" }}
-                  labelStyle={{ color: "var(--p-ink-soft)" }}
-                />
-                {w.goal_kg != null && (
-                  <ReferenceLine y={w.goal_kg} stroke={accent2} strokeDasharray="4 4" strokeOpacity={0.6}
-                    label={{ value: "Objetivo", fill: "var(--p-ink-soft)", fontSize: 11, position: "insideTopRight" }} />
-                )}
-                <Area type="monotone" dataKey="kg" stroke={accent} strokeWidth={2.5} fill="url(#pesoPortal)" />
-              </AreaChart>
-            </ResponsiveContainer>
+            <Suspense fallback={<div className="h-full w-full animate-pulse rounded-xl" style={{ background: "var(--p-line)" }} />}>
+              <GraficaPeso series={series} accent={accent} accent2={accent2} goalKg={w.goal_kg} />
+            </Suspense>
           </div>
           {w.weekly_rate_kg != null && Math.abs(w.weekly_rate_kg) >= 0.01 && (
             <p className="mt-1 text-center text-xs opacity-60">
@@ -219,7 +193,7 @@ export function PortalProgress({ api, brand, hasTraining = true, token }: { api:
             <>
               <PhotoColumn api={api} title="Tus fotos" date={data.photos.first_date} photos={data.photos.first} wide />
               <p className="mt-2 flex items-center gap-1.5 text-xs opacity-60">
-                <CameraOff size={13} /> Envía fotos la próxima revisión
+                <CameraOff size={13} /> Sube tus fotos al cerrar la próxima revisión
               </p>
             </>
           )}

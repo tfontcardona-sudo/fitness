@@ -53,7 +53,7 @@ class WeeklyDigest:
 
 
 def _week_of(client: Client, db: Session, hoy) -> ClientWeek:
-    from app.services.push import diary_is_filled
+    from app.services.push import dias_registrados
 
     # 7 días INCLUSIVOS (hoy-6 … hoy): con hoy-7 la ventana tenía 8 fechas y un
     # cliente constante salía como "8/7" en el email.
@@ -66,7 +66,9 @@ def _week_of(client: Client, db: Session, hoy) -> ClientWeek:
                DailyLog.log_date >= desde14, DailyLog.log_date <= hoy)
         .order_by(DailyLog.log_date)
     ).scalars().all()
-    dias = {lg.log_date for lg in logs if lg.log_date >= desde7 and diary_is_filled(lg)}
+    # Cuenta TODO lo que registra el cliente (diario, series de entreno o
+    # comidas elegidas): un DQR Train solo registra series y salía con 0/7.
+    dias = dias_registrados(db, [lg for lg in logs if lg.log_date >= desde7])
     pesos = [(lg.log_date, lg.weight_kg) for lg in logs if lg.weight_kg]
     delta = None
     if len(pesos) >= 3:
@@ -152,6 +154,10 @@ def run_weekly_digest(db: Session, hoy=None) -> dict:
                 payload = {
                     "title": f"📊 Resumen semanal · {digest.week_label}",
                     "body": " · ".join(partes),
+                    # Sin count, el service worker apagaba el badge del coach:
+                    # el resumen del lunes le borraba los "N pagos sin leer".
+                    "count": len(digest.at_risk) + len(digest.review_pending)
+                             + len(digest.renewals),
                     "url": "/",
                     "tag": "dq-weekly",
                 }

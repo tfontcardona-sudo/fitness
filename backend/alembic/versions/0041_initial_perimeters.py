@@ -17,14 +17,22 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Idempotente: la 0001 crea el esquema con `create_all` desde los modelos,
-    # así que en una instalación NUEVA estas columnas ya nacen puestas y el
-    # ALTER reventaba la cadena entera (el contenedor no llegaba a arrancar).
+    # Guarda de idempotencia: en una base NUEVA, 0001 crea el esquema
+    # completo con `create_all`, así que estas columnas YA existen y el
+    # add_column reventaba — y como Alembic corre toda la cadena en una
+    # transacción, la base quedaba VACÍA (ni alembic_version) y el
+    # contenedor en crashloop. Sin esto no había forma de arrancar de cero
+    # ni de recuperarse ante un desastre.
     insp = sa.inspect(op.get_bind())
-    cols = {c["name"] for c in insp.get_columns("clients")}
-    for nombre in ("initial_waist_cm", "initial_hip_cm", "initial_arm_cm", "initial_thigh_cm"):
-        if nombre not in cols:
-            op.add_column("clients", sa.Column(nombre, sa.Float(), nullable=True))
+    existentes = {c["name"] for c in insp.get_columns("clients")}
+    if "initial_waist_cm" not in existentes:
+        op.add_column("clients", sa.Column("initial_waist_cm", sa.Float(), nullable=True))
+    if "initial_hip_cm" not in existentes:
+        op.add_column("clients", sa.Column("initial_hip_cm", sa.Float(), nullable=True))
+    if "initial_arm_cm" not in existentes:
+        op.add_column("clients", sa.Column("initial_arm_cm", sa.Float(), nullable=True))
+    if "initial_thigh_cm" not in existentes:
+        op.add_column("clients", sa.Column("initial_thigh_cm", sa.Float(), nullable=True))
 
 
 def downgrade() -> None:

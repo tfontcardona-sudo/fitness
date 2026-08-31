@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
+  AlertTriangle,
   BadgeEuro,
   CalendarPlus,
   CheckCircle2,
@@ -53,7 +54,7 @@ interface Accion {
   alert?: CoachAlert;
 }
 
-function nextAction(c: ClientOut): Accion | null {
+function nextAction(c: ClientOut, avisoPlan?: CoachAlert): Accion | null {
   if (c.status === "review_pending")
     return {
       client: c, prio: 1, tone: "#7B4FC9", icon: ClipboardCheck, category: "Revisión",
@@ -70,21 +71,39 @@ function nextAction(c: ClientOut): Accion | null {
   // flag se apaga en cuanto el coach ABRE la pestaña Seguimiento, así que la
   // tarea desaparecía de "Hoy" sin haberse hecho. Ahora viene de la alerta
   // adapt_plan del backend, anclada al período analizado — auditoría.)
-  if (c.status === "onboarding" && !c.goal_type)
-    // Aún SIN anamnesis: el botón lleva a completarla/leerla (lo que falta).
-    // Cada tipo de acción con SU color e icono (mismos que las carpetas).
-    return {
-      // prio 4 = "En espera del cliente": el coach solo puede recordárselo.
-      client: c, prio: 4, tone: "#6366F1", icon: ClipboardList, category: "Falta anamnesis",
-      title: "Cliente nuevo · falta su anamnesis",
-      cta: "Abrir anamnesis", tab: "anamnesis",
-    };
-  if (c.status === "onboarding")
+  if (c.status === "onboarding") {
+    // "Falta su anamnesis" y "llegó pero la IA no pudo leerla" son cosas MUY
+    // distintas y aquí se fundían en una sola: con la anamnesis ya en el
+    // sistema, el panel decía "falta su anamnesis" y la metía en "En espera
+    // del cliente", cuando la pelota estaba en el tejado del coach. La verdad
+    // la tiene el backend (aviso `create_plan`, que distingue las dos vías);
+    // aquí solo se consume — incluidos sus días de espera.
+    const recibida = c.consent_signed_at != null
+      || avisoPlan?.action === "Revisar anamnesis";
+    if (!recibida)
+      return {
+        // prio 4 = "En espera del cliente": el coach solo puede recordárselo.
+        client: c, prio: 4, tone: "#6366F1", icon: ClipboardList, category: "Falta anamnesis",
+        title: "Cliente nuevo · falta su anamnesis",
+        detail: avisoPlan?.message,
+        cta: avisoPlan?.action ?? "Abrir anamnesis", tab: "anamnesis",
+        alert: avisoPlan,
+      };
+    if (!c.goal_type)
+      return {
+        // Ya está en casa: le toca al COACH rellenar lo que la IA no sacó.
+        client: c, prio: 2, tone: "#6366F1", icon: ClipboardList, category: "Revisar anamnesis",
+        title: "Anamnesis recibida · revísala y genera el plan",
+        detail: avisoPlan?.message,
+        cta: "Revisar anamnesis", tab: "anamnesis",
+        alert: avisoPlan,
+      };
     return {
       client: c, prio: 3, tone: "#E8833A", icon: CalendarPlus, category: "Falta planificación",
       title: "Anamnesis lista · falta su planificación",
       cta: "Crear planificación", tab: "planificacion",
     };
+  }
   // 45 días en la misma etapa de objetivo → valorar cambio (posponible)
   const dueDays = goalReviewDue(c);
   if (dueDays != null)
@@ -116,13 +135,16 @@ const agendaHora = (iso: string) =>
 export default function DashboardPage() {
   const [clients, setClients] = useState<ClientOut[] | null>(null);
   const [alerts, setAlerts] = useState<CoachAlert[]>([]);
+  const alertasDeSistema = alerts.filter((a) => a.client_id === 0);
   const [agenda, setAgenda] = useState<VideoCallAgendaItem[]>([]);
   // Un fallo de red NO se disfraza de "Todo al día": banner explícito.
   const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
     const load = () => {
-      api.listClients()
+      // `light`: esta pantalla se refresca sola cada 3 s y no pinta ni una
+      // de las notas de la anamnesis (son la mayor parte del peso de la lista).
+      api.listClients({ light: true })
         .then((cs) => { setLoadFailed(false); setClients((prev) => keepIfSame(prev, cs)); })
         .catch(() => { setLoadFailed(true); setClients((c) => c ?? []); });
     };
@@ -156,14 +178,20 @@ export default function DashboardPage() {
     // Con un borrador pendiente de activar, la tarea NO es "crear planificación"
     // (eso generaría otra y gastaría créditos): es revisarlo y activarlo.
     const draftIds = new Set(alerts.filter((a) => a.kind === "publish_plan").map((a) => a.client_id));
+    const avisoPlanPorCliente = new Map(
+      alerts.filter((a) => a.kind === "create_plan").map((a) => [a.client_id, a]));
     const acciones = c
-      .map(nextAction)
+      .map((cl) => nextAction(cl, avisoPlanPorCliente.get(cl.id)))
       .filter((a): a is Accion => a !== null)
       .filter((a) => !(a.category === "Revisión" && sendFbIds.has(a.client.id)))
       .filter((a) => !(a.category === "Falta planificación" && draftIds.has(a.client.id)));
     // Falta recurso/producto y videollamadas: vienen del centro de alertas
     // (mismo dato), cada tipo con su grupo, color e icono propios.
     for (const al of alerts) {
+      // Avisos DEL SISTEMA (client_id 0, "Sistema"): no cuelgan de ninguna
+      // ficha, así que el `find` los descartaba y el aviso más grave del
+      // panel —"los automatismos están parados"— no se veía en Hoy.
+      if (al.client_id === 0) continue;
       const cli = c.find((x) => x.id === al.client_id);
       if (!cli) continue;
       if (al.kind === "missing_products") {
@@ -328,6 +356,24 @@ export default function DashboardPage() {
           Sin conexión · datos incompletos, reintentando…
         </div>
       )}
+
+      {/* AVISO DEL SISTEMA: lo más grave que puede pasar (los automatismos
+          parados = ni períodos, ni recordatorios, ni cortes de suscripción).
+          Banda propia arriba del todo, sin ficha ni avatar. */}
+      {alertasDeSistema.map((al) => (
+        <div key={al.key} role="alert"
+          className="card mt-4 flex items-start gap-2.5 border p-3.5 text-sm"
+          style={{ borderColor: "#C2453A66", background: "#C2453A14" }}>
+          <AlertTriangle size={18} style={{ color: "#C2453A" }} className="mt-0.5 shrink-0" />
+          <span className="min-w-0">
+            <span className="block font-semibold" style={{ color: "#E0685C" }}>
+              Aviso del sistema
+            </span>
+            <span className="mt-0.5 block text-zinc-300">{al.message}</span>
+            {al.fix && <span className="mt-1 block text-xs text-zinc-500">{al.fix}</span>}
+          </span>
+        </div>
+      ))}
 
       {/* QUÉ TOCA HACER — el corazón del panel (naranja: acción) */}
       <section className="mt-7">

@@ -37,6 +37,13 @@ export function ClientDocuments({ client, onUploaded, onGoAnamnesis, portalUrl, 
   function load() {
     api.listClientDocuments(client.id).then(setDocs).catch(() => setDocs([]));
   }
+
+  // El CUESTIONARIO y los ADJUNTOS (analítica, informes) son cosas distintas:
+  // con todo en un montón, subir una analítica plegaba la tarjeta con el check
+  // "subida" y daba la anamnesis por recibida, mientras la campana seguía
+  // diciendo que faltaba.
+  const anamnesis = (docs ?? []).filter((d) => (d as any).kind !== "adjunto");
+  const adjuntos = (docs ?? []).filter((d) => (d as any).kind === "adjunto");
   useEffect(load, [client.id]);
 
   function downloadTemplate() {
@@ -215,10 +222,10 @@ export function ClientDocuments({ client, onUploaded, onGoAnamnesis, portalUrl, 
   return (
     // DESPLEGABLE: abierto solo mientras falte la anamnesis (hay que actuar);
     // una vez subida queda plegado y el check lo resume de un vistazo.
-    <details className="card p-5" open={!docs || docs.length === 0}>
+    <details className="card p-5" open={!docs || anamnesis.length === 0}>
       <summary className="flex cursor-pointer items-center justify-between">
         <h3 className="text-sm font-semibold text-zinc-200">Anamnesis</h3>
-        {docs && docs.length > 0 && (
+        {docs && anamnesis.length > 0 && (
           <span
             className="flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
             style={{ background: "color-mix(in srgb, var(--brand-accent) 12%, transparent)", color: "var(--brand-accent)" }}
@@ -263,7 +270,7 @@ export function ClientDocuments({ client, onUploaded, onGoAnamnesis, portalUrl, 
         <p className="mt-2 text-xs text-zinc-400">
           {busy
             ? "Subiendo y leyendo con IA…"
-            : docs && docs.length > 0
+            : anamnesis.length > 0
             ? "Arrastra otro PDF para reemplazar"
             : "Arrastra el PDF aquí o haz clic"}
         </p>
@@ -297,25 +304,40 @@ export function ClientDocuments({ client, onUploaded, onGoAnamnesis, portalUrl, 
         }}
       />
 
-      {/* Lista de documentos */}
-      {docs && docs.length > 0 && (
-        <ul className="mt-4 space-y-1.5">
-          {docs.map((d) => (
-            <li key={d.name}>
-              <button
-                onClick={() => openDoc(d.name)}
-                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left hover:bg-[var(--surface-raised)]"
-              >
-                <FileText size={15} style={{ color: "var(--brand-accent)" }} />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm text-zinc-200">{d.name}</span>
-                  <span className="text-xs text-zinc-500">{d.size_kb} KB</span>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      {/* Lista de documentos, con los ADJUNTOS en su propio grupo */}
+      {(() => {
+        const grupos: [string, DocItem[]][] = [
+          ["", anamnesis],
+          ["Adjuntos (analítica, informes)", adjuntos],
+        ];
+        return grupos.map(([titulo, lista]) => (
+          lista.length > 0 && (
+            <div key={titulo || "anamnesis"}>
+              {titulo && (
+                <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                  {titulo}
+                </p>
+              )}
+              <ul className={titulo ? "mt-1.5 space-y-1.5" : "mt-4 space-y-1.5"}>
+                {lista.map((d) => (
+                  <li key={d.name}>
+                    <button
+                      onClick={() => openDoc(d.name)}
+                      className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left hover:bg-[var(--surface-raised)]"
+                    >
+                      <FileText size={15} style={{ color: "var(--brand-accent)" }} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm text-zinc-200">{d.name}</span>
+                        <span className="text-xs text-zinc-500">{d.size_kb} KB</span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )
+        ));
+      })()}
 
       {/* Acceso al portal del cliente (usuario = su email + contraseña por email).
           Se envía solo al subir la anamnesis; aquí el coach puede reenviarlo por

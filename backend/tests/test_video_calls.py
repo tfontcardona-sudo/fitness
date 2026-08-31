@@ -416,6 +416,18 @@ def test_coach_subscription_upsert_and_digest_skips(db, monkeypatch) -> None:
     monkeypatch.setattr(settings, "vapid_public_key", "pub")
     monkeypatch.setattr(settings, "vapid_private_key", "priv")
 
+    # Este test afirma "el coach NO tiene dispositivos", así que no puede
+    # depender de lo que haya en la base: una fila de coach abandonada por otra
+    # ejecución (o por una interrumpida a medias) lo tumbaba con un fallo que
+    # no señalaba a ningún error del código. Se parte de cero a propósito.
+    from app.models import PushSubscription
+
+    previas = list(db.scalars(
+        select(PushSubscription).where(PushSubscription.is_coach.is_(True))))
+    for fila in previas:
+        db.delete(fila)
+    db.flush()
+
     ep = f"https://push.example/coach-{uuid.uuid4().hex}"
     s1 = push_svc.save_coach_subscription(db, ep, "k1", "a1")
     s2 = push_svc.save_coach_subscription(db, ep, "k2", "a2")  # upsert, mismo endpoint
@@ -432,3 +444,91 @@ def test_coach_subscription_upsert_and_digest_skips(db, monkeypatch) -> None:
     day = datetime(2026, 7, 20, 12, 0, tzinfo=ZoneInfo(settings.tz))
     out = push_svc.run_coach_digest(db, day.astimezone(timezone.utc))
     assert out.get("skipped") == "el coach no tiene dispositivos suscritos"
+
+
+@needs_db
+def test_dos_videollamadas_el_mismo_dia_son_dos_avisos_para_el_coach(db, monkeypatch) -> None:
+    """Un push con `tag` fija SUSTITUYE al anterior en el móvil. Con una tag
+    compartida, dos clientes con videollamada el mismo día dejaban al coach con
+    UNA sola notificación: la segunda se comía a la primera. Es el mismo fallo
+    que ya se corrigió en los cobros."""
+    from datetime import date, datetime, timedelta, timezone
+    from zoneinfo import ZoneInfo
+
+    from app.config import settings
+    from app.models import Client, VideoCall
+    from app.services import push as push_svc
+    from app.security import new_portal_token
+
+    enviados = []
+    monkeypatch.setattr(settings, "push_enabled", True)
+    monkeypatch.setattr(settings, "vapid_public_key", "pub")
+    monkeypatch.setattr(settings, "vapid_private_key", "priv")
+    monkeypatch.setattr(push_svc, "send_to_coach",
+                        lambda db, payload: enviados.append(payload) or 1)
+    monkeypatch.setattr(push_svc, "send_to_client",
+                        lambda db, client, payload: 1)
+
+    tz = ZoneInfo(settings.tz)
+    manana = date.today() + timedelta(days=1)
+    creados = []
+    for i in range(2):
+        c = Client(full_name=f"Cliente VC {i} {uuid.uuid4().hex[:6]}",
+                   email=f"vc{i}-{uuid.uuid4().hex[:6]}@test.local",
+                   package_tier="pro", billing_period="1m", status="active",
+                   portal_token="p", payment_status="paid")
+        db.add(c)
+        db.flush()
+        c.portal_token = new_portal_token(c.id)
+        db.add(VideoCall(
+            client_id=c.id, period_index=1, status="scheduled",
+            scheduled_for=manana,
+            scheduled_at=datetime.combine(manana, datetime.min.time(),
+                                          tzinfo=tz).replace(hour=17 + i)))
+        creados.append(c)
+    db.commit()
+
+    # Mediodía de hoy: entra la rama "el día antes" para las dos llamadas.
+    ahora = datetime.combine(date.today(), datetime.min.time(),
+                             tzinfo=tz).replace(hour=12)
+    push_svc.run_video_call_reminders(db, ahora.astimezone(timezone.utc))
+
+    mias = [p for p in enviados if p.get("title") == "Videollamada"]
+    assert len(mias) == 2, f"se enviaron {len(mias)} avisos"
+    tags = {p.get("tag") for p in mias}
+    assert len(tags) == 2, f"las dos comparten tag y una tapa a la otra: {tags}"
+def test_dos_videollamadas_el_mismo_dia_no_se_pisan_en_el_movil_del_coach(db, monkeypatch):
+    """El aviso al coach usaba una tag FIJA ("dq-vc-coach"): dos clientes con
+    llamada el mismo día generaban dos notificaciones con la misma tag y el
+    móvil solo enseñaba la última — la primera desaparecía sin leerse."""
+    from app.config import settings
+    from app.services import push as push_svc
+
+    monkeypatch.setattr(settings, "push_enabled", True)
+    monkeypatch.setattr(settings, "vapid_public_key", "pub")
+    monkeypatch.setattr(settings, "vapid_private_key", "priv")
+
+    enviados = []
+    monkeypatch.setattr(push_svc, "send_to_coach",
+                        lambda _db, payload: enviados.append(payload) or 1)
+    monkeypatch.setattr(push_svc, "send_to_client", lambda _db, _c, _p: 1)
+
+    class _VC:
+        def __init__(self, vc_id):
+            self.id = vc_id
+            self.meet_url = None
+
+    class _C:
+        id = 1
+        portal_token = "tok"
+        full_name = "Ana"
+
+    push_svc._send_videocall_reminder(db, _C(), _VC(11), "Marca",
+                                      client_body="c", coach_body="Ana: mañana")
+    push_svc._send_videocall_reminder(db, _C(), _VC(12), "Marca",
+                                      client_body="c", coach_body="Luis: mañana")
+
+    tags = [p["tag"] for p in enviados]
+    assert len(set(tags)) == 2, f"las dos llamadas comparten tag: {tags}"
+    # Y siguen llevando `count`: sin él, el service worker apaga el badge.
+    assert all(p.get("count") for p in enviados)

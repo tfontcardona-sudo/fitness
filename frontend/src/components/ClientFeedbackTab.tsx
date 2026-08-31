@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { Link } from "react-router-dom";
 import { libre } from "../lib/accordion";
 import { ancla } from "../lib/anchors";
-import { Sparkles, AlertTriangle, MessageSquare, MessageCircle, Mail, Video, Target, TrendingUp, BarChart3, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
+import { Sparkles, AlertTriangle, Download, MessageSquare, MessageCircle, Mail, Video, Target, TrendingUp, BarChart3, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
 import { api, getToken } from "../lib/api";
 import { feedbackBody, feedbackMessage, openWhatsApp, videoCallModifyMessage, videoCallScheduledMessage, waPhone } from "../lib/whatsapp";
+import { copiarConAviso } from "../lib/clipboard";
 import { pkg } from "../lib/packages";
+import { useBrand } from "../hooks/useBrand";
 import { ExpandableArea, Spinner, useToast } from "./ui";
 import type { ClientOut, VideoCallOut } from "../types";
 
@@ -34,6 +37,7 @@ interface Period {
  */
 export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { client: ClientOut; onClientChanged?: () => void; onGoPlan?: () => void }) {
   const toast = useToast();
+  const { brand } = useBrand();   // para el enlace de reservas del coach
   const [periods, setPeriods] = useState<Period[] | null>(null);
   const [contents, setContents] = useState<Record<number, any>>({});
   const [generating, setGenerating] = useState<number | null>(null);
@@ -104,19 +108,36 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
    *  deja la videollamada pendiente de agendar a mano. */
   async function modifyVideoCall(call: VideoCallOut) {
     const phone = waPhone(client.phone);
-    if (phone) openWhatsApp(phone, videoCallModifyMessage(client.full_name, _whenLabel(call)));
+    if (phone) {
+      openWhatsApp(phone, videoCallModifyMessage(
+        client.full_name, _whenLabel(call), brand?.meet_url ?? null));
+    }
     try {
       await api.modifyVideoCall(client.id, call.id);
       loadCalls();
-      toast.push("Acuerda el día por WhatsApp");
+      // SIN teléfono no se ha abierto ningún WhatsApp: decir "acuerda el día
+      // por WhatsApp" mandaba al coach a mirar una ventana que no existe.
+      toast.push(phone
+        ? "Acuerda el día por WhatsApp"
+        : "Pendiente de agendar · sin teléfono, escríbele por email");
     } catch (e: any) {
       toast.push(e?.message ?? "No se pudo modificar", "error");
     }
   }
 
   const load = useCallback(() => {
-    api.listPlans(client.id)
-      .then((plans) => setAdaptedIdx(plans[0]?.nutrition_json?.applied_adjustments?.period_index ?? null))
+    // El RESUMEN de las versiones: esta pantalla solo lee el nº de revisión ya
+    // adaptada y antes se descargaban TODAS las versiones enteras para eso.
+    api.listPlanSummaries(client.id)
+      .then((plans) => {
+        // El plan VIGENTE (publicado; si no, el más nuevo), no `plans[0]`: con
+        // un borrador retenido de un mes superior, ese no es el activo. El
+        // sello del resumen ya mira nutrición Y entreno, así que el tier
+        // `train` —cuyo banner de "revisar y adaptar" era eterno— también sale.
+        const vigente = plans.find((p) => p.status === "published")
+          ?? [...plans].sort((a, b) => (b.id ?? 0) - (a.id ?? 0))[0];
+        setAdaptedIdx(vigente?.applied_adjustments?.period_index ?? null);
+      })
       .catch(() => {});
     api.listPeriods(client.id)
       .then(async (ps) => {
@@ -182,9 +203,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
   }
 
   function copyAll(content: any) {
-    navigator.clipboard.writeText(feedbackBody(content))
-      .then(() => toast.push("Feedback copiado al portapapeles"))
-      .catch(() => toast.push("No se pudo copiar", "error"));
+    void copiarConAviso(feedbackBody(content), toast, "Feedback copiado al portapapeles");
   }
 
   /** Entrega el feedback al cliente según su paquete:
@@ -201,6 +220,38 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
       await _deliverFeedback(feedbackId, content, alreadySent, periodIndex);
     } finally {
       setEnviando(false);
+    }
+  }
+
+  /** El INFORME de la revisión, en Word, para el propio coach.
+   *
+   *  `feedbackDocumentUrl` llevaba en el cliente HTTP desde que existe el
+   *  informe y no lo llamaba ninguna pantalla: el coach podía generarlo,
+   *  editarlo y enviarlo, pero no descargarlo — ni para releerlo antes de
+   *  mandarlo, ni para hacerlo llegar por otra vía. El endpoint exige JWT, así
+   *  que va por fetch→blob como el resto de descargas del panel. */
+  const [bajando, setBajando] = useState<number | null>(null);
+  async function descargarInforme(feedbackId: number, periodIndex: number) {
+    if (bajando) return;
+    setBajando(feedbackId);
+    try {
+      const r = await fetch(api.feedbackDocumentUrl(feedbackId), {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (!r.ok) throw new Error(`Error ${r.status}`);
+      const url = URL.createObjectURL(await r.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `revision_${periodIndex}_${client.full_name
+        .replace(/[^\p{L}\p{N}]+/gu, "_").toLowerCase()}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch {
+      toast.push("No se pudo descargar el informe", "error");
+    } finally {
+      setBajando(null);
     }
   }
 
@@ -244,7 +295,13 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
       load();
       onClientChanged?.();
     } catch {
-      /* el WhatsApp ya está abierto; el marcado puede reintentarse */
+      // EL CATCH MUDO otra vez (ya se corrigió en el panel de Planificación,
+      // no aquí): el WhatsApp se abre igual, pero si el backend no registra el
+      // envío el ciclo NO avanza — el feedback sigue sin `sent_at`, el cliente
+      // no lo ve en su Progreso y el cliente se queda en `review_pending`. Sin
+      // aviso, el coach da por hecho que ya está y nadie vuelve a mirarlo.
+      toast.push("WhatsApp abierto, pero el envío no quedó registrado · "
+                 + "vuelve a pulsar Enviar para que el ciclo avance", "error");
     }
   }
 
@@ -412,6 +469,14 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                 <p className="mt-0.5 text-xs text-zinc-500">{p.starts_on} → {p.ends_on}</p>
               </div>
               <div className="flex gap-2" onClick={(e) => e.preventDefault()}>
+                {p.feedback_id && content && (
+                  <button onClick={() => descargarInforme(p.feedback_id as number, p.period_index)}
+                    disabled={bajando !== null} className="btn btn-ghost disabled:opacity-60"
+                    title="Descargar el informe de esta revisión en Word">
+                    {bajando === p.feedback_id ? <Spinner /> : <Download size={15} />}
+                    {bajando === p.feedback_id ? "Preparando…" : "Descargar"}
+                  </button>
+                )}
                 {p.feedback_id && content && !sent && (
                   <button onClick={() => deliverFeedback(p.feedback_id as number, content, false, p.period_index)}
                     disabled={enviando} className="btn btn-primary"
@@ -500,7 +565,11 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                   <Stat label="A su objetivo" value={m.distance_to_goal_kg != null ? `${Math.abs(m.distance_to_goal_kg)} kg` : "—"} />
                   <Stat
                     label="Adherencia dieta"
-                    value={`${m.adherence?.diet_pct ?? 0}% · ${(m.adherence?.diet_days_yes ?? 0) + (m.adherence?.diet_days_partial ?? 0)} de ${m.adherence?.period_days ?? 0} días`}
+                    // Sin un solo registro de dieta no es un 0 %: es que no
+                    // hay dato (un cliente de solo entreno ni ve ese campo).
+                    value={m.adherence?.diet_pct == null
+                      ? "Sin datos"
+                      : `${m.adherence.diet_pct}% · ${(m.adherence?.diet_days_yes ?? 0) + (m.adherence?.diet_days_partial ?? 0)} de ${m.adherence?.period_days ?? 0} días`}
                   />
                   <Stat label="Días registrados" value={`${m.adherence?.days_logged ?? 0}/${m.adherence?.period_days ?? 0}`} />
                 </div>
@@ -698,12 +767,7 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
   }
 
   async function copyLink(url: string) {
-    try {
-      await navigator.clipboard.writeText(url);
-      toast.push("Enlace de Meet copiado");
-    } catch {
-      toast.push("No se pudo copiar el enlace", "error");
-    }
+    await copiarConAviso(url, toast, "Enlace de Meet copiado");
   }
 
   const cuando = call?.scheduled_at
@@ -783,7 +847,11 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
         </div>
       )}
 
-      {/* Propuesta del cliente: aceptar tal cual o modificar (WhatsApp). */}
+      {/* Propuesta del cliente: aceptar tal cual, modificar (WhatsApp) o darla
+          por hecha. Este último botón faltaba: el backend admite cerrar desde
+          `proposed` y `pending_manual` justamente para que sin Google (o si la
+          llamada se hizo por teléfono) la propuesta tenga salida, pero la web
+          no lo ofrecía y su alerta ALTA sonaba para siempre. */}
       {call?.status === "proposed" && (
         <div className="mt-2 space-y-2">
           <p className="text-xs text-zinc-300">
@@ -805,6 +873,14 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
               onClick={() => onModify(call)}>
               <Pencil size={13} /> Modificar (WhatsApp)
             </button>
+            <button className="btn btn-ghost !px-3 !py-1.5 text-xs" disabled={busy}
+              onClick={() => run(
+                () => api.videoCallDone(clientId, call.id),
+                "Videollamada marcada como hecha",
+              )}
+              title="Si ya la hicisteis por teléfono o WhatsApp, o no vas a usar Meet">
+              <CheckCircle2 size={13} /> Ya está hecha
+            </button>
           </div>
           {notConnectedNote}
         </div>
@@ -818,6 +894,16 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
             escríbelo aquí:
           </p>
           {manualScheduler}
+          <div className="flex flex-wrap items-center gap-2">
+            <button className="btn btn-ghost !px-3 !py-1.5 text-xs" disabled={busy}
+              onClick={() => run(
+                () => api.videoCallDone(clientId, call.id),
+                "Videollamada marcada como hecha",
+              )}
+              title="Si ya la hicisteis por teléfono o WhatsApp, o no vas a usar Meet">
+              <CheckCircle2 size={13} /> Ya está hecha
+            </button>
+          </div>
           <button className="text-[11px] text-zinc-500 hover:text-zinc-300"
             onClick={() => onModify(call)}>
             Reenviar WhatsApp al cliente
@@ -1069,7 +1155,24 @@ const KIND_LABEL: Record<string, string> = {
  *  NO son públicas). Muestra miniaturas; un toque abre la foto a tamaño real. */
 /** Envoltorio plegado de las fotos: consulta solo el NÚMERO (metadatos, barato)
  *  y no descarga ninguna imagen hasta que el coach abre el desplegable. */
-function PeriodPhotosFolded({ clientId, periodId }: { clientId: number; periodId: number }) {
+/** Las fotos del cliente son UNA sola petición para toda la pestaña.
+ *
+ *  Cada revisión pintaba su contador y pedía la lista ENTERA para contar las
+ *  suyas: un cliente con un año de historial disparaba 24 peticiones idénticas
+ *  al abrir Feedback. Quien las comparte es `api.listClientPhotos`, que
+ *  memoiza la promesa 30 s — aquí llegó a haber una SEGUNDA capa haciendo lo
+ *  mismo (dos sesiones resolvieron el hallazgo a la vez) y quedó inerte: la
+ *  primera llamada ya devolvía la promesa cacheada, así que su mapa nunca
+ *  llegaba a compartir nada. Se queda una.
+ */
+export function PeriodPhotosFolded({ clientId, periodId, label }: {
+  clientId: number;
+  /** `null` = las fotos INICIALES de la anamnesis (sin período): el "antes" de
+   *  la primera revisión, que hasta ahora no se veía en ninguna pantalla del
+   *  coach pese a pedírselas al cliente con un "solo las ve tu coach". */
+  periodId: number | null;
+  label?: string;
+}) {
   const [count, setCount] = useState<number | null>(null);
   const [open, setOpen] = useState(false);
   useEffect(() => {
@@ -1084,16 +1187,39 @@ function PeriodPhotosFolded({ clientId, periodId }: { clientId: number; periodId
     <details className="mt-2" {...libre()}
       onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
       <summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-zinc-300">
-        Fotos del período ({count})
+        {label ?? "Fotos del período"} ({count})
       </summary>
-      {open && <PeriodPhotos clientId={clientId} periodId={periodId} />}
+      {open && <PeriodPhotos clientId={clientId} periodId={periodId} label={label} />}
     </details>
   );
 }
 
-function PeriodPhotos({ clientId, periodId }: { clientId: number; periodId: number }) {
+function PeriodPhotos({ clientId, periodId, label }: {
+  clientId: number; periodId: number | null; label?: string;
+}) {
   const [photos, setPhotos] = useState<{ id: number; kind: string; url: string }[] | null>(null);
   const [total, setTotal] = useState(0);
+  const toast = useToast();
+
+  /** La tira son miniaturas; al pulsar una se abre la foto ORIGINAL.
+   *  La pestaña se abre ANTES de descargar (si se abriera después, el
+   *  navegador la bloquearía por no venir de un clic). */
+  async function abrirEntera(e: ReactMouseEvent, photoId: number) {
+    e.preventDefault();
+    const w = window.open("about:blank", "_blank");
+    try {
+      const r = await fetch(api.clientPhotoUrl(clientId, photoId), {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (!r.ok) throw new Error("no se pudo abrir");
+      const url = URL.createObjectURL(await r.blob());
+      if (w) w.location.href = url;
+      else window.open(url, "_blank", "noopener");
+    } catch {
+      w?.close();
+      toast.push("No se pudo abrir la foto", "error");
+    }
+  }
 
   useEffect(() => {
     let alive = true;
@@ -1102,19 +1228,21 @@ function PeriodPhotos({ clientId, periodId }: { clientId: number; periodId: numb
       .then(async (all) => {
         const mine = all.filter((p) => p.period_id === periodId);
         if (alive) setTotal(mine.length);
-        const loaded: { id: number; kind: string; url: string }[] = [];
-        for (const p of mine.slice(0, 8)) {
+        // EN PARALELO y en MINIATURA: se pintan a 80×96 px, así que pedir el
+        // original del móvil del cliente (varios MB) de ocho en ocho y una
+        // detrás de otra era decenas de megas para una tira de sellos.
+        const bajadas = await Promise.all(mine.slice(0, 8).map(async (p) => {
           try {
-            const r = await fetch(api.clientPhotoUrl(clientId, p.id), {
+            const r = await fetch(api.clientPhotoUrl(clientId, p.id, 320), {
               headers: { Authorization: `Bearer ${getToken()}` },
             });
-            if (!r.ok) continue;
+            if (!r.ok) return null;
             const url = URL.createObjectURL(await r.blob());
             urls.push(url);
-            loaded.push({ id: p.id, kind: p.kind, url });
-          } catch { /* una foto ilegible no rompe la tira */ }
-        }
-        if (alive) setPhotos(loaded);
+            return { id: p.id, kind: p.kind, url };
+          } catch { return null; /* una foto ilegible no rompe la tira */ }
+        }));
+        if (alive) setPhotos(bajadas.filter((x): x is { id: number; kind: string; url: string } => x !== null));
       })
       .catch(() => alive && setPhotos([]));
     return () => {
@@ -1126,13 +1254,17 @@ function PeriodPhotos({ clientId, periodId }: { clientId: number; periodId: numb
   if (!photos || photos.length === 0) return null;
   return (
     <div className="mt-3">
+      {/* El rótulo lo pone quien monta el componente: con `periodId` nulo son
+          las fotos INICIALES de la anamnesis, no las "del período". La mitad
+          del soporte para eso (la prop `label`) estaba puesta y no se usaba. */}
       <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-        Fotos de progreso del período
+        {label ?? "Fotos de progreso del período"}
       </p>
       <div className="flex flex-wrap gap-2">
         {photos.map((p) => (
-          <a key={p.id} href={p.url} target="_blank" rel="noopener noreferrer" className="group relative">
-            <img src={p.url} alt={KIND_LABEL[p.kind] ?? p.kind}
+          <a key={p.id} href={p.url} target="_blank" rel="noopener noreferrer" className="group relative"
+            onClick={(e) => abrirEntera(e, p.id)}>
+            <img src={p.url} alt={KIND_LABEL[p.kind] ?? p.kind} loading="lazy" decoding="async"
               className="h-24 w-20 rounded-lg border border-zinc-700 object-cover transition group-hover:opacity-80" />
             <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1 text-[10px] text-white">
               {KIND_LABEL[p.kind] ?? p.kind}

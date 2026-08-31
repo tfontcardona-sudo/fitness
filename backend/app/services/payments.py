@@ -46,7 +46,11 @@ _log = logging.getLogger("app.payments")
 # dinero (importe 0, fuera de los totales) pero es un hecho de Stripe que el
 # coach debe ver en el feed, no solo en un push que se esfuma.
 # "manual": cobro fuera de Stripe que anota el coach (efectivo, transferencia…).
-KINDS = ("checkout", "invoice", "refund", "subscription", "manual")
+KINDS = ("checkout", "invoice", "refund", "subscription", "manual",
+         # CONTRACARGO: el cliente reclama el cobro a su banco. Sin
+         # estar aquí, `record_payment` lo degradaba a "checkout" en
+         # silencio y en el libro parecía un cobro más.
+         "dispute")
 STATUSES = ("paid", "failed", "refunded", "canceled")
 
 # Tope del histórico que trae la sincronización manual con Stripe.
@@ -119,6 +123,7 @@ def record_payment(
     seen: bool = False,
     fee_cents: int | None = None,
     payment_intent: str | None = None,
+    subscription_id: str | None = None,
 ) -> Payment | None:
     """Anota un movimiento en el libro. Devuelve la fila creada, o None si ya
     estaba anotada (idempotente por objeto+estado) o si algo falló.
@@ -144,6 +149,7 @@ def record_payment(
             amount_cents=int(amount_cents or 0),
             fee_cents=int(fee_cents) if fee_cents is not None else None,
             payment_intent=payment_intent or None,
+            subscription_id=subscription_id or None,
             currency=(currency or "eur").lower(),
             livemode=bool(livemode),
             client_id=client.id if client is not None else None,
@@ -210,9 +216,28 @@ def record_refunds_of_charge(db: Session, charge: dict, *,
                               Payment.status == "refunded").limit(1)
     ) if cargo_id else None
 
+    # Filas SINTÉTICAS "…_difN": las anotó una carga SIN desglose para cuadrar
+    # el acumulado. No son reembolsos de Stripe, así que el guard de arriba no
+    # las ve: si luego llega el desglose y se insertan los re_… encima, el
+    # mismo dinero se resta DOS VECES (justo lo que el guard venía a impedir).
+    sinteticas = list(db.scalars(
+        select(Payment).where(Payment.stripe_object_id.like(f"{cargo_id}_dif%"),
+                              Payment.status == "refunded")
+    )) if cargo_id else []
+
     reembolsos = [r for r in ((charge.get("refunds") or {}).get("data") or [])
                   if r.get("id") and (r.get("amount") or 0) > 0]
     if reembolsos and agregada is None:
+        if sinteticas:
+            # El desglose manda… solo si lo trae ENTERO (Stripe pagina
+            # `refunds` de 10 en 10). Si viene corto, se quedan las sintéticas:
+            # llevan el acumulado bueno y el libro no se descuadra.
+            suma_desglose = sum(int(r.get("amount") or 0) for r in reembolsos)
+            if suma_desglose < int(charge.get("amount_refunded") or 0):
+                return 0
+            for s in sinteticas:
+                db.delete(s)
+            db.flush()
         nuevas = 0
         for r in reembolsos:
             cuando = ts_to_dt(r.get("created") or charge.get("created"))
@@ -230,11 +255,43 @@ def record_refunds_of_charge(db: Session, charge: dict, *,
     if total <= 0:
         return 0
     if agregada is not None:
-        # Si han devuelto MÁS desde entonces, se pone al día el importe.
+        # Si han devuelto MÁS desde entonces, se pone al día el importe. Y
+        # vuelve a contar como SIN LEER: es dinero que se ha ido DESPUÉS de la
+        # última vez que el coach miró (antes se quedaba "visto" por la fecha
+        # del cargo, que puede ser de hace meses, y el badge no avisaba).
         if total > agregada.amount_cents:
             agregada.amount_cents = total
+            if seen_by_age:
+                agregada.seen_at = None  # la columna del "sin leer" del feed
             return 1
         return 0
+
+    # SIMÉTRICO al guard de arriba: ¿ya hay filas re_… de este mismo cargo?
+    # (las anotó un webhook cuya carga SÍ traía el desglose y ahora llega una
+    # que no — con las versiones nuevas de la API, `charge.refunds` ya no viene
+    # por defecto y la sincronización lo omite). Insertar además la fila
+    # agregada restaría el MISMO dinero dos veces: 129 € devueltos pasaban a
+    # restar 258 € del mes, de la gráfica y del CSV de la gestoría.
+    pi_id = comun["payment_intent"]
+    if pi_id:
+        ya_devuelto = int(db.scalar(
+            select(func.coalesce(func.sum(Payment.amount_cents), 0)).where(
+                Payment.kind == "refund", Payment.status == "refunded",
+                Payment.payment_intent == pi_id)
+        ) or 0)
+        if ya_devuelto >= total:
+            return 0
+        if ya_devuelto > 0:
+            # Se ha devuelto MÁS de lo anotado y esta carga no trae el
+            # desglose: se anota solo la DIFERENCIA. El id lleva el total
+            # dentro, así que una reentrega no la duplica.
+            if seen_by_age:
+                comun["seen"] = False  # devolución posterior a lo anotado
+            pago = record_payment(db, object_id=f"{cargo_id}_dif{total}",
+                                  amount_cents=total - ya_devuelto,
+                                  paid_at=ts_to_dt(charge.get("created")), **comun)
+            return 1 if pago is not None else 0
+
     pago = record_payment(db, object_id=cargo_id, amount_cents=total,
                           paid_at=ts_to_dt(charge.get("created")), **comun)
     return 1 if pago is not None else 0
@@ -278,6 +335,23 @@ def _neto_cents(db: Session, desde: datetime, hasta: datetime) -> tuple[int, int
     return total, cobros
 
 
+def neto_de_cliente(db: Session, client_id: int) -> int:
+    """Neto REAL de un cliente en céntimos: cobros − devoluciones, sin dinero
+    de prueba.
+
+    La ficha sumaba a mano la PÁGINA de 20 movimientos que pintaba: a partir
+    del movimiento 21 el "total pagado" mentía, y los cobros en modo prueba
+    (sk_test_) contaban como ingreso aunque el resto del panel los excluye.
+    """
+    filas = db.execute(
+        select(Payment.status, func.coalesce(func.sum(Payment.amount_cents), 0))
+        .where(Payment.client_id == client_id, Payment.livemode.is_(True),
+               Payment.status.in_(("paid", "refunded")))
+        .group_by(Payment.status)
+    ).all()
+    return sum(int(suma or 0) if st == "paid" else -int(suma or 0) for st, suma in filas)
+
+
 def summary(db: Session) -> dict:
     """Cabecera del feed: ingresos del mes, del anterior, sin leer y avisos."""
     ahora_local = datetime.now(timezone.utc).astimezone(_tz())
@@ -306,7 +380,9 @@ def summary(db: Session) -> dict:
     huerfanos = int(db.scalar(
         select(func.count(Payment.id)).where(
             Payment.client_id.is_(None), Payment.status == "paid",
-            Payment.livemode.is_(True), Payment.anonymized_at.is_(None))
+            Payment.livemode.is_(True), Payment.anonymized_at.is_(None),
+            # Los que el coach ya declaró ajenos dejan de contar (mig. 0043).
+            Payment.dismissed_at.is_(None))
     ) or 0)
     # Comisiones de Stripe del mes (solo cobros con fee consultado): permiten
     # enseñar el NETO real que llega al banco, no solo el bruto cobrado.
@@ -394,7 +470,8 @@ def list_payments(db: Session, *, limit: int = 50, offset: int = 0,
         # cobros ya anonimizados por RGPD).
         filtros += [Payment.client_id.is_(None), Payment.status == "paid",
                     Payment.livemode.is_(True),
-                    Payment.anonymized_at.is_(None)]
+                    Payment.anonymized_at.is_(None),
+                    Payment.dismissed_at.is_(None)]
     total = int(db.scalar(select(func.count(Payment.id)).where(*filtros)) or 0)
     filas = list(db.scalars(
         select(Payment).where(*filtros)
@@ -418,6 +495,36 @@ def mark_seen(db: Session, ids: list[int] | None = None) -> int:
     if filas:
         db.commit()
     return len(filas)
+
+
+def resolver_huerfano(db: Session, payment_id: int, *,
+                      client_id: int | None = None) -> Payment | None:
+    """Le da salida a un cobro SIN FICHA: o se asigna a un cliente, o se declara
+    ajeno a la asesoría.
+
+    El resumen avisaba de "N sin ficha" y el feed sabía filtrarlos, pero no
+    había NINGUNA acción que apagara el aviso: `adopt_orphans` solo reasocia por
+    email y dentro de 30 días, así que un cobro de otro producto de la cuenta —o
+    uno con el email mal escrito en el checkout— contaba para siempre. Un aviso
+    que no se puede resolver se acaba ignorando, y con él los que sí importan.
+    """
+    pago = db.get(Payment, payment_id)
+    if pago is None:
+        return None
+    if client_id is None:
+        pago.dismissed_at = datetime.now(timezone.utc)
+    else:
+        cliente = db.get(Client, client_id)
+        if cliente is None:
+            raise ValueError("cliente no encontrado")
+        pago.client_id = cliente.id
+        pago.dismissed_at = None
+        # La ficha se pone al día: un cobro que llevaba semanas sin asociar es,
+        # muy probablemente, el que falta para su fecha de último pago.
+        _refresca_ficha(cliente, pagado_en=pago.paid_at, livemode=pago.livemode)
+    db.commit()
+    db.refresh(pago)
+    return pago
 
 
 def adopt_orphans(db: Session, client: Client, *, days: int = 30) -> int:
@@ -501,14 +608,30 @@ def _refresca_ficha(client: Client | None, *, pagado_en: datetime | None,
         client.paid_at = cuando
 
 
+def _sub_de_factura(inv: dict) -> str | None:
+    """El `sub_…` de una factura, con el MISMO criterio que el webhook.
+
+    Lo resuelve `stripe_service._invoice_subscription_bits`, que sabe leerlo de
+    los tres sitios donde Stripe lo pone según la versión de la API."""
+    try:
+        from app.services.stripe_service import _invoice_subscription_bits
+
+        return _invoice_subscription_bits(inv)[0]
+    except Exception:  # noqa: BLE001 — sin sello es como estaba antes
+        return None
+
+
 def sync_from_stripe(db: Session, *, days: int = SYNC_DEFAULT_DAYS) -> dict:
     """Trae de Stripe los movimientos de los últimos `days` días y anota los que
     falten. Sirve para DOS cosas: rellenar el histórico anterior a esta tabla y
     repescar cobros cuyo webhook se perdió (Stripe caído, deploy en marcha…).
 
-    Recorre las tres fuentes que cubren el negocio:
+    Recorre las cuatro fuentes que cubren el negocio:
       · Checkout Sessions pagadas (planes de pago único),
       · Facturas pagadas (renovaciones de la suscripción de la oferta),
+      · Facturas que NO se pudieron cobrar (`open` ya intentada, o
+        `uncollectible`): es lo más caro de perder — el cliente cree que ha
+        pagado y el coach sigue trabajando gratis,
       · Cobros con devolución (reembolsos).
 
     Idempotente: lo ya anotado se ignora. Nunca lanza al caller salvo que Stripe
@@ -530,12 +653,33 @@ def sync_from_stripe(db: Session, *, days: int = SYNC_DEFAULT_DAYS) -> dict:
     revisados = 0
     errores: list[str] = []
 
-    def _limitado(iterador):
-        """Corta el barrido: ni la cuenta más movida de un coach pasa de aquí."""
-        nonlocal revisados
+    cortado = False
+
+    # Cinco pasadas: checkout, facturas pagadas, `open` intentadas,
+    # `uncollectible` y cargos con devolución. El cupo se repartía entre TRES
+    # (lo que había cuando se escribió) y con cinco el barrido podía irse a
+    # 5×(2000/3) — por encima del tope global que este freno existe para
+    # respetar. El tope de verdad lo pone `revisados >= SYNC_MAX_OBJECTS`, pero
+    # el reparto por fuente tiene que cuadrar con las fuentes que hay.
+    FUENTES = 5
+
+    def _limitado(iterador, cupo: int = SYNC_MAX_OBJECTS // FUENTES):
+        """Corta el barrido: ni la cuenta más movida de un coach pasa de aquí.
+
+        CUPO POR FUENTE. Con un presupuesto único, las Checkout Sessions
+        abandonadas —cada apertura de un enlace de pago crea una de verdad— se
+        lo comían entero en el primer bucle y las FACTURAS y las DEVOLUCIONES,
+        que son las que importan para la oferta, no llegaban a dar ni una
+        vuelta. Y el corte se ANOTA (`partial`) para que la web no diga "sin
+        cobros pendientes" cuando ni siquiera ha mirado.
+        """
+        nonlocal revisados, cortado
+        usados = 0
         for obj in iterador:
-            if revisados >= SYNC_MAX_OBJECTS:
+            if usados >= cupo or revisados >= SYNC_MAX_OBJECTS:
+                cortado = True
                 break
+            usados += 1
             revisados += 1
             yield obj
 
@@ -606,12 +750,64 @@ def sync_from_stripe(db: Session, *, days: int = SYNC_DEFAULT_DAYS) -> dict:
                 payment_intent=(inv.get("payment_intent") or None)
                 if not isinstance(inv.get("payment_intent"), dict)
                 else inv["payment_intent"].get("id"),
+                # A QUÉ SUSCRIPCIÓN pertenece. El webhook lo sella
+                # (`_anotar_factura`) y la repesca no: una factura recuperada
+                # aquí no contaba para "¿cuántos cobros lleva la oferta?", el
+                # programa no se daba por cerrado, la suscripción no se
+                # cancelaba y Stripe cobraba un mes de más. Es el mismo sello
+                # que la mig. 0042 añadió justo para esto.
+                subscription_id=_sub_de_factura(inv),
             ) is not None:
                 creados += 1
                 _refresca_ficha(cliente, pagado_en=ts_to_dt(pagada_en),
                                 livemode=bool(inv.get("livemode", True)))
     except Exception as exc:  # noqa: BLE001
         errores.append(f"facturas: {exc}")
+
+    # 2b) Facturas FALLIDAS. La repesca solo miraba `status="paid"`, así que un
+    #     cobro que NO entró —el caso más caro de perder: el cliente cree que
+    #     ha pagado, sigue entrenando y el coach trabaja gratis— dependía por
+    #     completo de que llegara su webhook. Y la sincronización existe justo
+    #     para cuando el webhook NO llega. En Stripe una factura que no se pudo
+    #     cobrar queda `open` (con reintentos por delante) o `uncollectible`
+    #     (agotados); las dos son el mismo movimiento "failed" del libro, y el
+    #     UNIQUE (objeto, estado) hace que la de después no duplique nada.
+    try:
+        from app.services.stripe_service import _anotar_factura, periodo_de_factura  # noqa: F401
+
+        for estado in ("open", "uncollectible"):
+            for inv in _limitado(stripe.Invoice.list(
+                    created={"gte": desde}, status=estado, limit=100).auto_paging_iter()):
+                if not _invoice_es_de_la_oferta(inv):
+                    continue
+                # `open` incluye la factura recién emitida que aún no se ha
+                # intentado cobrar: esa no ha fallado nada.
+                if estado == "open" and not (inv.get("attempted")
+                                             or (inv.get("attempt_count") or 0) > 0):
+                    continue
+                cliente = _client_from_invoice(db, inv)
+                creada = ts_to_dt(inv.get("created"))
+                if record_payment(
+                    db, object_id=inv["id"], kind="invoice", status="failed",
+                    amount_cents=inv.get("amount_due") or 0,
+                    currency=inv.get("currency") or "eur",
+                    livemode=bool(inv.get("livemode", True)),
+                    client=cliente, customer_name=inv.get("customer_name"),
+                    customer_email=inv.get("customer_email"),
+                    tier=(cliente.package_tier if cliente else "full"),
+                    billing_period=periodo_de_factura(inv, cliente),
+                    description=describe("full", periodo_de_factura(inv, cliente),
+                                         kind="invoice",
+                                         billing_reason=inv.get("billing_reason")),
+                    paid_at=creada,
+                    # SIN LEER siempre: un impago que aparece por repesca es,
+                    # por definición, uno del que el coach no se ha enterado.
+                    seen=False,
+                    subscription_id=_sub_de_factura(inv),
+                ) is not None:
+                    creados += 1
+    except Exception as exc:  # noqa: BLE001
+        errores.append(f"impagos: {exc}")
 
     # 3) Devoluciones (un reembolso resta de los ingresos del mes).
     try:
@@ -645,7 +841,7 @@ def sync_from_stripe(db: Session, *, days: int = SYNC_DEFAULT_DAYS) -> dict:
     # `partial`: el freno duro cortó el barrido — el resultado NO cubre todo el
     # rango pedido y el caller/UI no debe darlo por completo en silencio.
     return {"created": creados, "scanned": revisados, "errors": errores,
-            "partial": revisados >= SYNC_MAX_OBJECTS}
+            "partial": cortado}
 
 
 # ------------------------------------------------- cobros FUERA de Stripe ----

@@ -19,6 +19,25 @@ export const REFRESH_MS = 3000;
  *  segundo a segundo y, además, se recargan al navegar y al hacer cada acción. */
 export const ALERTS_REFRESH_MS = 20000;
 
+/** Biblioteca de ejercicios cacheada en memoria (por juego de filtros). Se
+ *  guarda la PROMESA, así que dos pantallas que la piden a la vez comparten
+ *  una sola petición en vuelo. Caduca sola y la invalida cualquier cambio en
+ *  Recursos. */
+const _cacheEjercicios = new Map<string, Promise<ExerciseOut[]>>();
+/** Lista de fotos por cliente (ver `listClientPhotos`). */
+const _cacheFotos = new Map<string, Promise<{ id: number; kind: string; period_id: number | null; taken_at: string }[]>>();
+const EJERCICIOS_TTL_MS = 5 * 60 * 1000;
+
+/** Olvida la biblioteca cacheada: la llaman crear/editar/archivar/restaurar. */
+export function olvidaEjercicios(): void {
+  _cacheEjercicios.clear();
+}
+
+/** Envuelve una mutación de la biblioteca para invalidar la caché al terminar. */
+function _trasTocarEjercicios<T>(p: Promise<T>): Promise<T> {
+  return p.finally(() => olvidaEjercicios());
+}
+
 /** Igualdad "por valor" de dos respuestas de la API (objetos JSON planos).
  *  Se usa en el polling de 3 s: si los datos nuevos son idénticos a los que ya
  *  hay en pantalla, NO se actualiza el estado. Así se evita el parpadeo y las
@@ -53,6 +72,7 @@ import type {
   ExerciseOut,
   LandingOut,
   MeOut,
+  PaymentOut,
   PaymentsListOut,
   PaymentsSummaryOut,
   PlanPricesOut,
@@ -177,6 +197,33 @@ async function request<T>(
   return res.json() as Promise<T>;
 }
 
+export interface PlanSummary {
+  id: number;
+  client_id: number;
+  month_index: number;
+  version: number;
+  status: string;
+  goal_type: string | null;
+  generated_by: string | null;
+  guardrail_flags: string[] | null;
+  published_at: string | null;
+  created_at: string | null;
+  target_kcal: number | null;
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
+  meals_count: number | null;
+  split_name: string | null;
+  sessions_count: number | null;
+  applied_adjustments: {
+    period_index?: number;
+    items?: { change?: string; detail?: string; reason?: string }[];
+  } | null;
+  rationale: string | null;
+  has_nutrition: boolean;
+  has_training: boolean;
+}
+
 export const api = {
   // --- auth ---
   login: (username: string, password: string) =>
@@ -184,10 +231,13 @@ export const api = {
   me: () => request<MeOut>("GET", "/auth/me"),
 
   // --- clients ---
-  listClients: (params: { status?: ClientStatus; q?: string } = {}) => {
+  listClients: (params: { status?: ClientStatus; q?: string; light?: boolean } = {}) => {
     const qs = new URLSearchParams();
     if (params.status) qs.set("status", params.status);
     if (params.q) qs.set("q", params.q);
+    // Sin las notas largas de la anamnesis: para los listados que se refrescan
+    // solos y no las pintan. La ficha (`getClient`) las sigue trayendo.
+    if (params.light) qs.set("light", "1");
     const suffix = qs.toString() ? `?${qs}` : "";
     return request<ClientOut[]>("GET", `/clients${suffix}`);
   },
@@ -197,8 +247,12 @@ export const api = {
   updateClient: (id: number, patch: Partial<ClientOut>) =>
     request<ClientOut>("PATCH", `/clients/${id}`, patch),
   // Borrado total (RGPD): el backend exige `confirm` == nombre completo exacto.
-  deleteClient: (id: number, confirm: string) =>
-    request<void>("DELETE", `/clients/${id}?confirm=${encodeURIComponent(confirm)}`),
+  // `suscripcionAMano`: el coach declara haber cancelado la suscripción en
+  // Stripe él mismo. Es la salida cuando Stripe no responde y el borrado —una
+  // obligación legal con plazo— se quedaría bloqueado para siempre.
+  deleteClient: (id: number, confirm: string, suscripcionAMano = false) =>
+    request<void>("DELETE", `/clients/${id}?confirm=${encodeURIComponent(confirm)}`
+      + (suscripcionAMano ? "&suscripcion_cancelada_a_mano=true" : "")),
   portalLink: (id: number) =>
     request<PortalLinkOut>("GET", `/clients/${id}/portal-link`),
   regeneratePortalToken: (id: number) =>
@@ -217,13 +271,19 @@ export const api = {
   // Enlace ESTABLE de pago de un cliente (para mandarlo por WhatsApp/email).
   payLinkUrl: (portalToken: string) => `${window.location.origin}/api/pay/${portalToken}`,
   exportClientUrl: (id: number) => `/api/clients/${id}/export`,
-  listPlans: (clientId: number) =>
+  /** Las versiones del plan EN UNA LÍNEA (sin el banco de comidas ni el
+   *  educativo): es lo que necesita el archivo de "Planificaciones anteriores",
+   *  el chip de dieta de la ficha y el selector. La versión que se abre y se
+   *  edita se pide entera con `getPlan`. */
+  listPlanSummaries: (clientId: number) =>
+    request<PlanSummary[]>("GET", `/clients/${clientId}/plans/summary`),
+  getPlan: (planId: number) =>
     request<{
-      id: number; month_index: number; version: number; status: string;
+      id: number; client_id: number; month_index: number; version: number; status: string;
       nutrition_json: any; training_json: any; education_json: any;
-      guardrail_flags: string[] | null;
+      guardrail_flags: string[] | null; review_json: any;
       goal_type: string | null; published_at: string | null; created_at: string | null;
-    }[]>("GET", `/clients/${clientId}/plans`),
+    }>("GET", `/plans/${planId}`),
   // ---- Etapa del objetivo (45 días) + alertas del coach ----
   goalReviewAnalysis: (clientId: number) =>
     request<{ text: string; options: string[] }>("POST", `/clients/${clientId}/goal-review/analysis`),
@@ -234,9 +294,17 @@ export const api = {
   listAlerts: () =>
     request<{ alerts: CoachAlert[]; count: number; high: number }>("GET", "/alerts"),
   planDocumentUrl: (planId: number) => `/api/plans/${planId}/document`,
-  listClientDocuments: (clientId: number) =>
-    request<{ name: string; size_kb: number; uploaded_at: number }[]>(
-      "GET", `/clients/${clientId}/documents`),
+  // `kind` distingue el CUESTIONARIO de los adjuntos (analítica, informes):
+  // sin él, subir una analítica daba la anamnesis por recibida y "Ver PDF"
+  // abría el informe de sangre.
+  listClientDocuments: (clientId: number, kind?: "anamnesis" | "adjunto") =>
+    request<{ name: string; kind?: string; size_kb: number; uploaded_at: number }[]>(
+      "GET", `/clients/${clientId}/documents${kind ? `?kind=${kind}` : ""}`),
+  // Lo que dejó anotado la lectura de la anamnesis: la síntesis y las
+  // CONTRADICCIONES detectadas (se calculaban y no las veía nadie).
+  anamnesisAnalysis: (clientId: number) =>
+    request<{ deep_analysis: string | null; contradictions: string[]; read_at: string | null }>(
+      "GET", `/clients/${clientId}/anamnesis-analysis`),
   uploadClientDocument: (clientId: number, file: File, kind: "anamnesis" | "adjunto" = "anamnesis") => {
     const fd = new FormData();
     fd.append("file", file);
@@ -248,11 +316,25 @@ export const api = {
   },
   clientDocumentUrl: (clientId: number, name: string) =>
     `/api/clients/${clientId}/documents/${encodeURIComponent(name)}`,
-  listClientPhotos: (clientId: number) =>
-    request<{ id: number; kind: string; period_id: number | null; taken_at: string }[]>(
-      "GET", `/clients/${clientId}/photos`),
-  clientPhotoUrl: (clientId: number, photoId: number) =>
-    `/api/clients/${clientId}/photos/${photoId}`,
+  // La pestaña Feedback pinta una tarjeta por revisión y CADA UNA pedía la
+  // lista entera de fotos del cliente (con 6 revisiones, 6 peticiones idénticas
+  // al abrir, y otra por tarjeta desplegada). Se comparte una sola petición en
+  // vuelo y se recuerda 30 s: dentro de la misma pantalla no cambia.
+  listClientPhotos: (clientId: number) => {
+    const k = `fotos:${clientId}`;
+    const ya = _cacheFotos.get(k);
+    if (ya) return ya;
+    const p = request<{ id: number; kind: string; period_id: number | null; taken_at: string }[]>(
+      "GET", `/clients/${clientId}/photos`)
+      .catch((e) => { _cacheFotos.delete(k); throw e; });
+    _cacheFotos.set(k, p);
+    window.setTimeout(() => _cacheFotos.delete(k), 30000);
+    return p;
+  },
+  // `ancho`: miniatura servida por el backend. Las tiras de fotos las pintaban
+  // a 80×96 px descargando el original de varios MB, una detrás de otra.
+  clientPhotoUrl: (clientId: number, photoId: number, ancho?: number) =>
+    `/api/clients/${clientId}/photos/${photoId}` + (ancho ? `?w=${ancho}` : ""),
   getClientHistory: (clientId: number) =>
     request<{
       start_weight_kg: number | null; current_weight_kg: number | null; goal_weight_kg: number | null;
@@ -375,9 +457,38 @@ export const api = {
     request<{ index: number; at: string | null; label: string;
       summary: { target_kcal?: number; protein_g?: number; carbs_g?: number; fat_g?: number; n_meals?: number } }[]>(
       "GET", `/plans/${planId}/history`),
+  // Recupera SOLO el contenido educativo cuando su llamada falló (el plan se
+  // guarda igual, con el aviso). Modelo ligero + caché por split: cuesta una
+  // fracción de regenerar el plan entero, que es lo único que había antes.
+  generateEducation: (planId: number) =>
+    request<{ id: number; status: string; education_json: any;
+      guardrail_flags: string[] | null }>(
+      "POST", `/plans/${planId}/generate-education`),
   revertPlan: (planId: number, index: number) =>
     request<{ id: number; status: string; nutrition_json: any; training_json: any; education_json: any }>(
       "POST", `/plans/${planId}/revert`, { index }),
+  // Diagnóstico del correo: por qué no sale un email y qué pasó en los últimos
+  // intentos. El backend lo tenía desde hace tandas y no había pantalla que lo
+  // abriera — "no le llega el correo al cliente" se diagnosticaba entrando por
+  // SSH a leer los logs del contenedor.
+  // Le da salida a un cobro SIN FICHA: con `clientId`, se lo asigna; sin él,
+  // se declara ajeno a la asesoría y deja de contar en el aviso "N sin ficha"
+  // (que hasta ahora no había forma de apagar).
+  resolverHuerfano: (paymentId: number, clientId?: number | null) =>
+    request<PaymentOut>("POST", `/payments/${paymentId}/resolver`,
+      { client_id: clientId ?? null }),
+  emailStatus: () =>
+    request<{
+      config: {
+        emails_enabled: boolean; smtp_host: string | null; smtp_port: number;
+        smtp_user: string | null; smtp_from: string | null;
+        smtp_pass_set: boolean; ready: boolean; missing: string[];
+      };
+      recent: { kind: string; subject: string; status: string;
+                error: string | null; sent_at: string | null }[];
+    }>("GET", "/email/status"),
+  emailTest: (to: string) =>
+    request<{ status: string; error: string | null }>("POST", "/email/test", { to }),
   macroRecommendation: (clientId: number) =>
     request<{ available: boolean; weight_kg?: number; tdee?: number; adjustment_pct?: number;
       kcal?: number; protein_g?: number; carbs_g?: number; fat_g?: number; warnings?: string[] }>(
@@ -395,6 +506,9 @@ export const api = {
     request<{ id: number; status: string }>("POST", `/change-requests/${crId}/resolve`),
 
   // --- feedback (cierre → informe) ---
+  // Abrir un período A MANO. En el ciclo normal no hace falta —lo abre solo
+  // `plan_activation` al publicar el plan, y el mantenimiento diario como red—,
+  // pero el endpoint se queda como salida para fechas o duraciones a medida.
   createPeriod: (clientId: number, planId: number, startsOn: string, days = 14) =>
     request<{ period_id: number; period_index: number; starts_on: string; ends_on: string }>(
       "POST", `/clients/${clientId}/periods`, { plan_id: planId, starts_on: startsOn, days }),
@@ -442,7 +556,7 @@ export const api = {
       period_index: number; status: string;
       weight: { start_kg: number | null; end_kg: number | null; delta_kg: number | null; weekly_rate_kg: number | null };
       body_weight_now_kg: number | null; goal_weight_kg: number | null; distance_to_goal_kg: number | null;
-      adherence: { diet_pct: number; log_pct: number; days_logged: number; period_days: number };
+      adherence: { diet_pct: number | null; log_pct: number; days_logged: number; period_days: number };
       strength: { name: string; e1rm_kg: number; delta_kg: number | null }[];
     }>("GET", `/periods/${periodId}/metrics`),
   feedbackDocumentUrl: (docId: number) => `/api/feedback/${docId}/document`,
@@ -523,12 +637,19 @@ export const api = {
   markPaymentsSeen: (ids?: number[]) =>
     request<{ marked: number; unseen: number }>("POST", "/payments/seen", ids ? { ids } : {}),
   /** Repesca de Stripe lo que falte (histórico + webhooks perdidos). */
+  // `partial` = el barrido se cortó por el freno de objetos: NO cubre todo el
+  // rango pedido y la pantalla no puede decir "sin cobros pendientes".
   syncPayments: (days?: number) =>
-    request<{ created: number; scanned: number; errors: string[] }>(
+    request<{ created: number; scanned: number; errors: string[]; partial?: boolean }>(
       "POST", `/payments/sync${days ? `?days=${days}` : ""}`),
 
   /** Cobro FUERA de Stripe (efectivo, transferencia, Bizum) con su importe:
    *  sin él, el total del mes solo contaba la pasarela. */
+  /** Borra un cobro anotado A MANO (los de Stripe son el extracto: no se
+   *  tocan). Sin esto, un importe mal tecleado se quedaba para siempre en el
+   *  total del mes, en la gráfica y en el CSV de la gestoría. */
+  borrarCobro: (paymentId: number) =>
+    request<void>("DELETE", `/payments/${paymentId}`),
   registrarCobroManual: (body: {
     client_id: number; amount_eur: number;
     method: "efectivo" | "transferencia" | "bizum" | "otro";
@@ -592,13 +713,16 @@ export const api = {
     return request<BrandConfigOut>("POST", "/brand/video-cover", fd);
   },
   // Vídeo del ejercicio subido como archivo (tiene prioridad sobre el enlace).
+  // Subir o quitar el vídeo TAMBIÉN cambia la biblioteca: sin invalidar, la
+  // caché de `listExercises` seguía sirviendo hasta 5 min el ejercicio sin su
+  // vídeo — el coach lo subía, la pantalla no lo enseñaba, y volvía a subirlo.
   uploadExerciseVideo: (id: number, file: File) => {
     const fd = new FormData();
     fd.append("file", file);
-    return request<ExerciseOut>("POST", `/exercises/${id}/video`, fd);
+    return _trasTocarEjercicios(request<ExerciseOut>("POST", `/exercises/${id}/video`, fd));
   },
   deleteExerciseVideo: (id: number) =>
-    request<ExerciseOut>("DELETE", `/exercises/${id}/video`),
+    _trasTocarEjercicios(request<ExerciseOut>("DELETE", `/exercises/${id}/video`)),
 
   // --- página pública de enlaces + registro self-serve ---
   publicLanding: () => request<LandingOut>("GET", "/public/landing"),
@@ -606,11 +730,6 @@ export const api = {
   // URL pública de un archivo bajo media/ (foto de landing, portada de vídeos…).
   mediaUrl: (path: string | null | undefined) =>
     path && path.startsWith("media/") ? `/api/media/${path.slice(6)}` : null,
-  // Registro personal desde /planes: crea la ficha, envía el email de arranque
-  // (pago + anamnesis) y devuelve la URL de pago de Stripe (o null si no está).
-  publicRegister: (body: {
-    full_name: string; email: string; phone: string; tier: string; period: string;
-  }) => request<{ url: string | null; email_status: string }>("POST", "/public/register", body),
 
   // --- exercises ---
   listExercises: (params: { q?: string; pattern?: string; muscle?: string; include_archived?: boolean } = {}) => {
@@ -620,7 +739,17 @@ export const api = {
     if (params.muscle) qs.set("muscle", params.muscle);
     if (params.include_archived) qs.set("include_archived", "true");
     const suffix = qs.toString() ? `?${qs}` : "";
-    return request<ExerciseOut[]>("GET", `/exercises${suffix}`);
+    // CACHÉ de la biblioteca: son ~90 KB que viajaban DOS veces al abrir la
+    // ficha (el panel y el editor la piden por separado) y otra vez en cada
+    // apertura del editor. La biblioteca solo cambia cuando el coach toca
+    // Recursos, y esas acciones la invalidan (`olvidaEjercicios`).
+    const cacheada = _cacheEjercicios.get(suffix);
+    if (cacheada) return cacheada;
+    const p = request<ExerciseOut[]>("GET", `/exercises${suffix}`)
+      .catch((e) => { _cacheEjercicios.delete(suffix); throw e; });
+    _cacheEjercicios.set(suffix, p);
+    window.setTimeout(() => _cacheEjercicios.delete(suffix), EJERCICIOS_TTL_MS);
+    return p;
   },
   createExercise: (body: {
     canonical_name: string;
@@ -630,13 +759,13 @@ export const api = {
     muscle_secondary?: string[];
     equipment?: string[];
     level_min?: number;
-  }) => request<ExerciseOut>("POST", "/exercises", body),
+  }) => _trasTocarEjercicios(request<ExerciseOut>("POST", "/exercises", body)),
   archiveExercise: (id: number) =>
-    request<ExerciseOut>("POST", `/exercises/${id}/archive`),
+    _trasTocarEjercicios(request<ExerciseOut>("POST", `/exercises/${id}/archive`)),
   restoreExercise: (id: number) =>
-    request<ExerciseOut>("POST", `/exercises/${id}/restore`),
+    _trasTocarEjercicios(request<ExerciseOut>("POST", `/exercises/${id}/restore`)),
   updateExercise: (id: number, patch: Partial<ExerciseOut>) =>
-    request<ExerciseOut>("PATCH", `/exercises/${id}`, patch),
+    _trasTocarEjercicios(request<ExerciseOut>("PATCH", `/exercises/${id}`, patch)),
 
   // --- recursos: productos recomendados (sección Recursos del portal) ---
   listProducts: () => request<RecommendedProductOut[]>("GET", "/resources/products"),

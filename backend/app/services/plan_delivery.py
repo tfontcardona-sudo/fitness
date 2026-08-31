@@ -90,6 +90,10 @@ def build_plan_pdf(db: Session, plan: Plan, client: Client,
         # llegaban a NINGÚN sitio (auditoría de calidad).
         include_nutrition=bool(plan.nutrition_json),
         include_training=bool(training),
+        # Fecha de GENERACIÓN del plan (el PDF se construye en cada descarga:
+        # sin esto, el mismo plan salía fechado el día en que se pulsaba el
+        # botón y la fecha no identificaba nada).
+        generated_on=(plan.created_at.date() if getattr(plan, "created_at", None) else None),
     )
 
     ascii_name = unicodedata.normalize("NFKD", client.full_name).encode("ascii", "ignore").decode()

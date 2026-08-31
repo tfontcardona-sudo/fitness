@@ -76,6 +76,17 @@ export function formatDate(iso: string | null | undefined): string {
   return d.toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+/** Día corto para tablas densas: "lun 17 ago". El registro diario de una
+ *  quincena son ~14 filas y el año no aporta nada; el día de la semana sí (el
+ *  coach lee de un vistazo si los huecos caen en fin de semana). */
+export function formatDayShort(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("es-ES", { weekday: "short", day: "2-digit", month: "short" })
+    .replace(/,/g, "");
+}
+
 /** Mes natural en que se hizo el plan ("julio 2026") a partir de su fecha de
  *  activación (o creación). Es el TÍTULO de la planificación: el mes real, no
  *  el número de asesoría. Primera letra en mayúscula. */

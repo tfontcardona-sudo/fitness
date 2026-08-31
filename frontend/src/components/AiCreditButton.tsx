@@ -179,7 +179,7 @@ export function AiCreditButton({ collapsed }: { collapsed: boolean }) {
               </div>
               <div style={{ color: "var(--text-faint)" }}>
                 disponible de {fmtUsd(balance ?? 0)} apuntados
-                {plansLeft !== null && ` · dan para ~${plansLeft} planes`}
+                {plansLeft !== null && ` · dan para ~${plansLeft} planes o más`}
               </div>
             </div>
           ) : (
@@ -196,7 +196,16 @@ export function AiCreditButton({ collapsed }: { collapsed: boolean }) {
               value={`${fmtSmall(credit.spent_window_usd)} · ${credit.calls_window} llamadas`}
             />
             {credit.avg_cost_per_plan_usd !== null && (
-              <Row label="Coste medio por plan" value={fmtSmall(credit.avg_cost_per_plan_usd)} />
+              // NO es lo que cuesta generar un plan: es TODO el gasto de IA de
+              // la ventana dividido entre los planes generados, y ahí dentro
+              // están también la lectura de anamnesis, el panel de revisión,
+              // los feedbacks y los borradores de WhatsApp. Decir "coste por
+              // plan" a secas hacía pensar que generar sale mucho más caro de
+              // lo que sale (y la estimación de planes restantes se queda
+              // corta, que al menos es el lado seguro).
+              <Row label="Gasto por plan generado"
+                   title="Todo el gasto de IA del periodo dividido entre los planes generados: incluye leer anamnesis, revisar, feedbacks y mensajes. Generar un plan cuesta menos."
+                   value={fmtSmall(credit.avg_cost_per_plan_usd)} />
             )}
             {remaining !== null && (
               <Row label="Desde el apunte" value={fmtSmall(spent)} />
@@ -262,9 +271,9 @@ export function AiCreditButton({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value, title }: { label: string; value: string; title?: string }) {
   return (
-    <div className="flex items-baseline justify-between gap-2">
+    <div className="flex items-baseline justify-between gap-2" title={title}>
       <span style={{ color: "var(--text-faint)" }}>{label}</span>
       <span className="font-medium" style={{ color: "var(--text)" }}>
         {value}

@@ -37,9 +37,53 @@ const EMPTY: DiaryForm = {
  * sueño, adherencia y cómo se siente); los ejercicios del día ya van en HOY.
  * Cada cambio se guarda con debounce para no perder nada (G.4: autosave).
  */
-export function PortalDiary({ api, brand, periodStatus = null, businessToday = null,
+/* LO TECLEADO NO SE PIERDE (mismo criterio que Entreno).
+   El portal remonta el contenido al cambiar de pestaña, así que re-encolar el
+   guardado fallido en un ref del componente era perderlo: bastaba un tramo sin
+   cobertura (gimnasio en sótano, metro) para que el peso en ayunas, el sueño o
+   la nota del día se esfumaran… mientras el banner prometía "lo que apuntes se
+   guardará al volver". `sessionStorage`: sobrevive a la navegación pero no a
+   cerrar la app días después (un diario de anteayer no se reenvía). */
+
+/* La clave lleva el TOKEN, es decir, va POR CLIENTE. Era fija para todos, y
+   `sessionStorage` es de la pestaña: en un móvil compartido —una pareja, el
+   móvil de casa— bastaba con que uno abriera su enlace, escribiera, se quedara
+   sin cobertura, y que el otro abriera el suyo en la misma pestaña ese mismo
+   día: el pendiente del primero se reenviaba al diario del segundo. Su peso,
+   su sueño, sus notas, escritos en la ficha de otra persona. Es el mismo
+   criterio que ya sigue la pantalla de cierre (`DRAFT_KEY(token, …)`). */
+const K_DIARIO_PENDIENTE = (token: string) =>
+  `dqr.diario.pendiente.${token.slice(0, 16)}`;
+
+function _guardarPendiente(token: string, fecha: string, datos: unknown): void {
+  try {
+    sessionStorage.setItem(K_DIARIO_PENDIENTE(token),
+      JSON.stringify({ fecha, datos, ts: Date.now() }));
+  } catch { /* sin almacenamiento: se pierde, como antes */ }
+}
+function _limpiarPendiente(token: string): void {
+  try { sessionStorage.removeItem(K_DIARIO_PENDIENTE(token)); } catch { /* nada que hacer */ }
+}
+/** Lo que quedó sin guardar, CON SU FECHA. Antes se descartaba si la fecha no
+ *  era la de hoy, y eso se llevaba por delante justo el caso que más duele: el
+ *  cliente apunta su diario a las 23:58, se queda sin cobertura, y al abrir la
+ *  app por la mañana lo pendiente era "de ayer" y se tiraba a la basura. Se
+ *  reenvía con la fecha a la que pertenece —que es lo que evita pisar el día
+ *  de hoy—, no se pierde. */
+function _leerPendiente(token: string): { fecha: string; datos: Record<string, unknown> } | null {
+  try {
+    const raw = sessionStorage.getItem(K_DIARIO_PENDIENTE(token));
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    if (!d?.fecha || !d.datos || typeof d.datos !== "object") return null;
+    if (Date.now() - (d.ts ?? 0) > 24 * 3600 * 1000) return null;
+    return { fecha: String(d.fecha), datos: d.datos as Record<string, unknown> };
+  } catch { return null; }
+}
+
+export function PortalDiary({ api, token, brand, periodStatus = null, businessToday = null,
   hasPeriod = true, hasNutrition = true, hasTraining = true }: {
-  api: Api; brand: PortalBrand; periodStatus?: string | null; businessToday?: string | null;
+  api: Api; token: string; brand: PortalBrand; periodStatus?: string | null; businessToday?: string | null;
   hasPeriod?: boolean; hasNutrition?: boolean;
   // Con entreno contratado las Novedades ya viven en la pestaña Entreno; el
   // cliente SOLO-DIETA no abre esa pantalla y se le enseñan aquí.
@@ -88,17 +132,25 @@ export function PortalDiary({ api, brand, periodStatus = null, businessToday = n
   useEffect(() => {
     setLoadError(false);
     api.getDiary(today).then((d) => {
-      if (d.exists) {
-        setForm({
+      const base: DiaryForm = d.exists
+        ? {
           weight_kg: d.weight_kg, sleep_hours: d.sleep_hours,
           steps: d.steps ?? "", satiety_1_10: d.satiety_1_10, water_liters: d.water_liters,
           diet_adherence: d.diet_adherence, energy_1_5: d.energy_1_5,
           mood_1_5: d.mood_1_5, fatigue_1_5: d.fatigue_1_5,
           free_notes: d.free_notes ?? "",
-        });
-      } else {
-        setForm({ ...EMPTY });
-      }
+        }
+        : { ...EMPTY };
+      // Lo que quedó sin guardar (sin cobertura) MANDA sobre lo del servidor:
+      // si no, la pantalla enseñaría los valores viejos y el siguiente tecleo
+      // los volvería a guardar, borrando lo que el cliente ya había apuntado.
+      // Solo si es de HOY: el pendiente de anoche se reenvía con su fecha (más
+      // abajo), pero pintarlo encima del formulario de hoy sería enseñarle al
+      // cliente los datos de ayer como si fueran los de esta mañana.
+      const pendiente = _leerPendiente(token);
+      setForm(pendiente && pendiente.fecha === today
+        ? { ...base, ...(pendiente.datos as Partial<DiaryForm>) }
+        : base);
     }).catch(() => {
       // Sin esto, un fallo de red dejaba el skeleton girando para siempre.
       setLoadError(true);
@@ -119,6 +171,13 @@ export function PortalDiary({ api, brand, periodStatus = null, businessToday = n
   // Debounce SIN pérdidas: lo pendiente se vuelca al instante al salir de la
   // app o cambiar de pestaña, y un fallo de red avisa (no falla en silencio).
   const pendingRef = useRef<DiaryForm | null>(null);
+  // ORDEN DE LOS ENVÍOS. Cada guardado se lleva un número; al volver, solo el
+  // ÚLTIMO manda. Sin esto, el reenvío de lo que quedó pendiente viajaba con
+  // los valores VIEJOS y, si el cliente ya había seguido tecleando, su
+  // respuesta llegaba la última y pisaba lo recién escrito — y encima
+  // limpiaba el pendiente del envío nuevo. Se perdían datos en silencio,
+  // justo en el camino que existe para no perder datos.
+  const envioRef = useRef(0);
   const saveNowRef = useRef<() => void>(() => {});
   saveNowRef.current = () => {
     const data = pendingRef.current;
@@ -127,15 +186,23 @@ export function PortalDiary({ api, brand, periodStatus = null, businessToday = n
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     // Solo campos del diario: NO mandamos workout_sets para no borrar las
     // series registradas en la pestaña "Entreno" (upsert parcial en backend).
+    const mio = ++envioRef.current;
     setSaveState("saving");
     api
       .saveDiary({ log_date: today, ...data })
-      .then(() => { setSavedAt(new Date()); setSaveState("saved"); })
+      .then(() => {
+        if (mio !== envioRef.current) return;   // ya hay otro más nuevo en vuelo
+        _limpiarPendiente(token); setSavedAt(new Date()); setSaveState("saved");
+      })
       .catch((e) => {
         // RE-ENCOLA lo no guardado: el siguiente flush (o el de salida de la
         // app) lo reintenta — antes el dato pendiente se descartaba y solo
-        // otro tecleo volvía a enviarlo.
+        // otro tecleo volvía a enviarlo. Y lo guarda FUERA del componente: el
+        // volcado de última hora ocurre al desmontar (cambiar de pestaña), así
+        // que un ref ya muerto no servía de nada.
+        if (mio !== envioRef.current) return;   // uno más nuevo se hará cargo
         pendingRef.current = pendingRef.current ?? data;
+        _guardarPendiente(token, today, data);
         setSaveState("idle");
         toast.push(
           e instanceof PortalError ? e.message : "Sin guardar · revisa tu conexión",
@@ -154,14 +221,39 @@ export function PortalDiary({ api, brand, periodStatus = null, businessToday = n
     const onHide = () => {
       if (document.visibilityState === "hidden") saveNowRef.current();
     };
+    // Al VOLVER LA COBERTURA se reintenta solo: la recuperación no puede
+    // depender de que el cliente cambie de pestaña (es lo que promete el
+    // banner "sin conexión").
+    const onOnline = () => saveNowRef.current();
     document.addEventListener("visibilitychange", onHide);
     window.addEventListener("pagehide", onHide);
+    window.addEventListener("online", onOnline);
     return () => {
       document.removeEventListener("visibilitychange", onHide);
       window.removeEventListener("pagehide", onHide);
+      window.removeEventListener("online", onOnline);
       saveNowRef.current();
     };
   }, []);
+
+  // Lo que quedó sin guardar en una visita anterior se reenvía al entrar, CON
+  // SU FECHA (puede ser el diario de anoche) y dentro del mismo orden de
+  // envíos: si el cliente ya está tecleando, su guardado es más nuevo y este
+  // reenvío no puede pisarlo.
+  useEffect(() => {
+    const sinGuardar = _leerPendiente(token);
+    if (!sinGuardar) return;
+    if (pendingRef.current) return;      // ya hay algo suyo más reciente
+    const mio = ++envioRef.current;
+    api.saveDiary({ log_date: sinGuardar.fecha, ...(sinGuardar.datos as any) })
+      .then(() => {
+        if (mio !== envioRef.current) return;
+        _limpiarPendiente(token);
+        if (sinGuardar.fecha === today) { setSavedAt(new Date()); setSaveState("saved"); }
+      })
+      .catch(() => { /* sigue guardado: se reintenta al volver */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api, today]);
 
   if (loadError && !form) {
     return (

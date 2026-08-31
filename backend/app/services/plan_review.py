@@ -14,12 +14,82 @@ plan intacto sin anotación, nunca bloquea la generación.
 from __future__ import annotations
 
 import copy
+from datetime import date
 
 from app.services import review_panel as rp
 from app.services.nutrition_scale import reconcile_nutrition
 
 # Nº máximo de intentos de reparación (igual que el motor del panel).
 MAX_REVIEW_ITERATIONS = rp.MAX_REPAIR_ITERATIONS
+
+
+def ctx_desde_cliente(client, nutrition: dict | None = None, db=None):
+    """Contexto de revisión a partir de la FICHA, sin pasar por la generación.
+
+    El panel §9 lo alimenta `generate-plan` con el `ClientContext` que acaba de
+    construir. La ADAPTACIÓN quincenal no construye ninguno —solo reescala
+    números— y por eso el panel nunca llegó a correr sobre ella: se quedó con
+    `is_checkin` y sus roles propios escritos y muertos. Aquí se arma lo que el
+    panel de verdad lee (perfil, bloque del cliente y bloque clínico), tomándolo
+    de la ficha y del propio plan; nada de esto vuelve a calcularse.
+    """
+    from types import SimpleNamespace
+
+    nut = nutrition or {}
+    hoy = date.today()
+    nac = getattr(client, "birth_date", None)
+    edad = (hoy.year - nac.year - ((hoy.month, hoy.day) < (nac.month, nac.day))) if nac else 0
+    # PESO DE REFERENCIA: la única verdad del sistema (último registro del
+    # portal > cierre > ficha). Sin sesión se cae a lo que diga la ficha.
+    peso = 0.0
+    if db is not None:
+        try:
+            from app.services.periods import reference_weight_kg
+
+            peso = reference_weight_kg(db, client) or 0.0
+        except Exception:  # noqa: BLE001 — el contexto nunca rompe la revisión
+            peso = 0.0
+    peso = peso or getattr(client, "current_weight_kg", None) or getattr(
+        client, "start_weight_kg", None) or 0.0
+    notas = " · ".join(x for x in (
+        getattr(client, "injuries_notes", None), getattr(client, "medical_notes", None),
+        getattr(client, "medication_notes", None), getattr(client, "current_supplements", None),
+    ) if x)
+    return SimpleNamespace(
+        sex=getattr(client, "sex", None) or "male",
+        age=edad,
+        height_cm=getattr(client, "height_cm", None) or 0.0,
+        weight_kg=peso,
+        goal_type=getattr(client, "goal_type", None) or "maintenance",
+        goal_weight_kg=getattr(client, "goal_weight_kg", None),
+        level=getattr(client, "level", None) or "beginner",
+        training_days=getattr(client, "training_days", None) or 0,
+        session_max_min=getattr(client, "session_max_min", None) or 60,
+        training_place=getattr(client, "training_place", None) or "gym",
+        diet_mode=getattr(client, "diet_mode", None) or "flexible",
+        diet_pattern=getattr(client, "diet_pattern", None),
+        meals_per_day=getattr(client, "meals_per_day", None),
+        meal_schedule=getattr(client, "meal_schedule", None) or [],
+        food_allergies=list(getattr(client, "food_allergies", None) or []),
+        food_dislikes=list(getattr(client, "food_dislikes", None) or []),
+        food_likes=list(getattr(client, "food_likes", None) or []),
+        contraindications=set(),
+        body_fat_pct=getattr(client, "body_fat_pct", None),
+        # Las métricas se toman del PLAN, que ya las lleva calculadas por el
+        # backend: aquí no se recalcula nada (la IA no calcula, y esto tampoco).
+        bmr=nut.get("bmr_kcal") or 0.0,
+        tdee=nut.get("tdee_kcal") or 0.0,
+        target_kcal=nut.get("target_kcal") or 0.0,
+        energy_method="",
+        exercise_library=[],
+        macro_plan=None,
+        deep_analysis=None,
+        goal_in_own_words=getattr(client, "lifestyle_notes", None),
+        clinical_notes=notas or None,
+        sport_history=getattr(client, "sport_history", None),
+        tracking_history=None,
+        notes="",
+    )
 
 
 def build_profile(client, ctx) -> dict:
@@ -39,9 +109,29 @@ def build_profile(client, ctx) -> dict:
     return prof
 
 
-def _plan_text(nutrition: dict, training: dict | None = None) -> str:
-    """Render compacto y legible del plan (nutrición + resumen de entreno)
-    para los revisores IA."""
+def _plato(opcion: dict) -> str:
+    """Nombre del plato + sus ingredientes principales, para el revisor.
+
+    El alérgeno o el alimento incompatible con el patrón casi nunca está en el
+    título ("Bowl de la casa"): vive en los ingredientes. Se recortan a los
+    primeros para no disparar el coste de la ronda.
+    """
+    if not isinstance(opcion, dict):
+        return ""
+    nombre = str(opcion.get("title") or opcion.get("name") or "").strip()
+    ings = [str((i or {}).get("food") or "").strip()
+            for i in (opcion.get("ingredients") or []) if isinstance(i, dict)]
+    ings = [i for i in ings if i][:5]
+    if nombre and ings:
+        return f"{nombre} ({', '.join(ings)})"
+    return nombre or (", ".join(ings) if ings else "")
+
+
+def _plan_text(nutrition: dict, training: dict | None = None,
+               nombres: dict[int, str] | None = None) -> str:
+    """Render compacto y legible del plan (nutrición + entreno) para los
+    revisores IA. `nombres` traduce `exercise_id` → nombre: el plan guarda
+    ids, y sin la traducción los roles de entrenamiento veían números."""
     m = nutrition.get("macros") or {}
     lines = [
         f"Objetivo calórico: {nutrition.get('target_kcal')} kcal "
@@ -58,10 +148,41 @@ def _plan_text(nutrition: dict, training: dict | None = None) -> str:
             f"P{t.get('protein_g')}/C{t.get('carbs_g')}/G{t.get('fat_g')}."
         )
     bank = nutrition.get("meal_bank") or {}
+    # LOS PLATOS. Sin esto los 8-10 revisores (incluido el clínico CON VETO)
+    # juzgaban la dieta viendo solo kcal y macros: ni un alérgeno, ni un
+    # alimento fuera del patrón dietético, ni la monotonía del menú. El campo
+    # del esquema es `title` (MealOption), no `name` — leerlo mal dejaba la
+    # lista vacía y la línea de opciones no se emitía nunca.
     for slot in (bank.get("slots") or [])[:8]:
-        opts = [o.get("name") for o in (slot.get("options") or []) if o.get("name")]
+        opts = [_plato(o) for o in (slot.get("options") or [])]
+        opts = [o for o in opts if o]
         if opts:
-            lines.append(f"  · Opciones {slot.get('name', '')}: {', '.join(opts[:4])}.")
+            lines.append(f"  · Opciones toma {slot.get('slot', '')}: {'; '.join(opts[:4])}.")
+        # EQUIVALENCIAS: cuelgan de LA TOMA (`slot.equivalences.groups`), no de
+        # la raíz del banco. Se leían de `bank["equivalences"]`, una clave que
+        # el esquema no declara y que nadie escribe: era código muerto. Y como
+        # el prompt manda COMIDA y CENA en formato equivalencias —sus `options`
+        # llegan vacías—, las DOS tomas principales no aportaban una sola línea
+        # al texto que ven los 8-10 revisores IA. El coach pagaba la ronda
+        # entera por un juicio cualitativo que no veía sus platos de comer y
+        # cenar. (Los alérgenos y el patrón dietético SÍ estaban cubiertos: el
+        # Revisor 0 determinista recorre las equivalencias por su cuenta.)
+        for grupo in ((slot.get("equivalences") or {}).get("groups") or [])[:6]:
+            items = [str(i.get("food") or "") for i in (grupo.get("items") or [])]
+            items = [i for i in items if i]
+            if items:
+                lines.append(
+                    f"  · Equivalencias toma {slot.get('slot', '')} "
+                    f"({grupo.get('name', '')}): {', '.join(items[:8])}.")
+    # MENÚ CERRADO (modo strict): el banco no trae `slots` sino `days`.
+    dias = bank.get("days") or []
+    for dia in dias[:3]:
+        platos = [_plato(m.get("dish") or {}) for m in (dia.get("meals") or [])]
+        platos = [x for x in platos if x]
+        if platos:
+            lines.append(f"  · {dia.get('day', 'día')}: {'; '.join(platos[:6])}.")
+    if len(dias) > 3:
+        lines.append(f"  · (…y {len(dias) - 3} día(s) más con el mismo estilo de menú)")
     # RESUMEN DEL ENTRENO: sin él, los roles que juzgan la coherencia
     # dieta↔entreno opinaban a ciegas (solo veían la dieta).
     if training:
@@ -74,6 +195,25 @@ def _plan_text(nutrition: dict, training: dict | None = None) -> str:
             series = sum(int(e.get("sets") or 0) for e in ejercicios)
             lines.append(f"- {s.get('day', '')} {s.get('name', '')}: "
                          f"{len(ejercicios)} ejercicios, {series} series.")
+            # LOS EJERCICIOS, POR NOMBRE Y EN ORDEN. El panel tiene roles cuya
+            # rúbrica es literalmente "selección y ORDEN de ejercicios", y solo
+            # veían el RECUENTO ("6 ejercicios, 18 series"): con eso no se puede
+            # juzgar si el plan repite patrón, si el aislamiento va antes que el
+            # básico o si toca una lesión declarada. Se pagaban a ciegas.
+            for e in ejercicios[:10]:
+                eid = e.get("exercise_id")
+                nombre = (e.get("name") or (nombres or {}).get(eid)
+                          or (f"ejercicio #{eid}" if eid else ""))
+                if not nombre:
+                    continue
+                detalle = f"{e.get('sets') or '?'}×{e.get('rep_range') or '?'}"
+                if e.get("rir"):
+                    detalle += f" RIR {e.get('rir')}"
+                if e.get("rest_sec"):
+                    detalle += f", {e['rest_sec']}s descanso"
+                lines.append(f"    · {nombre}: {detalle}")
+            if len(ejercicios) > 10:
+                lines.append(f"    · (…y {len(ejercicios) - 10} ejercicio(s) más)")
         prog = training.get("weekly_progression") or []
         if prog:
             lines.append("Progresión: " + " | ".join(
@@ -147,13 +287,21 @@ def review_and_repair(
     profile = build_profile(client, ctx)
     anamnesis_text = _anamnesis_text(ctx)
     criterios_text = _criterios_text()
+    # La biblioteca que se le inyectó al generador: es donde viven los NOMBRES
+    # (el plan guarda `exercise_id`).
+    nombres_ejercicio = {
+        int(e["id"]): str(e.get("canonical_name") or e.get("name") or "")
+        for e in (getattr(ctx, "exercise_library", None) or [])
+        if e.get("id") is not None
+    }
     weight_kg = getattr(ctx, "weight_kg", None) or getattr(client, "current_weight_kg", None)
 
     def reviewer_for(plan: dict):
         if ai is None:
             return None
         return rp.make_ai_reviewer(
-            ai, plan_text=_plan_text(plan, training), anamnesis_text=anamnesis_text,
+            ai, plan_text=_plan_text(plan, training, nombres_ejercicio),
+            anamnesis_text=anamnesis_text,
             criterios_text=criterios_text,
         )
 

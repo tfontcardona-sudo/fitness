@@ -6,6 +6,7 @@ import { InlineVideo, isEmbeddable } from "./InlineVideo";
 import { useDismiss } from "../lib/useDismiss";
 import { usePortalToast } from "./PortalToast";
 import type { portalApi } from "./portalApi";
+import { copiar } from "../lib/clipboard";
 
 type Api = ReturnType<typeof portalApi>;
 
@@ -23,10 +24,12 @@ export function PortalResources({ api, brand, hasTraining = true }: { api: Api; 
   // encima de la galería; tocar otra tarjeta cambia de vídeo.
   const [playing, setPlaying] = useState<ResourceExerciseVideo | null>(null);
   const playerRef = useRef<HTMLDivElement>(null);
+  // Contador de reintentos: cambiarlo vuelve a lanzar la carga.
+  const [intento, setIntento] = useState(0);
 
   useEffect(() => {
     api.resources().then(setData).catch(() => setError(true));
-  }, [api]);
+  }, [api, intento]);
 
   // El reproductor vive encima de la galería: si el cliente toca una tarjeta del
   // fondo, se le lleva hasta él (si no, parecería que el toque no hizo nada).
@@ -42,8 +45,17 @@ export function PortalResources({ api, brand, hasTraining = true }: { api: Api; 
     return (
       <div className="space-y-5">
         <h2 className="p-title">Recursos</h2>
-        <div className="portal-card p-4 text-sm opacity-70">
-          No se pudieron cargar · reintenta
+        {/* El texto decía "reintenta" y no había NADA que pulsar: era la única
+            pantalla del portal sin su botón, así que la única salida era
+            recargar la app entera. */}
+        <div className="portal-card p-4 text-center">
+          <p className="text-sm opacity-70">No se pudieron cargar tus recursos.</p>
+          <button
+            onClick={() => { setError(false); setIntento((n) => n + 1); }}
+            className="portal-btn3d mt-3 rounded-xl px-4 py-2 text-sm font-semibold"
+          >
+            Reintentar
+          </button>
         </div>
       </div>
     );
@@ -204,12 +216,11 @@ function ProductCard({ product: p, accent }: { product: ResourceProduct; accent:
     e.preventDefault();
     e.stopPropagation();
     if (!p.discount_code) return;
-    try {
-      await navigator.clipboard.writeText(p.discount_code);
+    if (await copiar(p.discount_code)) {
       setCopied(true);
       toast.push(`${p.discount_code} copiado · pégalo al pagar`);
       window.setTimeout(() => setCopied(false), 2500);
-    } catch {
+    } else {
       // Sin permiso de portapapeles (raro): el código está visible igualmente.
       toast.push(`Usa ${p.discount_code} al pagar`);
     }
@@ -218,7 +229,7 @@ function ProductCard({ product: p, accent }: { product: ResourceProduct; accent:
   // Al abrir el producto: se copia el código SOLO (mejor esfuerzo) y, si la
   // tienda del partner lo soporta, buy_url ya lo lleva aplicado al carrito.
   function onOpen() {
-    if (p.discount_code) navigator.clipboard.writeText(p.discount_code).catch(() => {});
+    if (p.discount_code) void copiar(p.discount_code);
   }
 
   return (

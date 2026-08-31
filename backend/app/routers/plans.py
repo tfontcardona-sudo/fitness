@@ -429,14 +429,167 @@ def revert_plan(plan_id: int, body: PlanRevertIn, db: Session = Depends(get_db))
     return PlanOut.model_validate(plan)
 
 
+def _plan_ligero(p: Plan) -> Plan:
+    """Copia del plan con los JSON GORDOS recortados a lo que pintan las
+    pantallas de solo lectura (la línea "Dieta" del resumen, el sello de la
+    adaptación). Un cliente veterano tiene 12-20 versiones, cada una con su
+    banco de 4×7 recetas con ingredientes, el educativo y los hallazgos del
+    panel: devolverlo entero DOS veces al abrir cada ficha eran varios MB."""
+    nut = p.nutrition_json or None
+    if nut:
+        comidas = nut.get("meals") or []
+        nut = {
+            "target_kcal": nut.get("target_kcal"), "tdee_kcal": nut.get("tdee_kcal"),
+            "macros": nut.get("macros"), "rev": nut.get("rev"),
+            "applied_adjustments": nut.get("applied_adjustments"),
+            "meals": [{"slot": m.get("slot"), "name": m.get("name"),
+                       "time": m.get("time")} for m in comidas if isinstance(m, dict)],
+        }
+    tr = p.training_json or None
+    if tr:
+        sesiones = tr.get("sessions") or []
+        tr = {
+            "split_name": tr.get("split_name"),
+            "applied_adjustments": tr.get("applied_adjustments"),
+            "sessions": [{"day": x.get("day"), "name": x.get("name")}
+                         for x in sesiones if isinstance(x, dict)],
+        }
+    # Objeto SUELTO (no la fila de la sesión): recortar el dict del ORM haría
+    # que SQLAlchemy persistiera el recorte en el siguiente flush.
+    return Plan(
+        id=p.id, client_id=p.client_id, month_index=p.month_index, version=p.version,
+        status=p.status, goal_type=p.goal_type, generated_by=p.generated_by,
+        nutrition_json=nut, training_json=tr, education_json=None,
+        guardrail_flags=p.guardrail_flags, review_json=None,
+        created_at=p.created_at, published_at=p.published_at,
+    )
+
+
 @router.get("/api/clients/{client_id}/plans", response_model=list[PlanOut])
-def list_plans(client_id: int, db: Session = Depends(get_db)) -> list[PlanOut]:
+def list_plans(client_id: int, todo: bool = False,
+               db: Session = Depends(get_db)) -> list[PlanOut]:
+    """Planes del cliente, del más reciente al más antiguo.
+
+    Dos modos:
+
+    · por defecto — recortados MENOS los dos que el panel puede llegar a
+      pintar: el plan vigente (publicado) y el borrador más nuevo. El resto de
+      versiones históricas no se pintan nunca enteras, y arrastraban su banco
+      de recetas, su educativo y los hallazgos del panel de supervisión en cada
+      recarga (medido: 55 KB con 3 versiones; un cliente de medio año tiene
+      12-20 y son cientos de KB, y el panel lo repide tras CADA acción).
+    · `todo=true` — todos completos, tal cual estaban. Para quien de verdad
+      necesite el histórico entero (importar/exportar, depurar).
+
+    Para pintar UNA LÍNEA por versión (el archivo de planificaciones
+    anteriores, el chip de dieta, el selector) está el endpoint de RESUMEN de
+    aquí abajo, que ni siquiera devuelve los JSONB. Al fusionar las dos
+    sesiones que atacaron esto se quedó ese resumen y se retiró el parámetro
+    `ligero`, que hacía el mismo recorte a medias y sin ningún consumidor.
+    """
     _client_or_404(db, client_id)
     plans = db.scalars(
         select(Plan).where(Plan.client_id == client_id)
         .order_by(Plan.month_index.desc(), Plan.version.desc())
     ).all()
-    return [PlanOut.model_validate(p) for p in plans]
+    if todo:
+        return [PlanOut.model_validate(p) for p in plans]
+    # Los que el panel SÍ pinta enteros: el publicado y el borrador más nuevo
+    # (la banda de "borrador retenido" lo enseña y permite activarlo).
+    completos = {p.id for p in plans if p.status == "published"}
+    borrador = next((p for p in sorted(plans, key=lambda x: x.id, reverse=True)
+                     if p.status == "draft"), None)
+    if borrador is not None:
+        completos.add(borrador.id)
+    if not completos and plans:  # sin publicado ni borrador: el más nuevo
+        completos.add(max(plans, key=lambda x: x.id).id)
+    return [PlanOut.model_validate(p if p.id in completos else _plan_ligero(p))
+            for p in plans]
+
+
+class PlanSummaryOut(BaseModel):
+    """Una versión del plan EN UNA LÍNEA: lo justo para el archivo de
+    "Planificaciones anteriores", el chip de dieta de la ficha y el selector.
+
+    El panel pedía la lista COMPLETA (los cuatro JSONB de cada versión) en el
+    montaje y otra vez tras cada acción, para pintar cuatro cifras por versión:
+    un cliente con un año de asesoría arrastraba megas por cada clic. El plan
+    que se EDITA se pide entero y aparte (`GET /api/plans/{id}`)."""
+
+    id: int
+    client_id: int
+    month_index: int
+    version: int
+    status: str
+    goal_type: str | None = None
+    generated_by: str | None = None
+    guardrail_flags: list[str] | None = None
+    published_at: datetime | None = None
+    created_at: datetime | None = None
+    # Resumen de la dieta (sin el banco de comidas, que es lo que pesa)
+    target_kcal: float | None = None
+    protein_g: float | None = None
+    carbs_g: float | None = None
+    fat_g: float | None = None
+    meals_count: int | None = None
+    # Resumen del entrenamiento
+    split_name: str | None = None
+    sessions_count: int | None = None
+    # Por qué cambió esta versión
+    applied_adjustments: dict | None = None
+    rationale: str | None = None
+    has_nutrition: bool = False
+    has_training: bool = False
+
+
+def _plan_summary(row) -> PlanSummaryOut:
+    """Construye el resumen desde (Plan.id, client_id, …, nutrition_json,
+    training_json): recibe la fila tal cual la devuelve la consulta acotada."""
+    nut = row.nutrition_json or {}
+    tr = row.training_json or {}
+    macros = nut.get("macros") or {}
+    aj = nut.get("applied_adjustments") or tr.get("applied_adjustments") or None
+    meals = nut.get("meals")
+    sesiones = tr.get("sessions")
+    return PlanSummaryOut(
+        id=row.id, client_id=row.client_id, month_index=row.month_index,
+        version=row.version, status=row.status, goal_type=row.goal_type,
+        generated_by=row.generated_by, guardrail_flags=row.guardrail_flags, published_at=row.published_at,
+        created_at=row.created_at,
+        target_kcal=nut.get("target_kcal"),
+        protein_g=macros.get("protein_g"), carbs_g=macros.get("carbs_g"),
+        fat_g=macros.get("fat_g"),
+        meals_count=len(meals) if isinstance(meals, list) else None,
+        split_name=tr.get("split_name"),
+        sessions_count=len(sesiones) if isinstance(sesiones, list) else None,
+        applied_adjustments=aj if isinstance(aj, dict) else None,
+        rationale=nut.get("rationale") or tr.get("rationale"),
+        has_nutrition=bool(nut), has_training=bool(tr),
+    )
+
+
+@router.get("/api/clients/{client_id}/plans/summary", response_model=list[PlanSummaryOut])
+def list_plan_summaries(client_id: int, db: Session = Depends(get_db)) -> list[PlanSummaryOut]:
+    """Todas las versiones del plan, resumidas. Mismo orden que la lista completa."""
+    _client_or_404(db, client_id)
+    filas = db.execute(
+        select(Plan.id, Plan.client_id, Plan.month_index, Plan.version, Plan.status,
+               Plan.goal_type, Plan.generated_by, Plan.guardrail_flags,
+               Plan.published_at, Plan.created_at,
+               Plan.nutrition_json, Plan.training_json)
+        .where(Plan.client_id == client_id)
+        .order_by(Plan.month_index.desc(), Plan.version.desc())
+    ).all()
+    return [_plan_summary(f) for f in filas]
+
+
+@router.get("/api/plans/{plan_id}", response_model=PlanOut)
+def get_plan(plan_id: int, db: Session = Depends(get_db)) -> PlanOut:
+    """Una versión CONCRETA con todo su contenido (la que el panel enseña y edita)."""
+    plan = db.get(Plan, plan_id)
+    if not plan:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan no encontrado")
+    return PlanOut.model_validate(plan)
 
 
 @router.post("/api/plans/{plan_id}/discard", response_model=PlanOut)
@@ -525,11 +678,21 @@ def generate_education(plan_id: int, db: Session = Depends(get_db)) -> PlanOut:
 
     split = (plan.training_json or {}).get("split_name") or ""
     tr_ns = SimpleNamespace(split_name=split)
+    # Las RESTRICCIONES del cliente viajan en el prompt (y por eso separan la
+    # caché): sin ellas, este atajo devolvía el educativo genérico del split y
+    # a un alérgico o a un vegano le llegaban píldoras y FAQ con sus alimentos
+    # vetados — el documento las filtra al imprimir, así que además se quedaba
+    # con menos contenido del que ha pagado.
+    cliente = db.get(Client, plan.client_id) if plan.client_id else None
+    ctx_rest = SimpleNamespace(
+        diet_pattern=getattr(cliente, "diet_pattern", None),
+        food_allergies=list(getattr(cliente, "food_allergies", None) or []),
+    )
     try:
         if plan.nutrition_json:
             edu = _education_with_cache(
                 AIClient(), split_name=split, variant="full",
-                user=_education_user_prompt(SimpleNamespace(training=tr_ns)))
+                user=_education_user_prompt(SimpleNamespace(training=tr_ns), ctx_rest))
         else:
             edu = _education_with_cache(
                 AIClient(), split_name=split, variant="train",
@@ -671,14 +834,21 @@ def list_periods(client_id: int, db: Session = Depends(get_db)) -> list[PeriodOu
         select(Period).where(Period.client_id == client_id)
         .order_by(Period.period_index.desc())
     ).all()
+    # El feedback de CADA revisión en UNA consulta: antes era una por período
+    # (con 8 revisiones, 9 viajes a la base para pintar una lista que el panel
+    # recarga tras cada acción). Se queda el de id más alto, igual que antes.
+    from sqlalchemy import func as _func
+
+    ids = [p.id for p in periods]
+    ultimo_fb = dict(db.execute(
+        select(FeedbackDoc.period_id, _func.max(FeedbackDoc.id))
+        .where(FeedbackDoc.period_id.in_(ids))
+        .group_by(FeedbackDoc.period_id)
+    ).all()) if ids else {}
     out = []
     for p in periods:
         po = PeriodOut.model_validate(p)
-        fb = db.scalar(
-            select(FeedbackDoc).where(FeedbackDoc.period_id == p.id)
-            .order_by(FeedbackDoc.id.desc()).limit(1)
-        )
-        po.feedback_id = fb.id if fb else None
+        po.feedback_id = ultimo_fb.get(p.id)
         po.plan_adjustments = (p.ai_analysis_json or {}).get("plan_adjustments") or None
         po.biweekly_decision = (p.ai_analysis_json or {}).get("biweekly_decision") or None
         out.append(po)
@@ -870,6 +1040,12 @@ def _advance_cycle_after_feedback(db: Session, fb: FeedbackDoc) -> Client | None
 
     fb.sent_at = datetime.now(timezone.utc)
     period = db.get(Period, fb.period_id)
+    # El "!" de "revisión recibida" se apagaba SOLO al abrir la pestaña
+    # Seguimiento: el coach podía generar el informe, enviárselo al cliente y
+    # seguir con la marca encendida en su lista. Enviar la revisión ES haberla
+    # atendido.
+    if period is not None and period.coach_reviewed_at is None:
+        period.coach_reviewed_at = datetime.now(timezone.utc)
     client = db.get(Client, period.client_id) if period else None
     if client and client.status == "review_pending":
         client.status = "active"  # cerrado el feedback, arranca el siguiente ciclo

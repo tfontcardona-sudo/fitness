@@ -24,6 +24,7 @@ Decisiones:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from datetime import date, datetime, timezone
@@ -153,9 +154,14 @@ def has_session_on(training_json: dict | None, day: date) -> bool:
     if not training_json:
         return False
     label = portal_svc.DAY_LABELS[day.weekday()].lower()
+    # Mismo lector a prueba de basura que la pantalla "Hoy": con un `day` que
+    # no fuese texto, el `.strip()` reventaba AQUÍ DENTRO del trabajo
+    # programado y se llevaba por delante el recordatorio de TODOS los
+    # clientes, no solo el del plan roto.
     return any(
-        (s.get("day", "").strip().lower() == label)
-        for s in training_json.get("sessions", [])
+        portal_svc.dia_de_sesion(s) == label
+        for s in (training_json.get("sessions") or [])
+        if isinstance(s, dict)
     )
 
 
@@ -167,12 +173,94 @@ def diary_is_filled(log: DailyLog | None) -> bool:
     return any(getattr(log, f, None) not in (None, "") for f in _DIARY_FIELDS)
 
 
+def dias_con_registro(db: Session, period_id: int, *,
+                      solo_nutricion: bool = False) -> set[date]:
+    """Días del período en que el cliente REGISTRÓ algo, en el sentido amplio.
+
+    UNA SOLA VERDAD para las tres capas que antes divergían: el motor de "en
+    riesgo" (jobs), la alerta `no_logs` del panel y la racha 🔥 del portal.
+    Cuenta como registro el diario relleno, las SERIES de entreno y las comidas
+    elegidas — antes el motor solo miraba el diario, así que un cliente que
+    entrenaba y registraba sus series cada sesión (todo lo que tiene contratado
+    un DQR Train) figuraba con 0 días y acababa marcado "en riesgo" con
+    adherencia 0 %, mientras el panel de al lado decía que sí registraba.
+    """
+    logs = list(db.scalars(select(DailyLog).where(DailyLog.period_id == period_id)))
+    return dias_registrados(db, logs, solo_nutricion=solo_nutricion)
+
+
+def dias_registrados(db: Session, logs: list[DailyLog], *,
+                     solo_nutricion: bool = False) -> set[date]:
+    """Igual que `dias_con_registro` pero sobre filas de diario ya cargadas
+    (el resumen semanal recorre varios períodos de una vez)."""
+    if not logs:
+        return set()
+    con_series = set(db.scalars(
+        select(WorkoutLog.daily_log_id).where(
+            WorkoutLog.daily_log_id.in_([lg.id for lg in logs]))))
+    return dias_registrados_precargado(logs, con_series,
+                                       solo_nutricion=solo_nutricion)
+
+
+def dias_registrados_precargado(logs: list[DailyLog], con_series: set[int], *,
+                                solo_nutricion: bool = False) -> set[date]:
+    """La REGLA de "esto cuenta como registro", sin tocar la base.
+
+    Aquí vive la única definición; las dos funciones de arriba solo se
+    encargan de traer las series. El barrido de alertas del panel la usa con
+    los diarios y las series de TODOS los clientes ya cargados de una vez.
+
+    `solo_nutricion` mira ÚNICAMENTE la señal de dieta (diario relleno o
+    comidas elegidas), dejando fuera las series de entreno. Sirve para una
+    pregunta distinta de "¿ha abandonado?": la de "¿está registrando lo que
+    tiene contratado?". Un cliente Full que entrena cuatro días por semana y
+    no se pesa NUNCA no ha abandonado —y marcarlo "en riesgo" sería un falso
+    positivo—, pero lleva la quincena entera sin un solo dato de nutrición, y
+    al cerrarla el motor quincenal se niega a ajustar por falta de datos. El
+    ciclo se pierde y el coach se entera al final. Con esto se entera antes.
+    """
+    def _dieta(lg) -> bool:
+        return bool(lg.chosen_options_json) or diary_is_filled(lg)
+
+    return {
+        lg.log_date for lg in logs
+        if _dieta(lg) or (not solo_nutricion and lg.id in con_series)
+    }
+
+
+# Los pendientes de la revisión CADUCAN. Sin tope, "Pendiente hoy · Fotos"
+# salía a las 09, 12, 15, 18 y 21 TODOS los días, para siempre, aunque esa
+# revisión se cerrara hace semanas y el cliente ya estuviera en el ciclo
+# siguiente: la vía más rápida a que silencie las notificaciones de la app (y
+# con ellas los avisos que sí importan: plan nuevo, informe listo).
+CADUCIDAD_FOTOS_DIAS = 7
+CADUCIDAD_AVISO_CIERRE_DIAS = 7
+CADUCIDAD_VIDEOLLAMADA_DIAS = 10
+
+
+def _ciclo_superado(db: Session, client: Client, period) -> bool:
+    """¿La revisión ya quedó atrás? (informe enviado o período posterior)."""
+    from app.models import FeedbackDoc, Period
+
+    enviado = db.scalar(
+        select(FeedbackDoc.id).where(FeedbackDoc.period_id == period.id,
+                                     FeedbackDoc.sent_at.is_not(None)).limit(1))
+    if enviado:
+        return True
+    return bool(db.scalar(
+        select(Period.id).where(Period.client_id == client.id,
+                                Period.period_index > period.period_index).limit(1)))
+
+
 def photos_pending(db: Session, client: Client, *, now: datetime | None = None,
                    min_minutes: int = 0) -> bool:
     """¿Falta que el cliente confirme el envío de sus fotos de progreso?
     True si su última revisión (cerrada/analizada) no está confirmada y han
     pasado al menos `min_minutes` desde que la envió (para el push: ~15 min;
-    para el banner del portal: 0, se muestra ya)."""
+    para el banner del portal: 0, se muestra ya).
+
+    Deja de pedirlas cuando la revisión queda atrás (informe enviado o período
+    nuevo) o cuando pasa la ventana: son fotos PARA ese informe."""
     from datetime import timedelta
 
     from app.models import Period
@@ -189,6 +277,10 @@ def photos_pending(db: Session, client: Client, *, now: datetime | None = None,
     submitted = p.closing_submitted_at
     if submitted.tzinfo is None:
         submitted = submitted.replace(tzinfo=timezone.utc)
+    if now > submitted + timedelta(days=CADUCIDAD_FOTOS_DIAS):
+        return False
+    if _ciclo_superado(db, client, p):
+        return False
     return now >= submitted + timedelta(minutes=min_minutes)
 
 
@@ -214,6 +306,17 @@ def videocall_pending(db: Session, client: Client) -> bool:
         VideoCall.period_index == p.period_index))
     # Sin videollamada, o propuesta sin fecha (estado 'book' del portal): toca
     # que el cliente la agende. Con propuesta/agendada/manual/hecha, no.
+    # CADUCA: pasada la ventana, esa videollamada ya no tiene sentido — y el
+    # cliente llevaría 5 avisos al día indefinidamente.
+    from datetime import timedelta
+
+    referencia = p.closing_submitted_at
+    if referencia is not None:
+        if referencia.tzinfo is None:
+            referencia = referencia.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > referencia + timedelta(
+                days=CADUCIDAD_VIDEOLLAMADA_DIAS):
+            return False
     if vc is None:
         return True
     return vc.status == "proposed" and vc.scheduled_at is None
@@ -240,7 +343,12 @@ def pending_for_client(db: Session, client: Client, today: date,
         return out
 
     info = portal_svc.period_info(period, today) or {}
-    out["quincenal"] = bool(info.get("can_close"))
+    # El aviso de cerrar la revisión CADUCA: sin tope salían 5 push al día
+    # mientras el período siguiera abierto (y solo paraba al pasar a inactivo,
+    # 30 días después). Una semana insistiendo es suficiente; a partir de ahí
+    # el problema lo resuelve el coach, que ve el período vencido en su panel.
+    out["quincenal"] = bool(info.get("can_close")) and (
+        (today - period.ends_on).days <= CADUCIDAD_AVISO_CIERRE_DIAS)
 
     if period.starts_on <= today <= period.ends_on:
         log = db.scalar(
@@ -410,7 +518,10 @@ def notify_coach_video_call_proposed(db: Session, client: Client, when_label: st
         "body": f"{name} propuso videollamada: {when_label}. Acéptala o modifícala.",
         "count": 1,
         "url": f"{base}/clientes/{client.id}?tab=feedback",
-        "tag": "dq-vc-propuesta",
+        # Tag POR CLIENTE: con una tag compartida, la propuesta del segundo
+        # cliente sustituía en la bandeja a la del primero y esa desaparecía
+        # sin dejar rastro (mismo problema que ya se corrigió en los cobros).
+        "tag": f"dq-vc-propuesta-{client.id}",
     }
     return send_to_coach(db, payload)
 
@@ -428,7 +539,7 @@ def notify_coach_video_call_rescheduled(db: Session, client: Client, when_label:
         "body": f"{name} no puede a la hora agendada y propone: {when_label}. Acéptala o modifícala.",
         "count": 1,
         "url": f"{base}/clientes/{client.id}?tab=feedback",
-        "tag": "dq-vc-propuesta",
+        "tag": f"dq-vc-propuesta-{client.id}",
     }
     return send_to_coach(db, payload)
 
@@ -505,12 +616,14 @@ def _send_videocall_reminder(db: Session, client: Client, vc, brand_name: str,
         "title": brand_name, "body": client_body, "count": 1,
         "url": vc.meet_url or f"{base}/p/{client.portal_token}", "tag": "dq-videollamada",
     })
+    # Tag ÚNICA POR LLAMADA. Con una tag compartida, el móvil sustituye el
+    # aviso anterior por el nuevo: dos clientes con videollamada el mismo día
+    # y el coach solo veía UNA notificación. Es el mismo fallo que ya se
+    # corrigió en los cobros. (Dentro de la misma llamada sí interesa que se
+    # sustituyan: "mañana" y "en 1 hora" hablan de la misma cita.)
     n += send_to_coach(db, {
         "title": "Videollamada", "body": coach_body, "count": 1,
         "url": vc.meet_url or f"{base}/clientes/{client.id}?tab=feedback",
-        # Tag POR VIDEOLLAMADA: con una tag compartida, el aviso de la segunda
-        # videollamada del día sustituía al de la primera y el coach solo veía
-        # una (mismo fallo que ya se corrigió en los cobros).
         "tag": f"dq-vc-coach-{vc.id}",
     })
     return n
@@ -618,6 +731,19 @@ def run_push_reminders(db: Session, now: datetime | None = None) -> dict:
     return summary
 
 
+
+def _huella_de_alertas(alerts: list[dict]) -> str:
+    """Huella COMO HASH de las alertas abiertas, no como lista literal.
+
+    `record_job` guarda el detalle recortado a 300 caracteres, y la lista de
+    claves los pasa con ~10 alertas abiertas: a partir de ahí se comparaba la
+    huella ENTERA contra una guardada a medias, nunca coincidían y el resumen
+    se enviaba en cada barrido aunque no hubiera cambiado nada — que es justo
+    el machaqueo que esta dedup existe para evitar. Un hash cabe siempre."""
+    claves = "|".join(sorted(str(a.get("key") or a.get("kind")) for a in alerts))
+    return hashlib.sha256(claves.encode("utf-8")).hexdigest()[:32]
+
+
 def run_coach_digest(db: Session, now: datetime | None = None) -> dict:
     """Resumen push al MÓVIL DEL COACH (cada 3 h, 08–22): cuántos pendientes
     hay y los primeros, derivados del centro de alertas — siempre al día de
@@ -652,6 +778,41 @@ def run_coach_digest(db: Session, now: datetime | None = None) -> dict:
     ]
     if len(alerts) > 3:
         lines.append(f"…y {len(alerts) - 3} más")
+
+    # NO REPETIRSE: el móvil del coach vibraba 5 veces al día con EXACTAMENTE
+    # el mismo texto mientras hubiera una alerta abierta (y `renewal_due`,
+    # `payment_pending` o `goal_review` duran días o semanas). Así se acaba
+    # silenciando la app — y con ella los avisos inmediatos que sí valen
+    # dinero. Se envía cuando hay algo NUEVO, y una vez al día de cortesía si
+    # todo sigue igual.
+    # HUELLA COMO HASH, no como lista literal. `record_job` guarda el detalle
+    # recortado a 300 caracteres, y la lista de claves los pasa con ~10 alertas
+    # abiertas: a partir de ahí se comparaba la huella ENTERA contra una
+    # guardada a medias, nunca coincidían, y el resumen se enviaba en cada
+    # barrido aunque no hubiera cambiado nada — que es justo el machaqueo que
+    # esta dedup existe para evitar. Un hash cabe siempre.
+    huella = _huella_de_alertas(alerts)
+    try:
+        from app.services.job_state import estado_de_los_trabajos, record_job
+
+        previo = (estado_de_los_trabajos().get("coach_digest_huella") or {})
+        misma = previo.get("detail") == huella
+        ultimo = previo.get("last_run_at")
+        de_cortesia = True
+        if misma and ultimo:
+            try:
+                cuando = datetime.fromisoformat(ultimo)
+                if cuando.tzinfo is None:
+                    cuando = cuando.replace(tzinfo=timezone.utc)
+                de_cortesia = (datetime.now(timezone.utc) - cuando).total_seconds() >= 20 * 3600
+            except ValueError:
+                de_cortesia = True
+        if misma and not de_cortesia:
+            return {"alerts": len(alerts), "devices": 0, "skipped": "sin novedades"}
+        record_job("coach_digest_huella", ok=True, detalle=huella)
+    except Exception:  # noqa: BLE001 — el registro nunca frena el aviso
+        pass
+
     payload = {
         "title": f"{len(alerts)} pendiente{'s' if len(alerts) != 1 else ''} de tus clientes",
         "body": "\n".join(lines),

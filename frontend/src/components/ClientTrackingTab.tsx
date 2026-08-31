@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ancla } from "../lib/anchors";
 import { api, keepIfSame, REFRESH_MS } from "../lib/api";
+import { formatDayShort } from "../lib/format";
 import { pkg } from "../lib/packages";
 import type { ClientOut } from "../types";
 import { useToast } from "./ui";
@@ -92,7 +93,13 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
         .then((d) => alive && (setErr(null), setData((prev) => keepIfSame(prev, d))))
         .catch((e) => alive && setErr(e?.message ?? "Error"));
     load();
-    timer.current = window.setInterval(load, REFRESH_MS); // polling → tiempo real
+    // Con la pestaña del navegador OCULTA no se pide nada: es el único
+    // intervalo del panel que no lo comprobaba, y esta respuesta es la más
+    // cara del backend (se recalculaba el seguimiento entero cada 3 s aunque
+    // el coach estuviera en otra ventana).
+    timer.current = window.setInterval(() => {
+      if (!document.hidden) load();
+    }, REFRESH_MS);
     return () => {
       alive = false;
       if (timer.current) window.clearInterval(timer.current);
@@ -197,6 +204,11 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
                   <th title="Litros de agua">Agua</th>
                   <th title="Adherencia a la dieta: sí / parcial / no">Dieta</th>
                   {hasTraining && <th title="Series de entreno registradas">Series</th>}
+                  {/* Lo que el cliente ESCRIBE cada día ("me molesta el hombro
+                      en el press"). Se guardaba, el backend lo servía y esta
+                      tabla no lo enseñaba: el coach no lo leía nunca y el aviso
+                      solo llegaba —si llegaba— en el feedback quincenal. */}
+                  <th title="Lo que ha escrito el cliente ese día">Notas</th>
                 </tr>
               </thead>
               <tbody className="text-zinc-200">
@@ -204,7 +216,11 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
                   // La fila de HOY se resalta: es la que el coach mira primero.
                   <tr key={d.date} className="border-t border-white/5"
                     style={d.date === hoyISO ? { background: "var(--surface-raised)" } : undefined}>
-                    <td className="px-3 py-2">{d.date}</td>
+                    {/* En español, como en el resto del panel: el crudo
+                        "2026-08-17" era el único sitio donde asomaba el ISO. */}
+                    <td className="px-3 py-2 whitespace-nowrap" title={d.date}>
+                      {formatDayShort(d.date)}
+                    </td>
                     <td>{fmt1(d.weight_kg)}</td>
                     <td>{fmt1(d.sleep_hours)}</td>
                     <td className="max-w-[130px] truncate">{d.steps ?? "—"}</td>
@@ -212,6 +228,10 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
                     <td>{fmt1(d.water_liters)}</td>
                     <td>{ADHERENCE_LABEL[d.diet_adherence ?? ""] ?? d.diet_adherence ?? "—"}</td>
                     {hasTraining && <td>{d.workout_sets || "—"}</td>}
+                    <td className="max-w-[220px] truncate pr-3"
+                      title={d.free_notes || undefined}>
+                      {d.free_notes ? `💬 ${d.free_notes}` : "—"}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -226,6 +246,7 @@ export function ClientTrackingTab({ client }: { client: ClientOut }) {
                     <td>{avg.water_liters ?? "—"}</td>
                     <td>{avg.diet_adherence_pct != null ? `${avg.diet_adherence_pct}%` : "—"}</td>
                     {hasTraining && <td>{avg.workout_sets ?? "—"}</td>}
+                    <td />
                   </tr>
                 </tfoot>
               )}

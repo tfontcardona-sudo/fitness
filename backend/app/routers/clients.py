@@ -104,12 +104,20 @@ def _feelings_score_10(feelings: dict | None) -> float | None:
     return round(statistics.median(vals) * 2, 1)
 
 
+# Cuántas revisiones cerradas viajan en el seguimiento (se pide cada 3 s). El
+# archivo completo está en la pestaña Historial.
+MAX_REVISIONES_EN_SEGUIMIENTO = 4
+
+
 def _quincenal_entry(db: Session, period: Period, prev: Period | None) -> dict:
     """Datos completos de una revisión quincenal con ANTES/DESPUÉS (día 1 vs 15)."""
-    logs = list(db.scalars(
-        select(DailyLog).where(DailyLog.period_id == period.id).order_by(DailyLog.log_date)
-    ))
-    first_w = next((lg.weight_kg for lg in logs if lg.weight_kg is not None), None)
+    # Solo hace falta el PRIMER peso: traerse todos los diarios de la revisión
+    # (~14 filas con sus campos) para leer uno era la consulta más cara de esta
+    # respuesta, multiplicada por cada revisión del cliente.
+    first_w = db.scalar(
+        select(DailyLog.weight_kg)
+        .where(DailyLog.period_id == period.id, DailyLog.weight_kg.is_not(None))
+        .order_by(DailyLog.log_date).limit(1))
     before_w = first_w if first_w is not None else (prev.closing_weight_kg if prev else None)
     # Primera revisión sin período previo: el "antes" de los perímetros son los
     # INICIALES de la anamnesis (mig. 0041) — antes ese delta no existía.
@@ -184,11 +192,20 @@ def client_tracking(client_id: int, db: Session = Depends(get_db)) -> dict:
         .where(DailyLog.period_id == period.id)
         .order_by(DailyLog.log_date.desc())
     ).all()
+    # Series por día en UNA consulta agrupada: antes era un COUNT por CADA día
+    # registrado (hasta 14) y esta respuesta se pide cada 3 s mientras la
+    # pestaña Seguimiento esté abierta.
+    series_por_dia: dict[int, int] = {}
+    if logs:
+        series_por_dia = {
+            fila[0]: int(fila[1]) for fila in db.execute(
+                select(WorkoutLog.daily_log_id, func.count())
+                .where(WorkoutLog.daily_log_id.in_([lg.id for lg in logs]))
+                .group_by(WorkoutLog.daily_log_id))
+        }
     daily = []
     for lg in logs:
-        n_sets = db.scalar(
-            select(func.count()).select_from(WorkoutLog).where(WorkoutLog.daily_log_id == lg.id)
-        ) or 0
+        n_sets = series_por_dia.get(lg.id, 0)
         daily.append({
             "date": lg.log_date.isoformat(),
             "weight_kg": lg.weight_kg, "sleep_hours": lg.sleep_hours,
@@ -217,11 +234,17 @@ def client_tracking(client_id: int, db: Session = Depends(get_db)) -> dict:
     days_elapsed = (min(today, period.ends_on) - period.starts_on).days + 1
 
     # Revisiones quincenales acumuladas (más reciente primero), con antes/después
+    # Solo las ÚLTIMAS revisiones: el histórico completo (que crece sin tope,
+    # ~24 al año) se recalculaba y se reenviaba entero 20 veces por minuto,
+    # leyendo TODOS los diarios de cada revisión cerrada para sacar un peso.
+    # El archivo completo vive en la pestaña Historial.
     quincenals = []
-    for i in range(len(periods) - 1, -1, -1):
-        pr = periods[i]
-        if pr.status in ("closed", "analyzed"):
-            quincenals.append(_quincenal_entry(db, pr, periods[i - 1] if i > 0 else None))
+    cerrados = [i for i in range(len(periods) - 1, -1, -1)
+                if periods[i].status in ("closed", "analyzed")]
+    for i in cerrados[:MAX_REVISIONES_EN_SEGUIMIENTO]:
+        quincenals.append(_quincenal_entry(db, periods[i], periods[i - 1] if i > 0 else None))
+
+    from app.services.push import dias_registrados
 
     return {
         "has_period": True,
@@ -235,7 +258,13 @@ def client_tracking(client_id: int, db: Session = Depends(get_db)) -> dict:
         },
         "daily": daily,
         "daily_averages": averages,
-        "days_logged": len(logs),
+        # UNA SOLA REGLA de "día registrado" en todo el sistema. Aquí se
+        # contaban las FILAS: el autosave del portal crea la del día ANTES de
+        # que el cliente teclee nada, así que Seguimiento decía "8 días
+        # registrados" mientras el resto del panel —que usa
+        # `push.dias_registrados`— contaba 5 y el aviso de "sin registros"
+        # saltaba. El mismo dato con dos respuestas distintas.
+        "days_logged": len(dias_registrados(db, list(logs))),
         "today_logged": any(lg.log_date == today for lg in logs),
         "quincenals": quincenals,
         "quincenal_pending": period.status == "open",
@@ -282,7 +311,6 @@ def create_client(body: ClientCreate, db: Session = Depends(get_db)) -> ClientCr
         # principiante/intermedio; base determinista del coach para avanzado).
         level=body.level,
         status="onboarding",
-        auto_pilot=settings.auto_pilot_default,
         portal_token="pendiente",  # se firma con el id real tras el flush
     )
     db.add(client)
@@ -325,11 +353,36 @@ def create_client(body: ClientCreate, db: Session = Depends(get_db)) -> ClientCr
 
 
 # --------------------------------------------------------------- listado ----
-@router.get("", response_model=list[ClientOut])
+# Campos que el LISTADO no envía. Las dos pantallas que lo consumen ("Hoy" y
+# "Clientes") lo piden cada 3 segundos y NINGUNA pinta el historial clínico:
+# eran ~1 KB por cliente de lesiones, patologías, medicación, hábitos y
+# antropometría antigua viajando 40 veces por minuto (medido: 69 KB por
+# barrido con 40 fichas, y las notas reales son bastante más largas que las
+# del banco de pruebas). La ficha del cliente sigue trayéndolo TODO por su
+# propio endpoint, que es donde se lee de verdad.
+_LISTA_SIN = {
+    "injuries_notes", "medical_notes", "medication_notes", "sport_history",
+    "lifestyle_notes", "current_supplements", "meal_schedule", "equipment",
+    "excluded_exercise_ids", "food_allergies", "food_dislikes", "food_likes",
+}
+
+
+# OJO: con una respuesta de tipo LISTA la exclusión va bajo "__all__"
+# (Pydantic la aplica a cada elemento); con el set suelto no excluye nada.
+@router.get("", response_model=list[ClientOut],
+            response_model_exclude={"__all__": _LISTA_SIN})
 def list_clients(
     db: Session = Depends(get_db),
     status_filter: ClientStatus | None = Query(default=None, alias="status"),
     q: str | None = Query(default=None, min_length=2, description="busca en nombre/email"),
+    # `light` llegó de otra sesión que atacó lo MISMO por otro camino: un
+    # opt-in que vaciaba las notas. Se conserva el parámetro para no romper a
+    # quien ya lo manda, pero no hace falta hacer nada con él: la exclusión de
+    # arriba (`response_model_exclude`) ya quita esos campos SIEMPRE, que es más
+    # seguro — no depende de que cada llamador se acuerde de pedirlo.
+    light: bool = Query(default=False, deprecated=True,
+                        description="ya no hace falta: el listado nunca lleva "
+                                    "las notas largas"),
 ) -> list[ClientOut]:
     stmt = select(Client).order_by(Client.created_at.desc())
     if status_filter:
@@ -510,6 +563,94 @@ def regenerate_portal_token(client_id: int, db: Session = Depends(get_db)) -> Po
 
 
 # ------------------------------------------------- RGPD: portabilidad ----
+def _periodos_exportables(db: Session, client_id: int) -> list[dict]:
+    """Los períodos CON todo lo que el cliente tecleó: su diario día a día y
+    sus series de entreno.
+
+    El ZIP de "descargar todo" llevaba ficha, planes y un resumen de seis
+    campos por período: se dejaba fuera justo lo que el cliente ha ido
+    apuntando durante meses (peso diario, sueño, pasos, agua, saciedad,
+    adherencia, notas) y TODAS sus series (peso × reps × RIR). Y como el flujo
+    natural de una baja es exportar y luego borrar, ese historial desaparecía
+    para siempre.
+    """
+    periodos = list(db.scalars(
+        select(Period).where(Period.client_id == client_id).order_by(Period.period_index)))
+    if not periodos:
+        return []
+    logs = list(db.scalars(
+        select(DailyLog).where(DailyLog.period_id.in_([p.id for p in periodos]))
+        .order_by(DailyLog.log_date)))
+    series_por_log: dict[int, list[dict]] = {}
+    if logs:
+        from app.models import Exercise
+
+        nombres = {e.id: e.canonical_name for e in db.scalars(select(Exercise))}
+        for w in db.scalars(select(WorkoutLog)
+                            .where(WorkoutLog.daily_log_id.in_([lg.id for lg in logs]))
+                            .order_by(WorkoutLog.id)):
+            series_por_log.setdefault(w.daily_log_id, []).append({
+                "ejercicio": nombres.get(w.exercise_id) or w.exercise_id,
+                "serie": w.set_number, "reps": w.reps,
+                "peso_kg": w.weight_kg, "rpe": w.rpe, "notas": w.notes,
+            })
+    logs_por_periodo: dict[int, list[dict]] = {}
+    for lg in logs:
+        logs_por_periodo.setdefault(lg.period_id, []).append({
+            "fecha": _jsonable(lg.log_date), "peso_kg": lg.weight_kg,
+            "sueno_h": lg.sleep_hours, "pasos": lg.steps,
+            "saciedad_1_10": lg.satiety_1_10, "agua_l": lg.water_liters,
+            "adherencia_dieta": lg.diet_adherence, "energia_1_5": lg.energy_1_5,
+            "animo_1_5": lg.mood_1_5, "fatiga_1_5": lg.fatigue_1_5,
+            "notas": lg.free_notes, "comidas_elegidas": lg.chosen_options_json,
+            "series": series_por_log.get(lg.id, []),
+        })
+    return [
+        {
+            "period_index": pe.period_index, "starts_on": _jsonable(pe.starts_on),
+            "ends_on": _jsonable(pe.ends_on), "status": pe.status,
+            "closing_weight_kg": pe.closing_weight_kg, "metrics": pe.metrics_json,
+            "cierre": {
+                "cintura_cm": pe.closing_waist_cm, "cadera_cm": pe.closing_hip_cm,
+                "brazo_cm": pe.closing_arm_cm, "muslo_cm": pe.closing_thigh_cm,
+                "valoracion": pe.closing_rating, "sensaciones": pe.closing_feelings_json,
+                "adherencia_dieta_0_10": pe.adherence_diet_0_10,
+                "adherencia_entreno_0_10": pe.adherence_training_0_10,
+                "lo_mas_dificil": pe.closing_hardest, "dudas": pe.closing_questions,
+                "cambios": pe.closing_changes, "siguiente_objetivo": pe.closing_next_goal,
+                "comidas_libres": pe.free_meals_count,
+                "enviado_el": _jsonable(pe.closing_submitted_at),
+            },
+            "diario": logs_por_periodo.get(pe.id, []),
+        }
+        for pe in periodos
+    ]
+
+
+
+# Tope de ADJUNTOS del ZIP de portabilidad (los datos estructurados van
+# siempre). El ZIP se arma en memoria: sin tope, un cliente con muchas fotos
+# tumbaba el proceso entero de la API, no solo su descarga.
+MAX_EXPORT_ADJUNTOS_BYTES = 200 * 1024 * 1024
+
+
+def _informes_exportables(db: Session, client_id: int) -> list[dict]:
+    """Los informes quincenales del cliente: el análisis de SUS datos."""
+    from app.models import FeedbackDoc
+
+    periodos = {p.id: p.period_index for p in db.scalars(
+        select(Period).where(Period.client_id == client_id))}
+    if not periodos:
+        return []
+    return [
+        {"revision": periodos.get(fb.period_id), "tipo": fb.kind,
+         "enviado_el": _jsonable(fb.sent_at), "contenido": fb.content_json}
+        for fb in db.scalars(
+            select(FeedbackDoc).where(FeedbackDoc.period_id.in_(periodos))
+            .order_by(FeedbackDoc.id))
+    ]
+
+
 @router.get("/{client_id}/export")
 def export_client_zip(client_id: int, db: Session = Depends(get_db)) -> Response:
     """\"Descargar todo\": ZIP con datos estructurados + fotos + documentos."""
@@ -525,30 +666,65 @@ def export_client_zip(client_id: int, db: Session = Depends(get_db)) -> Response
             }
             for p in db.scalars(select(Plan).where(Plan.client_id == client_id).order_by(Plan.month_index, Plan.version))
         ],
-        "periods": [
-            {
-                "period_index": pe.period_index, "starts_on": _jsonable(pe.starts_on),
-                "ends_on": _jsonable(pe.ends_on), "status": pe.status,
-                "closing_weight_kg": pe.closing_weight_kg, "metrics": pe.metrics_json,
-            }
-            for pe in db.scalars(select(Period).where(Period.client_id == client_id).order_by(Period.period_index))
+        "periods": _periodos_exportables(db, client_id),
+        # Los INFORMES QUINCENALES y lo que el cliente ESCRIBIÓ a su coach
+        # faltaban. Los dos son suyos: el informe es el análisis de sus propios
+        # datos (peso, adherencia, fuerza) y las peticiones son texto que él
+        # redactó. Como el flujo natural de una baja es exportar y luego
+        # borrar, se perdían para siempre justo cuando se ejercía el derecho
+        # que debía conservarlos.
+        "informes": _informes_exportables(db, client_id),
+        "mensajes_al_coach": [
+            {"fecha": _jsonable(cr.created_at), "estado": cr.status,
+             "mensaje": cr.message}
+            for cr in db.scalars(
+                select(ChangeRequest)
+                .where(ChangeRequest.client_id == client_id)
+                .order_by(ChangeRequest.created_at))
         ],
         "exported_at": datetime.now(timezone.utc).isoformat(),
     }
 
     buf = io.BytesIO()
+    # TOPE del ZIP. Se armaba entero en memoria sin límite: un cliente con
+    # muchas fotos de progreso y varios PDFs podía hacer que el proceso se
+    # comiera cientos de MB y tumbara la API para TODOS. Lo que no quepa se
+    # deja fuera y se DICE en el propio ZIP, con la ruta para pedirlo aparte;
+    # los datos estructurados (que son lo que exige la portabilidad) van
+    # siempre, pesen lo que pesen los adjuntos.
+    omitidos: list[str] = []
+    presupuesto = MAX_EXPORT_ADJUNTOS_BYTES
+
+    def _cabe(ruta) -> bool:
+        nonlocal presupuesto
+        try:
+            tam = ruta.stat().st_size
+        except OSError:
+            return False
+        if tam > presupuesto:
+            omitidos.append(ruta.name)
+            return False
+        presupuesto -= tam
+        return True
+
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("datos.json", json.dumps(data, ensure_ascii=False, indent=2))
         photos = db.scalars(select(ProgressPhoto).where(ProgressPhoto.client_id == client_id))
         for ph in photos:
             p = abs_path(ph.file_path)
-            if p.exists():
+            if p.exists() and _cabe(p):
                 zf.write(p, f"fotos/{p.name}")
         docs_dir = storage_root() / "clients" / str(client_id) / "documents"
         if docs_dir.exists():
             for f in sorted(docs_dir.iterdir()):
-                if f.is_file():
+                if f.is_file() and _cabe(f):
                     zf.write(f, f"documentos/{f.name}")
+        if omitidos:
+            data["adjuntos_omitidos"] = {
+                "motivo": "el ZIP superaba el tamaño máximo; pídelos aparte al coach",
+                "ficheros": omitidos,
+            }
+        # El JSON se escribe AL FINAL: así puede contar lo que quedó fuera.
+        zf.writestr("datos.json", json.dumps(data, ensure_ascii=False, indent=2))
 
     log_event(db, "client", client.id, "client_exported", None)
     db.commit()
@@ -574,6 +750,9 @@ def export_client_zip(client_id: int, db: Session = Depends(get_db)) -> Response
 def delete_client(
     client_id: int,
     confirm: str = Query(description="Debe coincidir EXACTAMENTE con el nombre completo"),
+    suscripcion_cancelada_a_mano: bool = Query(
+        default=False,
+        description="El coach declara haber cancelado ya la suscripción en Stripe"),
     db: Session = Depends(get_db),
 ) -> Response:
     """Supresión total RGPD con doble confirmación: modal en UI + nombre
@@ -584,6 +763,34 @@ def delete_client(
             status.HTTP_400_BAD_REQUEST,
             "La confirmación no coincide con el nombre completo del cliente",
         )
+
+    # ANTES DE BORRAR: cortar el cobro recurrente. Sin esto, Stripe le seguía
+    # cobrando cada mes a alguien que ya no existe en el sistema: el cargo
+    # entraba como pago huérfano (sin ficha a la que asociarlo) y el coach se
+    # enteraba por la reclamación del cliente. Si Stripe no responde NO se
+    # borra: se le dice al coach que la cancele allí y repita, porque borrar
+    # ahora sería perder el único hilo que queda para pararla.
+    if client.stripe_subscription_id and settings.stripe_enabled:
+        from app.services.stripe_service import cancelar_suscripcion
+
+        cancelada, detalle = cancelar_suscripcion(client.stripe_subscription_id)
+        if not cancelada and not suscripcion_cancelada_a_mano:
+            raise HTTPException(
+                status.HTTP_502_BAD_GATEWAY,
+                f"No se pudo cancelar su suscripción de Stripe ({detalle}). "
+                "Cancélala en Stripe y vuelve a intentarlo: si se borra ahora, "
+                "se le seguiría cobrando todos los meses.",
+            )
+        if not cancelada:
+            # SALIDA DECLARADA. El freno es correcto —borrar dejando el cobro
+            # vivo es peor—, pero no puede ser eterno: el filtro de errores solo
+            # reconoce unas cuantas formas ("no such subscription", "already
+            # canceled"), así que una clave caducada o Stripe caído bloqueaban
+            # una obligación LEGAL con plazo (30 días). El coach puede cancelar
+            # en Stripe y declararlo aquí; queda en la auditoría con su motivo.
+            detalle = f"declarada a mano por el coach (Stripe respondió: {detalle})"
+        log_event(db, "client", client_id, "subscription_cancelled",
+                  {"motivo": "baja_rgpd", "detalle": detalle})
 
     period_ids = list(db.scalars(select(Period.id).where(Period.client_id == client_id)))
     if period_ids:
@@ -599,6 +806,17 @@ def delete_client(
     # video_calls.client_id también es NOT NULL sin ON DELETE (mig. 0023): sin
     # esta línea, borrar a un cliente Pro con videollamadas revienta el commit.
     from app.models import VideoCall
+    videollamadas = list(db.scalars(
+        select(VideoCall).where(VideoCall.client_id == client_id)))
+    vc_ids = [vc.id for vc in videollamadas]
+    # El evento vive TAMBIÉN en Google Calendar, fuera de esta base: borrar la
+    # fila no lo quitaba de ahí. La cita seguía en el calendario del coach con
+    # el nombre y el email del cliente borrado —dato personal que sobrevive a
+    # la supresión— y Google le seguía mandando sus recordatorios nativos de
+    # una reunión con alguien que ya no existe. Best-effort: si Google está
+    # caído o desconectado, la baja NO se bloquea (el aviso queda en el log).
+    for vc in videollamadas:
+        _cancel_google_event_safe(db, vc)
     db.execute(delete(VideoCall).where(VideoCall.client_id == client_id))
     # Libro de caja: el movimiento NO se borra (los ingresos del mes no pueden
     # cambiar porque se dé de baja a alguien) pero se ANONIMIZA — se queda sin
@@ -618,12 +836,77 @@ def delete_client(
     db.execute(delete(Plan).where(Plan.client_id == client_id))
     db.execute(delete(ChangeRequest).where(ChangeRequest.client_id == client_id))
     db.execute(update(EmailLog).where(EmailLog.client_id == client_id).values(client_id=None))
+    # AUDITORÍA: cada PATCH de la ficha guarda el ANTES y el DESPUÉS de los
+    # campos editados — lesiones, patologías, medicación, alergias, teléfono.
+    # Son datos de SALUD (art. 9 RGPD) y se quedaban en `audit_log` para
+    # siempre, sin ficha, sin caducidad y sin ninguna pantalla desde la que
+    # verlos. Una "supresión total" que deja el historial clínico no lo es.
+    # (audit_log no tiene FK a clients, por eso la red estructural del test de
+    # borrado no podía cazarlo.)
+    from app.models import AuditLog, WhatsAppRound
+
+    db.execute(delete(AuditLog).where(AuditLog.entity == "client",
+                                      AuditLog.entity_id == client_id))
+    if plan_ids:
+        db.execute(delete(AuditLog).where(AuditLog.entity == "plan",
+                                          AuditLog.entity_id.in_(plan_ids)))
+    if period_ids:
+        db.execute(delete(AuditLog).where(AuditLog.entity == "period",
+                                          AuditLog.entity_id.in_(period_ids)))
+    if vc_ids:
+        db.execute(delete(AuditLog).where(AuditLog.entity == "video_call",
+                                          AuditLog.entity_id.in_(vc_ids)))
+    # SU NOMBRE EN LOS PLANES DE OTROS. Copiar un plan deja un sello legible
+    # ("copiado de el plan de Ana Pérez") en `guardrail_flags` del plan DESTINO
+    # y en la auditoría de ese plan — filas de OTRO cliente, que la supresión
+    # de este no tocaba. El dato personal sobrevivía a la baja en fichas ajenas.
+    # Se sustituye por una referencia sin nombre; el sello sigue diciendo que es
+    # una copia, que es para lo que sirve.
+    _borrado = "un cliente dado de baja"
+    if (nombre_borrado := (client.full_name or "").strip()):
+        for otro in db.scalars(
+                select(Plan).where(Plan.client_id != client_id,
+                                   Plan.generated_by == "library",
+                                   Plan.guardrail_flags.isnot(None))):
+            marcas = list(otro.guardrail_flags or [])
+            if any(nombre_borrado in (m or "") for m in marcas):
+                otro.guardrail_flags = [
+                    (m or "").replace(nombre_borrado, _borrado) for m in marcas]
+        for ev in db.scalars(select(AuditLog).where(AuditLog.event == "plan_copied")):
+            detalle = ev.detail_json or {}
+            origen = str(detalle.get("origen") or "")
+            if nombre_borrado in origen:
+                ev.detail_json = {**detalle,
+                                  "origen": origen.replace(nombre_borrado, _borrado)}
+
+    # Los mensajes de WhatsApp redactados para él viven en un JSON por día,
+    # con su id como clave: se quita la suya sin tocar las de los demás.
+    for ronda in db.scalars(select(WhatsAppRound)):
+        textos = ronda.texts_json or {}
+        if str(client_id) in textos:
+            nuevos = {k: v for k, v in textos.items() if k != str(client_id)}
+            ronda.texts_json = nuevos
+
     db.delete(client)
 
-    delete_client_tree(client_id)
     # Registro anónimo de la baja: sin nombre, sin email (PARTE I)
     log_event(db, "client", client_id, "client_deleted", {"anonymous": True})
     db.commit()
+
+    # LOS FICHEROS, AL FINAL. Se borraban ANTES del commit, así que si el
+    # commit fallaba —una tabla nueva con FK sin cubrir, un interbloqueo, la
+    # conexión caída— la ficha seguía viva y sus fotos, su anamnesis y sus
+    # documentos ya no estaban: pérdida irrecuperable en un cliente que NO se
+    # ha dado de baja. Al revés el peor caso es un directorio huérfano, que no
+    # le hace daño a nadie y queda anotado para barrerlo.
+    try:
+        delete_client_tree(client_id)
+    except Exception:  # noqa: BLE001 — la baja ya está hecha y es lo que cuenta
+        import logging
+
+        logging.getLogger("app.rgpd").exception(
+            "cliente %s borrado, pero sus ficheros siguen en disco: bórralos a "
+            "mano en {STORAGE_PATH}/clients/%s", client_id, client_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -719,6 +1002,7 @@ def ingest_anamnesis_pdf(db: Session, client_id: int, content: bytes,
                       "La lectura automática falló: revísala y rellena la ficha a mano.")
             push_svc.send_to_coach(db, {
                 "title": f"📋 {client.full_name} ha enviado su anamnesis",
+                "count": 1,
                 "body": cuerpo,
                 "url": f"/clientes/{client.id}?tab=anamnesis",
                 "tag": f"anamnesis-{client.id}",
@@ -766,10 +1050,82 @@ def upload_client_document(
 
 
 @router.get("/{client_id}/documents")
-def get_client_documents(client_id: int, db: Session = Depends(get_db)) -> list[dict]:
-    """Lista los documentos subidos del cliente."""
+def get_client_documents(client_id: int, kind: str | None = None,
+                         db: Session = Depends(get_db)) -> list[dict]:
+    """Documentos subidos del cliente. Cada uno con su `kind`
+    (anamnesis | adjunto); `?kind=anamnesis` filtra solo el cuestionario."""
     _client_or_404_docs(db, client_id)
-    return list_documents(client_id)
+    docs = list_documents(client_id)
+    if kind:
+        docs = [d for d in docs if d.get("kind") == kind]
+    return docs
+
+
+@router.get("/{client_id}/anamnesis-analysis")
+def get_anamnesis_analysis(client_id: int, db: Session = Depends(get_db)) -> dict:
+    """Lo que la lectura de la anamnesis dejó anotado: la síntesis y las
+    CONTRADICCIONES detectadas ("declara vegano pero menciona pollo", "quiere
+    bajar 17 kg antes del 01/10: ~1,8 %/semana").
+
+    Se calculaban, se guardaban en el sidecar… y no las devolvía ningún
+    endpoint: la única forma de verlas era volver a pulsar "Leer con IA", que
+    gasta créditos y pisa las correcciones del coach. Justo lo que hay que
+    resolver ANTES de generar el plan."""
+    import json as _json
+
+    cliente = _client_or_404_docs(db, client_id)
+
+    # LAS CONTRADICCIONES SE RECALCULAN, no se leen del sidecar. Son una función
+    # DETERMINISTA de la ficha (`detect_contradictions`), no salida de la IA:
+    # no cuestan créditos y se pueden mirar cuando haga falta. Servirlas
+    # congeladas desde el momento de la extracción las convertía en una foto
+    # fija que mentía en las dos direcciones: seguía avisando de algo que el
+    # coach ya había corregido, y callaba si era el propio coach quien
+    # introducía la contradicción al editar la ficha. Y todo esto ANTES de
+    # generar el plan, que es justo cuando hay que resolverlas.
+    contradicciones: list[str] = []
+    try:
+        from app.services.anamnesis_extraction import detect_contradictions
+
+        perfil = {k: getattr(cliente, k, None) for k in (
+            "sex", "birth_date", "height_cm", "start_weight_kg", "goal_type",
+            "goal_weight_kg", "goal_deadline", "level", "training_days",
+            "session_max_min", "training_place", "lifestyle_notes",
+            "sport_history", "injuries_notes", "medical_notes",
+            "medication_notes", "food_allergies", "food_dislikes", "food_likes")}
+        contradicciones = [c.detail for c in detect_contradictions(perfil)]
+    except Exception:  # noqa: BLE001 — nunca rompe la ficha
+        contradicciones = []
+
+    def _retrato_en_vivo() -> str | None:
+        """Retrato determinista de la ficha ACTUAL (vía formulario, o reserva).
+        No cuesta créditos, así que refleja siempre lo último que corrigió el
+        coach — que es justo lo que hay que mirar antes de generar."""
+        try:
+            from app.services.anamnesis_extraction import client_portrait
+
+            return client_portrait({k: getattr(cliente, k, None) for k in (
+                "sex", "goal_type", "level", "training_days", "session_max_min",
+                "lifestyle_notes", "injuries_notes", "medical_notes",
+                "medication_notes", "food_allergies", "food_dislikes")}) or None
+        except Exception:  # noqa: BLE001
+            return None
+
+    try:
+        ruta = _anamnesis_analysis_path(client_id)
+        if ruta.exists():
+            datos = _json.loads(ruta.read_text(encoding="utf-8"))
+            return {
+                # El retrato del sidecar es el que se PAGÓ a la IA (vía PDF).
+                # Si no lo hay —vía formulario—, se compone al vuelo.
+                "deep_analysis": datos.get("deep_analysis") or _retrato_en_vivo(),
+                "contradictions": contradicciones,
+                "read_at": datos.get("at"),
+            }
+    except Exception:  # noqa: BLE001 — un sidecar roto no rompe la ficha
+        pass
+    return {"deep_analysis": _retrato_en_vivo(),
+            "contradictions": contradicciones, "read_at": None}
 
 
 @router.post("/{client_id}/send-portal-access")
@@ -854,6 +1210,12 @@ def _confirm_meet(db: Session, client: Client, vc, *, start_aware: datetime,
                 attendee_email=client.email or None)
     except gcal.GoogleCalendarError as exc:
         db.rollback()
+        # El rollback deshace TAMBIÉN el borrado de la credencial que Google
+        # acaba de rechazar: sin esto la fila revocada volvía, el panel seguía
+        # diciendo "Google conectado" y cada intento de agendar repetía el
+        # mismo error sin que el coach viera nunca el botón de reconectar.
+        if getattr(exc, "revocado", False) and gcal.olvidar_credencial(db):
+            db.commit()
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
 
     vc.status = "scheduled"
@@ -1064,22 +1426,44 @@ def client_history(client_id: int, db: Session = Depends(get_db)) -> dict:
     """Evolución del cliente en el tiempo: peso/adherencia/fuerza por período +
     planes y feedbacks. Para la pestaña Historial (resumida y descargable)."""
     from app.models import FeedbackDoc, Period, Plan
-    from app.services.feedback_service import compute_period_summary
+    from app.services.feedback_service import compute_period_summary, sets_por_periodo
 
     client = _client_or_404_docs(db, client_id)
     periods = list(db.scalars(
         select(Period).where(Period.client_id == client_id).order_by(Period.period_index)
     ))
-    plans = list(db.scalars(
-        select(Plan).where(Plan.client_id == client_id).order_by(Plan.month_index, Plan.version)
-    ))
+    # Series de TODAS las revisiones de una vez: el resumen de cada período
+    # compara con los anteriores, así que en bucle se releían las mismas series
+    # una y otra vez (con 4 revisiones eran 27 consultas; con 8, más del doble
+    # y releyendo cuatro veces el mismo histórico).
+    cache_sets = sets_por_periodo(db, [p.id for p in periods])
+    # Y el feedback de cada revisión, también de una vez (era otra consulta por
+    # período dentro del mismo bucle).
+    _pids = [p.id for p in periods]
+    ultimo_fb: dict[int, tuple[int, object]] = {}
+    if _pids:
+        for _pid, _fid, _sent in db.execute(
+            select(FeedbackDoc.period_id, FeedbackDoc.id, FeedbackDoc.sent_at)
+            .where(FeedbackDoc.period_id.in_(_pids))
+            .order_by(FeedbackDoc.id.asc())
+        ).all():
+            ultimo_fb[_pid] = (_fid, _sent)  # el de id más alto gana (orden asc)
+    # SOLO los cuatro escalares que se imprimen: traer la fila entera arrastraba
+    # los cuatro JSONB de CADA versión (banco de recetas, educativo, hallazgos
+    # del panel) para emitir una línea de 40 bytes por plan. En un cliente
+    # veterano con 16 versiones eran ~500 KB leídos y parseados para nada.
+    plans = db.execute(
+        select(Plan.id, Plan.month_index, Plan.version, Plan.status)
+        .where(Plan.client_id == client_id)
+        .order_by(Plan.month_index, Plan.version)
+    ).all()
 
     current = client.start_weight_kg
     hist = []
     e1rm_series: dict[str, list[float]] = {}  # nombre → e1rm por período (para % total)
     for p in periods:
         try:
-            m = compute_period_summary(db, p.id)
+            m = compute_period_summary(db, p.id, cache_sets=cache_sets)
         except Exception:
             m = {}
         # Solo actualizamos el peso "actual" con un valor REAL (registrado o de
@@ -1100,10 +1484,7 @@ def client_history(client_id: int, db: Session = Depends(get_db)) -> dict:
             if s.get("delta_kg") is not None and (s["e1rm_kg"] - s["delta_kg"]) > 0
         ]
         period_strength_pct = round(sum(gains) / len(gains), 1) if gains else None
-        fb = db.scalar(
-            select(FeedbackDoc).where(FeedbackDoc.period_id == p.id)
-            .order_by(FeedbackDoc.id.desc()).limit(1)
-        )
+        fb_id, fb_sent = ultimo_fb.get(p.id, (None, None))
         hist.append({
             "period_index": p.period_index,
             "starts_on": p.starts_on.isoformat(), "ends_on": p.ends_on.isoformat(),
@@ -1117,8 +1498,8 @@ def client_history(client_id: int, db: Session = Depends(get_db)) -> dict:
             # Perímetros (cinta) al cierre de este período
             "waist_cm": p.closing_waist_cm, "hip_cm": p.closing_hip_cm,
             "arm_cm": p.closing_arm_cm, "thigh_cm": p.closing_thigh_cm,
-            "feedback_id": fb.id if fb else None,
-            "feedback_sent": bool(fb and fb.sent_at),
+            "feedback_id": fb_id,
+            "feedback_sent": bool(fb_sent),
         })
 
     # % de fuerza subido EN TOTAL (primer vs último e1RM de cada ejercicio)
@@ -1151,7 +1532,8 @@ def client_history(client_id: int, db: Session = Depends(get_db)) -> dict:
         "total_strength_gain_pct": total_strength_gain_pct,
         "periods": hist,
         "plans": [
-            {"id": pl.id, "month_index": pl.month_index, "version": pl.version, "status": pl.status}
+            {"id": pl.id, "month_index": pl.month_index, "version": pl.version,
+             "status": pl.status}
             for pl in plans
         ],
     }
@@ -1171,9 +1553,38 @@ def list_client_photos(client_id: int, db: Session = Depends(get_db)) -> list[di
     ]
 
 
+def _miniatura(path, ancho: int) -> bytes | None:
+    """Reduce una foto a `ancho` px de lado mayor. Devuelve None si no se puede
+    (formato raro, archivo corrupto): el llamador sirve entonces el original.
+
+    `draft()` hace que el JPEG se decodifique ya reducido — sin él, generar la
+    miniatura costaría más que servir la foto entera."""
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+
+        with Image.open(path) as img:
+            img.draft("RGB", (ancho, ancho))
+            img = img.convert("RGB")
+            img.thumbnail((ancho, ancho))
+            buf = BytesIO()
+            img.save(buf, format="JPEG", quality=80, optimize=True)
+            return buf.getvalue()
+    except Exception:  # noqa: BLE001
+        return None
+
+
 @router.get("/{client_id}/photos/{photo_id}")
-def get_client_photo(client_id: int, photo_id: int, db: Session = Depends(get_db)):
-    """Sirve una foto de progreso (requiere JWT del coach)."""
+def get_client_photo(client_id: int, photo_id: int,
+                     w: int | None = Query(default=None, ge=32, le=2000,
+                                           description="ancho máximo en px (miniatura)"),
+                     db: Session = Depends(get_db)):
+    """Sirve una foto de progreso (requiere JWT del coach).
+
+    Con `?w=` devuelve una MINIATURA. La tira de fotos del período las pintaba a
+    80×96 px descargando el original del móvil del cliente (varios MB cada una):
+    ocho fotos eran decenas de megas para ocho sellos de contacto."""
     p = db.get(ProgressPhoto, photo_id)
     if not p or p.client_id != client_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Foto no encontrada")
@@ -1182,9 +1593,19 @@ def get_client_photo(client_id: int, photo_id: int, db: Session = Depends(get_db
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Archivo no encontrado")
     ext = path.suffix.lower()
     media = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}.get(ext, "application/octet-stream")
+    # La foto de un período cerrado no cambia nunca: que el navegador la guarde.
+    cache = {"Cache-Control": "private, max-age=86400"}
+    if w:
+        mini = _miniatura(path, w)
+        if mini is not None:
+            return Response(
+                content=mini, media_type="image/jpeg",
+                headers={"Content-Disposition": f'inline; filename="foto_{photo_id}_w{w}.jpg"',
+                         **cache},
+            )
     return Response(
         content=path.read_bytes(), media_type=media,
-        headers={"Content-Disposition": f'inline; filename="foto_{photo_id}{ext}"'},
+        headers={"Content-Disposition": f'inline; filename="foto_{photo_id}{ext}"', **cache},
     )
 
 
@@ -1498,6 +1919,12 @@ def generate_client_plan(
         ) from exc
 
     nutrition, training, education, flags = generated.to_persistable()
+    # AVISOS DE LAS MÉTRICAS: "el suelo seguro queda por encima del TDEE: esto
+    # es mantenimiento, no déficit", "edad fuera de rango", "los suelos de
+    # macros no cabían y se han subido las kcal"… se calculaban y se TIRABAN en
+    # este camino (la base sin IA sí los conserva), así que el coach nunca los
+    # veía en el plan generado con IA — que es el camino normal.
+    flags = list(et.warnings) + list(_mp.notes) + list(flags)
 
     # Ninguna toma sin contenido: si la IA omitió un slot (o el filtrado de
     # alérgenos lo vació), recibe 3 opciones por defecto escaladas a sus macros —
@@ -1531,8 +1958,9 @@ def generate_client_plan(
                         "añádelas a mano en el editor.")
     except Exception:
         pass
-    for note in (_mp.notes or []):
-        coverage_flags.append(f"aviso: {note}")
+    # (Las notas de `macro_targets` YA entraron arriba, con las de energía: si
+    #  se añaden también aquí, el coach ve cada aviso DOS veces en el mismo
+    #  plan — dos caminos vivos escritos por sesiones distintas.)
     if coverage_flags:
         flags = list(flags) + coverage_flags
 
@@ -1557,9 +1985,15 @@ def generate_client_plan(
     # La regeneración YA incorpora los ajustes de la última revisión analizada
     # (van en el prompt): se SELLA applied_adjustments para que la alerta
     # "sin adaptar" se apague y "Adaptar" no vuelva a aplicarlos encima.
-    if (nutrition is not None and last_analyzed
+    # En un plan SOLO-ENTRENO (DQR Train) no hay nutrición donde sellarlo: el
+    # sello va a `training_json`, que es donde lo busca la alerta (y donde lo
+    # escribe la adaptación). Sin esto, a un cliente Train el aviso
+    # "planificación sin adaptar" no se le apagaba NUNCA por mucho que el coach
+    # regenerara, y "Adaptar" volvía a aplicarle encima los mismos ajustes.
+    _sello_destino = nutrition if nutrition is not None else training
+    if (_sello_destino is not None and last_analyzed
             and (last_analyzed.ai_analysis_json or {}).get("plan_adjustments")):
-        nutrition["applied_adjustments"] = {
+        _sello_destino["applied_adjustments"] = {
             "period_index": last_analyzed.period_index,
             "items": [{
                 "area": a.get("area") or "general",
@@ -1985,6 +2419,7 @@ def _do_read_anamnesis(client_id: int, db: Session) -> dict:
                 "deep_analysis": data.get("deep_analysis"),
                 "injuries_notes": data.get("injuries_notes"),
                 "contradictions": contradicciones,
+                "at": datetime.now(timezone.utc).isoformat(),
             }, ensure_ascii=False),
             encoding="utf-8",
         )

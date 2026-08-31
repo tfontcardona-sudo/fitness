@@ -145,3 +145,42 @@ def test_prompt_de_revisor_es_aislado():
     assert REVIEWER_ROLES[0]["name"] in p
     # NO debe filtrar el razonamiento de generación ni informes de otros revisores
     assert "razonamiento" not in p.lower() or "sin el razonamiento" not in p.lower()
+
+
+def test_los_revisores_corren_en_paralelo_sin_cambiar_el_resultado():
+    """8-10 llamadas independientes encadenadas eran el grueso del "Generando…"
+    que espera el coach. En paralelo el veredicto tiene que ser EL MISMO y en
+    el MISMO orden (el primero va solo: es el que escribe la caché de prompts).
+    """
+    import threading
+    import time
+
+    from app.services.review_panel import (
+        REVIEWER_ROLES, ReviewFinding, ReviewerVerdict, run_panel,
+    )
+
+    vivos, max_vivos = 0, 0
+    lock = threading.Lock()
+    vistos: list[str] = []
+
+    def _revisor(role):
+        nonlocal vivos, max_vivos
+        with lock:
+            vivos += 1
+            max_vivos = max(max_vivos, vivos)
+        time.sleep(0.05)
+        with lock:
+            vivos -= 1
+            vistos.append(role["key"])
+        return ReviewerVerdict(role["key"], "aprobado", 90, [], can_veto=False)
+
+    inicio = time.monotonic()
+    res = run_panel(_coherent_plan(), _profile(), ai_reviewer=_revisor)
+    tardo = time.monotonic() - inicio
+
+    esperadas = [r["key"] for r in REVIEWER_ROLES]
+    claves = [v.reviewer for v in res.verdicts if v.reviewer in esperadas]
+    assert claves == esperadas, "el orden se conserva"
+    assert max_vivos > 1, "no llegó a solaparse ninguno"
+    assert tardo < 0.05 * len(REVIEWER_ROLES), "no ha ahorrado tiempo"
+    assert res.color in ("verde", "ambar")

@@ -27,20 +27,28 @@ interface ExRecord { e1rm_kg: number; weight_kg: number; reps: number; date: str
    `sessionStorage`: sobreviven a la navegación pero no a cerrar la app días
    después (un descanso de anteayer no tiene ningún sentido). */
 
-const K_PENDIENTE = "dqr.entreno.pendiente";
-const K_DESCANSO = "dqr.entreno.descanso";
+/* Las claves van POR CLIENTE (llevan el token). Eran fijas, y el portal se usa
+   desde móviles que a veces son compartidos —una pareja, el móvil de casa— y
+   sin login: bastaba con que uno registrara sus series, se quedara sin
+   cobertura, y que el otro abriera su enlace en la misma pestaña ese mismo día
+   para que las series del primero se reenviaran al entreno del segundo. Y el
+   temporizador de descanso de uno arrancaba en la sesión del otro. Mismo
+   criterio que la pantalla de cierre y la del diario. */
+const K_PENDIENTE = (token: string) => `dqr.entreno.pendiente.${token.slice(0, 16)}`;
+const K_DESCANSO = (token: string) => `dqr.entreno.descanso.${token.slice(0, 16)}`;
 
-function _guardarPendiente(fecha: string, sets: unknown[]): void {
+function _guardarPendiente(token: string, fecha: string, sets: unknown[]): void {
   try {
-    sessionStorage.setItem(K_PENDIENTE, JSON.stringify({ fecha, sets, ts: Date.now() }));
+    sessionStorage.setItem(K_PENDIENTE(token),
+      JSON.stringify({ fecha, sets, ts: Date.now() }));
   } catch { /* sin almacenamiento: se pierde, como antes */ }
 }
-function _limpiarPendiente(): void {
-  try { sessionStorage.removeItem(K_PENDIENTE); } catch { /* nada que hacer */ }
+function _limpiarPendiente(token: string): void {
+  try { sessionStorage.removeItem(K_PENDIENTE(token)); } catch { /* nada que hacer */ }
 }
-function _leerPendiente(fecha: string): unknown[] | null {
+function _leerPendiente(token: string, fecha: string): unknown[] | null {
   try {
-    const raw = sessionStorage.getItem(K_PENDIENTE);
+    const raw = sessionStorage.getItem(K_PENDIENTE(token));
     if (!raw) return null;
     const d = JSON.parse(raw);
     // Solo del MISMO día: reenviar las series de ayer pisaría las de hoy.
@@ -50,15 +58,15 @@ function _leerPendiente(fecha: string): unknown[] | null {
   } catch { return null; }
 }
 
-function _guardarDescanso(d: { fin: number; total: number; exName: string }): void {
-  try { sessionStorage.setItem(K_DESCANSO, JSON.stringify(d)); } catch { /* ídem */ }
+function _guardarDescanso(token: string, d: { fin: number; total: number; exName: string }): void {
+  try { sessionStorage.setItem(K_DESCANSO(token), JSON.stringify(d)); } catch { /* ídem */ }
 }
-function _limpiarDescanso(): void {
-  try { sessionStorage.removeItem(K_DESCANSO); } catch { /* ídem */ }
+function _limpiarDescanso(token: string): void {
+  try { sessionStorage.removeItem(K_DESCANSO(token)); } catch { /* ídem */ }
 }
-function _leerDescanso(): { fin: number; total: number; exName: string } | null {
+function _leerDescanso(token: string): { fin: number; total: number; exName: string } | null {
   try {
-    const raw = sessionStorage.getItem(K_DESCANSO);
+    const raw = sessionStorage.getItem(K_DESCANSO(token));
     if (!raw) return null;
     const d = JSON.parse(raw);
     return typeof d?.fin === "number" && typeof d?.total === "number"
@@ -66,9 +74,9 @@ function _leerDescanso(): { fin: number; total: number; exName: string } | null 
   } catch { return null; }
 }
 
-export function PortalWorkout({ api, brand, periodStatus = null, businessToday = null,
+export function PortalWorkout({ api, token, brand, periodStatus = null, businessToday = null,
   hasPeriod = true }: {
-  api: Api; brand: PortalBrand; periodStatus?: string | null; businessToday?: string | null;
+  api: Api; token: string; brand: PortalBrand; periodStatus?: string | null; businessToday?: string | null;
   /** ¿Hay período de seguimiento? Sin él, el backend rechaza el guardado. */
   hasPeriod?: boolean;
 }) {
@@ -190,6 +198,12 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
   // si el cliente sale de la app, bloquea el móvil o cambia de pestaña, y un
   // fallo de red AVISA (antes fallaba en silencio con "se guarda solo" puesto).
   const pendingRef = useRef<Record<number, SetRow[]> | null>(null);
+  // ORDEN DE LOS ENVÍOS. Los dos escritores de esta pantalla (el autosave y el
+  // reenvío de lo que quedó pendiente al remontar) mandan al MISMO PUT, y ese
+  // PUT REEMPLAZA la lista entera de series. Sin número de envío, uno viejo
+  // que llegue el último borra las series que el cliente acaba de registrar, y
+  // su `.then` limpia el pendiente NUEVO dando "Guardado ✓" por lo que no está.
+  const envioRef = useRef(0);
   const saveNowRef = useRef<() => void>(() => {});
   saveNowRef.current = () => {
     const data = pendingRef.current;
@@ -204,17 +218,22 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
         }
       });
     });
+    const mio = ++envioRef.current;
     setSaveState("saving");
     api.saveDiary({ log_date: today, workout_sets })
-      .then(() => { _limpiarPendiente(); setSavedAt(new Date()); setSaveState("saved"); })
+      .then(() => {
+        if (mio !== envioRef.current) return;   // ya hay otro más nuevo en vuelo
+        _limpiarPendiente(token); setSavedAt(new Date()); setSaveState("saved");
+      })
       .catch((e) => {
+        if (mio !== envioRef.current) return;   // uno más nuevo se hará cargo
         // RE-ENCOLA lo no guardado para que el siguiente flush lo reintente
         // (antes el pendiente se descartaba y solo otro tecleo re-enviaba).
         pendingRef.current = pendingRef.current ?? data;
         // Y lo GUARDA fuera del componente: el volcado de última hora ocurre
         // al desmontar (cambiar de pestaña), así que re-encolarlo en un ref ya
         // muerto era perderlo. Aquí sobrevive al desmontaje y al cierre.
-        _guardarPendiente(today, workout_sets);
+        _guardarPendiente(token, today, workout_sets);
         setSaveState("idle");
         toast.push(
           e instanceof PortalError ? e.message : "Sin guardar · revisa tu conexión",
@@ -232,11 +251,16 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
     const onHide = () => {
       if (document.visibilityState === "hidden") saveNowRef.current();
     };
+    // Al VOLVER LA COBERTURA se reintenta solo (es lo que promete el banner
+    // "sin conexión"): antes había que cambiar de pestaña para recuperarlo.
+    const onOnline = () => saveNowRef.current();
     document.addEventListener("visibilitychange", onHide);
     window.addEventListener("pagehide", onHide);
+    window.addEventListener("online", onOnline);
     return () => {
       document.removeEventListener("visibilitychange", onHide);
       window.removeEventListener("pagehide", onHide);
+      window.removeEventListener("online", onOnline);
       saveNowRef.current(); // al cambiar de pestaña (desmontaje) no se pierde nada
     };
   }, []);
@@ -244,7 +268,7 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
   function startRest(sec: number, exName: string, finAbsoluto?: number) {
     if (restTimer.current) window.clearInterval(restTimer.current);
     const fin = finAbsoluto ?? Date.now() + sec * 1000;
-    _guardarDescanso({ fin, total: sec, exName });
+    _guardarDescanso(token, { fin, total: sec, exName });
     setRest({ left: Math.max(0, Math.round((fin - Date.now()) / 1000)), total: sec, exName });
     restTimer.current = window.setInterval(() => {
       setRest((r) => {
@@ -252,7 +276,7 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
         if (r.left <= 1) {
           if (restTimer.current) window.clearInterval(restTimer.current);
           restTimer.current = null;
-          _limpiarDescanso();
+          _limpiarDescanso(token);
           try { navigator.vibrate?.([200, 100, 200]); } catch { /* sin soporte */ }
           toast.push("💪 Descanso terminado · siguiente serie");
           return null;
@@ -266,7 +290,7 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
   function cancelRest() {
     if (restTimer.current) window.clearInterval(restTimer.current);
     restTimer.current = null;
-    _limpiarDescanso();
+    _limpiarDescanso(token);
     setRest(null);
   }
 
@@ -274,17 +298,23 @@ export function PortalWorkout({ api, brand, periodStatus = null, businessToday =
   // lo que quedó sin guardar se reintenta y el descanso en marcha se retoma
   // donde iba, en vez de morir los dos en silencio.
   useEffect(() => {
-    const sinGuardar = _leerPendiente(today);
-    if (sinGuardar && sinGuardar.length) {
+    const sinGuardar = _leerPendiente(token, today);
+    // Si ya hay algo más reciente esperando en memoria, ese manda: reenviar la
+    // foto vieja solo sirve para pisarlo.
+    if (sinGuardar && sinGuardar.length && !pendingRef.current) {
+      const mio = ++envioRef.current;
       api.saveDiary({ log_date: today, workout_sets: sinGuardar as any })
-        .then(() => { _limpiarPendiente(); setSavedAt(new Date()); setSaveState("saved"); })
+        .then(() => {
+          if (mio !== envioRef.current) return;
+          _limpiarPendiente(token); setSavedAt(new Date()); setSaveState("saved");
+        })
         .catch(() => { /* sigue guardado: se reintenta al volver */ });
     }
-    const guardado = _leerDescanso();
+    const guardado = _leerDescanso(token);
     if (guardado && guardado.fin > Date.now() + 1000) {
       startRest(guardado.total, guardado.exName, guardado.fin);
     } else if (guardado) {
-      _limpiarDescanso();
+      _limpiarDescanso(token);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

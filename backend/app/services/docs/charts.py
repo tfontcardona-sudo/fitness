@@ -85,16 +85,21 @@ def weight_trend_chart(
     return _fig_to_png(fig)
 
 
-def adherence_chart(diet_pct: float, training_pct: float, accent: str) -> bytes:
+def adherence_chart(diet_pct: float | None, training_pct: float, accent: str) -> bytes:
     """Barras horizontales de adherencia: DIETA vs REGISTRO (0–100%).
 
     La segunda barra es el ratio de REGISTRO (días con diario / días del período),
     no una adherencia de entreno real: se etiqueta "Registro" para no engañar (el
-    caller pasa `log_ratio`)."""
-    fig, ax = plt.subplots(figsize=(6.4, 2.0))
-    cats = ["Registro", "Dieta"]
-    vals = [training_pct, diet_pct]
-    bars = ax.barh(cats, vals, color=[accent, "#8B9DF7"], height=0.55, zorder=3)
+    caller pasa `log_ratio`).
+
+    `diet_pct=None` = sin dieta contratada o sin un solo registro de dieta: la
+    barra NO se pinta. Pintarla a 0 % le reprochaba por escrito al cliente el
+    incumplimiento de algo que no había comprado."""
+    fig, ax = plt.subplots(figsize=(6.4, 2.0 if diet_pct is not None else 1.4))
+    cats = ["Registro"] + (["Dieta"] if diet_pct is not None else [])
+    vals = [training_pct] + ([diet_pct] if diet_pct is not None else [])
+    colores = [accent, "#8B9DF7"][:len(cats)]
+    bars = ax.barh(cats, vals, color=colores, height=0.55, zorder=3)
     ax.set_xlim(0, 100)
     ax.set_xlabel("% de adherencia")
     for bar, v in zip(bars, vals):
@@ -134,16 +139,30 @@ def perimeters_chart(
     """Evolución de perímetros (cintura, cadera…) a lo largo de los cierres."""
     fig, ax = plt.subplots(figsize=(6.4, 3.0))
     palette = [accent, "#8B9DF7", "#F7C96E", "#C99EF7"]
+    # Rejilla COMÚN por etiquetas: unas medidas traen dos puntos
+    # (Inicio→Actual) y otras solo el actual. Dibujarlas todas desde x=0 y
+    # rotular el eje con las etiquetas de la PRIMERA serie ponía la medida de
+    # HOY bajo la etiqueta "Inicio" — justo al revés de lo que dice el informe.
+    etiquetas: list[str] = []
+    for series in perimeters.values():
+        for lbl, _ in series:
+            if lbl not in etiquetas:
+                etiquetas.append(lbl)
+    # Cada punto va en la columna de SU ETIQUETA. Alinear por el final daba
+    # por hecho que todas las series comparten las mismas etiquetas: en cuanto
+    # una medida traía "Anterior" (del cierre previo) y otra "Inicio" (de la
+    # anamnesis), la rejilla tenía 3 columnas y las series de 2 puntos se
+    # desplazaban una posición — el valor del ANTES se pintaba encima de
+    # "Actual". El informe enseñaba una evolución que no era la del cliente.
     for i, (name, series) in enumerate(perimeters.items()):
-        xs = list(range(len(series)))
+        xs = [etiquetas.index(lbl) for lbl, _ in series]
         ys = [v for _, v in series]
         ax.plot(xs, ys, marker="o", markersize=4, linewidth=2,
                 color=palette[i % len(palette)], label=name, zorder=3)
     ax.set_ylabel("cm")
-    if perimeters:
-        any_series = next(iter(perimeters.values()))
-        ax.set_xticks(list(range(len(any_series))))
-        ax.set_xticklabels([lbl for lbl, _ in any_series], fontsize=9)
+    if etiquetas:
+        ax.set_xticks(list(range(len(etiquetas))))
+        ax.set_xticklabels(etiquetas, fontsize=9)
     ax.legend(frameon=False, fontsize=9, ncol=2, loc="best")
     return _fig_to_png(fig)
 

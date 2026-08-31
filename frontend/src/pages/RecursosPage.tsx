@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import {
   Copy,
@@ -20,6 +20,8 @@ import {
   X,
 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
+import { copiarConAviso } from "../lib/clipboard";
+import { formatDate } from "../lib/format";
 import { youtubeId } from "../lib/video";
 import type {
   ExerciseOut,
@@ -59,7 +61,11 @@ export default function RecursosPage() {
         <h1 className="text-xl font-semibold text-zinc-100">Recursos del portal</h1>
       </header>
 
-      <div className="mb-6 inline-flex rounded-xl border p-1" style={{ borderColor: "var(--line-strong)" }}>
+      {/* Cinco pestañas no caben en un móvil: "Página de enlaces" y
+          "Aprendizaje" quedaban FUERA de la pantalla y solo se llegaba a ellas
+          arrastrando la página entera de lado. */}
+      <div className="tab-strip mb-6">
+      <div className="inline-flex rounded-xl border p-1" style={{ borderColor: "var(--line-strong)" }}>
         {([["productos", "Productos", Package], ["videos", "Vídeos de ejercicios", Video], ["modelos", "Modelos de plan", Copy], ["enlaces", "Página de enlaces", ExternalLink], ["aprendizaje", "Aprendizaje", GraduationCap]] as const).map(
           ([id, label, Icon]) => (
             <button
@@ -78,6 +84,7 @@ export default function RecursosPage() {
           ),
         )}
       </div>
+      </div>
 
       {tab === "productos" ? <ProductsManager /> : tab === "videos" ? <ExerciseVideosManager />
         : tab === "modelos" ? <TemplatesManager />
@@ -95,10 +102,20 @@ function LearningManager() {
   const toast = useToast();
   const [data, setData] = useState<Awaited<ReturnType<typeof api.learningLessons>> | null>(null);
   const [refrescando, setRefrescando] = useState(false);
+  // Mismo fallo que en la pestaña Historial: al fallar la carga el estado se
+  // quedaba en null, que aquí significa "cargando", y el PageLoader giraba
+  // para siempre sin salida.
+  const [error, setError] = useState(false);
+  const [intento, setIntento] = useState(0);
 
   useEffect(() => {
-    api.learningLessons().then(setData).catch(() => setData(null));
-  }, []);
+    let vivo = true;
+    setError(false);
+    api.learningLessons()
+      .then((d) => { if (vivo) setData(d); })
+      .catch(() => { if (vivo) setError(true); });
+    return () => { vivo = false; };
+  }, [intento]);
 
   async function refrescar() {
     setRefrescando(true);
@@ -118,6 +135,16 @@ function LearningManager() {
     }
   }
 
+  if (data === null && error) {
+    return (
+      <div className="card flex flex-col items-center gap-3 p-8 text-sm text-zinc-400">
+        No se pudieron cargar las lecciones.
+        <button className="btn btn-ghost" onClick={() => setIntento((n) => n + 1)}>
+          Reintentar
+        </button>
+      </div>
+    );
+  }
   if (data === null) return <PageLoader />;
   return (
     <div className="space-y-4">
@@ -298,6 +325,25 @@ function LinksPageManager() {
     }
   }
 
+  // EL LOGO DE LA MARCA. `POST /api/brand/logo` existe desde el principio y no
+  // lo llamaba ninguna pantalla: el logo sale en la página pública de enlaces y
+  // en la cabecera de TODOS los correos al cliente, y para cambiarlo había que
+  // llamar a la API a mano. Va aquí, junto a las otras imágenes de la marca.
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const logoRef = useRef<HTMLInputElement>(null);
+  async function uploadLogo(file: File | undefined) {
+    if (!file || uploadingLogo) return;
+    setUploadingLogo(true);
+    try {
+      setBrand(await api.uploadLogo(file));
+      toast.push("Logo actualizado · sale en tu página y en tus correos");
+    } catch (e) {
+      toast.push(e instanceof ApiError ? e.message : "No se pudo subir el logo", "error");
+    } finally {
+      setUploadingLogo(false);
+    }
+  }
+
   async function uploadPlansPhoto(file: File | undefined) {
     if (!file || uploadingPlans) return;
     setUploadingPlans(true);
@@ -338,8 +384,7 @@ function LinksPageManager() {
           <button
             className="btn btn-primary shrink-0"
             onClick={() => {
-              navigator.clipboard.writeText(publicUrl).catch(() => {});
-              toast.push("Enlace copiado · pégalo en Instagram");
+              void copiarConAviso(publicUrl, toast, "Enlace copiado · pégalo en Instagram");
             }}
           >
             Copiar
@@ -364,6 +409,27 @@ function LinksPageManager() {
         <button className="btn btn-ghost mt-3" disabled={uploading} onClick={() => photoRef.current?.click()}>
           <Upload size={15} className="text-zinc-500" />
           {uploading ? "Subiendo…" : brand.links_photo_path ? "Cambiar foto" : "Subir foto"}
+        </button>
+      </div>
+
+      {/* EL LOGO: la página pública y la cabecera de todos los correos. */}
+      <div className="card p-5">
+        <h3 className="text-sm font-semibold text-zinc-200">Logo de la marca</h3>
+        <p className="mt-1 text-sm text-zinc-500">
+          Sale en tu página de enlaces y en la cabecera de todos los correos al
+          cliente · PNG/JPG
+        </p>
+        {api.mediaUrl(brand.logo_path) && (
+          <img src={api.mediaUrl(brand.logo_path)!} alt="Logo actual"
+            className="mt-3 h-16 w-auto rounded-xl border p-1"
+            style={{ borderColor: "var(--line-strong)", background: "#fff" }} />
+        )}
+        <input ref={logoRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+          onChange={(e) => { uploadLogo(e.target.files?.[0]); e.target.value = ""; }} />
+        <button className="btn btn-ghost mt-3" disabled={uploadingLogo}
+          onClick={() => logoRef.current?.click()}>
+          <Upload size={15} className="text-zinc-500" />
+          {uploadingLogo ? "Subiendo…" : brand.logo_path ? "Cambiar logo" : "Subir logo"}
         </button>
       </div>
 
@@ -453,6 +519,124 @@ function LinksPageManager() {
           </button>
         </div>
       </div>
+
+      <DiagnosticoCorreo />
+    </div>
+  );
+}
+
+/* ============================================== Diagnóstico del correo ============================================== */
+
+/** POR QUÉ NO SALE UN CORREO. El backend tenía `/api/email/status` y
+ *  `/api/email/test` desde hacía tandas y ninguna pantalla los abría: cuando un
+ *  cliente decía "no me ha llegado nada", la única forma de saber si era el
+ *  SMTP, la contraseña de aplicación o su bandeja de spam era entrar al
+ *  servidor a leer los logs. */
+function DiagnosticoCorreo() {
+  const toast = useToast();
+  const [datos, setDatos] = useState<Awaited<ReturnType<typeof api.emailStatus>> | null>(null);
+  const [error, setError] = useState(false);
+  const [intento, setIntento] = useState(0);
+  const [destino, setDestino] = useState("");
+  const [probando, setProbando] = useState(false);
+
+  useEffect(() => {
+    let vivo = true;
+    setError(false);
+    api.emailStatus()
+      .then((d) => { if (vivo) setDatos(d); })
+      .catch(() => { if (vivo) setError(true); });
+    return () => { vivo = false; };
+  }, [intento]);
+
+  async function probar() {
+    const to = destino.trim();
+    if (!to || probando) return;
+    setProbando(true);
+    try {
+      const r = await api.emailTest(to);
+      if (r.status === "sent") toast.push("Correo de prueba enviado");
+      else toast.push(r.error || `No se envió (${r.status})`, "error");
+      setIntento((n) => n + 1);   // refresca el historial con este intento
+    } catch (e: any) {
+      toast.push(e?.message ?? "No se pudo enviar la prueba", "error");
+    } finally {
+      setProbando(false);
+    }
+  }
+
+  return (
+    <div className="card p-5">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-zinc-200">Correo</h3>
+        {datos && (
+          <span className="rounded-full px-2 py-0.5 text-xs font-semibold"
+            style={datos.config.ready
+              ? { background: "rgba(22,163,74,0.12)", color: "#15803D" }
+              : { background: "rgba(217,119,6,0.12)", color: "#B45309" }}>
+            {datos.config.ready ? "● Listo" : "▲ Sin configurar"}
+          </span>
+        )}
+      </div>
+
+      {error ? (
+        <div className="text-xs text-zinc-400">
+          No se pudo consultar el estado.{" "}
+          <button className="underline" onClick={() => setIntento((n) => n + 1)}>Reintentar</button>
+        </div>
+      ) : !datos ? (
+        <Spinner />
+      ) : (
+        <>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+            <dt className="text-zinc-500">Servidor</dt>
+            <dd className="text-zinc-300">
+              {datos.config.smtp_host ? `${datos.config.smtp_host}:${datos.config.smtp_port}` : "—"}
+            </dd>
+            <dt className="text-zinc-500">Remitente</dt>
+            <dd className="text-zinc-300">{datos.config.smtp_from || datos.config.smtp_user || "—"}</dd>
+            <dt className="text-zinc-500">Contraseña</dt>
+            <dd className="text-zinc-300">{datos.config.smtp_pass_set ? "puesta" : "sin poner"}</dd>
+          </dl>
+
+          {datos.config.missing.length > 0 && (
+            <p className="mt-3 text-xs" style={{ color: "#B45309" }}>
+              Falta en el <code>.env</code>: {datos.config.missing.join(" · ")}
+            </p>
+          )}
+
+          <div className="mt-4 flex flex-wrap items-end gap-2">
+            <div className="min-w-0 flex-1">
+              <label className="label">Enviar una prueba a</label>
+              <input className="input" type="email" placeholder="tu@correo.com"
+                value={destino} onChange={(e) => setDestino(e.target.value)} />
+            </div>
+            <button className="btn btn-primary" disabled={probando || !destino.trim()} onClick={probar}>
+              {probando ? "Enviando…" : "Enviar prueba"}
+            </button>
+          </div>
+
+          {datos.recent.length > 0 && (
+            <details className="mt-4">
+              <summary className="cursor-pointer text-xs text-zinc-400">
+                Últimos {datos.recent.length} intentos
+              </summary>
+              <ul className="mt-2 space-y-1 text-xs">
+                {datos.recent.map((r, i) => (
+                  <li key={i} className="flex flex-wrap items-baseline gap-2">
+                    <span style={{ color: r.status === "sent" ? "#15803D" : "#B91C1C" }}>
+                      {r.status === "sent" ? "✓" : "✕"}
+                    </span>
+                    <span className="text-zinc-300">{r.subject}</span>
+                    <span className="text-zinc-500">{r.sent_at ? formatDate(r.sent_at) : "—"}</span>
+                    {r.error && <span className="w-full text-zinc-500">{r.error}</span>}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -1004,7 +1188,12 @@ function ProductThumb({ src, icon: Icon }: { src: string | null; icon: typeof Pi
       style={{ borderColor: "var(--line-strong)", background: "var(--surface-raised)" }}
     >
       {ok && src ? (
-        <img src={src} alt="" className="h-full w-full object-cover" onError={() => setOk(false)} />
+        // loading="lazy": la lista de vídeos son ~300 filas y el navegador
+        // pedía las ~300 portadas de YouTube (480×360) de golpe al abrir la
+        // pestaña, estuvieran o no a la vista. decoding="async" saca el
+        // decodificado del hilo que pinta.
+        <img src={src} alt="" loading="lazy" decoding="async"
+             className="h-full w-full object-cover" onError={() => setOk(false)} />
       ) : (
         <Icon size={18} className="text-zinc-500" />
       )}
@@ -1027,9 +1216,12 @@ function ExerciseVideosManager() {
   }, []);
   useEffect(load, [load]);
 
+  // El filtrado va con el valor DIFERIDO: escribir en el buscador no espera a
+  // recalcular y repintar las 279 filas en la misma pulsación.
+  const qDiferida = useDeferredValue(q);
   const filtered = useMemo(() => {
     if (!all) return [];
-    const needle = q.trim().toLowerCase();
+    const needle = qDiferida.trim().toLowerCase();
     return all.filter((e) => {
       if (onlySet && !e.video_url && !e.image_url && !e.video_path) return false;
       if (!needle) return true;
@@ -1039,7 +1231,7 @@ function ExerciseVideosManager() {
         (e.aliases || []).some((a) => a.toLowerCase().includes(needle))
       );
     });
-  }, [all, q, onlySet]);
+  }, [all, qDiferida, onlySet]);
 
   if (all === null) return <PageLoader />;
 
@@ -1141,7 +1333,10 @@ function VideoCoverCard() {
   );
 }
 
-function ExerciseVideoRow({
+/** Memoizada: 279 filas se repintaban ENTERAS con cada tecla del buscador.
+ *  `onSaved` es estable (useCallback) y `toast` viene del proveedor, así que
+ *  la comparación por props funciona de verdad. */
+const ExerciseVideoRow = memo(function ExerciseVideoRow({
   exercise: ex, onSaved, toast,
 }: {
   exercise: ExerciseOut;
@@ -1169,6 +1364,32 @@ function ExerciseVideoRow({
       toast.push(e instanceof ApiError ? e.message : "No se pudo guardar", "error");
     } finally {
       setSaving(false);
+    }
+  }
+
+  // ARCHIVAR / RESTAURAR. El endpoint existe desde siempre y no lo llamaba
+  // ninguna pantalla: un ejercicio que el coach ya no quiere pautar (porque no
+  // tiene la máquina, o porque no le convence) no se podía retirar de la
+  // biblioteca desde la web — y esa biblioteca es la que se le inyecta a la IA
+  // para que elija. Archivar NO borra: el ejercicio sigue en los planes que ya
+  // lo usan, solo deja de ofrecerse.
+  const [archivando, setArchivando] = useState(false);
+  async function alternarArchivo() {
+    if (archivando) return;
+    setArchivando(true);
+    try {
+      if (ex.archived) {
+        await api.restoreExercise(ex.id);
+        toast.push(`"${ex.canonical_name}" vuelve a la biblioteca`);
+      } else {
+        await api.archiveExercise(ex.id);
+        toast.push(`"${ex.canonical_name}" archivado · deja de proponerse`);
+      }
+      onSaved();
+    } catch (e) {
+      toast.push(e instanceof ApiError ? e.message : "No se pudo archivar", "error");
+    } finally {
+      setArchivando(false);
     }
   }
 
@@ -1201,7 +1422,7 @@ function ExerciseVideoRow({
   }
 
   return (
-    <li className="card p-3">
+    <li className="card fila-diferida p-3">
       <div className="flex items-start gap-3">
         <div
           className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border"
@@ -1214,6 +1435,7 @@ function ExerciseVideoRow({
             <Video size={18} style={{ color: "#2E7D46" }} />
           ) : previewSrc && imgOk ? (
             <img src={previewSrc} alt="" className="h-full w-full object-cover"
+              loading="lazy" decoding="async" width={56} height={56}
               onError={() => setImgOk(false)} />
           ) : (
             <Video size={18} className="text-zinc-500" />
@@ -1253,24 +1475,39 @@ function ExerciseVideoRow({
             />
           </div>
         </div>
-        <button
-          className="btn btn-primary !px-3 !py-1.5 text-xs"
-          disabled={!dirty || saving}
-          onClick={save}
-        >
-          {saving ? <Spinner className="text-white" /> : "Guardar"}
-        </button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button
+            className="btn btn-ghost !px-2 !py-1.5 text-xs text-zinc-500"
+            disabled={archivando}
+            title={ex.archived
+              ? "Volver a ofrecerlo (a ti y a la IA que arma los planes)"
+              : "Dejar de proponerlo: no se borra, solo sale de la biblioteca"}
+            onClick={alternarArchivo}
+          >
+            {archivando ? "…" : ex.archived ? "Restaurar" : "Archivar"}
+          </button>
+          <button
+            className="btn btn-primary !px-3 !py-1.5 text-xs"
+            disabled={!dirty || saving}
+            onClick={save}
+          >
+            {saving ? <Spinner className="text-white" /> : "Guardar"}
+          </button>
+        </div>
       </div>
     </li>
   );
-}
+});
 
 /** Portada de YouTube para la vista previa del coach — misma detección (host
  *  anclado, lib/video.ts) que usa el reproductor del portal: la vista previa
  *  enseña EXACTAMENTE lo que verá el cliente. */
 function youtubeThumb(url: string): string | null {
   const id = youtubeId(url);
-  return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null;
+  // `mqdefault` (320×180) y no `hqdefault` (480×360): el hueco de la lista mide
+  // 56×56 px y hay 279 filas — la versión grande eran megas de portadas para
+  // pintar sellos del tamaño de una uña.
+  return id ? `https://img.youtube.com/vi/${id}/mqdefault.jpg` : null;
 }
 
 

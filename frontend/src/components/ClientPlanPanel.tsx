@@ -6,6 +6,7 @@ import { ancla, hrefCliente } from "../lib/anchors";
 import { copiarConAviso } from "../lib/clipboard";
 import { pin, pinId, syncScope } from "../lib/pins";
 import { api, getToken } from "../lib/api";
+import type { PlanSummary } from "../lib/api";
 import { manualUpdateMessage, openWhatsApp, planAndFeedbackMessage, planMessage, waPhone, waUrl } from "../lib/whatsapp";
 import { pkg } from "../lib/packages";
 import { CANONICAL_MEALS, mealKeysFromNames } from "../lib/meals";
@@ -17,7 +18,7 @@ import type { Destino } from "../lib/findings";
 import { agrupar, resumirDetalle, resumenCorto, toAviso, traducirFlags } from "../lib/findings";
 import { MemoDetails } from "./MemoDetails";
 import { ClientPlanEditor } from "./ClientPlanEditor";
-import type { ClientOut, GoalType } from "../types";
+import type { ClientOut, ExerciseOut, GoalType } from "../types";
 
 interface PlanReview {
   color?: "verde" | "ambar" | "rojo" | null;
@@ -47,10 +48,27 @@ interface PlanData {
  *  por id. El backend ordena por (mes DESC, versión DESC), así que `plans[0]`
  *  podía ser un plan SUSTITUIDO de un mes posterior generado y descartado —
  *  el coach veía (y enviaba) una versión que el cliente no tiene (auditoría). */
-function vigente(plans: any[]): any | null {
+function vigente(plans: PlanSummary[]): PlanSummary | null {
   if (!plans.length) return null;
   return plans.find((p) => p.status === "published")
     ?? [...plans].sort((a, b) => (b.id ?? 0) - (a.id ?? 0))[0];
+}
+
+/** Sello de la ADAPTACIÓN quincenal del plan.
+ *
+ *  En un plan SOLO-ENTRENO no hay nutrición donde guardarlo, así que el
+ *  backend lo escribe en `training_json` (y así lo lee su alerta). El panel
+ *  solo miraba la nutrición: para todo el tier `train` el ciclo no se cerraba
+ *  NUNCA — banner rojo eterno, "Adaptar" devolviendo 409 y la tarjeta de
+ *  cambios aplicados sin aparecer jamás. Una sola verdad, aquí. */
+export function selloAdaptacion(plan: any): {
+  period_index: number;
+  items: { area: string; change: string; reason: string; applied: boolean; detail: string | null }[];
+} | null {
+  if (!plan) return null;
+  const nut = plan.nutrition ?? plan.nutrition_json ?? null;
+  const tr = plan.training ?? plan.training_json ?? null;
+  return nut?.applied_adjustments ?? tr?.applied_adjustments ?? null;
 }
 
 /** Normaliza un plan venga de generatePlan (nutrition/...) o de listPlans (nutrition_json/...). */
@@ -101,9 +119,18 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
   const [exMap, setExMap] = useState<Record<number, string>>({});
   // Vídeo de cada ejercicio (biblioteca): botón directo en la rutina.
   const [exVideo, setExVideo] = useState<Record<number, string>>({});
+  // La biblioteca ENTERA, tal cual llegó: se le pasa al editor para que no la
+  // vuelva a descargar (son ~100 KB y ya está aquí desde el montaje).
+  const [exList, setExList] = useState<ExerciseOut[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(() => enVuelo.has(client.id));
   const [publishing, setPublishing] = useState(false);
+  // ACCIÓN DEL DOCUMENTO EN CURSO. Ninguna de estas acciones daba señal de
+  // estar trabajando: generar el PDF levanta un LibreOffice y tarda segundos,
+  // así que el coach volvía a pulsar. En "Enviar plan por email" eso no es un
+  // trabajo repetido, es un correo DUPLICADO al cliente.
+  type AccionDoc = "pdf" | "docx" | "email" | "wa" | "wafb";
+  const [accionDoc, setAccionDoc] = useState<AccionDoc | null>(null);
   const [editing, setEditing] = useState(false);
   // El perfil se entera de que el editor está abierto (guard de navegación).
   useEffect(() => { onEditingChange?.(editing); }, [editing, onEditingChange]);
@@ -119,8 +146,11 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
     // la IA no propusiera ajustes de texto (p. ej. solo un diet break).
     biweekly_decision?: { action?: string; kcal_delta_pct?: number; rationale?: string } | null;
   }[]>([]);
-  // Todas las versiones (archivo de planificaciones anteriores por objetivo)
-  const [allPlans, setAllPlans] = useState<any[]>([]);
+  // Todas las versiones, RESUMIDAS (archivo de planificaciones anteriores por
+  // objetivo). El contenido completo solo se pide de la versión que se enseña:
+  // esta lista se repide tras cada acción y con los cuatro JSONB de cada
+  // versión un cliente con un año de asesoría arrastraba megas por cada clic.
+  const [allPlans, setAllPlans] = useState<PlanSummary[]>([]);
   // Último feedback generado (para poder enviarlo junto al plan por WhatsApp).
   const [fb, setFb] = useState<{ id: number; content: any; sent: boolean } | null>(null);
   // Edición de los "Cambios aplicados" tras adaptar: texto/porqué o quitar filas.
@@ -154,11 +184,11 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
     setAdjDraft(null);
     setMissing(null);
     Promise.all([
-      api.listPlans(client.id),
+      api.listPlanSummaries(client.id),
       api.listExercises({ include_archived: true }),
       api.listPeriods(client.id),
     ])
-      .then(([plans, exs, pds]) => {
+      .then(async ([plans, exs, pds]) => {
         if (!alive) return;
         const map: Record<number, string> = {};
         const vids: Record<number, string> = {};
@@ -171,10 +201,15 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
         });
         setExMap(map);
         setExVideo(vids);
+        setExList(exs);
         setPeriods(pds);
         setAllPlans(plans);
         const v = vigente(plans);
-        if (v) setPlan(normalize(v));
+        // Solo la versión que se ENSEÑA se pide entera.
+        if (v) {
+          const completo = await api.getPlan(v.id).catch(() => null);
+          if (alive && completo) setPlan(normalize(completo));
+        }
         // Feedback más reciente (si existe): habilita el envío conjunto.
         const withFb = pds
           .filter((p: any) => p.feedback_id)
@@ -192,6 +227,23 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
     };
   }, [client.id]);
 
+  /** Recarga el archivo de versiones (resumido) y deja a la vista UNA de ellas,
+   *  pedida entera: `preferido` si se indica, si no la vigente. Es el único
+   *  camino de recarga del panel — antes cada acción repetía la lista COMPLETA
+   *  de versiones con todo su contenido. */
+  async function recargarPlanes(preferido?: number | null): Promise<PlanSummary[]> {
+    const resumen = await api.listPlanSummaries(client.id).catch(() => null);
+    if (!resumen) return allPlans;
+    setAllPlans(resumen);
+    const elegido = (preferido != null ? resumen.find((p) => p.id === preferido) : null)
+      ?? vigente(resumen);
+    if (elegido) {
+      const completo = await api.getPlan(elegido.id).catch(() => null);
+      if (completo) setPlan(normalize(completo));
+    }
+    return resumen;
+  }
+
   /** Enlace público al PDF del plan (endpoint por token — sin login). */
   async function planPdfUrl(): Promise<string> {
     const link = await api.portalLink(client.id);
@@ -201,6 +253,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
   /** Un clic: abre WhatsApp del cliente con el mensaje profesional del plan
    *  y el enlace directo a su PDF. */
   async function sendPlanWhatsApp() {
+    if (accionDoc) return;
     const phone = waPhone(client.phone);
     if (!phone) {
       toast.push("Añade el teléfono del cliente en su ficha para enviarlo por WhatsApp", "error");
@@ -209,9 +262,10 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
     // Abrimos la pestaña YA, dentro del gesto de clic: si esperáramos al await de
     // planPdfUrl(), Safari/iOS bloquearían el window.open y el botón no haría nada.
     const win = window.open("", "_blank");
+    setAccionDoc("wa");
     try {
       const pdfUrl = await planPdfUrl();
-      const adaptedIdx = plan?.nutrition?.applied_adjustments?.period_index ?? null;
+      const adaptedIdx = selloAdaptacion(plan)?.period_index ?? null;
       const url = waUrl(phone, planMessage(client.full_name, pdfUrl, adaptedIdx, plan?.month_index ?? 1));
       if (win) win.location.href = url; else openWhatsApp(phone, planMessage(client.full_name, pdfUrl, adaptedIdx, plan?.month_index ?? 1));
       // El enlace genera el PDF al abrirse → el cliente recibe la versión
@@ -221,22 +275,25 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
     } catch {
       if (win) win.close();
       toast.push("Sin enlace del plan", "error");
+    } finally {
+      setAccionDoc(null);
     }
   }
 
   /** Un clic: plan + feedback juntos en un solo WhatsApp (mensaje profesional).
    *  Si el feedback aún no constaba como enviado, se marca (el ciclo avanza). */
   async function sendPlanAndFeedbackWhatsApp() {
-    if (!fb) return;
+    if (!fb || accionDoc) return;
     const phone = waPhone(client.phone);
     if (!phone) {
       toast.push("Añade el teléfono del cliente en su ficha para enviarlo por WhatsApp", "error");
       return;
     }
     const win = window.open("", "_blank"); // ver nota en sendPlanWhatsApp
+    setAccionDoc("wafb");
     try {
       const pdfUrl = await planPdfUrl();
-      const adaptedIdx = plan?.nutrition?.applied_adjustments?.period_index ?? null;
+      const adaptedIdx = selloAdaptacion(plan)?.period_index ?? null;
       const url = waUrl(phone, planAndFeedbackMessage(client.full_name, fb.content, pdfUrl, adaptedIdx));
       if (win) win.location.href = url; else openWhatsApp(phone, planAndFeedbackMessage(client.full_name, fb.content, pdfUrl, adaptedIdx));
       setNeedsDownload(false); // el enlace enviado sirve la versión vigente
@@ -255,13 +312,16 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
     } catch {
       if (win) win.close();
       toast.push("No se pudo preparar el envío", "error");
+    } finally {
+      setAccionDoc(null);
     }
   }
 
   /** Entrega la planificación POR EMAIL (paquetes Start/Full): el backend adjunta
    *  el PDF y enlaza el portal. Equivale al envío por WhatsApp de Pro. */
   async function sendPlanByEmail() {
-    if (!plan) return;
+    if (!plan || accionDoc) return;   // el candado evita el correo DUPLICADO
+    setAccionDoc("email");
     try {
       const r = await api.sendPlanEmail(plan.id);
       if (r.email_status === "sent") {
@@ -274,6 +334,8 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
       }
     } catch {
       toast.push("Fallo al enviar por email", "error");
+    } finally {
+      setAccionDoc(null);
     }
   }
 
@@ -288,12 +350,31 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
           ? { ...d.orig, detail: d.main, reason: d.reason }
           : { ...d.orig, change: d.main, reason: d.reason },
       );
-      const nutrition = { ...plan.nutrition, applied_adjustments: { ...appliedBlock, items } };
+      // En un plan SOLO-ENTRENO el sello vive en `training_json`: escribirlo
+      // en la nutrición le fabricaría una dieta fantasma (que el PDF y el
+      // portal pintarían en blanco).
+      const tieneDieta = !!plan.nutrition;
+      const bloque = { ...appliedBlock, items };
+      const cuerpo = tieneDieta
+        ? { nutrition_json: { ...plan.nutrition, applied_adjustments: bloque } }
+        : { training_json: { ...plan.training, applied_adjustments: bloque } };
       // La respuesta trae el rev incrementado por el backend: guardarla evita
       // que la SIGUIENTE edición muera con un 409 falso de "otra pestaña"
       // (auditoría crítica). Mismo patrón que el save del editor.
-      const r = await api.updatePlan(plan.id, { nutrition_json: nutrition });
-      setPlan(normalize({ ...plan, nutrition_json: r.nutrition_json ?? nutrition }));
+      const r = await api.updatePlan(plan.id, cuerpo as any);
+      // OJO: las claves son `nutrition`/`training`, NO `nutrition_json`.
+      // `normalize` lee `p.nutrition ?? p.nutrition_json`, así que con el
+      // spread de `plan` delante el valor VIEJO ganaba y la respuesta del
+      // backend se tiraba entera — incluido el `rev` recién incrementado, que
+      // es justo lo que este bloque decía guardar: la siguiente edición moría
+      // con un 409 falso de "otra pestaña" (auditoría).
+      setPlan(normalize({
+        ...plan,
+        nutrition: tieneDieta
+          ? (r.nutrition_json ?? (cuerpo as any).nutrition_json) : plan.nutrition,
+        training: tieneDieta
+          ? plan.training : (r.training_json ?? (cuerpo as any).training_json),
+      }));
       setAdjDraft(null);
       // Estos cambios también salen en el PDF ("Novedades de tu plan"):
       // el descargado antes queda antiguo.
@@ -320,10 +401,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
       if (!vivo) return;
       setGenerating(false);
       try {
-        const plans = await api.listPlans(client.id);
-        setAllPlans(plans);
-        const v = vigente(plans);
-        if (v) setPlan(normalize(v));
+        await recargarPlanes();
       } catch { /* la carga normal del montaje ya lo enseña */ }
     });
     return () => { vivo = false; };
@@ -371,10 +449,10 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
     enVuelo.set(client.id, peticion.catch(() => undefined));
     try {
       const r = await peticion;
-      const plans = await api.listPlans(client.id);
-      setAllPlans(plans);
-      const full = plans.find((pl) => pl.id === r.id) ?? vigente(plans);
-      if (full) setPlan(normalize(full));
+      // La adaptación puede quedar RETENIDA (borrador) conviviendo con el plan
+      // activo: la que hay que enseñar es ELLA, no la vigente.
+      const resumen = await recargarPlanes(r.id);
+      const full = resumen.find((pl) => pl.id === r.id) ?? vigente(resumen);
       setPeriods(await api.listPeriods(client.id).catch(() => periods));
       setNeedsDownload(false); // versión nueva activa: el aviso de la edición anterior caduca
       onClientChanged?.(); // resincroniza sidebar (Dieta) y estados
@@ -410,7 +488,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
       // banda de "sin activar": el cliente sigue viendo el actual. Sin plan,
       // la copia pasa a ser lo que se enseña.
       if (plan && plan.status === "published") {
-        setAllPlans(await api.listPlans(client.id).catch(() => allPlans));
+        await recargarPlanes();
       } else {
         setPlan(normalize(p));
       }
@@ -471,7 +549,8 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
   }
 
   function downloadDocument(format: "pdf" | "docx" = "pdf") {
-    if (!plan) return;
+    if (!plan || accionDoc) return;
+    setAccionDoc(format);
     const url0 = api.planDocumentUrl(plan.id) + (format === "docx" ? "?format=docx" : "");
     fetch(url0, { headers: { Authorization: `Bearer ${getToken()}` } })
       .then((r) => {
@@ -489,10 +568,35 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
         setNeedsDownload(false); // ya tiene la versión actualizada
         if (format === "docx") setWordDescargado(true); // la vuelta, a mano
       })
-      .catch(() => toast.push("No se pudo descargar", "error"));
+      .catch(() => toast.push("No se pudo descargar", "error"))
+      .finally(() => setAccionDoc(null));
   }
 
   const downloadPdf = () => downloadDocument("pdf");
+
+  // EL EDUCATIVO QUE FALLÓ. Su llamada es la tercera del plan y la única que NO
+  // tumba la generación: el plan se guarda con el aviso y el cliente recibe un
+  // documento sin "Aprende con tu plan". El backend sabe rehacerlo solo (modelo
+  // ligero + caché por split) y ese atajo no tenía botón: la única salida del
+  // coach era regenerar el plan ENTERO y repagar núcleo, comidas y panel.
+  const [recuperandoEdu, setRecuperandoEdu] = useState(false);
+  async function recuperarEducativo() {
+    if (!plan || recuperandoEdu) return;
+    setRecuperandoEdu(true);
+    try {
+      const r = await api.generateEducation(plan.id);
+      setPlan({
+        ...plan,
+        education: r.education_json ?? plan.education,
+        guardrail_flags: r.guardrail_flags ?? [],
+      });
+      toast.push("Contenido educativo recuperado");
+    } catch (e: any) {
+      toast.push(e?.message ?? "No se pudo recuperar el educativo", "error");
+    } finally {
+      setRecuperandoEdu(false);
+    }
+  }
 
   // ---- Ida y VUELTA del Word editable: subir el .docx editado, ver los
   // cambios detectados y aplicarlos por el MISMO camino que el editor web.
@@ -531,10 +635,16 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
       // solo viaja si el importador detectó cambios en sus cajas.
       if (importPreview.education_json) patch.education_json = importPreview.education_json;
       const r = await api.updatePlan(plan.id, patch);
+      // Mismas claves que lee `normalize` (ver arriba): con `*_json` el plan
+      // seguía mostrando lo de ANTES del Word — el coach veía "Word aplicado"
+      // y las cifras viejas en pantalla — y el rev rancio hacía fallar la
+      // siguiente edición. El educativo también vuelve del backend.
       setPlan(normalize({
         ...plan,
-        nutrition_json: r.nutrition_json ?? importPreview.nutrition_json ?? plan.nutrition,
-        training_json: r.training_json ?? importPreview.training_json ?? plan.training,
+        // Mismo motivo que arriba: la clave que manda es `nutrition`/`training`.
+        nutrition: r.nutrition_json ?? importPreview.nutrition_json ?? plan.nutrition,
+        training: r.training_json ?? importPreview.training_json ?? plan.training,
+        education: r.education_json ?? importPreview.education_json ?? plan.education,
       }));
       setImportPreview(null);
       setNeedsDownload(true); // el documento cambió: toca re-descargar el PDF
@@ -710,6 +820,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
       <ClientPlanEditor
         plan={plan}
         exMap={exMap}
+        library={exList}
         client={client}
         refWeightKg={(client as any).reference_weight_kg ?? lastClosing?.closing_weight_kg ?? client.start_weight_kg ?? null}
         initialFocus={editFocus}
@@ -758,8 +869,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
   const review = periods
     .filter((p) => p.status === "analyzed")
     .reduce<(typeof periods)[number] | null>((a, b) => (!a || b.period_index > a.period_index ? b : a), null);
-  const appliedBlock: { period_index: number; items: { area: string; change: string; reason: string; applied: boolean; detail: string | null }[] } | null =
-    nut.applied_adjustments ?? null;
+  const appliedBlock = selloAdaptacion(plan);
   const alreadyAdapted = review != null && appliedBlock?.period_index === review.period_index;
 
   /** Un clic en el aviso lleva a donde se resuelve: el editor abierto por la
@@ -842,10 +952,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
     setPublishing(true);
     try {
       await api.publishPlan(retenido.id);
-      const ps = await api.listPlans(client.id).catch(() => allPlans);
-      setAllPlans(ps);
-      const v = vigente(ps);
-      if (v) setPlan(normalize(v));
+      await recargarPlanes();
       onClientChanged?.();
       toast.push("Activa · la ve el cliente");
     } catch {
@@ -891,7 +998,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
             {/* Con retención por seguridad lo PRIMERO es revisar: el botón
                 destacado es "Ver este borrador"; activar sin corregir queda en
                 segundo plano y pide confirmación. En una copia normal, al revés. */}
-            <button onClick={() => setPlan(normalize(retenido))}
+            <button onClick={() => { void recargarPlanes(retenido.id); }}
               className={esCopia ? "btn btn-ghost text-xs" : "btn btn-primary text-xs"}>
               Ver este borrador
             </button>
@@ -911,7 +1018,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                 if (!window.confirm(`¿Descartar el borrador v${retenido.version}? No se puede deshacer desde aquí (queda en Planificaciones anteriores).`)) return;
                 try {
                   await api.discardPlan(retenido.id);
-                  setAllPlans(await api.listPlans(client.id).catch(() => allPlans));
+                  await recargarPlanes();
                   toast.push("Borrador descartado");
                 } catch (e: any) {
                   toast.push(e?.message ?? "No se pudo descartar", "error");
@@ -933,7 +1040,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
         const v = vigente(allPlans);
         if (!v || v.id === plan.id) return null;
         return (
-          <button onClick={() => setPlan(normalize(v))} className="btn btn-ghost text-xs">
+          <button onClick={() => { void recargarPlanes(v.id); }} className="btn btn-ghost text-xs">
             ← Volver al plan activo (v{v.version})
           </button>
         );
@@ -1041,11 +1148,28 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                 </>
               );
             })()}
+            {/* El educativo es lo único recuperable por separado: se le da su
+                propia salida en vez de dejar el aviso sin ninguna acción. */}
+            {(plan.guardrail_flags ?? []).some(
+              (f) => f.includes("no se pudo generar el contenido educativo")) && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-xs"
+                   style={{ borderColor: "var(--line)" }}>
+                <span className="text-zinc-400">
+                  Falta la sección «Aprende con tu plan» del documento.
+                </span>
+                <button onClick={recuperarEducativo} disabled={recuperandoEdu}
+                  className="btn btn-ghost !px-3 !py-1 text-xs disabled:opacity-60"
+                  title="No regenera el plan: solo el educativo, con el modelo ligero">
+                  {recuperandoEdu ? <Spinner /> : null}
+                  {recuperandoEdu ? "Recuperando…" : "Recuperar solo el educativo"}
+                </button>
+              </div>
+            )}
             {/* REGISTRO de qué versión es esta: su origen (IA / adaptación a
                 revisión #N) y si lleva cambios manuales sin enviar. */}
             <p className="mt-0.5 text-xs text-zinc-500">
               {(() => {
-                const adj = (nut as any)?.applied_adjustments;
+                const adj = selloAdaptacion(plan);
                 const manual = ((nut as any)?.manual_changes?.items ?? []).length;
                 const esBase = plan.guardrail_flags?.some((f) => f.startsWith("base sin IA"));
                 const esCopiaLinea = plan.guardrail_flags?.some((f) => f.startsWith("copiado de"));
@@ -1076,8 +1200,10 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
             <button onClick={() => setEditing(true)} className="btn btn-ghost">
               <Pencil size={15} /> Editar
             </button>
-            <button onClick={downloadPdf} className="btn btn-ghost">
-              <Download size={15} /> Descargar PDF
+            <button onClick={downloadPdf} disabled={accionDoc !== null}
+              className="btn btn-ghost disabled:opacity-60">
+              {accionDoc === "pdf" ? <Spinner /> : <Download size={15} />}
+              {accionDoc === "pdf" ? "Preparando…" : "Descargar PDF"}
             </button>
             {/* La VUELTA del Word: tras descargar el editable, subirlo está a
                 un clic (no escondido dentro de «Más»). */}
@@ -1099,7 +1225,11 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
             )}
             {/* Las acciones poco frecuentes viven en un menú: la botonera pasa
                 de 6-7 botones del mismo peso a 3-4 (lo frecuente destaca). */}
-            <details className="relative"
+            {/* Ancho COMPLETO en móvil: el menú es de 240 px y cuelga del
+                borde derecho del botón; con el botón en media columna (154 px)
+                salía 44 px por FUERA de la pantalla y las opciones quedaban
+                cortadas por la izquierda, sin forma de arrastrarlas. */}
+            <details className="relative col-span-2 sm:col-span-1"
               onKeyDown={(e) => {
                 if (e.key !== "Escape") return;
                 e.currentTarget.removeAttribute("open");
@@ -1162,10 +1292,12 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                     e.currentTarget.closest("details")?.removeAttribute("open");
                     downloadDocument("docx");
                   }}
-                  className="btn btn-ghost w-full justify-start"
+                  disabled={accionDoc !== null}
+                  className="btn btn-ghost w-full justify-start disabled:opacity-60"
                   title="Editar el plan en Word"
                 >
-                  <FileText size={15} /> Word editable
+                  {accionDoc === "docx" ? <Spinner /> : <FileText size={15} />}
+                  {accionDoc === "docx" ? "Preparando…" : "Word editable"}
                 </button>
                 <label
                   className="btn btn-ghost w-full cursor-pointer justify-start"
@@ -1187,18 +1319,24 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
               </div>
             </details>
             {plan.status === "published" && byEmail && (
-              <button onClick={sendPlanByEmail} className="btn btn-primary col-span-2 sm:col-span-1">
-                <Mail size={15} /> Enviar plan por email
+              <button onClick={sendPlanByEmail} disabled={accionDoc !== null}
+                className="btn btn-primary col-span-2 sm:col-span-1 disabled:opacity-60">
+                {accionDoc === "email" ? <Spinner /> : <Mail size={15} />}
+                {accionDoc === "email" ? "Enviando…" : "Enviar plan por email"}
               </button>
             )}
             {plan.status === "published" && !byEmail && (
-              <button onClick={sendPlanWhatsApp} className={`${fb ? "btn btn-ghost" : "btn btn-primary"} col-span-2 sm:col-span-1`}>
-                <MessageCircle size={15} /> Enviar plan por WhatsApp
+              <button onClick={sendPlanWhatsApp} disabled={accionDoc !== null}
+                className={`${fb ? "btn btn-ghost" : "btn btn-primary"} col-span-2 sm:col-span-1 disabled:opacity-60`}>
+                {accionDoc === "wa" ? <Spinner /> : <MessageCircle size={15} />}
+                {accionDoc === "wa" ? "Preparando…" : "Enviar plan por WhatsApp"}
               </button>
             )}
             {plan.status === "published" && !byEmail && fb && (
-              <button onClick={sendPlanAndFeedbackWhatsApp} className="btn btn-primary col-span-2 sm:col-span-1">
-                <MessageCircle size={15} /> Enviar plan + feedback
+              <button onClick={sendPlanAndFeedbackWhatsApp} disabled={accionDoc !== null}
+                className="btn btn-primary col-span-2 sm:col-span-1 disabled:opacity-60">
+                {accionDoc === "wafb" ? <Spinner /> : <MessageCircle size={15} />}
+                {accionDoc === "wafb" ? "Preparando…" : "Enviar plan + feedback"}
               </button>
             )}
             {plan.status !== "published" && (
@@ -1392,12 +1530,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
       {(() => {
         const manualItems: string[] = ((nut as any)?.manual_changes?.items ?? []) as string[];
         if (!manualItems.length) return null;
-        const refreshPlans = () =>
-          api.listPlans(client.id).then((plans) => {
-            setAllPlans(plans);
-            const v = vigente(plans);
-            if (v) setPlan(normalize(v));
-          }).catch(() => {});
+        const refreshPlans = () => recargarPlanes().catch(() => {});
         const sendWa = async () => {
           const phone = waPhone(client.phone);
           if (!phone) {
@@ -1463,7 +1596,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                   <button onClick={sendEmail} disabled={sendingUpd} className="btn btn-ghost !px-3 !py-1.5 text-xs">
                     <Mail size={13} /> {sendingUpd ? "Enviando…" : "Enviar por email"}
                   </button>
-                  <button onClick={downloadPdf} className="btn btn-ghost !px-3 !py-1.5 text-xs">
+                  <button onClick={downloadPdf} disabled={accionDoc !== null} className="btn btn-ghost !px-3 !py-1.5 text-xs disabled:opacity-60">
                     <Download size={13} /> PDF actualizado
                   </button>
                   <button
@@ -1493,7 +1626,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
               PDF antiguo sin tu edición
             </p>
           </div>
-          <button onClick={downloadPdf} className="btn btn-primary shrink-0">
+          <button onClick={downloadPdf} disabled={accionDoc !== null} className="btn btn-primary shrink-0 disabled:opacity-60">
             <Download size={15} /> Descargar PDF actualizado
           </button>
         </div>
@@ -1506,12 +1639,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
         currentMonth={plan.month_index}
         onClientChanged={onClientChanged}
         onRegenerated={async () => {
-          const plans = await api.listPlans(client.id).catch(() => null);
-          if (plans) {
-            setAllPlans(plans);
-            const v = vigente(plans);
-            if (v) setPlan(normalize(v));
-          }
+          await recargarPlanes();
           setPeriods(await api.listPeriods(client.id).catch(() => periods));
         }}
       />
@@ -1945,14 +2073,14 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                   </span>
                 </summary>
                 <div className="grid grid-cols-2 gap-2 px-3 py-3 text-xs text-zinc-400 sm:grid-cols-4">
-                  <span>Calorías: <b className="text-zinc-200">{Math.round(p.nutrition_json?.target_kcal ?? 0)}</b></span>
+                  <span>Calorías: <b className="text-zinc-200">{Math.round(p.target_kcal ?? 0)}</b></span>
                   <span>P/C/G: <b className="text-zinc-200">
-                    {Math.round(p.nutrition_json?.macros?.protein_g ?? 0)}/
-                    {Math.round(p.nutrition_json?.macros?.carbs_g ?? 0)}/
-                    {Math.round(p.nutrition_json?.macros?.fat_g ?? 0)} g
+                    {Math.round(p.protein_g ?? 0)}/
+                    {Math.round(p.carbs_g ?? 0)}/
+                    {Math.round(p.fat_g ?? 0)} g
                   </b></span>
-                  {hasTraining && <span>Split: <b className="text-zinc-200">{p.training_json?.split_name ?? "—"}</b></span>}
-                  {hasTraining && <span>Sesiones: <b className="text-zinc-200">{(p.training_json?.sessions ?? []).length}</b></span>}
+                  {hasTraining && <span>Split: <b className="text-zinc-200">{p.split_name ?? "—"}</b></span>}
+                  {hasTraining && <span>Sesiones: <b className="text-zinc-200">{p.sessions_count ?? 0}</b></span>}
                 </div>
                 {/* Por qué se adaptó o cambió esta versión */}
                 {(p.whyChanged?.length || p.whyLabel) && (
@@ -1982,20 +2110,21 @@ const fmtDay = (d: Date) =>
 /** Planes archivados (todos menos el vigente) con las fechas en que se usaron
  *  (desde su creación hasta el plan siguiente), la duración y el PORQUÉ del
  *  cambio (ajustes aplicados de la revisión o justificación del plan). */
-function archivedPlans(all: any[], currentId: number): any[] {
+function archivedPlans(all: PlanSummary[], currentId: number): any[] {
   const asc = [...all].sort((a, b) => String(a.created_at ?? "").localeCompare(String(b.created_at ?? "")));
   return asc
     .map((p, i) => {
       const from = p.created_at ? new Date(p.created_at) : null;
-      const next = asc[i + 1]?.created_at ? new Date(asc[i + 1].created_at) : new Date();
+      const siguiente = asc[i + 1]?.created_at;
+      const next = siguiente ? new Date(siguiente) : new Date();
       const days = from ? Math.max(1, Math.round((next.getTime() - from.getTime()) / 86400000)) : null;
-      const applied = p.nutrition_json?.applied_adjustments?.items as any[] | undefined;
+      const applied = p.applied_adjustments?.items;
       const whyChanged = (applied ?? [])
         .filter((it) => it?.change || it?.detail)
-        .map((it) => ({ change: it.detail ?? it.change, reason: it.reason ?? "" }));
-      const rationale: string | null = p.nutrition_json?.rationale ?? null;
+        .map((it) => ({ change: (it.detail ?? it.change) as string, reason: it.reason ?? "" }));
+      const rationale: string | null = p.rationale ?? null;
       const whyLabel = whyChanged.length
-        ? `Adaptación a la revisión #${p.nutrition_json?.applied_adjustments?.period_index}:`
+        ? `Adaptación a la revisión #${p.applied_adjustments?.period_index}:`
         : rationale
           ? rationale.split("\n")[0].slice(0, 180)
           : p.generated_by === "ai"

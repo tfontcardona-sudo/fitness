@@ -344,14 +344,18 @@ def test_pipeline_reintenta_y_corrige_el_nucleo_vetado():
     assert any("reintentado tras violar guardrails" in f for f in plan.guardrail_flags)
 
 
-def test_pipeline_flags_out_of_tolerance_meal_options():
-    # Una opción del slot 1 desviada >5% → warning recuperable (no bloquea)
+def test_pipeline_cuadra_las_opciones_fuera_de_tolerancia():
+    # Una opción del slot 1 desviada >5%: el backend la cuadra a SU objetivo
+    # (la IA elige alimentos, los gramos los pone el backend) y lo deja anotado.
+    # Nunca puede quedar como violación: retendría el plan en borrador.
     meals = json.loads(_flexible_meals_json())
     meals["slots"][0]["options"][0]["macros"]["kcal"] = 900  # muy alto
     client = ScriptedClient([_valid_core_json(), json.dumps(meals), _education_json()])
     plan = generate_monthly_plan(_ctx(), client)
     flags = plan.guardrail_flags
-    assert any("slot 1" in f for f in flags)
+    assert any("cuadre" in f for f in flags)
+    assert not [f for f in flags if f.startswith("violation:")]
+    assert abs(plan.meals.slots[0].options[0].macros.kcal - 528) / 528 <= 0.05
 
 
 # --- Regresión gotcha §5.2: 'temperature' NUNCA llega al modelo pesado ---------
@@ -419,3 +423,94 @@ def test_plan_sin_nutricion_ni_entreno_es_error():
     with pytest.raises(PlanGenerationError):
         generate_monthly_plan(_ctx(), ScriptedClient([]), include_training=False,
                               include_nutrition=False)
+
+
+def test_el_patron_dietetico_llega_al_prompt_que_elige_los_alimentos():
+    """Un vegano no puede recibir propuestas con pollo.
+
+    El patrón viajaba solo en el bloque del cliente del NÚCLEO y en el filtro
+    del catálogo; la llamada de comidas (la que de verdad elige los platos) no
+    lo sabía, así que el plan salía con carne y el Revisor 0 lo vetaba después
+    (créditos gastados y borrador retenido).
+    """
+    import dataclasses
+
+    from app.schemas.ai import PlanCoreOutput
+    from app.services.ai.generator import _meals_user_prompt
+
+    core = PlanCoreOutput.model_validate_json(_valid_core_json())
+
+    sin_patron = _meals_user_prompt(_ctx(), core)
+    assert "PATRÓN DIETÉTICO" not in sin_patron
+
+    vegano = dataclasses.replace(_ctx(), diet_pattern="vegano")
+    prompt = _meals_user_prompt(vegano, core)
+    assert "PATRÓN DIETÉTICO OBLIGATORIO" in prompt and "VEGANO" in prompt
+    # Los alimentos prohibidos salen de la misma tabla que usa el validador.
+    assert "pollo" in prompt.lower()
+
+    halal = dataclasses.replace(_ctx(), diet_pattern="Halal")   # con mayúscula
+    assert "HALAL" in _meals_user_prompt(halal, core)
+
+
+def _meals_json_desviado(factor: float = 0.8, con_alergeno: bool = False) -> str:
+    """Banco cuyas opciones se salen del objetivo de su toma (y, si se pide, una
+    con lactosa además de dos seguras)."""
+    targets = {
+        1: (528, 44, 52, 16), 2: (726, 60, 72, 22),
+        3: (331, 30, 28, 11), 4: (540, 41, 58, 16),
+    }
+    slots = []
+    for slot, (kcal, p, c, f) in targets.items():
+        options = []
+        for key in "ABC":
+            ings = [{"food": "Pollo", "grams": 150, "household": "1 pechuga"}]
+            if con_alergeno and slot == 1 and key == "B":
+                ings = [{"food": "Yogur de leche", "grams": 200, "household": "1 vaso"}]
+            options.append({
+                "key": key, "title": f"Opción {key} slot {slot}",
+                "ingredients": ings, "prep": "Cocinar y servir", "prep_minutes": 8,
+                "macros": {"kcal": round(kcal * factor), "protein_g": round(p * factor),
+                           "carbs_g": round(c * factor), "fat_g": round(f * factor)},
+                "tags": ["rápido"],
+            })
+        slots.append({"slot": slot, "options": options})
+    return json.dumps({"mode": "flexible_7", "slots": slots})
+
+
+def test_el_banco_se_cuadra_antes_de_juzgarlo():
+    """Un plato a −20% del objetivo lo cuadra el backend: no puede RETENER el plan.
+
+    Antes el informe se calculaba ANTES de reparar, así que el desvío entraba
+    como `violation:` y el plan se quedaba en borrador retenido pese a que el
+    sistema sabía corregirlo solo.
+    """
+    sc = ScriptedClient([_valid_core_json(), _meals_json_desviado(0.8),
+                         _education_json()])
+    plan = generate_monthly_plan(_ctx(), sc)
+    bloqueantes = [f for f in plan.guardrail_flags if str(f).startswith("violation:")]
+    assert not bloqueantes, bloqueantes
+    assert any("cuadre" in str(f) for f in plan.guardrail_flags)
+    # Y el banco persistido ya lleva los gramos corregidos, no los de la IA.
+    macros = plan.meals.slots[0].options[0].macros
+    assert abs(macros.kcal - 528) / 528 <= 0.05
+
+
+def test_un_alergeno_retirado_no_deja_aviso_fantasma():
+    """El alérgeno se retira del banco cuando queda alternativa segura; el
+    informe se calcula DESPUÉS, así que ya no lo ve y el plan no se retiene."""
+    ctx = dataclasses_replace_alergia()
+    sc = ScriptedClient([_valid_core_json(), _meals_json_desviado(1.0, con_alergeno=True),
+                         _education_json()])
+    plan = generate_monthly_plan(ctx, sc)
+    bloqueantes = [f for f in plan.guardrail_flags if str(f).startswith("violation:")]
+    assert not bloqueantes, bloqueantes
+    assert any("retiradas" in str(f) for f in plan.guardrail_flags)
+    titulos = [o.title for o in plan.meals.slots[0].options]
+    assert "Opción B slot 1" not in titulos     # la del yogur ya no está
+
+
+def dataclasses_replace_alergia():
+    import dataclasses
+
+    return dataclasses.replace(_ctx(), food_allergies=["lactosa"])

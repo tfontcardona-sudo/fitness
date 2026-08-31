@@ -37,6 +37,22 @@ def _http_url_required(v: str | None) -> str | None:
     return v
 
 # Literales compartidos
+def _tier_legado(v):
+    """Traduce los nombres ANTIGUOS de paquete ("start"/"pro") a los de ahora.
+
+    La tabla vive en `services.packages.LEGACY_TIERS`; aquí solo se aplica. Sin
+    esto, un cliente dado de alta antes del cambio de nombres reventaba con un
+    500 la lista ENTERA de clientes —y con ella "Hoy" y su propia ficha—, porque
+    el esquema de salida declara los tres tiers actuales y nada más. Un dato
+    legado en la base no puede tumbar la pantalla principal del coach.
+    """
+    if isinstance(v, str):
+        from app.services.packages import LEGACY_TIERS
+
+        return LEGACY_TIERS.get(v.strip().lower(), v)
+    return v
+
+
 Sex = Literal["male", "female"]
 GoalType = Literal["fat_loss", "muscle_gain", "recomp", "maintenance", "injury_recovery"]
 Level = Literal["beginner", "intermediate", "advanced"]
@@ -93,6 +109,7 @@ class ClientCreate(BaseModel):
     # corregirlo después (la anamnesis manda).
     level: Level | None = None
 
+    _v_tier_legado = field_validator("package_tier", mode="before")(_tier_legado)
 
 class AnamnesisSubmit(BaseModel):
     """Wizard público del cliente (vía portal_token). Recoge TODO (G.3)."""
@@ -198,9 +215,9 @@ class ClientUpdate(BaseModel):
     diet_mode: DietMode | None = None
     diet_pattern: DietPattern | None = None
     strict_free_meal_enabled: bool | None = None
-    auto_pilot: bool | None = None
     emails_enabled: bool | None = None
 
+    _v_tier_legado = field_validator("package_tier", mode="before")(_tier_legado)
 
 class ClientOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -259,7 +276,6 @@ class ClientOut(BaseModel):
     renewal_due: bool = False
     strict_free_meal_enabled: bool
     status: ClientStatus
-    auto_pilot: bool
     emails_enabled: bool
     consent_signed_at: datetime | None
     portal_access_sent_at: datetime | None = None
@@ -276,6 +292,9 @@ class ClientOut(BaseModel):
 
 
 # ------------------------------------------------------------ exercises ----
+
+    _v_tier_legado = field_validator("package_tier", mode="before")(_tier_legado)
+
 class ExerciseIn(BaseModel):
     canonical_name: str = Field(min_length=3, max_length=160)
     aliases: list[str] = Field(default_factory=list)
@@ -312,6 +331,24 @@ class ExerciseOut(ExerciseIn):
     # romper el GET de la biblioteca — la validación estricta es de ENTRADA; el
     # portal además re-filtra las URLs al construir los recursos.
     _v_urls = field_validator("video_url", "image_url")(_passthrough)
+
+
+class ExerciseListOut(ExerciseOut):
+    """La BIBLIOTECA ENTERA (283 ejercicios) sin las dos notas largas.
+
+    `technique_notes` + `biomechanics_notes` son 36 KB de los ~141 KB que pesa
+    la lista, y NINGUNA pantalla del panel las pinta (el portal las sirve por su
+    propio endpoint de recursos, ejercicio a ejercicio). El panel de
+    planificación y el editor piden esta lista entera, así que ese cuarto del
+    peso viajaba dos veces por visita para nada. La ficha individual
+    (`GET /api/exercises/{id}`) las sigue devolviendo."""
+
+    technique_notes: str | None = Field(default=None, exclude=True)
+    biomechanics_notes: str | None = Field(default=None, exclude=True)
+    # Y las CONTRAINDICACIONES tampoco las pinta ninguna pantalla desde el
+    # listado: las usa el BACKEND leyendo de la base (filtro de guardrails y
+    # generación), no este JSON. Suman al peso que viaja dos veces por visita.
+    contraindications: list[str] = Field(default_factory=list, exclude=True)
 
 
 # ---------------------------------------------------------------- brand ----
@@ -594,6 +631,9 @@ class AnamnesisStateOut(BaseModel):
 
     first_name: str
     anamnesis_done: bool
+    # ¿Firmó el consentimiento? Solo lo firma quien pasa por el FORMULARIO, y
+    # sin él el backend rechaza las fotos iniciales (datos de salud).
+    consent_signed: bool = False
     photos_count: int
     brand_name: str
     color_primary: str
@@ -666,6 +706,7 @@ class PortalState(BaseModel):
     # sin rellenar no la rompe (se rompe al acabar el día vacío).
     streak_days: int = 0
 
+    _v_tier_legado = field_validator("package_tier", mode="before")(_tier_legado)
 
 class PushKeyOut(BaseModel):
     """GET /api/p/{token}/push/public-key — clave pública VAPID para subscribe."""
@@ -724,7 +765,10 @@ class TodayMealSlot(BaseModel):
 
 
 class TodayExercise(BaseModel):
-    exercise_id: int
+    # Puede faltar: un plan editado a mano o importado del Word puede traer un
+    # ejercicio que no se resolvió contra la biblioteca. Se enseña igual (con su
+    # nombre de reserva) en vez de tumbar la pantalla entera del cliente.
+    exercise_id: int | None = None
     name: str
     sets: int
     rep_range: str
@@ -836,7 +880,14 @@ class PeriodCreateIn(BaseModel):
 # Libro de caja de Stripe (tabla `payments`): quién pagó, cuánto y cuándo.
 # Espejo en frontend/src/types.ts (regla A.1.5).
 # "manual": cobro fuera de Stripe anotado por el coach (efectivo, transferencia…).
-PaymentKind = Literal["checkout", "invoice", "refund", "subscription", "manual"]
+# Los tipos que ESCRIBE el sistema hoy. En la SALIDA no se validan como enum:
+# la columna es texto libre y una sola fila con un tipo inesperado —una versión
+# anterior, un arreglo a mano en la base, un `kind` nuevo de Stripe— tumbaba
+# con un 500 el feed ENTERO de pagos y el bloque de cobros de la ficha. El
+# libro de caja tiene que enseñar lo que hay, aunque no lo reconozca.
+PaymentKind = Literal["checkout", "invoice", "refund", "subscription", "manual",
+                      # "dispute": contracargo (reclamación al banco).
+                      "dispute"]
 PaymentMovementStatus = Literal["paid", "failed", "refunded", "canceled"]
 
 
@@ -844,8 +895,8 @@ class PaymentOut(BaseModel):
     """Un movimiento del feed de pagos del panel."""
 
     id: int
-    kind: PaymentKind
-    status: PaymentMovementStatus
+    kind: str
+    status: str
     amount_cents: int
     currency: str
     # Movimiento en modo PRUEBA de Stripe: se ve, pero no suma en los totales.
@@ -869,6 +920,9 @@ class PaymentsListOut(BaseModel):
     items: list[PaymentOut]
     count: int          # total que cumple el filtro (para el "Ver más")
     unseen: int
+    # Neto del CLIENTE (cobros − devoluciones, sin dinero de prueba) cuando se
+    # filtra por client_id: la ficha ya no lo suma de la página que pinta.
+    client_total_cents: int | None = None
 
 
 class PaymentsSummaryOut(BaseModel):

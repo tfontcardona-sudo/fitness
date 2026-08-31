@@ -170,3 +170,28 @@ def test_email_test_endpoint_reports_failure_reason(client, auth):
     # El intento queda registrado con su motivo para diagnóstico posterior.
     recent = client.get("/api/email/status", headers=auth).json()["recent"]
     assert any(e["kind"] == "test" and e["error"] for e in recent)
+
+
+def test_al_cliente_de_solo_entreno_no_se_le_habla_de_dieta():
+    """Simétrico al de solo-nutrición: el informe le hablaba de calorías,
+    macros y adherencia a la dieta a quien no ha contratado ninguna dieta (y
+    cuyo portal ni siquiera enseña esos campos)."""
+    from app.services.ai.feedback import (
+        FeedbackAIOutput, _NUTRITION_ONLY_NOTE, _TRAINING_ONLY_NOTE,
+        generate_feedback_analysis,
+    )
+
+    vistos = {}
+
+    class _FakeAI:
+        def generate_json(self, *, model, system, user, schema, **kw):
+            vistos["system"] = system
+            return FeedbackAIOutput(natural_analysis="ok", closing_message="ok")
+
+    generate_feedback_analysis({"objetivo": "muscle_gain"}, _FakeAI(), training_only=True)
+    assert _TRAINING_ONLY_NOTE in vistos["system"]
+    assert _NUTRITION_ONLY_NOTE not in vistos["system"]
+
+    generate_feedback_analysis({"objetivo": "fat_loss"}, _FakeAI(), nutrition_only=True)
+    assert _NUTRITION_ONLY_NOTE in vistos["system"]
+    assert _TRAINING_ONLY_NOTE not in vistos["system"]

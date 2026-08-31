@@ -19,7 +19,10 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import BrandConfig, Client, DailyLog, Exercise, Period, Plan, RecommendedProduct
+from app.models import (
+    BrandConfig, Client, DailyLog, Exercise, Period, Plan, RecommendedProduct,
+    WorkoutLog,
+)
 from app.services.storage import media_url
 
 # URLs que el portal renderiza como href/src: solo esquema http(s) — los datos
@@ -134,7 +137,16 @@ def current_training_week(db: Session, plan: Plan | None, today: date) -> dict |
     """
     if plan is None:
         return None
+    # El esquema dice `list[WeeklyProgressionWeek]`, pero a `training_json` le
+    # llegan planes editados a mano, importados del Word y copiados de un
+    # modelo: si ahí viene un objeto (o una lista de cualquier cosa), el
+    # `weeks[idx]` de abajo reventaba con un KeyError y el cliente se quedaba
+    # con un 500 y la pantalla de Entreno EN BLANCO. Mismo criterio que el
+    # resto de la pantalla: lo que no se entiende se ignora, no se cae.
     weeks = (plan.training_json or {}).get("weekly_progression") or []
+    if not isinstance(weeks, list):
+        return None
+    weeks = [w for w in weeks if isinstance(w, dict)]
     if not weeks:
         return None
     start_dt = db.scalar(
@@ -176,26 +188,20 @@ def streak_days(db, client_id: int, today: date) -> int:
     de teclear); el día de HOY aún sin rellenar no rompe la racha (se rompe al
     terminar el día en blanco). Tope de mirada: 90 días (más que de sobra y la
     consulta se mantiene barata)."""
-    from sqlalchemy import or_, select
-
-    from app.models import DailyLog, Period
+    from app.services.push import dias_registrados
 
     desde = today - timedelta(days=90)
-    con_algo = [
-        DailyLog.weight_kg.is_not(None), DailyLog.sleep_hours.is_not(None),
-        DailyLog.steps.is_not(None), DailyLog.satiety_1_10.is_not(None),
-        DailyLog.water_liters.is_not(None), DailyLog.diet_adherence.is_not(None),
-        DailyLog.energy_1_5.is_not(None), DailyLog.mood_1_5.is_not(None),
-        DailyLog.fatigue_1_5.is_not(None), DailyLog.free_notes.is_not(None),
-        DailyLog.chosen_options_json.is_not(None),
-    ]
-    dias = set(db.scalars(
-        select(DailyLog.log_date)
+    # UNA SOLA DEFINICIÓN de "día registrado" en todo el sistema. Esta función
+    # llevaba su propia copia de la regla (diario relleno, comidas elegidas o
+    # series de entreno) y cualquier retoque en una de las dos dejaba al portal
+    # diciendo "🔥 5 días" mientras el panel del coach avisaba de "sin
+    # registros desde hace 5 días". La regla vive en `push.dias_registrados`.
+    logs = list(db.scalars(
+        select(DailyLog)
         .join(Period, DailyLog.period_id == Period.id)
         .where(Period.client_id == client_id,
-               DailyLog.log_date >= desde, DailyLog.log_date <= today,
-               or_(*con_algo))
-    ))
+               DailyLog.log_date >= desde, DailyLog.log_date <= today)))
+    dias = dias_registrados(db, logs)
     if not dias:
         return 0
     racha = 0
@@ -213,8 +219,13 @@ def period_info(period: Period | None, today: date) -> dict | None:
     days_total = (period.ends_on - period.starts_on).days + 1
     days_elapsed = max(0, min(days_total, (today - period.starts_on).days + 1))
     days_left = max(0, (period.ends_on - today).days)
-    # Cierre disponible desde el día 14 del período (G.4)
-    can_close = days_elapsed >= 14 and period.status == "open"
+    # Cierre disponible desde el día 14 del período (G.4) — o el ÚLTIMO día, si
+    # ese período resulta ser más corto (uno abierto a mano, uno recortado al
+    # publicar el plan a mitad de ciclo). Con el 14 fijo, un período de 13 días
+    # dejaba al cliente en un callejón: el anillo del portal decía "¡toca
+    # revisión!" y la pantalla, "disponible al día 14 · se activa el <fecha que
+    # YA pasó>". No podía enviarla nunca y solo lo desbloqueaba el coach.
+    can_close = days_elapsed >= min(14, days_total) and period.status == "open"
     return {
         "period_id": period.id,
         "period_index": period.period_index,
@@ -295,33 +306,99 @@ def _meals_for_today(plan: Plan, client: Client, chosen: dict | None) -> list[di
             # plato del día = el del weekday actual en el menú cerrado
             today_idx = today_local().weekday()
             slug = DAY_SLUGS[today_idx]
-            for d in bank.get("days", []):
-                if d["day"] == slug:
-                    for meal in d["meals"]:
-                        if meal["slot"] == slot:
-                            dish = meal["dish"]
-                            entry["options"] = [{
-                                "key": dish.get("key", "A"), "title": dish["title"],
-                                "macros": dish["macros"], "prep_minutes": dish.get("prep_minutes"),
-                                "tags": dish.get("tags", []),
-                            }]
+            # Lectura defensiva: el menú cerrado también llega editado a
+            # mano o importado del Word, y con una clave de menos el corchete
+            # tumbaba la pantalla entera en vez de saltarse ese día.
+            for d in bank.get("days") or []:
+                if not isinstance(d, dict) or d.get("day") != slug:
+                    continue
+                for meal in d.get("meals") or []:
+                    if not isinstance(meal, dict) or meal.get("slot") != slot:
+                        continue
+                    dish = meal.get("dish") or {}
+                    if not dish.get("title"):
+                        continue
+                    entry["options"] = [{
+                        "key": dish.get("key", "A"), "title": dish["title"],
+                        "macros": dish.get("macros") or {},
+                        "prep_minutes": dish.get("prep_minutes"),
+                        "tags": dish.get("tags", []),
+                    }]
         slots_out.append(entry)
     return slots_out
 
 
-def _resolve_session(db: Session, sess: dict, load_factor: float = 1.0) -> dict:
+def _biblioteca_de(db: Session, sesiones: list[dict]) -> dict[int, Exercise]:
+    """Los ejercicios de VARIAS sesiones en UNA consulta.
+
+    La pantalla de Entreno del portal resolvía la biblioteca una vez POR SESIÓN
+    (4-6 consultas por carga, con los mismos ejercicios repetidos entre días) y
+    es de las pantallas más visitadas del sistema: la abre cada cliente cada día
+    que entrena."""
+    # ENTEROS Y NADA MÁS. A `training_json` le llegan planes editados a mano,
+    # importados del Word y copiados de un modelo: un `exercise_id` con un "12"
+    # entre comillas (o un null colado) entraba en el IN(...) y tumbaba la
+    # consulta —y con ella la pantalla de Entreno de ese cliente— en vez de
+    # quedarse sin nombre. Misma regla que el resto del portal: mejor un hueco
+    # que un portal roto.
+    ids = {e.get("exercise_id") for s in sesiones for e in (s.get("exercises") or [])
+           if isinstance(e.get("exercise_id"), int) and not isinstance(e.get("exercise_id"), bool)}
+    if not ids:
+        return {}
+    return {ex.id: ex for ex in db.scalars(select(Exercise).where(Exercise.id.in_(ids)))}
+
+
+def _texto(v) -> str:
+    """Lo que el cliente LEE, siempre como texto.
+
+    El contrato de la pantalla "Hoy" declara estos campos como cadena, pero al
+    `training_json` le llegan planes editados a mano, importados del Word y
+    copiados de un modelo: un `rir: 2` o un `rep_range: 10` (números en vez de
+    texto) hacían fallar la validación de la respuesta y el cliente se
+    encontraba su pantalla principal con un 500. Comprobado: cuatro formas
+    distintas la tumbaban y la de Entreno aguantaba las ocho — el mismo dato
+    con dos contratos distintos. Misma regla que `dia_de_sesion`: mejor un
+    hueco que un portal roto.
+    """
+    if v is None:
+        return ""
+    return v if isinstance(v, str) else str(v)
+
+
+def _entero(v, por_defecto):
+    """Igual que `_texto`, para los campos numéricos (series, descanso, id)."""
+    if isinstance(v, bool):
+        return por_defecto
+    if isinstance(v, int):
+        return v
+    if isinstance(v, float):
+        return int(v)
+    if isinstance(v, str):
+        try:
+            return int(float(v.strip().replace(",", ".")))
+        except ValueError:
+            return por_defecto
+    return por_defecto
+
+
+def _resolve_session(db: Session, sess: dict, load_factor: float = 1.0,
+                     lib: dict[int, Exercise] | None = None) -> dict:
     """Convierte una sesión del plan (con exercise_id) en una sesión con nombres
     de ejercicio y vídeo resueltos desde la biblioteca. `load_factor` ajusta el
     peso sugerido a la SEMANA del mesociclo que vive el cliente (p. ej. 1.05 en
-    la semana de pico, 0.6 en la descarga), redondeado a 0,5 kg."""
-    ex_ids = [e["exercise_id"] for e in sess.get("exercises", [])]
-    lib = {
-        ex.id: ex
-        for ex in db.scalars(select(Exercise).where(Exercise.id.in_(ex_ids)))
-    } if ex_ids else {}
+    la semana de pico, 0.6 en la descarga), redondeado a 0,5 kg.
+
+    `lib` (opcional): biblioteca YA resuelta para varias sesiones a la vez."""
+    if lib is None:
+        ex_ids = [e.get("exercise_id") for e in sess.get("exercises", [])
+                  if e.get("exercise_id") is not None]
+        lib = {
+            ex.id: ex
+            for ex in db.scalars(select(Exercise).where(Exercise.id.in_(ex_ids)))
+        } if ex_ids else {}
     exercises = []
     for e in sess.get("exercises", []):
-        ex = lib.get(e["exercise_id"])
+        ex = lib.get(e.get("exercise_id"))
         # Vídeo del ejercicio: el archivo SUBIDO (servido por /api/media) tiene
         # prioridad; si no, el enlace externo re-filtrado (solo http(s)) — los
         # datos legados sin esquema no pueden llegar al portal como href.
@@ -333,11 +410,17 @@ def _resolve_session(db: Session, sess: dict, load_factor: float = 1.0) -> dict:
         # mostraba 21,0 donde tocaba 21,5). Valor que VE el cliente.
         import math
         week_hint = (math.floor(hint * load_factor * 2 + 0.5) / 2) if isinstance(hint, (int, float)) else None
+        # Acceso DEFENSIVO: el resto del bloque ya usa `.get()`, pero estas tres
+        # claves se leían con corchete, así que un plan al que le faltara una
+        # —editado a mano por el coach, importado del Word, copiado de la
+        # biblioteca— tumbaba con un 500 la pantalla ENTERA de Entreno del
+        # cliente. Mejor una sesión con un hueco que un portal roto.
         exercises.append({
-            "exercise_id": e["exercise_id"],
-            "name": ex.canonical_name if ex else f"Ejercicio {e['exercise_id']}",
-            "sets": e["sets"], "rep_range": e["rep_range"], "rir": e.get("rir", ""),
-            "rest_sec": e.get("rest_sec", 90),
+            "exercise_id": _entero(e.get("exercise_id"), None),
+            "name": ex.canonical_name if ex else f"Ejercicio {e.get('exercise_id') or '?'}",
+            "sets": _entero(e.get("sets"), 0), "rep_range": _texto(e.get("rep_range")),
+            "rir": _texto(e.get("rir")),
+            "rest_sec": _entero(e.get("rest_sec"), 90),
             "start_weight_hint_kg": e.get("start_weight_hint_kg"),
             "week_weight_hint_kg": week_hint,
             "technique_cue": e.get("technique_cue"),
@@ -353,10 +436,22 @@ def _resolve_session(db: Session, sess: dict, load_factor: float = 1.0) -> dict:
             "video_url": _playable(video),
         })
     return {
-        "day": sess.get("day", ""), "name": sess.get("name", ""),
+        "day": _texto(sess.get("day")), "name": _texto(sess.get("name")),
         "warmup": sess.get("warmup"), "exercises": exercises,
         "cooldown": sess.get("cooldown"),
     }
+
+
+def dia_de_sesion(sess: dict) -> str:
+    """El día de una sesión, en minúsculas y a prueba de basura.
+
+    El esquema dice `day: str` ("Lunes"…), pero a `training_json` le llegan
+    planes editados a mano, importados del Word y copiados de un modelo. Con un
+    `day` numérico —o nulo— el `.strip()` de quien lo leía reventaba con un
+    AttributeError: la pantalla "Hoy" del cliente (la más visitada del portal)
+    se caía con un 500, y el recordatorio diario se llevaba por delante el
+    aviso de TODOS los clientes, no solo el del plan roto."""
+    return str(sess.get("day") or "").strip().lower()
 
 
 def _session_for_today(db: Session, plan: Plan, today: date) -> dict | None:
@@ -372,25 +467,35 @@ def _session_for_today(db: Session, plan: Plan, today: date) -> dict | None:
     week = current_training_week(db, plan, today)
     factor = (week or {}).get("load_factor") or 1.0
     for sess in training.get("sessions", []):
-        if sess.get("day", "").strip().lower() == today_label:
+        if dia_de_sesion(sess) == today_label:
             return _resolve_session(db, sess, factor)
     return None
 
 
-def build_training_sessions(db: Session, client: Client) -> list[dict]:
+def build_training_sessions(db: Session, client: Client, plan: Plan | None = None,
+                            week: dict | None = None) -> list[dict]:
     """TODAS las sesiones del plan vigente, con nombres de ejercicio resueltos
     y el peso sugerido AJUSTADO a la semana del mesociclo en curso.
 
     Para el selector de sesión del portal (el cliente registra la que ha hecho,
-    no solo la del día)."""
-    period = active_period(db, client.id)
-    plan = published_plan_for_period(db, period) if period else latest_published_plan(db, client.id)
+    no solo la del día).
+
+    `plan` y `week` los pasa quien ya los ha resuelto (el endpoint de Entreno los
+    necesita para las Novedades y la semana del mesociclo): sin ellos esta
+    función repetía la misma resolución de plan que su llamador."""
+    if plan is None:
+        period = active_period(db, client.id)
+        plan = (published_plan_for_period(db, period) if period
+                else latest_published_plan(db, client.id))
     if plan is None:
         return []
-    week = current_training_week(db, plan, today_local())
+    if week is None:
+        week = current_training_week(db, plan, today_local())
     factor = (week or {}).get("load_factor") or 1.0
     training = plan.training_json or {}
-    return [_resolve_session(db, s, factor) for s in training.get("sessions", [])]
+    sesiones = training.get("sessions", []) or []
+    lib = _biblioteca_de(db, sesiones)  # UNA consulta para todas las sesiones
+    return [_resolve_session(db, s, factor, lib) for s in sesiones]
 
 
 # ------------------------------------------------ recursos del portal ----
@@ -453,10 +558,22 @@ def discount_buy_url(product_url: str | None, code: str | None,
 
 def product_image_url(p: RecommendedProduct) -> str | None:
     """URL efectiva de la imagen de un producto: la subida (servida por la API,
-    con cache-busting por updated_at) tiene prioridad; si no, la URL externa."""
+    con cache-busting por updated_at) tiene prioridad; si no, la URL externa.
+
+    Si la ficha dice que hay imagen subida pero el FICHERO ya no está —una
+    restauración de la base sin el volumen de storage, un borrado a mano— se
+    cae a la URL externa en vez de prometer una imagen que devuelve 404: en
+    Recursos y en el portal del cliente salía un hueco roto por cada producto.
+    """
     if p.image_path:
-        ver = int(p.updated_at.timestamp()) if p.updated_at else 0
-        return f"/api/resources/products/{p.id}/image?v={ver}"
+        try:
+            from app.services.storage import abs_path
+
+            if abs_path(p.image_path).exists():
+                ver = int(p.updated_at.timestamp()) if p.updated_at else 0
+                return f"/api/resources/products/{p.id}/image?v={ver}"
+        except Exception:  # noqa: BLE001 — una ruta rara no puede tumbar la lista
+            pass
     return p.image_url or None
 
 

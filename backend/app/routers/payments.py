@@ -18,8 +18,9 @@ GOTCHA: sin `from __future__ import annotations` (gotcha §5.1 — rompe la
 resolución de tipos de FastAPI/Pydantic en los routers).
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from pydantic import BaseModel
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -33,6 +34,7 @@ from app.schemas.entities import (
     PaymentsSummaryOut,
 )
 from app.services import payments as pay_svc
+from app.services.audit import log_event
 
 router = APIRouter(prefix="/api/payments", tags=["payments"],
                    dependencies=[Depends(get_current_user)])
@@ -84,6 +86,10 @@ def list_payments(
         items=[_to_out(p, nombres) for p in filas],
         count=total,
         unseen=pay_svc.unseen_count(db),
+        # Neto REAL del cliente (cobros − devoluciones, sin dinero de prueba):
+        # la ficha lo sumaba de la página que pintaba y mentía a partir del
+        # movimiento 21. Solo se calcula cuando se filtra por cliente.
+        client_total_cents=pay_svc.neto_de_cliente(db, client_id) if client_id else None,
     )
 
 
@@ -128,7 +134,7 @@ def export_csv(db: Session = Depends(get_db)):
                "canceled": "Baja"}
     tipos = {"checkout": "Pago único", "invoice": "Suscripción",
              "refund": "Devolución", "subscription": "Suscripción",
-             "manual": "Cobro a mano"}
+             "manual": "Cobro a mano", "dispute": "Contracargo"}
     for pago, nombre in filas:
         local = pago.paid_at.astimezone(tz) if pago.paid_at else None
         importe = pago.amount_cents / 100
@@ -178,6 +184,90 @@ def sync_payments(days: int = Query(default=pay_svc.SYNC_DEFAULT_DAYS, ge=1, le=
         return pay_svc.sync_from_stripe(db, days=days)
     except StripeError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+
+class HuerfanoIn(BaseModel):
+    """`client_id` a quién pertenece el cobro; sin él, se declara ajeno."""
+
+    client_id: int | None = None
+
+
+@router.post("/{payment_id}/resolver", response_model=PaymentOut)
+def resolver_huerfano(payment_id: int, body: HuerfanoIn | None = None,
+                      db: Session = Depends(get_db)) -> PaymentOut:
+    """Le da salida a un cobro SIN FICHA: se asigna a un cliente, o se declara
+    ajeno a la asesoría y deja de contar en el aviso "N sin ficha".
+
+    Ese aviso no tenía forma de apagarse: `adopt_orphans` solo reasocia por
+    email y dentro de 30 días, así que un cobro de otro producto de la cuenta
+    —o uno con el email mal escrito en el checkout— contaba para siempre. Un
+    aviso que no se puede resolver se acaba ignorando, y con él los que sí."""
+    try:
+        pago = pay_svc.resolver_huerfano(
+            db, payment_id, client_id=(body.client_id if body else None))
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    if pago is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Movimiento no encontrado")
+    log_event(db, "payment", pago.id, "orphan_resolved",
+              {"client_id": pago.client_id})
+    db.commit()
+    nombres = {}
+    if pago.client_id:
+        cliente = db.get(Client, pago.client_id)
+        if cliente is not None:
+            nombres[cliente.id] = cliente.full_name
+    return _to_out(pago, nombres)
+
+
+@router.delete("/{payment_id}", status_code=status.HTTP_204_NO_CONTENT)
+def borrar_cobro_manual(payment_id: int, db: Session = Depends(get_db)) -> Response:
+    """Borra un cobro anotado A MANO (solo esos: lo de Stripe es el extracto).
+
+    Un 1290 tecleado en vez de 129 entraba en el total del mes, en la gráfica,
+    en el CSV de la gestoría y reescribía la ventana de renovación… y no había
+    NINGÚN camino en la web para arreglarlo. Al borrarlo, la ficha vuelve a
+    apuntar al cobro anterior del cliente.
+    """
+    from app.models import Payment
+
+    pago = db.get(Payment, payment_id)
+    if pago is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Cobro no encontrado")
+    if pago.kind != "manual":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Solo se pueden borrar los cobros anotados a mano: los de Stripe "
+            "son el extracto real de la pasarela.")
+    client_id = pago.client_id
+    db.delete(pago)
+    db.flush()
+    # La ficha se recalcula con lo que QUEDA: si se borra el último cobro, el
+    # cliente no puede quedarse con esa fecha de pago fantasma.
+    if client_id:
+        cliente = db.get(Client, client_id)
+        if cliente is not None:
+            # Los cobros de Stripe se enlazan por EMAIL, y si el cliente pagó
+            # con otro correo su fila queda sin ficha: mirando solo client_id,
+            # borrar un cobro a mano marcaba como IMPAGADO a alguien que sí
+            # había pagado (y le reabría el aviso de pago y el banner del
+            # portal). Se mira también por su email, igual que la pasarela.
+            email = (cliente.email or "").strip().lower()
+            suyos = [Payment.client_id == client_id]
+            if email:
+                suyos.append(func.lower(Payment.customer_email) == email)
+            ultimo = db.scalar(
+                select(Payment).where(Payment.status == "paid", or_(*suyos))
+                .order_by(Payment.paid_at.desc().nullslast()).limit(1))
+            cliente.paid_at = ultimo.paid_at if ultimo else None
+            # Una suscripción viva de Stripe manda sobre la ausencia de filas:
+            # el cobro está domiciliado aunque el libro aún no lo tenga.
+            if ultimo is None and not cliente.stripe_subscription_id:
+                cliente.payment_status = "pending"
+    log_event(db, "client", client_id or 0, "manual_payment_deleted",
+              {"payment_id": payment_id, "amount_cents": pago.amount_cents})
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/manual", response_model=PaymentOut, status_code=status.HTTP_201_CREATED)

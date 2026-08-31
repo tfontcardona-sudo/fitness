@@ -247,6 +247,10 @@ def _indice_nutricion(nutrition: dict, include_training: bool,
     if nutrition.get("meals"):
         partes.append("Estructura diaria")
     partes += ["Alimentos por grupos", "Tus comidas", "Dieta semanal"]
+    # El menú cerrado lleva además su lista de la compra semanal.
+    bank_modo = (nutrition.get("meal_bank") or {})
+    if bank_modo.get("mode") == "strict" and bank_modo.get("days"):
+        partes.append("Tu lista de la compra semanal")
     reglas = [r for r in (nutrition.get("flexibility_rules") or []) if str(r).strip()
               and not _food_blocked(str(r), bl, diet_pattern)]
     refeed = (nutrition.get("refeed_or_break") or "").strip()
@@ -415,6 +419,7 @@ def generate_plan_doc(
     food_allergies: list[str] | None = None, food_dislikes: list[str] | None = None,
     include_training: bool = False, include_nutrition: bool = True,
     diet_pattern: str | None = None,
+    generated_on: _date | None = None,
 ) -> bytes:
     # El documento lleva lo que el cliente tenga contratado: dieta, entreno o las
     # dos cosas. include_nutrition=False es el plan `train` (documento SOLO de
@@ -462,7 +467,11 @@ def generate_plan_doc(
     setup_reference_pages(
         doc, logo_path=str(ASSETS / "dq_logo.png"),
         right_title=f"{_cabecera} | {client_name}",
-        right_sub=f"Mes {month_index} · {_date.today().strftime('%d/%m/%Y')}",
+        # Fecha de GENERACIÓN del plan, no del día en que se pulsa "descargar":
+        # el PDF se construye bajo demanda, así que el mismo plan salía con una
+        # fecha distinta cada vez y el del mes 3 podía parecer posterior al del
+        # mes 4. `today()` queda solo como último recurso.
+        right_sub=f"Mes {month_index} · {(generated_on or _date.today()).strftime('%d/%m/%Y')}",
         footer_text=_pie,
     )
 
@@ -603,6 +612,33 @@ def generate_plan_doc(
             if libre:
                 section_bar(doc, "Tu comida libre semanal", GOLD)
                 info_box(doc, [libre], fill=CREAM, cant_split=True)
+            # LISTA DE LA COMPRA: con el menú cerrado el cliente tenía que sumar
+            # a mano los ingredientes de 28 platos para ir al supermercado. La
+            # pieza que lo resuelve existía entera (y con tests) y no la
+            # llamaba nadie.
+            try:
+                from app.services.docs.shopping_list import build_shopping_list
+
+                compra = build_shopping_list(bank)
+            except Exception:  # noqa: BLE001 — nunca tumba el documento
+                compra = {}
+            if compra:
+                section_bar(doc, "Tu lista de la compra semanal", BLUE)
+                lineas = []
+                for categoria, items in compra.items():
+                    partes = [
+                        (f"{it['food']} {int(it['grams'])} g" if it.get("grams")
+                         else f"{it['food']} (al gusto)")
+                        for it in items
+                    ]
+                    if partes:
+                        lineas.append(f"{categoria}: " + " · ".join(partes))
+                if lineas:
+                    # cant_split=False: la lista de la compra NO tiene cota (son
+                    # todos los alimentos de la semana agrupados por categoría).
+                    # En una caja indivisible, lo que no cabe en la página se
+                    # pierde de vista: el cliente iba al súper con media lista.
+                    info_box(doc, lineas, fill=CREAM)
         elif diet_mode != "strict" and meals:
             blocks = {s.get("slot"): s for s in bank.get("slots", [])}
             for m in meals:
@@ -706,7 +742,8 @@ def generate_plan_doc(
 
 
     if not include_training or not training:
-        _education_section(doc, education, include_training=False)
+        _education_section(doc, education, include_training=False,
+                           blocked=blocked, diet_pattern=diet_pattern)
         _contact_section(doc, brand)
         buf = io.BytesIO()
         doc.save(buf)
@@ -811,7 +848,8 @@ def generate_plan_doc(
                    "vuelvas más fuerte.")
         info_box(doc, [training["deload_instructions"]])
 
-    _education_section(doc, education, include_training=True)
+    _education_section(doc, education, include_training=True,
+                       blocked=blocked, diet_pattern=diet_pattern)
     _contact_section(doc, brand)
 
     buf = io.BytesIO()
@@ -832,15 +870,26 @@ def _contact_section(doc: Document, brand: DocBrand) -> None:
     info_box(doc, lineas, fill=CREAM, label_color=WINE, cant_split=True)
 
 
-def _education_section(doc: Document, education: dict | None, *, include_training: bool) -> None:
+def _education_section(doc: Document, education: dict | None, *, include_training: bool,
+                       blocked: list[str] | None = None,
+                       diet_pattern: str | None = None) -> None:
     """Contenido educativo del plan (píldoras, técnica por patrones, FAQ).
     Se generaba con IA y se guardaba en education_json pero NUNCA llegaba al
     documento del cliente (auditoría): el parámetro entraba y no se usaba.
-    Cada tarjeta viaja entera a la página siguiente si no cabe (cant_split)."""
+    Cada tarjeta viaja entera a la página siguiente si no cabe (cant_split).
+
+    FILTRO DE ALÉRGENOS: era la ÚNICA sección del documento que no pasaba por
+    él, y encima su texto no está escrito para este cliente (la caché sirve el
+    mismo contenido a todos los del mismo split), así que una píldora o una FAQ
+    sobre lácteos podía acabar impresa en el PDF de un alérgico a la leche o de
+    un vegano. Se descarta la píldora/FAQ entera, como con las ideas rápidas."""
     edu = education or {}
-    pills = [p for p in (edu.get("pills") or []) if (p.get("for_client") or "").strip()]
+    bl = blocked or []
+    pills = [p for p in (edu.get("pills") or []) if (p.get("for_client") or "").strip()
+             and not _blocked_line((p.get("topic", ""), p.get("for_client", "")), bl, diet_pattern)]
     biomech = [b for b in (edu.get("biomech_by_pattern") or []) if b.get("pattern")]
-    faq = [f for f in (edu.get("faq") or []) if (f.get("q") or "").strip()]
+    faq = [f for f in (edu.get("faq") or []) if (f.get("q") or "").strip()
+           and not _blocked_line((f.get("q", ""), f.get("a", "")), bl, diet_pattern)]
     if not (pills or biomech or faq):
         return
 

@@ -52,7 +52,7 @@ def _no_real_email(monkeypatch):
     sent = []
     monkeypatch.setattr(EmailService, "_transport", lambda self, msg: sent.append(msg))
     monkeypatch.setenv("EMAILS_ENABLED", "true")
-    # settings ya está cacheado; forzamos el flag directamente
+    # settings ya está cacheado; forzamos los flags directamente
     from app.config import settings
 
     monkeypatch.setattr(settings, "emails_enabled", True)
@@ -60,6 +60,14 @@ def _no_real_email(monkeypatch):
     monkeypatch.setattr(settings, "smtp_user", "coach@example.com")
     monkeypatch.setattr(settings, "smtp_pass", "clave-de-prueba")
     monkeypatch.setattr(settings, "smtp_from", "coach@example.com")
+    # …y el SMTP CONFIGURADO. `EmailService.send` corta antes de llegar al
+    # transporte si faltan host/user/pass, y registra el intento como "failed":
+    # sin esto, en los tests TODOS los correos quedaban como fallidos, que es
+    # justo lo contrario de lo que simula el fixture (y lo que pasa en
+    # producción). Con la dedup mirando el estado, esa mentira se notaba.
+    monkeypatch.setattr(settings, "smtp_host", "smtp.test.local")
+    monkeypatch.setattr(settings, "smtp_user", "coach@example.com")
+    monkeypatch.setattr(settings, "smtp_pass", "app-password-de-prueba")
     return sent
 
 
@@ -215,3 +223,104 @@ def test_job_respects_client_email_toggle(db, _no_real_email):
     log = db.scalar(select(EmailLog).where(
         EmailLog.client_id == client.id, EmailLog.kind == "coach_at_risk"))
     assert log is not None and log.status == "disabled"
+
+
+def test_quien_solo_registra_entrenos_no_es_un_cliente_en_riesgo(db, _no_real_email):
+    """DQR Train: registra sus series cada sesión y NADA de diario.
+
+    El motor de "en riesgo" solo miraba los campos del diario, así que lo veía
+    con 0 días y el día 10 lo marcaba `at_risk` con «adherencia 0%», mientras
+    la alerta `no_logs` del panel —que sí cuenta las series— decía lo
+    contrario. Ahora las tres capas leen la misma definición de "día
+    registrado".
+    """
+    import uuid
+
+    from app.models import DailyLog, Exercise, WorkoutLog
+    from app.services.jobs import run_daily_maintenance
+
+    hoy = date(2026, 6, 20)
+    client = _make_client(db, status="active", email="train@example.com")
+    period = _make_period(db, client, start=hoy - timedelta(days=10),
+                          end=hoy + timedelta(days=4), status="open")
+
+    ex = Exercise(canonical_name=f"Sentadilla train {uuid.uuid4().hex[:6]}",
+                  muscle_primary="pierna", movement_pattern="sentadilla",
+                  equipment=["barra"], aliases=[], muscle_secondary=[],
+                  contraindications=[])
+    db.add(ex)
+    db.flush()
+    for i in range(9):
+        lg = DailyLog(period_id=period.id, log_date=hoy - timedelta(days=9 - i))
+        db.add(lg)
+        db.flush()
+        db.add(WorkoutLog(daily_log_id=lg.id, exercise_id=ex.id, set_number=1,
+                          reps=8, weight_kg=80))
+    db.commit()
+
+    from app.services.jobs import _facts_for
+
+    hechos = _facts_for(db, client)
+    assert hechos.days_logged_in_period == 9
+
+    run_daily_maintenance(db, hoy)
+    db.refresh(client)
+    assert client.status == "active", "entrenar cada día no puede ser 'en riesgo'"
+    assert _count_emails(db, client.id, "coach_at_risk") == 0
+
+    # Y la racha del portal cuenta esos mismos días.
+    from app.services.portal import streak_days
+
+    assert streak_days(db, client.id, hoy) >= 1
+
+    # Limpieza: el ejercicio no es del cliente, así que el barrido de conftest
+    # (que borra los clientes de dominios de prueba) no se lo lleva.
+    import sqlalchemy as sa
+
+    db.execute(sa.delete(WorkoutLog).where(WorkoutLog.exercise_id == ex.id))
+    db.execute(sa.delete(Exercise).where(Exercise.id == ex.id))
+    db.commit()
+
+
+# --- Tanda 3: un correo que FALLA no puede contar como enviado ---------------
+
+def test_un_recordatorio_que_falla_se_reintenta_al_dia_siguiente(db, _no_real_email):
+    """El cupo y la dedup contaban las filas de email_log SIN mirar su estado:
+    con el SMTP caído, los intentos fallidos gastaban el cupo y el cliente se
+    quedaba sin recordatorio aunque el correo volviera a funcionar."""
+    from datetime import date, timedelta
+
+    from app.models import EmailLog
+    from app.services import jobs
+
+    hoy = date.today()
+    c = _make_client(db, status="active", email="fallo@test.local")
+    # Tres intentos FALLIDOS de hoy (SMTP caído).
+    for _ in range(3):
+        db.add(EmailLog(client_id=c.id, kind="closing_due", subject="x",
+                        status="failed", error="SMTPAuthenticationError"))
+    db.commit()
+
+    # Ni la dedup del día ni el cupo del período los cuentan.
+    assert jobs._already_sent_today(db, c.id, "closing_due", hoy) is False
+    assert jobs._enviados_desde(db, c.id, "closing_due", hoy - timedelta(days=1)) == 0
+
+    # Uno que SÍ salió sí cuenta (si no, se acosaría al cliente).
+    db.add(EmailLog(client_id=c.id, kind="closing_due", subject="x", status="sent"))
+    db.commit()
+    assert jobs._already_sent_today(db, c.id, "closing_due", hoy) is True
+    assert jobs._enviados_desde(db, c.id, "closing_due", hoy - timedelta(days=1)) == 1
+
+
+def test_el_cliente_que_no_quiere_correos_no_se_reintenta_cada_dia(db, _no_real_email):
+    """"disabled" (el cliente apagó sus correos) sí es un final: reintentarlo a
+    diario solo llenaría email_log de filas inútiles."""
+    from datetime import date
+
+    from app.models import EmailLog
+    from app.services import jobs
+
+    c = _make_client(db, status="active", email="nocorreo@test.local")
+    db.add(EmailLog(client_id=c.id, kind="closing_due", subject="x", status="disabled"))
+    db.commit()
+    assert jobs._already_sent_today(db, c.id, "closing_due", date.today()) is True

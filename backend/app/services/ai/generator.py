@@ -175,6 +175,119 @@ def _strip_allergens_from_bank(meals, allergies: list[str] | None) -> int:
     return removed
 
 
+# Cuánto pueden separarse entre sí los ratios de los tres macros para que el
+# desvío del plato siga siendo "de escala" y no "de composición" (ver abajo).
+_RATIO_ESCALA_MAX = 1.05
+
+
+def _es_desvio_de_escala(mac: dict, t: dict) -> bool:
+    """¿El plato es el mix CORRECTO en la cantidad equivocada?
+
+    Es la única forma de desvío que se puede arreglar moviendo los gramos: si
+    al plato le falta un 12% de todo, con un 12% más de cada ingrediente queda
+    cuadrado y sigue siendo lo que sus ingredientes dan.
+
+    Si en cambio le sobra grasa y le falta proteína (desvío de COMPOSICIÓN), no
+    hay ningún factor de gramos que lo arregle: habría que cambiar el reparto
+    de alimentos. Escalar ahí deja los macros clavados al objetivo y los gramos
+    produciendo otra cosa — el plan IMPRIME unos macros que su propia lista de
+    la compra no da.
+    """
+    ratios = []
+    for eje in ("protein_g", "carbs_g", "fat_g"):
+        val, tgt = float(mac.get(eje) or 0), float(t.get(eje) or 0)
+        if val > 0 and tgt > 0:
+            ratios.append(tgt / val)
+    if len(ratios) < 2:          # sin dos ejes que comparar, no se afirma nada
+        return False
+    return (max(ratios) / min(ratios)) <= _RATIO_ESCALA_MAX
+
+
+def _repara_desvios_del_banco(bank: dict, targets: dict[int, dict],
+                              foods_by_id: dict | None = None) -> int:
+    """Ajusta al objetivo de SU toma los platos que se salen de la tolerancia.
+
+    Principio del sistema: la IA SELECCIONA alimentos, el backend FIJA los
+    gramos. En la generación esto no se hacía: un plato a 700 kcal contra un
+    objetivo de 800 se marcaba como `violation:` y RETENÍA el plan entero, aun
+    sabiendo el backend cuadrarlo (es lo que ya hace en el camino del coach y
+    en la adaptación). Cada eje va por su ratio y las kcal se recalculan de los
+    macros (4/4/9), igual que en `nutrition_scale`. Devuelve cuántos cuadró.
+
+    SOLO se cuadra el desvío de ESCALA. `_scale_dish` fija cada macro a su eje
+    pero mueve todos los gramos por un ÚNICO factor (el cambio de energía del
+    plato), así que con un desvío de COMPOSICIÓN los macros quedaban exactos y
+    los ingredientes ya no los producían: el plato DECLARABA una proteína que
+    sus gramos no dan, el PDF imprimía esos gramos y la lista de la compra los
+    sumaba. Y nada lo cazaba después — el Revisor 0 compara los macros
+    DECLARADOS con el objetivo, y los revisores IA solo ven nombres de
+    alimentos. Un desvío de composición se deja SIN TOCAR: su `violation:`
+    sobrevive y el plan queda retenido para que lo mire el coach, que es
+    justo lo que debe pasar cuando el reparto de alimentos no da el objetivo.
+    """
+    from app.services.nutrition_scale import _scale_dish
+
+    tol = gr.MEAL_OPTION_TOLERANCE
+
+    def _platos():
+        if bank.get("mode") == "strict":
+            for dia in bank.get("days") or []:
+                for m in dia.get("meals") or []:
+                    yield m.get("dish"), targets.get(int(m.get("slot") or 0))
+        else:
+            for s in bank.get("slots") or []:
+                t = targets.get(int(s.get("slot") or 0))
+                for o in s.get("options") or []:
+                    yield o, t
+
+    cuadrados = 0
+    for plato, t in _platos():
+        if not isinstance(plato, dict) or not t:
+            continue
+        mac = plato.get("macros") or {}
+        fuera = False
+        for eje in ("kcal", "protein_g", "carbs_g", "fat_g"):
+            tgt, val = float(t.get(eje) or 0), float(mac.get(eje) or 0)
+            if tgt > 0 and abs(val - tgt) / tgt > tol:
+                fuera = True
+                break
+        if not fuera:
+            continue
+
+        if not _es_desvio_de_escala(mac, t):
+            continue     # de composición: que lo vea el coach, no se maquilla
+
+        # PRIMERO EL SOLVER. `_scale_dish` mueve todos los gramos por un único
+        # factor y no conoce el catálogo: se salta `min_grams`/`max_grams` (365 g
+        # de calabacín con tope de 350) y deja la medida casera mintiendo
+        # («4 ud (165 g)» con la unidad a 55 g). El solver hace justo lo que hay
+        # que hacer —cotas respetadas, ración cocinable y casera REGENERADA— y es
+        # determinista y gratis. Solo si no puede (algún ingrediente sin
+        # `food_id` del catálogo) se cae al escalado de siempre.
+        if foods_by_id:
+            try:
+                from app.services.portion_solver import snap_option_ingredients
+
+                fijado = snap_option_ingredients(
+                    plato.get("ingredients") or [], t, foods_by_id)
+            except Exception:  # noqa: BLE001 — el solver nunca rompe el cuadre
+                fijado = None
+            if fijado:
+                nuevos, macros = fijado
+                plato["ingredients"] = nuevos
+                plato["macros"] = macros
+                cuadrados += 1
+                continue
+
+        def _r(eje: str, _mac=mac, _t=t) -> float:
+            val, tgt = float(_mac.get(eje) or 0), float(_t.get(eje) or 0)
+            return (tgt / val) if val > 0 and tgt > 0 else 1.0
+
+        _scale_dish(plato, _r("kcal"), _r("protein_g"), _r("carbs_g"), _r("fat_g"))
+        cuadrados += 1
+    return cuadrados
+
+
 def _slot_targets(core: PlanCoreOutput) -> dict[int, dict]:
     """{slot: {kcal, protein_g, carbs_g, fat_g}} desde el núcleo, para validar
     opciones de comida con ±5%."""
@@ -310,12 +423,37 @@ def _analysis_block(ctx: ClientContext) -> str:
     )
 
 
-def _core_user_prompt(ctx: ClientContext) -> str:
+def _biblioteca_block(ctx: ClientContext) -> str:
+    """La BIBLIOTECA filtrada, tal cual viaja al modelo.
+
+    Es el bloque más gordo del prompt del núcleo (cientos de ejercicios) y vivía
+    en el USER prompt, que no se cachea: en el reintento por validación se
+    repagaba entero. Sacándolo aparte puede ir como segundo bloque de system con
+    `cache_control` — el primero (el prompt fijo) sigue cacheándose entre
+    clientes y este, específico de cada uno, se lee al 10% en el reintento."""
     library = [
         {"id": e["id"], "nombre": e["canonical_name"],
          "patron": e["movement_pattern"], "musculo": e["muscle_primary"]}
         for e in ctx.exercise_library
     ]
+    return ("BIBLIOTECA DE EJERCICIOS DISPONIBLE (usa SOLO estos exercise_id):\n"
+            + json.dumps(library, ensure_ascii=False))
+
+
+def _system_con_biblioteca(base: str, ctx: ClientContext) -> list[dict]:
+    """System en DOS bloques cacheados: el fijo (compartido entre clientes) y la
+    biblioteca de este cliente (compartida entre su llamada y su reintento)."""
+    return [
+        {"type": "text", "text": base, "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": _biblioteca_block(ctx),
+         "cache_control": {"type": "ephemeral"}},
+    ]
+
+
+def _core_user_prompt(ctx: ClientContext) -> str:
+    # (La biblioteca ya NO se monta aquí: viaja en el bloque de system
+    #  cacheado, `_biblioteca_block`. Construirla también aquí era trabajo
+    #  tirado en cada generación — y la mitad vieja del refactor.)
     max_sets = max(
         1,
         (ctx.session_max_min - gr.SESSION_MINUTES_FIXED_OVERHEAD)
@@ -332,8 +470,8 @@ quiere conseguir esta persona (y por qué). El plan de dieta Y el de
 entrenamiento deben estar diseñados para ESE fin concreto, no solo para la
 etiqueta genérica del objetivo. Refléjalo en rationale y split_rationale.
 
-BIBLIOTECA DE EJERCICIOS DISPONIBLE (usa SOLO estos exercise_id):
-{json.dumps(library, ensure_ascii=False)}
+(La BIBLIOTECA DE EJERCICIOS te llega arriba, en las instrucciones: usa SOLO
+esos exercise_id.)
 
 Devuelve un JSON con esta forma EXACTA (sin texto fuera del JSON). TODOS los campos de
 cada objeto son OBLIGATORIOS salvo los marcados como (null si no aplica). No omitas NINGUNO:
@@ -409,11 +547,7 @@ def _core_user_prompt_training_only(ctx: ClientContext) -> str:
     contexto que el completo, pero se pide EXCLUSIVAMENTE el entrenamiento (sin
     dieta, macros ni comidas). La metodología de entreno viaja en el system
     prompt (`system_prompt_training_only`), así que aquí van datos y forma."""
-    lib = [
-        {"id": e["id"], "nombre": e["canonical_name"],
-         "patron": e["movement_pattern"], "musculo": e["muscle_primary"]}
-        for e in ctx.exercise_library
-    ]
+    # (Igual que en el núcleo completo: la biblioteca va en el system.)
     max_sets = max(
         1,
         (ctx.session_max_min - gr.SESSION_MINUTES_FIXED_OVERHEAD)
@@ -433,8 +567,8 @@ quiere conseguir esta persona. El entrenamiento debe estar diseñado para ESE fi
 concreto, no solo para la etiqueta genérica del objetivo. Refléjalo en
 split_rationale.
 
-BIBLIOTECA DE EJERCICIOS DISPONIBLE (usa SOLO estos exercise_id):
-{json.dumps(lib, ensure_ascii=False)}
+(La BIBLIOTECA DE EJERCICIOS te llega arriba, en las instrucciones: usa SOLO
+esos exercise_id.)
 
 RESTRICCIÓN DE DURACIÓN: la duración de cada sesión se estima como (total de series × \
 {gr.SESSION_MINUTES_FORMULA_PER_SET} min) + {gr.SESSION_MINUTES_FIXED_OVERHEAD} min. El cliente \
@@ -521,6 +655,39 @@ def _food_catalog_block(food_catalog: list[dict] | None) -> str:
     )
 
 
+# El patrón dietético dicho en cristiano para el prompt que ELIGE los alimentos.
+# Antes solo viajaba en el bloque del cliente (núcleo) y en el filtro del
+# catálogo: la llamada de comidas no lo sabía, así que a un vegano se le podía
+# proponer pollo y el plan acababa vetado por el Revisor 0 (créditos tirados y
+# borrador retenido). Los alimentos prohibidos salen de la MISMA tabla que usa
+# el validador (guardrails._DIET_PATTERN_FORBIDDEN): una sola verdad.
+_PATRON_TEXTO = {
+    "vegano": "VEGANO: ni carne, ni pescado, ni marisco, ni huevo, ni lácteos, ni miel",
+    "vegetariano": "VEGETARIANO: ni carne ni pescado ni marisco (sí huevo y lácteos)",
+    "pescetariano": "PESCETARIANO: nada de carne (sí pescado, huevo y lácteos)",
+    "sin_cerdo": "SIN CERDO: ni cerdo ni sus derivados (jamón, bacon, chorizo…)",
+    "halal": "HALAL: ni cerdo ni derivados ni alcohol",
+    "kosher": "KOSHER: ni cerdo ni marisco; no mezcles carne con lácteos en la misma toma",
+}
+
+
+def _patron_block(patron: str | None) -> str:
+    if not patron:
+        return ""
+    clave = (patron or "").strip().lower().replace(" ", "_")
+    texto = _PATRON_TEXTO.get(clave)
+    if not texto:
+        return f" PATRÓN DIETÉTICO OBLIGATORIO: {patron}."
+    try:
+        from app.services.guardrails import _DIET_PATTERN_FORBIDDEN
+
+        prohibidos = ", ".join(_DIET_PATTERN_FORBIDDEN.get(clave, ())[:14])
+    except Exception:  # noqa: BLE001
+        prohibidos = ""
+    extra = f" (nada de: {prohibidos}…)" if prohibidos else ""
+    return f" PATRÓN DIETÉTICO OBLIGATORIO — {texto}{extra}."
+
+
 def _meals_user_prompt(ctx: ClientContext, core: PlanCoreOutput,
                        food_catalog: list[dict] | None = None) -> str:
     targets = _slot_targets(core)
@@ -534,7 +701,8 @@ TOMAS DEL DÍA (slot, nombre, hora, macros objetivo del slot):
 {json.dumps(slot_info, ensure_ascii=False, indent=2)}
 
 PROHIBIDO (NINGÚN plato puede contenerlo — seguridad): \
-alergias/intolerancias={ctx.food_allergies}, aversiones={ctx.food_dislikes}. \
+alergias/intolerancias={ctx.food_allergies}, aversiones={ctx.food_dislikes}.\
+{_patron_block(ctx.diet_pattern)} \
 PREFERIR / INCLUIR cuando encaje en los macros (alimentos que le gustan): {ctx.food_likes}.\
 {(' SALUD A TENER EN CUENTA EN LA DIETA (patologías, medicación, digestivo): ' + ctx.clinical_notes.replace(chr(10), ' ')) if ctx.clinical_notes else ''}\
 {_food_catalog_block(food_catalog)}"""
@@ -601,13 +769,31 @@ JSON: {{"mode":"strict","days":[{{"day":"lunes","meals":[{{"slot":N,"dish":{{"ke
 {free_meal}}}"""
 
 
-def _education_user_prompt(core: PlanCoreOutput) -> str:
+def _education_user_prompt(core: PlanCoreOutput, ctx: "ClientContext | None" = None) -> str:
     patterns = sorted({
         "empuje_horizontal", "empuje_vertical", "traccion_horizontal",
         "traccion_vertical", "sentadilla", "bisagra_cadera",
     })
-    return f"""Genera el CONTENIDO EDUCATIVO del plan.
+    # Restricciones alimentarias EN EL PROMPT: el educativo es lo único del
+    # documento que no lo sabía, y encima se cachea por prompt — así que una
+    # píldora sobre lácteos escrita para otro cliente acababa impresa en el PDF
+    # de un alérgico a la leche o de un vegano. Al viajar en el prompt, la
+    # caché las separa sola (la clave incluye el texto del prompt).
+    restricciones = ""
+    if ctx is not None:
+        partes = []
+        if getattr(ctx, "diet_pattern", None):
+            partes.append(f"patrón dietético {ctx.diet_pattern}")
+        if getattr(ctx, "food_allergies", None):
+            partes.append("alergias/intolerancias: " + ", ".join(ctx.food_allergies))
+        if partes:
+            restricciones = ("\nRESTRICCIONES ALIMENTARIAS DEL CLIENTE (" +
+                             " · ".join(partes) +
+                             "): ningún ejemplo, píldora ni FAQ puede recomendar "
+                             "esos alimentos.\n")
 
+    return f"""Genera el CONTENIDO EDUCATIVO del plan.
+{restricciones}
 Split del cliente: {core.training.split_name}.
 JSON: {{"pills":[{{"topic":...,"for_client":...}} (EXACTAMENTE 3)],
 "biomech_by_pattern":[{{"pattern":...,"cues":[...],"why":...}}],
@@ -745,7 +931,8 @@ def generate_monthly_plan(
 
         try:
             tcore = ai.generate_json(
-                model=model, system=system_prompt_training_only(),
+                model=model,
+                system=_system_con_biblioteca(system_prompt_training_only(), ctx),
                 user=_core_user_prompt_training_only(ctx) + _lecciones,
                 schema=TrainingOnlyCoreOutput,
             )
@@ -760,7 +947,8 @@ def generate_monthly_plan(
             # tumbaba la generación entera y el coach solo veía un error.
             try:
                 tcore2 = ai.generate_json(
-                    model=model, system=system_prompt_training_only(),
+                    model=model,
+                    system=_system_con_biblioteca(system_prompt_training_only(), ctx),
                     user=_core_user_prompt_training_only(ctx) + _lecciones
                     + "\n\nATENCIÓN: tu intento anterior violó estas reglas de "
                       "seguridad; corrígelas TODAS sin cambiar nada más:\n- "
@@ -803,7 +991,8 @@ def generate_monthly_plan(
     def _llamar_nucleo(extra: str = ""):
         if include_training:
             return ai.generate_json(
-                model=model, system=system_prompt_full(),
+                model=model,
+                system=_system_con_biblioteca(system_prompt_full(), ctx),
                 user=_core_user_prompt(ctx) + _lecciones + extra,
                 schema=PlanCoreOutput,
             )
@@ -920,10 +1109,17 @@ def generate_monthly_plan(
         try:
             from app.services.diet_training_coherence import check_diet_training_coherence
 
+            from app.services.diet_training_coherence import horarios_de_las_notas
+
+            # La jornada, la hora de entreno y el sueño están en las notas de
+            # la anamnesis: sin pasarlas, tres de las comprobaciones de §6 no
+            # se ejecutaban nunca en producción.
+            horarios = horarios_de_las_notas(ctx.goal_in_own_words)
             coh = check_diet_training_coherence(
                 core.nutrition.model_dump(), training_core.model_dump(),
                 tdee=ctx.tdee,
                 exercise_lookup=_exercise_lookup(ctx.exercise_library),
+                **horarios,
             )
             flags += coh.as_flags()
         except Exception:  # noqa: BLE001 — el chequeo nunca frena la generación
@@ -958,20 +1154,11 @@ def generate_monthly_plan(
                 flags.append(f"solver: {snapped} opción(es) con gramos fijados por el catálogo (§2)")
         except Exception:  # noqa: BLE001 — el solver nunca rompe la generación
             pass
-    if isinstance(meals, MealsFlexibleOutput):
-        meal_report = gr.check_meal_options(
-            [s.model_dump() for s in meals.slots], targets,
-            allergies=ctx.food_allergies, dislikes=ctx.food_dislikes,
-        )
-    else:
-        meal_report = gr.check_strict_day_meals(
-            [d.model_dump() for d in meals.days], targets,
-            allergies=ctx.food_allergies, dislikes=ctx.food_dislikes,
-        )
-    # Las opciones fuera de ±5% son warnings recuperables: se marcan para que el
-    # coach revise; no bloquean (re-pedir opción por opción se hace en Fase 4
-    # cuando hay scheduler/SSE; aquí lo dejamos como flag accionable).
-    flags += meal_report.as_flags()
+    # PRIMERO REPARAR, DESPUÉS JUZGAR. Al revés (que es como estaba) el informe
+    # veía el banco SIN reparar: sus "violation:" retenían el plan en borrador
+    # por un alérgeno que la línea siguiente ya había retirado y por desvíos que
+    # el propio backend sabe cuadrar. El coach acababa buscando en el editor un
+    # aviso fantasma y activando a mano cada plan.
 
     # SEGURIDAD: retira del banco cualquier opción/alimento con un alérgeno
     # declarado (cuando queda alternativa segura), para que un alérgeno NUNCA
@@ -982,6 +1169,41 @@ def generate_monthly_plan(
         if removed:
             flags.append(f"seguridad: retiradas {removed} opción(es)/alimento(s) con alérgenos del banco")
 
+    # CUADRE: la IA elige los alimentos, los gramos los fija el backend.
+    try:
+        bank_dict = meals.model_dump()
+        cuadrados = _repara_desvios_del_banco(
+            bank_dict, targets,
+            {f["id"]: f for f in (food_catalog or []) if f.get("id") is not None})
+        if cuadrados:
+            meals = schema.model_validate(bank_dict)
+            flags.append(
+                f"cuadre: {cuadrados} plato(s) ajustados al objetivo de su toma "
+                "(corregido automáticamente)")
+    except Exception as exc:  # noqa: BLE001 — el cuadre nunca rompe la generación
+        # PERO NO EN SILENCIO. Si la revalidación falla (bastaba un ingrediente
+        # que cayera a 0 g), se perdían TODAS las reparaciones y el plan salía
+        # retenido por desvíos que el backend acababa de corregir, sin que nada
+        # dijera por qué. El coach se iba al editor a buscar un aviso fantasma.
+        flags.append(
+            "aviso: el cuadre automático del banco no se pudo aplicar "
+            f"({type(exc).__name__}) — revisa las cantidades a mano")
+
+    if isinstance(meals, MealsFlexibleOutput):
+        meal_report = gr.check_meal_options(
+            [s.model_dump() for s in meals.slots], targets,
+            allergies=ctx.food_allergies, dislikes=ctx.food_dislikes,
+        )
+    else:
+        meal_report = gr.check_strict_day_meals(
+            [d.model_dump() for d in meals.days], targets,
+            allergies=ctx.food_allergies, dislikes=ctx.food_dislikes,
+        )
+    # Lo que sobrevive a la reparación sí es un problema real: si queda una
+    # violación (un alérgeno sin alternativa segura, un plato imposible de
+    # cuadrar) el plan se retiene, que es justo lo que se quiere.
+    flags += meal_report.as_flags()
+
     # ③ Educativo (solo con entrenamiento: las píldoras y la biomecánica giran
     #    en torno al entreno; en solo-nutrición no aplica).
     education: EducationOutput | None = None
@@ -989,7 +1211,7 @@ def generate_monthly_plan(
         try:
             education = _education_with_cache(
                 ai, split_name=core.training.split_name, variant="full",
-                user=_education_user_prompt(core),
+                user=_education_user_prompt(core, ctx),
             )
         except AIGenerationError:
             # AHORRO + robustez (auditoría de costes): antes un fallo aquí

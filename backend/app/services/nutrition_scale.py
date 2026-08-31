@@ -349,26 +349,63 @@ def _scale(v, f: float):
 
 
 def _scale_g(v, f: float):
-    """Gramos de ingrediente: reescala y redondea a múltiplos de 5 (half-up:
-    un ingrediente pequeño se conserva, no se esfuma a 0 g)."""
-    return max(0, _rhu(v * f / 5) * 5) if isinstance(v, (int, float)) else v
+    """Gramos de ingrediente: reescala y redondea a múltiplos de 5.
+
+    SUELO DE 5 g para lo que ya pesaba algo. El half-up conserva lo pequeño
+    hasta 2,5 g, pero por debajo caía a 0 — y el esquema exige `grams > 0`, así
+    que el `model_validate` de vuelta reventaba y el `except` de la generación
+    tiraba EN SILENCIO todas las reparaciones del banco: el plan salía sin
+    cuadrar y retenido por desvíos que el backend acababa de corregir. Un
+    ingrediente de 0 g, además, no es un ingrediente."""
+    if not isinstance(v, (int, float)):
+        return v
+    escalado = _rhu(v * f / 5) * 5
+    return max(5, escalado) if v > 0 else max(0, escalado)
 
 
 def _scale_amount_text(text, f: float):
     """Reescala las cantidades DENTRO de un texto de equivalencias
     ("140 g crudo = 380 g cocido" → ambos números). Solo toca números con
     unidad de peso/volumen (g/gr/ml); '2 huevos' o '1 taza' se quedan igual.
-    Redondea a múltiplos de 5 a partir de 25 (raciones cocinables)."""
+    Redondea a múltiplos de 5 a partir de 25 (raciones cocinables).
+
+    CASO "N ud (M g)": la medida casera que escribe el solver de porciones lleva
+    las unidades DELANTE. Al reescalar solo el número en gramos, el plato se
+    imprimía como «4 ud (165 g)» con la unidad de 55 g: cuatro huevos que pesan
+    tres. Aquí se recalcula también el número de unidades; si no da un entero
+    razonable, se deja solo el peso, que es lo que el cliente puede seguir."""
     if not isinstance(text, str) or f == 1.0:
         return text
 
-    def repl(m):
-        val = float(m.group(1).replace(",", "."))
-        scaled = val * f
-        scaled = _rhu(scaled / 5) * 5 if scaled >= 25 else max(1, _rhu(scaled))
-        return f"{int(scaled)} {m.group(2)}"
+    def _peso(val: float) -> int:
+        return int(_rhu(val / 5) * 5 if val >= 25 else max(1, _rhu(val)))
 
-    return re.sub(r"(\d+(?:[.,]\d+)?)\s*(g|gr|ml)\b", repl, text)
+    def repl_ud(m):
+        uds, val, unidad = float(m.group(1)), float(m.group(2).replace(",", ".")), m.group(3)
+        nuevo = _peso(val * f)
+        por_unidad = val / uds if uds > 0 else 0
+        if por_unidad > 0:
+            n = _rhu(nuevo / por_unidad)
+            if n >= 1 and abs(n * por_unidad - nuevo) <= max(1.0, 0.15 * por_unidad):
+                return f"{int(n)} ud ({nuevo} {unidad})"
+        return f"{nuevo} {unidad}"
+
+    # La forma compuesta se resuelve PRIMERO y su resultado se aparta: si se
+    # dejara en el texto, el barrido de abajo volvería a escalar sus gramos.
+    apartados: list[str] = []
+
+    def _aparta(m):
+        apartados.append(repl_ud(m))
+        return f"\x00{len(apartados) - 1}\x00"
+
+    text = re.sub(r"(\d+)\s*ud\s*\(\s*(\d+(?:[.,]\d+)?)\s*(g|gr|ml)\s*\)",
+                  _aparta, text)
+
+    def repl(m):
+        return f"{_peso(float(m.group(1).replace(',', '.')) * f)} {m.group(2)}"
+
+    text = re.sub(r"(\d+(?:[.,]\d+)?)\s*(g|gr|ml)\b", repl, text)
+    return re.sub(r"\x00(\d+)\x00", lambda m: apartados[int(m.group(1))], text)
 
 
 def _equiv_ratio(group_name, r_k: float, r_p: float, r_c: float, r_f: float) -> float:

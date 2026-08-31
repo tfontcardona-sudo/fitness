@@ -170,3 +170,48 @@ def test_la_renovacion_pagada_en_mano_tambien_se_puede_anotar(client, auth):
                      json={"client_id": cid, "amount_eur": 99.0, "method": "efectivo"},
                      headers=auth)
     assert r2.status_code == 201, r2.text
+
+
+def test_un_cobro_a_mano_mal_tecleado_se_puede_borrar(client, auth):
+    """1290 € en vez de 129 entraba en el total del mes, en la gráfica, en el
+    CSV de la gestoría y movía la ventana de renovación… y no había NINGÚN
+    camino en la web para arreglarlo. Los de Stripe, en cambio, son el extracto
+    real de la pasarela: esos no se tocan."""
+    from datetime import datetime, timezone
+
+    from app.db import SessionLocal
+    from app.models import Client, Payment
+    from app.services import payments as pay_svc
+
+    cid = _nuevo_cliente(client, auth)
+    r = client.post("/api/payments/manual", headers=auth, json={
+        "client_id": cid, "amount_eur": 1290.0, "method": "transferencia",
+    })
+    assert r.status_code == 201, r.text
+    pago_id = r.json()["id"]
+
+    with SessionLocal() as db:
+        cliente = db.get(Client, cid)
+        assert cliente.payment_status == "paid"
+        de_stripe = pay_svc.record_payment(
+            db, object_id=f"ch_no_borrar_{uuid.uuid4().hex[:8]}", kind="charge",
+            status="paid", amount_cents=12900, livemode=False, client=cliente,
+            paid_at=datetime.now(timezone.utc))
+        db.commit()
+        stripe_id = de_stripe.id
+
+    # Uno de Stripe NO se puede borrar.
+    assert client.delete(f"/api/payments/{stripe_id}", headers=auth).status_code == 409
+    # El de a mano sí.
+    assert client.delete(f"/api/payments/{pago_id}", headers=auth).status_code == 204
+
+    with SessionLocal() as db:
+        assert db.get(Payment, pago_id) is None
+        ficha = db.get(Client, cid)
+        # La ficha vuelve a apuntar al cobro que QUEDA, no a una fecha fantasma.
+        # Comparar contra el cobro RESTANTE (y no solo "no es None"): con
+        # `paid_at` ya puesto por el cobro borrado, la comprobación pasaba
+        # igual aunque el recálculo no existiera (auditoría: test flojo).
+        restante = db.get(Payment, stripe_id)
+        assert ficha.payment_status == "paid"
+        assert ficha.paid_at == restante.paid_at

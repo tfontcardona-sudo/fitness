@@ -73,6 +73,13 @@ def public_landing(request: Request, db: Session = Depends(get_db)) -> LandingOu
     )
 
 
+# EMBUDO SELF-SERVE. `/plan-prices`, `/register` y `/checkout` son el camino
+# del que llega a /planes decidido a contratar: elige plan, paga en Stripe y su
+# ficha nace sola. Estuvo un tiempo construido y sin botón —la página solo
+# llevaba al WhatsApp del coach— hasta que se le conectó "Contratar ahora", que
+# aterriza DIRECTO en la pasarela. El contacto sigue ahí para quien prefiere
+# preguntar antes de pagar.
+
 @router.get("/plan-prices")
 @limiter.limit("60/minute")
 def public_plan_prices(request: Request) -> dict:
@@ -81,12 +88,60 @@ def public_plan_prices(request: Request) -> dict:
     return get_plan_prices()
 
 
+# TOPE DIARIO GLOBAL del formulario público. El límite por IP (5/min) y el de
+# una hora por dirección no frenan a quien rota IPs y direcciones: cada llamada
+# creaba una ficha REAL y mandaba un email desde el buzón del coach a la
+# dirección que eligiera el que llama. Con la cuota de Gmail (~500/día) agotada
+# no salen NI los accesos al portal, NI los planes, NI los informes de los
+# clientes de verdad — y la cuenta puede acabar restringida por spam.
+# Configurable (PUBLIC_SIGNUPS_PER_DAY) para poder subirlo en una campaña.
+MAX_ALTAS_PUBLICAS_DIA = 25
+
+
+def _altas_publicas_de_hoy(db: Session) -> int:
+    from datetime import datetime, timezone as _tz
+
+    from app.models import AuditLog
+
+    hoy = datetime.now(_tz.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    return int(db.scalar(
+        select(func.count(AuditLog.id)).where(
+            AuditLog.entity == "client", AuditLog.event == "client_created",
+            AuditLog.created_at >= hoy,
+            AuditLog.detail_json["by"].astext == "self")
+    ) or 0)
+
+
+def _avisa_cupo_al_coach(db: Session, altas: int) -> None:
+    """Un tope alcanzado puede ser un ataque… o una campaña que funciona: el
+    coach tiene que enterarse el mismo día, no descubrirlo por las quejas."""
+    try:
+        from app.services import push as push_svc
+
+        push_svc.send_to_coach(db, {
+            "title": "⚠ Altas públicas al tope",
+            "body": (f"{altas} registros hoy desde la web: se ha frenado el "
+                     "formulario para proteger tu correo. Los que llegan ahora "
+                     "quedan anotados SIN ficha: dales el alta a mano."),
+            "count": 1,
+            "url": f"{settings.public_base_url.rstrip('/')}/clientes",
+            "tag": "dq-cupo-altas",
+        })
+    except Exception:  # noqa: BLE001 — el aviso nunca rompe la petición
+        pass
+
+
 @router.post("/register")
 @limiter.limit("5/minute")
 def public_register(request: Request, body: PublicRegisterIn,
                     db: Session = Depends(get_db)) -> dict:
     """Registro self-serve: crea la ficha (pago pendiente), envía el email de
-    arranque (pago + anamnesis) y devuelve la URL de pago de Stripe."""
+    arranque (pago + anamnesis) y devuelve la URL de pago de Stripe.
+
+    La web usa la vía CORTA (`/public/checkout`): el visitante pulsa "Contratar
+    ahora", paga, y su ficha nace del webhook con los datos que le pide Stripe.
+    Esta pide antes nombre, email y teléfono, y sirve para el alta guiada (un
+    formulario propio, una campaña) sin pasar por el panel."""
     # La oferta (en sus DOS formas de pago) es SOLO del plan Full — misma
     # validación que el alta manual: sin ella se colaba un train/nutri+oferta
     # cuyo enlace de pago cobraría un plan que no existe.
@@ -95,6 +150,31 @@ def public_register(request: Request, body: PublicRegisterIn,
                             "La oferta es solo del plan Full")
     email = body.email.strip().lower()
     client = db.scalar(select(Client).where(func.lower(Client.email) == email))
+
+    # Cupo diario: solo para ALTAS NUEVAS (un cliente que reintenta su propio
+    # pago nunca se queda fuera).
+    if client is None:
+        tope = getattr(settings, "public_signups_per_day", None) or MAX_ALTAS_PUBLICAS_DIA
+        altas = _altas_publicas_de_hoy(db)
+        if altas >= tope:
+            # El cupo protege la cuota de correo del coach, pero un tope
+            # alcanzado por una campaña que funciona tiraba el CLIENTE a la
+            # basura: se iba con un 429 y de él no quedaba ni el nombre. El
+            # lead se GUARDA en el registro (sin crear ficha ni mandar correo,
+            # que es lo que hay que frenar) para que el coach lo recupere y lo
+            # dé de alta a mano.
+            log_event(db, "client", 0, "public_signup_blocked", {
+                "full_name": body.full_name.strip(), "email": email,
+                "phone": body.phone.strip(), "tier": body.tier,
+                "period": body.period, "altas_hoy": altas, "tope": tope,
+            })
+            _avisa_cupo_al_coach(db, altas)
+            db.commit()
+            raise HTTPException(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                "Estamos recibiendo muchas solicitudes ahora mismo. Ya tenemos "
+                "tus datos: escríbenos por WhatsApp y te damos el alta a mano "
+                "hoy mismo.")
 
     # Solo se reutiliza una ficha en ONBOARDING con pago pendiente (el reintento
     # legítimo del propio interesado). Cualquier otra — pagada O YA EN MARCHA
@@ -116,7 +196,6 @@ def public_register(request: Request, body: PublicRegisterIn,
             package_tier=body.tier,
             billing_period=body.period,
             status="onboarding",
-            auto_pilot=settings.auto_pilot_default,
             portal_token="pendiente",  # se firma con el id real tras el flush
         )
         db.add(client)

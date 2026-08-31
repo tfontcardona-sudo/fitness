@@ -398,6 +398,46 @@ def test_consentimiento_no_cuenta_como_anamnesis(db, tmp_path, monkeypatch):
     assert [x["name"] for x in st.list_documents(c.id)] == ["anamnesis.pdf"]
 
 
+def test_quien_ya_mando_su_anamnesis_no_puede_reescribir_la_ficha(http, db, tmp_path,
+                                                                  monkeypatch):
+    """Ni por la vía PDF ni con el plan ya en marcha.
+
+    El enlace del cuestionario es permanente. Con el criterio antiguo (solo
+    `consent_signed_at`), el cliente que la mandó en PDF volvía a su enlace,
+    veía el formulario en blanco y podía machacar peso, objetivo, lesiones y
+    alergias de una ficha ya revisada — sin diff, sin historial y sin que
+    nadie se enterara.
+    """
+    import app.services.storage as st
+    from app.routers.portal_public import _anamnesis_recibida
+
+    monkeypatch.setattr(st, "storage_root", lambda: tmp_path)
+    c = _make_client(db, status="onboarding")
+    d = tmp_path / "clients" / str(c.id) / "documents"
+    d.mkdir(parents=True)
+    (d / "anamnesis.pdf").write_bytes(b"%PDF-1.4 anamnesis")
+    db.commit()
+
+    assert _anamnesis_recibida(c) is True
+    estado = http.get(f"/api/p/{c.portal_token}").json()
+    assert estado["anamnesis_done"] is True     # ve "recibida", no el wizard
+
+    body = {
+        "sex": "female", "birth_date": "1990-05-01", "height_cm": 160,
+        "start_weight_kg": 55.0, "goal_type": "muscle_gain", "level": "beginner",
+        "training_days": 3, "session_max_min": 45, "training_place": "home",
+        "daily_activity_level": "light", "diet_mode": "flexible_7",
+        "consent_accepted": True,
+    }
+    r = http.post(f"/api/p/{c.portal_token}/anamnesis", json=body)
+    assert r.status_code == 409, r.text
+    assert http.get(f"/api/p/{c.portal_token}/anamnesis/prefill").status_code == 409
+
+    # Y con el cliente ya activo (plan en marcha), tampoco.
+    c2 = _make_client(db, status="active")
+    assert http.post(f"/api/p/{c2.portal_token}/anamnesis", json=body).status_code == 409
+
+
 def test_formulario_digital_apaga_el_banner_y_avisa(http, db):
     from app.routers.portal_public import _needs_anamnesis
 
@@ -524,3 +564,227 @@ def test_subir_pdf_no_borra_el_consentimiento_rgpd(http, db, tmp_path, monkeypat
     assert "consentimiento_rgpd.pdf" in nombres          # la prueba legal sigue
     assert "anamnesis_vieja.pdf" not in nombres          # la anterior sí se retira
     assert any(n.endswith(".pdf") and "consentimiento" not in n for n in nombres)
+
+
+def test_quien_ya_envio_el_cuestionario_no_puede_reescribir_su_ficha_por_pdf(
+        http, db, tmp_path, monkeypatch):
+    """El PDF se LEE con IA y esa lectura PISA los campos de la ficha. Quien ya
+    mandó el formulario digital tiene una ficha que el coach puede haber
+    revisado y corregido: dejar entrar un PDF por detrás borraba esas
+    correcciones en silencio. El formulario ya responde 409 tras enviarse; el
+    PDF hacía la misma promesa y no la cumplía."""
+    import app.services.storage as st
+
+    monkeypatch.setattr(st, "storage_root", lambda: tmp_path)
+    c = _make_client(db, status="onboarding")
+    c.consent_signed_at = datetime.now(timezone.utc)   # envió el formulario
+    db.commit()
+
+    r = http.post(f"/api/p/{c.portal_token}/anamnesis-pdf",
+                  files={"file": ("anamnesis.pdf", b"%PDF-1.4 nueva", "application/pdf")})
+    assert r.status_code == 409, r.text
+    assert "coach" in r.json()["detail"]
+
+
+# --- Memoria de vetos: útil, pero SIN datos de nadie -------------------------
+
+def test_la_memoria_de_vetos_no_lleva_datos_del_cliente(tmp_path, monkeypatch):
+    """Las advertencias de vetos se inyectan en la generación de TODOS los
+    clientes: no pueden llevar las cifras ni los alimentos de uno concreto (ni
+    por privacidad ni porque los números los pone el backend, no la IA)."""
+    from app.config import settings
+    from app.services.coach_lessons import record_ai_vetos, vetos_reference
+
+    monkeypatch.setattr(settings, "storage_path", str(tmp_path))
+
+    reales = [
+        "violation: kcal objetivo 1450 por debajo del mínimo 1600 (max BMR/1600)",
+        "violation: proteína 120 g < mínimo 144 g (1.8 g/kg)",
+        "violation: ⚠ ALÉRGENO lactosa en «yogur griego» (opción 2 del slot 3)",
+        "violation: aversión declarada: pescado en «merluza al horno»",
+        "contrato: la IA devolvió 2300 kcal (objetivo del backend: 2000) — fijados",
+    ]
+    record_ai_vetos(reales)      # dos veces: solo lo repetido entra en el prompt
+    record_ai_vetos(reales)
+
+    bloque = vetos_reference()
+    assert bloque, "los vetos repetidos deberían entrar en el prompt"
+    assert not any(ch.isdigit() for ch in bloque), bloque
+    for dato in ("lactosa", "yogur", "merluza", "pescado", "1450", "144"):
+        assert dato not in bloque, f"se filtró «{dato}» al prompt de otro cliente"
+    # Y la lección SÍ se conserva, en genérico.
+    assert "alérgeno declarado" in bloque
+    assert "por debajo del mínimo" in bloque
+
+
+def test_los_vetos_ya_guardados_tambien_se_sanean_al_leerlos(tmp_path, monkeypatch):
+    """El filtro se aplicaba SOLO al escribir. El sidecar es de larga vida —la
+    memoria se acumula durante meses—, así que cualquier clave guardada antes
+    de que el filtro existiera (o metida a mano) viajaba tal cual al prompt de
+    TODOS los clientes, con las cifras y los alimentos de uno solo."""
+    import json
+
+    from app.config import settings
+    from app.services.coach_lessons import _vetos_path, vetos_reference
+
+    monkeypatch.setattr(settings, "storage_path", str(tmp_path))
+
+    # Sidecar "antiguo": escrito sin pasar por el filtro.
+    p = _vetos_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps({"conteo": {
+        "violation: kcal objetivo 1450 por debajo del mínimo 1600": 4,
+        "violation: ⚠ ALÉRGENO lactosa en «yogur griego» (opción 2 del slot 3)": 3,
+        "violation: aversión declarada: pescado en «merluza al horno»": 2,
+    }}, ensure_ascii=False), encoding="utf-8")
+
+    bloque = vetos_reference()
+    assert bloque, "los vetos repetidos deberían entrar en el prompt"
+    assert not any(ch.isdigit() for ch in bloque), bloque
+    for dato in ("lactosa", "yogur", "merluza", "pescado", "1450", "1600"):
+        assert dato not in bloque, f"se filtró «{dato}» al prompt de otro cliente"
+    # La lección sobrevive, en genérico.
+    assert "alérgeno declarado" in bloque
+    assert "por debajo del mínimo" in bloque
+
+
+
+def test_el_estado_del_cuestionario_dice_si_hay_consentimiento():
+    """Las fotos iniciales EXIGEN consentimiento firmado (son datos de salud) y
+    solo lo firma quien pasa por el FORMULARIO. Sin ese dato en el estado, la
+    pantalla ofrecía subirlas también a quien entregó su anamnesis en PDF, y el
+    backend le respondía 403: una petición imposible de satisfacer."""
+    import io
+    import uuid
+    from datetime import datetime, timezone
+
+    from fastapi.testclient import TestClient
+    from PIL import Image
+    from sqlalchemy import delete
+
+    from app.db import SessionLocal
+    from app.main import app
+    from app.models import Client
+    from app.security import new_portal_token
+
+    db = SessionLocal()
+    marca = uuid.uuid4().hex[:8]
+    c = Client(full_name=f"Sin Consentimiento {marca}",
+               email=f"sincons-{marca}@test.local", package_tier="full",
+               billing_period="1m", status="onboarding", portal_token="tmp",
+               payment_status="paid")
+    db.add(c)
+    db.flush()
+    c.portal_token = new_portal_token(c.id)
+    db.commit()
+    token, cid = c.portal_token, c.id
+    db.close()
+
+    buf = io.BytesIO()
+    Image.new("RGB", (60, 90), (120, 120, 120)).save(buf, format="JPEG")
+    try:
+        with TestClient(app) as http:
+            # Sin firmar: el estado lo dice Y el backend rechaza las fotos.
+            estado = http.get(f"/api/p/{token}").json()
+            assert estado["consent_signed"] is False
+            r = http.post(f"/api/p/{token}/anamnesis/photos",
+                          files={"files": ("f.jpg", buf.getvalue(), "image/jpeg")})
+            assert r.status_code == 403, r.text
+
+            # Firmado (vía formulario): el estado cambia y las fotos entran.
+            db = SessionLocal()
+            db.get(Client, cid).consent_signed_at = datetime.now(timezone.utc)
+            db.commit()
+            db.close()
+
+            estado = http.get(f"/api/p/{token}").json()
+            assert estado["consent_signed"] is True
+            r = http.post(f"/api/p/{token}/anamnesis/photos",
+                          files={"files": ("f.jpg", buf.getvalue(), "image/jpeg")})
+            assert r.status_code == 200, r.text
+
+            # Y el ÁNGULO viaja: la página sube una foto por ángulo. Cuando
+            # todas nacían "front", el primer informe emparejaba el frontal de
+            # la revisión con el lateral de la línea base (feedback_service
+            # empareja por `kind`).
+            r = http.post(f"/api/p/{token}/anamnesis/photos?kind=side",
+                          files={"files": ("s.jpg", buf.getvalue(), "image/jpeg")})
+            assert r.status_code == 200, r.text
+            assert r.json()[0]["kind"] == "side"
+    finally:
+        db = SessionLocal()
+        from app.models import ProgressPhoto
+
+        db.execute(delete(ProgressPhoto).where(ProgressPhoto.client_id == cid))
+        db.execute(delete(Client).where(Client.id == cid))
+        db.commit()
+        db.close()
+
+
+def test_las_contradicciones_y_el_retrato_siguen_a_la_ficha_corregida():
+    """Los dos son funciones DETERMINISTAS de la ficha —no salida de la IA, no
+    cuestan créditos— y se servían congelados desde el momento del envío. Eso
+    los convertía en una foto fija que mentía en las dos direcciones: seguían
+    avisando de algo que el coach ya había corregido, y callaban si era él
+    quien introducía la contradicción al editar. Y el retrato congelado ganaba
+    al recálculo en vivo, así que las correcciones del coach —la razón de que
+    revise la ficha antes de generar— NO llegaban al prompt."""
+    import os
+    import uuid
+    from datetime import date, timedelta
+
+    from fastapi.testclient import TestClient
+    from sqlalchemy import delete
+
+    from app.db import SessionLocal
+    from app.main import app
+    from app.models import Client
+    from app.security import create_access_token, new_portal_token
+
+    db = SessionLocal()
+    marca = uuid.uuid4().hex[:8]
+    # Objetivo imposible: perder 17 kg en un mes. Contradicción determinista.
+    c = Client(full_name=f"Contradice {marca}", email=f"contra-{marca}@test.local",
+               package_tier="full", billing_period="1m", status="active",
+               portal_token="tmp", payment_status="paid", sex="male",
+               birth_date=date.today() - timedelta(days=365 * 30), height_cm=178,
+               start_weight_kg=95.0, goal_type="fat_loss", goal_weight_kg=78.0,
+               goal_deadline=date.today() + timedelta(days=30),
+               level="beginner", training_days=3)
+    db.add(c)
+    db.flush()
+    c.portal_token = new_portal_token(c.id)
+    db.commit()
+    cid = c.id
+    db.close()
+
+    auth = {"Authorization": f"Bearer {create_access_token(os.environ.get('ADMIN_1_USER', 'coach1'))}"}
+    try:
+        with TestClient(app) as http:
+            r = http.get(f"/api/clients/{cid}/anamnesis-analysis", headers=auth).json()
+            assert r["contradictions"], "un objetivo imposible tiene que avisar"
+            assert r["deep_analysis"], "sin sidecar, el retrato se compone al vuelo"
+            assert "perder grasa" in r["deep_analysis"]
+
+            # El COACH corrige el plazo: la contradicción tiene que apagarse.
+            db = SessionLocal()
+            db.get(Client, cid).goal_deadline = date.today() + timedelta(days=300)
+            db.commit()
+            db.close()
+            r2 = http.get(f"/api/clients/{cid}/anamnesis-analysis", headers=auth).json()
+            assert not r2["contradictions"], (
+                f"sigue avisando de algo ya corregido: {r2['contradictions']}")
+
+            # Y si el coach cambia el objetivo, el retrato lo refleja.
+            db = SessionLocal()
+            db.get(Client, cid).goal_type = "muscle_gain"
+            db.commit()
+            db.close()
+            r3 = http.get(f"/api/clients/{cid}/anamnesis-analysis", headers=auth).json()
+            assert "ganar músculo" in r3["deep_analysis"], (
+                f"el retrato se quedó en el objetivo viejo: {r3['deep_analysis']}")
+    finally:
+        db = SessionLocal()
+        db.execute(delete(Client).where(Client.id == cid))
+        db.commit()
+        db.close()

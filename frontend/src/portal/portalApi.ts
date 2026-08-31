@@ -162,6 +162,11 @@ export function portalApi(token: string) {
     saveDiary: (body: Partial<DailyLogUpsert> & { log_date: string }) =>
       req<{ saved: boolean }>("PUT", `${base}/diary`, body),
     close: (body: PeriodCloseIn) => req<{ closed: boolean }>("POST", `${base}/close`, body),
+    // Cuántas fotos del período lleva subidas ya: el contador NO puede vivir
+    // solo en la pantalla (al volver o recargar arrancaba de cero, reetiquetaba
+    // desde "frontal" y prometía cuatro huecos que el servidor no tenía).
+    closePhotosCount: () =>
+      req<{ count: number; max: number }>("GET", `${base}/close/photos`),
     closePhotos: (files: File[], kind: string) => {
       const fd = new FormData();
       files.forEach((f) => fd.append("files", f));

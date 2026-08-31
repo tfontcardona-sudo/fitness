@@ -163,3 +163,55 @@ def test_resumen_de_uso_nunca_revienta():
         s = usage_summary(db)
     assert set(s) >= {"spent_today_usd", "spent_window_usd", "calls_window",
                       "last_call_at", "avg_cost_per_plan_usd", "window_days"}
+
+
+def test_el_gasto_de_varios_revisores_en_paralelo_no_se_pisa():
+    """Los 8-10 revisores del panel corren EN PARALELO, cada uno con su sesión.
+    Con el patrón leer-modificar-escribir todos leían el mismo saldo y el
+    último en escribir se llevaba por delante lo que habían sumado los otros:
+    el gasto anotado salía por debajo del real y el coach veía un saldo
+    optimista justo en la operación que más créditos consume."""
+    import threading
+
+    from sqlalchemy import select
+
+    from app.db import SessionLocal
+    from app.models import AiCreditState, AiUsageEvent
+    from app.services import ai_credit
+
+    db = SessionLocal()
+    try:
+        estado = ai_credit.get_state(db)
+        antes = float(estado.spent_usd or 0.0)
+        db.expire_all()
+    finally:
+        db.close()
+
+    coste = ai_credit.estimate_cost_usd("claude-opus-4-8", 10_000, 2_000)
+    assert coste > 0, "el modelo de prueba tiene que costar algo"
+
+    hilos = [threading.Thread(target=ai_credit.record_usage,
+                              args=("claude-opus-4-8", 10_000, 2_000))
+             for _ in range(8)]
+    for h in hilos:
+        h.start()
+    for h in hilos:
+        h.join()
+
+    db = SessionLocal()
+    try:
+        estado = db.scalar(select(AiCreditState).limit(1))
+        db.refresh(estado)
+        sumado = float(estado.spent_usd or 0.0) - antes
+        esperado = coste * 8
+        assert abs(sumado - esperado) < esperado * 0.01, (
+            f"se anotaron {sumado:.6f} $ de {esperado:.6f} $: se pisaron entre ellos")
+    finally:
+        # Limpieza: se deja el saldo como estaba y fuera los eventos de prueba.
+        estado.spent_usd = antes
+        db.query(AiUsageEvent).filter(
+            AiUsageEvent.model == "claude-opus-4-8",
+            AiUsageEvent.input_tokens == 10_000,
+            AiUsageEvent.output_tokens == 2_000).delete()
+        db.commit()
+        db.close()
