@@ -198,7 +198,6 @@ class ClientUpdate(BaseModel):
     diet_mode: DietMode | None = None
     diet_pattern: DietPattern | None = None
     strict_free_meal_enabled: bool | None = None
-    auto_pilot: bool | None = None
     emails_enabled: bool | None = None
 
 
@@ -259,7 +258,6 @@ class ClientOut(BaseModel):
     renewal_due: bool = False
     strict_free_meal_enabled: bool
     status: ClientStatus
-    auto_pilot: bool
     emails_enabled: bool
     consent_signed_at: datetime | None
     portal_access_sent_at: datetime | None = None

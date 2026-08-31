@@ -322,7 +322,6 @@ export interface ClientOut {
   renewal_due?: boolean;
   strict_free_meal_enabled: boolean;
   status: ClientStatus;
-  auto_pilot: boolean;
   emails_enabled: boolean;
   consent_signed_at: string | null;
   portal_access_sent_at?: string | null;

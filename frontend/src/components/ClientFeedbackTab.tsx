@@ -7,6 +7,7 @@ import { selloAdaptacion } from "./ClientPlanPanel";
 import { api, getToken } from "../lib/api";
 import { feedbackBody, feedbackMessage, openWhatsApp, videoCallModifyMessage, videoCallScheduledMessage, waPhone } from "../lib/whatsapp";
 import { pkg } from "../lib/packages";
+import { useBrand } from "../hooks/useBrand";
 import { ExpandableArea, Spinner, useToast } from "./ui";
 import type { ClientOut, VideoCallOut } from "../types";
 
@@ -35,6 +36,7 @@ interface Period {
  */
 export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { client: ClientOut; onClientChanged?: () => void; onGoPlan?: () => void }) {
   const toast = useToast();
+  const { brand } = useBrand();   // para el enlace de reservas del coach
   const [periods, setPeriods] = useState<Period[] | null>(null);
   const [contents, setContents] = useState<Record<number, any>>({});
   const [generating, setGenerating] = useState<number | null>(null);
@@ -105,11 +107,18 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
    *  deja la videollamada pendiente de agendar a mano. */
   async function modifyVideoCall(call: VideoCallOut) {
     const phone = waPhone(client.phone);
-    if (phone) openWhatsApp(phone, videoCallModifyMessage(client.full_name, _whenLabel(call)));
+    if (phone) {
+      openWhatsApp(phone, videoCallModifyMessage(
+        client.full_name, _whenLabel(call), brand?.meet_url ?? null));
+    }
     try {
       await api.modifyVideoCall(client.id, call.id);
       loadCalls();
-      toast.push("Acuerda el día por WhatsApp");
+      // SIN teléfono no se ha abierto ningún WhatsApp: decir "acuerda el día
+      // por WhatsApp" mandaba al coach a mirar una ventana que no existe.
+      toast.push(phone
+        ? "Acuerda el día por WhatsApp"
+        : "Pendiente de agendar · sin teléfono, escríbele por email");
     } catch (e: any) {
       toast.push(e?.message ?? "No se pudo modificar", "error");
     }

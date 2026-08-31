@@ -137,7 +137,6 @@ class Settings(BaseSettings):
         return f"{self.public_base_url.rstrip('/')}/api/google/oauth/callback"
 
     # --- Comportamiento ---
-    auto_pilot_default: bool = False
     tz: str = "Europe/Madrid"
     # Apaga TODOS los jobs (recordatorios, cierres, resúmenes): tests/CI.
     scheduler_enabled: bool = True

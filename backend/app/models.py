@@ -127,6 +127,11 @@ class Client(Base):
 
     # Gestión
     status: Mapped[str] = mapped_column(String(30), default="onboarding", index=True)
+    # INERTE. Nunca se leyó en ninguna parte: venía de un `AUTO_PILOT_DEFAULT`
+    # documentado en el .env que prometía un "piloto automático" inexistente (y
+    # que iría contra el criterio del sistema: el coach revisa antes de
+    # generar). Se retiraron el ajuste y la superficie de API; la columna se
+    # queda porque quitarla pide una migración a cambio de nada.
     auto_pilot: Mapped[bool] = mapped_column(Boolean, default=False)
     emails_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     # Estado del pago del plan (Stripe): "pending" | "paid". Se marca "paid"

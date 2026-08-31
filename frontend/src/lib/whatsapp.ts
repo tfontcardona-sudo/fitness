@@ -137,14 +137,23 @@ function pickVoice(fullName: string, extra = 0): Voice {
 
 /** Mensaje para MODIFICAR la propuesta de videollamada del cliente: se le pide
  *  acordar otro día/hora por el chat (el coach lo agenda luego a mano). */
-export function videoCallModifyMessage(fullName: string, proposedWhen?: string): string {
+export function videoCallModifyMessage(
+  fullName: string, proposedWhen?: string, bookingUrl?: string | null,
+): string {
   const ref = proposedWhen
     ? `Sobre la videollamada que propusiste (${proposedWhen}): necesito moverla un poco.`
     : "Sobre la videollamada de revisión que propusiste: necesito moverla un poco.";
+  // El ENLACE DE RESERVAS que el coach guarda en Recursos. Su propio campo
+  // promete "va en el WhatsApp" y no viajaba a ninguna parte: se guardaba, se
+  // leía para repintar el mismo input y ahí moría. Aquí es donde sirve — sin
+  // Google conectado, es la única forma de que el cliente coja hueco solo.
+  const paso = bookingUrl
+    ? `Coge el hueco que mejor te venga aquí:\n${bookingUrl}`
+    : "¿Qué otro día y hora te vienen bien? En cuanto lo cerremos te llega la invitación con el enlace de Meet.";
   return [
     `Hola ${waFirstName(fullName)},`,
     ref,
-    "¿Qué otro día y hora te vienen bien? En cuanto lo cerremos te llega la invitación con el enlace de Meet.",
+    paso,
     "Un saludo.",
   ].join("\n\n");
 }
@@ -155,11 +164,17 @@ export function videoCallModifyMessage(fullName: string, proposedWhen?: string):
 export function videoCallScheduledMessage(
   fullName: string, whenLabel: string, meetUrl: string,
 ): string {
+  // SIN enlace de Meet (agendada a mano, sin Google conectado) el mensaje decía
+  // "puedes unirte desde aquí:" y a continuación NADA: el cliente recibía una
+  // confirmación con un hueco en blanco donde iba su enlace.
+  const cierre = meetUrl
+    ? [`Nos vemos en Google Meet, puedes unirte desde aquí:\n${meetUrl}`,
+       "Te llegará también la invitación a tu Google Calendar con recordatorios. Un saludo."]
+    : ["Te paso el enlace para conectarnos un rato antes. Un saludo."];
   return [
     `Hola ${waFirstName(fullName)},`,
     `Te confirmo tu videollamada de revisión: ${whenLabel}.`,
-    `Nos vemos en Google Meet, puedes unirte desde aquí:\n${meetUrl}`,
-    "Te llegará también la invitación a tu Google Calendar con recordatorios. Un saludo.",
+    ...cierre,
   ].join("\n\n");
 }
 

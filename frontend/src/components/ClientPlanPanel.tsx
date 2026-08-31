@@ -121,6 +121,12 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(() => enVuelo.has(client.id));
   const [publishing, setPublishing] = useState(false);
+  // ACCIÓN DEL DOCUMENTO EN CURSO. Ninguna de estas acciones daba señal de
+  // estar trabajando: generar el PDF levanta un LibreOffice y tarda segundos,
+  // así que el coach volvía a pulsar. En "Enviar plan por email" eso no es un
+  // trabajo repetido, es un correo DUPLICADO al cliente.
+  type AccionDoc = "pdf" | "docx" | "email" | "wa" | "wafb";
+  const [accionDoc, setAccionDoc] = useState<AccionDoc | null>(null);
   const [editing, setEditing] = useState(false);
   // El perfil se entera de que el editor está abierto (guard de navegación).
   useEffect(() => { onEditingChange?.(editing); }, [editing, onEditingChange]);
@@ -218,6 +224,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
   /** Un clic: abre WhatsApp del cliente con el mensaje profesional del plan
    *  y el enlace directo a su PDF. */
   async function sendPlanWhatsApp() {
+    if (accionDoc) return;
     const phone = waPhone(client.phone);
     if (!phone) {
       toast.push("Añade el teléfono del cliente en su ficha para enviarlo por WhatsApp", "error");
@@ -226,6 +233,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
     // Abrimos la pestaña YA, dentro del gesto de clic: si esperáramos al await de
     // planPdfUrl(), Safari/iOS bloquearían el window.open y el botón no haría nada.
     const win = window.open("", "_blank");
+    setAccionDoc("wa");
     try {
       const pdfUrl = await planPdfUrl();
       const adaptedIdx = selloAdaptacion(plan)?.period_index ?? null;
@@ -238,19 +246,22 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
     } catch {
       if (win) win.close();
       toast.push("Sin enlace del plan", "error");
+    } finally {
+      setAccionDoc(null);
     }
   }
 
   /** Un clic: plan + feedback juntos en un solo WhatsApp (mensaje profesional).
    *  Si el feedback aún no constaba como enviado, se marca (el ciclo avanza). */
   async function sendPlanAndFeedbackWhatsApp() {
-    if (!fb) return;
+    if (!fb || accionDoc) return;
     const phone = waPhone(client.phone);
     if (!phone) {
       toast.push("Añade el teléfono del cliente en su ficha para enviarlo por WhatsApp", "error");
       return;
     }
     const win = window.open("", "_blank"); // ver nota en sendPlanWhatsApp
+    setAccionDoc("wafb");
     try {
       const pdfUrl = await planPdfUrl();
       const adaptedIdx = selloAdaptacion(plan)?.period_index ?? null;
@@ -272,13 +283,16 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
     } catch {
       if (win) win.close();
       toast.push("No se pudo preparar el envío", "error");
+    } finally {
+      setAccionDoc(null);
     }
   }
 
   /** Entrega la planificación POR EMAIL (paquetes Start/Full): el backend adjunta
    *  el PDF y enlaza el portal. Equivale al envío por WhatsApp de Pro. */
   async function sendPlanByEmail() {
-    if (!plan) return;
+    if (!plan || accionDoc) return;   // el candado evita el correo DUPLICADO
+    setAccionDoc("email");
     try {
       const r = await api.sendPlanEmail(plan.id);
       if (r.email_status === "sent") {
@@ -291,6 +305,8 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
       }
     } catch {
       toast.push("Fallo al enviar por email", "error");
+    } finally {
+      setAccionDoc(null);
     }
   }
 
@@ -507,7 +523,8 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
   }
 
   function downloadDocument(format: "pdf" | "docx" = "pdf") {
-    if (!plan) return;
+    if (!plan || accionDoc) return;
+    setAccionDoc(format);
     const url0 = api.planDocumentUrl(plan.id) + (format === "docx" ? "?format=docx" : "");
     fetch(url0, { headers: { Authorization: `Bearer ${getToken()}` } })
       .then((r) => {
@@ -525,10 +542,35 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
         setNeedsDownload(false); // ya tiene la versión actualizada
         if (format === "docx") setWordDescargado(true); // la vuelta, a mano
       })
-      .catch(() => toast.push("No se pudo descargar", "error"));
+      .catch(() => toast.push("No se pudo descargar", "error"))
+      .finally(() => setAccionDoc(null));
   }
 
   const downloadPdf = () => downloadDocument("pdf");
+
+  // EL EDUCATIVO QUE FALLÓ. Su llamada es la tercera del plan y la única que NO
+  // tumba la generación: el plan se guarda con el aviso y el cliente recibe un
+  // documento sin "Aprende con tu plan". El backend sabe rehacerlo solo (modelo
+  // ligero + caché por split) y ese atajo no tenía botón: la única salida del
+  // coach era regenerar el plan ENTERO y repagar núcleo, comidas y panel.
+  const [recuperandoEdu, setRecuperandoEdu] = useState(false);
+  async function recuperarEducativo() {
+    if (!plan || recuperandoEdu) return;
+    setRecuperandoEdu(true);
+    try {
+      const r = await api.generateEducation(plan.id);
+      setPlan({
+        ...plan,
+        education: r.education_json ?? plan.education,
+        guardrail_flags: r.guardrail_flags ?? [],
+      });
+      toast.push("Contenido educativo recuperado");
+    } catch (e: any) {
+      toast.push(e?.message ?? "No se pudo recuperar el educativo", "error");
+    } finally {
+      setRecuperandoEdu(false);
+    }
+  }
 
   // ---- Ida y VUELTA del Word editable: subir el .docx editado, ver los
   // cambios detectados y aplicarlos por el MISMO camino que el editor web.
@@ -1081,6 +1123,23 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                 </>
               );
             })()}
+            {/* El educativo es lo único recuperable por separado: se le da su
+                propia salida en vez de dejar el aviso sin ninguna acción. */}
+            {(plan.guardrail_flags ?? []).some(
+              (f) => f.includes("no se pudo generar el contenido educativo")) && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-xs"
+                   style={{ borderColor: "var(--line)" }}>
+                <span className="text-zinc-400">
+                  Falta la sección «Aprende con tu plan» del documento.
+                </span>
+                <button onClick={recuperarEducativo} disabled={recuperandoEdu}
+                  className="btn btn-ghost !px-3 !py-1 text-xs disabled:opacity-60"
+                  title="No regenera el plan: solo el educativo, con el modelo ligero">
+                  {recuperandoEdu ? <Spinner /> : null}
+                  {recuperandoEdu ? "Recuperando…" : "Recuperar solo el educativo"}
+                </button>
+              </div>
+            )}
             {/* REGISTRO de qué versión es esta: su origen (IA / adaptación a
                 revisión #N) y si lleva cambios manuales sin enviar. */}
             <p className="mt-0.5 text-xs text-zinc-500">
@@ -1116,8 +1175,10 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
             <button onClick={() => setEditing(true)} className="btn btn-ghost">
               <Pencil size={15} /> Editar
             </button>
-            <button onClick={downloadPdf} className="btn btn-ghost">
-              <Download size={15} /> Descargar PDF
+            <button onClick={downloadPdf} disabled={accionDoc !== null}
+              className="btn btn-ghost disabled:opacity-60">
+              {accionDoc === "pdf" ? <Spinner /> : <Download size={15} />}
+              {accionDoc === "pdf" ? "Preparando…" : "Descargar PDF"}
             </button>
             {/* La VUELTA del Word: tras descargar el editable, subirlo está a
                 un clic (no escondido dentro de «Más»). */}
@@ -1206,10 +1267,12 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                     e.currentTarget.closest("details")?.removeAttribute("open");
                     downloadDocument("docx");
                   }}
-                  className="btn btn-ghost w-full justify-start"
+                  disabled={accionDoc !== null}
+                  className="btn btn-ghost w-full justify-start disabled:opacity-60"
                   title="Editar el plan en Word"
                 >
-                  <FileText size={15} /> Word editable
+                  {accionDoc === "docx" ? <Spinner /> : <FileText size={15} />}
+                  {accionDoc === "docx" ? "Preparando…" : "Word editable"}
                 </button>
                 <label
                   className="btn btn-ghost w-full cursor-pointer justify-start"
@@ -1231,18 +1294,24 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
               </div>
             </details>
             {plan.status === "published" && byEmail && (
-              <button onClick={sendPlanByEmail} className="btn btn-primary col-span-2 sm:col-span-1">
-                <Mail size={15} /> Enviar plan por email
+              <button onClick={sendPlanByEmail} disabled={accionDoc !== null}
+                className="btn btn-primary col-span-2 sm:col-span-1 disabled:opacity-60">
+                {accionDoc === "email" ? <Spinner /> : <Mail size={15} />}
+                {accionDoc === "email" ? "Enviando…" : "Enviar plan por email"}
               </button>
             )}
             {plan.status === "published" && !byEmail && (
-              <button onClick={sendPlanWhatsApp} className={`${fb ? "btn btn-ghost" : "btn btn-primary"} col-span-2 sm:col-span-1`}>
-                <MessageCircle size={15} /> Enviar plan por WhatsApp
+              <button onClick={sendPlanWhatsApp} disabled={accionDoc !== null}
+                className={`${fb ? "btn btn-ghost" : "btn btn-primary"} col-span-2 sm:col-span-1 disabled:opacity-60`}>
+                {accionDoc === "wa" ? <Spinner /> : <MessageCircle size={15} />}
+                {accionDoc === "wa" ? "Preparando…" : "Enviar plan por WhatsApp"}
               </button>
             )}
             {plan.status === "published" && !byEmail && fb && (
-              <button onClick={sendPlanAndFeedbackWhatsApp} className="btn btn-primary col-span-2 sm:col-span-1">
-                <MessageCircle size={15} /> Enviar plan + feedback
+              <button onClick={sendPlanAndFeedbackWhatsApp} disabled={accionDoc !== null}
+                className="btn btn-primary col-span-2 sm:col-span-1 disabled:opacity-60">
+                {accionDoc === "wafb" ? <Spinner /> : <MessageCircle size={15} />}
+                {accionDoc === "wafb" ? "Preparando…" : "Enviar plan + feedback"}
               </button>
             )}
             {plan.status !== "published" && (
@@ -1507,7 +1576,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                   <button onClick={sendEmail} disabled={sendingUpd} className="btn btn-ghost !px-3 !py-1.5 text-xs">
                     <Mail size={13} /> {sendingUpd ? "Enviando…" : "Enviar por email"}
                   </button>
-                  <button onClick={downloadPdf} className="btn btn-ghost !px-3 !py-1.5 text-xs">
+                  <button onClick={downloadPdf} disabled={accionDoc !== null} className="btn btn-ghost !px-3 !py-1.5 text-xs disabled:opacity-60">
                     <Download size={13} /> PDF actualizado
                   </button>
                   <button
@@ -1537,7 +1606,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
               PDF antiguo sin tu edición
             </p>
           </div>
-          <button onClick={downloadPdf} className="btn btn-primary shrink-0">
+          <button onClick={downloadPdf} disabled={accionDoc !== null} className="btn btn-primary shrink-0 disabled:opacity-60">
             <Download size={15} /> Descargar PDF actualizado
           </button>
         </div>

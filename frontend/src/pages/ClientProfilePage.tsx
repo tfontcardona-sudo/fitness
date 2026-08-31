@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Check, BellRing, ChevronRight, MessageCircle, Pencil, Smartphone, ClipboardCheck, Trash2, CreditCard } from "lucide-react";
-import { api, keepIfSame, REFRESH_MS } from "../lib/api";
+import { ArrowLeft, Check, BellRing, ChevronRight, Download, MessageCircle, Pencil, Smartphone, ClipboardCheck, Trash2, CreditCard } from "lucide-react";
+import { api, getToken, keepIfSame, REFRESH_MS } from "../lib/api";
 import { openWhatsApp, waPhone } from "../lib/whatsapp";
 import type { PaymentsListOut, ClientOut } from "../types";
 import {
@@ -224,6 +224,37 @@ export default function ClientProfilePage() {
       toast.push("Enlace regenerado. El anterior ya no funciona.");
     } catch {
       toast.push("No se pudo regenerar", "error");
+    }
+  }
+
+  // RGPD, derecho de PORTABILIDAD. El ZIP con todo lo del cliente (ficha,
+  // planes, diario, series, informes y documentos) estaba construido y probado
+  // en el backend desde hacía tandas y no tenía ni un botón. El flujo natural
+  // es exportar ANTES de borrar: sin esto, el borrado se llevaba por delante un
+  // historial que el cliente tiene derecho a llevarse.
+  const [exportando, setExportando] = useState(false);
+  async function exportarTodo() {
+    if (!client || exportando) return;
+    setExportando(true);
+    try {
+      const r = await fetch(api.exportClientUrl(client.id), {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (!r.ok) throw new Error();
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${client.full_name.replace(/[^\p{L}\p{N}]+/gu, "_")}_datos.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      toast.push("Descarga preparada");
+    } catch {
+      toast.push("No se pudo preparar la descarga", "error");
+    } finally {
+      setExportando(false);
     }
   }
 
@@ -459,6 +490,16 @@ export default function ClientProfilePage() {
             className="w-full py-1.5 text-center text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
           >
             Regenerar enlace del portal (el actual dejará de funcionar)
+          </button>
+          {/* RGPD: primero llevarse los datos, después borrarlos. */}
+          <button
+            onClick={exportarTodo}
+            disabled={exportando}
+            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border py-2 text-xs text-zinc-300 transition-colors hover:text-white disabled:opacity-60"
+            style={{ borderColor: "var(--line)" }}
+            title="ZIP con su ficha, planes, diario, series, informes y documentos"
+          >
+            <Download size={13} /> {exportando ? "Preparando…" : "Descargar todos sus datos"}
           </button>
           {/* Zona peligrosa: borrado total del cliente. Botón claramente en ROJO
               (borde + texto + fondo tenue) y separado del resto; el modal exige

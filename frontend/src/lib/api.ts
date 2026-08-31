@@ -387,9 +387,32 @@ export const api = {
     request<{ index: number; at: string | null; label: string;
       summary: { target_kcal?: number; protein_g?: number; carbs_g?: number; fat_g?: number; n_meals?: number } }[]>(
       "GET", `/plans/${planId}/history`),
+  // Recupera SOLO el contenido educativo cuando su llamada falló (el plan se
+  // guarda igual, con el aviso). Modelo ligero + caché por split: cuesta una
+  // fracción de regenerar el plan entero, que es lo único que había antes.
+  generateEducation: (planId: number) =>
+    request<{ id: number; status: string; education_json: any;
+      guardrail_flags: string[] | null }>(
+      "POST", `/plans/${planId}/generate-education`),
   revertPlan: (planId: number, index: number) =>
     request<{ id: number; status: string; nutrition_json: any; training_json: any; education_json: any }>(
       "POST", `/plans/${planId}/revert`, { index }),
+  // Diagnóstico del correo: por qué no sale un email y qué pasó en los últimos
+  // intentos. El backend lo tenía desde hace tandas y no había pantalla que lo
+  // abriera — "no le llega el correo al cliente" se diagnosticaba entrando por
+  // SSH a leer los logs del contenedor.
+  emailStatus: () =>
+    request<{
+      config: {
+        emails_enabled: boolean; smtp_host: string | null; smtp_port: number;
+        smtp_user: string | null; smtp_from: string | null;
+        smtp_pass_set: boolean; ready: boolean; missing: string[];
+      };
+      recent: { kind: string; subject: string; status: string;
+                error: string | null; sent_at: string | null }[];
+    }>("GET", "/email/status"),
+  emailTest: (to: string) =>
+    request<{ status: string; error: string | null }>("POST", "/email/test", { to }),
   macroRecommendation: (clientId: number) =>
     request<{ available: boolean; weight_kg?: number; tdee?: number; adjustment_pct?: number;
       kcal?: number; protein_g?: number; carbs_g?: number; fat_g?: number; warnings?: string[] }>(

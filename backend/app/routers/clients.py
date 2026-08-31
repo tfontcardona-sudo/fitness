@@ -303,7 +303,6 @@ def create_client(body: ClientCreate, db: Session = Depends(get_db)) -> ClientCr
         # principiante/intermedio; base determinista del coach para avanzado).
         level=body.level,
         status="onboarding",
-        auto_pilot=settings.auto_pilot_default,
         portal_token="pendiente",  # se firma con el id real tras el flush
     )
     db.add(client)

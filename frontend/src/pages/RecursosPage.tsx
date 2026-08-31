@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
+import { formatDate } from "../lib/format";
 import { youtubeId } from "../lib/video";
 import type {
   ExerciseOut,
@@ -458,6 +459,124 @@ function LinksPageManager() {
           </button>
         </div>
       </div>
+
+      <DiagnosticoCorreo />
+    </div>
+  );
+}
+
+/* ============================================== Diagnóstico del correo ============================================== */
+
+/** POR QUÉ NO SALE UN CORREO. El backend tenía `/api/email/status` y
+ *  `/api/email/test` desde hacía tandas y ninguna pantalla los abría: cuando un
+ *  cliente decía "no me ha llegado nada", la única forma de saber si era el
+ *  SMTP, la contraseña de aplicación o su bandeja de spam era entrar al
+ *  servidor a leer los logs. */
+function DiagnosticoCorreo() {
+  const toast = useToast();
+  const [datos, setDatos] = useState<Awaited<ReturnType<typeof api.emailStatus>> | null>(null);
+  const [error, setError] = useState(false);
+  const [intento, setIntento] = useState(0);
+  const [destino, setDestino] = useState("");
+  const [probando, setProbando] = useState(false);
+
+  useEffect(() => {
+    let vivo = true;
+    setError(false);
+    api.emailStatus()
+      .then((d) => { if (vivo) setDatos(d); })
+      .catch(() => { if (vivo) setError(true); });
+    return () => { vivo = false; };
+  }, [intento]);
+
+  async function probar() {
+    const to = destino.trim();
+    if (!to || probando) return;
+    setProbando(true);
+    try {
+      const r = await api.emailTest(to);
+      if (r.status === "sent") toast.push("Correo de prueba enviado");
+      else toast.push(r.error || `No se envió (${r.status})`, "error");
+      setIntento((n) => n + 1);   // refresca el historial con este intento
+    } catch (e: any) {
+      toast.push(e?.message ?? "No se pudo enviar la prueba", "error");
+    } finally {
+      setProbando(false);
+    }
+  }
+
+  return (
+    <div className="card p-5">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-zinc-200">Correo</h3>
+        {datos && (
+          <span className="rounded-full px-2 py-0.5 text-xs font-semibold"
+            style={datos.config.ready
+              ? { background: "rgba(22,163,74,0.12)", color: "#15803D" }
+              : { background: "rgba(217,119,6,0.12)", color: "#B45309" }}>
+            {datos.config.ready ? "● Listo" : "▲ Sin configurar"}
+          </span>
+        )}
+      </div>
+
+      {error ? (
+        <div className="text-xs text-zinc-400">
+          No se pudo consultar el estado.{" "}
+          <button className="underline" onClick={() => setIntento((n) => n + 1)}>Reintentar</button>
+        </div>
+      ) : !datos ? (
+        <Spinner />
+      ) : (
+        <>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+            <dt className="text-zinc-500">Servidor</dt>
+            <dd className="text-zinc-300">
+              {datos.config.smtp_host ? `${datos.config.smtp_host}:${datos.config.smtp_port}` : "—"}
+            </dd>
+            <dt className="text-zinc-500">Remitente</dt>
+            <dd className="text-zinc-300">{datos.config.smtp_from || datos.config.smtp_user || "—"}</dd>
+            <dt className="text-zinc-500">Contraseña</dt>
+            <dd className="text-zinc-300">{datos.config.smtp_pass_set ? "puesta" : "sin poner"}</dd>
+          </dl>
+
+          {datos.config.missing.length > 0 && (
+            <p className="mt-3 text-xs" style={{ color: "#B45309" }}>
+              Falta en el <code>.env</code>: {datos.config.missing.join(" · ")}
+            </p>
+          )}
+
+          <div className="mt-4 flex flex-wrap items-end gap-2">
+            <div className="min-w-0 flex-1">
+              <label className="label">Enviar una prueba a</label>
+              <input className="input" type="email" placeholder="tu@correo.com"
+                value={destino} onChange={(e) => setDestino(e.target.value)} />
+            </div>
+            <button className="btn btn-primary" disabled={probando || !destino.trim()} onClick={probar}>
+              {probando ? "Enviando…" : "Enviar prueba"}
+            </button>
+          </div>
+
+          {datos.recent.length > 0 && (
+            <details className="mt-4">
+              <summary className="cursor-pointer text-xs text-zinc-400">
+                Últimos {datos.recent.length} intentos
+              </summary>
+              <ul className="mt-2 space-y-1 text-xs">
+                {datos.recent.map((r, i) => (
+                  <li key={i} className="flex flex-wrap items-baseline gap-2">
+                    <span style={{ color: r.status === "sent" ? "#15803D" : "#B91C1C" }}>
+                      {r.status === "sent" ? "✓" : "✕"}
+                    </span>
+                    <span className="text-zinc-300">{r.subject}</span>
+                    <span className="text-zinc-500">{r.sent_at ? formatDate(r.sent_at) : "—"}</span>
+                    {r.error && <span className="w-full text-zinc-500">{r.error}</span>}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </>
+      )}
     </div>
   );
 }
