@@ -18,17 +18,17 @@
 >   `charts.py:146`, `word_import.py:722`, `adapt_plan.py:548`,
 >   `pdf_convert.py:55`, `plans.py:576` y `plan_doc.py:637`.
 > - **Tanda 5 (RGPD, borrado y portabilidad) — sesión "DQR asesories"
->   (`claude/stripe-integration-steps-somce4`). HECHA.**
+>   (`claude/stripe-integration-steps-somce4`). HECHA.** Alcance acotado a lo
+>   que la tanda 4 no lleva: `clients.py` 618/626/702/730/751 (borrado RGPD,
+>   "Descargar todo", ZIP de portabilidad), `tests/test_borrado_rgpd.py:74` y
+>   `frontend/Caddyfile:43` (el tope de subida contra los vídeos de ejercicio).
+>   La mitad "documentos" de esta tanda es de la 4: no la toco.
 > - **Tanda 6 (portal del cliente y anamnesis) — sesión "DQR asesories"
 >   (`claude/stripe-integration-steps-somce4`). HECHA.** Alcance:
 >   `PortalDiary.tsx` 48/64/213, `AnamnesisPage.tsx` 254/497/501,
 >   `PortalApp.tsx:290`, `PortalResources.tsx:46`, `portal_public.py` 268/406 y
 >   `clients.py:927` (contradicciones de la anamnesis). `feedback_service.py:116`
->   (fotos iniciales como "front") entra aquí por ser del mismo camino. Alcance acotado a lo
->   que la tanda 4 no lleva: `clients.py` 618/626/702/730/751 (borrado RGPD,
->   "Descargar todo", ZIP de portabilidad), `tests/test_borrado_rgpd.py:74` y
->   `frontend/Caddyfile:43` (el tope de subida contra los vídeos de ejercicio).
->   La mitad "documentos" de esta tanda es de la 4: no la toco.
+>   (fotos iniciales como "front") entra aquí por ser del mismo camino.
 > - **Tanda 7 (optimización backend + frontend) — sesión "rutina y dieta quice"
 >   (`claude/continue-previous-n6layq`), EN CURSO.** Alcance: `clients.py`
 >   1233/1242 (ficha e historial), `plan_library.py:426`, `plans.py` 477/721,
