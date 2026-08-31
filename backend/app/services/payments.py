@@ -46,7 +46,11 @@ _log = logging.getLogger("app.payments")
 # dinero (importe 0, fuera de los totales) pero es un hecho de Stripe que el
 # coach debe ver en el feed, no solo en un push que se esfuma.
 # "manual": cobro fuera de Stripe que anota el coach (efectivo, transferencia…).
-KINDS = ("checkout", "invoice", "refund", "subscription", "manual")
+KINDS = ("checkout", "invoice", "refund", "subscription", "manual",
+         # CONTRACARGO: el cliente reclama el cobro a su banco. Sin
+         # estar aquí, `record_payment` lo degradaba a "checkout" en
+         # silencio y en el libro parecía un cobro más.
+         "dispute")
 STATUSES = ("paid", "failed", "refunded", "canceled")
 
 # Tope del histórico que trae la sincronización manual con Stripe.
@@ -604,6 +608,19 @@ def _refresca_ficha(client: Client | None, *, pagado_en: datetime | None,
         client.paid_at = cuando
 
 
+def _sub_de_factura(inv: dict) -> str | None:
+    """El `sub_…` de una factura, con el MISMO criterio que el webhook.
+
+    Lo resuelve `stripe_service._invoice_subscription_bits`, que sabe leerlo de
+    los tres sitios donde Stripe lo pone según la versión de la API."""
+    try:
+        from app.services.stripe_service import _invoice_subscription_bits
+
+        return _invoice_subscription_bits(inv)[0]
+    except Exception:  # noqa: BLE001 — sin sello es como estaba antes
+        return None
+
+
 def sync_from_stripe(db: Session, *, days: int = SYNC_DEFAULT_DAYS) -> dict:
     """Trae de Stripe los movimientos de los últimos `days` días y anota los que
     falten. Sirve para DOS cosas: rellenar el histórico anterior a esta tabla y
@@ -725,6 +742,13 @@ def sync_from_stripe(db: Session, *, days: int = SYNC_DEFAULT_DAYS) -> dict:
                 payment_intent=(inv.get("payment_intent") or None)
                 if not isinstance(inv.get("payment_intent"), dict)
                 else inv["payment_intent"].get("id"),
+                # A QUÉ SUSCRIPCIÓN pertenece. El webhook lo sella
+                # (`_anotar_factura`) y la repesca no: una factura recuperada
+                # aquí no contaba para "¿cuántos cobros lleva la oferta?", el
+                # programa no se daba por cerrado, la suscripción no se
+                # cancelaba y Stripe cobraba un mes de más. Es el mismo sello
+                # que la mig. 0042 añadió justo para esto.
+                subscription_id=_sub_de_factura(inv),
             ) is not None:
                 creados += 1
                 _refresca_ficha(cliente, pagado_en=ts_to_dt(pagada_en),
@@ -771,6 +795,7 @@ def sync_from_stripe(db: Session, *, days: int = SYNC_DEFAULT_DAYS) -> dict:
                     # SIN LEER siempre: un impago que aparece por repesca es,
                     # por definición, uno del que el coach no se ha enterado.
                     seen=False,
+                    subscription_id=_sub_de_factura(inv),
                 ) is not None:
                     creados += 1
     except Exception as exc:  # noqa: BLE001

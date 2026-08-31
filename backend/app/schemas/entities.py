@@ -885,7 +885,9 @@ class PeriodCreateIn(BaseModel):
 # anterior, un arreglo a mano en la base, un `kind` nuevo de Stripe— tumbaba
 # con un 500 el feed ENTERO de pagos y el bloque de cobros de la ficha. El
 # libro de caja tiene que enseñar lo que hay, aunque no lo reconozca.
-PaymentKind = Literal["checkout", "invoice", "refund", "subscription", "manual"]
+PaymentKind = Literal["checkout", "invoice", "refund", "subscription", "manual",
+                      # "dispute": contracargo (reclamación al banco).
+                      "dispute"]
 PaymentMovementStatus = Literal["paid", "failed", "refunded", "canceled"]
 
 

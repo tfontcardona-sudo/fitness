@@ -713,13 +713,16 @@ export const api = {
     return request<BrandConfigOut>("POST", "/brand/video-cover", fd);
   },
   // Vídeo del ejercicio subido como archivo (tiene prioridad sobre el enlace).
+  // Subir o quitar el vídeo TAMBIÉN cambia la biblioteca: sin invalidar, la
+  // caché de `listExercises` seguía sirviendo hasta 5 min el ejercicio sin su
+  // vídeo — el coach lo subía, la pantalla no lo enseñaba, y volvía a subirlo.
   uploadExerciseVideo: (id: number, file: File) => {
     const fd = new FormData();
     fd.append("file", file);
-    return request<ExerciseOut>("POST", `/exercises/${id}/video`, fd);
+    return _trasTocarEjercicios(request<ExerciseOut>("POST", `/exercises/${id}/video`, fd));
   },
   deleteExerciseVideo: (id: number) =>
-    request<ExerciseOut>("DELETE", `/exercises/${id}/video`),
+    _trasTocarEjercicios(request<ExerciseOut>("DELETE", `/exercises/${id}/video`)),
 
   // --- página pública de enlaces + registro self-serve ---
   publicLanding: () => request<LandingOut>("GET", "/public/landing"),

@@ -58,6 +58,15 @@ def cliente_en_curso():
     db.add(p)
     db.flush()
     yield db, c, p, hoy
+    # Las SERIES cuelgan del diario con FK sin ON DELETE: hay que quitarlas
+    # antes o el borrado del período revienta (lo destapó el caso del Train,
+    # que registra justamente series).
+    from app.models import WorkoutLog as _WL
+
+    ids = [x.id for x in db.query(DailyLog).filter_by(period_id=p.id)]
+    if ids:
+        db.query(_WL).filter(_WL.daily_log_id.in_(ids)).delete(synchronize_session=False)
+        db.flush()
     db.query(DailyLog).filter_by(period_id=p.id).delete()
     db.flush()
     db.delete(p)
@@ -125,3 +134,38 @@ def test_quien_no_registra_nada_recibe_el_aviso_de_siempre(cliente_en_curso):
     kinds = _kinds(db, c, hoy)
     assert "no_logs" in kinds
     assert "sin_pesajes" not in kinds
+
+
+def test_al_dqr_train_tambien_se_le_avisa_de_que_no_se_pesa(cliente_en_curso):
+    """EL CASO QUE MOTIVÓ EL AVISO y que la fusión perdió.
+
+    Al juntar las dos sesiones que escribieron cada aviso, `sin_pesajes` quedó
+    encerrado dentro de la guarda de nutrición de `no_diet_logs`, y
+    `has_nutrition("train")` es False: justo al DQR Train —que registra series
+    a diario, así que nunca sale "en riesgo"— dejó de avisársele. Y a él se le
+    pide el peso igual (en el diario, y obligatorio al cerrar): es la métrica
+    con la que se mide su progreso, y sin ella el motor quincenal responde
+    `dato_insuficiente`."""
+    from app.models import DailyLog, Exercise, WorkoutLog
+    from app.routers.alerts import client_alerts
+
+    db, c, p, hoy = cliente_en_curso
+    c.package_tier = "train"                 # ← el paquete que nadie cubría
+    ex = db.query(Exercise).first()
+    # Registra a diario (SERIES de entreno), pero no se pesa NUNCA.
+    for d in range(9):
+        lg = DailyLog(period_id=p.id, log_date=p.starts_on + timedelta(days=d))
+        db.add(lg)
+        db.flush()
+        if ex is not None:
+            db.add(WorkoutLog(daily_log_id=lg.id, exercise_id=ex.id,
+                              set_number=1, reps=10, weight_kg=40))
+    db.flush()
+
+    avisos = client_alerts(db, c, hoy)
+    kinds = [a["kind"] for a in avisos]
+    assert "sin_pesajes" in kinds, kinds
+    assert "no_logs" not in kinds           # registra: no ha abandonado
+    # Y el texto no le promete un ajuste de calorías que no tiene contratado.
+    aviso = next(a for a in avisos if a["kind"] == "sin_pesajes")
+    assert "calorías" not in aviso["message"]

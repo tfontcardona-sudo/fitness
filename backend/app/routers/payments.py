@@ -134,7 +134,7 @@ def export_csv(db: Session = Depends(get_db)):
                "canceled": "Baja"}
     tipos = {"checkout": "Pago único", "invoice": "Suscripción",
              "refund": "Devolución", "subscription": "Suscripción",
-             "manual": "Cobro a mano"}
+             "manual": "Cobro a mano", "dispute": "Contracargo"}
     for pago, nombre in filas:
         local = pago.paid_at.astimezone(tz) if pago.paid_at else None
         importe = pago.amount_cents / 100

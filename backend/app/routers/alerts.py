@@ -560,47 +560,58 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
             out.append(_alert(client, "no_logs", "media",
                               f"Sin registros del cliente desde hace {gap} días.",
                               "seguimiento", "Ver seguimiento"))
-        elif pkgs.has_nutrition(getattr(client, "package_tier", None)):
-            # SIN DATOS DE DIETA, aunque sí registre. "En riesgo" mide
-            # ABANDONO, y quien entrena cuatro días por semana no ha
-            # abandonado: marcarlo así sería un falso positivo. Pero las
-            # series tapan el hueco en la cuenta de arriba, así que un cliente
-            # con nutrición contratada podía pasarse la quincena ENTERA sin un
-            # solo pesaje ni una comida marcada, figurando "al día" en todas
-            # las capas del coach. Y al cerrar, el motor quincenal se niega a
-            # ajustar las kcal por falta de datos: el ciclo se pierde y el
-            # coach se entera cuando ya no hay nada que hacer. Esta es una
-            # pregunta distinta —"¿registra lo que tiene contratado?"— y por
-            # eso es una alerta aparte, no un cambio del estado del cliente.
-            dias_dieta = datos.dias_con_registro(db, last_period,
-                                                 solo_nutricion=True)
-            ultimo_dieta = max(dias_dieta) if dias_dieta else None
-            desde_dieta = ultimo_dieta or (last_period.starts_on - date.resolution)
-            hueco_dieta = (today - desde_dieta).days
-            if hueco_dieta >= NO_DIET_LOGS_DAYS and days_in >= NO_DIET_LOGS_DAYS:
-                que_falta = ("ni peso ni comidas" if not dias_dieta
-                             else f"nada desde hace {hueco_dieta} días")
-                out.append(_alert(
-                    client, "no_diet_logs", "media",
-                    f"Registra entrenos pero no su dieta: {que_falta}. "
-                    "Sin pesajes, la revisión no podrá ajustar las calorías.",
-                    "seguimiento", "Ver seguimiento"))
+        else:
+            # Dos avisos distintos para dos huecos distintos, y el de dieta solo
+            # aplica a quien tiene nutrición contratada. El de PESAJES no: al
+            # DQR Train se le pide el peso igual (en el diario y, obligatorio,
+            # al cerrar), es la métrica con la que se mide su progreso, y sin
+            # ella el motor quincenal responde `dato_insuficiente`. Encerrarlo
+            # bajo la guarda de nutrición —como quedó al fusionar las dos
+            # sesiones que escribieron cada aviso— dejaba justo al Train, que
+            # es el caso que motivó el aviso, sin ninguna alerta.
+            aviso_de_dieta = False
+            if pkgs.has_nutrition(getattr(client, "package_tier", None)):
+                # SIN DATOS DE DIETA, aunque sí registre. "En riesgo" mide
+                # ABANDONO, y quien entrena cuatro días por semana no ha
+                # abandonado: marcarlo así sería un falso positivo. Pero las
+                # series tapan el hueco en la cuenta de arriba, así que un cliente
+                # con nutrición contratada podía pasarse la quincena ENTERA sin un
+                # solo pesaje ni una comida marcada, figurando "al día" en todas
+                # las capas del coach. Y al cerrar, el motor quincenal se niega a
+                # ajustar las kcal por falta de datos: el ciclo se pierde y el
+                # coach se entera cuando ya no hay nada que hacer. Esta es una
+                # pregunta distinta —"¿registra lo que tiene contratado?"— y por
+                # eso es una alerta aparte, no un cambio del estado del cliente.
+                dias_dieta = datos.dias_con_registro(db, last_period,
+                                                     solo_nutricion=True)
+                ultimo_dieta = max(dias_dieta) if dias_dieta else None
+                desde_dieta = ultimo_dieta or (last_period.starts_on - date.resolution)
+                hueco_dieta = (today - desde_dieta).days
+                if hueco_dieta >= NO_DIET_LOGS_DAYS and days_in >= NO_DIET_LOGS_DAYS:
+                    que_falta = ("ni peso ni comidas" if not dias_dieta
+                                 else f"nada desde hace {hueco_dieta} días")
+                    out.append(_alert(
+                        client, "no_diet_logs", "media",
+                        f"Registra entrenos pero no su dieta: {que_falta}. "
+                        "Sin pesajes, la revisión no podrá ajustar las calorías.",
+                        "seguimiento", "Ver seguimiento"))
+                    aviso_de_dieta = True
 
-            # Y SI SÍ REGISTRA SU DIETA PERO NO SE PESA (el otro punto
-            # ciego, encontrado en paralelo por otra sesión): marcar la comida
-            # cada día cuenta como registro y el cliente va verde en todas las
-            # pantallas… pero al cerrar la quincena el motor determinista se
-            # encuentra con 0-1 pesajes, responde `dato_insuficiente` y no hay
-            # con qué ajustar el plan: catorce días perdidos que el coach
-            # descubría cuando ya no tenían arreglo. Se avisa pasada la mitad
-            # del período, que es cuando aún da tiempo a pedírselo, y sale de
-            # las filas YA cargadas: ni una consulta más.
-            #
-            # Va en el `else` del aviso de arriba: cuando no hay NINGÚN dato de
-            # dieta manda aquel, que es más general, y así no se avisa dos veces
-            # de lo mismo (los dos avisos los escribieron sesiones distintas a
-            # la vez, cada uno con su prueba).
-            else:
+                # Y SI SÍ REGISTRA SU DIETA PERO NO SE PESA (el otro punto
+                # ciego, encontrado en paralelo por otra sesión): marcar la comida
+                # cada día cuenta como registro y el cliente va verde en todas las
+                # pantallas… pero al cerrar la quincena el motor determinista se
+                # encuentra con 0-1 pesajes, responde `dato_insuficiente` y no hay
+                # con qué ajustar el plan: catorce días perdidos que el coach
+                # descubría cuando ya no tenían arreglo. Se avisa pasada la mitad
+                # del período, que es cuando aún da tiempo a pedírselo, y sale de
+                # las filas YA cargadas: ni una consulta más.
+                #
+                # Va en el `else` del aviso de arriba: cuando no hay NINGÚN dato de
+                # dieta manda aquel, que es más general, y así no se avisa dos veces
+                # de lo mismo (los dos avisos los escribieron sesiones distintas a
+                # la vez, cada uno con su prueba).
+            if not aviso_de_dieta:
                 pesajes = datos.pesajes(db, last_period)
                 largo = (last_period.ends_on - last_period.starts_on).days + 1
                 dia = days_in + 1
@@ -608,10 +619,11 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
                     quedan = max(0, (last_period.ends_on - today).days)
                     como = ("solo se ha pesado una vez" if pesajes
                             else "no se ha pesado ni un día")
+                    # Sin hablar de calorías: a un DQR Train no se le ajustan.
                     out.append(_alert(
                         client, "sin_pesajes", "media",
-                        f"Registra a diario pero {como}: sin pesos no se puede "
-                        f"ajustar su plan al cerrar (quedan {quedan} días).",
+                        f"Registra a diario pero {como}: sin pesos no hay con "
+                        f"qué medir su progreso al cerrar (quedan {quedan} días).",
                         "seguimiento", "Pedirle que se pese"))
 
         # --- Período vencido sin cerrar: el cliente registra pero no envía ---

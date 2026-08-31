@@ -1950,8 +1950,9 @@ def generate_client_plan(
                         "añádelas a mano en el editor.")
     except Exception:
         pass
-    for note in (_mp.notes or []):
-        coverage_flags.append(f"aviso: {note}")
+    # (Las notas de `macro_targets` YA entraron arriba, con las de energía: si
+    #  se añaden también aquí, el coach ve cada aviso DOS veces en el mismo
+    #  plan — dos caminos vivos escritos por sesiones distintas.)
     if coverage_flags:
         flags = list(flags) + coverage_flags
 

@@ -1155,28 +1155,16 @@ const KIND_LABEL: Record<string, string> = {
  *  NO son públicas). Muestra miniaturas; un toque abre la foto a tamaño real. */
 /** Envoltorio plegado de las fotos: consulta solo el NÚMERO (metadatos, barato)
  *  y no descarga ninguna imagen hasta que el coach abre el desplegable. */
-/** Las fotos del cliente son UNA lista para toda la pestaña.
+/** Las fotos del cliente son UNA sola petición para toda la pestaña.
  *
- *  Cada revisión pintaba su propio contador y pedía la lista ENTERA para
- *  contar las suyas: un cliente con un año de historial disparaba 24
- *  peticiones idénticas al abrir Feedback, y una más al desplegar una tira.
- *  Aquí se pide una vez por cliente y las comparten todas las tarjetas. */
-const fotosEnVuelo = new Map<number, Promise<{ id: number; kind: string; period_id: number | null; taken_at: string }[]>>();
-
-function fotosDelCliente(clientId: number) {
-  let p = fotosEnVuelo.get(clientId);
-  if (!p) {
-    p = api.listClientPhotos(clientId).finally(() => {
-      // Se suelta al terminar: la próxima visita a la pestaña vuelve a pedirla
-      // (puede haber fotos nuevas), pero las tarjetas de una misma carga la
-      // comparten.
-      setTimeout(() => fotosEnVuelo.delete(clientId), 0);
-    });
-    fotosEnVuelo.set(clientId, p);
-  }
-  return p;
-}
-
+ *  Cada revisión pintaba su contador y pedía la lista ENTERA para contar las
+ *  suyas: un cliente con un año de historial disparaba 24 peticiones idénticas
+ *  al abrir Feedback. Quien las comparte es `api.listClientPhotos`, que
+ *  memoiza la promesa 30 s — aquí llegó a haber una SEGUNDA capa haciendo lo
+ *  mismo (dos sesiones resolvieron el hallazgo a la vez) y quedó inerte: la
+ *  primera llamada ya devolvía la promesa cacheada, así que su mapa nunca
+ *  llegaba a compartir nada. Se queda una.
+ */
 export function PeriodPhotosFolded({ clientId, periodId, label }: {
   clientId: number;
   /** `null` = las fotos INICIALES de la anamnesis (sin período): el "antes" de
@@ -1189,7 +1177,7 @@ export function PeriodPhotosFolded({ clientId, periodId, label }: {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     let alive = true;
-    fotosDelCliente(clientId)
+    api.listClientPhotos(clientId)
       .then((all) => { if (alive) setCount(all.filter((p) => p.period_id === periodId).length); })
       .catch(() => { if (alive) setCount(0); });
     return () => { alive = false; };
@@ -1234,7 +1222,7 @@ function PeriodPhotos({ clientId, periodId }: { clientId: number; periodId: numb
   useEffect(() => {
     let alive = true;
     const urls: string[] = [];
-    fotosDelCliente(clientId)
+    api.listClientPhotos(clientId)
       .then(async (all) => {
         const mine = all.filter((p) => p.period_id === periodId);
         if (alive) setTotal(mine.length);

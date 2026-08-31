@@ -381,7 +381,12 @@ export default function ClientProfilePage() {
             {/* CUÁNTO ha pagado este cliente: el backend ya filtraba el feed
                 por cliente y ninguna pantalla lo pedía, así que "¿le cobré la
                 renovación de julio?" solo se respondía bajándose el CSV. */}
-            <CobrosDelCliente clientId={client.id} onCambio={reload} />
+            {/* `refreshKey`: anotar un cobro a mano llama a `reload` del
+                padre, pero este hijo solo recarga cuando cambia `clientId` —
+                así que el cobro recién anotado no aparecía hasta cambiar de
+                ficha (y si era el PRIMERO, el bloque entero seguía oculto,
+                porque se esconde con la lista vacía). */}
+            <CobrosDelCliente clientId={client.id} refreshKey={reloadKey} onCambio={reload} />
           </div>
 
           {/* DIARIO DEL CLIENTE (su app del móvil): botón destacado y distinto. */}
@@ -846,7 +851,9 @@ function hoyLocal(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function CobrosDelCliente({ clientId, onCambio }: { clientId: number; onCambio: () => void }) {
+function CobrosDelCliente({ clientId, refreshKey, onCambio }: {
+  clientId: number; refreshKey: number; onCambio: () => void;
+}) {
   const toast = useToast();
   const [pagos, setPagos] = useState<PaymentsListOut["items"] | null>(null);
   // Total REAL del cliente: lo calcula el backend sobre TODOS sus movimientos
@@ -860,7 +867,9 @@ function CobrosDelCliente({ clientId, onCambio }: { clientId: number; onCambio: 
     api.listPayments({ client_id: clientId, limit: 20 })
       .then((r) => { setPagos(r.items); setTotalCents(r.client_total_cents ?? null); })
       .catch(() => setPagos([]));
-  }, [clientId]);
+    // `refreshKey` en las dependencias: cada acción del perfil (anotar un
+    // cobro, marcar pagado) lo sube y esta lista se vuelve a pedir.
+  }, [clientId, refreshKey]);
   useEffect(cargar, [cargar]);
 
   if (!pagos || pagos.length === 0) return null;
