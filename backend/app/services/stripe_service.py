@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -265,7 +265,9 @@ def ensure_canonical_prices(stripe, log=None) -> list[str]:
         necesarios = {"checkout.session.completed",
                       "checkout.session.async_payment_succeeded", "invoice.paid",
                       "invoice.payment_failed", "customer.subscription.deleted",
-                      "charge.refunded"}
+                      "charge.refunded",
+                      # Contracargo: el dinero se va y hay PLAZO para responder.
+                      "charge.dispute.created", "charge.dispute.closed"}
         for ep in stripe.WebhookEndpoint.list(limit=100)["data"]:
             if "/api/stripe/webhook" not in (ep.get("url") or ""):
                 continue
@@ -277,12 +279,12 @@ def ensure_canonical_prices(stripe, log=None) -> list[str]:
                     ep["id"], enabled_events=sorted(actuales | necesarios))
                 note("  ~ webhook: añadidos invoice.paid / invoice.payment_failed / "
                      "customer.subscription.deleted / charge.refunded / "
-                     "checkout.session.async_payment_succeeded")
+                     "charge.dispute.* / checkout.session.async_payment_succeeded")
     except Exception as exc:  # noqa: BLE001 — clave restringida, sin red…
         note(f"  ! webhook sin comprobar ({exc}): añade a mano invoice.paid, "
              "invoice.payment_failed, customer.subscription.deleted, "
-             "charge.refunded y checkout.session.async_payment_succeeded "
-             "en el dashboard")
+             "charge.refunded, charge.dispute.created, charge.dispute.closed y "
+             "checkout.session.async_payment_succeeded en el dashboard")
     return out
 
 
@@ -393,6 +395,17 @@ def _resolve_price_id(tier: str, period: str) -> str:
     return settings.stripe_price_legacy(tier, period)
 
 
+def _es_primera_compra(client: "Client | None") -> bool:
+    """¿Este pago es el de ARRANQUE de la asesoría, o una renovación?
+
+    La página de "¡Pago recibido!" prometía a todo el mundo el cuestionario
+    inicial "ya en tu correo". A quien RENUEVA no se le manda ninguno —ya hizo
+    su anamnesis hace meses—, así que se quedaba esperando (y revisando el spam)
+    un email que no iba a llegar nunca. Sin ficha (registro personal) sí es un
+    alta; con ficha, lo es solo mientras siga en onboarding."""
+    return client is None or client.status == "onboarding"
+
+
 def create_checkout_url(db: Session, tier: str, period: str = "1m", *,
                         client: Client | None = None) -> str:
     """Crea una Checkout Session de Stripe para `tier` × `period` (duración
@@ -461,7 +474,7 @@ def create_checkout_url(db: Session, tier: str, period: str = "1m", *,
         session = stripe.checkout.Session.create(
             mode="subscription" if es_oferta else modo,
             line_items=[{"price": price, "quantity": 1}],
-            success_url=f"{base}/pago-ok",
+            success_url=f"{base}/pago-ok" + ("" if _es_primera_compra(client) else "?r=1"),
             cancel_url=f"{base}/planes",
             metadata=metadata,
             client_reference_id=(str(client.id) if client else None),
@@ -1055,6 +1068,106 @@ def _handle_charge_refunded(db: Session, event: dict) -> dict:
     return {"refunded": devuelto, "client_id": client.id if client else None}
 
 
+def _handle_charge_dispute(db: Session, event: dict) -> dict:
+    """CONTRACARGO: el cliente ha reclamado el cobro a su banco.
+
+    Es lo más caro que puede pasar en la pasarela y era EL ÚNICO movimiento de
+    dinero que el sistema no miraba: Stripe retiene el importe al abrirse la
+    disputa (más una comisión que no se devuelve), y el coach no se enteraba de
+    nada — ni en el libro, ni en el móvil. Se seguía viendo el ingreso del mes
+    como si el dinero estuviera ahí, y al cliente como pagado.
+
+    Se anota como una salida (`status="refunded"`, que es lo que RESTA de los
+    totales y sale en el filtro "Devoluciones") y se avisa al momento. Si la
+    disputa se GANA, Stripe manda `charge.dispute.closed` con `status=won` y se
+    anota la vuelta del dinero. Como en la devolución, el estado de la ficha no
+    se toca solo: quién sigue de alta lo decide el coach."""
+    from app.services import payments as pay_svc
+
+    disputa = event["data"]["object"]
+    importe = disputa.get("amount") or 0
+    if importe <= 0:
+        return {"ignored": "disputa_sin_importe"}
+    cargo = disputa.get("charge")
+    cargo_id = cargo.get("id") if isinstance(cargo, dict) else cargo
+    pi = disputa.get("payment_intent")
+    pi_id = pi.get("id") if isinstance(pi, dict) else pi
+
+    # ¿Es NUESTRO el cobro disputado? Misma simetría que la devolución: una
+    # disputa de otro producto de la cuenta no puede restar de estos ingresos.
+    from app.models import Payment
+
+    vinculos = []
+    if cargo_id:
+        vinculos.append(Payment.stripe_object_id == cargo_id)
+    if pi_id:
+        vinculos.append(Payment.payment_intent == pi_id)
+    fila = db.scalar(
+        select(Payment).where(Payment.status == "paid", or_(*vinculos)).limit(1)
+    ) if vinculos else None
+    if fila is None:
+        return {"ignored": "disputa_ajena"}
+    client = db.get(Client, fila.client_id) if fila.client_id else None
+
+    ganada = (disputa.get("status") or "") in ("won", "warning_closed")
+    if ganada:
+        # El dinero vuelve: se anula la salida anotada al abrirse.
+        anotada = db.scalar(
+            select(Payment).where(Payment.stripe_object_id == (disputa.get("id") or ""),
+                                  Payment.status == "refunded").limit(1))
+        if anotada is None:
+            return {"ignored": "disputa_ganada_sin_anotar"}
+        db.delete(anotada)
+        db.commit()
+        _avisa_de_la_disputa(db, client, importe, disputa, ganada=True)
+        return {"dispute": "won", "client_id": client.id if client else None}
+
+    nuevo = pay_svc.record_payment(
+        db, object_id=disputa.get("id") or f"dp_{cargo_id}", kind="dispute",
+        status="refunded", amount_cents=importe,
+        currency=disputa.get("currency") or fila.currency or "eur",
+        livemode=bool(disputa.get("livemode", True)), client=client,
+        customer_name=fila.customer_name, customer_email=fila.customer_email,
+        description="Contracargo (reclamación al banco)",
+        paid_at=pay_svc.ts_to_dt(disputa.get("created") or event.get("created")),
+        event_id=event.get("id"), payment_intent=pi_id,
+        seen=False,   # jamás "visto": es dinero saliendo por una reclamación
+    ) is not None
+    if client is not None:
+        log_event(db, "client", client.id, "payment_disputed",
+                  {"dispute_id": disputa.get("id"), "amount_eur": importe / 100.0})
+    db.commit()
+    if nuevo:
+        _avisa_de_la_disputa(db, client, importe, disputa, ganada=False)
+    return {"dispute": disputa.get("status"), "client_id": client.id if client else None}
+
+
+def _avisa_de_la_disputa(db: Session, client: Client | None, importe: int,
+                         disputa: dict, *, ganada: bool) -> None:
+    """Push al coach. Una disputa tiene PLAZO para responder con pruebas: si se
+    entera tarde, la pierde por incomparecencia."""
+    try:
+        from app.services import push as push_svc
+
+        quien = (client.full_name if client else None) or "un cliente"
+        base = settings.public_base_url.rstrip("/")
+        if ganada:
+            titulo = f"💰 Contracargo ganado: {_euros(importe)}"
+            cuerpo = f"El banco te ha dado la razón con {quien}: el dinero vuelve."
+        else:
+            titulo = f"💸⚠️ Contracargo de {_euros(importe)}"
+            cuerpo = (f"{quien} ha reclamado el cobro a su banco. Stripe retiene "
+                      "el importe y hay PLAZO para responder con pruebas: "
+                      "entra en Stripe cuanto antes.")
+        push_svc.send_to_coach(db, {
+            "title": titulo, "body": cuerpo, "count": 1,
+            "url": f"{base}/pagos",
+            "tag": f"dq-disputa-{disputa.get('id')}",
+        })
+    except Exception:  # noqa: BLE001 — el push nunca rompe el webhook
+        pass
+
+
 def pagos_oferta_cobrados(db: Session, client: Client, periodo: str,
                           sub_id: str | None = None) -> int:
     """Nº de FACTURAS COBRADAS de la oferta (en la forma de pago `periodo`)
@@ -1112,6 +1225,23 @@ def cancelar_suscripcion(sub_id: str | None) -> tuple[bool, str]:
         return False, str(exc)[:200]
 
 
+def _olvida_la_suscripcion(client: Client, sub_id: str) -> None:
+    """Quita de la ficha la suscripción que acaba de cancelarse.
+
+    `renewals.renewal_window` devuelve None mientras la ficha tenga una
+    suscripción: "se cobra sola, no hay nada que avisar". El corte de la oferta
+    la cancelaba EN STRIPE y dejaba el id puesto, así que ese cliente no volvía
+    a entrar NUNCA en la ventana de renovación: ni email al cliente, ni alerta
+    `renewal_due` al coach, ni reapertura del enlace de pago. El programa
+    terminaba y nadie se enteraba — silencioso y en dinero.
+
+    Hasta ahora solo lo limpiaba el webhook `customer.subscription.deleted`; si
+    ese evento se perdía (o el corte venía del backstop diario), no lo limpiaba
+    nadie."""
+    if client.stripe_subscription_id == sub_id:
+        client.stripe_subscription_id = None
+
+
 def detener_suscripcion_oferta(db: Session, client: Client, sub_id: str | None,
                                *, motivo: str, periodo: str = OFFER2_PERIOD) -> bool:
     """Cancela EN STRIPE la suscripción de la oferta: el último cobro del
@@ -1127,6 +1257,7 @@ def detener_suscripcion_oferta(db: Session, client: Client, sub_id: str | None,
         stripe = _stripe()
         cancel = getattr(stripe.Subscription, "cancel", None) or stripe.Subscription.delete
         cancel(sub_id)
+        _olvida_la_suscripcion(client, sub_id)
         log_event(db, "client", client.id, "subscription_completed",
                   {"subscription": sub_id, "motivo": motivo})
         if periodo == OFFER_PERIOD:
@@ -1155,6 +1286,7 @@ def detener_suscripcion_oferta(db: Session, client: Client, sub_id: str | None,
         msg = str(exc).lower()
         if "canceled" in msg or "cancelled" in msg or "no such subscription" in msg:
             # Ya estaba cancelada (reintento del webhook o baja manual): hecho.
+            _olvida_la_suscripcion(client, sub_id)
             return True
         _log.warning("No se pudo cancelar la suscripción de la oferta %s: %s",
                      sub_id, exc)
@@ -1293,6 +1425,18 @@ def _handle_subscription_deleted(db: Session, event: dict) -> dict:
             client = None
     if client is None and sub_id:
         client = db.scalar(select(Client).where(Client.stripe_subscription_id == sub_id))
+    if client is None and sub_id:
+        # ÚLTIMO RECURSO: por el LIBRO. En el alta self-serve la suscripción no
+        # lleva `client_id` en su metadata (la ficha nace después, en el
+        # checkout), así que el único vínculo era el campo de la ficha — y ese
+        # campo se limpia en cuanto la oferta se completa. Sin esta red, el
+        # `deleted` que llega DESPUÉS de la limpieza no encontraba a nadie y el
+        # movimiento "Oferta completada" se perdía del feed.
+        from app.models import Payment
+
+        client = db.scalar(
+            select(Client).join(Payment, Payment.client_id == Client.id)
+            .where(Payment.subscription_id == sub_id).limit(1))
     if client is None:
         return {"ignored": "subscription_sin_cliente"}
     # PROGRAMA DE LA OFERTA COMPLETADO: la baja la provocamos NOSOTROS al
@@ -1406,6 +1550,8 @@ def handle_webhook(db: Session, payload: bytes, sig_header: str | None) -> dict:
         return _handle_subscription_deleted(db, event)
     if event["type"] == "charge.refunded":
         return _handle_charge_refunded(db, event)
+    if event["type"].startswith("charge.dispute."):
+        return _handle_charge_dispute(db, event)
     if event["type"] not in ("checkout.session.completed",
                              "checkout.session.async_payment_succeeded"):
         return {"ignored": event["type"]}
@@ -1418,6 +1564,14 @@ def handle_webhook(db: Session, payload: bytes, sig_header: str | None) -> dict:
     evt_id = event.get("id")
     meta = session.get("metadata") or {}
     client_id = meta.get("client_id") or session.get("client_reference_id")
+    # `client_reference_id` lo pone QUIEN crea la sesión, y en esta cuenta hay
+    # más productos que los nuestros: un Payment Link ajeno con una referencia
+    # no numérica ("pedido-42", un email) reventaba el `int()` de más abajo con
+    # un 500. Stripe reintenta un 500 durante días, así que ese webhook se
+    # atascaba y con él el cobro se quedaba sin anotar. Una referencia que no
+    # es un id nuestro simplemente NO es nuestra.
+    if client_id is not None and not str(client_id).strip().isdigit():
+        client_id = None
     # SIMETRÍA con facturas (`invoice_ajena`) y cargos (`cargo_ajeno`): una
     # Checkout Session de OTRO producto de la misma cuenta (un Payment Link de
     # un ebook, un taller) no lleva NUESTRA metadata — las sesiones que crea

@@ -908,3 +908,212 @@ def test_un_tipo_de_movimiento_desconocido_no_tumba_el_libro(monkeypatch):
         assert salida and any(x.kind == "charge" for x in salida)
     finally:
         db.close()
+
+
+def test_una_referencia_no_numerica_no_tumba_el_webhook(monkeypatch):
+    """`client_reference_id` lo pone quien crea la sesión, y en esta cuenta de
+    Stripe hay más productos que los nuestros. Un Payment Link ajeno con una
+    referencia de texto ("pedido-42") reventaba el `int()` del webhook con un
+    500 — y Stripe reintenta un 500 durante días, así que ese webhook se
+    atascaba y el cobro se quedaba sin anotar en el libro."""
+    stripe_service = _prep(monkeypatch)
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        sesion = {
+            "id": f"cs_ref_texto_{uuid.uuid4().hex[:10]}", "currency": "eur",
+            "livemode": True, "amount_total": 4900, "payment_status": "paid",
+            "created": int(datetime.now(timezone.utc).timestamp()),
+            "client_reference_id": "pedido-42",     # ← ni numérico ni nuestro
+            "metadata": {},
+            "customer_details": {"email": f"taller-{uuid.uuid4().hex[:6]}@otracosa.com",
+                                 "name": "Comprador Ajeno"},
+        }
+        monkeypatch.setattr(stripe_service, "_stripe", _fake_stripe(
+            _evento("checkout.session.completed", sesion)))
+        res = stripe_service.handle_webhook(db, b"{}", "sig")
+
+        # Ni 500 ni ficha fabricada: se anota como huérfano y se ve el dinero.
+        assert res == {"ignored": "checkout_ajeno"}, res
+        db.expire_all()
+        filas = _pagos_de(db, sesion["id"])
+        assert len(filas) == 1 and filas[0].client_id is None
+    finally:
+        db.close()
+
+
+def test_la_sincronizacion_repesca_los_cobros_que_FALLARON(monkeypatch):
+    """La repesca solo miraba `status="paid"`. Un cobro que NO entró es lo más
+    caro de perder —el cliente cree que ha pagado, sigue entrenando y el coach
+    trabaja gratis— y dependía por completo de que llegase su webhook; la
+    sincronización existe justo para cuando el webhook no llega.
+
+    Y una factura recién emitida que aún no se ha intentado cobrar NO es un
+    impago: esa no puede entrar."""
+    from app.config import settings
+    from app.db import SessionLocal
+    from app.services import payments as pay_svc
+
+    db = SessionLocal()
+    try:
+        monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_x")
+        ahora = int(datetime.now(timezone.utc).timestamp())
+        marca = uuid.uuid4().hex[:8]
+        impagada = {
+            "id": f"in_impago_{marca}", "currency": "eur", "livemode": True,
+            "amount_due": 12000, "amount_paid": 0, "created": ahora,
+            "attempted": True, "attempt_count": 2,
+            "billing_reason": "subscription_cycle",
+            "customer_email": f"impago-{marca}@x.com", "customer_name": "Impago Cliente",
+            "lines": {"data": [{"price": {"lookup_key": "dqr_full_oferta"}}]},
+        }
+        sin_intentar = {
+            "id": f"in_nueva_{marca}", "currency": "eur", "livemode": True,
+            "amount_due": 12000, "amount_paid": 0, "created": ahora,
+            "attempted": False, "attempt_count": 0,
+            "billing_reason": "subscription_cycle",
+            "customer_email": f"nueva-{marca}@x.com",
+            "lines": {"data": [{"price": {"lookup_key": "dqr_full_oferta"}}]},
+        }
+
+        class _Iter:
+            def __init__(self, data): self._d = data
+            def auto_paging_iter(self): return iter(self._d)
+
+        class _Invoice:
+            @staticmethod
+            def list(**kw):
+                if kw.get("status") == "open":
+                    return _Iter([impagada, sin_intentar])
+                return _Iter([])
+
+        class _Vacio:
+            @staticmethod
+            def list(**kw): return _Iter([])
+
+        class _Checkout:
+            Session = _Vacio
+
+        class _FakeStripe:
+            Charge = _Vacio
+            Invoice = _Invoice
+            checkout = _Checkout
+
+        from app.services import stripe_service
+        monkeypatch.setattr(stripe_service, "_stripe", lambda: _FakeStripe)
+
+        res = pay_svc.sync_from_stripe(db, days=30)
+        assert res["errors"] == [], res["errors"]
+        db.expire_all()
+
+        filas = _pagos_de(db, impagada["id"])
+        assert len(filas) == 1, "el impago repescado no se anotó"
+        assert filas[0].status == "failed"
+        assert filas[0].amount_cents == 12000
+        # SIN LEER: si aparece por repesca es que el coach no se enteró.
+        assert filas[0].seen_at is None
+        # La factura que aún no se ha intentado cobrar no es un impago.
+        assert _pagos_de(db, sin_intentar["id"]) == []
+    finally:
+        db.close()
+
+
+def _cobro_anotado(db, *, email: str, importe: int = 12900):
+    """Un cobro nuestro ya en el libro, para poder disputarlo después."""
+    from app.services import payments as pay_svc
+
+    cid = f"ch_disp_{uuid.uuid4().hex[:10]}"
+    pay_svc.record_payment(
+        db, object_id=cid, kind="checkout", status="paid", amount_cents=importe,
+        customer_name="Cliente Disputa", customer_email=email,
+        payment_intent=f"pi_{uuid.uuid4().hex[:12]}",
+        paid_at=datetime.now(timezone.utc))
+    db.commit()
+    from sqlalchemy import select
+
+    from app.models import Payment
+    return db.scalar(select(Payment).where(Payment.stripe_object_id == cid))
+
+
+def test_un_contracargo_resta_y_avisa(monkeypatch):
+    """CONTRACARGO: el cliente reclama el cobro a su banco. Es lo más caro que
+    pasa en la pasarela y era EL ÚNICO movimiento de dinero que el sistema no
+    miraba: Stripe retiene el importe, el libro seguía enseñando el ingreso y
+    el coach no se enteraba — y una disputa tiene PLAZO para responder con
+    pruebas, así que enterarse tarde es perderla."""
+    stripe_service = _prep(monkeypatch)
+    from app.db import SessionLocal
+    from app.services import payments as pay_svc
+    from app.services import push as push_svc
+
+    avisos = []
+    monkeypatch.setattr(push_svc, "send_to_coach", lambda db, p: avisos.append(p))
+
+    db = SessionLocal()
+    try:
+        cobro = _cobro_anotado(db, email=f"disputa-{uuid.uuid4().hex[:6]}@x.com")
+        antes = pay_svc.summary(db)["month_total_cents"]
+
+        disputa = {
+            "id": f"dp_{uuid.uuid4().hex[:12]}", "amount": 12900, "currency": "eur",
+            "livemode": True, "status": "needs_response",
+            "charge": cobro.stripe_object_id,
+            "payment_intent": cobro.payment_intent,
+            "created": int(datetime.now(timezone.utc).timestamp()),
+        }
+        monkeypatch.setattr(stripe_service, "_stripe", _fake_stripe(
+            _evento("charge.dispute.created", disputa)))
+        res = stripe_service.handle_webhook(db, b"{}", "sig")
+        assert res["dispute"] == "needs_response", res
+
+        db.expire_all()
+        filas = _pagos_de(db, disputa["id"])
+        assert len(filas) == 1 and filas[0].status == "refunded"
+        assert filas[0].seen_at is None                      # nunca "visto"
+        assert pay_svc.summary(db)["month_total_cents"] == antes - 12900
+        assert avisos and "Contracargo" in avisos[-1]["title"]
+
+        # Y una disputa de un cobro AJENO de la misma cuenta no resta.
+        ajena = dict(disputa, id=f"dp_{uuid.uuid4().hex[:12]}",
+                     charge=f"ch_ajeno_{uuid.uuid4().hex[:8]}", payment_intent=None)
+        monkeypatch.setattr(stripe_service, "_stripe", _fake_stripe(
+            _evento("charge.dispute.created", ajena)))
+        assert stripe_service.handle_webhook(db, b"{}", "sig") == {"ignored": "disputa_ajena"}
+    finally:
+        db.close()
+
+
+def test_un_contracargo_ganado_devuelve_el_dinero_al_libro(monkeypatch):
+    """Si el banco da la razón al coach, el dinero vuelve: la salida anotada al
+    abrirse la disputa se anula, o el mes quedaría restado para siempre."""
+    stripe_service = _prep(monkeypatch)
+    from app.db import SessionLocal
+    from app.services import payments as pay_svc
+    from app.services import push as push_svc
+
+    monkeypatch.setattr(push_svc, "send_to_coach", lambda db, p: None)
+    db = SessionLocal()
+    try:
+        cobro = _cobro_anotado(db, email=f"ganada-{uuid.uuid4().hex[:6]}@x.com")
+        antes = pay_svc.summary(db)["month_total_cents"]
+        disputa = {
+            "id": f"dp_{uuid.uuid4().hex[:12]}", "amount": 12900, "currency": "eur",
+            "livemode": True, "status": "needs_response",
+            "charge": cobro.stripe_object_id, "payment_intent": cobro.payment_intent,
+            "created": int(datetime.now(timezone.utc).timestamp()),
+        }
+        monkeypatch.setattr(stripe_service, "_stripe", _fake_stripe(
+            _evento("charge.dispute.created", disputa)))
+        stripe_service.handle_webhook(db, b"{}", "sig")
+        db.expire_all()
+        assert pay_svc.summary(db)["month_total_cents"] == antes - 12900
+
+        monkeypatch.setattr(stripe_service, "_stripe", _fake_stripe(
+            _evento("charge.dispute.closed", dict(disputa, status="won"))))
+        res = stripe_service.handle_webhook(db, b"{}", "sig")
+        assert res["dispute"] == "won", res
+        db.expire_all()
+        assert pay_svc.summary(db)["month_total_cents"] == antes
+    finally:
+        db.close()

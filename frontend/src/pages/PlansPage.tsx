@@ -301,17 +301,23 @@ export default function PlansPage() {
   );
 }
 
-/** Página de gracias tras un pago correcto (success_url de Stripe). */
+/** Página de gracias tras un pago correcto (success_url de Stripe).
+ *
+ *  El texto DEPENDE de si es un alta o una RENOVACIÓN (`?r=1`, que pone el
+ *  propio backend al crear la sesión de pago): a quien renueva no se le manda
+ *  ningún cuestionario —ya hizo su anamnesis— y este cartel le mandaba a
+ *  esperar, y a rebuscar en el spam, un correo que no existe. */
 export function PaymentOkPage() {
+  const renovacion = new URLSearchParams(window.location.search).get("r") === "1";
   return (
     <div style={{ minHeight: "100vh", background: "#f6f1e7", color: "#26211a" }}
       className="flex flex-col items-center justify-center px-8 text-center">
       <img src="/dq-logo.png" alt="" className="h-14 w-auto rounded-xl shadow-sm" />
       <h1 className="mt-5 text-2xl font-bold">¡Pago recibido!</h1>
       <p className="mt-2 max-w-md text-sm opacity-75">
-        Gracias. Ya tienes en tu correo tu cuestionario inicial (anamnesis):
-        rellénalo y súbelo desde el enlace del email para que preparemos tu plan.
-        Revisa también la carpeta de spam.
+        {renovacion
+          ? "Gracias. Tu asesoría sigue en marcha: entra en tu portal como siempre, ahí tienes tu plan y tu seguimiento."
+          : "Gracias. Te llega por correo tu cuestionario inicial (anamnesis): rellénalo para que preparemos tu plan. Revisa también la carpeta de spam; si en unos minutos no lo ves, escríbenos y te lo reenviamos."}
       </p>
     </div>
   );

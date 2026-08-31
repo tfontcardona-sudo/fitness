@@ -576,9 +576,12 @@ def sync_from_stripe(db: Session, *, days: int = SYNC_DEFAULT_DAYS) -> dict:
     falten. Sirve para DOS cosas: rellenar el histórico anterior a esta tabla y
     repescar cobros cuyo webhook se perdió (Stripe caído, deploy en marcha…).
 
-    Recorre las tres fuentes que cubren el negocio:
+    Recorre las cuatro fuentes que cubren el negocio:
       · Checkout Sessions pagadas (planes de pago único),
       · Facturas pagadas (renovaciones de la suscripción de la oferta),
+      · Facturas que NO se pudieron cobrar (`open` ya intentada, o
+        `uncollectible`): es lo más caro de perder — el cliente cree que ha
+        pagado y el coach sigue trabajando gratis,
       · Cobros con devolución (reembolsos).
 
     Idempotente: lo ya anotado se ignora. Nunca lanza al caller salvo que Stripe
@@ -695,6 +698,50 @@ def sync_from_stripe(db: Session, *, days: int = SYNC_DEFAULT_DAYS) -> dict:
                                 livemode=bool(inv.get("livemode", True)))
     except Exception as exc:  # noqa: BLE001
         errores.append(f"facturas: {exc}")
+
+    # 2b) Facturas FALLIDAS. La repesca solo miraba `status="paid"`, así que un
+    #     cobro que NO entró —el caso más caro de perder: el cliente cree que
+    #     ha pagado, sigue entrenando y el coach trabaja gratis— dependía por
+    #     completo de que llegara su webhook. Y la sincronización existe justo
+    #     para cuando el webhook NO llega. En Stripe una factura que no se pudo
+    #     cobrar queda `open` (con reintentos por delante) o `uncollectible`
+    #     (agotados); las dos son el mismo movimiento "failed" del libro, y el
+    #     UNIQUE (objeto, estado) hace que la de después no duplique nada.
+    try:
+        from app.services.stripe_service import _anotar_factura, periodo_de_factura  # noqa: F401
+
+        for estado in ("open", "uncollectible"):
+            for inv in _limitado(stripe.Invoice.list(
+                    created={"gte": desde}, status=estado, limit=100).auto_paging_iter()):
+                if not _invoice_es_de_la_oferta(inv):
+                    continue
+                # `open` incluye la factura recién emitida que aún no se ha
+                # intentado cobrar: esa no ha fallado nada.
+                if estado == "open" and not (inv.get("attempted")
+                                             or (inv.get("attempt_count") or 0) > 0):
+                    continue
+                cliente = _client_from_invoice(db, inv)
+                creada = ts_to_dt(inv.get("created"))
+                if record_payment(
+                    db, object_id=inv["id"], kind="invoice", status="failed",
+                    amount_cents=inv.get("amount_due") or 0,
+                    currency=inv.get("currency") or "eur",
+                    livemode=bool(inv.get("livemode", True)),
+                    client=cliente, customer_name=inv.get("customer_name"),
+                    customer_email=inv.get("customer_email"),
+                    tier=(cliente.package_tier if cliente else "full"),
+                    billing_period=periodo_de_factura(inv, cliente),
+                    description=describe("full", periodo_de_factura(inv, cliente),
+                                         kind="invoice",
+                                         billing_reason=inv.get("billing_reason")),
+                    paid_at=creada,
+                    # SIN LEER siempre: un impago que aparece por repesca es,
+                    # por definición, uno del que el coach no se ha enterado.
+                    seen=False,
+                ) is not None:
+                    creados += 1
+    except Exception as exc:  # noqa: BLE001
+        errores.append(f"impagos: {exc}")
 
     # 3) Devoluciones (un reembolso resta de los ingresos del mes).
     try:
