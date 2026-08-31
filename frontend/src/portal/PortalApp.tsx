@@ -309,9 +309,9 @@ export default function PortalApp({ token }: { token: string }) {
               visibilitychange antes del remontaje. */}
           <div key={`${effTab}-${state.today ?? ""}`} className="animate-rise"
             ref={(el) => { if (el) window.scrollTo({ top: 0 }); }}>
-            {effTab === "entreno" && <PortalWorkout api={apiClient} brand={state.brand} periodStatus={periodStatus} businessToday={state.today ?? null} hasPeriod={state.period != null || state.status === "review_pending"} />}
+            {effTab === "entreno" && <PortalWorkout api={apiClient} token={token} brand={state.brand} periodStatus={periodStatus} businessToday={state.today ?? null} hasPeriod={state.period != null || state.status === "review_pending"} />}
             {effTab === "recursos" && <PortalResources api={apiClient} brand={state.brand} hasTraining={!isStart} />}
-            {effTab === "diario" && <PortalDiary api={apiClient} brand={state.brand} periodStatus={periodStatus} businessToday={state.today ?? null} hasPeriod={state.period != null || state.status === "review_pending"} hasNutrition={caps.hasNutrition} hasTraining={!isStart} />}
+            {effTab === "diario" && <PortalDiary api={apiClient} token={token} brand={state.brand} periodStatus={periodStatus} businessToday={state.today ?? null} hasPeriod={state.period != null || state.status === "review_pending"} hasNutrition={caps.hasNutrition} hasTraining={!isStart} />}
             {effTab === "progreso" && <PortalProgress api={apiClient} brand={state.brand} hasTraining={!isStart} token={token} />}
             {effTab === "cierre" && (
               <PortalClose
