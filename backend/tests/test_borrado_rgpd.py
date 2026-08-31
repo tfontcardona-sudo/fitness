@@ -513,3 +513,62 @@ def test_el_tope_de_caddy_deja_pasar_los_videos_que_el_backend_admite():
 
     # Y ese bloque tiene que ir ANTES del general: Caddy resuelve por orden.
     assert texto.index("handle /api/exercises/*/video") < texto.index("handle /api/* {")
+
+
+def test_el_nombre_del_borrado_no_sobrevive_en_los_planes_de_otros(http, auth):
+    """Copiar un plan deja un sello legible ("copiado de el plan de Ana Pérez")
+    en `guardrail_flags` del plan DESTINO y en la auditoría de ese plan: filas
+    de OTRO cliente, que la supresión de este no tocaba. El dato personal
+    sobrevivía a la baja, en fichas ajenas."""
+    from sqlalchemy import select
+
+    from app.db import SessionLocal
+    from app.models import AuditLog, Client, Plan
+
+    origen_nombre = f"Origen Borrable {uuid.uuid4().hex[:6]}"
+    a = http.post("/api/clients", headers=auth, json={
+        "full_name": origen_nombre,
+        "email": f"orig-{uuid.uuid4().hex[:8]}@example.com"}).json()["client"]["id"]
+    b = http.post("/api/clients", headers=auth, json={
+        "full_name": f"Destino {uuid.uuid4().hex[:6]}",
+        "email": f"dest-{uuid.uuid4().hex[:8]}@example.com"}).json()["client"]["id"]
+
+    db = SessionLocal()
+    try:
+        # Simula el resultado de copiar el plan de A a B: el sello con su nombre
+        # en el plan de B y en la auditoría de ESE plan.
+        plan_b = Plan(client_id=b, month_index=1, version=1, status="draft",
+                      generated_by="library",
+                      guardrail_flags=[f"copiado de el plan de {origen_nombre} — "
+                                       "revísalo y actívalo"])
+        db.add(plan_b)
+        db.flush()
+        db.add(AuditLog(entity="plan", entity_id=plan_b.id, event="plan_copied",
+                        detail_json={"client_id": b,
+                                     "origen": f"el plan de {origen_nombre}",
+                                     "avisos": 0}))
+        db.commit()
+        plan_b_id = plan_b.id
+    finally:
+        db.close()
+
+    r = http.delete(f"/api/clients/{a}?confirm={origen_nombre.replace(' ', '%20')}",
+                    headers=auth)
+    assert r.status_code == 204, r.text
+
+    db = SessionLocal()
+    try:
+        assert db.get(Client, a) is None
+        plan_b = db.get(Plan, plan_b_id)
+        marcas = " ".join(plan_b.guardrail_flags or [])
+        assert origen_nombre not in marcas, f"su nombre sigue en el plan de otro: {marcas}"
+        assert "copiado de" in marcas, "el sello tiene que seguir diciendo que es copia"
+
+        ev = db.scalar(select(AuditLog).where(AuditLog.entity == "plan",
+                                              AuditLog.entity_id == plan_b_id,
+                                              AuditLog.event == "plan_copied"))
+        assert ev is not None
+        assert origen_nombre not in str(ev.detail_json), (
+            f"su nombre sigue en la auditoría de otro: {ev.detail_json}")
+    finally:
+        db.close()

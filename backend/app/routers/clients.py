@@ -813,6 +813,29 @@ def delete_client(
     if vc_ids:
         db.execute(delete(AuditLog).where(AuditLog.entity == "video_call",
                                           AuditLog.entity_id.in_(vc_ids)))
+    # SU NOMBRE EN LOS PLANES DE OTROS. Copiar un plan deja un sello legible
+    # ("copiado de el plan de Ana Pérez") en `guardrail_flags` del plan DESTINO
+    # y en la auditoría de ese plan — filas de OTRO cliente, que la supresión
+    # de este no tocaba. El dato personal sobrevivía a la baja en fichas ajenas.
+    # Se sustituye por una referencia sin nombre; el sello sigue diciendo que es
+    # una copia, que es para lo que sirve.
+    _borrado = "un cliente dado de baja"
+    if (nombre_borrado := (client.full_name or "").strip()):
+        for otro in db.scalars(
+                select(Plan).where(Plan.client_id != client_id,
+                                   Plan.generated_by == "library",
+                                   Plan.guardrail_flags.isnot(None))):
+            marcas = list(otro.guardrail_flags or [])
+            if any(nombre_borrado in (m or "") for m in marcas):
+                otro.guardrail_flags = [
+                    (m or "").replace(nombre_borrado, _borrado) for m in marcas]
+        for ev in db.scalars(select(AuditLog).where(AuditLog.event == "plan_copied")):
+            detalle = ev.detail_json or {}
+            origen = str(detalle.get("origen") or "")
+            if nombre_borrado in origen:
+                ev.detail_json = {**detalle,
+                                  "origen": origen.replace(nombre_borrado, _borrado)}
+
     # Los mensajes de WhatsApp redactados para él viven en un JSON por día,
     # con su id como clave: se quita la suya sin tocar las de los demás.
     for ronda in db.scalars(select(WhatsAppRound)):
