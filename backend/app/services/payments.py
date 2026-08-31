@@ -212,9 +212,28 @@ def record_refunds_of_charge(db: Session, charge: dict, *,
                               Payment.status == "refunded").limit(1)
     ) if cargo_id else None
 
+    # Filas SINTÉTICAS "…_difN": las anotó una carga SIN desglose para cuadrar
+    # el acumulado. No son reembolsos de Stripe, así que el guard de arriba no
+    # las ve: si luego llega el desglose y se insertan los re_… encima, el
+    # mismo dinero se resta DOS VECES (justo lo que el guard venía a impedir).
+    sinteticas = list(db.scalars(
+        select(Payment).where(Payment.stripe_object_id.like(f"{cargo_id}_dif%"),
+                              Payment.status == "refunded")
+    )) if cargo_id else []
+
     reembolsos = [r for r in ((charge.get("refunds") or {}).get("data") or [])
                   if r.get("id") and (r.get("amount") or 0) > 0]
     if reembolsos and agregada is None:
+        if sinteticas:
+            # El desglose manda… solo si lo trae ENTERO (Stripe pagina
+            # `refunds` de 10 en 10). Si viene corto, se quedan las sintéticas:
+            # llevan el acumulado bueno y el libro no se descuadra.
+            suma_desglose = sum(int(r.get("amount") or 0) for r in reembolsos)
+            if suma_desglose < int(charge.get("amount_refunded") or 0):
+                return 0
+            for s in sinteticas:
+                db.delete(s)
+            db.flush()
         nuevas = 0
         for r in reembolsos:
             cuando = ts_to_dt(r.get("created") or charge.get("created"))
@@ -232,9 +251,14 @@ def record_refunds_of_charge(db: Session, charge: dict, *,
     if total <= 0:
         return 0
     if agregada is not None:
-        # Si han devuelto MÁS desde entonces, se pone al día el importe.
+        # Si han devuelto MÁS desde entonces, se pone al día el importe. Y
+        # vuelve a contar como SIN LEER: es dinero que se ha ido DESPUÉS de la
+        # última vez que el coach miró (antes se quedaba "visto" por la fecha
+        # del cargo, que puede ser de hace meses, y el badge no avisaba).
         if total > agregada.amount_cents:
             agregada.amount_cents = total
+            if seen_by_age:
+                agregada.seen_at = None  # la columna del "sin leer" del feed
             return 1
         return 0
 
@@ -257,6 +281,8 @@ def record_refunds_of_charge(db: Session, charge: dict, *,
             # Se ha devuelto MÁS de lo anotado y esta carga no trae el
             # desglose: se anota solo la DIFERENCIA. El id lleva el total
             # dentro, así que una reentrega no la duplica.
+            if seen_by_age:
+                comun["seen"] = False  # devolución posterior a lo anotado
             pago = record_payment(db, object_id=f"{cargo_id}_dif{total}",
                                   amount_cents=total - ya_devuelto,
                                   paid_at=ts_to_dt(charge.get("created")), **comun)
@@ -303,6 +329,23 @@ def _neto_cents(db: Session, desde: datetime, hasta: datetime) -> tuple[int, int
         else:
             total -= int(suma or 0)
     return total, cobros
+
+
+def neto_de_cliente(db: Session, client_id: int) -> int:
+    """Neto REAL de un cliente en céntimos: cobros − devoluciones, sin dinero
+    de prueba.
+
+    La ficha sumaba a mano la PÁGINA de 20 movimientos que pintaba: a partir
+    del movimiento 21 el "total pagado" mentía, y los cobros en modo prueba
+    (sk_test_) contaban como ingreso aunque el resto del panel los excluye.
+    """
+    filas = db.execute(
+        select(Payment.status, func.coalesce(func.sum(Payment.amount_cents), 0))
+        .where(Payment.client_id == client_id, Payment.livemode.is_(True),
+               Payment.status.in_(("paid", "refunded")))
+        .group_by(Payment.status)
+    ).all()
+    return sum(int(suma or 0) if st == "paid" else -int(suma or 0) for st, suma in filas)
 
 
 def summary(db: Session) -> dict:

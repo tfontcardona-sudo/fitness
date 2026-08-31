@@ -19,7 +19,7 @@ resolución de tipos de FastAPI/Pydantic en los routers).
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -85,6 +85,10 @@ def list_payments(
         items=[_to_out(p, nombres) for p in filas],
         count=total,
         unseen=pay_svc.unseen_count(db),
+        # Neto REAL del cliente (cobros − devoluciones, sin dinero de prueba):
+        # la ficha lo sumaba de la página que pintaba y mentía a partir del
+        # movimiento 21. Solo se calcula cuando se filtra por cliente.
+        client_total_cents=pay_svc.neto_de_cliente(db, client_id) if client_id else None,
     )
 
 
@@ -208,12 +212,22 @@ def borrar_cobro_manual(payment_id: int, db: Session = Depends(get_db)) -> Respo
     if client_id:
         cliente = db.get(Client, client_id)
         if cliente is not None:
+            # Los cobros de Stripe se enlazan por EMAIL, y si el cliente pagó
+            # con otro correo su fila queda sin ficha: mirando solo client_id,
+            # borrar un cobro a mano marcaba como IMPAGADO a alguien que sí
+            # había pagado (y le reabría el aviso de pago y el banner del
+            # portal). Se mira también por su email, igual que la pasarela.
+            email = (cliente.email or "").strip().lower()
+            suyos = [Payment.client_id == client_id]
+            if email:
+                suyos.append(func.lower(Payment.customer_email) == email)
             ultimo = db.scalar(
-                select(Payment).where(Payment.client_id == client_id,
-                                      Payment.status == "paid")
-                .order_by(Payment.paid_at.desc()).limit(1))
+                select(Payment).where(Payment.status == "paid", or_(*suyos))
+                .order_by(Payment.paid_at.desc().nullslast()).limit(1))
             cliente.paid_at = ultimo.paid_at if ultimo else None
-            if ultimo is None:
+            # Una suscripción viva de Stripe manda sobre la ausencia de filas:
+            # el cobro está domiciliado aunque el libro aún no lo tenga.
+            if ultimo is None and not cliente.stripe_subscription_id:
                 cliente.payment_status = "pending"
     log_event(db, "client", client_id or 0, "manual_payment_deleted",
               {"payment_id": payment_id, "amount_cents": pago.amount_cents})

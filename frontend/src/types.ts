@@ -853,6 +853,9 @@ export interface PaymentsListOut {
   items: PaymentOut[];
   count: number;
   unseen: number;
+  /** Neto del CLIENTE (cobros − devoluciones, sin dinero de prueba) cuando se
+   *  filtra por client_id: la ficha ya no suma la página que pinta. */
+  client_total_cents?: number | null;
 }
 
 export interface PaymentsSummaryOut {

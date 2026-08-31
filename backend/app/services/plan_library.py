@@ -237,6 +237,18 @@ def copiar_a_cliente(db: Session, client: Client, *, nutrition: dict | None,
 
     avisos: list[str] = []
 
+    # Lo del CICLO del origen tampoco puede viajar dentro del entreno. En un
+    # plan solo-entreno (o en cualquiera cuyo sello acabara ahí) el bloque
+    # `applied_adjustments` vive en training_json: al copiarlo, el destino
+    # aparecía "adaptado a la revisión #N" de una revisión que no es suya —con
+    # las CIFRAS del cliente de origen dentro de sus Novedades— y su aviso de
+    # "sin adaptar" se apagaba solo. La limpieza existía únicamente para la
+    # nutrición (auditoría).
+    for _bloque in (training, education):
+        if _bloque:
+            for clave in ("applied_adjustments", "rev", "gen_inputs", "manual_changes"):
+                _bloque.pop(clave, None)
+
     # El paquete del DESTINO manda: pegar entreno a un cliente Start (solo
     # nutrición) publicaría en su portal algo que no ha contratado.
     if training and not pkgs.has_training(client.package_tier):
@@ -402,16 +414,21 @@ def guardar_modelo(db: Session, plan: Plan, titulo: str) -> PlanTemplate:
     if not titulo:
         raise PlanLibraryError("Ponle un título al modelo (p. ej. «Planificación base»).")
     nutrition = _copy.deepcopy(plan.nutrition_json) if plan.nutrition_json else None
-    if nutrition:
-        # El modelo tampoco arrastra el ciclo de nadie.
-        for clave in ("applied_adjustments", "rev", "gen_inputs", "manual_changes"):
-            nutrition.pop(clave, None)
+    training = _copy.deepcopy(plan.training_json) if plan.training_json else None
+    education = _copy.deepcopy(plan.education_json) if plan.education_json else None
+    # El modelo tampoco arrastra el ciclo de nadie — NI POR EL ENTRENO: el
+    # sello de la adaptación vive ahí en los planes solo-entreno, así que el
+    # modelo lo repartía a todos los clientes a los que se aplicara.
+    for _bloque in (nutrition, training, education):
+        if _bloque:
+            for clave in ("applied_adjustments", "rev", "gen_inputs", "manual_changes"):
+                _bloque.pop(clave, None)
     tpl = PlanTemplate(
         title=titulo[:120],
-        summary=resumen_plan(nutrition, plan.training_json, plan.goal_type)[:200],
+        summary=resumen_plan(nutrition, training, plan.goal_type)[:200],
         nutrition_json=nutrition,
-        training_json=_copy.deepcopy(plan.training_json) if plan.training_json else None,
-        education_json=_copy.deepcopy(plan.education_json) if plan.education_json else None,
+        training_json=training,
+        education_json=education,
     )
     db.add(tpl)
     db.flush()

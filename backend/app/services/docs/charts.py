@@ -148,10 +148,14 @@ def perimeters_chart(
         for lbl, _ in series:
             if lbl not in etiquetas:
                 etiquetas.append(lbl)
-    # Las series cortas se alinean por el FINAL (su punto es el "Actual").
+    # Cada punto va en la columna de SU ETIQUETA. Alinear por el final daba
+    # por hecho que todas las series comparten las mismas etiquetas: en cuanto
+    # una medida traía "Anterior" (del cierre previo) y otra "Inicio" (de la
+    # anamnesis), la rejilla tenía 3 columnas y las series de 2 puntos se
+    # desplazaban una posición — el valor del ANTES se pintaba encima de
+    # "Actual". El informe enseñaba una evolución que no era la del cliente.
     for i, (name, series) in enumerate(perimeters.items()):
-        desplazamiento = len(etiquetas) - len(series)
-        xs = [desplazamiento + j for j in range(len(series))]
+        xs = [etiquetas.index(lbl) for lbl, _ in series]
         ys = [v for _, v in series]
         ax.plot(xs, ys, marker="o", markersize=4, linewidth=2,
                 color=palette[i % len(palette)], label=name, zorder=3)

@@ -634,7 +634,11 @@ def generate_plan_doc(
                     if partes:
                         lineas.append(f"{categoria}: " + " · ".join(partes))
                 if lineas:
-                    info_box(doc, lineas, fill=CREAM, cant_split=True)
+                    # cant_split=False: la lista de la compra NO tiene cota (son
+                    # todos los alimentos de la semana agrupados por categoría).
+                    # En una caja indivisible, lo que no cabe en la página se
+                    # pierde de vista: el cliente iba al súper con media lista.
+                    info_box(doc, lineas, fill=CREAM)
         elif diet_mode != "strict" and meals:
             blocks = {s.get("slot"): s for s in bank.get("slots", [])}
             for m in meals:

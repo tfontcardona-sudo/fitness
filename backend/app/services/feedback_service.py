@@ -64,16 +64,28 @@ def _perimeters(prev: Period | None, cur: Period,
     fields = [("Cintura", "closing_waist_cm"), ("Cadera", "closing_hip_cm"),
               ("Brazo", "closing_arm_cm"), ("Muslo", "closing_thigh_cm")]
     out: dict[str, list[tuple[str, float]]] = {}
+    fuentes: set[str] = set()
+    crudo: dict[str, tuple[float | None, float]] = {}
     for label, attr in fields:
         cur_v = getattr(cur, attr, None)
         if cur_v is None:
             continue
-        series: list[tuple[str, float]] = []
         prev_v = getattr(prev, attr, None) if prev else None
-        etiqueta_prev = "Anterior"
-        if prev_v is None and client is not None:
+        if prev_v is not None:
+            fuentes.add("Anterior")
+        elif client is not None:
             prev_v = getattr(client, attr.replace("closing_", "initial_"), None)
-            etiqueta_prev = "Inicio"
+            if prev_v is not None:
+                fuentes.add("Inicio")
+        crudo[label] = (prev_v, cur_v)
+    # UNA sola etiqueta para la columna del "antes". Si unas medidas vienen del
+    # cierre anterior y otras de la anamnesis, dos etiquetas distintas parten
+    # la rejilla en tres columnas y descolocan las series (la gráfica acababa
+    # pintando el antes de una medida sobre el ahora de otra).
+    etiqueta_prev = ("Antes" if len(fuentes) > 1
+                     else (fuentes.pop() if fuentes else "Anterior"))
+    for label, (prev_v, cur_v) in crudo.items():
+        series: list[tuple[str, float]] = []
         if prev_v is not None:
             series.append((etiqueta_prev, prev_v))
         series.append(("Actual", cur_v))

@@ -29,6 +29,17 @@
 >   "Descargar todo", ZIP de portabilidad), `tests/test_borrado_rgpd.py:74` y
 >   `frontend/Caddyfile:43` (el tope de subida contra los vídeos de ejercicio).
 >   La mitad "documentos" de esta tanda es de la 4: no la toco.
+> - **Tanda 7 (optimización backend + frontend) — sesión "rutina y dieta quice"
+>   (`claude/continue-previous-n6layq`), EN CURSO.** Alcance: `clients.py`
+>   1233/1242 (ficha e historial), `plan_library.py:426`, `plans.py` 477/721,
+>   `exercises.py:58`, `portal.py:412`, `ClientPlanEditor.tsx:102`,
+>   `ClientFeedbackTab.tsx:1129`, `DashboardPage.tsx:145`, `RecursosPage.tsx:1087`
+>   y `AppShell.tsx:127`. NO toco nada del portal ni de la anamnesis (tanda 6).
+>
+> ⚠️ **Ojo con `main`**: va POR DETRÁS de esta rama (no tiene la caché del PDF ni
+> la rejilla de la gráfica de perímetros). Las tandas 2 y 4 se apilan sobre esta
+> rama a propósito: llevadas a `main` por separado, se aplicarían sobre una base
+> que no tiene sus prerrequisitos.
 
 > **Qué es esto.** El inventario en crudo de dos barridos automáticos: una
 > verificación adversarial de los 27 commits de la auditoría anterior, y los dos
@@ -211,3 +222,67 @@ fallo que dice cazar).
 - **[media] El estado del email (SMTP) tiene endpoints de diagnóstico y ninguna pantalla**
 - **[baja] El "Enlace de reservas" que el coach guarda no lo lee nadie**
 - **[baja] `AUTO_PILOT_DEFAULT` documentado y sin efecto**
+
+---
+
+## Tanda 2 (pagos, libro de caja y altas) — VERIFICADOS Y ARREGLADOS en paralelo
+
+> Sesión paralela sobre esta misma rama. Cada uno se reprodujo leyendo el
+> código antes de tocarlo, y va con su regresión (`tests/test_auditoria_pagos.py`).
+
+| Hallazgo | Dónde | Qué era de verdad |
+|---|---|---|
+| La fila DIFERENCIA reabre el doble descuento | `services/payments.py` | Real. El guard solo miraba la fila con el id del cargo, no las sintéticas `…_difN`: al llegar después el desglose, el mismo dinero restaba dos veces. Ahora el desglose COMPLETO las sustituye (y si viene corto —Stripe pagina de 10 en 10— se respetan las sintéticas). |
+| Una devolución repescada entra ya marcada como leída | `services/payments.py` | Real, solo estaba arreglado en la vía del desglose. La devolución posterior a lo anotado vuelve a "sin leer". |
+| Borrar un cobro a mano puede marcar como IMPAGADO a quien sí pagó | `routers/payments.py` | Real: el recálculo solo miraba `client_id` y los cobros de Stripe se enlazan por EMAIL. Ahora mira también por correo y nunca degrada a un cliente con suscripción viva. |
+| El "total" de cobros de la ficha se corta en 20 y suma dinero de prueba | `ClientProfilePage.tsx` | Real. El total lo calcula ahora el backend (`neto_de_cliente`) sobre TODOS los movimientos y sin `livemode=false`. |
+| El aviso del barrido cortado pide dos cosas que el coach no puede hacer | `PagosPage.tsx` | Real: no había control de días y repetir el barrido relee lo mismo. Ahora hay selector de ventana y, al cortarse, se repasan solos los últimos 7 días. |
+| El cupo de altas apaga el formulario todo el día | `routers/public_site.py` | Real, y además el lead se perdía entero. Ahora queda anotado (`public_signup_blocked`) y sale un aviso de sistema en "Hoy" con nombre y teléfono para darle el alta a mano. |
+| El test del borrado del cobro a mano pasa sin el recálculo | `tests/test_cobro_manual.py` | Real: comparaba con "no es None". Ahora compara con la fecha del cobro que queda. |
+| El test del cupo pasa aunque el contador esté muerto | `tests/test_public_register.py` | Real (tope 0 → `0 >= 0`). Ahora da un alta real y agota el cupo. |
+
+**No tocado a propósito** (es de otra tanda en marcha): todo `services/stripe_service.py`,
+`PlansPage.tsx` y el embudo self-serve de `/planes`.
+
+**Aviso**: `tests/test_ai_service.py::test_full_pipeline_generates_plan` falla en
+esta rama desde antes de esta tanda (el pipeline hace 2 llamadas y el test espera 3).
+
+
+---
+
+## Tanda 4 (IA y planes) — VERIFICADOS A MANO Y ARREGLADOS
+
+> Sesión "rutina y dieta quice". El workflow de verificación adversarial (13
+> hallazgos × 2 verificadores) **murió entero contra el límite de sesión**, así
+> que la verificación se hizo A MANO, leyendo el código y reproduciendo la
+> cadena del daño. **9 de 9 comprobados eran reales.**
+
+| Hallazgo | Dónde | Qué era de verdad |
+|---|---|---|
+| El sello editado y el `rev` nuevo se tiran: `normalize` se queda con el plan viejo | `ClientPlanPanel.tsx` | Real y en DOS sitios. `normalize` lee `p.nutrition ?? p.nutrition_json`, y se le pasaba `{...plan, nutrition_json: …}`: el valor VIEJO gana siempre y la respuesta del backend se tira entera. Consecuencias: tras aplicar un Word el panel seguía enseñando las cifras de antes ("Word aplicado" y nada cambia en pantalla), y el `rev` rancio hacía morir la siguiente edición con un 409 falso — justo lo que el comentario decía evitar. |
+| DQR Train: regenerar no sella la adaptación → banner "sin adaptar" eterno | `routers/clients.py` | Real. El sello solo se escribía `if nutrition is not None`; un plan solo-entreno no tiene nutrición. Ahora va a `training_json`, que es donde lo busca la alerta y donde lo escribe `adapt_plan`. |
+| Copiar un plan/modelo arrastra el sello de adaptación de OTRO cliente | `services/plan_library.py` | Real, y es fuga de datos: la limpieza de `applied_adjustments`/`rev`/`gen_inputs`/`manual_changes` existía SOLO para la nutrición, y en los planes solo-entreno el sello vive en el entreno. El destino salía "adaptado a la revisión #7" de otro cliente, con las CIFRAS del origen dentro de sus Novedades, y su aviso de "sin adaptar" se apagaba solo. Arreglado también en los MODELOS. |
+| "Por qué este enfoque" hereda el volcado viejo y suma una frase por revisión | `services/adapt_plan.py` | Real (la parte del volcado ya estaba; la ACUMULACIÓN no). La marca lleva el nº de revisión, así que cada quincena añadía otro párrafo idéntico. Peor aún en `split_rationale`, que no deduplicaba nada: "· Adaptado a la revisión quincenal #1. · … #2. · … #3." impreso en el PDF bajo "Estructura ·". Ahora la coletilla SUSTITUYE a la anterior y el argumentario original queda intacto. |
+| El Word del educativo deja de importarse si el cliente tiene alergias | `services/word_import.py` | Real. El importador comparaba contra todas las píldoras "con texto", pero `plan_doc` imprime solo las que pasan el filtro de alérgenos y patrón: con alergias el Word traía 2 y el plan 3, el recuento no cuadraba y la caja entera se descartaba. Ahora delega en `_blocked_line`, el MISMO criterio del documento. |
+| La gráfica de perímetros invierte las series cuando las etiquetas no coinciden | `docs/charts.py` + `feedback_service.py` | Real. Con una medida del cierre anterior ("Anterior") y otra de la anamnesis ("Inicio") la rejilla tenía 3 columnas y las series de 2 puntos se desplazaban una posición: **el "antes" se pintaba sobre "Actual"**. Doble arreglo: una sola etiqueta de "antes" en origen ("Antes" si las fuentes se mezclan) y, en la gráfica, cada punto en la columna de SU etiqueta. |
+| La caché por contenido del PDF nunca acierta: cada descarga arranca LibreOffice | `docs/pdf_convert.py` | Real y **medido**: python-docx sella la hora en cada entrada del zip, así que el mismo plan guardado 1,2 s después ya da otro sha1. Con solo 2 conversiones simultáneas, el portal contestaba "el servidor está preparando otros documentos" sin necesidad. La clave se calcula ahora sobre el contenido del zip, ignorando timestamps. |
+| Regenerar solo el educativo lo pide sin alergias ni patrón dietético | `routers/plans.py` | Real: el atajo montaba un ctx falso con solo el nombre del split, así que `_education_user_prompt` no recibía restricciones y devolvía el educativo genérico. El documento las filtra al imprimir, así que el cliente con alergias se quedaba además con menos contenido del que ha pagado. |
+| La lista de la compra va en una caja no divisible entre páginas | `docs/plan_doc.py` | Real. La lista no tiene cota (todos los alimentos de la semana): en una caja `cant_split=True`, lo que no cabe en la página se pierde de vista y el cliente va al súper con media lista. |
+
+**De regalo, la suite deja de dar rojos falsos** (`tests/conftest.py`): la caché
+del educativo no se apagaba durante los tests, así que un sidecar de una
+ejecución real —o simplemente un test anterior de la misma suite, que la
+rellena— servía el educativo de vuelta y los tests que CUENTAN llamadas a la IA
+fallaban sin que nada estuviera roto (`test_full_pipeline_generates_plan` 2≠3 y
+`test_plan_solo_entrenamiento_sin_dieta` 1≠2). CLAUDE.md ya lo pedía; faltaba
+imponerlo. **Con esto la suite entera queda en verde.**
+
+**No tocado a propósito** (los tiene abiertos la tanda 1 en este momento):
+`services/ai/generator.py` (los tres hallazgos del cuadre/0 g/lecciones del
+banco) y `services/coach_lessons.py:219`. Quedan PENDIENTES para quien cierre
+esa tanda.
+
+⚠️ **Aviso de reparto**: la sesión de la tanda 1 está commiteando desde las
+20:18 en `jobs.py`, `job_state.py`, `push.py`, `alerts.py` y `sw.js` — que son
+exactamente los ficheros que la tanda 3 reclamó a las 14:58. Conviene que se
+pongan de acuerdo antes de que dupliquen trabajo.

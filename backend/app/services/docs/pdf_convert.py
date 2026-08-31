@@ -52,7 +52,7 @@ def docx_bytes_to_pdf(docx_bytes: bytes, timeout: int = 120) -> bytes:
 
     Con caché por contenido y un tope de conversiones simultáneas.
     """
-    clave = hashlib.sha1(docx_bytes).hexdigest()
+    clave = _clave_de_contenido(docx_bytes)
     with _cache_lock:
         cacheado = _cache.get(clave)
     if cacheado is not None:
@@ -70,6 +70,30 @@ def docx_bytes_to_pdf(docx_bytes: bytes, timeout: int = 120) -> bytes:
         while len(_cache_orden) > _CACHE_MAX:
             _cache.pop(_cache_orden.pop(0), None)
     return pdf
+
+
+def _clave_de_contenido(docx_bytes: bytes) -> str:
+    """Huella del CONTENIDO del .docx, ignorando las marcas de tiempo del zip.
+
+    python-docx sella cada entrada del zip con la hora del guardado, así que el
+    MISMO plan generado dos veces en segundos distintos daba bytes distintos:
+    la caché no acertaba NUNCA y cada descarga arrancaba un LibreOffice de
+    ~300 MB (con solo dos huecos simultáneos, el portal contestaba "el servidor
+    está preparando otros documentos" sin necesidad). Medido: dos guardados con
+    1,2 s de diferencia ya no comparten sha1.
+    """
+    try:
+        import io
+        import zipfile
+
+        h = hashlib.sha1()
+        with zipfile.ZipFile(io.BytesIO(docx_bytes)) as z:
+            for nombre in sorted(z.namelist()):
+                h.update(nombre.encode("utf-8"))
+                h.update(z.read(nombre))
+        return h.hexdigest()
+    except Exception:  # noqa: BLE001 — si no es un zip legible, huella cruda
+        return hashlib.sha1(docx_bytes).hexdigest()
 
 
 def _convierte(docx_bytes: bytes, timeout: int) -> bytes:
