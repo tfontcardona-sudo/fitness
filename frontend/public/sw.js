@@ -39,7 +39,7 @@ self.addEventListener("push", (event) => {
     }),
   ];
 
-  // Badge del icono de la app (Android/desktop instalada e iOS ≥16.4)
+  // Badge del icono de la app (Android/desktop instalada e iOS ≥16.4).
   if ("setAppBadge" in self.navigator && count !== null) {
     tasks.push(
       count > 0 ? self.navigator.setAppBadge(count) : self.navigator.clearAppBadge()

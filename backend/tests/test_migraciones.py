@@ -78,3 +78,47 @@ def test_una_base_vacia_llega_hasta_la_ultima_migracion(tmp_path):
                 "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
                 f"WHERE datname = '{nombre}'"))
             con.execute(text(f'DROP DATABASE IF EXISTS "{nombre}"'))
+
+
+# ---------------------------------------------------------------------------
+# La otra mitad, ESTÁTICA (no toca la base): que cada migración lleve su guarda.
+# Viene de la sesión que trabajó esta misma tanda en paralelo. Las dos pruebas
+# se complementan: la de arriba ejecuta la cadena entera sobre una base vacía y
+# caza el fallo real; esta lee el código y caza al siguiente que se olvide.
+# ---------------------------------------------------------------------------
+
+import re
+from pathlib import Path
+
+VERSIONS = Path(__file__).resolve().parents[1] / "alembic" / "versions"
+
+# Operaciones que fallan si el objeto ya existe.
+_CREADORAS = re.compile(
+    r"op\.(add_column|create_table|create_index|create_unique_constraint)\("
+)
+
+# Formas válidas de asegurarse antes de crear.
+_GUARDAS = ("inspect(", "IF NOT EXISTS", "get_columns", "get_table_names")
+
+
+def _migraciones() -> list[Path]:
+    return sorted(p for p in VERSIONS.glob("[0-9]*.py") if not p.name.startswith("0001"))
+
+
+def test_hay_migraciones_que_revisar():
+    assert len(_migraciones()) > 10, "no se encontraron las migraciones"
+
+
+def test_toda_migracion_que_crea_algo_comprueba_antes_si_existe():
+    sin_guarda: list[str] = []
+    for f in _migraciones():
+        src = f.read_text(encoding="utf-8")
+        if _CREADORAS.search(src) and not any(g in src for g in _GUARDAS):
+            sin_guarda.append(f.name)
+
+    assert not sin_guarda, (
+        "Estas migraciones crean columnas/tablas sin comprobar si ya existen; "
+        "en una instalación NUEVA (donde la 0001 ya las creó desde los modelos) "
+        "romperían `alembic upgrade head` y el arranque del contenedor: "
+        + ", ".join(sin_guarda)
+    )

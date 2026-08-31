@@ -197,8 +197,9 @@ def test_el_resumen_del_coach_no_se_repite_cada_tres_horas(sidecar, monkeypatch)
 
 def test_un_correo_que_falla_no_consume_el_intento(monkeypatch):
     """`EmailLog` anota los tres desenlaces: `sent`, `failed` (SMTP caído) y
-    `disabled` (el cliente los tiene apagados). Los contadores de idempotencia
-    los sumaban todos, así que un correo que NI SALIÓ consumía su intento: el
+    `disabled` (los correos apagados, del cliente o del servidor). Los
+    contadores los sumaban todos, así que un correo que NI SALIÓ gastaba su
+    turno: el
     recordatorio no se reintentaba jamás, y tres días de SMTP caído agotaban el
     tope de avisos de cierre para toda la quincena — el cliente no recibía
     ninguno y en el libro constaban tres."""
@@ -225,18 +226,22 @@ def test_un_correo_que_falla_no_consume_el_intento(monkeypatch):
                             sent_at=ahora, status=estado))
             db.flush()
 
-        # Tres intentos que NO llegaron: ni cuentan como enviados ni gastan tope.
+        # Los FALLIDOS no gastan intento: mañana se reintenta.
         _anota("failed")
-        _anota("disabled")
         _anota("failed")
         assert _already_sent_today(db, c.id, "closing_due", hoy) is False
         assert _enviados_desde(db, c.id, "closing_due", hoy - timedelta(days=20)) == 0
         assert _ya_enviado_desde(db, c.id, "closing_due", hoy - timedelta(days=20)) is False
 
-        # El que SÍ salió sí cuenta.
-        _anota("sent")
+        # Un `disabled` SÍ cuenta: no falló nada, es que están apagados.
+        # Reintentarlo cada día solo llenaría el registro sin enviar nada.
+        _anota("disabled")
         assert _already_sent_today(db, c.id, "closing_due", hoy) is True
         assert _enviados_desde(db, c.id, "closing_due", hoy - timedelta(days=20)) == 1
+
+        # Y el que salió de verdad, también.
+        _anota("sent")
+        assert _enviados_desde(db, c.id, "closing_due", hoy - timedelta(days=20)) == 2
         assert _enviados_desde(db, c.id, "closing_due", hoy - timedelta(days=20)) < MAX_AVISOS_DE_CIERRE
     finally:
         db.execute(delete(EmailLog).where(EmailLog.client_id == c.id))

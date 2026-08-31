@@ -387,7 +387,13 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
     datos = datos or _AL_VUELO
     out: list[dict] = []
     # Lo PRIMERO, porque sobrevive a los dos `return` de abajo: una petición
-    # sin atender no puede depender de en qué punto del ciclo esté el cliente.
+    # sin atender no puede depender de en qué punto del ciclo esté el cliente
+    # —ni de que aún no tenga planificación (cuando más preguntas hace), ni de
+    # que esté inactivo (cuando quiere volver)—. Otra sesión arregló esto mismo
+    # en paralelo colocándolo tras el corte de "sin plan"; al fusionar quedaban
+    # las dos versiones: el aviso salía DUPLICADO y su consulta suelta devolvía
+    # el N+1 al barrido. Se conserva esta, que además cubre al inactivo y se
+    # sirve de la precarga.
     peticion = _alerta_peticion(db, client, datos)
     if peticion is not None:
         out.append(peticion)

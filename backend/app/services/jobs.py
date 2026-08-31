@@ -47,16 +47,34 @@ MAX_AVISOS_DE_CIERRE = 3
 
 
 # `EmailLog` anota los TRES desenlaces: `sent`, `failed` (SMTP caído, dirección
-# rechazada…) y `disabled` (el cliente tiene los emails apagados). Los contadores
-# de abajo miran solo los ENVIADOS DE VERDAD. Contando también los otros dos, un
-# correo que ni salió consumía su intento: un fallo puntual de SMTP dejaba el
-# recordatorio sin reintentar JAMÁS, y tres días de SMTP caído agotaban el tope
-# de avisos de cierre para toda la quincena — el cliente no recibía ninguno y
-# nadie lo notaba, porque en el libro constaban tres.
-_ENVIADO_DE_VERDAD = EmailLog.status == "sent"
+# rechazada…) y `disabled` (los correos están apagados, del cliente o del
+# servidor). Los contadores de abajo descartan los FALLIDOS: contarlos hacía que
+# un correo que ni salió consumiera su intento — un fallo puntual de SMTP dejaba
+# el recordatorio sin reintentar JAMÁS, y tres días de SMTP caído agotaban el
+# tope de avisos de cierre para toda la quincena (el cliente no recibía ninguno
+# y nadie lo notaba, porque en el libro constaban tres).
+#
+# Los `disabled` SÍ cuentan, y a propósito: ahí no ha fallado nada, es que ese
+# cliente —o el servidor entero, como en desarrollo— tiene los correos
+# apagados. Reintentarlo cada día solo llenaría el registro de filas sin enviar
+# un solo correo.
+_NO_FALLIDO = EmailLog.status != "failed"
 
 
 def _already_sent_today(db: Session, client_id: int, kind: str, today: date) -> bool:
+    """¿Ya se le mandó HOY un correo de este tipo?
+
+    Un envío FALLIDO (SMTP caído, contraseña caducada) deja igualmente su fila en
+    el registro. Contarla como "ya enviado" convertía una caída pasajera del
+    correo en un recordatorio perdido para SIEMPRE: el del día 12, el de cerrar
+    la quincena y los de arranque (D+3/D+7) solo se disparan en SU día, así que
+    no había segunda oportunidad. Ahora un fallo no bloquea: al día siguiente se
+    reintenta (el mantenimiento corre una vez al día, no hay riesgo de repetir).
+
+    Los `disabled` SÍ cuentan: no son un fallo, es que ese cliente tiene los
+    correos apagados a propósito — reintentarlo cada día solo llenaría el
+    registro sin enviar nada.
+    """
     start = datetime(today.year, today.month, today.day, tzinfo=timezone.utc)
     n = db.scalar(
         select(func.count())
@@ -65,7 +83,7 @@ def _already_sent_today(db: Session, client_id: int, kind: str, today: date) -> 
             EmailLog.client_id == client_id,
             EmailLog.kind == kind,
             EmailLog.sent_at >= start,
-            _ENVIADO_DE_VERDAD,
+            _NO_FALLIDO,
         )
     )
     return bool(n)
@@ -73,13 +91,13 @@ def _already_sent_today(db: Session, client_id: int, kind: str, today: date) -> 
 
 def _enviados_desde(db: Session, client_id: int, kind: str, desde: date) -> int:
     """Cuántas veces se ha mandado ese aviso desde una fecha (inicio de período
-    o alta del cliente). Solo cuenta los que SALIERON."""
+    o alta del cliente). Un envío FALLIDO no gasta cupo."""
     inicio = datetime(desde.year, desde.month, desde.day, tzinfo=timezone.utc)
     return int(db.scalar(
         select(func.count()).select_from(EmailLog).where(
             EmailLog.client_id == client_id, EmailLog.kind == kind,
             EmailLog.sent_at >= inicio,
-            _ENVIADO_DE_VERDAD,
+            _NO_FALLIDO,
         )
     ) or 0)
 
