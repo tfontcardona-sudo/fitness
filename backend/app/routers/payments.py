@@ -19,6 +19,7 @@ resolución de tipos de FastAPI/Pydantic en los routers).
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -183,6 +184,40 @@ def sync_payments(days: int = Query(default=pay_svc.SYNC_DEFAULT_DAYS, ge=1, le=
         return pay_svc.sync_from_stripe(db, days=days)
     except StripeError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+
+class HuerfanoIn(BaseModel):
+    """`client_id` a quién pertenece el cobro; sin él, se declara ajeno."""
+
+    client_id: int | None = None
+
+
+@router.post("/{payment_id}/resolver", response_model=PaymentOut)
+def resolver_huerfano(payment_id: int, body: HuerfanoIn | None = None,
+                      db: Session = Depends(get_db)) -> PaymentOut:
+    """Le da salida a un cobro SIN FICHA: se asigna a un cliente, o se declara
+    ajeno a la asesoría y deja de contar en el aviso "N sin ficha".
+
+    Ese aviso no tenía forma de apagarse: `adopt_orphans` solo reasocia por
+    email y dentro de 30 días, así que un cobro de otro producto de la cuenta
+    —o uno con el email mal escrito en el checkout— contaba para siempre. Un
+    aviso que no se puede resolver se acaba ignorando, y con él los que sí."""
+    try:
+        pago = pay_svc.resolver_huerfano(
+            db, payment_id, client_id=(body.client_id if body else None))
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    if pago is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Movimiento no encontrado")
+    log_event(db, "payment", pago.id, "orphan_resolved",
+              {"client_id": pago.client_id})
+    db.commit()
+    nombres = {}
+    if pago.client_id:
+        cliente = db.get(Client, pago.client_id)
+        if cliente is not None:
+            nombres[cliente.id] = cliente.full_name
+    return _to_out(pago, nombres)
 
 
 @router.delete("/{payment_id}", status_code=status.HTTP_204_NO_CONTENT)

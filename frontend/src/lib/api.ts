@@ -53,6 +53,7 @@ import type {
   ExerciseOut,
   LandingOut,
   MeOut,
+  PaymentOut,
   PaymentsListOut,
   PaymentsSummaryOut,
   PlanPricesOut,
@@ -197,8 +198,12 @@ export const api = {
   updateClient: (id: number, patch: Partial<ClientOut>) =>
     request<ClientOut>("PATCH", `/clients/${id}`, patch),
   // Borrado total (RGPD): el backend exige `confirm` == nombre completo exacto.
-  deleteClient: (id: number, confirm: string) =>
-    request<void>("DELETE", `/clients/${id}?confirm=${encodeURIComponent(confirm)}`),
+  // `suscripcionAMano`: el coach declara haber cancelado la suscripción en
+  // Stripe él mismo. Es la salida cuando Stripe no responde y el borrado —una
+  // obligación legal con plazo— se quedaría bloqueado para siempre.
+  deleteClient: (id: number, confirm: string, suscripcionAMano = false) =>
+    request<void>("DELETE", `/clients/${id}?confirm=${encodeURIComponent(confirm)}`
+      + (suscripcionAMano ? "&suscripcion_cancelada_a_mano=true" : "")),
   portalLink: (id: number) =>
     request<PortalLinkOut>("GET", `/clients/${id}/portal-link`),
   regeneratePortalToken: (id: number) =>
@@ -401,6 +406,12 @@ export const api = {
   // intentos. El backend lo tenía desde hace tandas y no había pantalla que lo
   // abriera — "no le llega el correo al cliente" se diagnosticaba entrando por
   // SSH a leer los logs del contenedor.
+  // Le da salida a un cobro SIN FICHA: con `clientId`, se lo asigna; sin él,
+  // se declara ajeno a la asesoría y deja de contar en el aviso "N sin ficha"
+  // (que hasta ahora no había forma de apagar).
+  resolverHuerfano: (paymentId: number, clientId?: number | null) =>
+    request<PaymentOut>("POST", `/payments/${paymentId}/resolver`,
+      { client_id: clientId ?? null }),
   emailStatus: () =>
     request<{
       config: {

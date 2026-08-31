@@ -1117,3 +1117,42 @@ def test_un_contracargo_ganado_devuelve_el_dinero_al_libro(monkeypatch):
         assert pay_svc.summary(db)["month_total_cents"] == antes
     finally:
         db.close()
+
+
+def test_un_cobro_sin_ficha_por_fin_tiene_salida(http, monkeypatch):
+    """El resumen avisa de "N sin ficha" y el feed sabe filtrarlos, pero NADA
+    apagaba el aviso: `adopt_orphans` solo reasocia por email y dentro de 30
+    días, así que un cobro de otro producto de la cuenta —o uno con el email
+    mal escrito en el checkout— contaba para siempre. Un aviso que no se puede
+    resolver se acaba ignorando, y con él los que sí importan."""
+    from app.db import SessionLocal
+    from app.services import payments as pay_svc
+
+    db = SessionLocal()
+    try:
+        marca = uuid.uuid4().hex[:8]
+        pay_svc.record_payment(
+            db, object_id=f"cs_huerfano_{marca}", kind="checkout", status="paid",
+            amount_cents=4900, customer_name="Ajeno Total",
+            customer_email=f"ajeno-{marca}@otracosa.com",
+            paid_at=datetime.now(timezone.utc))
+        db.commit()
+        fila = _pagos_de(db, f"cs_huerfano_{marca}")[0]
+        antes = pay_svc.summary(db)["orphan_count"]
+        assert antes >= 1
+
+        # Sale en el filtro de huérfanos…
+        pagos, _ = pay_svc.list_payments(db, orphan=True, limit=100)
+        assert fila.id in {p.id for p in pagos}
+
+        # …y se puede declarar ajeno: deja de contar y sale del filtro.
+        r = http.post(f"/api/payments/{fila.id}/resolver", headers=_auth(), json={})
+        assert r.status_code == 200, r.text
+        db.expire_all()
+        assert pay_svc.summary(db)["orphan_count"] == antes - 1
+        pagos, _ = pay_svc.list_payments(db, orphan=True, limit=100)
+        assert fila.id not in {p.id for p in pagos}
+        # Pero el DINERO sigue contando: no se ha borrado nada.
+        assert _pagos_de(db, f"cs_huerfano_{marca}")[0].amount_cents == 4900
+    finally:
+        db.close()

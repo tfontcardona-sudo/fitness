@@ -264,7 +264,13 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
       load();
       onClientChanged?.();
     } catch {
-      /* el WhatsApp ya está abierto; el marcado puede reintentarse */
+      // EL CATCH MUDO otra vez (ya se corrigió en el panel de Planificación,
+      // no aquí): el WhatsApp se abre igual, pero si el backend no registra el
+      // envío el ciclo NO avanza — el feedback sigue sin `sent_at`, el cliente
+      // no lo ve en su Progreso y el cliente se queda en `review_pending`. Sin
+      // aviso, el coach da por hecho que ya está y nadie vuelve a mirarlo.
+      toast.push("WhatsApp abierto, pero el envío no quedó registrado · "
+                 + "vuelve a pulsar Enviar para que el ciclo avance", "error");
     }
   }
 

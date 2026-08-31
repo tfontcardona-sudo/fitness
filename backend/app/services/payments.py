@@ -376,7 +376,9 @@ def summary(db: Session) -> dict:
     huerfanos = int(db.scalar(
         select(func.count(Payment.id)).where(
             Payment.client_id.is_(None), Payment.status == "paid",
-            Payment.livemode.is_(True), Payment.anonymized_at.is_(None))
+            Payment.livemode.is_(True), Payment.anonymized_at.is_(None),
+            # Los que el coach ya declaró ajenos dejan de contar (mig. 0043).
+            Payment.dismissed_at.is_(None))
     ) or 0)
     # Comisiones de Stripe del mes (solo cobros con fee consultado): permiten
     # enseñar el NETO real que llega al banco, no solo el bruto cobrado.
@@ -464,7 +466,8 @@ def list_payments(db: Session, *, limit: int = 50, offset: int = 0,
         # cobros ya anonimizados por RGPD).
         filtros += [Payment.client_id.is_(None), Payment.status == "paid",
                     Payment.livemode.is_(True),
-                    Payment.anonymized_at.is_(None)]
+                    Payment.anonymized_at.is_(None),
+                    Payment.dismissed_at.is_(None)]
     total = int(db.scalar(select(func.count(Payment.id)).where(*filtros)) or 0)
     filas = list(db.scalars(
         select(Payment).where(*filtros)
@@ -488,6 +491,36 @@ def mark_seen(db: Session, ids: list[int] | None = None) -> int:
     if filas:
         db.commit()
     return len(filas)
+
+
+def resolver_huerfano(db: Session, payment_id: int, *,
+                      client_id: int | None = None) -> Payment | None:
+    """Le da salida a un cobro SIN FICHA: o se asigna a un cliente, o se declara
+    ajeno a la asesoría.
+
+    El resumen avisaba de "N sin ficha" y el feed sabía filtrarlos, pero no
+    había NINGUNA acción que apagara el aviso: `adopt_orphans` solo reasocia por
+    email y dentro de 30 días, así que un cobro de otro producto de la cuenta —o
+    uno con el email mal escrito en el checkout— contaba para siempre. Un aviso
+    que no se puede resolver se acaba ignorando, y con él los que sí importan.
+    """
+    pago = db.get(Payment, payment_id)
+    if pago is None:
+        return None
+    if client_id is None:
+        pago.dismissed_at = datetime.now(timezone.utc)
+    else:
+        cliente = db.get(Client, client_id)
+        if cliente is None:
+            raise ValueError("cliente no encontrado")
+        pago.client_id = cliente.id
+        pago.dismissed_at = None
+        # La ficha se pone al día: un cobro que llevaba semanas sin asociar es,
+        # muy probablemente, el que falta para su fecha de último pago.
+        _refresca_ficha(cliente, pagado_en=pago.paid_at, livemode=pago.livemode)
+    db.commit()
+    db.refresh(pago)
+    return pago
 
 
 def adopt_orphans(db: Session, client: Client, *, days: int = 30) -> int:

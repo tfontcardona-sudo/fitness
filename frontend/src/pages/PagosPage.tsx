@@ -174,6 +174,23 @@ export default function PagosPage() {
     return () => window.clearInterval(t);
   }, [cargar]);
 
+  /** Le da salida a un cobro SIN FICHA. El aviso "N sin ficha" no tenía forma
+   *  de apagarse: `adopt_orphans` solo reasocia por email y dentro de 30 días,
+   *  así que un cobro de otro producto de la cuenta —o uno con el email mal
+   *  escrito en el checkout— contaba para siempre. Un aviso que no se puede
+   *  resolver se acaba ignorando, y con él los que sí importan. */
+  async function descartarHuerfano(id: number) {
+    try {
+      await api.resolverHuerfano(id);
+      setItems((prev) => (prev ? prev.filter((p) => p.id !== id) : prev));
+      setTotal((n) => Math.max(0, n - 1));
+      setResumen((s) => (s ? { ...s, orphan_count: Math.max(0, s.orphan_count - 1) } : s));
+      toast.push("Marcado como ajeno a la asesoría");
+    } catch (e) {
+      toast.push(e instanceof ApiError ? e.message : "No se pudo marcar", "error");
+    }
+  }
+
   async function verMas() {
     if (!items) return;
     setCargando(true);
@@ -511,6 +528,11 @@ export default function PagosPage() {
                     pago={p}
                     nuevo={nuevos.has(p.id)}
                     onClick={() => p.client_id && navigate(`/clientes/${p.client_id}`)}
+                    // Solo en la vista de huérfanos: ahí es donde el aviso
+                    // "N sin ficha" necesita una salida.
+                    onDescartar={filtro === "orphan"
+                      ? () => descartarHuerfano(p.id)
+                      : undefined}
                   />
                 ))}
               </div>
@@ -552,8 +574,9 @@ function Chip({ tone, icon: Icon, children, onClick, title }: {
 }
 
 /** Una línea del feed: quién, qué plan, a qué hora y cuánto. */
-function Movimiento({ pago, nuevo, onClick }: {
+function Movimiento({ pago, nuevo, onClick, onDescartar }: {
   pago: PaymentOut; nuevo: boolean; onClick: () => void;
+  onDescartar?: () => void;
 }) {
   const cobrado = pago.status === "paid";
   const devuelto = pago.status === "refunded";
@@ -564,7 +587,7 @@ function Movimiento({ pago, nuevo, onClick }: {
   const Icono = cobrado ? ArrowUpRight : devuelto ? ArrowDownLeft : AlertTriangle;
   const sinFicha = pago.client_id === null;
 
-  return (
+  const fila = (
     <button
       onClick={onClick}
       disabled={sinFicha}
@@ -613,5 +636,21 @@ function Movimiento({ pago, nuevo, onClick }: {
         </span>
       </span>
     </button>
+  );
+
+  // El botón de descartar no puede ir DENTRO del <button> de la fila (un botón
+  // dentro de otro no es HTML válido y el clic se lo come el de fuera).
+  if (!onDescartar) return fila;
+  return (
+    <div className="flex items-center gap-2 pr-3">
+      <span className="min-w-0 flex-1">{fila}</span>
+      <button
+        onClick={onDescartar}
+        className="btn btn-ghost shrink-0 !px-2 !py-1 text-xs"
+        title="Este cobro no es de la asesoría: deja de contar en el aviso"
+      >
+        No es mío
+      </button>
+    </div>
   );
 }

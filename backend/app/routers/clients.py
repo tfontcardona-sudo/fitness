@@ -717,6 +717,9 @@ def export_client_zip(client_id: int, db: Session = Depends(get_db)) -> Response
 def delete_client(
     client_id: int,
     confirm: str = Query(description="Debe coincidir EXACTAMENTE con el nombre completo"),
+    suscripcion_cancelada_a_mano: bool = Query(
+        default=False,
+        description="El coach declara haber cancelado ya la suscripción en Stripe"),
     db: Session = Depends(get_db),
 ) -> Response:
     """Supresión total RGPD con doble confirmación: modal en UI + nombre
@@ -738,13 +741,21 @@ def delete_client(
         from app.services.stripe_service import cancelar_suscripcion
 
         cancelada, detalle = cancelar_suscripcion(client.stripe_subscription_id)
-        if not cancelada:
+        if not cancelada and not suscripcion_cancelada_a_mano:
             raise HTTPException(
                 status.HTTP_502_BAD_GATEWAY,
                 f"No se pudo cancelar su suscripción de Stripe ({detalle}). "
                 "Cancélala en Stripe y vuelve a intentarlo: si se borra ahora, "
                 "se le seguiría cobrando todos los meses.",
             )
+        if not cancelada:
+            # SALIDA DECLARADA. El freno es correcto —borrar dejando el cobro
+            # vivo es peor—, pero no puede ser eterno: el filtro de errores solo
+            # reconoce unas cuantas formas ("no such subscription", "already
+            # canceled"), así que una clave caducada o Stripe caído bloqueaban
+            # una obligación LEGAL con plazo (30 días). El coach puede cancelar
+            # en Stripe y declararlo aquí; queda en la auditoría con su motivo.
+            detalle = f"declarada a mano por el coach (Stripe respondió: {detalle})"
         log_event(db, "client", client_id, "subscription_cancelled",
                   {"motivo": "baja_rgpd", "detalle": detalle})
 

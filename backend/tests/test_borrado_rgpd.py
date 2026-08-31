@@ -597,3 +597,59 @@ def test_el_nombre_del_borrado_no_sobrevive_en_los_planes_de_otros(http, auth):
             f"su nombre sigue en la auditoría de otro: {ev.detail_json}")
     finally:
         db.close()
+
+
+def test_stripe_caido_no_bloquea_para_siempre_la_baja_rgpd(http, auth, monkeypatch):
+    """El freno es correcto —borrar dejando el cobro vivo le seguiría cobrando
+    a alguien que ya no existe—, pero no puede ser ETERNO: el filtro de errores
+    solo reconoce unas formas concretas ("no such subscription", "already
+    canceled"), así que una clave caducada o Stripe caído bloqueaban una
+    obligación LEGAL con plazo de 30 días. El coach cancela en Stripe, lo
+    declara, y queda en la auditoría."""
+    import uuid
+
+    from app.config import settings
+    from app.db import SessionLocal
+    from app.models import AuditLog, Client
+    from app.security import new_portal_token
+    from app.services import stripe_service
+
+    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_x")
+    # Stripe responde algo que el filtro NO reconoce (clave caducada, red…).
+    monkeypatch.setattr(stripe_service, "cancelar_suscripcion",
+                        lambda sub_id: (False, "Expired API Key provided"))
+
+    db = SessionLocal()
+    marca = uuid.uuid4().hex[:8]
+    c = Client(full_name=f"Baja Atascada {marca}", email=f"atasco-{marca}@test.local",
+               package_tier="full", billing_period="oferta", status="active",
+               portal_token="p", payment_status="paid",
+               stripe_subscription_id=f"sub_{marca}")
+    db.add(c); db.flush()
+    c.portal_token = new_portal_token(c.id)
+    db.commit()
+    cid, nombre = c.id, c.full_name
+    db.close()
+
+    # Sin declarar nada: el freno actúa y DICE por qué.
+    r = http.delete(f"/api/clients/{cid}?confirm={nombre}", headers=auth)
+    assert r.status_code == 502
+    assert "suscripción de Stripe" in r.json()["detail"]
+
+    # Declarándolo: se borra, y la auditoría lo deja escrito.
+    r = http.delete(
+        f"/api/clients/{cid}?confirm={nombre}&suscripcion_cancelada_a_mano=true",
+        headers=auth)
+    assert r.status_code in (200, 204), r.text
+
+    db = SessionLocal()
+    try:
+        assert db.get(Client, cid) is None
+        from sqlalchemy import select
+        eventos = db.scalars(
+            select(AuditLog).where(AuditLog.entity_id == cid,
+                                   AuditLog.event == "subscription_cancelled")).all()
+        assert eventos, "la declaración del coach no quedó en la auditoría"
+        assert "a mano" in str(eventos[-1].detail_json)
+    finally:
+        db.close()
