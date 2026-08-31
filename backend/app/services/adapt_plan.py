@@ -614,9 +614,9 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
     from app.services.guardrails import check_nutrition
 
     violations: list[str] = []
+    _c = db.get(Client, client_id)
     if tiene_dieta:
         try:
-            _c = db.get(Client, client_id)
             rep = check_nutrition(
                 nut,
                 sex=(_c.sex if _c else None) or "male",
@@ -631,6 +631,51 @@ def adapt_plan_from_feedback(db: Session, client_id: int) -> Plan:
             violations = [f"violation: {v}" for v in rep.violations]
         except Exception:  # noqa: BLE001 — el chequeo nunca rompe la adaptación
             violations = []
+
+    # PANEL §9 EN LA REVISIÓN QUINCENAL. `review_panel` tiene desde hace tandas
+    # un modo `is_checkin` con roles propios —los que juzgan si el AJUSTE tiene
+    # sentido para lo que ha pasado estas dos semanas— y no lo activaba nadie:
+    # la adaptación, que es la que decide con qué calorías vive el cliente los
+    # siguientes catorce días, salía sin más revisión que el Revisor 0.
+    #
+    # SE PAGA SOLO CUANDO HAY ALGO QUE MIRAR. La adaptación es un cambio
+    # NUMÉRICO y acotado (el motor quincenal decide el %, la proteína queda
+    # bloqueada), así que con el validador determinista limpio no hay nada
+    # cualitativo nuevo que juzgar: cobrar 8-10 roles a cada cliente cada
+    # quincena sería justo lo contrario de lo que se buscaba al recortar
+    # créditos. Si el Revisor 0 encuentra algo, entonces sí entra el panel
+    # completo, que es cuando su criterio vale lo que cuesta.
+    review_summary = None
+    if tiene_dieta and violations:
+        try:
+            from app.services.ai.client import AIClient
+            from app.services.plan_review import ctx_desde_cliente, review_generated_plan
+
+            try:
+                _ai = AIClient()
+            except Exception:  # noqa: BLE001 — sin clave, solo el Revisor 0
+                _ai = None
+            nut, review_summary = review_generated_plan(
+                nut, client=_c, ctx=ctx_desde_cliente(_c, nut, db), ai=_ai,
+                training=(plan.training_json or None))
+            plan.nutrition_json = nut
+            plan.review_json = review_summary
+            # El panel puede haber REPARADO el desvío: se vuelve a preguntar
+            # antes de retener el plan por algo que ya no pasa.
+            rep2 = check_nutrition(
+                nut, sex=(_c.sex if _c else None) or "male",
+                weight_kg=float((_c.current_weight_kg or _c.start_weight_kg or 0) if _c else 0) or 70.0,
+                bmr=0.0, tdee=float(nut.get("tdee_kcal") or 0),
+                is_recalibration=True,
+                previous_target_kcal=(
+                    None if kcal_salto_por_diseno
+                    else float((base.nutrition_json or {}).get("target_kcal") or 0) or None))
+            violations = [f"violation: {v}" for v in rep2.violations]
+        except Exception:  # noqa: BLE001 — el panel jamás bloquea la adaptación
+            pass
+    if review_summary and review_summary.get("color") == "rojo" and not violations:
+        violations = ["violation: revisión ROJO — el panel encontró puntos a "
+                      "corregir en la adaptación"]
     if violations:
         plan.guardrail_flags = violations + [
             "retenido: adaptación guardada como BORRADOR — revisa y activa tú "

@@ -14,12 +14,82 @@ plan intacto sin anotación, nunca bloquea la generación.
 from __future__ import annotations
 
 import copy
+from datetime import date
 
 from app.services import review_panel as rp
 from app.services.nutrition_scale import reconcile_nutrition
 
 # Nº máximo de intentos de reparación (igual que el motor del panel).
 MAX_REVIEW_ITERATIONS = rp.MAX_REPAIR_ITERATIONS
+
+
+def ctx_desde_cliente(client, nutrition: dict | None = None, db=None):
+    """Contexto de revisión a partir de la FICHA, sin pasar por la generación.
+
+    El panel §9 lo alimenta `generate-plan` con el `ClientContext` que acaba de
+    construir. La ADAPTACIÓN quincenal no construye ninguno —solo reescala
+    números— y por eso el panel nunca llegó a correr sobre ella: se quedó con
+    `is_checkin` y sus roles propios escritos y muertos. Aquí se arma lo que el
+    panel de verdad lee (perfil, bloque del cliente y bloque clínico), tomándolo
+    de la ficha y del propio plan; nada de esto vuelve a calcularse.
+    """
+    from types import SimpleNamespace
+
+    nut = nutrition or {}
+    hoy = date.today()
+    nac = getattr(client, "birth_date", None)
+    edad = (hoy.year - nac.year - ((hoy.month, hoy.day) < (nac.month, nac.day))) if nac else 0
+    # PESO DE REFERENCIA: la única verdad del sistema (último registro del
+    # portal > cierre > ficha). Sin sesión se cae a lo que diga la ficha.
+    peso = 0.0
+    if db is not None:
+        try:
+            from app.services.periods import reference_weight_kg
+
+            peso = reference_weight_kg(db, client) or 0.0
+        except Exception:  # noqa: BLE001 — el contexto nunca rompe la revisión
+            peso = 0.0
+    peso = peso or getattr(client, "current_weight_kg", None) or getattr(
+        client, "start_weight_kg", None) or 0.0
+    notas = " · ".join(x for x in (
+        getattr(client, "injuries_notes", None), getattr(client, "medical_notes", None),
+        getattr(client, "medication_notes", None), getattr(client, "current_supplements", None),
+    ) if x)
+    return SimpleNamespace(
+        sex=getattr(client, "sex", None) or "male",
+        age=edad,
+        height_cm=getattr(client, "height_cm", None) or 0.0,
+        weight_kg=peso,
+        goal_type=getattr(client, "goal_type", None) or "maintenance",
+        goal_weight_kg=getattr(client, "goal_weight_kg", None),
+        level=getattr(client, "level", None) or "beginner",
+        training_days=getattr(client, "training_days", None) or 0,
+        session_max_min=getattr(client, "session_max_min", None) or 60,
+        training_place=getattr(client, "training_place", None) or "gym",
+        diet_mode=getattr(client, "diet_mode", None) or "flexible",
+        diet_pattern=getattr(client, "diet_pattern", None),
+        meals_per_day=getattr(client, "meals_per_day", None),
+        meal_schedule=getattr(client, "meal_schedule", None) or [],
+        food_allergies=list(getattr(client, "food_allergies", None) or []),
+        food_dislikes=list(getattr(client, "food_dislikes", None) or []),
+        food_likes=list(getattr(client, "food_likes", None) or []),
+        contraindications=set(),
+        body_fat_pct=getattr(client, "body_fat_pct", None),
+        # Las métricas se toman del PLAN, que ya las lleva calculadas por el
+        # backend: aquí no se recalcula nada (la IA no calcula, y esto tampoco).
+        bmr=nut.get("bmr_kcal") or 0.0,
+        tdee=nut.get("tdee_kcal") or 0.0,
+        target_kcal=nut.get("target_kcal") or 0.0,
+        energy_method="",
+        exercise_library=[],
+        macro_plan=None,
+        deep_analysis=None,
+        goal_in_own_words=getattr(client, "lifestyle_notes", None),
+        clinical_notes=notas or None,
+        sport_history=getattr(client, "sport_history", None),
+        tracking_history=None,
+        notes="",
+    )
 
 
 def build_profile(client, ctx) -> dict:

@@ -73,18 +73,12 @@ def public_landing(request: Request, db: Session = Depends(get_db)) -> LandingOu
     )
 
 
-# ⚠️ EMBUDO SELF-SERVE SIN CONSUMIDOR (auditoría, tanda 8). Estos tres
-# endpoints —`/plan-prices`, `/register` y `/checkout`— se construyeron para que
-# el interesado se diera de alta y pagara SOLO desde /planes. Esa página se
-# rehízo después: hoy solo informa y lleva al WhatsApp del coach, que envía el
-# enlace de pago personalmente (decisión del dueño). Ni la web ni el portal los
-# llaman ya — `api.publicPlanPrices/publicRegister/publicCheckout` existen en
-# `lib/api.ts` y no los usa nadie.
-#
-# NO se retiran: son públicos y estables, y pueden estar enlazados desde fuera
-# (bio de Instagram, un QR impreso). Siguen con su límite de peticiones y su
-# cupo diario de altas. Si el dueño confirma que el embudo no vuelve, esto y sus
-# métodos del front se pueden borrar de una vez.
+# EMBUDO SELF-SERVE. `/plan-prices`, `/register` y `/checkout` son el camino
+# del que llega a /planes decidido a contratar: elige plan, paga en Stripe y su
+# ficha nace sola. Estuvo un tiempo construido y sin botón —la página solo
+# llevaba al WhatsApp del coach— hasta que se le conectó "Contratar ahora", que
+# aterriza DIRECTO en la pasarela. El contacto sigue ahí para quien prefiere
+# preguntar antes de pagar.
 
 @router.get("/plan-prices")
 @limiter.limit("60/minute")
@@ -142,7 +136,12 @@ def _avisa_cupo_al_coach(db: Session, altas: int) -> None:
 def public_register(request: Request, body: PublicRegisterIn,
                     db: Session = Depends(get_db)) -> dict:
     """Registro self-serve: crea la ficha (pago pendiente), envía el email de
-    arranque (pago + anamnesis) y devuelve la URL de pago de Stripe."""
+    arranque (pago + anamnesis) y devuelve la URL de pago de Stripe.
+
+    La web usa la vía CORTA (`/public/checkout`): el visitante pulsa "Contratar
+    ahora", paga, y su ficha nace del webhook con los datos que le pide Stripe.
+    Esta pide antes nombre, email y teléfono, y sirve para el alta guiada (un
+    formulario propio, una campaña) sin pasar por el panel."""
     # La oferta (en sus DOS formas de pago) es SOLO del plan Full — misma
     # validación que el alta manual: sin ella se colaba un train/nutri+oferta
     # cuyo enlace de pago cobraría un plan que no existe.

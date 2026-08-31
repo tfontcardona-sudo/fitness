@@ -325,6 +325,25 @@ function LinksPageManager() {
     }
   }
 
+  // EL LOGO DE LA MARCA. `POST /api/brand/logo` existe desde el principio y no
+  // lo llamaba ninguna pantalla: el logo sale en la página pública de enlaces y
+  // en la cabecera de TODOS los correos al cliente, y para cambiarlo había que
+  // llamar a la API a mano. Va aquí, junto a las otras imágenes de la marca.
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const logoRef = useRef<HTMLInputElement>(null);
+  async function uploadLogo(file: File | undefined) {
+    if (!file || uploadingLogo) return;
+    setUploadingLogo(true);
+    try {
+      setBrand(await api.uploadLogo(file));
+      toast.push("Logo actualizado · sale en tu página y en tus correos");
+    } catch (e) {
+      toast.push(e instanceof ApiError ? e.message : "No se pudo subir el logo", "error");
+    } finally {
+      setUploadingLogo(false);
+    }
+  }
+
   async function uploadPlansPhoto(file: File | undefined) {
     if (!file || uploadingPlans) return;
     setUploadingPlans(true);
@@ -390,6 +409,27 @@ function LinksPageManager() {
         <button className="btn btn-ghost mt-3" disabled={uploading} onClick={() => photoRef.current?.click()}>
           <Upload size={15} className="text-zinc-500" />
           {uploading ? "Subiendo…" : brand.links_photo_path ? "Cambiar foto" : "Subir foto"}
+        </button>
+      </div>
+
+      {/* EL LOGO: la página pública y la cabecera de todos los correos. */}
+      <div className="card p-5">
+        <h3 className="text-sm font-semibold text-zinc-200">Logo de la marca</h3>
+        <p className="mt-1 text-sm text-zinc-500">
+          Sale en tu página de enlaces y en la cabecera de todos los correos al
+          cliente · PNG/JPG
+        </p>
+        {api.mediaUrl(brand.logo_path) && (
+          <img src={api.mediaUrl(brand.logo_path)!} alt="Logo actual"
+            className="mt-3 h-16 w-auto rounded-xl border p-1"
+            style={{ borderColor: "var(--line-strong)", background: "#fff" }} />
+        )}
+        <input ref={logoRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+          onChange={(e) => { uploadLogo(e.target.files?.[0]); e.target.value = ""; }} />
+        <button className="btn btn-ghost mt-3" disabled={uploadingLogo}
+          onClick={() => logoRef.current?.click()}>
+          <Upload size={15} className="text-zinc-500" />
+          {uploadingLogo ? "Subiendo…" : brand.logo_path ? "Cambiar logo" : "Subir logo"}
         </button>
       </div>
 
@@ -1327,6 +1367,32 @@ const ExerciseVideoRow = memo(function ExerciseVideoRow({
     }
   }
 
+  // ARCHIVAR / RESTAURAR. El endpoint existe desde siempre y no lo llamaba
+  // ninguna pantalla: un ejercicio que el coach ya no quiere pautar (porque no
+  // tiene la máquina, o porque no le convence) no se podía retirar de la
+  // biblioteca desde la web — y esa biblioteca es la que se le inyecta a la IA
+  // para que elija. Archivar NO borra: el ejercicio sigue en los planes que ya
+  // lo usan, solo deja de ofrecerse.
+  const [archivando, setArchivando] = useState(false);
+  async function alternarArchivo() {
+    if (archivando) return;
+    setArchivando(true);
+    try {
+      if (ex.archived) {
+        await api.restoreExercise(ex.id);
+        toast.push(`"${ex.canonical_name}" vuelve a la biblioteca`);
+      } else {
+        await api.archiveExercise(ex.id);
+        toast.push(`"${ex.canonical_name}" archivado · deja de proponerse`);
+      }
+      onSaved();
+    } catch (e) {
+      toast.push(e instanceof ApiError ? e.message : "No se pudo archivar", "error");
+    } finally {
+      setArchivando(false);
+    }
+  }
+
   async function uploadVideo(file: File | undefined) {
     if (!file || uploading) return;
     setUploading(true);
@@ -1409,13 +1475,25 @@ const ExerciseVideoRow = memo(function ExerciseVideoRow({
             />
           </div>
         </div>
-        <button
-          className="btn btn-primary !px-3 !py-1.5 text-xs"
-          disabled={!dirty || saving}
-          onClick={save}
-        >
-          {saving ? <Spinner className="text-white" /> : "Guardar"}
-        </button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button
+            className="btn btn-ghost !px-2 !py-1.5 text-xs text-zinc-500"
+            disabled={archivando}
+            title={ex.archived
+              ? "Volver a ofrecerlo (a ti y a la IA que arma los planes)"
+              : "Dejar de proponerlo: no se borra, solo sale de la biblioteca"}
+            onClick={alternarArchivo}
+          >
+            {archivando ? "…" : ex.archived ? "Restaurar" : "Archivar"}
+          </button>
+          <button
+            className="btn btn-primary !px-3 !py-1.5 text-xs"
+            disabled={!dirty || saving}
+            onClick={save}
+          >
+            {saving ? <Spinner className="text-white" /> : "Guardar"}
+          </button>
+        </div>
       </div>
     </li>
   );
