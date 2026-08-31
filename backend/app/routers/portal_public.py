@@ -345,7 +345,10 @@ def anamnesis_prefill(
 @limiter.limit("20/minute")
 def upload_initial_photos(
     request: Request,
-files: Annotated[List[UploadFile], File(description="1–4 fotos corporales")],    kind: str = Query(default="front", pattern="^(front|side|back|detail)$"),
+    files: Annotated[List[UploadFile], File(description="1–4 fotos corporales")],
+    # El ÁNGULO de la foto. Sin él todas nacían "front" y el primer informe
+    # emparejaba el frontal de hoy con el lateral de la línea base.
+    kind: str = Query(default="front", pattern="^(front|side|back|detail)$"),
     client: Client = Depends(get_client_by_token),
     db: Session = Depends(get_db),
 ) -> list[PhotoOut]:

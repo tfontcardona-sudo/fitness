@@ -702,6 +702,15 @@ def test_el_estado_del_cuestionario_dice_si_hay_consentimiento():
             r = http.post(f"/api/p/{token}/anamnesis/photos",
                           files={"files": ("f.jpg", buf.getvalue(), "image/jpeg")})
             assert r.status_code == 200, r.text
+
+            # Y el ÁNGULO viaja: la página sube una foto por ángulo. Cuando
+            # todas nacían "front", el primer informe emparejaba el frontal de
+            # la revisión con el lateral de la línea base (feedback_service
+            # empareja por `kind`).
+            r = http.post(f"/api/p/{token}/anamnesis/photos?kind=side",
+                          files={"files": ("s.jpg", buf.getvalue(), "image/jpeg")})
+            assert r.status_code == 200, r.text
+            assert r.json()[0]["kind"] == "side"
     finally:
         db = SessionLocal()
         from app.models import ProgressPhoto
