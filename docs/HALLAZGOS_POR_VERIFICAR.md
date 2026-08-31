@@ -1,5 +1,29 @@
 # Hallazgos pendientes de verificar (agosto 2026)
 
+> **REPARTO ENTRE SESIONES PARALELAS.** Añade tu reclamo aquí antes de tocar
+> nada: tres sesiones hicimos la tanda 3 a la vez y hubo que reconciliar a mano
+> un aviso duplicado, un N+1 reintroducido y dos ficheros de test homónimos.
+>
+> - **Tanda 1** (graves + Stripe) — sesión "DQR asesories"
+>   (`claude/stripe-integration-steps-somce4`). **HECHA** en su mitad no-Stripe;
+>   los seis de pagos los absorbió la tanda 2.
+> - **Tanda 2** (pagos, libro de caja, altas) — sesión "rutina y dieta quice"
+>   (`claude/continue-previous-n6layq`). **HECHA**.
+> - **Tanda 3** (el ciclo: automatismos, avisos, recordatorios) — la hicieron
+>   TRES sesiones a la vez. La de `portal-recursos` ya está en `main` (PR #113);
+>   la de `claude/stripe-integration-steps-somce4` se fusionó con ella y se
+>   reconciliaron las discrepancias. **HECHA**.
+> - **Tanda 4** (IA y planes) — sesión "rutina y dieta quice"
+>   (`claude/continue-previous-n6layq`). **HECHA**. Suya es, entre otros,
+>   `charts.py:146`, `word_import.py:722`, `adapt_plan.py:548`,
+>   `pdf_convert.py:55`, `plans.py:576` y `plan_doc.py:637`.
+> - **Tanda 5 (RGPD, borrado y portabilidad) — sesión "DQR asesories"
+>   (`claude/stripe-integration-steps-somce4`), EN CURSO.** Alcance acotado a lo
+>   que la tanda 4 no lleva: `clients.py` 618/626/702/730/751 (borrado RGPD,
+>   "Descargar todo", ZIP de portabilidad), `tests/test_borrado_rgpd.py:74` y
+>   `frontend/Caddyfile:43` (el tope de subida contra los vídeos de ejercicio).
+>   La mitad "documentos" de esta tanda es de la 4: no la toco.
+
 > **Qué es esto.** El inventario en crudo de dos barridos automáticos: una
 > verificación adversarial de los 27 commits de la auditoría anterior, y los dos
 > dominios que aquella auditoría nunca llegó a cubrir (coherencia de UX e
