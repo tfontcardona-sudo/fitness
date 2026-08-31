@@ -8,9 +8,12 @@
 > accionable en este documento: lo que hay debajo es el REGISTRO de qué era
 > cada cosa y quién lo cerró.
 >
-> Quedan **dos decisiones abiertas del dueño**, no dos fallos (están al pie de
-> sus apartados, con lo que costaría cerrarlas): enchufar el panel §9 a la
-> revisión quincenal, y retirar o no el embudo self-serve de `/planes`.
+> **Las dos decisiones que quedaban también están aplicadas** (el dueño pidió
+> dejarlo todo a cero): el panel §9 ya revisa la revisión quincenal —pagando
+> solo cuando el Revisor 0 encuentra algo— y el embudo self-serve de `/planes`
+> se CONECTÓ en vez de retirarse: "Contratar ahora" lleva directo a Stripe, con
+> el precio real a la vista. No queda ningún método del cliente HTTP sin
+> pantalla salvo `createPeriod`, que es una salida manual documentada.
 >
 > Verificado con todo junto: suite completa **en los dos órdenes** (normal e
 > inverso: ya no depende de qué corra antes), `tsc`, build, arranque desde una
@@ -199,6 +202,12 @@ dos pases seguidos**.
 | El diario sin guardar al cruzar la medianoche se tira a la basura, pudiendo reenviarse con su fecha | `frontend/src/portal/PortalDiary.tsx:64` | (tanda 6) |
 | El pre-relleno "solo si está vacío" deja muerto el campo de duración de sesión (y trata `false` como vacío) | `frontend/src/pages/AnamnesisPage.tsx:254` | (tanda 6) |
 | El criterio único no llega a `/anamnesis-pdf`: el camino inverso sigue pisando la ficha revisada | `backend/app/routers/portal_public.py:406` | (tanda 6) |
+| El panel §9 de la revisión quincenal, construido y nunca ejecutado | `backend/app/services/adapt_plan.py` | (cierre) |
+| El embudo self-serve de `/planes`, construido y desconectado | `frontend/src/pages/PlansPage.tsx` | (cierre) |
+| Archivar/restaurar un ejercicio: solo por API, sin pantalla | `frontend/src/pages/RecursosPage.tsx` | (cierre) |
+| El logo de la marca no se podía subir desde ninguna pantalla | `frontend/src/pages/RecursosPage.tsx` | (cierre) |
+| El coach no podía descargarse el informe de la revisión | `frontend/src/components/ClientFeedbackTab.tsx` | (cierre) |
+| Un cliente con el paquete antiguo (`pro`/`start`) tumbaba con un 500 la lista entera | `backend/app/schemas/entities.py` | (cierre) |
 | La biblioteca de ejercicios (141 KB) viaja dos veces al abrir el editor, y una cuarta parte son notas que ninguna pantalla pinta | `backend/app/routers/exercises.py:58` | (tanda 7) |
 | La biblioteca de ejercicios (146 KB) se descarga dos veces por visita, y otra vez en cada apertura del editor | `frontend/src/components/ClientPlanEditor.tsx:102` | (tanda 7) |
 | `/api/clients` se pide entero cada 3 s desde Hoy y desde Clientes, con las notas clínicas que ninguna de las dos pantallas lee | `frontend/src/pages/DashboardPage.tsx:145` | (tanda 7) |
@@ -316,14 +325,6 @@ fallo que dice cazar).
 
 
 ### Créditos de IA
-
-- **[media] El panel de revisión de la revisión quincenal está construido y nunca se ejecuta**
-  · VERIFICADO y REAL (`is_checkin` + `CHECKIN_EXTRA_ROLES` existen en
-  `review_panel.py`; nadie pasa `is_checkin=True`, y `adapt_plan` solo corre
-  `check_nutrition`). NO se enchufa a propósito: pagar los 8-10 roles en cada
-  quincena de cada cliente va justo contra el recorte de créditos que pidió el
-  dueño, y hacerlo "solo si el Revisor 0 veta" exige construir un `ClientContext`
-  completo dentro de `adapt_plan`. Es una DECISIÓN de producto: dígalo el dueño.
 
 ### Construido y sin conectar
 

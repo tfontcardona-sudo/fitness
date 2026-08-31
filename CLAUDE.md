@@ -1602,6 +1602,40 @@ cd backend && python -m pytest tests/ -q
      sin jerga, memoria de vetos, panel caído en ámbar, resumen de entreno para
      los revisores y no-aviso con feedback sin enviar.
 
+0000000. ✅ **CIERRE: todo fusionado y a cero (agosto 2026).** El trabajo vivía
+   en CINCO ramas de cinco sesiones distintas; esta rama iba 96 commits por
+   detrás de `main` y dos sesiones habían hecho la MISMA tanda 7 en paralelo.
+   Todo fusionado en `claude/stripe-integration-steps-somce4` (PR #112).
+   - **Reconciliación de la tanda 7 duplicada**, quedándose con lo mejor de
+     cada versión: el esquema `ExerciseListOut` (la exclusión forma parte del
+     tipo) + su exclusión extra; el endpoint de RESUMEN de planes en vez del
+     `?ligero=true`; las fotos del período con las DOS mitades (una petición
+     compartida Y miniatura del backend); y los dos avisos del cliente que no
+     se pesa combinados en uno (`sin_pesajes` es el `else` de `no_diet_logs`).
+   - **Daño de fusión, corregido**: siete ficheros se commitearon con las
+     marcas de conflicto dentro; la racha del portal se quedó con media función
+     de cada versión (ahora usa la ÚNICA definición de "día registrado" del
+     sistema); y había un accesor `pesajes` duplicado del que Python se quedaba
+     con el roto.
+   - **Dos fallos que solo aparecieron al correr la suite en orden INVERSO**
+     (para comprobar que nada dependía del orden): un cliente con el paquete
+     antiguo (`pro`/`start`) tumbaba con un 500 la lista ENTERA de clientes,
+     "Hoy" y su ficha —la tabla de equivalencias existía y no se aplicaba a la
+     salida—; y el test de migraciones dejaba el engine atado a una base
+     temporal que después borraba, envenenando todo lo que corriera detrás.
+   - **Lo último que quedaba construido y sin conectar, conectado**: el panel
+     §9 revisa la revisión quincenal (pagando solo si el Revisor 0 veta); el
+     embudo self-serve de `/planes` con "Contratar ahora" directo a Stripe y el
+     precio real a la vista; archivar/restaurar ejercicios; subir el logo de la
+     marca; y descargar el informe de la revisión.
+   - **NO fusionada a propósito**: `claude/dqr-white-label-4ojp01` es otro
+     producto (white-label para otro gimnasio, con su kit de demo) y borra el
+     material de marketing de DQ. Es una decisión del dueño.
+   - Verificado con todo junto: suite completa **en los dos órdenes**, `tsc`,
+     build, arranque desde base VACÍA a la última migración (0043), una sola
+     cabeza de Alembic, la app levanta sus 165 rutas, y las cuatro guardas
+     (`check:anclas`, `check:avisos`, `check:claves`, `check:portapapeles`).
+
 000000. ✅ **TANDAS 7–8: el cierre del inventario (agosto 2026).** La 7
    (optimización) la llevó la sesión paralela. La **8**, la última, barrió lo
    que quedaba: créditos de IA, código construido y sin conectar, UX del panel
