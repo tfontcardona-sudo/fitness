@@ -370,3 +370,46 @@ verdad de las métricas del informe y no conviene tocar más de lo necesario.
 
 Regresiones: `tests/test_auditoria_rendimiento.py` (7), con topes de consultas y
 comprobación de que los campos que las pantallas SÍ usan siguen llegando.
+
+
+---
+
+## Integración de las tres fuentes — lo que encontró el navegador
+
+> Con las ocho tandas repartidas, esta sesión verificó el CONJUNTO: base desde
+> cero, suite completa, `tsc`/build/guardas y un recorrido real con Chromium por
+> el panel (escritorio y móvil, 13 rutas cada uno) y el portal.
+
+**Un 500 en la pantalla principal del cliente.** `GET /api/p/{token}/today`
+devolvía 500 —el cliente veía "No se pudo cargar"— en cuanto el plan traía un
+tipo inesperado. Comprobado con una matriz de ocho formas:
+
+| forma del ejercicio | HOY antes | ENTRENO antes | ahora |
+|---|---|---|---|
+| `rir` numérico (`2` en vez de `"2"`) | **500** | 200 | 200 |
+| `rep_range` numérico | **500** | 200 | 200 |
+| sin `exercise_id` | **500** | 200 | 200 |
+| `rest_sec` nulo | **500** | 200 | 200 |
+| `sets` texto / nulo, `rest_sec` texto | 200 | 200 | 200 |
+
+El mismo dato servido por dos endpoints con contratos distintos: Entreno
+aguantaba las ocho y Hoy se caía con cuatro. Al `training_json` le llegan planes
+editados a mano, importados del Word y copiados de un modelo, así que el
+contrato de SALIDA no puede ser más estricto que lo que el sistema es capaz de
+guardar. Arreglado en el único sitio donde se construye el payload
+(`portal.py`: `_texto`/`_entero`), misma regla que `dia_de_sesion`. Regresión
+con las seis formas en `tests/test_auditoria_rendimiento.py`.
+
+**Latente, avisado y NO tocado** (es de la tanda 6, portal del cliente):
+`PortalWorkout.tsx` indexa por `exercise_id` y el endpoint de Entreno ya podía
+mandarlo nulo ANTES de este cambio (un ejercicio que no se resolvió contra la
+biblioteca). No rompe la pantalla, pero en JS `logged[null]` mete todos los
+ejercicios sin id en el mismo saco. Al declarar el tipo honesto (`number | null`)
+salen 7 errores de TypeScript en ese fichero: ahí está el trabajo real. Se deja
+para quien lleve esa pantalla.
+
+**Comprobado y sano**: cero errores de consola, cero `pageerror` y cero 5xx en
+las 13 rutas del panel (escritorio y móvil) y en las 6 del portal; una sola
+cabeza de Alembic y arranque desde cero en verde; suite completa, `tsc`, build,
+`check:anclas`, `check:avisos` y `lint:hooks` (0 errores) sobre el código de las
+tres sesiones junto.

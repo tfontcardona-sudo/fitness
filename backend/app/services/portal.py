@@ -362,6 +362,39 @@ def _biblioteca_de(db: Session, sesiones: list[dict]) -> dict[int, Exercise]:
     return {ex.id: ex for ex in db.scalars(select(Exercise).where(Exercise.id.in_(ids)))}
 
 
+def _texto(v) -> str:
+    """Lo que el cliente LEE, siempre como texto.
+
+    El contrato de la pantalla "Hoy" declara estos campos como cadena, pero al
+    `training_json` le llegan planes editados a mano, importados del Word y
+    copiados de un modelo: un `rir: 2` o un `rep_range: 10` (números en vez de
+    texto) hacían fallar la validación de la respuesta y el cliente se
+    encontraba su pantalla principal con un 500. Comprobado: cuatro formas
+    distintas la tumbaban y la de Entreno aguantaba las ocho — el mismo dato
+    con dos contratos distintos. Misma regla que `dia_de_sesion`: mejor un
+    hueco que un portal roto.
+    """
+    if v is None:
+        return ""
+    return v if isinstance(v, str) else str(v)
+
+
+def _entero(v, por_defecto):
+    """Igual que `_texto`, para los campos numéricos (series, descanso, id)."""
+    if isinstance(v, bool):
+        return por_defecto
+    if isinstance(v, int):
+        return v
+    if isinstance(v, float):
+        return int(v)
+    if isinstance(v, str):
+        try:
+            return int(float(v.strip().replace(",", ".")))
+        except ValueError:
+            return por_defecto
+    return por_defecto
+
+
 def _resolve_session(db: Session, sess: dict, load_factor: float = 1.0,
                      lib: dict[int, Exercise] | None = None) -> dict:
     """Convierte una sesión del plan (con exercise_id) en una sesión con nombres
@@ -397,11 +430,11 @@ def _resolve_session(db: Session, sess: dict, load_factor: float = 1.0,
         # biblioteca— tumbaba con un 500 la pantalla ENTERA de Entreno del
         # cliente. Mejor una sesión con un hueco que un portal roto.
         exercises.append({
-            "exercise_id": e.get("exercise_id"),
+            "exercise_id": _entero(e.get("exercise_id"), None),
             "name": ex.canonical_name if ex else f"Ejercicio {e.get('exercise_id') or '?'}",
-            "sets": e.get("sets") or 0, "rep_range": e.get("rep_range") or "",
-            "rir": e.get("rir", ""),
-            "rest_sec": e.get("rest_sec", 90),
+            "sets": _entero(e.get("sets"), 0), "rep_range": _texto(e.get("rep_range")),
+            "rir": _texto(e.get("rir")),
+            "rest_sec": _entero(e.get("rest_sec"), 90),
             "start_weight_hint_kg": e.get("start_weight_hint_kg"),
             "week_weight_hint_kg": week_hint,
             "technique_cue": e.get("technique_cue"),
@@ -417,7 +450,7 @@ def _resolve_session(db: Session, sess: dict, load_factor: float = 1.0,
             "video_url": _playable(video),
         })
     return {
-        "day": sess.get("day", ""), "name": sess.get("name", ""),
+        "day": _texto(sess.get("day")), "name": _texto(sess.get("name")),
         "warmup": sess.get("warmup"), "exercises": exercises,
         "cooldown": sess.get("cooldown"),
     }

@@ -224,3 +224,56 @@ def test_los_tokens_de_producto_se_memorizan_sin_cambiar_el_resultado():
     # Repetido (ahora sale de la caché): mismo veredicto.
     assert product_covers("Creatina monohidrato", "Creatine Monohydrate 500 g")
     assert not product_covers("Creatina", "Aceite de pescado Omega 3")
+
+
+# --------------------------- integración: el portal no puede caerse -----------
+
+@pytest.mark.parametrize("etiqueta,ejercicio", [
+    ("rir numérico", {"sets": 4, "rep_range": "8-10", "rir": 2, "rest_sec": 120}),
+    ("rep_range numérico", {"sets": 4, "rep_range": 10, "rir": "2", "rest_sec": 120}),
+    ("sin exercise_id", {"sets": 4, "rep_range": "8-10", "rir": "2", "rest_sec": 120}),
+    ("rest_sec nulo", {"sets": 4, "rep_range": "8-10", "rir": "2", "rest_sec": None}),
+    ("sets nulo", {"sets": None, "rep_range": "8-10", "rir": "2", "rest_sec": 90}),
+    ("sets texto", {"sets": "4", "rep_range": "8-10", "rir": "2", "rest_sec": "120"}),
+])
+def test_un_plan_raro_no_tumba_la_pantalla_del_cliente(http, etiqueta, ejercicio):
+    """"Hoy" es la pantalla principal del cliente y devolvía 500 por un tipo
+    inesperado en el plan (un `rir: 2` en vez de "2", un ejercicio sin id, un
+    descanso nulo). Al `training_json` le llegan planes editados a mano,
+    importados del Word y copiados de un modelo: el contrato de salida no puede
+    ser más estricto que lo que el sistema es capaz de guardar. Comprobado:
+    cuatro formas la tumbaban y la pantalla de Entreno aguantaba las mismas."""
+    from datetime import date as _date
+
+    from app.db import SessionLocal
+    from app.models import Client, Exercise, Period, Plan
+    from app.security import new_portal_token
+    from sqlalchemy import select as _select
+
+    dias = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+    with SessionLocal() as db:
+        ex_id = db.scalar(_select(Exercise.id).limit(1))
+        e = dict(ejercicio)
+        if etiqueta != "sin exercise_id":
+            e["exercise_id"] = ex_id
+        uid = uuid.uuid4().hex[:8]
+        c = Client(full_name=f"Raro {uid}", email=f"raro-{uid}@test.local",
+                   portal_token="p", status="active", package_tier="full",
+                   goal_type="fat_loss")
+        db.add(c); db.flush(); c.portal_token = new_portal_token(c.id)
+        hoy = _date.today()
+        plan = Plan(client_id=c.id, month_index=1, version=1, status="published",
+                    nutrition_json={"target_kcal": 2000, "macros": {}, "meals": [],
+                                    "meal_bank": {}},
+                    training_json={"split_name": "X", "sessions": [
+                        {"day": dias[hoy.weekday()], "name": "S1", "exercises": [e]}]},
+                    education_json={})
+        db.add(plan); db.flush()
+        db.add(Period(client_id=c.id, plan_id=plan.id, period_index=1,
+                      starts_on=hoy - timedelta(days=2), ends_on=hoy + timedelta(days=11),
+                      status="open"))
+        db.commit()
+        token = c.portal_token
+
+    assert http.get(f"/api/p/{token}/today").status_code == 200, f"HOY se cae con {etiqueta}"
+    assert http.get(f"/api/p/{token}/training").status_code == 200, f"ENTRENO se cae con {etiqueta}"

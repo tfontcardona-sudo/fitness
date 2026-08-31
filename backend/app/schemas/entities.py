@@ -725,7 +725,10 @@ class TodayMealSlot(BaseModel):
 
 
 class TodayExercise(BaseModel):
-    exercise_id: int
+    # Puede faltar: un plan editado a mano o importado del Word puede traer un
+    # ejercicio que no se resolvió contra la biblioteca. Se enseña igual (con su
+    # nombre de reserva) en vez de tumbar la pantalla entera del cliente.
+    exercise_id: int | None = None
     name: str
     sets: int
     rep_range: str
