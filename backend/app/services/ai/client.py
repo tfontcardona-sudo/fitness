@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from typing import TypeVar
 
 from pydantic import BaseModel, ValidationError
@@ -29,6 +30,16 @@ TEMPERATURE = 0.3
 # Generoso: el banco de comidas (4 slots × 7 opciones con ingredientes/macros) y el
 # núcleo del plan son salidas grandes; 8000 truncaba el JSON → fallo de parseo.
 MAX_TOKENS = 16000
+# Techo al que sube el reintento cuando la respuesta se CORTÓ por longitud. Sin
+# esto, un JSON truncado se leía como "JSON mal formado" y el reintento salía
+# con el MISMO techo: se cortaba en el mismo sitio, se pagaban las dos llamadas
+# enteras y el fallo era seguro. Ver `generate_json`.
+MAX_TOKENS_TECHO = 32000
+
+# ¿Se cortó por longitud la última respuesta de ESTE hilo? Va en un
+# `threading.local` porque el panel de revisión (§9) lanza varios revisores a la
+# vez con el mismo AIClient: un atributo de instancia se pisarían entre sí.
+_corte = threading.local()
 
 # PROMPT CACHING (ahorro de créditos): un system prompt a partir de este tamaño
 # se envía como bloque con cache_control — la primera llamada escribe la caché
@@ -190,6 +201,7 @@ class AIClient:
                 raise translated from exc
             raise
         self._record_usage(model, resp)
+        _corte.cortada = getattr(resp, "stop_reason", None) == "max_tokens"
         return "".join(
             block.text for block in resp.content if getattr(block, "type", None) == "text"
         )
@@ -242,6 +254,7 @@ class AIClient:
                 raise translated from exc
             raise
         self._record_usage(model, resp)
+        _corte.cortada = getattr(resp, "stop_reason", None) == "max_tokens"
         return "".join(
             block.text for block in resp.content if getattr(block, "type", None) == "text"
         )
@@ -284,18 +297,37 @@ class AIClient:
         last_error: str | None = None
         attempt_user = user
 
+        techo = max_tokens
         for attempt in range(2):
+            _corte.cortada = False
             raw = self._raw_call(model=model, system=system, user=attempt_user,
-                                 temperature=temperature, max_tokens=max_tokens)
+                                 temperature=temperature, max_tokens=techo)
+            cortada = bool(getattr(_corte, "cortada", False))
             try:
                 data = json.loads(_extract_json(raw))
             except json.JSONDecodeError as exc:
-                last_error = f"JSON mal formado: {exc}"
+                last_error = (
+                    "la respuesta se CORTÓ por longitud (max_tokens), no es un "
+                    "error de formato" if cortada else f"JSON mal formado: {exc}")
             else:
                 try:
                     return schema.model_validate(data)
                 except ValidationError as exc:
                     last_error = _summarize_validation_error(exc)
+
+            if cortada:
+                # SUBIR EL TECHO y pedir brevedad. Reintentar idéntico se corta
+                # en el mismo sitio: dos llamadas pagadas enteras para un fallo
+                # seguro. Y el mensaje decía "JSON mal formado", que manda a
+                # buscar el fallo donde no está.
+                techo = min(MAX_TOKENS_TECHO, (techo or MAX_TOKENS) * 2)
+                attempt_user = (
+                    f"{user}\n\n--- CORRECCIÓN REQUERIDA ---\n"
+                    "Tu respuesta anterior se quedó A MEDIAS: era demasiado larga "
+                    "y se cortó. Devuelve el MISMO JSON pero más COMPACTO — textos "
+                    "más breves, sin repetir— y completo, sin texto adicional."
+                )
+                continue
 
             # Preparar reintento con el error concreto inyectado.
             attempt_user = (
@@ -304,6 +336,13 @@ class AIClient:
                 "Devuelve de nuevo SOLO el JSON corregido, sin texto adicional."
             )
 
+        if bool(getattr(_corte, "cortada", False)):
+            # Decir la VERDAD: con "JSON mal formado" el coach (y quien mire el
+            # log) busca el fallo en el prompt, y lo que pasa es que la
+            # respuesta no cabe.
+            raise AIGenerationError(
+                "La respuesta de la IA se CORTÓ por longitud incluso tras subir "
+                "el techo: el contenido pedido no cabe", last_error)
         raise AIGenerationError(
             "La IA no devolvió un JSON válido tras el reintento", last_error
         )
