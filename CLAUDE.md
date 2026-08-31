@@ -1448,6 +1448,51 @@ cd backend && python -m pytest tests/ -q
      sin jerga, memoria de vetos, panel caído en ámbar, resumen de entreno para
      los revisores y no-aviso con feedback sin enviar.
 
+00000. ✅ **TANDAS 1–6 (agosto 2026): el inventario de hallazgos, arreglado por
+   prioridad.** Tras la ronda 3 quedó `docs/HALLAZGOS_POR_VERIFICAR.md`: la
+   salida en crudo de dos barridos automáticos cuya verificación adversarial
+   murió contra el límite de sesión (**pistas con fichero y línea, NO hechos**).
+   Se atacó en tandas, ordenadas de más grave a menos, por VARIAS sesiones en
+   paralelo — el reparto vive en la cabecera de ese documento y hay que
+   reclamar la tanda ANTES de tocar nada (tres sesiones hicieron la 3 a la vez
+   y hubo que reconciliar a mano un aviso duplicado y un N+1 reintroducido).
+   - **Tanda 1** (graves): progresión semanal o día de sesión malformados
+     tumbaban "Hoy"/Entreno de TODOS los clientes; el plan declaraba macros que
+     su propia lista de la compra no daba; la memoria de vetos se sanea también
+     al LEERLA.
+   - **Tanda 2** (pagos): devoluciones descontadas dos veces (la fila sintética
+     de cuadre + el desglose `re_…`), la devolución posterior entraba "vista",
+     y borrar un cobro a mano dejaba al cliente en "pago pendiente".
+   - **Tanda 3** (el ciclo): cuatro de los cinco automatismos podían morir en
+     silencio → `services/job_state.py` (los cinco vigilados, con escalado por
+     horas sin éxito) enchufado al scheduler, a las alertas del panel y al push;
+     el badge del coach se apagaba solo; el gasto de IA se anotaba por debajo
+     del real; un correo que no llegó a salir consumía su intento.
+   - **Tanda 4** (IA y planes): copiar un plan arrastraba el sello de adaptación
+     de OTRO cliente; a un DQR Train regenerar no le apagaba el aviso "sin
+     adaptar"; la gráfica de perímetros pintaba el "antes" en la columna del
+     "ahora"; la caché del PDF no acertaba NUNCA (python-docx sella la hora en
+     el zip) y cada descarga levantaba un LibreOffice.
+   - **Tanda 5** (RGPD): la baja dejaba cabos sueltos y el nombre del borrado
+     sobrevivía en las fichas de otros; Caddy cortaba a 30 MB los vídeos que el
+     backend admite hasta 300.
+   - **Tanda 6** (portal y anamnesis): en un móvil COMPARTIDO el borrador de un
+     cliente acababa en la ficha de otro (claves de `sessionStorage` sin token →
+     guarda nueva `npm run check:claves`, que encontró sola el mismo fallo en
+     Entreno); un guardado viejo podía BORRAR las series recién registradas (el
+     PUT del diario reemplaza la lista entera → número de envío monotónico
+     compartido por los dos escritores, en Diario y en Entreno); las
+     contradicciones y el retrato de la anamnesis se servían congelados del
+     sidecar y dejaban de seguir a las correcciones del coach (son funciones
+     DETERMINISTAS de la ficha: se recalculan en vivo); quien ya envió el
+     formulario podía reescribir su ficha subiendo un PDF por detrás.
+   - **Comprobación transversal de las seis**: todas las tandas fusionadas en
+     una rama (la 2 y la 4 vivían solo en la otra), una sola cabeza de Alembic
+     con el arranque desde cero probado, cero funciones huérfanas, cero TODO
+     nuevos, suite + `tsc` + build + las tres guardas en verde — y, una a una,
+     **cada regresión comprobada quitando su arreglo**: las 16 caen sin él (las
+     otras tres son de front o de test, sin código que revertir).
+
 0000. ✅ **RONDA 3 (agosto 2026): Word de ida y vuelta + créditos al mínimo +
    pulido integral.** Todo en verde (suite completa, tsc, build).
    - **WORD EDITABLE DE IDA Y VUELTA** (petición estrella del dueño): botón
