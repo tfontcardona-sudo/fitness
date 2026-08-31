@@ -147,6 +147,11 @@ def _state(db: Session, client: Client) -> AnamnesisStateOut:
     return AnamnesisStateOut(
         first_name=_first_name(client),
         anamnesis_done=_anamnesis_recibida(client),
+        # Las fotos iniciales EXIGEN consentimiento firmado (datos de salud), y
+        # solo lo firma quien pasa por el FORMULARIO. Sin decirlo aquí, la
+        # pantalla ofrecía subirlas también a quien entregó su anamnesis en PDF
+        # y el backend le respondía 403: una petición imposible de satisfacer.
+        consent_signed=client.consent_signed_at is not None,
         photos_count=_photos_count(db, client.id),
         brand_name=brand.name,
         color_primary=brand.color_primary,

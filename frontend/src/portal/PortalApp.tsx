@@ -287,7 +287,12 @@ export default function PortalApp({ token }: { token: string }) {
                   Ver mi plan (PDF)
                 </span>
                 <span className="p-sub mt-0.5 block">
-                  {isStart ? "Dieta · pautas" : "Dieta · rutina · pautas"}
+                  {/* Lo que el cliente TIENE, no lo que tiene el paquete Full.
+                      La condición solo distinguía Start (sin entreno), así que
+                      a un DQR Train —que no lleva nutrición— el portal le
+                      anunciaba una dieta que su PDF no contiene. */}
+                  {[caps.hasNutrition && "Dieta", caps.hasTraining && "rutina", "pautas"]
+                    .filter(Boolean).join(" · ")}
                 </span>
               </span>
             </a>

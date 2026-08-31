@@ -594,6 +594,9 @@ class AnamnesisStateOut(BaseModel):
 
     first_name: str
     anamnesis_done: bool
+    # ¿Firmó el consentimiento? Solo lo firma quien pasa por el FORMULARIO, y
+    # sin él el backend rechaza las fotos iniciales (datos de salud).
+    consent_signed: bool = False
     photos_count: int
     brand_name: str
     color_primary: str

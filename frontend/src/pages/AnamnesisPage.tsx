@@ -182,6 +182,9 @@ export default function AnamnesisPage() {
   const [recuperado, setRecuperado] = useState(() => borrador != null);
   const [enviando, setEnviando] = useState(false);
   const [hecho, setHecho] = useState(false);
+  // ¿Firmó el consentimiento? Lo dice el servidor. Es lo que exige para
+  // guardar las fotos iniciales, y solo lo firma quien pasa por el formulario.
+  const [consentimientoFirmado, setConsentimientoFirmado] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tokenBad, setTokenBad] = useState(false);
   // Vía PDF alternativa (plegada al pie).
@@ -202,6 +205,7 @@ export default function AnamnesisPage() {
       })
       .then((st) => {
         if (st?.anamnesis_done) { limpiarBorrador(token); setHecho(true); }
+        if (st?.consent_signed) setConsentimientoFirmado(true);
         // Contador REAL de fotos ya subidas: sin esto, quien volvía al enlace
         // veía "Subir mis fotos" a cero y el rechazo por límite era invisible.
         if (typeof st?.photos_count === "number") setFotosSubidas(st.photos_count);
@@ -367,6 +371,9 @@ export default function AnamnesisPage() {
       limpiarBorrador(token);
       setRecuperado(false);
       setHecho(true);
+      // Enviar el formulario ES firmar el consentimiento: ya puede subir fotos
+      // sin esperar a que el servidor lo confirme en otra vuelta.
+      setConsentimientoFirmado(true);
       window.scrollTo({ top: 0 });
     } catch (e: any) {
       setError(e?.message ?? "No se pudo enviar. Inténtalo de nuevo en un momento.");
@@ -375,26 +382,44 @@ export default function AnamnesisPage() {
     }
   }
 
+  /** UNA A UNA, y cada una con SU ángulo. Se subían las cuatro de golpe en una
+   *  sola petición, y el endpoint aplica un único `kind` a todo el lote: las
+   *  cuatro quedaban como "frontal". El primer informe quincenal monta el
+   *  "antes y ahora" emparejando por ángulo, así que comparaba la frontal de
+   *  ahora con lo que en realidad era una lateral o una de espalda. El orden
+   *  es el que pide la propia pantalla (frontal · perfil · espalda) y CONTINÚA
+   *  por donde se quedó, para quien vuelve a subir más. */
   async function subirFotos(files: FileList | null) {
     if (!files || !files.length || subiendoFotos) return;
+    const angulos = ["front", "side", "back", "detail"];
+    const lote = Array.from(files).slice(0, Math.max(0, 4 - fotosSubidas));
+    if (!lote.length) {
+      setFotosError("Ya has subido el máximo de 4 fotos.");
+      return;
+    }
     setSubiendoFotos(true);
     setFotosError(null);
+    let subidas = 0;
     try {
-      const fd = new FormData();
-      Array.from(files).slice(0, 4).forEach((f) => fd.append("files", f));
-      const r = await fetch(`/api/p/${token}/anamnesis/photos`, { method: "POST", body: fd });
-      if (r.ok) {
-        const creadas = await r.json();
-        setFotosSubidas((n) => n + (Array.isArray(creadas) ? creadas.length : 0));
-      } else {
-        // El rechazo (límite de 4, formato, tamaño) debe VERSE: antes el
-        // spinner se apagaba sin mensaje y el cliente creía que subió.
-        let msg = "No se pudieron subir las fotos. Inténtalo de nuevo.";
-        try {
-          const data = await r.json();
-          if (typeof data?.detail === "string") msg = data.detail;
-        } catch { /* sin cuerpo JSON */ }
-        setFotosError(msg);
+      for (const f of lote) {
+        const angulo = angulos[Math.min(fotosSubidas + subidas, angulos.length - 1)];
+        const fd = new FormData();
+        fd.append("files", f);
+        const r = await fetch(`/api/p/${token}/anamnesis/photos?kind=${angulo}`,
+                              { method: "POST", body: fd });
+        if (!r.ok) {
+          // El rechazo (límite de 4, formato, tamaño) debe VERSE: antes el
+          // spinner se apagaba sin mensaje y el cliente creía que subió.
+          let msg = "No se pudieron subir las fotos. Inténtalo de nuevo.";
+          try {
+            const data = await r.json();
+            if (typeof data?.detail === "string") msg = data.detail;
+          } catch { /* sin cuerpo JSON */ }
+          setFotosError(subidas > 0 ? `${subidas} subida(s). ${msg}` : msg);
+          break;
+        }
+        subidas += 1;
+        setFotosSubidas(fotosSubidas + subidas);
       }
     } catch {
       setFotosError("No se pudieron subir las fotos — revisa tu conexión.");
@@ -493,12 +518,29 @@ export default function AnamnesisPage() {
             <div style={{ ...card, borderColor: "#cfe3cf" }} className="text-center">
               <CheckCircle2 size={40} className="mx-auto" style={{ color: "#2E7D46" }} />
               <h2 className="mt-3 text-lg font-bold">¡Anamnesis recibida!</h2>
+              {/* Antes afirmaba "te hemos enviado el acceso por email" pasara lo
+                  que pasara: con los correos apagados, el SMTP caído o un
+                  cliente sin email, era mentira — y encima la pantalla no
+                  ofrecía NINGUNA vuelta al portal, así que se quedaba sin
+                  forma de entrar. El enlace de aquí es el mismo por el que ha
+                  llegado, que siempre funciona. */}
               <p className="mt-2 text-sm opacity-75">
-                Te hemos enviado el acceso a tu portal por email (mira también el spam).
-                Tu coach prepara tu plan.
+                Tu coach ya la tiene y prepara tu plan. Si te llega un correo con
+                el acceso, mira también el spam.
               </p>
+              <a
+                href={`/p/${token}`}
+                className="mt-4 inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold"
+                style={{ background: "#2E7D46", color: "#fff" }}
+              >
+                Entrar en mi portal
+              </a>
             </div>
-            {pdfState !== "done" && fotosSubidas < 4 && (
+            {/* Solo con CONSENTIMIENTO firmado, que es lo que exige el backend
+                para guardar fotos (datos de salud) y solo firma quien pasa por
+                el formulario. A quien entregó su anamnesis en PDF se le ofrecía
+                igual y recibía un 403 imposible de satisfacer. */}
+            {consentimientoFirmado && pdfState !== "done" && fotosSubidas < 4 && (
               <div style={card}>
                 <p className="text-sm font-bold">
                   <Camera size={15} className="mr-1 inline" style={{ verticalAlign: "-2px" }} />

@@ -23,10 +23,12 @@ export function PortalResources({ api, brand, hasTraining = true }: { api: Api; 
   // encima de la galería; tocar otra tarjeta cambia de vídeo.
   const [playing, setPlaying] = useState<ResourceExerciseVideo | null>(null);
   const playerRef = useRef<HTMLDivElement>(null);
+  // Contador de reintentos: cambiarlo vuelve a lanzar la carga.
+  const [intento, setIntento] = useState(0);
 
   useEffect(() => {
     api.resources().then(setData).catch(() => setError(true));
-  }, [api]);
+  }, [api, intento]);
 
   // El reproductor vive encima de la galería: si el cliente toca una tarjeta del
   // fondo, se le lleva hasta él (si no, parecería que el toque no hizo nada).
@@ -42,8 +44,17 @@ export function PortalResources({ api, brand, hasTraining = true }: { api: Api; 
     return (
       <div className="space-y-5">
         <h2 className="p-title">Recursos</h2>
-        <div className="portal-card p-4 text-sm opacity-70">
-          No se pudieron cargar · reintenta
+        {/* El texto decía "reintenta" y no había NADA que pulsar: era la única
+            pantalla del portal sin su botón, así que la única salida era
+            recargar la app entera. */}
+        <div className="portal-card p-4 text-center">
+          <p className="text-sm opacity-70">No se pudieron cargar tus recursos.</p>
+          <button
+            onClick={() => { setError(false); setIntento((n) => n + 1); }}
+            className="portal-btn3d mt-3 rounded-xl px-4 py-2 text-sm font-semibold"
+          >
+            Reintentar
+          </button>
         </div>
       </div>
     );

@@ -627,3 +627,66 @@ def test_los_vetos_ya_guardados_tambien_se_sanean_al_leerlos(tmp_path, monkeypat
     assert "alérgeno declarado" in bloque
     assert "por debajo del mínimo" in bloque
 
+
+
+def test_el_estado_del_cuestionario_dice_si_hay_consentimiento():
+    """Las fotos iniciales EXIGEN consentimiento firmado (son datos de salud) y
+    solo lo firma quien pasa por el FORMULARIO. Sin ese dato en el estado, la
+    pantalla ofrecía subirlas también a quien entregó su anamnesis en PDF, y el
+    backend le respondía 403: una petición imposible de satisfacer."""
+    import io
+    import uuid
+    from datetime import datetime, timezone
+
+    from fastapi.testclient import TestClient
+    from PIL import Image
+    from sqlalchemy import delete
+
+    from app.db import SessionLocal
+    from app.main import app
+    from app.models import Client
+    from app.security import new_portal_token
+
+    db = SessionLocal()
+    marca = uuid.uuid4().hex[:8]
+    c = Client(full_name=f"Sin Consentimiento {marca}",
+               email=f"sincons-{marca}@test.local", package_tier="full",
+               billing_period="1m", status="onboarding", portal_token="tmp",
+               payment_status="paid")
+    db.add(c)
+    db.flush()
+    c.portal_token = new_portal_token(c.id)
+    db.commit()
+    token, cid = c.portal_token, c.id
+    db.close()
+
+    buf = io.BytesIO()
+    Image.new("RGB", (60, 90), (120, 120, 120)).save(buf, format="JPEG")
+    try:
+        with TestClient(app) as http:
+            # Sin firmar: el estado lo dice Y el backend rechaza las fotos.
+            estado = http.get(f"/api/p/{token}").json()
+            assert estado["consent_signed"] is False
+            r = http.post(f"/api/p/{token}/anamnesis/photos",
+                          files={"files": ("f.jpg", buf.getvalue(), "image/jpeg")})
+            assert r.status_code == 403, r.text
+
+            # Firmado (vía formulario): el estado cambia y las fotos entran.
+            db = SessionLocal()
+            db.get(Client, cid).consent_signed_at = datetime.now(timezone.utc)
+            db.commit()
+            db.close()
+
+            estado = http.get(f"/api/p/{token}").json()
+            assert estado["consent_signed"] is True
+            r = http.post(f"/api/p/{token}/anamnesis/photos",
+                          files={"files": ("f.jpg", buf.getvalue(), "image/jpeg")})
+            assert r.status_code == 200, r.text
+    finally:
+        db = SessionLocal()
+        from app.models import ProgressPhoto
+
+        db.execute(delete(ProgressPhoto).where(ProgressPhoto.client_id == cid))
+        db.execute(delete(Client).where(Client.id == cid))
+        db.commit()
+        db.close()
