@@ -134,3 +134,39 @@ def test_sin_biblioteca_el_ejercicio_sale_por_su_id_y_no_desaparece():
         "day": "Lunes", "name": "A",
         "exercises": [{"exercise_id": 7, "sets": 4, "rep_range": "6-8", "rir": "2"}]}]}
     assert "ejercicio #7" in _plan_text({"target_kcal": 2000, "macros": {}}, training, None)
+
+
+def test_la_biblioteca_de_ejercicios_viaja_cacheada_y_no_se_repaga():
+    """Era el bloque más gordo del prompt del núcleo (cientos de ejercicios) y
+    vivía en el USER prompt, que no se cachea: el reintento por validación lo
+    repagaba ENTERO. Ahora va como segundo bloque de system con `cache_control`
+    — el primero (el prompt fijo) se sigue cacheando entre clientes y este,
+    específico del cliente, se lee al 10% en su reintento."""
+    from types import SimpleNamespace
+
+    from app.services.ai.generator import _biblioteca_block, _system_con_biblioteca
+
+    ctx = SimpleNamespace(exercise_library=[
+        {"id": 7, "canonical_name": "Press banca", "movement_pattern": "empuje_horizontal",
+         "muscle_primary": "pecho"},
+        {"id": 9, "canonical_name": "Remo", "movement_pattern": "traccion_horizontal",
+         "muscle_primary": "espalda"},
+    ])
+    bloques = _system_con_biblioteca("INSTRUCCIONES FIJAS", ctx)
+
+    assert len(bloques) == 2
+    # Los DOS cacheados: el fijo entre clientes, el de la biblioteca entre la
+    # llamada y su reintento.
+    assert all(b["cache_control"] == {"type": "ephemeral"} for b in bloques)
+    assert bloques[0]["text"] == "INSTRUCCIONES FIJAS"
+    assert "Press banca" in bloques[1]["text"] and "\"id\": 7" in bloques[1]["text"]
+    assert _biblioteca_block(ctx) == bloques[1]["text"]
+
+
+def test_el_prompt_del_nucleo_ya_no_lleva_la_biblioteca_dentro():
+    """Si se quedara también en el user prompt, se enviaría DOS veces."""
+    from app.services.ai import generator as gen
+
+    fuente = __import__("inspect").getsource(gen._core_user_prompt)
+    assert "json.dumps(library" not in fuente
+    assert "te llega arriba" in fuente

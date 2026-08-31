@@ -423,6 +423,33 @@ def _analysis_block(ctx: ClientContext) -> str:
     )
 
 
+def _biblioteca_block(ctx: ClientContext) -> str:
+    """La BIBLIOTECA filtrada, tal cual viaja al modelo.
+
+    Es el bloque más gordo del prompt del núcleo (cientos de ejercicios) y vivía
+    en el USER prompt, que no se cachea: en el reintento por validación se
+    repagaba entero. Sacándolo aparte puede ir como segundo bloque de system con
+    `cache_control` — el primero (el prompt fijo) sigue cacheándose entre
+    clientes y este, específico de cada uno, se lee al 10% en el reintento."""
+    library = [
+        {"id": e["id"], "nombre": e["canonical_name"],
+         "patron": e["movement_pattern"], "musculo": e["muscle_primary"]}
+        for e in ctx.exercise_library
+    ]
+    return ("BIBLIOTECA DE EJERCICIOS DISPONIBLE (usa SOLO estos exercise_id):\n"
+            + json.dumps(library, ensure_ascii=False))
+
+
+def _system_con_biblioteca(base: str, ctx: ClientContext) -> list[dict]:
+    """System en DOS bloques cacheados: el fijo (compartido entre clientes) y la
+    biblioteca de este cliente (compartida entre su llamada y su reintento)."""
+    return [
+        {"type": "text", "text": base, "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": _biblioteca_block(ctx),
+         "cache_control": {"type": "ephemeral"}},
+    ]
+
+
 def _core_user_prompt(ctx: ClientContext) -> str:
     library = [
         {"id": e["id"], "nombre": e["canonical_name"],
@@ -445,8 +472,8 @@ quiere conseguir esta persona (y por qué). El plan de dieta Y el de
 entrenamiento deben estar diseñados para ESE fin concreto, no solo para la
 etiqueta genérica del objetivo. Refléjalo en rationale y split_rationale.
 
-BIBLIOTECA DE EJERCICIOS DISPONIBLE (usa SOLO estos exercise_id):
-{json.dumps(library, ensure_ascii=False)}
+(La BIBLIOTECA DE EJERCICIOS te llega arriba, en las instrucciones: usa SOLO
+esos exercise_id.)
 
 Devuelve un JSON con esta forma EXACTA (sin texto fuera del JSON). TODOS los campos de
 cada objeto son OBLIGATORIOS salvo los marcados como (null si no aplica). No omitas NINGUNO:
@@ -546,8 +573,8 @@ quiere conseguir esta persona. El entrenamiento debe estar diseñado para ESE fi
 concreto, no solo para la etiqueta genérica del objetivo. Refléjalo en
 split_rationale.
 
-BIBLIOTECA DE EJERCICIOS DISPONIBLE (usa SOLO estos exercise_id):
-{json.dumps(lib, ensure_ascii=False)}
+(La BIBLIOTECA DE EJERCICIOS te llega arriba, en las instrucciones: usa SOLO
+esos exercise_id.)
 
 RESTRICCIÓN DE DURACIÓN: la duración de cada sesión se estima como (total de series × \
 {gr.SESSION_MINUTES_FORMULA_PER_SET} min) + {gr.SESSION_MINUTES_FIXED_OVERHEAD} min. El cliente \
@@ -910,7 +937,8 @@ def generate_monthly_plan(
 
         try:
             tcore = ai.generate_json(
-                model=model, system=system_prompt_training_only(),
+                model=model,
+                system=_system_con_biblioteca(system_prompt_training_only(), ctx),
                 user=_core_user_prompt_training_only(ctx) + _lecciones,
                 schema=TrainingOnlyCoreOutput,
             )
@@ -925,7 +953,8 @@ def generate_monthly_plan(
             # tumbaba la generación entera y el coach solo veía un error.
             try:
                 tcore2 = ai.generate_json(
-                    model=model, system=system_prompt_training_only(),
+                    model=model,
+                    system=_system_con_biblioteca(system_prompt_training_only(), ctx),
                     user=_core_user_prompt_training_only(ctx) + _lecciones
                     + "\n\nATENCIÓN: tu intento anterior violó estas reglas de "
                       "seguridad; corrígelas TODAS sin cambiar nada más:\n- "
@@ -968,7 +997,8 @@ def generate_monthly_plan(
     def _llamar_nucleo(extra: str = ""):
         if include_training:
             return ai.generate_json(
-                model=model, system=system_prompt_full(),
+                model=model,
+                system=_system_con_biblioteca(system_prompt_full(), ctx),
                 user=_core_user_prompt(ctx) + _lecciones + extra,
                 schema=PlanCoreOutput,
             )

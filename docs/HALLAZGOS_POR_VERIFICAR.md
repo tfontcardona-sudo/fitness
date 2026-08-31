@@ -37,7 +37,7 @@
 >   y `AppShell.tsx:127`. NO toco nada del portal ni de la anamnesis (tanda 6).
 > - **Tanda 8 (créditos de IA, código sin conectar, UX del panel e
 >   integraciones) — sesión "DQR asesories"
->   (`claude/stripe-integration-steps-somce4`), EN CURSO.** Es la ÚLTIMA: barre
+>   (`claude/stripe-integration-steps-somce4`). HECHA.** Es la ÚLTIMA: barre
 >   todo lo que no lleva la tanda 7. Alcance: las seis de "Créditos de IA", las
 >   cinco de "Construido y sin conectar", las cinco de UX del panel del coach,
 >   las seis de Stripe, las dos de email/push, las cuatro de Google/WhatsApp y
@@ -113,6 +113,54 @@
 | El diario sin guardar al cruzar la medianoche se tira a la basura, pudiendo reenviarse con su fecha | `frontend/src/portal/PortalDiary.tsx:64` | (tanda 6) |
 | El pre-relleno "solo si está vacío" deja muerto el campo de duración de sesión (y trata `false` como vacío) | `frontend/src/pages/AnamnesisPage.tsx:254` | (tanda 6) |
 | El criterio único no llega a `/anamnesis-pdf`: el camino inverso sigue pisando la ficha revisada | `backend/app/routers/portal_public.py:406` | (tanda 6) |
+| El sello editado (y el `rev` nuevo) se tiran: `normalize` se queda con el plan viejo | `frontend/src/components/ClientPlanPanel.tsx:320` | (tanda 4) |
+| DQR Train: regenerar el plan no sella la adaptación → el banner "sin adaptar" es eterno | `backend/app/routers/clients.py:1726` | (tanda 4) |
+| Copiar un plan/modelo arrastra el sello de adaptación de OTRO cliente dentro de `training_json` | `backend/app/services/plan_library.py:268` | (tanda 4) |
+| La fila DIFERENCIA reabre el doble descuento que el commit venía a cerrar | `backend/app/services/payments.py:258` | (tanda 2) |
+| Borrar un cobro a mano puede marcar como IMPAGADO a un cliente que sí pagó | `backend/app/routers/payments.py:215` | (tanda 2) |
+| La gráfica de perímetros invierte las series cuando las etiquetas no coinciden | `backend/app/services/docs/charts.py:146` | (tanda 4) |
+| El Word del educativo deja de importarse en cuanto el cliente tiene alergias o patrón dietético | `backend/app/services/word_import.py:722` | (tanda 4) |
+| "Por qué este enfoque" hereda el volcado interno viejo y suma una frase en cada revisión | `backend/app/services/adapt_plan.py:548` | (tanda 4) |
+| La caché por contenido del PDF nunca acierta con el plan: cada descarga arranca LibreOffice | `backend/app/services/docs/pdf_convert.py:55` | (tanda 4) |
+| El cupo global de altas apaga el formulario todo el día con 25 peticiones, y el único aviso es un push best-effort | `backend/app/routers/public_site.py:146` | (tanda 2) |
+| El aviso del barrido cortado pide al coach dos cosas que no puede hacer | `frontend/src/pages/PagosPage.tsx:250` | (tanda 2) |
+| El test del borrado del cobro a mano pasa igual sin el recálculo de la ficha | `backend/tests/test_cobro_manual.py:211` | (tanda 2) |
+| El "total" de cobros de la ficha se corta en 20 movimientos y suma dinero de prueba | `frontend/src/pages/ClientProfilePage.tsx:789` | (tanda 2) |
+| Una devolución repescada por la sincronización entra ya marcada como leída | `backend/app/services/payments.py:219` | (tanda 2) |
+| Regenerar solo el educativo vuelve a pedirlo sin alergias ni patrón dietético | `backend/app/routers/plans.py:576` | (tanda 4) |
+| La lista de la compra va en una caja marcada como no divisible entre páginas | `backend/app/services/docs/plan_doc.py:637` | (tanda 4) |
+| El test del cupo pasa aunque el contador de altas esté muerto | `backend/tests/test_public_register.py:213` | (tanda 2) |
+| El cuadre deshace lo que el solver §2 acaba de fijar: se salta las cotas del catálogo y deja la medida casera mintiendo ("4 ud (165 g)") | `backend/app/services/ai/generator.py:1086` | (tanda 8) |
+| Un ingrediente pequeño que cae a 0 g hace fallar el `model_validate` y el `except` tira TODAS las reparaciones del banco, en silencio | `backend/app/services/ai/generator.py:1088` | (tanda 8) |
+| La baja RGPD puede quedar bloqueada por un error de Stripe que el filtro no reconoce | `backend/app/services/stripe_service.py:1091` | (tanda 8) |
+| Las ramas de "aversión" y "patrón" de `_sin_cifras` no coinciden con ningún veto real: el prompt recibe frases mutiladas | `backend/app/services/coach_lessons.py:219` | (tanda 8) |
+| La memoria de vetos (§13) deja de aprender del banco de comidas: los alérgenos y los desvíos ya no se anotan | `backend/app/services/ai/generator.py:1079` | (tanda 8) |
+| La pestaña Historial se queda girando para siempre si su carga falla | `frontend/src/components/ClientHistoryTab.tsx:25` | (tanda 8) |
+| Recursos → Aprendizaje: `PageLoader` eterno si fallan las lecciones | `frontend/src/pages/RecursosPage.tsx:100` | (tanda 8) |
+| Las acciones del documento del plan no dan señal de estar trabajando (y "Enviar plan por email" permite doble envío al cliente) | `frontend/src/components/ClientPlanPanel.tsx:1219` | (tanda 8) |
+| "Copiar enlace" del alta afirma que copió aunque no copie | `frontend/src/pages/ClientsPage.tsx:445` | (tanda 8) |
+| El panel enseña fechas en crudo (2026-08-17) donde el resto usa formato español | `frontend/src/components/ClientTrackingTab.tsx:218` | (tanda 8) |
+| Cancelar la oferta no limpia `stripe_subscription_id`: el cliente queda sin renovación posible | `backend/app/services/stripe_service.py:1096` | (tanda 8) |
+| La sincronización no repesca los cobros FALLIDOS, que es lo más caro de perder | `backend/app/services/payments.py:621` | (tanda 8) |
+| Los contracargos (`charge.dispute.*`) no se manejan: el dinero se va y nadie se entera | `backend/app/services/stripe_service.py:265` | (tanda 8) |
+| El aviso "N sin ficha" del feed de pagos no tiene salida: ninguna acción lo apaga | `backend/app/services/payments.py:331` | (tanda 8) |
+| `int(client_id)` sin proteger en el webhook: un checkout ajeno con referencia no numérica lo tumba | `backend/app/services/stripe_service.py:1416` | (tanda 8) |
+| El diagnóstico de correo existe en el backend y no hay ninguna pantalla que lo abra | `backend/app/routers/email.py:35` | (tanda 8) |
+| La página de "¡Pago recibido!" promete un correo que en la renovación no existe | `frontend/src/pages/PlansPage.tsx:312` | (tanda 8) |
+| El "enlace de reservas" se guarda y no lo lee nadie | `frontend/src/pages/RecursosPage.tsx:447` | (tanda 8) |
+| Sin enlace de Meet no se avisa al cliente, pero el toast dice que sí | `backend/app/routers/clients.py:1033` | (tanda 8) |
+| Marcar el feedback como enviado falla en silencio en la vía WhatsApp | `frontend/src/components/ClientFeedbackTab.tsx:258` | (tanda 8) |
+| Modificar sin teléfono promete un WhatsApp que nunca se abre | `frontend/src/components/ClientFeedbackTab.tsx:108` | (tanda 8) |
+| El entrenamiento llega como recuento: dos revisores se pagan a ciegas (y enteros en planes solo-nutrición) | `backend/app/services/plan_review.py` | (tanda 8) |
+| El atajo para recuperar el educativo sin repagar el plan no tiene botón (y genera el prompt sin el contexto del cliente) | `backend/app/routers/plans.py` | (tanda 8) |
+| Una respuesta cortada por `max_tokens` se trata como "JSON mal formado" y se reintenta idéntica | `backend/app/services/ai/client.py` | (tanda 8) |
+| El núcleo manda ~28 KB de biblioteca de ejercicios sin cachear y los repaga enteros en cada reintento | `backend/app/services/ai/generator.py` | (tanda 8) |
+| "Coste medio por plan" y "~N planes" reparten TODO el gasto de IA entre los planes | `backend/app/services/ai_credit.py` | (tanda 8) |
+| "Descargar todo" (export RGPD) está construido y no tiene ni un botón | `frontend/src/pages/ClientProfilePage.tsx` | (tanda 8) |
+| El endpoint que recupera el educativo fallido no lo llama nadie: el coach solo puede repagar el plan entero | `frontend/src/components/ClientPlanPanel.tsx` | (tanda 8) |
+| El estado del email (SMTP) tiene endpoints de diagnóstico y ninguna pantalla | `frontend/src/pages/RecursosPage.tsx` | (tanda 8) |
+| El "Enlace de reservas" que el coach guarda no lo lee nadie | `frontend/src/lib/whatsapp.ts` | (tanda 8) |
+| `AUTO_PILOT_DEFAULT` documentado y sin efecto | `backend/app/config.py` | (tanda 8) |
 | El cuestionario dice "te hemos enviado el acceso por email" aunque no se haya enviado ninguno, y no deja vía de vuelta al portal | `frontend/src/pages/AnamnesisPage.tsx:497` | (tanda 6) |
 | Al cliente DQR Train el portal le anuncia una dieta que su PDF no contiene | `frontend/src/portal/PortalApp.tsx:290` | (tanda 6) |
 | "Recursos" es la única pantalla del portal cuyo error no se puede reintentar, y el texto invita a hacerlo | `frontend/src/portal/PortalResources.tsx:46` | (tanda 6) |
@@ -131,31 +179,9 @@ fallo que dice cazar).
 
 ### Medias
 
-- **[media] El cuadre deshace lo que el solver §2 acaba de fijar: se salta las cotas del catálogo y deja la medida casera mintiendo ("4 ud (165 g)")** — `backend/app/services/ai/generator.py:1086` · `regresion`
-- **[media] Un ingrediente pequeño que cae a 0 g hace fallar el `model_validate` y el `except` tira TODAS las reparaciones del banco, en silencio** — `backend/app/services/ai/generator.py:1088` · `arreglo_incompleto`
-- **[media] El sello editado (y el `rev` nuevo) se tiran: `normalize` se queda con el plan viejo** — `frontend/src/components/ClientPlanPanel.tsx:320` · `suposicion_falsa`
-- **[media] DQR Train: regenerar el plan no sella la adaptación → el banner "sin adaptar" es eterno** — `backend/app/routers/clients.py:1726` · `arreglo_incompleto`
-- **[media] Copiar un plan/modelo arrastra el sello de adaptación de OTRO cliente dentro de `training_json`** — `backend/app/services/plan_library.py:268` · `arreglo_incompleto`
-- **[media] La fila DIFERENCIA reabre el doble descuento que el commit venía a cerrar** — `backend/app/services/payments.py:258` · `regresion`
-- **[media] Borrar un cobro a mano puede marcar como IMPAGADO a un cliente que sí pagó** — `backend/app/routers/payments.py:215` · `suposicion_falsa`
-- **[media] La baja RGPD puede quedar bloqueada por un error de Stripe que el filtro no reconoce** — `backend/app/services/stripe_service.py:1091` · `arreglo_incompleto`
-- **[media] La gráfica de perímetros invierte las series cuando las etiquetas no coinciden** — `backend/app/services/docs/charts.py:146` · `regresion`
-- **[media] El Word del educativo deja de importarse en cuanto el cliente tiene alergias o patrón dietético** — `backend/app/services/word_import.py:722` · `regresion`
-- **[media] "Por qué este enfoque" hereda el volcado interno viejo y suma una frase en cada revisión** — `backend/app/services/adapt_plan.py:548` · `arreglo_incompleto`
-- **[media] La caché por contenido del PDF nunca acierta con el plan: cada descarga arranca LibreOffice** — `backend/app/services/docs/pdf_convert.py:55` · `suposicion_falsa`
-- **[media] El cupo global de altas apaga el formulario todo el día con 25 peticiones, y el único aviso es un push best-effort** — `backend/app/routers/public_site.py:146` · `arreglo_incompleto`
 
 ### Bajas
 
-- **[baja] Las ramas de "aversión" y "patrón" de `_sin_cifras` no coinciden con ningún veto real: el prompt recibe frases mutiladas** — `backend/app/services/coach_lessons.py:219`
-- **[baja] La memoria de vetos (§13) deja de aprender del banco de comidas: los alérgenos y los desvíos ya no se anotan** — `backend/app/services/ai/generator.py:1079`
-- **[baja] El aviso del barrido cortado pide al coach dos cosas que no puede hacer** — `frontend/src/pages/PagosPage.tsx:250`
-- **[baja] El test del borrado del cobro a mano pasa igual sin el recálculo de la ficha** — `backend/tests/test_cobro_manual.py:211`
-- **[baja] El "total" de cobros de la ficha se corta en 20 movimientos y suma dinero de prueba** — `frontend/src/pages/ClientProfilePage.tsx:789`
-- **[baja] Una devolución repescada por la sincronización entra ya marcada como leída** — `backend/app/services/payments.py:219`
-- **[baja] Regenerar solo el educativo vuelve a pedirlo sin alergias ni patrón dietético** — `backend/app/routers/plans.py:576`
-- **[baja] La lista de la compra va en una caja marcada como no divisible entre páginas** — `backend/app/services/docs/plan_doc.py:637`
-- **[baja] El test del cupo pasa aunque el contador de altas esté muerto** — `backend/tests/test_public_register.py:213`
 
 ---
 
@@ -163,35 +189,23 @@ fallo que dice cazar).
 
 ### Coherencia de UX — panel del coach
 
-- **[media] La pestaña Historial se queda girando para siempre si su carga falla** — `frontend/src/components/ClientHistoryTab.tsx:25`
-- **[media] Recursos → Aprendizaje: `PageLoader` eterno si fallan las lecciones** — `frontend/src/pages/RecursosPage.tsx:100`
-- **[media] Las acciones del documento del plan no dan señal de estar trabajando (y "Enviar plan por email" permite doble envío al cliente)** — `frontend/src/components/ClientPlanPanel.tsx:1219`
-- **[media] "Copiar enlace" del alta afirma que copió aunque no copie** — `frontend/src/pages/ClientsPage.tsx:445`
-- **[baja] El panel enseña fechas en crudo (2026-08-17) donde el resto usa formato español** — `frontend/src/components/ClientTrackingTab.tsx:218`
 
 ### Coherencia de UX — portal del cliente
 
 
 ### Integraciones — Stripe
 
-- **[media] Cancelar la oferta no limpia `stripe_subscription_id`: el cliente queda sin renovación posible** — `backend/app/services/stripe_service.py:1096`
-- **[media] La sincronización no repesca los cobros FALLIDOS, que es lo más caro de perder** — `backend/app/services/payments.py:621`
-- **[media] Los contracargos (`charge.dispute.*`) no se manejan: el dinero se va y nadie se entera** — `backend/app/services/stripe_service.py:265`
 - **[media] El embudo self-serve de `/planes` está construido y desconectado: tres endpoints públicos sin consumidor** — `backend/app/routers/public_site.py:128`
-- **[baja] El aviso "N sin ficha" del feed de pagos no tiene salida: ninguna acción lo apaga** — `backend/app/services/payments.py:331`
-- **[baja] `int(client_id)` sin proteger en el webhook: un checkout ajeno con referencia no numérica lo tumba** — `backend/app/services/stripe_service.py:1416`
+  · VERIFICADO y REAL (`publicPlanPrices`/`publicRegister`/`publicCheckout` no
+  los llama nadie). NO se retiran: son públicos y estables y pueden estar
+  enlazados desde fuera (bio de Instagram, un QR). Anotado en el código.
+  Si el dueño confirma que el embudo no vuelve, se borran de una vez.
 
 ### Integraciones — email y push
 
-- **[alta] El diagnóstico de correo existe en el backend y no hay ninguna pantalla que lo abra** — `backend/app/routers/email.py:35`
-- **[alta] La página de "¡Pago recibido!" promete un correo que en la renovación no existe** — `frontend/src/pages/PlansPage.tsx:312`
 
 ### Integraciones — Google y WhatsApp
 
-- **[media] El "enlace de reservas" se guarda y no lo lee nadie** — `frontend/src/pages/RecursosPage.tsx:447`
-- **[media] Sin enlace de Meet no se avisa al cliente, pero el toast dice que sí** — `backend/app/routers/clients.py:1033`
-- **[media] Marcar el feedback como enviado falla en silencio en la vía WhatsApp** — `frontend/src/components/ClientFeedbackTab.tsx:258`
-- **[baja] Modificar sin teléfono promete un WhatsApp que nunca se abre** — `frontend/src/components/ClientFeedbackTab.tsx:108`
 
 ---
 
@@ -217,20 +231,16 @@ fallo que dice cazar).
 
 ### Créditos de IA
 
-- **[media] El entrenamiento llega como recuento: dos revisores se pagan a ciegas (y enteros en planes solo-nutrición)**
 - **[media] El panel de revisión de la revisión quincenal está construido y nunca se ejecuta**
-- **[media] El atajo para recuperar el educativo sin repagar el plan no tiene botón (y genera el prompt sin el contexto del cliente)**
-- **[media] Una respuesta cortada por `max_tokens` se trata como "JSON mal formado" y se reintenta idéntica**
-- **[media] El núcleo manda ~28 KB de biblioteca de ejercicios sin cachear y los repaga enteros en cada reintento**
-- **[baja] "Coste medio por plan" y "~N planes" reparten TODO el gasto de IA entre los planes**
+  · VERIFICADO y REAL (`is_checkin` + `CHECKIN_EXTRA_ROLES` existen en
+  `review_panel.py`; nadie pasa `is_checkin=True`, y `adapt_plan` solo corre
+  `check_nutrition`). NO se enchufa a propósito: pagar los 8-10 roles en cada
+  quincena de cada cliente va justo contra el recorte de créditos que pidió el
+  dueño, y hacerlo "solo si el Revisor 0 veta" exige construir un `ClientContext`
+  completo dentro de `adapt_plan`. Es una DECISIÓN de producto: dígalo el dueño.
 
 ### Construido y sin conectar
 
-- **[media] "Descargar todo" (export RGPD) está construido y no tiene ni un botón**
-- **[media] El endpoint que recupera el educativo fallido no lo llama nadie: el coach solo puede repagar el plan entero**
-- **[media] El estado del email (SMTP) tiene endpoints de diagnóstico y ninguna pantalla**
-- **[baja] El "Enlace de reservas" que el coach guarda no lo lee nadie**
-- **[baja] `AUTO_PILOT_DEFAULT` documentado y sin efecto**
 
 ---
 

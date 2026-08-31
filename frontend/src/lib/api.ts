@@ -655,6 +655,10 @@ export const api = {
 
   // --- página pública de enlaces + registro self-serve ---
   publicLanding: () => request<LandingOut>("GET", "/public/landing"),
+  // ⚠️ Los tres de abajo son del EMBUDO SELF-SERVE, que ya no se usa: /planes
+  // solo informa y lleva al WhatsApp del coach, que manda el enlace de pago.
+  // No los llama nadie; se conservan porque sus endpoints son públicos y
+  // estables (ver la nota en routers/public_site.py).
   publicPlanPrices: () => request<PlanPricesOut>("GET", "/public/plan-prices"),
   // URL pública de un archivo bajo media/ (foto de landing, portada de vídeos…).
   mediaUrl: (path: string | null | undefined) =>
