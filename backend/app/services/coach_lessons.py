@@ -217,7 +217,14 @@ def _sin_cifras(texto: str) -> str:
         return "violation: se coló un alimento con un alérgeno declarado"
     if "aversión" in bajo or "aversion" in bajo or "no tolera" in bajo:
         return "violation: se coló un alimento que el cliente rechaza"
-    if "patrón" in bajo or "patron dietético" in bajo:
+    # El texto REAL del guardrail es «restricción 'vegano' violada: slot 2 …»:
+    # no lleva la palabra "patrón" por ninguna parte, así que esta rama no se
+    # activaba NUNCA y la frase caía al limpiador genérico, que se lleva los
+    # nombres entrecomillados y las cifras y deja un muñón —"restricción
+    # violada: slot ' contiene '"— inyectado en la generación de todos los
+    # demás clientes.
+    if ("patrón" in bajo or "patron dietético" in bajo
+            or "restricción" in bajo or "restriccion" in bajo):
         return "violation: se coló un alimento fuera del patrón dietético"
     if "contraindic" in bajo:
         return "violation: se coló un ejercicio contraindicado"
@@ -240,9 +247,16 @@ def record_ai_vetos(flags: list[str]) -> None:
     Se guarda el TIPO de veto, nunca las cifras del cliente: estas advertencias
     acaban en el prompt de otras generaciones."""
     try:
+        # `seguridad:` y `cuadre:` TAMBIÉN son vetos. Desde que se repara ANTES
+        # de juzgar, los dos tropiezos más repetidos de la IA —colar un alérgeno
+        # en el banco y no dar en el objetivo de la toma— ya no llegan a
+        # `check_meal_options`, así que dejaron de emitir `violation:` y la
+        # memoria dejó de aprenderlos: el prompt no advertía de ellos, el modelo
+        # los repetía y el backend seguía pagando por arreglarlos.
         interesantes = [
             _sin_cifras(f) for f in (flags or [])
-            if isinstance(f, str) and f.startswith(("violation:", "contrato:", "núcleo:"))
+            if isinstance(f, str) and f.startswith(
+                ("violation:", "contrato:", "núcleo:", "seguridad:", "cuadre:"))
         ]
         interesantes = [f for f in interesantes if len(f) > 12]
         if not interesantes:

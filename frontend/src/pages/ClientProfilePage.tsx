@@ -257,16 +257,25 @@ export default function ClientProfilePage() {
     }
   }
 
-  async function deleteClient() {
+  // Si Stripe no responde, el backend FRENA el borrado (borrar dejando el
+  // cobro vivo es peor). Pero el borrado RGPD tiene plazo legal: cuando el
+  // coach ya la ha cancelado en Stripe, puede declararlo y seguir.
+  const [stripeAtascado, setStripeAtascado] = useState<string | null>(null);
+  const [declaroCancelada, setDeclaroCancelada] = useState(false);
+
+  async function deleteClient(suscripcionAMano = false) {
     if (!client || deleting) return;
     setDeleting(true);
     try {
-      await api.deleteClient(client.id, client.full_name);
+      await api.deleteClient(client.id, client.full_name, suscripcionAMano);
       setConfirmDelete(false);
+      setStripeAtascado(null);
       toast.push(`${client.full_name} eliminado definitivamente`);
       navigate("/clientes");
-    } catch {
-      toast.push("No se pudo borrar el cliente", "error");
+    } catch (e: any) {
+      const msg = String(e?.message ?? "");
+      if (msg.includes("suscripción de Stripe")) setStripeAtascado(msg);
+      else toast.push("No se pudo borrar el cliente", "error");
       setDeleting(false);
     }
   }
@@ -576,10 +585,28 @@ export default function ClientProfilePage() {
             <br />
             <br />
             Para confirmar, escribe el nombre completo del cliente:
+            {stripeAtascado && (
+              <>
+                <br />
+                <br />
+                <span style={{ color: "#B45309" }}>{stripeAtascado}</span>
+                <br />
+                <br />
+                <label className="flex items-start gap-2 text-xs">
+                  <input type="checkbox" className="mt-0.5"
+                    checked={declaroCancelada}
+                    onChange={(e) => setDeclaroCancelada(e.target.checked)} />
+                  <span>
+                    Ya he cancelado su suscripción en Stripe y quiero borrarlo
+                    igualmente. <b>Quedará registrado en la auditoría.</b>
+                  </span>
+                </label>
+              </>
+            )}
           </>
         }
         confirmLabel={deleting ? "Borrando…" : "Borrar definitivamente"}
-        onConfirm={deleteClient}
+        onConfirm={() => deleteClient(declaroCancelada)}
         onCancel={() => !deleting && setConfirmDelete(false)}
       />
     </div>

@@ -57,9 +57,11 @@ def _plato(opcion: dict) -> str:
     return nombre or (", ".join(ings) if ings else "")
 
 
-def _plan_text(nutrition: dict, training: dict | None = None) -> str:
-    """Render compacto y legible del plan (nutrición + resumen de entreno)
-    para los revisores IA."""
+def _plan_text(nutrition: dict, training: dict | None = None,
+               nombres: dict[int, str] | None = None) -> str:
+    """Render compacto y legible del plan (nutrición + entreno) para los
+    revisores IA. `nombres` traduce `exercise_id` → nombre: el plan guarda
+    ids, y sin la traducción los roles de entrenamiento veían números."""
     m = nutrition.get("macros") or {}
     lines = [
         f"Objetivo calórico: {nutrition.get('target_kcal')} kcal "
@@ -123,6 +125,25 @@ def _plan_text(nutrition: dict, training: dict | None = None) -> str:
             series = sum(int(e.get("sets") or 0) for e in ejercicios)
             lines.append(f"- {s.get('day', '')} {s.get('name', '')}: "
                          f"{len(ejercicios)} ejercicios, {series} series.")
+            # LOS EJERCICIOS, POR NOMBRE Y EN ORDEN. El panel tiene roles cuya
+            # rúbrica es literalmente "selección y ORDEN de ejercicios", y solo
+            # veían el RECUENTO ("6 ejercicios, 18 series"): con eso no se puede
+            # juzgar si el plan repite patrón, si el aislamiento va antes que el
+            # básico o si toca una lesión declarada. Se pagaban a ciegas.
+            for e in ejercicios[:10]:
+                eid = e.get("exercise_id")
+                nombre = (e.get("name") or (nombres or {}).get(eid)
+                          or (f"ejercicio #{eid}" if eid else ""))
+                if not nombre:
+                    continue
+                detalle = f"{e.get('sets') or '?'}×{e.get('rep_range') or '?'}"
+                if e.get("rir"):
+                    detalle += f" RIR {e.get('rir')}"
+                if e.get("rest_sec"):
+                    detalle += f", {e['rest_sec']}s descanso"
+                lines.append(f"    · {nombre}: {detalle}")
+            if len(ejercicios) > 10:
+                lines.append(f"    · (…y {len(ejercicios) - 10} ejercicio(s) más)")
         prog = training.get("weekly_progression") or []
         if prog:
             lines.append("Progresión: " + " | ".join(
@@ -196,13 +217,21 @@ def review_and_repair(
     profile = build_profile(client, ctx)
     anamnesis_text = _anamnesis_text(ctx)
     criterios_text = _criterios_text()
+    # La biblioteca que se le inyectó al generador: es donde viven los NOMBRES
+    # (el plan guarda `exercise_id`).
+    nombres_ejercicio = {
+        int(e["id"]): str(e.get("canonical_name") or e.get("name") or "")
+        for e in (getattr(ctx, "exercise_library", None) or [])
+        if e.get("id") is not None
+    }
     weight_kg = getattr(ctx, "weight_kg", None) or getattr(client, "current_weight_kg", None)
 
     def reviewer_for(plan: dict):
         if ai is None:
             return None
         return rp.make_ai_reviewer(
-            ai, plan_text=_plan_text(plan, training), anamnesis_text=anamnesis_text,
+            ai, plan_text=_plan_text(plan, training, nombres_ejercicio),
+            anamnesis_text=anamnesis_text,
             criterios_text=criterios_text,
         )
 

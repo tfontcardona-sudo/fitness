@@ -100,3 +100,21 @@ def test_el_piloto_automatico_no_vuelve():
     assert "auto_pilot" not in ClientOut.model_fields
     assert "auto_pilot" not in ClientUpdate.model_fields
     assert "AUTO_PILOT" not in EJEMPLO.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# La página de "¡Pago recibido!" y lo que promete
+# ---------------------------------------------------------------------------
+
+def test_la_renovacion_no_promete_un_cuestionario_que_no_se_manda():
+    """`success_url` marca la renovación con `?r=1`. Sin eso, el cartel de
+    "¡Pago recibido!" decía a TODO el mundo que ya tenía su cuestionario en el
+    correo, y quien renueva no recibe ninguno: se quedaba esperándolo, y
+    rebuscando en el spam, un email que no existe."""
+    from app.models import Client
+    from app.services.stripe_service import _es_primera_compra
+
+    assert _es_primera_compra(None) is True                       # registro personal
+    assert _es_primera_compra(Client(status="onboarding")) is True  # alta manual
+    for estado in ("active", "review_pending", "at_risk", "inactive"):
+        assert _es_primera_compra(Client(status=estado)) is False, estado

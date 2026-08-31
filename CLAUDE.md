@@ -1542,6 +1542,61 @@ cd backend && python -m pytest tests/ -q
      sin jerga, memoria de vetos, panel caído en ámbar, resumen de entreno para
      los revisores y no-aviso con feedback sin enviar.
 
+000000. ✅ **TANDAS 7–8: el cierre del inventario (agosto 2026).** La 7
+   (optimización) la llevó la sesión paralela. La **8**, la última, barrió lo
+   que quedaba: créditos de IA, código construido y sin conectar, UX del panel
+   e integraciones.
+   - **Construido y sin puerta**: la PORTABILIDAD RGPD (ZIP con todo lo del
+     cliente) existía y no tenía botón — ahora está en el perfil, encima del de
+     borrar; el atajo para recuperar SOLO el contenido educativo que falló (sin
+     repagar núcleo + comidas + panel) tampoco tenía botón; el diagnóstico del
+     correo (`/api/email/status|test`) no tenía pantalla — está en Recursos, con
+     el estado, lo que falta en el `.env`, envío de prueba y los últimos
+     intentos; el "enlace de reservas" se guardaba y no lo leía nadie — ahora va
+     en el WhatsApp de reprogramar la videollamada, que es lo que su propio
+     campo promete; y `AUTO_PILOT_DEFAULT` prometía un modo que no existe (y que
+     iría contra el criterio del sistema): fuera el ajuste y su superficie de
+     API, la columna queda inerte y anotada.
+   - **Dinero**: los CONTRACARGOS (`charge.dispute.*`) eran el único movimiento
+     que el sistema no escuchaba —el banco retira el dinero y hay PLAZO para
+     responder con pruebas—; la baja de la oferta cancelaba en Stripe y dejaba
+     el `stripe_subscription_id` puesto, con lo que ese cliente no volvía a
+     entrar NUNCA en la ventana de renovación; la repesca no miraba las facturas
+     FALLIDAS (lo más caro de perder); y una referencia de checkout no numérica
+     reventaba el `int()` del webhook con un 500 que Stripe reintenta durante
+     días.
+   - **Créditos**: una respuesta cortada por `max_tokens` se trataba como "JSON
+     mal formado" y se reintentaba idéntica —dos llamadas caras para un fallo
+     seguro—; los revisores del panel juzgaban el entreno por un RECUENTO
+     ("6 ejercicios, 18 series") teniendo por rúbrica "selección y orden de
+     ejercicios"; y la biblioteca de ejercicios viajaba en el user prompt, sin
+     cachear, repagándose entera en cada reintento (ahora es un segundo bloque
+     de system con `cache_control`).
+   - **El cuadre del banco**: deshacía lo que el solver acababa de fijar
+     (gramos fuera de las cotas del catálogo y caseras que mienten,
+     «4 ud (165 g)» con la unidad a 55 g). Ahora intenta primero el solver, y la
+     medida casera recalcula sus unidades — espejado en el editor TS y cubierto
+     por el contrato de paridad. Un ingrediente que caía a 0 g tumbaba el
+     `model_validate` y el `except` tiraba EN SILENCIO todas las reparaciones.
+   - **La memoria de vetos (§13) dejó de aprender**: desde que se repara antes
+     de juzgar, el alérgeno colado y el desvío de la toma emiten `seguridad:` y
+     `cuadre:`, no `violation:`, y la memoria solo miraba el primer prefijo.
+   - **Avisos sin salida**: la baja RGPD podía quedar bloqueada para siempre si
+     Stripe fallaba con un error que el filtro no reconoce (ahora el coach puede
+     declarar que la canceló él, y queda en la auditoría); "N sin ficha" no se
+     podía apagar (mig. 0043, `payments.dismissed_at`); Historial y Aprendizaje
+     se quedaban girando para siempre al fallar su carga.
+   - **Guardas nuevas**: `npm run check:portapapeles` (una sola puerta al
+     portapapeles: había ocho `writeText` a pelo, tres con un "Copiado ✓"
+     incondicional detrás de un catch mudo) y `tests/test_ajustes_vivos.py`
+     (toda clave de `.env.example` existe en Settings y la menciona alguien).
+   - **Dos verificados y NO arreglados a propósito**, por ser decisión del
+     dueño: enchufar el panel §9 a la revisión quincenal (pagar 8-10 roles cada
+     quincena va contra el recorte de créditos que él pidió) y retirar el embudo
+     self-serve de `/planes` (tres endpoints públicos sin consumidor que pueden
+     estar enlazados desde fuera). Los dos quedan anotados en el código y en el
+     inventario.
+
 00000. ✅ **TANDAS 1–6 (agosto 2026): el inventario de hallazgos, arreglado por
    prioridad.** Tras la ronda 3 quedó `docs/HALLAZGOS_POR_VERIFICAR.md`: la
    salida en crudo de dos barridos automáticos cuya verificación adversarial

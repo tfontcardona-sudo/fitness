@@ -131,9 +131,16 @@ def usage_summary(db: Session) -> dict:
             .where(AiUsageEvent.created_at >= start_today)
         ) or 0.0), 4)
 
-        # Planes generados con IA en la misma ventana → coste medio por plan.
+        # Planes generados con IA en la misma ventana → gasto POR PLAN GENERADO.
         # "coach" (manual) y "scaffold" (base sin IA del avanzado) NO cuentan:
-        # cuestan 0 y meterlos en el denominador falsearía el coste medio.
+        # cuestan 0 y meterlos en el denominador falsearía la cifra.
+        #
+        # OJO CON EL NOMBRE: el numerador es TODO el gasto de la ventana —
+        # también la lectura de anamnesis, el panel de revisión, los feedbacks y
+        # los borradores de WhatsApp—, así que esto NO es lo que cuesta generar
+        # un plan: es más. La consecuencia es que `plans_left` sale CORTO, que
+        # es el lado seguro para un presupuesto; separar el gasto por tipo de
+        # llamada pediría anotar el motivo en `ai_usage_events` (no lo lleva).
         plans = int(db.scalar(
             select(func.count(Plan.id))
             .where(Plan.created_at >= since, Plan.generated_by.isnot(None),

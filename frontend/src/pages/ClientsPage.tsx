@@ -10,6 +10,7 @@ import { GOAL_LABEL, goalReviewDue, relativeDays } from "../lib/format";
 import { onboardingMessage, openWhatsApp, portalAccessMessage, waPhone } from "../lib/whatsapp";
 import { BILLING_PERIODS, OFFER2_EACH_EUR, OFFER_MONTHLY_EUR, PACKAGES, PACKAGE_ORDER, pkg } from "../lib/packages";
 import type { BillingPeriod, PackageTier } from "../types";
+import { copiarConAviso } from "../lib/clipboard";
 
 /** CARPETAS de la cartera según LO QUE FALTA de cada cliente (agrupado como
  *  las alertas): un lugar con todos y luego por la acción que requieren. Cada
@@ -445,8 +446,12 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
   }
 
   function copy(text: string) {
-    navigator.clipboard.writeText(text);
-    toast.push("Enlace copiado");
+    // `copiarConAviso` en vez del writeText a pelo: `navigator.clipboard` no
+    // existe fuera de contexto seguro (el coach entrando por la IP de la red
+    // local desde la tablet) y aquí el toast decía "copiado" pasara lo que
+    // pasase — el coach se iba convencido de llevar el enlace del cliente y
+    // pegaba lo que hubiera antes en el portapapeles.
+    void copiarConAviso(text, toast, "Enlace copiado");
   }
 
   // Abre WhatsApp del cliente con el acceso al portal ya escrito. Necesita el

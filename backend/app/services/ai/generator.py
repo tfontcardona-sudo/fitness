@@ -203,7 +203,8 @@ def _es_desvio_de_escala(mac: dict, t: dict) -> bool:
     return (max(ratios) / min(ratios)) <= _RATIO_ESCALA_MAX
 
 
-def _repara_desvios_del_banco(bank: dict, targets: dict[int, dict]) -> int:
+def _repara_desvios_del_banco(bank: dict, targets: dict[int, dict],
+                              foods_by_id: dict | None = None) -> int:
     """Ajusta al objetivo de SU toma los platos que se salen de la tolerancia.
 
     Principio del sistema: la IA SELECCIONA alimentos, el backend FIJA los
@@ -255,6 +256,28 @@ def _repara_desvios_del_banco(bank: dict, targets: dict[int, dict]) -> int:
 
         if not _es_desvio_de_escala(mac, t):
             continue     # de composición: que lo vea el coach, no se maquilla
+
+        # PRIMERO EL SOLVER. `_scale_dish` mueve todos los gramos por un único
+        # factor y no conoce el catálogo: se salta `min_grams`/`max_grams` (365 g
+        # de calabacín con tope de 350) y deja la medida casera mintiendo
+        # («4 ud (165 g)» con la unidad a 55 g). El solver hace justo lo que hay
+        # que hacer —cotas respetadas, ración cocinable y casera REGENERADA— y es
+        # determinista y gratis. Solo si no puede (algún ingrediente sin
+        # `food_id` del catálogo) se cae al escalado de siempre.
+        if foods_by_id:
+            try:
+                from app.services.portion_solver import snap_option_ingredients
+
+                fijado = snap_option_ingredients(
+                    plato.get("ingredients") or [], t, foods_by_id)
+            except Exception:  # noqa: BLE001 — el solver nunca rompe el cuadre
+                fijado = None
+            if fijado:
+                nuevos, macros = fijado
+                plato["ingredients"] = nuevos
+                plato["macros"] = macros
+                cuadrados += 1
+                continue
 
         def _r(eje: str, _mac=mac, _t=t) -> float:
             val, tgt = float(_mac.get(eje) or 0), float(_t.get(eje) or 0)
@@ -400,6 +423,33 @@ def _analysis_block(ctx: ClientContext) -> str:
     )
 
 
+def _biblioteca_block(ctx: ClientContext) -> str:
+    """La BIBLIOTECA filtrada, tal cual viaja al modelo.
+
+    Es el bloque más gordo del prompt del núcleo (cientos de ejercicios) y vivía
+    en el USER prompt, que no se cachea: en el reintento por validación se
+    repagaba entero. Sacándolo aparte puede ir como segundo bloque de system con
+    `cache_control` — el primero (el prompt fijo) sigue cacheándose entre
+    clientes y este, específico de cada uno, se lee al 10% en el reintento."""
+    library = [
+        {"id": e["id"], "nombre": e["canonical_name"],
+         "patron": e["movement_pattern"], "musculo": e["muscle_primary"]}
+        for e in ctx.exercise_library
+    ]
+    return ("BIBLIOTECA DE EJERCICIOS DISPONIBLE (usa SOLO estos exercise_id):\n"
+            + json.dumps(library, ensure_ascii=False))
+
+
+def _system_con_biblioteca(base: str, ctx: ClientContext) -> list[dict]:
+    """System en DOS bloques cacheados: el fijo (compartido entre clientes) y la
+    biblioteca de este cliente (compartida entre su llamada y su reintento)."""
+    return [
+        {"type": "text", "text": base, "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": _biblioteca_block(ctx),
+         "cache_control": {"type": "ephemeral"}},
+    ]
+
+
 def _core_user_prompt(ctx: ClientContext) -> str:
     library = [
         {"id": e["id"], "nombre": e["canonical_name"],
@@ -422,8 +472,8 @@ quiere conseguir esta persona (y por qué). El plan de dieta Y el de
 entrenamiento deben estar diseñados para ESE fin concreto, no solo para la
 etiqueta genérica del objetivo. Refléjalo en rationale y split_rationale.
 
-BIBLIOTECA DE EJERCICIOS DISPONIBLE (usa SOLO estos exercise_id):
-{json.dumps(library, ensure_ascii=False)}
+(La BIBLIOTECA DE EJERCICIOS te llega arriba, en las instrucciones: usa SOLO
+esos exercise_id.)
 
 Devuelve un JSON con esta forma EXACTA (sin texto fuera del JSON). TODOS los campos de
 cada objeto son OBLIGATORIOS salvo los marcados como (null si no aplica). No omitas NINGUNO:
@@ -523,8 +573,8 @@ quiere conseguir esta persona. El entrenamiento debe estar diseñado para ESE fi
 concreto, no solo para la etiqueta genérica del objetivo. Refléjalo en
 split_rationale.
 
-BIBLIOTECA DE EJERCICIOS DISPONIBLE (usa SOLO estos exercise_id):
-{json.dumps(lib, ensure_ascii=False)}
+(La BIBLIOTECA DE EJERCICIOS te llega arriba, en las instrucciones: usa SOLO
+esos exercise_id.)
 
 RESTRICCIÓN DE DURACIÓN: la duración de cada sesión se estima como (total de series × \
 {gr.SESSION_MINUTES_FORMULA_PER_SET} min) + {gr.SESSION_MINUTES_FIXED_OVERHEAD} min. El cliente \
@@ -887,7 +937,8 @@ def generate_monthly_plan(
 
         try:
             tcore = ai.generate_json(
-                model=model, system=system_prompt_training_only(),
+                model=model,
+                system=_system_con_biblioteca(system_prompt_training_only(), ctx),
                 user=_core_user_prompt_training_only(ctx) + _lecciones,
                 schema=TrainingOnlyCoreOutput,
             )
@@ -902,7 +953,8 @@ def generate_monthly_plan(
             # tumbaba la generación entera y el coach solo veía un error.
             try:
                 tcore2 = ai.generate_json(
-                    model=model, system=system_prompt_training_only(),
+                    model=model,
+                    system=_system_con_biblioteca(system_prompt_training_only(), ctx),
                     user=_core_user_prompt_training_only(ctx) + _lecciones
                     + "\n\nATENCIÓN: tu intento anterior violó estas reglas de "
                       "seguridad; corrígelas TODAS sin cambiar nada más:\n- "
@@ -945,7 +997,8 @@ def generate_monthly_plan(
     def _llamar_nucleo(extra: str = ""):
         if include_training:
             return ai.generate_json(
-                model=model, system=system_prompt_full(),
+                model=model,
+                system=_system_con_biblioteca(system_prompt_full(), ctx),
                 user=_core_user_prompt(ctx) + _lecciones + extra,
                 schema=PlanCoreOutput,
             )
@@ -1125,14 +1178,22 @@ def generate_monthly_plan(
     # CUADRE: la IA elige los alimentos, los gramos los fija el backend.
     try:
         bank_dict = meals.model_dump()
-        cuadrados = _repara_desvios_del_banco(bank_dict, targets)
+        cuadrados = _repara_desvios_del_banco(
+            bank_dict, targets,
+            {f["id"]: f for f in (food_catalog or []) if f.get("id") is not None})
         if cuadrados:
             meals = schema.model_validate(bank_dict)
             flags.append(
                 f"cuadre: {cuadrados} plato(s) ajustados al objetivo de su toma "
                 "(corregido automáticamente)")
-    except Exception:  # noqa: BLE001 — el cuadre nunca rompe la generación
-        pass
+    except Exception as exc:  # noqa: BLE001 — el cuadre nunca rompe la generación
+        # PERO NO EN SILENCIO. Si la revalidación falla (bastaba un ingrediente
+        # que cayera a 0 g), se perdían TODAS las reparaciones y el plan salía
+        # retenido por desvíos que el backend acababa de corregir, sin que nada
+        # dijera por qué. El coach se iba al editor a buscar un aviso fantasma.
+        flags.append(
+            "aviso: el cuadre automático del banco no se pudo aplicar "
+            f"({type(exc).__name__}) — revisa las cantidades a mano")
 
     if isinstance(meals, MealsFlexibleOutput):
         meal_report = gr.check_meal_options(

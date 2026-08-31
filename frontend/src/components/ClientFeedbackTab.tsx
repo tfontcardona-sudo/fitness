@@ -6,6 +6,7 @@ import { ancla } from "../lib/anchors";
 import { Sparkles, AlertTriangle, MessageSquare, MessageCircle, Mail, Video, Target, TrendingUp, BarChart3, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
 import { api, getToken } from "../lib/api";
 import { feedbackBody, feedbackMessage, openWhatsApp, videoCallModifyMessage, videoCallScheduledMessage, waPhone } from "../lib/whatsapp";
+import { copiarConAviso } from "../lib/clipboard";
 import { pkg } from "../lib/packages";
 import { useBrand } from "../hooks/useBrand";
 import { ExpandableArea, Spinner, useToast } from "./ui";
@@ -202,9 +203,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
   }
 
   function copyAll(content: any) {
-    navigator.clipboard.writeText(feedbackBody(content))
-      .then(() => toast.push("Feedback copiado al portapapeles"))
-      .catch(() => toast.push("No se pudo copiar", "error"));
+    void copiarConAviso(feedbackBody(content), toast, "Feedback copiado al portapapeles");
   }
 
   /** Entrega el feedback al cliente según su paquete:
@@ -264,7 +263,13 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
       load();
       onClientChanged?.();
     } catch {
-      /* el WhatsApp ya está abierto; el marcado puede reintentarse */
+      // EL CATCH MUDO otra vez (ya se corrigió en el panel de Planificación,
+      // no aquí): el WhatsApp se abre igual, pero si el backend no registra el
+      // envío el ciclo NO avanza — el feedback sigue sin `sent_at`, el cliente
+      // no lo ve en su Progreso y el cliente se queda en `review_pending`. Sin
+      // aviso, el coach da por hecho que ya está y nadie vuelve a mirarlo.
+      toast.push("WhatsApp abierto, pero el envío no quedó registrado · "
+                 + "vuelve a pulsar Enviar para que el ciclo avance", "error");
     }
   }
 
@@ -722,12 +727,7 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
   }
 
   async function copyLink(url: string) {
-    try {
-      await navigator.clipboard.writeText(url);
-      toast.push("Enlace de Meet copiado");
-    } catch {
-      toast.push("No se pudo copiar el enlace", "error");
-    }
+    await copiarConAviso(url, toast, "Enlace de Meet copiado");
   }
 
   const cuando = call?.scheduled_at

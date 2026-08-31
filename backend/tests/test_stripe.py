@@ -1543,3 +1543,57 @@ def test_la_vista_previa_de_whatsapp_no_crea_sesiones_de_pago(monkeypatch):
         r2 = http.get(f"/api/pay/{token}?ir=1", headers=cabecera, follow_redirects=False)
         assert r2.status_code == 302 and creadas
 
+
+
+def test_al_completar_la_oferta_la_ficha_suelta_la_suscripcion(monkeypatch):
+    """DINERO SILENCIOSO. `renewals.renewal_window` devuelve None mientras la
+    ficha lleve una suscripción ("se cobra sola, no hay nada que avisar"). El
+    corte de la oferta la cancelaba EN STRIPE y dejaba el id puesto, así que
+    ese cliente no volvía a entrar NUNCA en la ventana de renovación: ni email
+    al cliente, ni alerta `renewal_due` al coach, ni reapertura del enlace de
+    pago. El programa terminaba y no se enteraba nadie.
+
+    Solo lo limpiaba el webhook `customer.subscription.deleted`; si se perdía
+    —o el corte venía del backstop diario— no lo limpiaba nadie."""
+    from datetime import date, datetime, timedelta, timezone
+
+    from app.db import SessionLocal
+    from app.models import Client
+    from app.services import stripe_service
+    from app.services.renewals import is_due, renewal_window
+
+    class _Sub:
+        @staticmethod
+        def cancel(sub_id):
+            return {"id": sub_id, "status": "canceled"}
+
+    monkeypatch.setattr(stripe_service, "_stripe",
+                        lambda: type("S", (), {"Subscription": _Sub})())
+
+    db = SessionLocal()
+    c = _cliente_oferta3(db, sub_id="sub_suelta")
+    # Programa terminado hace 31 días: toca renovar.
+    c.paid_at = datetime.now(timezone.utc) - timedelta(days=31)
+    db.commit()
+    cid = c.id
+    try:
+        # Con la suscripción en la ficha, la renovación NO existe.
+        assert renewal_window(c, date.today()) is None
+
+        assert stripe_service.detener_suscripcion_oferta(
+            db, c, c.stripe_subscription_id, motivo="test", periodo="oferta") is True
+        db.commit()
+        db.refresh(c)
+
+        assert c.stripe_subscription_id is None
+        assert renewal_window(c, date.today()) is not None
+        assert is_due(c, date.today()) is True
+    finally:
+        from sqlalchemy import delete
+
+        from app.models import Payment
+
+        db.execute(delete(Payment).where(Payment.client_id == cid))
+        db.execute(delete(Client).where(Client.id == cid))
+        db.commit()
+        db.close()

@@ -73,6 +73,19 @@ def public_landing(request: Request, db: Session = Depends(get_db)) -> LandingOu
     )
 
 
+# ⚠️ EMBUDO SELF-SERVE SIN CONSUMIDOR (auditoría, tanda 8). Estos tres
+# endpoints —`/plan-prices`, `/register` y `/checkout`— se construyeron para que
+# el interesado se diera de alta y pagara SOLO desde /planes. Esa página se
+# rehízo después: hoy solo informa y lleva al WhatsApp del coach, que envía el
+# enlace de pago personalmente (decisión del dueño). Ni la web ni el portal los
+# llaman ya — `api.publicPlanPrices/publicRegister/publicCheckout` existen en
+# `lib/api.ts` y no los usa nadie.
+#
+# NO se retiran: son públicos y estables, y pueden estar enlazados desde fuera
+# (bio de Instagram, un QR impreso). Siguen con su límite de peticiones y su
+# cupo diario de altas. Si el dueño confirma que el embudo no vuelve, esto y sus
+# métodos del front se pueden borrar de una vez.
+
 @router.get("/plan-prices")
 @limiter.limit("60/minute")
 def public_plan_prices(request: Request) -> dict:

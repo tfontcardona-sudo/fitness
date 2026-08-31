@@ -737,6 +737,12 @@ class Payment(Base):
     livemode: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default=text("true"), nullable=False
     )
+    # El coach declaró que este movimiento NO es de la asesoría (mig. 0043).
+    # El aviso "N sin ficha" no tenía forma de apagarse: un cobro de otro
+    # producto de la cuenta, o uno con el email mal escrito en el checkout,
+    # contaba para siempre — y un aviso que no se puede resolver se ignora, y
+    # con él se ignoran los que sí importan.
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # SET NULL: borrar una ficha (RGPD) no puede tumbar el commit ni borrar el
     # movimiento; el borrado además anonimiza nombre y email de esta fila.
     client_id: Mapped[int | None] = mapped_column(

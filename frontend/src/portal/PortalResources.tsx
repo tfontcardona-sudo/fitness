@@ -6,6 +6,7 @@ import { InlineVideo, isEmbeddable } from "./InlineVideo";
 import { useDismiss } from "../lib/useDismiss";
 import { usePortalToast } from "./PortalToast";
 import type { portalApi } from "./portalApi";
+import { copiar } from "../lib/clipboard";
 
 type Api = ReturnType<typeof portalApi>;
 
@@ -215,12 +216,11 @@ function ProductCard({ product: p, accent }: { product: ResourceProduct; accent:
     e.preventDefault();
     e.stopPropagation();
     if (!p.discount_code) return;
-    try {
-      await navigator.clipboard.writeText(p.discount_code);
+    if (await copiar(p.discount_code)) {
       setCopied(true);
       toast.push(`${p.discount_code} copiado · pégalo al pagar`);
       window.setTimeout(() => setCopied(false), 2500);
-    } catch {
+    } else {
       // Sin permiso de portapapeles (raro): el código está visible igualmente.
       toast.push(`Usa ${p.discount_code} al pagar`);
     }
@@ -229,7 +229,7 @@ function ProductCard({ product: p, accent }: { product: ResourceProduct; accent:
   // Al abrir el producto: se copia el código SOLO (mejor esfuerzo) y, si la
   // tienda del partner lo soporta, buy_url ya lo lleva aplicado al carrito.
   function onOpen() {
-    if (p.discount_code) navigator.clipboard.writeText(p.discount_code).catch(() => {});
+    if (p.discount_code) void copiar(p.discount_code);
   }
 
   return (
