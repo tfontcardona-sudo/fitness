@@ -506,6 +506,9 @@ export const api = {
     request<{ id: number; status: string }>("POST", `/change-requests/${crId}/resolve`),
 
   // --- feedback (cierre → informe) ---
+  // ⚠️ SIN PANTALLA (y a propósito): abrir el período lo hace solo
+  // `plan_activation` al publicar el plan, y el mantenimiento diario como red.
+  // El endpoint se queda como salida manual si algún día hace falta.
   createPeriod: (clientId: number, planId: number, startsOn: string, days = 14) =>
     request<{ period_id: number; period_index: number; starts_on: string; ends_on: string }>(
       "POST", `/clients/${clientId}/periods`, { plan_id: planId, starts_on: startsOn, days }),
@@ -686,6 +689,8 @@ export const api = {
   updateBrand: (body: Omit<BrandConfigOut, "id" | "logo_path" | "links_photo_path"
     | "video_cover_path" | "plans_photo_path">) =>
     request<BrandConfigOut>("PUT", "/brand", body),
+  // ⚠️ SIN PANTALLA: el logo de la marca no se puede subir desde ningún
+  // sitio (Recursos edita el resto de la marca, no el logo).
   uploadLogo: (file: File) => {
     const fd = new FormData();
     fd.append("file", file);
@@ -763,6 +768,8 @@ export const api = {
     equipment?: string[];
     level_min?: number;
   }) => _trasTocarEjercicios(request<ExerciseOut>("POST", "/exercises", body)),
+  // ⚠️ SIN PANTALLA: archivar/restaurar un ejercicio solo se puede por API.
+  // La biblioteca de Recursos permite editarlos pero no retirarlos.
   archiveExercise: (id: number) =>
     _trasTocarEjercicios(request<ExerciseOut>("POST", `/exercises/${id}/archive`)),
   restoreExercise: (id: number) =>

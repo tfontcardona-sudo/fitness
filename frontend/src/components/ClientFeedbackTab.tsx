@@ -3,7 +3,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { Link } from "react-router-dom";
 import { libre } from "../lib/accordion";
 import { ancla } from "../lib/anchors";
-import { Sparkles, AlertTriangle, MessageSquare, MessageCircle, Mail, Video, Target, TrendingUp, BarChart3, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
+import { Sparkles, AlertTriangle, Download, MessageSquare, MessageCircle, Mail, Video, Target, TrendingUp, BarChart3, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
 import { api, getToken } from "../lib/api";
 import { feedbackBody, feedbackMessage, openWhatsApp, videoCallModifyMessage, videoCallScheduledMessage, waPhone } from "../lib/whatsapp";
 import { copiarConAviso } from "../lib/clipboard";
@@ -223,6 +223,38 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
     }
   }
 
+  /** El INFORME de la revisión, en Word, para el propio coach.
+   *
+   *  `feedbackDocumentUrl` llevaba en el cliente HTTP desde que existe el
+   *  informe y no lo llamaba ninguna pantalla: el coach podía generarlo,
+   *  editarlo y enviarlo, pero no descargarlo — ni para releerlo antes de
+   *  mandarlo, ni para hacerlo llegar por otra vía. El endpoint exige JWT, así
+   *  que va por fetch→blob como el resto de descargas del panel. */
+  const [bajando, setBajando] = useState<number | null>(null);
+  async function descargarInforme(feedbackId: number, periodIndex: number) {
+    if (bajando) return;
+    setBajando(feedbackId);
+    try {
+      const r = await fetch(api.feedbackDocumentUrl(feedbackId), {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (!r.ok) throw new Error(`Error ${r.status}`);
+      const url = URL.createObjectURL(await r.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `revision_${periodIndex}_${client.full_name
+        .replace(/[^\p{L}\p{N}]+/gu, "_").toLowerCase()}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch {
+      toast.push("No se pudo descargar el informe", "error");
+    } finally {
+      setBajando(null);
+    }
+  }
+
   async function _deliverFeedback(feedbackId: number, content: any, alreadySent: boolean, periodIndex = 0) {
     if (byEmail) {
       try {
@@ -437,6 +469,14 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                 <p className="mt-0.5 text-xs text-zinc-500">{p.starts_on} → {p.ends_on}</p>
               </div>
               <div className="flex gap-2" onClick={(e) => e.preventDefault()}>
+                {p.feedback_id && content && (
+                  <button onClick={() => descargarInforme(p.feedback_id as number, p.period_index)}
+                    disabled={bajando !== null} className="btn btn-ghost disabled:opacity-60"
+                    title="Descargar el informe de esta revisión en Word">
+                    {bajando === p.feedback_id ? <Spinner /> : <Download size={15} />}
+                    {bajando === p.feedback_id ? "Preparando…" : "Descargar"}
+                  </button>
+                )}
                 {p.feedback_id && content && !sent && (
                   <button onClick={() => deliverFeedback(p.feedback_id as number, content, false, p.period_index)}
                     disabled={enviando} className="btn btn-primary"
