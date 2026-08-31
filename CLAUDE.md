@@ -442,6 +442,62 @@ cd backend && python -m pytest tests/ -q
 
 ## 9. Trabajo pendiente / próximos pasos
 
+0000000000000000000000. ✅ **TANDA 7 DEL INVENTARIO: OPTIMIZACIÓN — LO QUE EL
+   PANEL PEDÍA DE MÁS (31-08-2026).** Trabajo en PARALELO con la sesión de
+   Stripe (que lleva la tanda 6, portal y anamnesis): el reparto está escrito en
+   `docs/HALLAZGOS_POR_VERIFICAR.md` con los ficheros que toca cada uno. Todos
+   los hallazgos se abrieron y se reprodujeron antes de tocar nada; cada
+   arreglo lleva su regresión en `tests/test_optimizacion.py` (11), y las 11
+   FALLAN con el código anterior. 613 tests en verde, `tsc` limpio, build,
+   `lint:hooks` sin errores, `check:anclas` y `check:avisos` OK.
+   - **La lista de versiones del plan era el agujero grande.** El panel de
+     Planificación pedía `GET /clients/{id}/plans` — TODAS las versiones con sus
+     cuatro JSONB, banco de comidas incluido — en el montaje **y otra vez tras
+     cada acción** (generar, adaptar, activar, descartar, copiar, aplicar el
+     Word…), para pintar cuatro cifras por versión. Ahora hay
+     `GET /clients/{id}/plans/summary` (una línea por versión: kcal, macros,
+     split, nº de sesiones, por qué cambió) y `GET /plans/{id}` para la ÚNICA
+     versión que se enseña y se edita. En el panel todo pasa por un solo
+     `recargarPlanes(preferido?)`. La ficha (chip de dieta) y la pestaña
+     Feedback (nº de revisión ya adaptada) también usan el resumen.
+     ⚠️ Si añades un dato del plan al archivo de "Planificaciones anteriores",
+     añádelo a `PlanSummaryOut` — el archivo ya NO tiene los JSON.
+   - **Cazado al refactorizar (no estaba en el inventario)**: `normalize()`
+     prefiere la clave `nutrition` a `nutrition_json`, y dos sitios le pasaban
+     `{...plan, nutrition_json: nuevo}` — como `plan` YA trae `nutrition`
+     (la vieja), lo recién guardado NO se veía: editar los "Cambios de tu plan"
+     o aplicar el Word decía "guardado" y la pantalla seguía con lo anterior
+     hasta recargar. El backend sí lo tenía. Corregido en los dos (y el Word
+     refresca también el educativo).
+   - **Historial cuadrático**: `compute_period_summary` compara cada revisión
+     con las anteriores, así que calcular el historial releía las series de las
+     previas una vez por revisión (doce revisiones = 78 barridos). Nuevo
+     `sets_por_periodo_de_cliente` (UNA consulta) que se pasa como caché
+     opcional; sin ella el comportamiento es el de siempre. De paso, el
+     historial dejó de traer los cuatro JSONB de todos los planes para imprimir
+     cuatro escalares, y los feedbacks van en una consulta y no una por período.
+   - **N+1 sueltos**: `GET /clients/{id}/periods` hacía una consulta de feedback
+     POR revisión; la pantalla de Entreno del portal resolvía el plan DOS veces
+     (el endpoint y `build_training_sessions`) y consultaba la biblioteca una
+     vez POR SESIÓN; "Elegir base" leía el plan ENTERO de todos los clientes
+     para pintar una línea de cada uno (ahora dos pasos: escalares para elegir,
+     contenido solo de los elegidos).
+   - **Peso por la red**: la biblioteca de ejercicios ya no manda
+     `technique_notes`/`biomechanics_notes` en la LISTA (36 de sus ~141 KB, y
+     ninguna pantalla del panel las pinta; la ficha individual las conserva) y
+     el editor la recibe del panel en vez de volver a descargarla al abrirse;
+     `GET /clients?light=1` deja fuera las notas largas de la anamnesis en Hoy y
+     Clientes, que se refrescan solas cada 3 s y no leen ninguna (la FICHA nunca
+     se recorta); las fotos del período se piden UNA vez por cliente (cada
+     tarjeta pedía la lista entera), se bajan EN PARALELO y en miniatura
+     (`?w=` con Pillow y `draft()`), y al pulsar una se abre la original.
+   - **Vídeos de ejercicio (279 filas)**: portada de YouTube `mqdefault` en vez
+     de `hqdefault` para un hueco de 56 px, `loading="lazy"`, fila memoizada
+     (se repintaban las 279 con cada tecla), buscador con `useDeferredValue` y
+     `content-visibility` (`.fila-diferida`) para no maquetar lo que no se ve.
+   - **Un clásico**: el aviso de "Sin conexión" del panel móvil estaba montado
+     DOS veces (líneas seguidas, copia y pega).
+
 000000000000000000000. ✅ **TANDA 3 (SEGUNDA MANO): LO QUE QUEDABA DEL CICLO, Y
    LA SUITE QUE MENTÍA (30-08-2026).** Trabajo en PARALELO con otras dos
    sesiones sobre el inventario `docs/HALLAZGOS_POR_VERIFICAR.md` (que vive en

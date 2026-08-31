@@ -439,6 +439,91 @@ def list_plans(client_id: int, db: Session = Depends(get_db)) -> list[PlanOut]:
     return [PlanOut.model_validate(p) for p in plans]
 
 
+class PlanSummaryOut(BaseModel):
+    """Una versión del plan EN UNA LÍNEA: lo justo para el archivo de
+    "Planificaciones anteriores", el chip de dieta de la ficha y el selector.
+
+    El panel pedía la lista COMPLETA (los cuatro JSONB de cada versión) en el
+    montaje y otra vez tras cada acción, para pintar cuatro cifras por versión:
+    un cliente con un año de asesoría arrastraba megas por cada clic. El plan
+    que se EDITA se pide entero y aparte (`GET /api/plans/{id}`)."""
+
+    id: int
+    client_id: int
+    month_index: int
+    version: int
+    status: str
+    goal_type: str | None = None
+    generated_by: str | None = None
+    guardrail_flags: list[str] | None = None
+    published_at: datetime | None = None
+    created_at: datetime | None = None
+    # Resumen de la dieta (sin el banco de comidas, que es lo que pesa)
+    target_kcal: float | None = None
+    protein_g: float | None = None
+    carbs_g: float | None = None
+    fat_g: float | None = None
+    meals_count: int | None = None
+    # Resumen del entrenamiento
+    split_name: str | None = None
+    sessions_count: int | None = None
+    # Por qué cambió esta versión
+    applied_adjustments: dict | None = None
+    rationale: str | None = None
+    has_nutrition: bool = False
+    has_training: bool = False
+
+
+def _plan_summary(row) -> PlanSummaryOut:
+    """Construye el resumen desde (Plan.id, client_id, …, nutrition_json,
+    training_json): recibe la fila tal cual la devuelve la consulta acotada."""
+    nut = row.nutrition_json or {}
+    tr = row.training_json or {}
+    macros = nut.get("macros") or {}
+    aj = nut.get("applied_adjustments") or tr.get("applied_adjustments") or None
+    meals = nut.get("meals")
+    sesiones = tr.get("sessions")
+    return PlanSummaryOut(
+        id=row.id, client_id=row.client_id, month_index=row.month_index,
+        version=row.version, status=row.status, goal_type=row.goal_type,
+        generated_by=row.generated_by, guardrail_flags=row.guardrail_flags, published_at=row.published_at,
+        created_at=row.created_at,
+        target_kcal=nut.get("target_kcal"),
+        protein_g=macros.get("protein_g"), carbs_g=macros.get("carbs_g"),
+        fat_g=macros.get("fat_g"),
+        meals_count=len(meals) if isinstance(meals, list) else None,
+        split_name=tr.get("split_name"),
+        sessions_count=len(sesiones) if isinstance(sesiones, list) else None,
+        applied_adjustments=aj if isinstance(aj, dict) else None,
+        rationale=nut.get("rationale") or tr.get("rationale"),
+        has_nutrition=bool(nut), has_training=bool(tr),
+    )
+
+
+@router.get("/api/clients/{client_id}/plans/summary", response_model=list[PlanSummaryOut])
+def list_plan_summaries(client_id: int, db: Session = Depends(get_db)) -> list[PlanSummaryOut]:
+    """Todas las versiones del plan, resumidas. Mismo orden que la lista completa."""
+    _client_or_404(db, client_id)
+    filas = db.execute(
+        select(Plan.id, Plan.client_id, Plan.month_index, Plan.version, Plan.status,
+               Plan.goal_type, Plan.generated_by, Plan.guardrail_flags,
+               Plan.published_at, Plan.created_at,
+               Plan.nutrition_json, Plan.training_json)
+        .where(Plan.client_id == client_id)
+        .order_by(Plan.month_index.desc(), Plan.version.desc())
+    ).all()
+    return [_plan_summary(f) for f in filas]
+
+
+@router.get("/api/plans/{plan_id}", response_model=PlanOut)
+def get_plan(plan_id: int, db: Session = Depends(get_db)) -> PlanOut:
+    """Una versión CONCRETA con todo su contenido (la que el panel enseña y edita)."""
+    plan = db.get(Plan, plan_id)
+    if not plan:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan no encontrado")
+    return PlanOut.model_validate(plan)
+
+
 @router.post("/api/plans/{plan_id}/discard", response_model=PlanOut)
 def discard_plan(plan_id: int, db: Session = Depends(get_db)) -> PlanOut:
     """Descarta un BORRADOR (copia equivocada, base que no va a usarse).
@@ -671,14 +756,24 @@ def list_periods(client_id: int, db: Session = Depends(get_db)) -> list[PeriodOu
         select(Period).where(Period.client_id == client_id)
         .order_by(Period.period_index.desc())
     ).all()
+    # Feedback de TODAS las revisiones en UNA consulta (antes una por revisión:
+    # la pestaña Feedback de un cliente con un año de historial hacía 24 viajes
+    # a la base de datos para pintar una lista). Como vienen ordenados por id,
+    # el último que se escribe por período es el más reciente — el mismo criterio
+    # que el `order_by(id.desc()).limit(1)` de antes.
+    fb_por_periodo: dict[int, int] = {}
+    if periods:
+        for pid, fid in db.execute(
+            select(FeedbackDoc.period_id, FeedbackDoc.id)
+            .where(FeedbackDoc.period_id.in_([p.id for p in periods]))
+            .order_by(FeedbackDoc.id)
+        ):
+            fb_por_periodo[pid] = fid
+
     out = []
     for p in periods:
         po = PeriodOut.model_validate(p)
-        fb = db.scalar(
-            select(FeedbackDoc).where(FeedbackDoc.period_id == p.id)
-            .order_by(FeedbackDoc.id.desc()).limit(1)
-        )
-        po.feedback_id = fb.id if fb else None
+        po.feedback_id = fb_por_periodo.get(p.id)
         po.plan_adjustments = (p.ai_analysis_json or {}).get("plan_adjustments") or None
         po.biweekly_decision = (p.ai_analysis_json or {}).get("biweekly_decision") or None
         out.append(po)

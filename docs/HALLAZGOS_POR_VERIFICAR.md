@@ -31,7 +31,7 @@
 >   La mitad "documentos" de esta tanda es de la 4: no la toco.
 >
 > - **Tanda 7 (optimización: backend + frontend) — sesión "videollamadas Google
->   Meet" (`claude/google-meet-calendar-integration-1po1c2`), EN CURSO.**
+>   Meet" (`claude/google-meet-calendar-integration-1po1c2`), HECHA.**
 >   Alcance: TODO el apartado "Pendientes · optimización" salvo lo que ya sea de
 >   otra tanda. Backend: `clients.py` 1233/1242 (historial y ficha),
 >   `plan_library.py:426`, `plans.py` 477/721, `exercises.py:58`,
@@ -41,6 +41,10 @@
 >   `AnamnesisPage.tsx`, `PortalDiary/PortalApp/PortalResources` ni la zona RGPD
 >   de `clients.py` (618-751): son de la tanda 6. En `clients.py` y
 >   `RecursosPage.tsx` coincidimos de fichero pero no de región.
+>   **HECHA** (todo el apartado de optimización verificado uno a uno y
+>   corregido, con `tests/test_optimizacion.py` — 11 regresiones que fallan sin
+>   el arreglo). Los tres de "Créditos de IA" y los de "Construido y sin
+>   conectar" NO son míos: son la tanda 8.
 
 > **Qué es esto.** El inventario en crudo de dos barridos automáticos: una
 > verificación adversarial de los 27 commits de la auditoría anterior, y los dos

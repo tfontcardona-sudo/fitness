@@ -325,11 +325,20 @@ def create_client(body: ClientCreate, db: Session = Depends(get_db)) -> ClientCr
 
 
 # --------------------------------------------------------------- listado ----
+# Texto libre de la anamnesis: pesa y solo se lee en la ficha del cliente.
+_CAMPOS_LARGOS = (
+    "injuries_notes", "medical_notes", "medication_notes", "current_supplements",
+    "sport_history", "lifestyle_notes",
+)
+
+
 @router.get("", response_model=list[ClientOut])
 def list_clients(
     db: Session = Depends(get_db),
     status_filter: ClientStatus | None = Query(default=None, alias="status"),
     q: str | None = Query(default=None, min_length=2, description="busca en nombre/email"),
+    light: bool = Query(default=False,
+                        description="sin las notas largas (listados que refrescan solos)"),
 ) -> list[ClientOut]:
     stmt = select(Client).order_by(Client.created_at.desc())
     if status_filter:
@@ -374,6 +383,13 @@ def list_clients(
             item.pending_review_period = pending[c.id]
         item.review_period_index = reviews.get(c.id)
         item.has_published_plan = c.id in with_plan
+        if light:
+            # Las pantallas que refrescan solas cada 3 s (Hoy y Clientes) pintan
+            # nombre, estado y cifras; las notas clínicas y de estilo de vida no
+            # las lee ninguna de las dos y son la mayor parte del peso de la
+            # lista. La FICHA (`GET /clients/{id}`) las sigue devolviendo enteras.
+            for campo in _CAMPOS_LARGOS:
+                setattr(item, campo, None)
         out.append(item)
     return out
 
@@ -1064,22 +1080,40 @@ def client_history(client_id: int, db: Session = Depends(get_db)) -> dict:
     """Evolución del cliente en el tiempo: peso/adherencia/fuerza por período +
     planes y feedbacks. Para la pestaña Historial (resumida y descargable)."""
     from app.models import FeedbackDoc, Period, Plan
-    from app.services.feedback_service import compute_period_summary
+    from app.services.feedback_service import (
+        compute_period_summary,
+        sets_por_periodo_de_cliente,
+    )
 
     client = _client_or_404_docs(db, client_id)
     periods = list(db.scalars(
         select(Period).where(Period.client_id == client_id).order_by(Period.period_index)
     ))
-    plans = list(db.scalars(
-        select(Plan).where(Plan.client_id == client_id).order_by(Plan.month_index, Plan.version)
+    # De cada plan solo se imprimen cuatro escalares: pedir la fila entera traía
+    # los cuatro JSONB (dieta, entreno, educativo y panel de revisión) de TODAS
+    # las versiones para tirarlos acto seguido.
+    plans = list(db.execute(
+        select(Plan.id, Plan.month_index, Plan.version, Plan.status)
+        .where(Plan.client_id == client_id).order_by(Plan.month_index, Plan.version)
     ))
+    # Series de TODAS las revisiones en una sola consulta: cada resumen compara
+    # con las anteriores y, sin esto, las releía una vez por revisión.
+    sets_cache = sets_por_periodo_de_cliente(db, client_id) if periods else {}
+    # Feedbacks de todas las revisiones, también en una sola consulta.
+    fbs: dict[int, FeedbackDoc] = {}
+    if periods:
+        for fb_row in db.scalars(
+            select(FeedbackDoc).where(FeedbackDoc.period_id.in_([p.id for p in periods]))
+            .order_by(FeedbackDoc.id)
+        ):
+            fbs[fb_row.period_id] = fb_row
 
     current = client.start_weight_kg
     hist = []
     e1rm_series: dict[str, list[float]] = {}  # nombre → e1rm por período (para % total)
     for p in periods:
         try:
-            m = compute_period_summary(db, p.id)
+            m = compute_period_summary(db, p.id, sets_por_periodo=sets_cache)
         except Exception:
             m = {}
         # Solo actualizamos el peso "actual" con un valor REAL (registrado o de
@@ -1100,10 +1134,7 @@ def client_history(client_id: int, db: Session = Depends(get_db)) -> dict:
             if s.get("delta_kg") is not None and (s["e1rm_kg"] - s["delta_kg"]) > 0
         ]
         period_strength_pct = round(sum(gains) / len(gains), 1) if gains else None
-        fb = db.scalar(
-            select(FeedbackDoc).where(FeedbackDoc.period_id == p.id)
-            .order_by(FeedbackDoc.id.desc()).limit(1)
-        )
+        fb = fbs.get(p.id)
         hist.append({
             "period_index": p.period_index,
             "starts_on": p.starts_on.isoformat(), "ends_on": p.ends_on.isoformat(),
@@ -1171,9 +1202,38 @@ def list_client_photos(client_id: int, db: Session = Depends(get_db)) -> list[di
     ]
 
 
+def _miniatura(path, ancho: int) -> bytes | None:
+    """Reduce una foto a `ancho` px de lado mayor. Devuelve None si no se puede
+    (formato raro, archivo corrupto): el llamador sirve entonces el original.
+
+    `draft()` hace que el JPEG se decodifique ya reducido — sin él, generar la
+    miniatura costaría más que servir la foto entera."""
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+
+        with Image.open(path) as img:
+            img.draft("RGB", (ancho, ancho))
+            img = img.convert("RGB")
+            img.thumbnail((ancho, ancho))
+            buf = BytesIO()
+            img.save(buf, format="JPEG", quality=80, optimize=True)
+            return buf.getvalue()
+    except Exception:  # noqa: BLE001
+        return None
+
+
 @router.get("/{client_id}/photos/{photo_id}")
-def get_client_photo(client_id: int, photo_id: int, db: Session = Depends(get_db)):
-    """Sirve una foto de progreso (requiere JWT del coach)."""
+def get_client_photo(client_id: int, photo_id: int,
+                     w: int | None = Query(default=None, ge=32, le=2000,
+                                           description="ancho máximo en px (miniatura)"),
+                     db: Session = Depends(get_db)):
+    """Sirve una foto de progreso (requiere JWT del coach).
+
+    Con `?w=` devuelve una MINIATURA. La tira de fotos del período las pintaba a
+    80×96 px descargando el original del móvil del cliente (varios MB cada una):
+    ocho fotos eran decenas de megas para ocho sellos de contacto."""
     p = db.get(ProgressPhoto, photo_id)
     if not p or p.client_id != client_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Foto no encontrada")
@@ -1182,9 +1242,19 @@ def get_client_photo(client_id: int, photo_id: int, db: Session = Depends(get_db
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Archivo no encontrado")
     ext = path.suffix.lower()
     media = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}.get(ext, "application/octet-stream")
+    # La foto de un período cerrado no cambia nunca: que el navegador la guarde.
+    cache = {"Cache-Control": "private, max-age=86400"}
+    if w:
+        mini = _miniatura(path, w)
+        if mini is not None:
+            return Response(
+                content=mini, media_type="image/jpeg",
+                headers={"Content-Disposition": f'inline; filename="foto_{photo_id}_w{w}.jpg"',
+                         **cache},
+            )
     return Response(
         content=path.read_bytes(), media_type=media,
-        headers={"Content-Disposition": f'inline; filename="foto_{photo_id}{ext}"'},
+        headers={"Content-Disposition": f'inline; filename="foto_{photo_id}{ext}"', **cache},
     )
 
 

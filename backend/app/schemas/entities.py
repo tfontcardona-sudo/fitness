@@ -314,6 +314,20 @@ class ExerciseOut(ExerciseIn):
     _v_urls = field_validator("video_url", "image_url")(_passthrough)
 
 
+class ExerciseListOut(ExerciseOut):
+    """La BIBLIOTECA ENTERA (283 ejercicios) sin las dos notas largas.
+
+    `technique_notes` + `biomechanics_notes` son 36 KB de los ~141 KB que pesa
+    la lista, y NINGUNA pantalla del panel las pinta (el portal las sirve por su
+    propio endpoint de recursos, ejercicio a ejercicio). El panel de
+    planificación y el editor piden esta lista entera, así que ese cuarto del
+    peso viajaba dos veces por visita para nada. La ficha individual
+    (`GET /api/exercises/{id}`) las sigue devolviendo."""
+
+    technique_notes: str | None = Field(default=None, exclude=True)
+    biomechanics_notes: str | None = Field(default=None, exclude=True)
+
+
 # ---------------------------------------------------------------- brand ----
 class BrandConfigIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)

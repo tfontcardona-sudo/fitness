@@ -36,10 +36,13 @@ interface PlanData {
  * edición del coach bajo su criterio).
  */
 export function ClientPlanEditor({
-  plan, exMap, onSaved, onCancel, client, refWeightKg, initialFocus,
+  plan, exMap, onSaved, onCancel, client, refWeightKg, initialFocus, library: libraryProp,
 }: {
   plan: PlanData;
   exMap: Record<number, string>;
+  /** Biblioteca ya descargada por el panel: sin ella el editor la volvía a
+   *  pedir entera cada vez que se abría (son ~100 KB por apertura). */
+  library?: ExerciseOut[];
   onSaved: (p: PlanData) => void;
   onCancel: () => void;
   client?: ClientOut;
@@ -97,10 +100,11 @@ export function ClientPlanEditor({
   // botón "+ Añadir ejercicio". CON archivados: un plan puede referenciar un
   // ejercicio ya archivado y su nombre/vídeo deben seguir resolviéndose; el
   // desplegable y el alta, en cambio, solo ofrecen ACTIVOS.
-  const [library, setLibrary] = useState<ExerciseOut[]>([]);
+  const [library, setLibrary] = useState<ExerciseOut[]>(libraryProp ?? []);
   useEffect(() => {
+    if (libraryProp?.length) { setLibrary(libraryProp); return; }
     api.listExercises({ include_archived: true }).then(setLibrary).catch(() => {});
-  }, []);
+  }, [libraryProp]);
   const activeLibrary = library.filter((e) => !e.archived);
 
   // Escribir un ejercicio a mano desde el buscador: se crea en la biblioteca

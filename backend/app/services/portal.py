@@ -309,16 +309,21 @@ def _meals_for_today(plan: Plan, client: Client, chosen: dict | None) -> list[di
     return slots_out
 
 
-def _resolve_session(db: Session, sess: dict, load_factor: float = 1.0) -> dict:
+def _resolve_session(db: Session, sess: dict, load_factor: float = 1.0,
+                    lib: dict | None = None) -> dict:
     """Convierte una sesión del plan (con exercise_id) en una sesión con nombres
     de ejercicio y vídeo resueltos desde la biblioteca. `load_factor` ajusta el
     peso sugerido a la SEMANA del mesociclo que vive el cliente (p. ej. 1.05 en
-    la semana de pico, 0.6 en la descarga), redondeado a 0,5 kg."""
+    la semana de pico, 0.6 en la descarga), redondeado a 0,5 kg.
+
+    `lib` (opcional) es la biblioteca ya resuelta: quien convierte VARIAS
+    sesiones seguidas la pasa una vez en lugar de consultarla por sesión."""
     ex_ids = [e["exercise_id"] for e in sess.get("exercises", [])]
-    lib = {
-        ex.id: ex
-        for ex in db.scalars(select(Exercise).where(Exercise.id.in_(ex_ids)))
-    } if ex_ids else {}
+    if lib is None:
+        lib = {
+            ex.id: ex
+            for ex in db.scalars(select(Exercise).where(Exercise.id.in_(ex_ids)))
+        } if ex_ids else {}
     exercises = []
     for e in sess.get("exercises", []):
         ex = lib.get(e["exercise_id"])
@@ -377,20 +382,35 @@ def _session_for_today(db: Session, plan: Plan, today: date) -> dict | None:
     return None
 
 
-def build_training_sessions(db: Session, client: Client) -> list[dict]:
+def build_training_sessions(db: Session, client: Client, plan: Plan | None = None,
+                            week: dict | None = None) -> list[dict]:
     """TODAS las sesiones del plan vigente, con nombres de ejercicio resueltos
     y el peso sugerido AJUSTADO a la semana del mesociclo en curso.
 
     Para el selector de sesión del portal (el cliente registra la que ha hecho,
-    no solo la del día)."""
-    period = active_period(db, client.id)
-    plan = published_plan_for_period(db, period) if period else latest_published_plan(db, client.id)
+    no solo la del día).
+
+    `plan` y `week` los pasa quien ya los ha resuelto (el endpoint de Entreno los
+    necesita para las Novedades y la semana del mesociclo): sin ellos esta
+    función repetía la misma resolución de plan que su llamador."""
+    if plan is None:
+        period = active_period(db, client.id)
+        plan = (published_plan_for_period(db, period) if period
+                else latest_published_plan(db, client.id))
     if plan is None:
         return []
-    week = current_training_week(db, plan, today_local())
+    if week is None:
+        week = current_training_week(db, plan, today_local())
     factor = (week or {}).get("load_factor") or 1.0
     training = plan.training_json or {}
-    return [_resolve_session(db, s, factor) for s in training.get("sessions", [])]
+    sesiones = training.get("sessions", [])
+    # UNA consulta a la biblioteca para todas las sesiones (antes una por sesión:
+    # una rutina de 5 días eran 5 viajes a la tabla de ejercicios).
+    ex_ids = {e["exercise_id"] for s in sesiones for e in s.get("exercises", [])
+              if isinstance(e.get("exercise_id"), int)}
+    lib = ({ex.id: ex for ex in db.scalars(select(Exercise).where(Exercise.id.in_(ex_ids)))}
+           if ex_ids else {})
+    return [_resolve_session(db, s, factor, lib) for s in sesiones]
 
 
 # ------------------------------------------------ recursos del portal ----

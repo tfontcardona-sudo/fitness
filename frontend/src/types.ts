@@ -347,6 +347,9 @@ export interface ExerciseOut {
   // Vídeo SUBIDO como archivo (media/…): tiene prioridad sobre video_url.
   video_path: string | null;
   image_url: string | null;
+  // OJO: la LISTA de la biblioteca (`GET /api/exercises`) NO trae estas dos
+  // notas — son 36 KB que ninguna pantalla del panel pinta y la lista viaja dos
+  // veces por visita. Llegan en la ficha individual (`GET /api/exercises/{id}`).
   technique_notes: string | null;
   biomechanics_notes: string | null;
   contraindications: string[];
