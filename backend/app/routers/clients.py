@@ -596,6 +596,29 @@ def _periodos_exportables(db: Session, client_id: int) -> list[dict]:
 
 
 
+# Tope de ADJUNTOS del ZIP de portabilidad (los datos estructurados van
+# siempre). El ZIP se arma en memoria: sin tope, un cliente con muchas fotos
+# tumbaba el proceso entero de la API, no solo su descarga.
+MAX_EXPORT_ADJUNTOS_BYTES = 200 * 1024 * 1024
+
+
+def _informes_exportables(db: Session, client_id: int) -> list[dict]:
+    """Los informes quincenales del cliente: el análisis de SUS datos."""
+    from app.models import FeedbackDoc
+
+    periodos = {p.id: p.period_index for p in db.scalars(
+        select(Period).where(Period.client_id == client_id))}
+    if not periodos:
+        return []
+    return [
+        {"revision": periodos.get(fb.period_id), "tipo": fb.kind,
+         "enviado_el": _jsonable(fb.sent_at), "contenido": fb.content_json}
+        for fb in db.scalars(
+            select(FeedbackDoc).where(FeedbackDoc.period_id.in_(periodos))
+            .order_by(FeedbackDoc.id))
+    ]
+
+
 @router.get("/{client_id}/export")
 def export_client_zip(client_id: int, db: Session = Depends(get_db)) -> Response:
     """\"Descargar todo\": ZIP con datos estructurados + fotos + documentos."""
@@ -612,22 +635,64 @@ def export_client_zip(client_id: int, db: Session = Depends(get_db)) -> Response
             for p in db.scalars(select(Plan).where(Plan.client_id == client_id).order_by(Plan.month_index, Plan.version))
         ],
         "periods": _periodos_exportables(db, client_id),
+        # Los INFORMES QUINCENALES y lo que el cliente ESCRIBIÓ a su coach
+        # faltaban. Los dos son suyos: el informe es el análisis de sus propios
+        # datos (peso, adherencia, fuerza) y las peticiones son texto que él
+        # redactó. Como el flujo natural de una baja es exportar y luego
+        # borrar, se perdían para siempre justo cuando se ejercía el derecho
+        # que debía conservarlos.
+        "informes": _informes_exportables(db, client_id),
+        "mensajes_al_coach": [
+            {"fecha": _jsonable(cr.created_at), "estado": cr.status,
+             "mensaje": cr.message}
+            for cr in db.scalars(
+                select(ChangeRequest)
+                .where(ChangeRequest.client_id == client_id)
+                .order_by(ChangeRequest.created_at))
+        ],
         "exported_at": datetime.now(timezone.utc).isoformat(),
     }
 
     buf = io.BytesIO()
+    # TOPE del ZIP. Se armaba entero en memoria sin límite: un cliente con
+    # muchas fotos de progreso y varios PDFs podía hacer que el proceso se
+    # comiera cientos de MB y tumbara la API para TODOS. Lo que no quepa se
+    # deja fuera y se DICE en el propio ZIP, con la ruta para pedirlo aparte;
+    # los datos estructurados (que son lo que exige la portabilidad) van
+    # siempre, pesen lo que pesen los adjuntos.
+    omitidos: list[str] = []
+    presupuesto = MAX_EXPORT_ADJUNTOS_BYTES
+
+    def _cabe(ruta) -> bool:
+        nonlocal presupuesto
+        try:
+            tam = ruta.stat().st_size
+        except OSError:
+            return False
+        if tam > presupuesto:
+            omitidos.append(ruta.name)
+            return False
+        presupuesto -= tam
+        return True
+
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("datos.json", json.dumps(data, ensure_ascii=False, indent=2))
         photos = db.scalars(select(ProgressPhoto).where(ProgressPhoto.client_id == client_id))
         for ph in photos:
             p = abs_path(ph.file_path)
-            if p.exists():
+            if p.exists() and _cabe(p):
                 zf.write(p, f"fotos/{p.name}")
         docs_dir = storage_root() / "clients" / str(client_id) / "documents"
         if docs_dir.exists():
             for f in sorted(docs_dir.iterdir()):
-                if f.is_file():
+                if f.is_file() and _cabe(f):
                     zf.write(f, f"documentos/{f.name}")
+        if omitidos:
+            data["adjuntos_omitidos"] = {
+                "motivo": "el ZIP superaba el tamaño máximo; pídelos aparte al coach",
+                "ficheros": omitidos,
+            }
+        # El JSON se escribe AL FINAL: así puede contar lo que quedó fuera.
+        zf.writestr("datos.json", json.dumps(data, ensure_ascii=False, indent=2))
 
     log_event(db, "client", client.id, "client_exported", None)
     db.commit()
@@ -698,7 +763,17 @@ def delete_client(
     # video_calls.client_id también es NOT NULL sin ON DELETE (mig. 0023): sin
     # esta línea, borrar a un cliente Pro con videollamadas revienta el commit.
     from app.models import VideoCall
-    vc_ids = list(db.scalars(select(VideoCall.id).where(VideoCall.client_id == client_id)))
+    videollamadas = list(db.scalars(
+        select(VideoCall).where(VideoCall.client_id == client_id)))
+    vc_ids = [vc.id for vc in videollamadas]
+    # El evento vive TAMBIÉN en Google Calendar, fuera de esta base: borrar la
+    # fila no lo quitaba de ahí. La cita seguía en el calendario del coach con
+    # el nombre y el email del cliente borrado —dato personal que sobrevive a
+    # la supresión— y Google le seguía mandando sus recordatorios nativos de
+    # una reunión con alguien que ya no existe. Best-effort: si Google está
+    # caído o desconectado, la baja NO se bloquea (el aviso queda en el log).
+    for vc in videollamadas:
+        _cancel_google_event_safe(db, vc)
     db.execute(delete(VideoCall).where(VideoCall.client_id == client_id))
     # Libro de caja: el movimiento NO se borra (los ingresos del mes no pueden
     # cambiar porque se dé de baja a alguien) pero se ANONIMIZA — se queda sin
@@ -748,10 +823,24 @@ def delete_client(
 
     db.delete(client)
 
-    delete_client_tree(client_id)
     # Registro anónimo de la baja: sin nombre, sin email (PARTE I)
     log_event(db, "client", client_id, "client_deleted", {"anonymous": True})
     db.commit()
+
+    # LOS FICHEROS, AL FINAL. Se borraban ANTES del commit, así que si el
+    # commit fallaba —una tabla nueva con FK sin cubrir, un interbloqueo, la
+    # conexión caída— la ficha seguía viva y sus fotos, su anamnesis y sus
+    # documentos ya no estaban: pérdida irrecuperable en un cliente que NO se
+    # ha dado de baja. Al revés el peor caso es un directorio huérfano, que no
+    # le hace daño a nadie y queda anotado para barrerlo.
+    try:
+        delete_client_tree(client_id)
+    except Exception:  # noqa: BLE001 — la baja ya está hecha y es lo que cuenta
+        import logging
+
+        logging.getLogger("app.rgpd").exception(
+            "cliente %s borrado, pero sus ficheros siguen en disco: bórralos a "
+            "mano en {STORAGE_PATH}/clients/%s", client_id, client_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

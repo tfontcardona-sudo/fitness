@@ -388,3 +388,128 @@ def test_si_stripe_falla_no_se_borra_a_ciegas(http, auth, monkeypatch):
         db.close()
     assert http.delete(f"/api/clients/{cid}?confirm={nombre}",
                        headers=auth).status_code == 204
+
+
+def test_descargar_todo_incluye_los_informes_y_lo_que_escribio_el_cliente(http, auth):
+    """El derecho de portabilidad exige entregar TODO lo que se tiene del
+    interesado. Faltaban dos cosas suyas: los informes quincenales —que son el
+    análisis de sus propios datos— y los mensajes que escribió a su coach desde
+    el portal. Y como una baja se exporta ANTES de borrar, se perdían justo al
+    ejercer el derecho que debía conservarlos."""
+    import io
+    import json
+    import zipfile
+    from datetime import date, timedelta
+
+    from app.db import SessionLocal
+    from app.models import ChangeRequest, FeedbackDoc, Period, Plan
+
+    nombre = f"Informes {uuid.uuid4().hex[:6]}"
+    creado = http.post("/api/clients", headers=auth, json={
+        "full_name": nombre, "email": f"inf-{uuid.uuid4().hex[:8]}@example.com",
+    })
+    cid = creado.json()["client"]["id"]
+
+    db = SessionLocal()
+    try:
+        plan = Plan(client_id=cid, month_index=1, version=1, status="published")
+        db.add(plan); db.flush()
+        hoy = date.today()
+        per = Period(client_id=cid, plan_id=plan.id, period_index=1,
+                     starts_on=hoy - timedelta(days=14), ends_on=hoy, status="analyzed")
+        db.add(per); db.flush()
+        db.add(FeedbackDoc(period_id=per.id, kind="biweekly", content_json={
+            "analysis": "Muy buena adherencia; el peso baja al ritmo previsto."}))
+        db.add(ChangeRequest(client_id=cid, status="open",
+                             message="Me voy de viaje: ¿cómo lo hago con las comidas?"))
+        db.commit()
+    finally:
+        db.close()
+
+    r = http.get(f"/api/clients/{cid}/export", headers=auth)
+    assert r.status_code == 200, r.text
+    with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
+        datos = json.loads(zf.read("datos.json"))
+
+    informes = datos.get("informes") or []
+    assert informes, "el ZIP no lleva los informes quincenales del cliente"
+    assert "adherencia" in json.dumps(informes, ensure_ascii=False)
+    assert informes[0]["revision"] == 1
+
+    mensajes = datos.get("mensajes_al_coach") or []
+    assert mensajes, "el ZIP no lleva lo que el cliente escribió a su coach"
+    assert "de viaje" in mensajes[0]["mensaje"]
+
+
+def test_una_baja_fallida_no_deja_al_cliente_sin_sus_ficheros(http, auth, monkeypatch):
+    """Los archivos se borraban ANTES del commit. Si el commit fallaba —una
+    tabla nueva con FK sin cubrir, un interbloqueo, la conexión caída— la ficha
+    seguía viva y sus fotos, su anamnesis y sus documentos ya no estaban:
+    pérdida irrecuperable en un cliente que NO se ha dado de baja."""
+    from app.db import SessionLocal
+    from app.models import Client
+    from app.services.storage import storage_root
+
+    nombre = f"Commit Roto {uuid.uuid4().hex[:6]}"
+    creado = http.post("/api/clients", headers=auth, json={
+        "full_name": nombre, "email": f"roto-{uuid.uuid4().hex[:8]}@example.com",
+    })
+    cid = creado.json()["client"]["id"]
+
+    # Un fichero suyo en disco, como el que deja cualquier anamnesis subida.
+    carpeta = storage_root() / "clients" / str(cid) / "documents"
+    carpeta.mkdir(parents=True, exist_ok=True)
+    fichero = carpeta / "anamnesis.pdf"
+    fichero.write_bytes(b"%PDF-1.4 datos del cliente")
+
+    # El commit de la baja revienta.
+    from sqlalchemy.orm import Session as _Session
+
+    original = _Session.commit
+
+    def _commit_que_falla(self, *a, **kw):
+        raise RuntimeError("interbloqueo simulado")
+
+    monkeypatch.setattr(_Session, "commit", _commit_que_falla)
+    try:
+        r = http.delete(f"/api/clients/{cid}?confirm={nombre.replace(' ', '%20')}",
+                        headers=auth)
+    except RuntimeError:
+        r = None      # el fallo puede propagarse: da igual, lo que importa es el disco
+    monkeypatch.setattr(_Session, "commit", original)
+
+    assert fichero.exists(), "la baja falló y aun así se llevó por delante sus ficheros"
+    db = SessionLocal()
+    try:
+        assert db.get(Client, cid) is not None, "la ficha debería seguir existiendo"
+    finally:
+        db.close()
+
+
+def test_el_tope_de_caddy_deja_pasar_los_videos_que_el_backend_admite():
+    """Caddy corta los cuerpos de `/api/*` a 30 MB, pero el backend admite
+    vídeos de ejercicio de hasta `MAX_VIDEO_MB`. Sin una excepción para esa
+    ruta, cualquier vídeo mayor moría en el proxy con un 413 pelado que no
+    explica nada, sin llegar nunca al mensaje del backend.
+
+    Prueba estática del Caddyfile: es infraestructura y no hay forma de
+    ejercitarla desde pytest, pero el desajuste entre los dos topes sí se puede
+    cazar aquí (que es lo que se escapó)."""
+    import re
+    from pathlib import Path
+
+    from app.services.storage import MAX_VIDEO_MB
+
+    caddy = (Path(__file__).resolve().parents[2] / "frontend" / "Caddyfile")
+    texto = caddy.read_text(encoding="utf-8")
+
+    bloque = re.search(r"handle /api/exercises/\*/video \{(.*?)\n\t\}", texto, re.S)
+    assert bloque, "el Caddyfile no tiene un tope propio para subir vídeos"
+    tope = re.search(r"max_size (\d+)MB", bloque.group(1))
+    assert tope, "el bloque de vídeos no declara max_size"
+    assert int(tope.group(1)) >= MAX_VIDEO_MB, (
+        f"Caddy corta a {tope.group(1)} MB lo que el backend admite hasta "
+        f"{MAX_VIDEO_MB} MB")
+
+    # Y ese bloque tiene que ir ANTES del general: Caddy resuelve por orden.
+    assert texto.index("handle /api/exercises/*/video") < texto.index("handle /api/* {")

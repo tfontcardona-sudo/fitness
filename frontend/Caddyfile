@@ -31,6 +31,20 @@
 		-X-Powered-By
 	}
 
+	# VÍDEOS DE EJERCICIO: el backend los admite hasta 300 MB
+	# (`storage.MAX_VIDEO_MB`) y el tope general de 30 MB de abajo los cortaba
+	# aquí, con un 413 pelado de Caddy que no explica nada y sin llegar nunca al
+	# mensaje del backend. Va ANTES del `handle /api/*` porque Caddy resuelve
+	# por orden. Solo esta ruta, que es la única que sube ficheros grandes.
+	handle /api/exercises/*/video {
+		request_body {
+			max_size 310MB
+		}
+		reverse_proxy api:8000 {
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
 	handle /api/* {
 		# TOPE DE TAMAÑO donde no cuesta nada: Caddy corta con 413 sin que el
 		# cuerpo llegue a Python. Sin esto no había límite en ningún punto —
@@ -39,6 +53,8 @@
 		# "lectura acotada a 10 MB" del código llegaba tarde) y el 429 del
 		# rate limit también se evalúa DESPUÉS de recibirlo entero.
 		# 30 MB deja holgura a la anamnesis en PDF y a las fotos de progreso.
+		# (Los vídeos de ejercicio tienen su propio bloque arriba: son el único
+		# caso legítimo de subida grande y no deben ensanchar este tope.)
 		request_body {
 			max_size 30MB
 		}
