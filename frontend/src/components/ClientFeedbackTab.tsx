@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { Link } from "react-router-dom";
 import { libre } from "../lib/accordion";
 import { ancla } from "../lib/anchors";
 import { Sparkles, AlertTriangle, MessageSquare, MessageCircle, Mail, Video, Target, TrendingUp, BarChart3, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
-import { selloAdaptacion } from "./ClientPlanPanel";
 import { api, getToken } from "../lib/api";
 import { feedbackBody, feedbackMessage, openWhatsApp, videoCallModifyMessage, videoCallScheduledMessage, waPhone } from "../lib/whatsapp";
 import { pkg } from "../lib/packages";
@@ -125,18 +125,17 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
   }
 
   const load = useCallback(() => {
-    // LIGERO: esta pantalla solo mira el sello de la adaptación, no necesita
-    // el banco de recetas ni el educativo de cada versión.
-    api.listPlans(client.id, { ligero: true })
+    // El RESUMEN de las versiones: esta pantalla solo lee el nº de revisión ya
+    // adaptada y antes se descargaban TODAS las versiones enteras para eso.
+    api.listPlanSummaries(client.id)
       .then((plans) => {
         // El plan VIGENTE (publicado; si no, el más nuevo), no `plans[0]`: con
-        // un borrador retenido de un mes superior, ese no es el activo. Y el
-        // sello puede vivir en el entreno (plan solo-entrenamiento): sin eso,
-        // para todo el tier `train` el banner de "revisar y adaptar" era
-        // eterno y el botón devolvía 409.
-        const vigente = plans.find((p: any) => p.status === "published")
-          ?? [...plans].sort((a: any, b: any) => (b.id ?? 0) - (a.id ?? 0))[0];
-        setAdaptedIdx(selloAdaptacion(vigente)?.period_index ?? null);
+        // un borrador retenido de un mes superior, ese no es el activo. El
+        // sello del resumen ya mira nutrición Y entreno, así que el tier
+        // `train` —cuyo banner de "revisar y adaptar" era eterno— también sale.
+        const vigente = plans.find((p) => p.status === "published")
+          ?? [...plans].sort((a, b) => (b.id ?? 0) - (a.id ?? 0))[0];
+        setAdaptedIdx(vigente?.applied_adjustments?.period_index ?? null);
       })
       .catch(() => {});
     api.listPeriods(client.id)
@@ -1116,6 +1115,28 @@ const KIND_LABEL: Record<string, string> = {
  *  NO son públicas). Muestra miniaturas; un toque abre la foto a tamaño real. */
 /** Envoltorio plegado de las fotos: consulta solo el NÚMERO (metadatos, barato)
  *  y no descarga ninguna imagen hasta que el coach abre el desplegable. */
+/** Las fotos del cliente son UNA lista para toda la pestaña.
+ *
+ *  Cada revisión pintaba su propio contador y pedía la lista ENTERA para
+ *  contar las suyas: un cliente con un año de historial disparaba 24
+ *  peticiones idénticas al abrir Feedback, y una más al desplegar una tira.
+ *  Aquí se pide una vez por cliente y las comparten todas las tarjetas. */
+const fotosEnVuelo = new Map<number, Promise<{ id: number; kind: string; period_id: number | null; taken_at: string }[]>>();
+
+function fotosDelCliente(clientId: number) {
+  let p = fotosEnVuelo.get(clientId);
+  if (!p) {
+    p = api.listClientPhotos(clientId).finally(() => {
+      // Se suelta al terminar: la próxima visita a la pestaña vuelve a pedirla
+      // (puede haber fotos nuevas), pero las tarjetas de una misma carga la
+      // comparten.
+      setTimeout(() => fotosEnVuelo.delete(clientId), 0);
+    });
+    fotosEnVuelo.set(clientId, p);
+  }
+  return p;
+}
+
 export function PeriodPhotosFolded({ clientId, periodId, label }: {
   clientId: number;
   /** `null` = las fotos INICIALES de la anamnesis (sin período): el "antes" de
@@ -1128,7 +1149,7 @@ export function PeriodPhotosFolded({ clientId, periodId, label }: {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     let alive = true;
-    api.listClientPhotos(clientId)
+    fotosDelCliente(clientId)
       .then((all) => { if (alive) setCount(all.filter((p) => p.period_id === periodId).length); })
       .catch(() => { if (alive) setCount(0); });
     return () => { alive = false; };
@@ -1148,31 +1169,50 @@ export function PeriodPhotosFolded({ clientId, periodId, label }: {
 function PeriodPhotos({ clientId, periodId }: { clientId: number; periodId: number | null }) {
   const [photos, setPhotos] = useState<{ id: number; kind: string; url: string }[] | null>(null);
   const [total, setTotal] = useState(0);
+  const toast = useToast();
+
+  /** La tira son miniaturas; al pulsar una se abre la foto ORIGINAL.
+   *  La pestaña se abre ANTES de descargar (si se abriera después, el
+   *  navegador la bloquearía por no venir de un clic). */
+  async function abrirEntera(e: ReactMouseEvent, photoId: number) {
+    e.preventDefault();
+    const w = window.open("about:blank", "_blank");
+    try {
+      const r = await fetch(api.clientPhotoUrl(clientId, photoId), {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (!r.ok) throw new Error("no se pudo abrir");
+      const url = URL.createObjectURL(await r.blob());
+      if (w) w.location.href = url;
+      else window.open(url, "_blank", "noopener");
+    } catch {
+      w?.close();
+      toast.push("No se pudo abrir la foto", "error");
+    }
+  }
 
   useEffect(() => {
     let alive = true;
     const urls: string[] = [];
-    api.listClientPhotos(clientId)
+    fotosDelCliente(clientId)
       .then(async (all) => {
         const mine = all.filter((p) => p.period_id === periodId);
         if (alive) setTotal(mine.length);
-        // EN PARALELO: se descargaban una detrás de otra, así que la tira de
-        // 8 fotos tardaba la suma de las 8 (y el coach mira esto en cada
-        // revisión). Una foto ilegible sigue sin romper la tira.
-        const loaded = (await Promise.all(mine.slice(0, 8).map(async (p) => {
+        // EN PARALELO y en MINIATURA: se pintan a 80×96 px, así que pedir el
+        // original del móvil del cliente (varios MB) de ocho en ocho y una
+        // detrás de otra era decenas de megas para una tira de sellos.
+        const bajadas = await Promise.all(mine.slice(0, 8).map(async (p) => {
           try {
-            const r = await fetch(api.clientPhotoUrl(clientId, p.id), {
+            const r = await fetch(api.clientPhotoUrl(clientId, p.id, 320), {
               headers: { Authorization: `Bearer ${getToken()}` },
             });
             if (!r.ok) return null;
             const url = URL.createObjectURL(await r.blob());
             urls.push(url);
             return { id: p.id, kind: p.kind, url };
-          } catch {
-            return null;
-          }
-        }))).filter((x): x is { id: number; kind: string; url: string } => x !== null);
-        if (alive) setPhotos(loaded);
+          } catch { return null; /* una foto ilegible no rompe la tira */ }
+        }));
+        if (alive) setPhotos(bajadas.filter((x): x is { id: number; kind: string; url: string } => x !== null));
       })
       .catch(() => alive && setPhotos([]));
     return () => {
@@ -1189,8 +1229,9 @@ function PeriodPhotos({ clientId, periodId }: { clientId: number; periodId: numb
       </p>
       <div className="flex flex-wrap gap-2">
         {photos.map((p) => (
-          <a key={p.id} href={p.url} target="_blank" rel="noopener noreferrer" className="group relative">
-            <img src={p.url} alt={KIND_LABEL[p.kind] ?? p.kind}
+          <a key={p.id} href={p.url} target="_blank" rel="noopener noreferrer" className="group relative"
+            onClick={(e) => abrirEntera(e, p.id)}>
+            <img src={p.url} alt={KIND_LABEL[p.kind] ?? p.kind} loading="lazy" decoding="async"
               className="h-24 w-20 rounded-lg border border-zinc-700 object-cover transition group-hover:opacity-80" />
             <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1 text-[10px] text-white">
               {KIND_LABEL[p.kind] ?? p.kind}

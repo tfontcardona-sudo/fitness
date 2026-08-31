@@ -736,9 +736,9 @@ def portal_training(
         changes = ((plan.nutrition_json or {}).get("applied_adjustments")
                    or (plan.training_json or {}).get("applied_adjustments")
                    or None)
-    week = portal_svc.current_training_week(db, plan, portal_svc.today_local())
-    if week:
-        week = {**week, "started_on": week["started_on"].isoformat()}
+    semana_cruda = portal_svc.current_training_week(db, plan, portal_svc.today_local())
+    week = ({**semana_cruda, "started_on": semana_cruda["started_on"].isoformat()}
+            if semana_cruda else semana_cruda)
     # El cliente ha abierto su rutina: si tenía un plan nuevo sin ver, apaga el
     # aviso (y con él el badge del icono de la PWA en la próxima sincronización).
     if plan is not None and client.plan_notice_pending:
@@ -754,7 +754,9 @@ def portal_training(
             cardio = {"daily_steps": c.get("daily_steps"),
                       "sessions": c.get("sessions") or []}
     return {
-        "sessions": portal_svc.build_training_sessions(db, client),
+        # El plan y la semana ya están resueltos arriba: se pasan para no
+        # repetir dentro las mismas tres consultas.
+        "sessions": portal_svc.build_training_sessions(db, client, plan=plan, week=semana_cruda),
         "plan_changes": changes,
         "week": week,
         "cardio": cardio,

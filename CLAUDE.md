@@ -611,6 +611,100 @@ cd backend && python -m pytest tests/ -q
      ejecución correcta; los avisos de día exacto (día 12, D+3/D+7) son
      umbrales y no se pierden si el job se salta un día; y cambiar el plan o
      la duración de un cliente pide confirmación.
+0000000000000000000000. ✅ **TANDA 7 DEL INVENTARIO: OPTIMIZACIÓN — LO QUE EL
+   PANEL PEDÍA DE MÁS (31-08-2026).** Trabajo en PARALELO con la sesión de
+   Stripe (que lleva la tanda 6, portal y anamnesis): el reparto está escrito en
+   `docs/HALLAZGOS_POR_VERIFICAR.md` con los ficheros que toca cada uno. Todos
+   los hallazgos se abrieron y se reprodujeron antes de tocar nada; cada
+   arreglo lleva su regresión en `tests/test_optimizacion.py` (11), y las 11
+   FALLAN con el código anterior. 613 tests en verde, `tsc` limpio, build,
+   `lint:hooks` sin errores, `check:anclas` y `check:avisos` OK.
+   - **La lista de versiones del plan era el agujero grande.** El panel de
+     Planificación pedía `GET /clients/{id}/plans` — TODAS las versiones con sus
+     cuatro JSONB, banco de comidas incluido — en el montaje **y otra vez tras
+     cada acción** (generar, adaptar, activar, descartar, copiar, aplicar el
+     Word…), para pintar cuatro cifras por versión. Ahora hay
+     `GET /clients/{id}/plans/summary` (una línea por versión: kcal, macros,
+     split, nº de sesiones, por qué cambió) y `GET /plans/{id}` para la ÚNICA
+     versión que se enseña y se edita. En el panel todo pasa por un solo
+     `recargarPlanes(preferido?)`. La ficha (chip de dieta) y la pestaña
+     Feedback (nº de revisión ya adaptada) también usan el resumen.
+     ⚠️ Si añades un dato del plan al archivo de "Planificaciones anteriores",
+     añádelo a `PlanSummaryOut` — el archivo ya NO tiene los JSON.
+   - **Cazado al refactorizar (no estaba en el inventario)**: `normalize()`
+     prefiere la clave `nutrition` a `nutrition_json`, y dos sitios le pasaban
+     `{...plan, nutrition_json: nuevo}` — como `plan` YA trae `nutrition`
+     (la vieja), lo recién guardado NO se veía: editar los "Cambios de tu plan"
+     o aplicar el Word decía "guardado" y la pantalla seguía con lo anterior
+     hasta recargar. El backend sí lo tenía. Corregido en los dos (y el Word
+     refresca también el educativo).
+   - **Historial cuadrático**: `compute_period_summary` compara cada revisión
+     con las anteriores, así que calcular el historial releía las series de las
+     previas una vez por revisión (doce revisiones = 78 barridos). Nuevo
+     `sets_por_periodo_de_cliente` (UNA consulta) que se pasa como caché
+     opcional; sin ella el comportamiento es el de siempre. De paso, el
+     historial dejó de traer los cuatro JSONB de todos los planes para imprimir
+     cuatro escalares, y los feedbacks van en una consulta y no una por período.
+   - **N+1 sueltos**: `GET /clients/{id}/periods` hacía una consulta de feedback
+     POR revisión; la pantalla de Entreno del portal resolvía el plan DOS veces
+     (el endpoint y `build_training_sessions`) y consultaba la biblioteca una
+     vez POR SESIÓN; "Elegir base" leía el plan ENTERO de todos los clientes
+     para pintar una línea de cada uno (ahora dos pasos: escalares para elegir,
+     contenido solo de los elegidos).
+   - **Peso por la red**: la biblioteca de ejercicios ya no manda
+     `technique_notes`/`biomechanics_notes` en la LISTA (36 de sus ~141 KB, y
+     ninguna pantalla del panel las pinta; la ficha individual las conserva) y
+     el editor la recibe del panel en vez de volver a descargarla al abrirse;
+     `GET /clients?light=1` deja fuera las notas largas de la anamnesis en Hoy y
+     Clientes, que se refrescan solas cada 3 s y no leen ninguna (la FICHA nunca
+     se recorta); las fotos del período se piden UNA vez por cliente (cada
+     tarjeta pedía la lista entera), se bajan EN PARALELO y en miniatura
+     (`?w=` con Pillow y `draft()`), y al pulsar una se abre la original.
+   - **Vídeos de ejercicio (279 filas)**: portada de YouTube `mqdefault` en vez
+     de `hqdefault` para un hueco de 56 px, `loading="lazy"`, fila memoizada
+     (se repintaban las 279 con cada tecla), buscador con `useDeferredValue` y
+     `content-visibility` (`.fila-diferida`) para no maquetar lo que no se ve.
+   - **Un clásico**: el aviso de "Sin conexión" del panel móvil estaba montado
+     DOS veces (líneas seguidas, copia y pega).
+
+000000000000000000000. ✅ **TANDA 3 (SEGUNDA MANO): LO QUE QUEDABA DEL CICLO, Y
+   LA SUITE QUE MENTÍA (30-08-2026).** Trabajo en PARALELO con otras dos
+   sesiones sobre el inventario `docs/HALLAZGOS_POR_VERIFICAR.md` (que vive en
+   la rama de la tanda 1). El PR #113 cerró cuatro de esta tanda mientras yo
+   verificaba; esto es lo que quedaba. Cada hallazgo se verificó de forma
+   adversarial (un refutador + un reproductor) ANTES de tocar nada.
+   - ⚠️ **LOS DOS FALLOS DE `test_ai_service` NO ERAN "PREEXISTENTES DE MAIN":
+     era la suite, que dependía del estado.** `pytest` dos veces seguidas daba
+     resultados distintos. La caché del contenido educativo se guarda en un
+     sidecar del storage y SOBREVIVE entre ejecuciones: el primer pase la
+     poblaba y el siguiente se saltaba la llamada de IA que los tests del
+     pipeline están CONTANDO (`assert len(client.calls) == 3` → 2). Las tres
+     sesiones lo estaban dando por bueno como "ya venía roto". Se apaga en los
+     tests (lo que este documento ya daba por hecho) y **la suite queda entera
+     en verde, dos pases seguidos**. Si añades un caché con sidecar, apágalo en
+     `tests/conftest.py` o volverás a envenenar la suite.
+   - **Aviso NUEVO `sin_pesajes` — el punto ciego de "día registrado".** Contar
+     las series y las comidas elegidas como registro es DELIBERADO y está
+     blindado con test (quien entrena a diario no puede salir "en riesgo"): NO
+     se toca. Pero detrás había un hueco real: el cliente que elige su comida
+     cada día cuenta como registrado, va verde en todas las pantallas y no
+     dispara nada… y al cerrar la quincena el motor determinista se encuentra
+     con 0-1 pesajes, responde `dato_insuficiente` y no hay con qué ajustar el
+     plan. Catorce días perdidos que el coach descubría cuando ya no tenían
+     arreglo. Ahora se avisa pasada la mitad del período, y sale de las filas
+     que el bloque de `no_logs` ya carga: ni una consulta más en el barrido.
+   - ⏸️ **HECHO Y ESPERANDO A LA TANDA 1** (rama
+     `claude/tanda3-pendiente-de-tanda1`): la vigilancia de automatismos que
+     solo miraba el mantenimiento diario, la escalada a "lleva N horas" que era
+     inalcanzable tras un fallo, la huella del resumen del coach truncada a 300
+     caracteres (silenciaba el aviso justo cuando había novedades), el cupo de
+     avisos de cierre que contaba los correos FALLIDOS y la racha del portal que
+     no consume la "única verdad". Todo ello vive en código que aún no está en
+     `main` (`job_state.py`, `_enviados_desde`, la dedup del resumen,
+     `dias_registrados`): arreglarlo aquí a medias solo crearía un conflicto con
+     su fusión. **Cuando la tanda 1 entre en `main`, fusiona esa rama.**
+   - 602 tests en verde (dos pases), `tsc` limpio, `check:anclas` y
+     `check:avisos` OK.
 
 00000000000000000. ✅ **OFERTA = PROGRAMA CERRADO DE 3 MESES (28-08-2026).**
    Decisión del dueño: la oferta es UNA — 3 meses de DQR Full con permanencia

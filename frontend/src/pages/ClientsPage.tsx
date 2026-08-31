@@ -57,7 +57,9 @@ export default function ClientsPage() {
 
   const load = useCallback(() => {
     api
-      .listClients({ q: q.length >= 2 ? q : undefined })
+      // `light`: la cartera se refresca sola cada 3 s y ninguna de sus
+      // columnas lee las notas de la anamnesis (la ficha sí las trae enteras).
+      .listClients({ q: q.length >= 2 ? q : undefined, light: true })
       .then((cs) => setClients((prev) => keepIfSame(prev, cs)))  // sin re-render si nada cambió
       // Fallo de red: se CONSERVA la cartera en pantalla (antes se vaciaba y
       // salía "Da de alta tu primer cliente" con 30 clientes reales — susto

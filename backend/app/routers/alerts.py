@@ -79,6 +79,9 @@ _DESTINO: dict[str, tuple[str, str]] = {
         "seguimiento.registros",
         "Pídele el peso: sin pesajes, la revisión no podrá ajustar las "
         "calorías y la quincena se pierde."),
+    "sin_pesajes": (
+        "seguimiento.registros",
+        "Pídele el peso en ayunas: sin pesos, al cerrar no hay con qué ajustar."),
     "period_overdue": (
         "feedback.cerrar",
         "Reclámasela por WhatsApp; si no la manda, ciérrala tú aquí para no "
@@ -199,6 +202,18 @@ class _AlVuelo:
         from app.services.push import dias_con_registro
 
         return dias_con_registro(db, period.id, solo_nutricion=solo_nutricion)
+
+    def pesajes(self, db: Session, period: Period) -> int:
+        """Cuántos DÍAS con peso apuntado lleva el período.
+
+        Es el dato que el motor quincenal necesita para ajustar las kcal: sin
+        él responde `dato_insuficiente` y la revisión no sirve de nada."""
+        from app.models import DailyLog
+
+        return int(db.scalar(
+            select(func.count(DailyLog.id)).where(
+                DailyLog.period_id == period.id,
+                DailyLog.weight_kg.is_not(None))) or 0)
 
     def peticiones_abiertas(self, db: Session, client: Client) -> list:
         from app.models import ChangeRequest
@@ -335,6 +350,12 @@ class _EnLote(_AlVuelo):
                 self._logs.get(period.id, []), self._con_series,
                 solo_nutricion=True)
         return super().dias_con_registro(db, period, solo_nutricion=solo_nutricion)
+
+    def pesajes(self, db: Session, period: Period) -> int:
+        # De las filas YA precargadas: ni una consulta más por cliente.
+        if period.id in self._logs:
+            return sum(1 for lg in self._logs[period.id] if lg.weight_kg is not None)
+        return super().pesajes(db, period)
 
     def peticiones_abiertas(self, db: Session, client: Client) -> list:
         return self._peticiones.get(client.id, [])
@@ -566,6 +587,34 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
                     f"Registra entrenos pero no su dieta: {que_falta}. "
                     "Sin pesajes, la revisión no podrá ajustar las calorías.",
                     "seguimiento", "Ver seguimiento"))
+
+            # Y SI SÍ REGISTRA SU DIETA PERO NO SE PESA (el otro punto
+            # ciego, encontrado en paralelo por otra sesión): marcar la comida
+            # cada día cuenta como registro y el cliente va verde en todas las
+            # pantallas… pero al cerrar la quincena el motor determinista se
+            # encuentra con 0-1 pesajes, responde `dato_insuficiente` y no hay
+            # con qué ajustar el plan: catorce días perdidos que el coach
+            # descubría cuando ya no tenían arreglo. Se avisa pasada la mitad
+            # del período, que es cuando aún da tiempo a pedírselo, y sale de
+            # las filas YA cargadas: ni una consulta más.
+            #
+            # Va en el `else` del aviso de arriba: cuando no hay NINGÚN dato de
+            # dieta manda aquel, que es más general, y así no se avisa dos veces
+            # de lo mismo (los dos avisos los escribieron sesiones distintas a
+            # la vez, cada uno con su prueba).
+            else:
+                pesajes = datos.pesajes(db, last_period)
+                largo = (last_period.ends_on - last_period.starts_on).days + 1
+                dia = days_in + 1
+                if pesajes <= 1 and dia >= max(7, largo // 2):
+                    quedan = max(0, (last_period.ends_on - today).days)
+                    como = ("solo se ha pesado una vez" if pesajes
+                            else "no se ha pesado ni un día")
+                    out.append(_alert(
+                        client, "sin_pesajes", "media",
+                        f"Registra a diario pero {como}: sin pesos no se puede "
+                        f"ajustar su plan al cerrar (quedan {quedan} días).",
+                        "seguimiento", "Pedirle que se pese"))
 
         # --- Período vencido sin cerrar: el cliente registra pero no envía ---
         overdue = (today - last_period.ends_on).days

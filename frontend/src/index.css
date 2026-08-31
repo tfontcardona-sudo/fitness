@@ -606,3 +606,12 @@ a.portal-note:active{transform:translateY(1px)}
 .portal-root .progress-fill, .card .progress-fill {
   transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+/* Listas MUY largas (los 279 ejercicios de "Vídeos de ejercicios"): el
+   navegador se salta el maquetado y el pintado de las filas que quedan fuera de
+   pantalla. `contain-intrinsic-size` reserva su alto aproximado para que la
+   barra de desplazamiento no dé saltos. Sin virtualizar y sin librerías. */
+.fila-diferida {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 86px;
+}

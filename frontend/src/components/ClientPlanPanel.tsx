@@ -6,6 +6,7 @@ import { ancla, hrefCliente } from "../lib/anchors";
 import { copiarConAviso } from "../lib/clipboard";
 import { pin, pinId, syncScope } from "../lib/pins";
 import { api, getToken } from "../lib/api";
+import type { PlanSummary } from "../lib/api";
 import { manualUpdateMessage, openWhatsApp, planAndFeedbackMessage, planMessage, waPhone, waUrl } from "../lib/whatsapp";
 import { pkg } from "../lib/packages";
 import { CANONICAL_MEALS, mealKeysFromNames } from "../lib/meals";
@@ -17,7 +18,7 @@ import type { Destino } from "../lib/findings";
 import { agrupar, resumirDetalle, resumenCorto, toAviso, traducirFlags } from "../lib/findings";
 import { MemoDetails } from "./MemoDetails";
 import { ClientPlanEditor } from "./ClientPlanEditor";
-import type { ClientOut, GoalType } from "../types";
+import type { ClientOut, ExerciseOut, GoalType } from "../types";
 
 interface PlanReview {
   color?: "verde" | "ambar" | "rojo" | null;
@@ -47,7 +48,7 @@ interface PlanData {
  *  por id. El backend ordena por (mes DESC, versión DESC), así que `plans[0]`
  *  podía ser un plan SUSTITUIDO de un mes posterior generado y descartado —
  *  el coach veía (y enviaba) una versión que el cliente no tiene (auditoría). */
-function vigente(plans: any[]): any | null {
+function vigente(plans: PlanSummary[]): PlanSummary | null {
   if (!plans.length) return null;
   return plans.find((p) => p.status === "published")
     ?? [...plans].sort((a, b) => (b.id ?? 0) - (a.id ?? 0))[0];
@@ -118,6 +119,9 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
   const [exMap, setExMap] = useState<Record<number, string>>({});
   // Vídeo de cada ejercicio (biblioteca): botón directo en la rutina.
   const [exVideo, setExVideo] = useState<Record<number, string>>({});
+  // La biblioteca ENTERA, tal cual llegó: se le pasa al editor para que no la
+  // vuelva a descargar (son ~100 KB y ya está aquí desde el montaje).
+  const [exList, setExList] = useState<ExerciseOut[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(() => enVuelo.has(client.id));
   const [publishing, setPublishing] = useState(false);
@@ -142,8 +146,11 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
     // la IA no propusiera ajustes de texto (p. ej. solo un diet break).
     biweekly_decision?: { action?: string; kcal_delta_pct?: number; rationale?: string } | null;
   }[]>([]);
-  // Todas las versiones (archivo de planificaciones anteriores por objetivo)
-  const [allPlans, setAllPlans] = useState<any[]>([]);
+  // Todas las versiones, RESUMIDAS (archivo de planificaciones anteriores por
+  // objetivo). El contenido completo solo se pide de la versión que se enseña:
+  // esta lista se repide tras cada acción y con los cuatro JSONB de cada
+  // versión un cliente con un año de asesoría arrastraba megas por cada clic.
+  const [allPlans, setAllPlans] = useState<PlanSummary[]>([]);
   // Último feedback generado (para poder enviarlo junto al plan por WhatsApp).
   const [fb, setFb] = useState<{ id: number; content: any; sent: boolean } | null>(null);
   // Edición de los "Cambios aplicados" tras adaptar: texto/porqué o quitar filas.
@@ -177,11 +184,11 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
     setAdjDraft(null);
     setMissing(null);
     Promise.all([
-      api.listPlans(client.id),
+      api.listPlanSummaries(client.id),
       api.listExercises({ include_archived: true }),
       api.listPeriods(client.id),
     ])
-      .then(([plans, exs, pds]) => {
+      .then(async ([plans, exs, pds]) => {
         if (!alive) return;
         const map: Record<number, string> = {};
         const vids: Record<number, string> = {};
@@ -194,10 +201,15 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
         });
         setExMap(map);
         setExVideo(vids);
+        setExList(exs);
         setPeriods(pds);
         setAllPlans(plans);
         const v = vigente(plans);
-        if (v) setPlan(normalize(v));
+        // Solo la versión que se ENSEÑA se pide entera.
+        if (v) {
+          const completo = await api.getPlan(v.id).catch(() => null);
+          if (alive && completo) setPlan(normalize(completo));
+        }
         // Feedback más reciente (si existe): habilita el envío conjunto.
         const withFb = pds
           .filter((p: any) => p.feedback_id)
@@ -214,6 +226,23 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
       alive = false;
     };
   }, [client.id]);
+
+  /** Recarga el archivo de versiones (resumido) y deja a la vista UNA de ellas,
+   *  pedida entera: `preferido` si se indica, si no la vigente. Es el único
+   *  camino de recarga del panel — antes cada acción repetía la lista COMPLETA
+   *  de versiones con todo su contenido. */
+  async function recargarPlanes(preferido?: number | null): Promise<PlanSummary[]> {
+    const resumen = await api.listPlanSummaries(client.id).catch(() => null);
+    if (!resumen) return allPlans;
+    setAllPlans(resumen);
+    const elegido = (preferido != null ? resumen.find((p) => p.id === preferido) : null)
+      ?? vigente(resumen);
+    if (elegido) {
+      const completo = await api.getPlan(elegido.id).catch(() => null);
+      if (completo) setPlan(normalize(completo));
+    }
+    return resumen;
+  }
 
   /** Enlace público al PDF del plan (endpoint por token — sin login). */
   async function planPdfUrl(): Promise<string> {
@@ -372,10 +401,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
       if (!vivo) return;
       setGenerating(false);
       try {
-        const plans = await api.listPlans(client.id);
-        setAllPlans(plans);
-        const v = vigente(plans);
-        if (v) setPlan(normalize(v));
+        await recargarPlanes();
       } catch { /* la carga normal del montaje ya lo enseña */ }
     });
     return () => { vivo = false; };
@@ -423,10 +449,10 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
     enVuelo.set(client.id, peticion.catch(() => undefined));
     try {
       const r = await peticion;
-      const plans = await api.listPlans(client.id);
-      setAllPlans(plans);
-      const full = plans.find((pl) => pl.id === r.id) ?? vigente(plans);
-      if (full) setPlan(normalize(full));
+      // La adaptación puede quedar RETENIDA (borrador) conviviendo con el plan
+      // activo: la que hay que enseñar es ELLA, no la vigente.
+      const resumen = await recargarPlanes(r.id);
+      const full = resumen.find((pl) => pl.id === r.id) ?? vigente(resumen);
       setPeriods(await api.listPeriods(client.id).catch(() => periods));
       setNeedsDownload(false); // versión nueva activa: el aviso de la edición anterior caduca
       onClientChanged?.(); // resincroniza sidebar (Dieta) y estados
@@ -462,7 +488,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
       // banda de "sin activar": el cliente sigue viendo el actual. Sin plan,
       // la copia pasa a ser lo que se enseña.
       if (plan && plan.status === "published") {
-        setAllPlans(await api.listPlans(client.id).catch(() => allPlans));
+        await recargarPlanes();
       } else {
         setPlan(normalize(p));
       }
@@ -615,6 +641,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
       // siguiente edición. El educativo también vuelve del backend.
       setPlan(normalize({
         ...plan,
+        // Mismo motivo que arriba: la clave que manda es `nutrition`/`training`.
         nutrition: r.nutrition_json ?? importPreview.nutrition_json ?? plan.nutrition,
         training: r.training_json ?? importPreview.training_json ?? plan.training,
         education: r.education_json ?? importPreview.education_json ?? plan.education,
@@ -793,6 +820,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
       <ClientPlanEditor
         plan={plan}
         exMap={exMap}
+        library={exList}
         client={client}
         refWeightKg={(client as any).reference_weight_kg ?? lastClosing?.closing_weight_kg ?? client.start_weight_kg ?? null}
         initialFocus={editFocus}
@@ -924,10 +952,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
     setPublishing(true);
     try {
       await api.publishPlan(retenido.id);
-      const ps = await api.listPlans(client.id).catch(() => allPlans);
-      setAllPlans(ps);
-      const v = vigente(ps);
-      if (v) setPlan(normalize(v));
+      await recargarPlanes();
       onClientChanged?.();
       toast.push("Activa · la ve el cliente");
     } catch {
@@ -973,7 +998,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
             {/* Con retención por seguridad lo PRIMERO es revisar: el botón
                 destacado es "Ver este borrador"; activar sin corregir queda en
                 segundo plano y pide confirmación. En una copia normal, al revés. */}
-            <button onClick={() => setPlan(normalize(retenido))}
+            <button onClick={() => { void recargarPlanes(retenido.id); }}
               className={esCopia ? "btn btn-ghost text-xs" : "btn btn-primary text-xs"}>
               Ver este borrador
             </button>
@@ -993,7 +1018,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                 if (!window.confirm(`¿Descartar el borrador v${retenido.version}? No se puede deshacer desde aquí (queda en Planificaciones anteriores).`)) return;
                 try {
                   await api.discardPlan(retenido.id);
-                  setAllPlans(await api.listPlans(client.id).catch(() => allPlans));
+                  await recargarPlanes();
                   toast.push("Borrador descartado");
                 } catch (e: any) {
                   toast.push(e?.message ?? "No se pudo descartar", "error");
@@ -1015,7 +1040,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
         const v = vigente(allPlans);
         if (!v || v.id === plan.id) return null;
         return (
-          <button onClick={() => setPlan(normalize(v))} className="btn btn-ghost text-xs">
+          <button onClick={() => { void recargarPlanes(v.id); }} className="btn btn-ghost text-xs">
             ← Volver al plan activo (v{v.version})
           </button>
         );
@@ -1505,12 +1530,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
       {(() => {
         const manualItems: string[] = ((nut as any)?.manual_changes?.items ?? []) as string[];
         if (!manualItems.length) return null;
-        const refreshPlans = () =>
-          api.listPlans(client.id).then((plans) => {
-            setAllPlans(plans);
-            const v = vigente(plans);
-            if (v) setPlan(normalize(v));
-          }).catch(() => {});
+        const refreshPlans = () => recargarPlanes().catch(() => {});
         const sendWa = async () => {
           const phone = waPhone(client.phone);
           if (!phone) {
@@ -1619,12 +1639,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
         currentMonth={plan.month_index}
         onClientChanged={onClientChanged}
         onRegenerated={async () => {
-          const plans = await api.listPlans(client.id).catch(() => null);
-          if (plans) {
-            setAllPlans(plans);
-            const v = vigente(plans);
-            if (v) setPlan(normalize(v));
-          }
+          await recargarPlanes();
           setPeriods(await api.listPeriods(client.id).catch(() => periods));
         }}
       />
@@ -2058,14 +2073,14 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                   </span>
                 </summary>
                 <div className="grid grid-cols-2 gap-2 px-3 py-3 text-xs text-zinc-400 sm:grid-cols-4">
-                  <span>Calorías: <b className="text-zinc-200">{Math.round(p.nutrition_json?.target_kcal ?? 0)}</b></span>
+                  <span>Calorías: <b className="text-zinc-200">{Math.round(p.target_kcal ?? 0)}</b></span>
                   <span>P/C/G: <b className="text-zinc-200">
-                    {Math.round(p.nutrition_json?.macros?.protein_g ?? 0)}/
-                    {Math.round(p.nutrition_json?.macros?.carbs_g ?? 0)}/
-                    {Math.round(p.nutrition_json?.macros?.fat_g ?? 0)} g
+                    {Math.round(p.protein_g ?? 0)}/
+                    {Math.round(p.carbs_g ?? 0)}/
+                    {Math.round(p.fat_g ?? 0)} g
                   </b></span>
-                  {hasTraining && <span>Split: <b className="text-zinc-200">{p.training_json?.split_name ?? "—"}</b></span>}
-                  {hasTraining && <span>Sesiones: <b className="text-zinc-200">{(p.training_json?.sessions ?? []).length}</b></span>}
+                  {hasTraining && <span>Split: <b className="text-zinc-200">{p.split_name ?? "—"}</b></span>}
+                  {hasTraining && <span>Sesiones: <b className="text-zinc-200">{p.sessions_count ?? 0}</b></span>}
                 </div>
                 {/* Por qué se adaptó o cambió esta versión */}
                 {(p.whyChanged?.length || p.whyLabel) && (
@@ -2095,21 +2110,21 @@ const fmtDay = (d: Date) =>
 /** Planes archivados (todos menos el vigente) con las fechas en que se usaron
  *  (desde su creación hasta el plan siguiente), la duración y el PORQUÉ del
  *  cambio (ajustes aplicados de la revisión o justificación del plan). */
-function archivedPlans(all: any[], currentId: number): any[] {
+function archivedPlans(all: PlanSummary[], currentId: number): any[] {
   const asc = [...all].sort((a, b) => String(a.created_at ?? "").localeCompare(String(b.created_at ?? "")));
   return asc
     .map((p, i) => {
       const from = p.created_at ? new Date(p.created_at) : null;
-      const next = asc[i + 1]?.created_at ? new Date(asc[i + 1].created_at) : new Date();
+      const siguiente = asc[i + 1]?.created_at;
+      const next = siguiente ? new Date(siguiente) : new Date();
       const days = from ? Math.max(1, Math.round((next.getTime() - from.getTime()) / 86400000)) : null;
-      const sello = selloAdaptacion(p);
-      const applied = sello?.items as any[] | undefined;
+      const applied = p.applied_adjustments?.items;
       const whyChanged = (applied ?? [])
         .filter((it) => it?.change || it?.detail)
-        .map((it) => ({ change: it.detail ?? it.change, reason: it.reason ?? "" }));
-      const rationale: string | null = p.nutrition_json?.rationale ?? null;
+        .map((it) => ({ change: (it.detail ?? it.change) as string, reason: it.reason ?? "" }));
+      const rationale: string | null = p.rationale ?? null;
       const whyLabel = whyChanged.length
-        ? `Adaptación a la revisión #${sello?.period_index}:`
+        ? `Adaptación a la revisión #${p.applied_adjustments?.period_index}:`
         : rationale
           ? rationale.split("\n")[0].slice(0, 180)
           : p.generated_by === "ai"

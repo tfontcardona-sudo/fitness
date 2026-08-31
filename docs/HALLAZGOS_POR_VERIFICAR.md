@@ -19,6 +19,13 @@
 >   `pdf_convert.py:55`, `plans.py:576` y `plan_doc.py:637`.
 > - **Tanda 5 (RGPD, borrado y portabilidad) — sesión "DQR asesories"
 >   (`claude/stripe-integration-steps-somce4`). HECHA.** Alcance acotado a lo
+>   (`claude/stripe-integration-steps-somce4`). HECHA.**
+> - **Tanda 6 (portal del cliente y anamnesis) — sesión "DQR asesories"
+>   (`claude/stripe-integration-steps-somce4`), EN CURSO.** Alcance:
+>   `PortalDiary.tsx` 48/64/213, `AnamnesisPage.tsx` 254/497/501,
+>   `PortalApp.tsx:290`, `PortalResources.tsx:46`, `portal_public.py` 268/406 y
+>   `clients.py:927` (contradicciones de la anamnesis). `feedback_service.py:116`
+>   (fotos iniciales como "front") entra aquí por ser del mismo camino. Alcance acotado a lo
 >   que la tanda 4 no lleva: `clients.py` 618/626/702/730/751 (borrado RGPD,
 >   "Descargar todo", ZIP de portabilidad), `tests/test_borrado_rgpd.py:74` y
 >   `frontend/Caddyfile:43` (el tope de subida contra los vídeos de ejercicio).
@@ -59,6 +66,22 @@
 > la rejilla de la gráfica de perímetros). Las tandas 2 y 4 se apilan sobre esta
 > rama a propósito: llevadas a `main` por separado, se aplicarían sobre una base
 > que no tiene sus prerrequisitos.
+>
+> - **Tanda 7 (optimización: backend + frontend) — sesión "videollamadas Google
+>   Meet" (`claude/google-meet-calendar-integration-1po1c2`), HECHA.**
+>   Alcance: TODO el apartado "Pendientes · optimización" salvo lo que ya sea de
+>   otra tanda. Backend: `clients.py` 1233/1242 (historial y ficha),
+>   `plan_library.py:426`, `plans.py` 477/721, `exercises.py:58`,
+>   `services/portal.py:412`. Frontend: `ClientPlanEditor.tsx:102`,
+>   `ClientFeedbackTab.tsx:1129`, `DashboardPage.tsx:145`,
+>   `RecursosPage.tsx:1087`, `AppShell.tsx:127`. **NO toco** `portal_public.py`,
+>   `AnamnesisPage.tsx`, `PortalDiary/PortalApp/PortalResources` ni la zona RGPD
+>   de `clients.py` (618-751): son de la tanda 6. En `clients.py` y
+>   `RecursosPage.tsx` coincidimos de fichero pero no de región.
+>   **HECHA** (todo el apartado de optimización verificado uno a uno y
+>   corregido, con `tests/test_optimizacion.py` — 11 regresiones que fallan sin
+>   el arreglo). Los tres de "Créditos de IA" y los de "Construido y sin
+>   conectar" NO son míos: son la tanda 8.
 
 > **Qué es esto.** El inventario en crudo de dos barridos automáticos: una
 > verificación adversarial de los 27 commits de la auditoría anterior, y los dos
@@ -127,6 +150,7 @@
 | Al cliente DQR Train el portal le anuncia una dieta que su PDF no contiene | `frontend/src/portal/PortalApp.tsx:290` | (tanda 6) |
 | "Recursos" es la única pantalla del portal cuyo error no se puede reintentar, y el texto invita a hacerlo | `frontend/src/portal/PortalResources.tsx:46` | (tanda 6) |
 
+
 ---
 
 ## Pendientes · verificación adversarial de la ronda anterior
@@ -146,6 +170,13 @@ fallo que dice cazar).
 - **[media] El sello editado (y el `rev` nuevo) se tiran: `normalize` se queda con el plan viejo** — `frontend/src/components/ClientPlanPanel.tsx:320` · `suposicion_falsa`
 - **[media] DQR Train: regenerar el plan no sella la adaptación → el banner "sin adaptar" es eterno** — `backend/app/routers/clients.py:1726` · `arreglo_incompleto`
 - **[media] Copiar un plan/modelo arrastra el sello de adaptación de OTRO cliente dentro de `training_json`** — `backend/app/services/plan_library.py:268` · `arreglo_incompleto`
+
+- **[media] El reenvío del pendiente del Diario corre sin control de concurrencia y borra lo tecleado después** — `frontend/src/portal/PortalDiary.tsx:213` · `regresion`
+- **[media] El pendiente del Diario se guarda con una clave sin cliente: en un móvil compartido escribe el diario de otro** — `frontend/src/portal/PortalDiary.tsx:48` · `regresion`
+- **[media] El sidecar de la vía formulario congela el retrato y las correcciones del coach dejan de llegar al prompt** — `backend/app/routers/portal_public.py:268` · `regresion`
+- **[media] Las contradicciones del nuevo endpoint son una foto fija: no se apagan al corregir la ficha ni aparecen si las crea el coach** — `backend/app/routers/clients.py:927` · `arreglo_incompleto`
+- **[media] Las fotos iniciales se guardan todas como `front`: el primer informe empareja un ángulo equivocado** — `backend/app/services/feedback_service.py:116` · `regresion`
+- **[media] El cliente que mandó su anamnesis en PDF ve la tarjeta de fotos iniciales y recibe un 403 imposible de satisfacer** — `frontend/src/pages/AnamnesisPage.tsx:501` · `regresion`
 - **[media] La fila DIFERENCIA reabre el doble descuento que el commit venía a cerrar** — `backend/app/services/payments.py:258` · `regresion`
 - **[media] Borrar un cobro a mano puede marcar como IMPAGADO a un cliente que sí pagó** — `backend/app/routers/payments.py:215` · `suposicion_falsa`
 - **[media] La baja RGPD puede quedar bloqueada por un error de Stripe que el filtro no reconoce** — `backend/app/services/stripe_service.py:1091` · `arreglo_incompleto`
@@ -159,6 +190,10 @@ fallo que dice cazar).
 
 - **[baja] Las ramas de "aversión" y "patrón" de `_sin_cifras` no coinciden con ningún veto real: el prompt recibe frases mutiladas** — `backend/app/services/coach_lessons.py:219`
 - **[baja] La memoria de vetos (§13) deja de aprender del banco de comidas: los alérgenos y los desvíos ya no se anotan** — `backend/app/services/ai/generator.py:1079`
+
+- **[baja] El diario sin guardar al cruzar la medianoche se tira a la basura, pudiendo reenviarse con su fecha** — `frontend/src/portal/PortalDiary.tsx:64`
+- **[baja] El pre-relleno "solo si está vacío" deja muerto el campo de duración de sesión (y trata `false` como vacío)** — `frontend/src/pages/AnamnesisPage.tsx:254`
+- **[baja] El criterio único no llega a `/anamnesis-pdf`: el camino inverso sigue pisando la ficha revisada** — `backend/app/routers/portal_public.py:406`
 - **[baja] El aviso del barrido cortado pide al coach dos cosas que no puede hacer** — `frontend/src/pages/PagosPage.tsx:250`
 - **[baja] El test del borrado del cobro a mano pasa igual sin el recálculo de la ficha** — `backend/tests/test_cobro_manual.py:211`
 - **[baja] El "total" de cobros de la ficha se corta en 20 movimientos y suma dinero de prueba** — `frontend/src/pages/ClientProfilePage.tsx:789`
@@ -181,6 +216,10 @@ fallo que dice cazar).
 
 ### Coherencia de UX — portal del cliente
 
+
+- **[media] El cuestionario dice "te hemos enviado el acceso por email" aunque no se haya enviado ninguno, y no deja vía de vuelta al portal** — `frontend/src/pages/AnamnesisPage.tsx:497`
+- **[media] Al cliente DQR Train el portal le anuncia una dieta que su PDF no contiene** — `frontend/src/portal/PortalApp.tsx:290`
+- **[baja] "Recursos" es la única pantalla del portal cuyo error no se puede reintentar, y el texto invita a hacerlo** — `frontend/src/portal/PortalResources.tsx:46`
 
 ### Integraciones — Stripe
 
@@ -413,3 +452,4 @@ las 13 rutas del panel (escritorio y móvil) y en las 6 del portal; una sola
 cabeza de Alembic y arranque desde cero en verde; suite completa, `tsc`, build,
 `check:anclas`, `check:avisos` y `lint:hooks` (0 errores) sobre el código de las
 tres sesiones junto.
+

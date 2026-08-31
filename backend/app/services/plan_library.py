@@ -440,28 +440,44 @@ def guardar_modelo(db: Session, plan: Plan, titulo: str) -> PlanTemplate:
 def pool_de_planes(db: Session) -> list[dict]:
     """El plan VIGENTE de cada cliente (o su último borrador si no hay activo),
     con su resumen: es la lista de "copiar de este cliente"."""
+    # DOS pasos a propósito. El primero elige UN plan por cliente leyendo solo
+    # escalares; el segundo trae el contenido únicamente de los elegidos. Antes
+    # se pedía la fila entera de TODOS los planes vivos de TODOS los clientes
+    # —los cuatro JSONB, banco de comidas incluido— para acabar tirando casi
+    # todos y pintar una línea de cada uno.
     filas = list(db.execute(
-        select(Plan, Client.full_name)
+        select(Plan.id, Plan.client_id, Plan.status, Plan.published_at,
+               Plan.created_at, Client.full_name)
         .join(Client, Client.id == Plan.client_id)
         .where(Plan.status.in_(("published", "draft")))
         .order_by(Plan.client_id, Plan.id.desc())
     ))
-    mejores: dict[int, tuple[Plan, str]] = {}
-    for plan, nombre in filas:
-        actual = mejores.get(plan.client_id)
+    mejores: dict[int, tuple] = {}
+    for fila in filas:
+        actual = mejores.get(fila.client_id)
         # Preferencia: publicado > borrador; a igualdad, el más nuevo (la
         # consulta ya viene de nuevo a viejo).
-        if actual is None or (plan.status == "published" and actual[0].status != "published"):
-            mejores[plan.client_id] = (plan, nombre)
+        if actual is None or (fila.status == "published" and actual.status != "published"):
+            mejores[fila.client_id] = fila
+    contenidos = {}
+    if mejores:
+        contenidos = {
+            c.id: c for c in db.execute(
+                select(Plan.id, Plan.nutrition_json, Plan.training_json, Plan.goal_type)
+                .where(Plan.id.in_([f.id for f in mejores.values()]))
+            )
+        }
     out = []
-    for plan, nombre in mejores.values():
+    for fila in mejores.values():
+        cont = contenidos.get(fila.id)
         out.append({
-            "plan_id": plan.id, "client_id": plan.client_id, "client_name": nombre,
-            "status": plan.status,
-            "summary": resumen_plan(plan.nutrition_json, plan.training_json,
-                                    plan.goal_type),
-            "updated_at": (plan.published_at or plan.created_at).isoformat()
-            if (plan.published_at or plan.created_at) else None,
+            "plan_id": fila.id, "client_id": fila.client_id, "client_name": fila.full_name,
+            "status": fila.status,
+            "summary": resumen_plan(cont.nutrition_json if cont else None,
+                                    cont.training_json if cont else None,
+                                    cont.goal_type if cont else None),
+            "updated_at": (fila.published_at or fila.created_at).isoformat()
+            if (fila.published_at or fila.created_at) else None,
         })
     out.sort(key=lambda x: x["client_name"].lower())
     return out

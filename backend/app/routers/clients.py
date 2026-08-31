@@ -367,6 +367,14 @@ def list_clients(
     db: Session = Depends(get_db),
     status_filter: ClientStatus | None = Query(default=None, alias="status"),
     q: str | None = Query(default=None, min_length=2, description="busca en nombre/email"),
+    # `light` llegó de otra sesión que atacó lo MISMO por otro camino: un
+    # opt-in que vaciaba las notas. Se conserva el parámetro para no romper a
+    # quien ya lo manda, pero no hace falta hacer nada con él: la exclusión de
+    # arriba (`response_model_exclude`) ya quita esos campos SIEMPRE, que es más
+    # seguro — no depende de que cada llamador se acuerde de pedirlo.
+    light: bool = Query(default=False, deprecated=True,
+                        description="ya no hace falta: el listado nunca lleva "
+                                    "las notas largas"),
 ) -> list[ClientOut]:
     stmt = select(Client).order_by(Client.created_at.desc())
     if status_filter:
@@ -1526,9 +1534,38 @@ def list_client_photos(client_id: int, db: Session = Depends(get_db)) -> list[di
     ]
 
 
+def _miniatura(path, ancho: int) -> bytes | None:
+    """Reduce una foto a `ancho` px de lado mayor. Devuelve None si no se puede
+    (formato raro, archivo corrupto): el llamador sirve entonces el original.
+
+    `draft()` hace que el JPEG se decodifique ya reducido — sin él, generar la
+    miniatura costaría más que servir la foto entera."""
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+
+        with Image.open(path) as img:
+            img.draft("RGB", (ancho, ancho))
+            img = img.convert("RGB")
+            img.thumbnail((ancho, ancho))
+            buf = BytesIO()
+            img.save(buf, format="JPEG", quality=80, optimize=True)
+            return buf.getvalue()
+    except Exception:  # noqa: BLE001
+        return None
+
+
 @router.get("/{client_id}/photos/{photo_id}")
-def get_client_photo(client_id: int, photo_id: int, db: Session = Depends(get_db)):
-    """Sirve una foto de progreso (requiere JWT del coach)."""
+def get_client_photo(client_id: int, photo_id: int,
+                     w: int | None = Query(default=None, ge=32, le=2000,
+                                           description="ancho máximo en px (miniatura)"),
+                     db: Session = Depends(get_db)):
+    """Sirve una foto de progreso (requiere JWT del coach).
+
+    Con `?w=` devuelve una MINIATURA. La tira de fotos del período las pintaba a
+    80×96 px descargando el original del móvil del cliente (varios MB cada una):
+    ocho fotos eran decenas de megas para ocho sellos de contacto."""
     p = db.get(ProgressPhoto, photo_id)
     if not p or p.client_id != client_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Foto no encontrada")
@@ -1537,9 +1574,19 @@ def get_client_photo(client_id: int, photo_id: int, db: Session = Depends(get_db
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Archivo no encontrado")
     ext = path.suffix.lower()
     media = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}.get(ext, "application/octet-stream")
+    # La foto de un período cerrado no cambia nunca: que el navegador la guarde.
+    cache = {"Cache-Control": "private, max-age=86400"}
+    if w:
+        mini = _miniatura(path, w)
+        if mini is not None:
+            return Response(
+                content=mini, media_type="image/jpeg",
+                headers={"Content-Disposition": f'inline; filename="foto_{photo_id}_w{w}.jpg"',
+                         **cache},
+            )
     return Response(
         content=path.read_bytes(), media_type=media,
-        headers={"Content-Disposition": f'inline; filename="foto_{photo_id}{ext}"'},
+        headers={"Content-Disposition": f'inline; filename="foto_{photo_id}{ext}"', **cache},
     )
 
 

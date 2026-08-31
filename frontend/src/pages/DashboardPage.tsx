@@ -142,7 +142,9 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const load = () => {
-      api.listClients()
+      // `light`: esta pantalla se refresca sola cada 3 s y no pinta ni una
+      // de las notas de la anamnesis (son la mayor parte del peso de la lista).
+      api.listClients({ light: true })
         .then((cs) => { setLoadFailed(false); setClients((prev) => keepIfSame(prev, cs)); })
         .catch(() => { setLoadFailed(true); setClients((c) => c ?? []); });
     };

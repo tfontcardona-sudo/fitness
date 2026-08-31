@@ -190,19 +190,18 @@ export default function ClientProfilePage() {
   const [planDiet, setPlanDiet] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
-    // LIGERO: la línea "Dieta" solo necesita kcal, macros y el nº de tomas.
-    api.listPlans(clientId, { ligero: true })
-      .then((plans: any[]) => {
+    // El RESUMEN de las versiones (una línea cada una): esto se recarga con
+    // cada acción del perfil y antes traía los cuatro JSONB de todos los planes
+    // del cliente para pintar una sola línea de kcal y macros.
+    api.listPlanSummaries(clientId)
+      .then((plans) => {
         if (!alive) return;
         const active = plans.find((p) => p.status === "published");
-        const n = active?.nutrition_json;
-        if (n?.target_kcal) {
-          const m = n.macros ?? {};
-          const nMeals = Array.isArray(n.meals) ? n.meals.length : null;
+        if (active?.target_kcal) {
           setPlanDiet(
-            `${Math.round(n.target_kcal)} kcal · P${Math.round(m.protein_g ?? 0)} ` +
-            `C${Math.round(m.carbs_g ?? 0)} G${Math.round(m.fat_g ?? 0)}` +
-            (nMeals ? ` · ${nMeals} comidas/día` : ""),
+            `${Math.round(active.target_kcal)} kcal · P${Math.round(active.protein_g ?? 0)} ` +
+            `C${Math.round(active.carbs_g ?? 0)} G${Math.round(active.fat_g ?? 0)}` +
+            (active.meals_count ? ` · ${active.meals_count} comidas/día` : ""),
           );
         } else setPlanDiet(null);
       })

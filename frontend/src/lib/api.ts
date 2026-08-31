@@ -196,6 +196,33 @@ async function request<T>(
   return res.json() as Promise<T>;
 }
 
+export interface PlanSummary {
+  id: number;
+  client_id: number;
+  month_index: number;
+  version: number;
+  status: string;
+  goal_type: string | null;
+  generated_by: string | null;
+  guardrail_flags: string[] | null;
+  published_at: string | null;
+  created_at: string | null;
+  target_kcal: number | null;
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
+  meals_count: number | null;
+  split_name: string | null;
+  sessions_count: number | null;
+  applied_adjustments: {
+    period_index?: number;
+    items?: { change?: string; detail?: string; reason?: string }[];
+  } | null;
+  rationale: string | null;
+  has_nutrition: boolean;
+  has_training: boolean;
+}
+
 export const api = {
   // --- auth ---
   login: (username: string, password: string) =>
@@ -203,10 +230,13 @@ export const api = {
   me: () => request<MeOut>("GET", "/auth/me"),
 
   // --- clients ---
-  listClients: (params: { status?: ClientStatus; q?: string } = {}) => {
+  listClients: (params: { status?: ClientStatus; q?: string; light?: boolean } = {}) => {
     const qs = new URLSearchParams();
     if (params.status) qs.set("status", params.status);
     if (params.q) qs.set("q", params.q);
+    // Sin las notas largas de la anamnesis: para los listados que se refrescan
+    // solos y no las pintan. La ficha (`getClient`) las sigue trayendo.
+    if (params.light) qs.set("light", "1");
     const suffix = qs.toString() ? `?${qs}` : "";
     return request<ClientOut[]>("GET", `/clients${suffix}`);
   },
@@ -236,17 +266,19 @@ export const api = {
   // Enlace ESTABLE de pago de un cliente (para mandarlo por WhatsApp/email).
   payLinkUrl: (portalToken: string) => `${window.location.origin}/api/pay/${portalToken}`,
   exportClientUrl: (id: number) => `/api/clients/${id}/export`,
-  // `ligero`: los JSON recortados (kcal, macros, tomas, sello de la
-  // adaptación). Para las pantallas que solo LEEN — con 12-20 versiones, cada
-  // una con su banco de recetas y su educativo, la ficha descargaba varios MB
-  // por apertura, y DOS veces.
-  listPlans: (clientId: number, opts?: { ligero?: boolean }) =>
+  /** Las versiones del plan EN UNA LÍNEA (sin el banco de comidas ni el
+   *  educativo): es lo que necesita el archivo de "Planificaciones anteriores",
+   *  el chip de dieta de la ficha y el selector. La versión que se abre y se
+   *  edita se pide entera con `getPlan`. */
+  listPlanSummaries: (clientId: number) =>
+    request<PlanSummary[]>("GET", `/clients/${clientId}/plans/summary`),
+  getPlan: (planId: number) =>
     request<{
-      id: number; month_index: number; version: number; status: string;
+      id: number; client_id: number; month_index: number; version: number; status: string;
       nutrition_json: any; training_json: any; education_json: any;
-      guardrail_flags: string[] | null;
+      guardrail_flags: string[] | null; review_json: any;
       goal_type: string | null; published_at: string | null; created_at: string | null;
-    }[]>("GET", `/clients/${clientId}/plans${opts?.ligero ? "?ligero=true" : ""}`),
+    }>("GET", `/plans/${planId}`),
   // ---- Etapa del objetivo (45 días) + alertas del coach ----
   goalReviewAnalysis: (clientId: number) =>
     request<{ text: string; options: string[] }>("POST", `/clients/${clientId}/goal-review/analysis`),
@@ -294,8 +326,10 @@ export const api = {
     window.setTimeout(() => _cacheFotos.delete(k), 30000);
     return p;
   },
-  clientPhotoUrl: (clientId: number, photoId: number) =>
-    `/api/clients/${clientId}/photos/${photoId}`,
+  // `ancho`: miniatura servida por el backend. Las tiras de fotos las pintaban
+  // a 80×96 px descargando el original de varios MB, una detrás de otra.
+  clientPhotoUrl: (clientId: number, photoId: number, ancho?: number) =>
+    `/api/clients/${clientId}/photos/${photoId}` + (ancho ? `?w=${ancho}` : ""),
   getClientHistory: (clientId: number) =>
     request<{
       start_weight_kg: number | null; current_weight_kg: number | null; goal_weight_kg: number | null;

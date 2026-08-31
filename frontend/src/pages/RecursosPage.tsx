@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import {
   Copy,
@@ -1156,9 +1156,12 @@ function ExerciseVideosManager() {
   }, []);
   useEffect(load, [load]);
 
+  // El filtrado va con el valor DIFERIDO: escribir en el buscador no espera a
+  // recalcular y repintar las 279 filas en la misma pulsación.
+  const qDiferida = useDeferredValue(q);
   const filtered = useMemo(() => {
     if (!all) return [];
-    const needle = q.trim().toLowerCase();
+    const needle = qDiferida.trim().toLowerCase();
     return all.filter((e) => {
       if (onlySet && !e.video_url && !e.image_url && !e.video_path) return false;
       if (!needle) return true;
@@ -1168,7 +1171,7 @@ function ExerciseVideosManager() {
         (e.aliases || []).some((a) => a.toLowerCase().includes(needle))
       );
     });
-  }, [all, q, onlySet]);
+  }, [all, qDiferida, onlySet]);
 
   if (all === null) return <PageLoader />;
 
@@ -1270,7 +1273,10 @@ function VideoCoverCard() {
   );
 }
 
-function ExerciseVideoRow({
+/** Memoizada: 279 filas se repintaban ENTERAS con cada tecla del buscador.
+ *  `onSaved` es estable (useCallback) y `toast` viene del proveedor, así que
+ *  la comparación por props funciona de verdad. */
+const ExerciseVideoRow = memo(function ExerciseVideoRow({
   exercise: ex, onSaved, toast,
 }: {
   exercise: ExerciseOut;
@@ -1330,7 +1336,7 @@ function ExerciseVideoRow({
   }
 
   return (
-    <li className="card p-3">
+    <li className="card fila-diferida p-3">
       <div className="flex items-start gap-3">
         <div
           className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border"
@@ -1343,6 +1349,7 @@ function ExerciseVideoRow({
             <Video size={18} style={{ color: "#2E7D46" }} />
           ) : previewSrc && imgOk ? (
             <img src={previewSrc} alt="" className="h-full w-full object-cover"
+              loading="lazy" decoding="async" width={56} height={56}
               onError={() => setImgOk(false)} />
           ) : (
             <Video size={18} className="text-zinc-500" />
@@ -1392,14 +1399,17 @@ function ExerciseVideoRow({
       </div>
     </li>
   );
-}
+});
 
 /** Portada de YouTube para la vista previa del coach — misma detección (host
  *  anclado, lib/video.ts) que usa el reproductor del portal: la vista previa
  *  enseña EXACTAMENTE lo que verá el cliente. */
 function youtubeThumb(url: string): string | null {
   const id = youtubeId(url);
-  return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null;
+  // `mqdefault` (320×180) y no `hqdefault` (480×360): el hueco de la lista mide
+  // 56×56 px y hay 279 filas — la versión grande eran megas de portadas para
+  // pintar sellos del tamaño de una uña.
+  return id ? `https://img.youtube.com/vi/${id}/mqdefault.jpg` : null;
 }
 
 

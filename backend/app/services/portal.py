@@ -486,17 +486,25 @@ def _session_for_today(db: Session, plan: Plan, today: date) -> dict | None:
     return None
 
 
-def build_training_sessions(db: Session, client: Client) -> list[dict]:
+def build_training_sessions(db: Session, client: Client, plan: Plan | None = None,
+                            week: dict | None = None) -> list[dict]:
     """TODAS las sesiones del plan vigente, con nombres de ejercicio resueltos
     y el peso sugerido AJUSTADO a la semana del mesociclo en curso.
 
     Para el selector de sesión del portal (el cliente registra la que ha hecho,
-    no solo la del día)."""
-    period = active_period(db, client.id)
-    plan = published_plan_for_period(db, period) if period else latest_published_plan(db, client.id)
+    no solo la del día).
+
+    `plan` y `week` los pasa quien ya los ha resuelto (el endpoint de Entreno los
+    necesita para las Novedades y la semana del mesociclo): sin ellos esta
+    función repetía la misma resolución de plan que su llamador."""
+    if plan is None:
+        period = active_period(db, client.id)
+        plan = (published_plan_for_period(db, period) if period
+                else latest_published_plan(db, client.id))
     if plan is None:
         return []
-    week = current_training_week(db, plan, today_local())
+    if week is None:
+        week = current_training_week(db, plan, today_local())
     factor = (week or {}).get("load_factor") or 1.0
     training = plan.training_json or {}
     sesiones = training.get("sessions", []) or []
