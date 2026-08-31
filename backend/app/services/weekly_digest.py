@@ -154,6 +154,10 @@ def run_weekly_digest(db: Session, hoy=None) -> dict:
                 payload = {
                     "title": f"📊 Resumen semanal · {digest.week_label}",
                     "body": " · ".join(partes),
+                    # Sin count, el service worker apagaba el badge del coach:
+                    # el resumen del lunes le borraba los "N pagos sin leer".
+                    "count": len(digest.at_risk) + len(digest.review_pending)
+                             + len(digest.renewals),
                     "url": "/",
                     "tag": "dq-weekly",
                 }

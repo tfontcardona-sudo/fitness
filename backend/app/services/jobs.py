@@ -46,6 +46,7 @@ def _first_name(client: Client) -> str:
 MAX_AVISOS_DE_CIERRE = 3
 
 
+<<<<<<< HEAD
 # `EmailLog` anota los TRES desenlaces: `sent`, `failed` (SMTP caído, dirección
 # rechazada…) y `disabled` (los correos están apagados, del cliente o del
 # servidor). Los contadores de abajo descartan los FALLIDOS: contarlos hacía que
@@ -59,6 +60,16 @@ MAX_AVISOS_DE_CIERRE = 3
 # apagados. Reintentarlo cada día solo llenaría el registro de filas sin enviar
 # un solo correo.
 _NO_FALLIDO = EmailLog.status != "failed"
+=======
+# Estados de email_log que cuentan como "este aviso ya está resuelto": entregado
+# ("sent") o deliberadamente no enviado porque el cliente no quiere correos
+# ("disabled"). "failed" NO cuenta: es transitorio (SMTP caído, credencial
+# caducada) y el aviso TIENE que reintentarse — contarlo gastaba el cupo con
+# correos que nunca salieron. Con el SMTP caído tres días, un cliente se quedaba
+# sin recordatorio de cierre el resto de la quincena, y sin el aviso del día 12
+# para siempre, aunque el correo volviera a funcionar esa misma tarde.
+ESTADOS_RESUELTOS = ("sent", "disabled")
+>>>>>>> origin/claude/tanda3-pendiente-de-tanda1
 
 
 def _already_sent_today(db: Session, client_id: int, kind: str, today: date) -> bool:
@@ -83,7 +94,11 @@ def _already_sent_today(db: Session, client_id: int, kind: str, today: date) -> 
             EmailLog.client_id == client_id,
             EmailLog.kind == kind,
             EmailLog.sent_at >= start,
+<<<<<<< HEAD
             _NO_FALLIDO,
+=======
+            EmailLog.status.in_(ESTADOS_RESUELTOS),
+>>>>>>> origin/claude/tanda3-pendiente-de-tanda1
         )
     )
     return bool(n)
@@ -91,13 +106,22 @@ def _already_sent_today(db: Session, client_id: int, kind: str, today: date) -> 
 
 def _enviados_desde(db: Session, client_id: int, kind: str, desde: date) -> int:
     """Cuántas veces se ha mandado ese aviso desde una fecha (inicio de período
+<<<<<<< HEAD
     o alta del cliente). Un envío FALLIDO no gasta cupo."""
+=======
+    o alta del cliente). Solo cuenta los que SALIERON (o los que no salieron a
+    propósito): ver ESTADOS_RESUELTOS."""
+>>>>>>> origin/claude/tanda3-pendiente-de-tanda1
     inicio = datetime(desde.year, desde.month, desde.day, tzinfo=timezone.utc)
     return int(db.scalar(
         select(func.count()).select_from(EmailLog).where(
             EmailLog.client_id == client_id, EmailLog.kind == kind,
             EmailLog.sent_at >= inicio,
+<<<<<<< HEAD
             _NO_FALLIDO,
+=======
+            EmailLog.status.in_(ESTADOS_RESUELTOS),
+>>>>>>> origin/claude/tanda3-pendiente-de-tanda1
         )
     ) or 0)
 
@@ -393,6 +417,7 @@ def _maintain_client(db: Session, client: Client, today: date,
                         "title": f"💤 {client.full_name} ha pasado a inactivo",
                 "count": 1,
                         "body": decision.reason or "30 días sin actividad.",
+                        "count": 1,  # sin count, el sw apagaba el badge de otros avisos
                         "url": f"/clientes/{client.id}",
                         "tag": f"inactive-{client.id}",
                     })

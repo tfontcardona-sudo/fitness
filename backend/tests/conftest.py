@@ -32,6 +32,7 @@ def _sin_cupo_de_altas():
 
 @pytest.fixture(scope="session", autouse=True)
 def _sin_cache_del_educativo():
+<<<<<<< HEAD
     """La caché del contenido educativo se apaga durante la suite.
 
     Con ella encendida los tests que CUENTAN llamadas a la IA (el pipeline
@@ -44,6 +45,15 @@ def _sin_cache_del_educativo():
     CLAUDE.md ya decía "EDUCATION_CACHE_ENABLED=false en tests"; lo que faltaba
     era imponerlo aquí en vez de depender de que cada quien lo exporte.
     """
+=======
+    """La caché del contenido educativo se guarda en un sidecar del storage y
+    SOBREVIVE entre ejecuciones: el primer `pytest` la puebla y el siguiente se
+    salta la llamada de IA que los tests del pipeline están contando. La suite
+    daba resultados distintos según cuántas veces se hubiera corrido antes
+    (`test_plan_solo_entrenamiento_sin_dieta` pasaba en limpio y fallaba a la
+    segunda). Se apaga en los tests, que es lo que el traspaso ya daba por
+    hecho; en producción sigue ahorrando créditos."""
+>>>>>>> origin/claude/tanda3-pendiente-de-tanda1
     from app.config import settings
 
     previo = getattr(settings, "education_cache_enabled", True)

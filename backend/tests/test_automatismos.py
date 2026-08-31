@@ -195,6 +195,7 @@ def test_el_resumen_del_coach_no_se_repite_cada_tres_horas(sidecar, monkeypatch)
         db.close()
 
 
+<<<<<<< HEAD
 def test_un_correo_que_falla_no_consume_el_intento(monkeypatch):
     """`EmailLog` anota los tres desenlaces: `sent`, `failed` (SMTP caído) y
     `disabled` (los correos apagados, del cliente o del servidor). Los
@@ -246,10 +247,163 @@ def test_un_correo_que_falla_no_consume_el_intento(monkeypatch):
     finally:
         db.execute(delete(EmailLog).where(EmailLog.client_id == c.id))
         db.execute(delete(Client).where(Client.id == c.id))
+=======
+# --- Tanda 3: lo que la vigilancia NO miraba ---------------------------------
+
+def test_un_trabajo_secundario_muerto_dias_tambien_se_canta(sidecar):
+    """Solo se vigilaba el mantenimiento diario: los recordatorios del cliente,
+    el resumen del coach o los avisos de videollamada podían estar caídos
+    indefinidamente y el panel seguía diciendo que todo iba bien."""
+    import json
+
+    sidecar.record_job("daily_maintenance", ok=True, detalle="ok")
+    sidecar.record_job("push_reminders", ok=True, detalle="ok")
+    assert sidecar.automatismos_parados() is None
+
+    # Los push llevan un día entero sin salir (se esperan cada 3 h).
+    ruta = sidecar._ruta()
+    datos = json.loads(ruta.read_text(encoding="utf-8"))
+    datos["push_reminders"]["last_success_at"] = (
+        datetime.now(timezone.utc) - timedelta(hours=30)).isoformat()
+    ruta.write_text(json.dumps(datos), encoding="utf-8")
+
+    motivo = sidecar.automatismos_parados()
+    assert motivo and "recordatorios del cliente" in motivo
+
+
+def test_saltarse_una_vuelta_de_un_secundario_no_alarma(sidecar):
+    """Un push perdido (un reinicio, un despliegue) no puede pintar alerta: por
+    eso el margen de los secundarios es ancho."""
+    import json
+
+    sidecar.record_job("daily_maintenance", ok=True, detalle="ok")
+    sidecar.record_job("coach_digest", ok=True, detalle="ok")
+    ruta = sidecar._ruta()
+    datos = json.loads(ruta.read_text(encoding="utf-8"))
+    datos["coach_digest"]["last_success_at"] = (
+        datetime.now(timezone.utc) - timedelta(hours=5)).isoformat()
+    ruta.write_text(json.dumps(datos), encoding="utf-8")
+    assert sidecar.automatismos_parados() is None
+
+
+def test_la_huella_del_resumen_no_se_vigila_como_un_trabajo(sidecar):
+    """`record_job` se reutiliza para guardar la huella de dedup del resumen del
+    coach: no es un automatismo y no puede salir como 'parado'."""
+    import json
+
+    sidecar.record_job("daily_maintenance", ok=True, detalle="ok")
+    sidecar.record_job("coach_digest_huella", ok=True, detalle="abc")
+    ruta = sidecar._ruta()
+    datos = json.loads(ruta.read_text(encoding="utf-8"))
+    datos["coach_digest_huella"]["last_success_at"] = (
+        datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    ruta.write_text(json.dumps(datos), encoding="utf-8")
+    assert sidecar.automatismos_parados() is None
+
+
+def test_un_trabajo_que_fallo_y_ademas_dejo_de_correr_escala_a_parado(sidecar):
+    """La rama de 'terminó con errores' devolvía antes de mirar la antigüedad:
+    un mantenimiento que falló y encima se paró se quedaba para siempre en
+    'terminó con errores' —que suena a que sigue corriendo— y el aviso no
+    escalaba nunca a 'lleva N horas sin ejecutarse'."""
+    import json
+
+    sidecar.record_job("daily_maintenance", ok=True, detalle="ok")
+    sidecar.record_job("daily_maintenance", ok=False, detalle="OperationalError: x")
+    ruta = sidecar._ruta()
+    datos = json.loads(ruta.read_text(encoding="utf-8"))
+    datos["daily_maintenance"]["last_success_at"] = (
+        datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
+    ruta.write_text(json.dumps(datos), encoding="utf-8")
+
+    motivo = sidecar.automatismos_parados()
+    assert motivo and "no se ejecuta" in motivo and "72 h" in motivo
+    # …sin perder el porqué: el último intento reventó.
+    assert "errores" in motivo
+
+
+# --- Tanda 3: la huella del resumen del coach --------------------------------
+
+def test_la_huella_del_resumen_distingue_conjuntos_largos_de_alertas(sidecar):
+    """Se guardaba la lista de claves EN CRUDO y `record_job` la recorta a 300
+    caracteres: con ~10 alertas abiertas dos conjuntos DISTINTOS coincidían en
+    los primeros 300 caracteres, se leían como "sin novedades" y el resumen se
+    silenciaba justo cuando había algo nuevo que contar."""
+    import hashlib
+
+    def huella(alertas):
+        return hashlib.sha256(
+            "|".join(sorted(str(a) for a in alertas)).encode("utf-8")).hexdigest()
+
+    # Dos conjuntos que comparten un prefijo larguísimo y difieren al final.
+    comunes = [f"cliente{i:02d}:renewal_due" for i in range(20)]
+    a = huella(comunes)
+    b = huella(comunes + ["cliente99:payment_pending"])
+    assert a != b
+
+    sidecar.record_job("coach_digest_huella", ok=True, detalle=a)
+    guardada = sidecar.estado_de_los_trabajos()["coach_digest_huella"]["detail"]
+    # Cabe entera (64 caracteres) y sigue distinguiendo el conjunto nuevo.
+    assert guardada == a and guardada != b
+
+
+# --- Tanda 3: la petición del cliente no puede caer en un agujero ------------
+
+def _db_ok() -> bool:
+    try:
+        from sqlalchemy import create_engine, text
+
+        from app.config import settings
+
+        create_engine(settings.database_url).connect().execute(text("SELECT 1"))
+        return True
+    except Exception:
+        return False
+
+
+needs_db = pytest.mark.skipif(not _db_ok(), reason="Requiere PostgreSQL")
+
+
+@needs_db
+def test_la_peticion_se_avisa_aunque_no_haya_plan_ni_el_cliente_este_activo():
+    """"Escribir a mi coach" se ofrece a TODO cliente con acceso, pero la alerta
+    vivía detrás de los `return` de "sin plan publicado" y de "inactivo": justo
+    los dos que más escriben —el que aún no tiene plan y pregunta por él, y el
+    que lleva semanas parado— mandaban su mensaje a un agujero."""
+    from app.db import SessionLocal
+    from app.models import ChangeRequest, Client
+    from app.routers.alerts import client_alerts
+    from app.security import new_portal_token
+
+    db = SessionLocal()
+    creados = []
+    try:
+        for estado in ("onboarding", "inactive"):
+            uid = uuid.uuid4().hex[:8]
+            c = Client(full_name=f"Peticion {estado}", email=f"cr-{uid}@test.local",
+                       portal_token="tmp", status=estado)
+            db.add(c)
+            db.flush()
+            c.portal_token = new_portal_token(c.id)
+            db.add(ChangeRequest(client_id=c.id, message="Me duele la rodilla",
+                                 status="open"))
+            db.flush()
+            creados.append(c)
+
+            kinds = [a["kind"] for a in client_alerts(db, c)]
+            assert "change_request" in kinds, (
+                f"un cliente {estado} escribe y nadie se entera: {kinds}")
+    finally:
+        for c in creados:
+            db.query(ChangeRequest).filter_by(client_id=c.id).delete()
+            db.flush()
+            db.delete(c)
+>>>>>>> origin/claude/tanda3-pendiente-de-tanda1
         db.commit()
         db.close()
 
 
+<<<<<<< HEAD
 def test_la_dedup_del_resumen_del_coach_aguanta_muchas_alertas(tmp_path, monkeypatch):
     """`record_job` guarda el detalle recortado a 300 caracteres. La huella era
     la lista literal de claves de alerta, que los pasa con ~10 alertas
@@ -335,3 +489,122 @@ def test_un_trabajo_que_lleva_dias_fallando_lo_dice(sidecar):
     viejo = sidecar.automatismos_parados(ahora)
     assert viejo and "120 h sin completarse" in viejo, viejo
     assert viejo != reciente, "el aviso tiene que escalar, no repetirse igual"
+=======
+@needs_db
+def test_la_racha_del_portal_cuenta_lo_mismo_que_el_motor():
+    """La racha tenía su PROPIO predicado en SQL (`is_not(None)`), que da por
+    bueno lo que el motor descarta: un `free_notes` vacío o un
+    `chosen_options_json` sin nada elegido —filas que el autosave del portal crea
+    con solo abrir la pantalla—. La racha premiaba días que para el coach no
+    existían, justo lo que la "única verdad" venía a evitar."""
+    from datetime import date, timedelta
+
+    from app.db import SessionLocal
+    from app.models import Client, DailyLog, Period, Plan
+    from app.security import new_portal_token
+    from app.services.portal import streak_days
+    from app.services.push import dias_con_registro
+
+    db = SessionLocal()
+    uid = uuid.uuid4().hex[:8]
+    hoy = date.today()
+    c = Client(full_name="Racha", email=f"racha-{uid}@test.local",
+               portal_token="tmp", status="active")
+    db.add(c)
+    db.flush()
+    c.portal_token = new_portal_token(c.id)
+    plan = Plan(client_id=c.id, month_index=1, version=1, status="published")
+    db.add(plan)
+    db.flush()
+    p = Period(client_id=c.id, plan_id=plan.id, period_index=1,
+               starts_on=hoy - timedelta(days=5), ends_on=hoy + timedelta(days=8),
+               status="open")
+    db.add(p)
+    db.flush()
+    try:
+        # Ayer: registro DE VERDAD. Hoy: solo la fila vacía del autosave.
+        db.add(DailyLog(period_id=p.id, log_date=hoy - timedelta(days=1),
+                        weight_kg=80.0))
+        db.add(DailyLog(period_id=p.id, log_date=hoy,
+                        free_notes="", chosen_options_json={}))
+        db.flush()
+
+        dias = dias_con_registro(db, p.id)
+        assert hoy not in dias, "el motor no cuenta la fila vacía del autosave"
+        # La racha debe contar lo mismo: 1 (ayer), no 2.
+        assert streak_days(db, c.id, hoy) == 1
+    finally:
+        db.query(DailyLog).filter_by(period_id=p.id).delete()
+        db.flush()
+        db.delete(p)
+        db.flush()
+        db.delete(plan)
+        db.flush()
+        db.delete(c)
+        db.commit()
+        db.close()
+
+
+@needs_db
+def test_quien_registra_a_diario_pero_no_se_pesa_se_avisa_a_tiempo():
+    """Ampliar "día registrado" a series y comidas fue correcto (un DQR Train
+    que entrena a diario no puede salir "en riesgo"), pero abrió un punto ciego:
+    quien toca su comida cada día cuenta como registrado, va verde en todas las
+    pantallas y al cerrar la quincena el motor se encuentra con 0 pesajes,
+    responde `dato_insuficiente` y no se puede ajustar nada. Catorce días
+    perdidos que el coach descubría cuando ya no tenían arreglo."""
+    from datetime import date, timedelta
+
+    from app.db import SessionLocal
+    from app.models import Client, DailyLog, Period, Plan
+    from app.routers.alerts import client_alerts
+    from app.security import new_portal_token
+
+    db = SessionLocal()
+    uid = uuid.uuid4().hex[:8]
+    hoy = date.today()
+    c = Client(full_name="Sin pesajes", email=f"pesa-{uid}@test.local",
+               portal_token="tmp", status="active", package_tier="full")
+    db.add(c)
+    db.flush()
+    c.portal_token = new_portal_token(c.id)
+    plan = Plan(client_id=c.id, month_index=1, version=1, status="published",
+                nutrition_json={}, training_json={})
+    db.add(plan)
+    db.flush()
+    # Día 10 de 14: aún da tiempo a pedirle que se pese.
+    p = Period(client_id=c.id, plan_id=plan.id, period_index=1,
+               starts_on=hoy - timedelta(days=9), ends_on=hoy + timedelta(days=4),
+               status="open")
+    db.add(p)
+    db.flush()
+    try:
+        # Registra TODOS los días… eligiendo comida, sin pesarse nunca.
+        for i in range(10):
+            db.add(DailyLog(period_id=p.id, log_date=hoy - timedelta(days=i),
+                            chosen_options_json={"1": "A"}))
+        db.flush()
+
+        kinds = [a["kind"] for a in client_alerts(db, c, hoy)]
+        # No está "sin registros" (registra) pero SÍ se avisa de los pesajes.
+        assert "no_logs" not in kinds
+        assert "sin_pesajes" in kinds, kinds
+
+        # En cuanto se pesa un par de veces, el aviso desaparece solo.
+        for i in (0, 1):
+            lg = db.query(DailyLog).filter_by(
+                period_id=p.id, log_date=hoy - timedelta(days=i)).one()
+            lg.weight_kg = 80.0 - i
+        db.flush()
+        assert "sin_pesajes" not in [a["kind"] for a in client_alerts(db, c, hoy)]
+    finally:
+        db.query(DailyLog).filter_by(period_id=p.id).delete()
+        db.flush()
+        db.delete(p)
+        db.flush()
+        db.delete(plan)
+        db.flush()
+        db.delete(c)
+        db.commit()
+        db.close()
+>>>>>>> origin/claude/tanda3-pendiente-de-tanda1

@@ -82,6 +82,15 @@
 >   corregido, con `tests/test_optimizacion.py` — 11 regresiones que fallan sin
 >   el arreglo). Los tres de "Créditos de IA" y los de "Construido y sin
 >   conectar" NO son míos: son la tanda 8.
+> **REPARTO EN CURSO (sesiones paralelas).** Tanda 1 (graves + Stripe): sesión
+> "DQR asesories" (rama `claude/stripe-integration-steps-somce4`). Tanda 2
+> (pagos/libro de caja/altas): sesión "rutina y dieta quice"
+> (`claude/continue-previous-n6layq`). **Tanda 3 (el ciclo: automatismos, avisos
+> y recordatorios): sesión "Google Meet y Calendario integrados"
+> (`claude/google-meet-calendar-integration-1po1c2`)** — alcance: jobs.py
+> (63/106/253), job_state.py (38/109), push.py (589/742), alerts.py
+> («Escribir a mi coach»), portal.py (racha), sw.js (badge sin count). Si coges
+> otra tanda, añade tu reclamo aquí para que nadie se solape.
 
 > **Qué es esto.** El inventario en crudo de dos barridos automáticos: una
 > verificación adversarial de los 27 commits de la auditoría anterior, y los dos
@@ -102,6 +111,33 @@
 > Lo pendiente de verdad es **volver a lanzar la verificación adversarial** con
 > presupuesto de sesión suficiente: dos verificadores independientes por
 > hallazgo, con instrucción de REFUTAR.
+
+## Tanda 3 · verificados y arreglados (sesión de Google Meet)
+
+Verificación adversarial (refutador + reproductor por hallazgo) y arreglo con
+regresión que **falla sin el arreglo**. Ninguno se dio por bueno sin reproducir.
+
+| Hallazgo | Veredicto | Qué pasaba de verdad |
+|---|---|---|
+| El tope de avisos de cierre cuenta emails FALLIDOS (`jobs.py:253`) | confirmado | `_enviados_desde`/`_already_sent_today` contaban filas de `email_log` sin mirar su `status`. Con el SMTP caído, los intentos fallidos gastaban el cupo: el cliente se quedaba sin recordatorio el resto de la quincena aunque el correo volviera esa tarde. Ahora solo cuentan `sent` y `disabled` (final deliberado); `failed` se reintenta. |
+| Un correo que falla cuenta como enviado (`jobs.py:63`) | confirmado | Misma raíz: el aviso del día 12 no se reintentaba nunca. Mismo arreglo. |
+| La vigilancia solo mira el mantenimiento diario (`job_state.py:38`) | confirmado | `CRITICOS` solo llevaba `daily_maintenance`: los recordatorios del cliente, el resumen del coach y los avisos de videollamada podían estar muertos días sin que nadie se enterara. Ahora los secundarios también se vigilan, con margen ancho (una vuelta perdida no alarma). |
+| Tras un fallo ya no escala a "lleva N horas" (`job_state.py:109`) | confirmado | La rama de `last_ok is False` devolvía ANTES de mirar la antigüedad: un trabajo que falló y además se paró se quedaba para siempre en "terminó con errores" —que suena a que sigue corriendo—. Ahora la antigüedad se mira primero y el motivo conserva el error. |
+| La huella del resumen se guarda truncada a 300 (`push.py:742`) | confirmado | `record_job` recorta el detalle a 300 caracteres y la lista de claves los pasa con ~10 alertas: dos conjuntos DISTINTOS se leían como "sin novedades" y el resumen se silenciaba justo cuando había algo nuevo. Ahora se guarda un sha256 (64 caracteres siempre). |
+| Tag de push del coach compartida (`push.py:589`) | confirmado | `"dq-vc-coach"` fija: dos clientes con videollamada el mismo día → el móvil solo enseñaba la última. Ahora la tag lleva el id de la llamada (como ya hacía `dq-vc-propuesta-{id}`). |
+| "Escribir a mi coach" sin alerta (`alerts.py:252`) | confirmado | La alerta vivía DETRÁS de los `return` de "sin plan publicado" e "inactivo". Justo los dos que más escriben —el que aún no tiene plan y pregunta por él, y el que lleva semanas parado— mandaban su mensaje a un agujero. Ahora se evalúa lo primero. |
+| La racha no usa la "única verdad" (`portal.py:195`) | confirmado | Tenía su propio predicado en SQL (`is_not(None)`), que da por bueno lo que el motor descarta (`free_notes` vacío, `chosen_options_json` sin elegir: filas que el autosave crea al abrir la pantalla). Premiaba días que para el coach no existían. Ahora consume `dias_registrados`. |
+| Un push sin `count` apaga el badge (`sw.js:37`) | confirmado | `Number(undefined) \|\| 0` → `clearAppBadge()`. **Dos emisores reales** lo hacían: el resumen semanal y el aviso de cliente inactivo, que borraban el "N pagos sin leer". Ahora "sin count" ≠ "count 0" (no se toca el badge) y los dos emisores mandan el suyo. |
+| Contar las series como día registrado deja ciego al coach (`jobs.py:106`) | **matizado** | El contador amplio es DELIBERADO y está blindado con test (un DQR Train que entrena a diario no puede salir "en riesgo"): **no se toca**. Pero el reproductor destapó el hueco real detrás: quien elige su comida cada día cuenta como registrado, va verde en todas las pantallas, y al cerrar la quincena el motor se encuentra con 0-1 pesajes, responde `dato_insuficiente` y no se puede ajustar nada — catorce días perdidos que el coach descubría tarde. Aviso NUEVO `sin_pesajes` pasada la mitad del período (sin una consulta extra en el barrido). |
+
+**De propina, arreglado al toparme con ello:** la suite era dependiente del
+estado — correr `pytest` dos veces daba resultados distintos. La caché del
+contenido educativo se guarda en un sidecar del storage y SOBREVIVE entre
+ejecuciones: el primer pase la poblaba y el siguiente se saltaba la llamada de
+IA que los tests del pipeline cuentan (`test_ai_service` fallaba a la segunda).
+Se apaga en los tests (que es lo que el traspaso ya daba por hecho). Con eso,
+los DOS fallos que arrastraba `test_ai_service` desaparecen: **652 en verde,
+dos pases seguidos**.
 
 ## Ya comprobados a mano y arreglados (no vuelvas a mirarlos)
 
@@ -219,6 +255,7 @@ fallo que dice cazar).
 - **[media] DQR Train: regenerar el plan no sella la adaptación → el banner "sin adaptar" es eterno** — `backend/app/routers/clients.py:1726` · `arreglo_incompleto`
 - **[media] Copiar un plan/modelo arrastra el sello de adaptación de OTRO cliente dentro de `training_json`** — `backend/app/services/plan_library.py:268` · `arreglo_incompleto`
 
+
 - **[media] El reenvío del pendiente del Diario corre sin control de concurrencia y borra lo tecleado después** — `frontend/src/portal/PortalDiary.tsx:213` · `regresion`
 - **[media] El pendiente del Diario se guarda con una clave sin cliente: en un móvil compartido escribe el diario de otro** — `frontend/src/portal/PortalDiary.tsx:48` · `regresion`
 - **[media] El sidecar de la vía formulario congela el retrato y las correcciones del coach dejan de llegar al prompt** — `backend/app/routers/portal_public.py:268` · `regresion`
@@ -239,6 +276,7 @@ fallo que dice cazar).
 - **[baja] Las ramas de "aversión" y "patrón" de `_sin_cifras` no coinciden con ningún veto real: el prompt recibe frases mutiladas** — `backend/app/services/coach_lessons.py:219`
 - **[baja] La memoria de vetos (§13) deja de aprender del banco de comidas: los alérgenos y los desvíos ya no se anotan** — `backend/app/services/ai/generator.py:1079`
 
+- **[baja] Los revisores en paralelo se pisan el saldo de créditos (lost update sobre `ai_credit_state`)** — `backend/app/services/ai_credit.py:70`
 - **[baja] El diario sin guardar al cruzar la medianoche se tira a la basura, pudiendo reenviarse con su fecha** — `frontend/src/portal/PortalDiary.tsx:64`
 - **[baja] El pre-relleno "solo si está vacío" deja muerto el campo de duración de sesión (y trata `false` como vacío)** — `frontend/src/pages/AnamnesisPage.tsx:254`
 - **[baja] El criterio único no llega a `/anamnesis-pdf`: el camino inverso sigue pisando la ficha revisada** — `backend/app/routers/portal_public.py:406`
@@ -277,6 +315,9 @@ fallo que dice cazar).
 
 ### Integraciones — email y push
 
+
+- **[alta] El diagnóstico de correo existe en el backend y no hay ninguna pantalla que lo abra** — `backend/app/routers/email.py:35`
+- **[alta] La página de "¡Pago recibido!" promete un correo que en la renovación no existe** — `frontend/src/pages/PlansPage.tsx:312`
 
 ### Integraciones — Google y WhatsApp
 

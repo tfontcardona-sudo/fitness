@@ -185,11 +185,16 @@ def streak_days(db, client_id: int, today: date) -> int:
     de teclear); el día de HOY aún sin rellenar no rompe la racha (se rompe al
     terminar el día en blanco). Tope de mirada: 90 días (más que de sobra y la
     consulta se mantiene barata)."""
+<<<<<<< HEAD
     from sqlalchemy import and_, or_, select
+=======
+    from sqlalchemy import select
+>>>>>>> origin/claude/tanda3-pendiente-de-tanda1
 
-    from app.models import DailyLog, Period, WorkoutLog
+    from app.models import DailyLog, Period
 
     desde = today - timedelta(days=90)
+<<<<<<< HEAD
     # Las SERIES de entreno también son un día registrado: quien más entrena
     # (y un DQR Train no tiene diario de dieta) veía racha 0 y la palanca de
     # adherencia se le volvía en contra.
@@ -217,11 +222,24 @@ def streak_days(db, client_id: int, today: date) -> int:
     ]
     dias = set(db.scalars(
         select(DailyLog.log_date)
+=======
+    # La REGLA de "este día cuenta" es la del motor (`push.dias_registrados`), no
+    # una copia en SQL: la de aquí usaba `is_not(None)`, que da por bueno lo que
+    # el motor descarta —un `free_notes` vacío ("") o un `chosen_options_json`
+    # sin elegir nada ({}), filas que el autosave del portal crea con solo abrir
+    # la pantalla—. La racha contaba días que para el coach no existían, que es
+    # justo lo que la "única verdad" venía a evitar (y su comentario ya decía,
+    # sin ser verdad, que la racha la consumía).
+    from app.services.push import dias_registrados
+
+    logs = list(db.scalars(
+        select(DailyLog)
+>>>>>>> origin/claude/tanda3-pendiente-de-tanda1
         .join(Period, DailyLog.period_id == Period.id)
         .where(Period.client_id == client_id,
-               DailyLog.log_date >= desde, DailyLog.log_date <= today,
-               or_(*con_algo))
+               DailyLog.log_date >= desde, DailyLog.log_date <= today)
     ))
+    dias = dias_registrados(db, logs)
     if not dias:
         return 0
     racha = 0

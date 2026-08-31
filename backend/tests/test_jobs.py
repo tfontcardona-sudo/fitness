@@ -60,6 +60,14 @@ def _no_real_email(monkeypatch):
     monkeypatch.setattr(settings, "smtp_user", "coach@example.com")
     monkeypatch.setattr(settings, "smtp_pass", "clave-de-prueba")
     monkeypatch.setattr(settings, "smtp_from", "coach@example.com")
+    # …y el SMTP CONFIGURADO. `EmailService.send` corta antes de llegar al
+    # transporte si faltan host/user/pass, y registra el intento como "failed":
+    # sin esto, en los tests TODOS los correos quedaban como fallidos, que es
+    # justo lo contrario de lo que simula el fixture (y lo que pasa en
+    # producción). Con la dedup mirando el estado, esa mentira se notaba.
+    monkeypatch.setattr(settings, "smtp_host", "smtp.test.local")
+    monkeypatch.setattr(settings, "smtp_user", "coach@example.com")
+    monkeypatch.setattr(settings, "smtp_pass", "app-password-de-prueba")
     return sent
 
 
@@ -272,3 +280,47 @@ def test_quien_solo_registra_entrenos_no_es_un_cliente_en_riesgo(db, _no_real_em
     db.execute(sa.delete(WorkoutLog).where(WorkoutLog.exercise_id == ex.id))
     db.execute(sa.delete(Exercise).where(Exercise.id == ex.id))
     db.commit()
+
+
+# --- Tanda 3: un correo que FALLA no puede contar como enviado ---------------
+
+def test_un_recordatorio_que_falla_se_reintenta_al_dia_siguiente(db, _no_real_email):
+    """El cupo y la dedup contaban las filas de email_log SIN mirar su estado:
+    con el SMTP caído, los intentos fallidos gastaban el cupo y el cliente se
+    quedaba sin recordatorio aunque el correo volviera a funcionar."""
+    from datetime import date, timedelta
+
+    from app.models import EmailLog
+    from app.services import jobs
+
+    hoy = date.today()
+    c = _make_client(db, status="active", email="fallo@test.local")
+    # Tres intentos FALLIDOS de hoy (SMTP caído).
+    for _ in range(3):
+        db.add(EmailLog(client_id=c.id, kind="closing_due", subject="x",
+                        status="failed", error="SMTPAuthenticationError"))
+    db.commit()
+
+    # Ni la dedup del día ni el cupo del período los cuentan.
+    assert jobs._already_sent_today(db, c.id, "closing_due", hoy) is False
+    assert jobs._enviados_desde(db, c.id, "closing_due", hoy - timedelta(days=1)) == 0
+
+    # Uno que SÍ salió sí cuenta (si no, se acosaría al cliente).
+    db.add(EmailLog(client_id=c.id, kind="closing_due", subject="x", status="sent"))
+    db.commit()
+    assert jobs._already_sent_today(db, c.id, "closing_due", hoy) is True
+    assert jobs._enviados_desde(db, c.id, "closing_due", hoy - timedelta(days=1)) == 1
+
+
+def test_el_cliente_que_no_quiere_correos_no_se_reintenta_cada_dia(db, _no_real_email):
+    """"disabled" (el cliente apagó sus correos) sí es un final: reintentarlo a
+    diario solo llenaría email_log de filas inútiles."""
+    from datetime import date
+
+    from app.models import EmailLog
+    from app.services import jobs
+
+    c = _make_client(db, status="active", email="nocorreo@test.local")
+    db.add(EmailLog(client_id=c.id, kind="closing_due", subject="x", status="disabled"))
+    db.commit()
+    assert jobs._already_sent_today(db, c.id, "closing_due", date.today()) is True
