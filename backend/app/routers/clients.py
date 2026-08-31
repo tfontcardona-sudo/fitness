@@ -345,7 +345,24 @@ def create_client(body: ClientCreate, db: Session = Depends(get_db)) -> ClientCr
 
 
 # --------------------------------------------------------------- listado ----
-@router.get("", response_model=list[ClientOut])
+# Campos que el LISTADO no envía. Las dos pantallas que lo consumen ("Hoy" y
+# "Clientes") lo piden cada 3 segundos y NINGUNA pinta el historial clínico:
+# eran ~1 KB por cliente de lesiones, patologías, medicación, hábitos y
+# antropometría antigua viajando 40 veces por minuto (medido: 69 KB por
+# barrido con 40 fichas, y las notas reales son bastante más largas que las
+# del banco de pruebas). La ficha del cliente sigue trayéndolo TODO por su
+# propio endpoint, que es donde se lee de verdad.
+_LISTA_SIN = {
+    "injuries_notes", "medical_notes", "medication_notes", "sport_history",
+    "lifestyle_notes", "current_supplements", "meal_schedule", "equipment",
+    "excluded_exercise_ids", "food_allergies", "food_dislikes", "food_likes",
+}
+
+
+# OJO: con una respuesta de tipo LISTA la exclusión va bajo "__all__"
+# (Pydantic la aplica a cada elemento); con el set suelto no excluye nada.
+@router.get("", response_model=list[ClientOut],
+            response_model_exclude={"__all__": _LISTA_SIN})
 def list_clients(
     db: Session = Depends(get_db),
     status_filter: ClientStatus | None = Query(default=None, alias="status"),
@@ -1382,22 +1399,44 @@ def client_history(client_id: int, db: Session = Depends(get_db)) -> dict:
     """Evolución del cliente en el tiempo: peso/adherencia/fuerza por período +
     planes y feedbacks. Para la pestaña Historial (resumida y descargable)."""
     from app.models import FeedbackDoc, Period, Plan
-    from app.services.feedback_service import compute_period_summary
+    from app.services.feedback_service import compute_period_summary, sets_por_periodo
 
     client = _client_or_404_docs(db, client_id)
     periods = list(db.scalars(
         select(Period).where(Period.client_id == client_id).order_by(Period.period_index)
     ))
-    plans = list(db.scalars(
-        select(Plan).where(Plan.client_id == client_id).order_by(Plan.month_index, Plan.version)
-    ))
+    # Series de TODAS las revisiones de una vez: el resumen de cada período
+    # compara con los anteriores, así que en bucle se releían las mismas series
+    # una y otra vez (con 4 revisiones eran 27 consultas; con 8, más del doble
+    # y releyendo cuatro veces el mismo histórico).
+    cache_sets = sets_por_periodo(db, [p.id for p in periods])
+    # Y el feedback de cada revisión, también de una vez (era otra consulta por
+    # período dentro del mismo bucle).
+    _pids = [p.id for p in periods]
+    ultimo_fb: dict[int, tuple[int, object]] = {}
+    if _pids:
+        for _pid, _fid, _sent in db.execute(
+            select(FeedbackDoc.period_id, FeedbackDoc.id, FeedbackDoc.sent_at)
+            .where(FeedbackDoc.period_id.in_(_pids))
+            .order_by(FeedbackDoc.id.asc())
+        ).all():
+            ultimo_fb[_pid] = (_fid, _sent)  # el de id más alto gana (orden asc)
+    # SOLO los cuatro escalares que se imprimen: traer la fila entera arrastraba
+    # los cuatro JSONB de CADA versión (banco de recetas, educativo, hallazgos
+    # del panel) para emitir una línea de 40 bytes por plan. En un cliente
+    # veterano con 16 versiones eran ~500 KB leídos y parseados para nada.
+    plans = db.execute(
+        select(Plan.id, Plan.month_index, Plan.version, Plan.status)
+        .where(Plan.client_id == client_id)
+        .order_by(Plan.month_index, Plan.version)
+    ).all()
 
     current = client.start_weight_kg
     hist = []
     e1rm_series: dict[str, list[float]] = {}  # nombre → e1rm por período (para % total)
     for p in periods:
         try:
-            m = compute_period_summary(db, p.id)
+            m = compute_period_summary(db, p.id, cache_sets=cache_sets)
         except Exception:
             m = {}
         # Solo actualizamos el peso "actual" con un valor REAL (registrado o de
@@ -1418,10 +1457,7 @@ def client_history(client_id: int, db: Session = Depends(get_db)) -> dict:
             if s.get("delta_kg") is not None and (s["e1rm_kg"] - s["delta_kg"]) > 0
         ]
         period_strength_pct = round(sum(gains) / len(gains), 1) if gains else None
-        fb = db.scalar(
-            select(FeedbackDoc).where(FeedbackDoc.period_id == p.id)
-            .order_by(FeedbackDoc.id.desc()).limit(1)
-        )
+        fb_id, fb_sent = ultimo_fb.get(p.id, (None, None))
         hist.append({
             "period_index": p.period_index,
             "starts_on": p.starts_on.isoformat(), "ends_on": p.ends_on.isoformat(),
@@ -1435,8 +1471,8 @@ def client_history(client_id: int, db: Session = Depends(get_db)) -> dict:
             # Perímetros (cinta) al cierre de este período
             "waist_cm": p.closing_waist_cm, "hip_cm": p.closing_hip_cm,
             "arm_cm": p.closing_arm_cm, "thigh_cm": p.closing_thigh_cm,
-            "feedback_id": fb.id if fb else None,
-            "feedback_sent": bool(fb and fb.sent_at),
+            "feedback_id": fb_id,
+            "feedback_sent": bool(fb_sent),
         })
 
     # % de fuerza subido EN TOTAL (primer vs último e1RM de cada ejercicio)
@@ -1469,7 +1505,8 @@ def client_history(client_id: int, db: Session = Depends(get_db)) -> dict:
         "total_strength_gain_pct": total_strength_gain_pct,
         "periods": hist,
         "plans": [
-            {"id": pl.id, "month_index": pl.month_index, "version": pl.version, "status": pl.status}
+            {"id": pl.id, "month_index": pl.month_index, "version": pl.version,
+             "status": pl.status}
             for pl in plans
         ],
     }

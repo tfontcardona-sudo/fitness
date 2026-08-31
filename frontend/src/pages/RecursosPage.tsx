@@ -1128,7 +1128,12 @@ function ProductThumb({ src, icon: Icon }: { src: string | null; icon: typeof Pi
       style={{ borderColor: "var(--line-strong)", background: "var(--surface-raised)" }}
     >
       {ok && src ? (
-        <img src={src} alt="" className="h-full w-full object-cover" onError={() => setOk(false)} />
+        // loading="lazy": la lista de vídeos son ~300 filas y el navegador
+        // pedía las ~300 portadas de YouTube (480×360) de golpe al abrir la
+        // pestaña, estuvieran o no a la vista. decoding="async" saca el
+        // decodificado del hilo que pinta.
+        <img src={src} alt="" loading="lazy" decoding="async"
+             className="h-full w-full object-cover" onError={() => setOk(false)} />
       ) : (
         <Icon size={18} className="text-zinc-500" />
       )}

@@ -138,10 +138,38 @@ def _workout_sets_for_logs(db: Session, log_ids: list[int]) -> list[dict]:
     ]
 
 
-def compute_period_summary(db: Session, period_id: int) -> dict:
+def sets_por_periodo(db: Session, period_ids: list[int]) -> dict[int, list[dict]]:
+    """Series de entreno de VARIOS períodos en UNA consulta, agrupadas por período.
+
+    La usa quien va a resumir varios períodos seguidos (la pestaña Historial):
+    `compute_period_summary` compara cada período con TODOS los anteriores, así
+    que llamarlo en bucle releía las mismas series una y otra vez —coste
+    cuadrático— aunque cada llamada suelta esté bien optimizada.
+    """
+    if not period_ids:
+        return {}
+    filas = db.execute(
+        select(DailyLog.period_id, WorkoutLog.exercise_id, WorkoutLog.weight_kg,
+               WorkoutLog.reps, WorkoutLog.daily_log_id)
+        .join(WorkoutLog, WorkoutLog.daily_log_id == DailyLog.id)
+        .where(DailyLog.period_id.in_(period_ids))
+    ).all()
+    out: dict[int, list[dict]] = {pid: [] for pid in period_ids}
+    for pid, ex_id, w, reps, dlid in filas:
+        out.setdefault(pid, []).append(
+            {"exercise_id": ex_id, "weight_kg": w, "reps": reps, "daily_log_id": dlid})
+    return out
+
+
+def compute_period_summary(db: Session, period_id: int, *,
+                           cache_sets: dict[int, list[dict]] | None = None) -> dict:
     """Resumen de métricas del período SIN IA, a partir de lo que el cliente
     registró: cambio de peso corporal, adherencia, fuerza ganada (e1RM vs período
-    anterior) y distancia al objetivo. Para el botón de feedback rápido del coach."""
+    anterior) y distancia al objetivo. Para el botón de feedback rápido del coach.
+
+    `cache_sets` (opcional): series YA cargadas por período (ver
+    `sets_por_periodo`). Quien resume varios períodos seguidos las trae de una
+    vez y evita releerlas en cada iteración; el resultado es idéntico."""
     period = db.get(Period, period_id)
     if not period:
         raise FeedbackError("Período no encontrado")
@@ -166,7 +194,8 @@ def compute_period_summary(db: Session, period_id: int) -> dict:
     # e1RM), con kg medios levantados y repes medias, comparado con la última
     # revisión ANTERIOR que tenga datos de ese ejercicio (no solo la inmediata):
     # kg subidos/bajados reales, Δe1RM y % de ganancia o pérdida de fuerza.
-    sets = _workout_sets_for_logs(db, [dl.id for dl in logs])
+    sets = (cache_sets.get(period_id, []) if cache_sets is not None
+            else _workout_sets_for_logs(db, [dl.id for dl in logs]))
     progress_all = M.exercise_e1rm_progress(sets)
 
     def _avg_by_ex(ss: list[dict]) -> dict[int, tuple[float, float]]:
@@ -189,17 +218,20 @@ def compute_period_summary(db: Session, period_id: int) -> dict:
         .order_by(Period.period_index.desc())
     ))
     if earlier_ids:
-        rows = db.execute(
-            select(DailyLog.period_id, WorkoutLog.exercise_id,
-                   WorkoutLog.weight_kg, WorkoutLog.reps, WorkoutLog.daily_log_id)
-            .join(WorkoutLog, WorkoutLog.daily_log_id == DailyLog.id)
-            .where(DailyLog.period_id.in_(earlier_ids))
-        ).all()
-        sets_by_period: dict[int, list[dict]] = {}
-        for pid, ex_id, w, reps, dlid in rows:
-            sets_by_period.setdefault(pid, []).append(
-                {"exercise_id": ex_id, "weight_kg": w, "reps": reps, "daily_log_id": dlid}
-            )
+        if cache_sets is not None:
+            sets_by_period = {pid: cache_sets.get(pid, []) for pid in earlier_ids}
+        else:
+            rows = db.execute(
+                select(DailyLog.period_id, WorkoutLog.exercise_id,
+                       WorkoutLog.weight_kg, WorkoutLog.reps, WorkoutLog.daily_log_id)
+                .join(WorkoutLog, WorkoutLog.daily_log_id == DailyLog.id)
+                .where(DailyLog.period_id.in_(earlier_ids))
+            ).all()
+            sets_by_period = {}
+            for pid, ex_id, w, reps, dlid in rows:
+                sets_by_period.setdefault(pid, []).append(
+                    {"exercise_id": ex_id, "weight_kg": w, "reps": reps, "daily_log_id": dlid}
+                )
         for prev_id in earlier_ids:  # ya en orden descendente
             prev_sets = sets_by_period.get(prev_id) or []
             for p in M.exercise_e1rm_progress(prev_sets):

@@ -466,21 +466,43 @@ def _plan_ligero(p: Plan) -> Plan:
 
 
 @router.get("/api/clients/{client_id}/plans", response_model=list[PlanOut])
-def list_plans(client_id: int, ligero: bool = False,
+def list_plans(client_id: int, ligero: bool = False, todo: bool = False,
                db: Session = Depends(get_db)) -> list[PlanOut]:
     """Planes del cliente, del más reciente al más antiguo.
 
-    `ligero=true` devuelve los JSON recortados (kcal, macros, tomas, sello de
-    la adaptación): es lo que necesitan las pantallas que solo LEEN. El editor
-    y el panel de planificación siguen pidiendo el plan completo."""
+    Tres modos, de menos a más peso:
+
+    · `ligero=true` — TODOS recortados (kcal, macros, tomas, sello). Lo que
+      necesitan las pantallas que solo LEEN una línea de resumen.
+    · por defecto — recortados MENOS los dos que el panel puede llegar a
+      pintar: el plan vigente (publicado) y el borrador más nuevo. El resto de
+      versiones históricas no se pintan nunca enteras, y arrastraban su banco
+      de recetas, su educativo y los hallazgos del panel de supervisión en cada
+      recarga (medido: 55 KB con 3 versiones; un cliente de medio año tiene
+      12-20 y son cientos de KB, y el panel lo repide tras CADA acción).
+    · `todo=true` — todos completos, tal cual estaban. Para quien de verdad
+      necesite el histórico entero (importar/exportar, depurar).
+    """
     _client_or_404(db, client_id)
     plans = db.scalars(
         select(Plan).where(Plan.client_id == client_id)
         .order_by(Plan.month_index.desc(), Plan.version.desc())
     ).all()
+    if todo:
+        return [PlanOut.model_validate(p) for p in plans]
     if ligero:
         return [PlanOut.model_validate(_plan_ligero(p)) for p in plans]
-    return [PlanOut.model_validate(p) for p in plans]
+    # Los que el panel SÍ pinta enteros: el publicado y el borrador más nuevo
+    # (la banda de "borrador retenido" lo enseña y permite activarlo).
+    completos = {p.id for p in plans if p.status == "published"}
+    borrador = next((p for p in sorted(plans, key=lambda x: x.id, reverse=True)
+                     if p.status == "draft"), None)
+    if borrador is not None:
+        completos.add(borrador.id)
+    if not completos and plans:  # sin publicado ni borrador: el más nuevo
+        completos.add(max(plans, key=lambda x: x.id).id)
+    return [PlanOut.model_validate(p if p.id in completos else _plan_ligero(p))
+            for p in plans]
 
 
 @router.post("/api/plans/{plan_id}/discard", response_model=PlanOut)
@@ -725,14 +747,21 @@ def list_periods(client_id: int, db: Session = Depends(get_db)) -> list[PeriodOu
         select(Period).where(Period.client_id == client_id)
         .order_by(Period.period_index.desc())
     ).all()
+    # El feedback de CADA revisión en UNA consulta: antes era una por período
+    # (con 8 revisiones, 9 viajes a la base para pintar una lista que el panel
+    # recarga tras cada acción). Se queda el de id más alto, igual que antes.
+    from sqlalchemy import func as _func
+
+    ids = [p.id for p in periods]
+    ultimo_fb = dict(db.execute(
+        select(FeedbackDoc.period_id, _func.max(FeedbackDoc.id))
+        .where(FeedbackDoc.period_id.in_(ids))
+        .group_by(FeedbackDoc.period_id)
+    ).all()) if ids else {}
     out = []
     for p in periods:
         po = PeriodOut.model_validate(p)
-        fb = db.scalar(
-            select(FeedbackDoc).where(FeedbackDoc.period_id == p.id)
-            .order_by(FeedbackDoc.id.desc()).limit(1)
-        )
-        po.feedback_id = fb.id if fb else None
+        po.feedback_id = ultimo_fb.get(p.id)
         po.plan_adjustments = (p.ai_analysis_json or {}).get("plan_adjustments") or None
         po.biweekly_decision = (p.ai_analysis_json or {}).get("biweekly_decision") or None
         out.append(po)

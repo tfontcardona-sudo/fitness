@@ -123,7 +123,6 @@ export default function AppShell() {
         <main className="coach-mobile relative flex-1 overflow-y-auto pb-24" style={{ background: "var(--bg)" }}>
           {updateBanner}
           <AlertsBell />
-        {sinConexion && <BandaSinConexion />}
           {sinConexion && <BandaSinConexion />}
           <PinDock />
           <Outlet />

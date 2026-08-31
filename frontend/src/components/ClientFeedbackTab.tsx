@@ -1156,18 +1156,22 @@ function PeriodPhotos({ clientId, periodId }: { clientId: number; periodId: numb
       .then(async (all) => {
         const mine = all.filter((p) => p.period_id === periodId);
         if (alive) setTotal(mine.length);
-        const loaded: { id: number; kind: string; url: string }[] = [];
-        for (const p of mine.slice(0, 8)) {
+        // EN PARALELO: se descargaban una detrás de otra, así que la tira de
+        // 8 fotos tardaba la suma de las 8 (y el coach mira esto en cada
+        // revisión). Una foto ilegible sigue sin romper la tira.
+        const loaded = (await Promise.all(mine.slice(0, 8).map(async (p) => {
           try {
             const r = await fetch(api.clientPhotoUrl(clientId, p.id), {
               headers: { Authorization: `Bearer ${getToken()}` },
             });
-            if (!r.ok) continue;
+            if (!r.ok) return null;
             const url = URL.createObjectURL(await r.blob());
             urls.push(url);
-            loaded.push({ id: p.id, kind: p.kind, url });
-          } catch { /* una foto ilegible no rompe la tira */ }
-        }
+            return { id: p.id, kind: p.kind, url };
+          } catch {
+            return null;
+          }
+        }))).filter((x): x is { id: number; kind: string; url: string } => x !== null);
         if (alive) setPhotos(loaded);
       })
       .catch(() => alive && setPhotos([]));

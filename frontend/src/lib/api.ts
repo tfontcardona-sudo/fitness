@@ -19,6 +19,25 @@ export const REFRESH_MS = 3000;
  *  segundo a segundo y, además, se recargan al navegar y al hacer cada acción. */
 export const ALERTS_REFRESH_MS = 20000;
 
+/** Biblioteca de ejercicios cacheada en memoria (por juego de filtros). Se
+ *  guarda la PROMESA, así que dos pantallas que la piden a la vez comparten
+ *  una sola petición en vuelo. Caduca sola y la invalida cualquier cambio en
+ *  Recursos. */
+const _cacheEjercicios = new Map<string, Promise<ExerciseOut[]>>();
+/** Lista de fotos por cliente (ver `listClientPhotos`). */
+const _cacheFotos = new Map<string, Promise<{ id: number; kind: string; period_id: number | null; taken_at: string }[]>>();
+const EJERCICIOS_TTL_MS = 5 * 60 * 1000;
+
+/** Olvida la biblioteca cacheada: la llaman crear/editar/archivar/restaurar. */
+export function olvidaEjercicios(): void {
+  _cacheEjercicios.clear();
+}
+
+/** Envuelve una mutación de la biblioteca para invalidar la caché al terminar. */
+function _trasTocarEjercicios<T>(p: Promise<T>): Promise<T> {
+  return p.finally(() => olvidaEjercicios());
+}
+
 /** Igualdad "por valor" de dos respuestas de la API (objetos JSON planos).
  *  Se usa en el polling de 3 s: si los datos nuevos son idénticos a los que ya
  *  hay en pantalla, NO se actualiza el estado. Así se evita el parpadeo y las
@@ -260,9 +279,21 @@ export const api = {
   },
   clientDocumentUrl: (clientId: number, name: string) =>
     `/api/clients/${clientId}/documents/${encodeURIComponent(name)}`,
-  listClientPhotos: (clientId: number) =>
-    request<{ id: number; kind: string; period_id: number | null; taken_at: string }[]>(
-      "GET", `/clients/${clientId}/photos`),
+  // La pestaña Feedback pinta una tarjeta por revisión y CADA UNA pedía la
+  // lista entera de fotos del cliente (con 6 revisiones, 6 peticiones idénticas
+  // al abrir, y otra por tarjeta desplegada). Se comparte una sola petición en
+  // vuelo y se recuerda 30 s: dentro de la misma pantalla no cambia.
+  listClientPhotos: (clientId: number) => {
+    const k = `fotos:${clientId}`;
+    const ya = _cacheFotos.get(k);
+    if (ya) return ya;
+    const p = request<{ id: number; kind: string; period_id: number | null; taken_at: string }[]>(
+      "GET", `/clients/${clientId}/photos`)
+      .catch((e) => { _cacheFotos.delete(k); throw e; });
+    _cacheFotos.set(k, p);
+    window.setTimeout(() => _cacheFotos.delete(k), 30000);
+    return p;
+  },
   clientPhotoUrl: (clientId: number, photoId: number) =>
     `/api/clients/${clientId}/photos/${photoId}`,
   getClientHistory: (clientId: number) =>
@@ -662,7 +693,17 @@ export const api = {
     if (params.muscle) qs.set("muscle", params.muscle);
     if (params.include_archived) qs.set("include_archived", "true");
     const suffix = qs.toString() ? `?${qs}` : "";
-    return request<ExerciseOut[]>("GET", `/exercises${suffix}`);
+    // CACHÉ de la biblioteca: son ~90 KB que viajaban DOS veces al abrir la
+    // ficha (el panel y el editor la piden por separado) y otra vez en cada
+    // apertura del editor. La biblioteca solo cambia cuando el coach toca
+    // Recursos, y esas acciones la invalidan (`olvidaEjercicios`).
+    const cacheada = _cacheEjercicios.get(suffix);
+    if (cacheada) return cacheada;
+    const p = request<ExerciseOut[]>("GET", `/exercises${suffix}`)
+      .catch((e) => { _cacheEjercicios.delete(suffix); throw e; });
+    _cacheEjercicios.set(suffix, p);
+    window.setTimeout(() => _cacheEjercicios.delete(suffix), EJERCICIOS_TTL_MS);
+    return p;
   },
   createExercise: (body: {
     canonical_name: string;
@@ -672,13 +713,13 @@ export const api = {
     muscle_secondary?: string[];
     equipment?: string[];
     level_min?: number;
-  }) => request<ExerciseOut>("POST", "/exercises", body),
+  }) => _trasTocarEjercicios(request<ExerciseOut>("POST", "/exercises", body)),
   archiveExercise: (id: number) =>
-    request<ExerciseOut>("POST", `/exercises/${id}/archive`),
+    _trasTocarEjercicios(request<ExerciseOut>("POST", `/exercises/${id}/archive`)),
   restoreExercise: (id: number) =>
-    request<ExerciseOut>("POST", `/exercises/${id}/restore`),
+    _trasTocarEjercicios(request<ExerciseOut>("POST", `/exercises/${id}/restore`)),
   updateExercise: (id: number, patch: Partial<ExerciseOut>) =>
-    request<ExerciseOut>("PATCH", `/exercises/${id}`, patch),
+    _trasTocarEjercicios(request<ExerciseOut>("PATCH", `/exercises/${id}`, patch)),
 
   // --- recursos: productos recomendados (sección Recursos del portal) ---
   listProducts: () => request<RecommendedProductOut[]>("GET", "/resources/products"),

@@ -29,7 +29,17 @@ def _get_or_404(db: Session, exercise_id: int) -> Exercise:
     return ex
 
 
-@router.get("", response_model=list[ExerciseOut])
+# Notas largas que NINGUNA pantalla pinta desde el LISTADO (medido: 38,6 KB de
+# los 146 que viajan con 304 ejercicios, más el peso de sus claves). El editor
+# del plan y la biblioteca de Recursos solo usan nombre, alias, músculo, patrón,
+# equipamiento y vídeo; las notas técnicas las usa el BACKEND leyendo de la base
+# (guardrails y generación), no este JSON, y el detalle de un ejercicio sigue
+# devolviéndolas enteras por `GET /api/exercises/{id}`.
+_LISTA_SIN_NOTAS = {"technique_notes", "biomechanics_notes", "contraindications"}
+
+
+@router.get("", response_model=list[ExerciseOut],
+            response_model_exclude={"__all__": _LISTA_SIN_NOTAS})
 def list_exercises(
     db: Session = Depends(get_db),
     pattern: str | None = Query(default=None, description="movement_pattern exacto"),

@@ -295,3 +295,68 @@ esa tanda.
 20:18 en `jobs.py`, `job_state.py`, `push.py`, `alerts.py` y `sw.js` — que son
 exactamente los ficheros que la tanda 3 reclamó a las 14:58. Conviene que se
 pongan de acuerdo antes de que dupliquen trabajo.
+
+
+---
+
+## Tanda 7 (optimización backend + frontend) — MEDIDA Y ARREGLADA
+
+> Sesión "rutina y dieta quice". Verificación con banco sintético propio (40
+> fichas, 120 planes, 160 revisiones, 27.000 series) contando CONSULTAS, BYTES y
+> MILISEGUNDOS por endpoint, antes y después. Nada aquí es una estimación.
+
+| Endpoint | Antes | Después |
+|---|---|---|
+| `GET /api/clients` (cada 3 s × 2 pantallas) | 69,2 KB | **42,0 KB** |
+| `GET /api/exercises` | 146,2 KB | **89,0 KB** + cacheada en el front |
+| `GET /clients/{id}/plans` (3 versiones) | 54,8 KB | **19,8 KB** |
+| `GET /clients/{id}/history` | 27 consultas · 39 ms | **18 consultas · 25 ms** |
+| `GET /clients/{id}/periods` (4 revisiones) | 7 consultas | **4 consultas** |
+| `GET /api/p/{token}/training` | 11 consultas | **8 consultas** |
+| `list_alerts` (cada 20 s) | 108 ms de CPU | **45 ms** |
+
+**Qué se hizo, y por qué:**
+
+- **El listado de clientes deja de enviar el historial clínico** (lesiones,
+  patologías, medicación, hábitos, alergias). Lo piden "Hoy" y "Clientes" cada
+  3 segundos y NINGUNA de las dos lo pinta; la ficha lo sigue trayendo entero
+  por su endpoint. ⚠️ Con una respuesta de tipo LISTA, `response_model_exclude`
+  va bajo `{"__all__": …}`: con el set suelto no excluye nada (se probó).
+- **La biblioteca de ejercicios** deja de mandar las notas técnicas y
+  biomecánicas (38,6 KB de 146: el 26 %) que ninguna pantalla pinta —las lee el
+  BACKEND de la base— y el detalle de un ejercicio las sigue devolviendo. En el
+  front, la biblioteca se **cachea en memoria** (5 min, compartiendo la petición
+  en vuelo): viajaba dos veces al abrir la ficha y otra en cada apertura del
+  editor. Cualquier cambio en Recursos la invalida.
+- **Los planes históricos ya no viajan enteros**: el listado devuelve completos
+  solo los DOS que el panel puede pintar (el publicado y el borrador más nuevo)
+  y recortados el resto. `?ligero=true` y `?todo=true` siguen disponibles.
+- **El historial deja de ser cuadrático**: `compute_period_summary` acepta las
+  series YA cargadas (`sets_por_periodo`), así que resumir 8 revisiones no
+  relee ocho veces el mismo histórico. Y los planes de la cabecera se leen como
+  4 escalares, no como 4 JSONB por versión.
+- **Fuera dos N+1** de informes: la lista de revisiones y el historial pedían un
+  `FeedbackDoc` por revisión.
+- **El portal resuelve la biblioteca una vez** para todas las sesiones de
+  entreno (era una consulta por sesión, con los mismos ejercicios repetidos), y
+  es de las pantallas más visitadas del sistema.
+- **`/api/alerts`**: `product_match` normalizaba el catálogo entero una vez POR
+  CLIENTE (18.160 normalizaciones y 168.000 pasadas de sinónimos por barrido, el
+  100 % del tiempo del endpoint). La función es pura → memorizada.
+- **Frontend**: las fotos de la revisión se descargaban EN SERIE y cada tarjeta
+  de revisión pedía la lista entera de fotos (6 peticiones idénticas con 6
+  revisiones) → lista cacheada 30 s y descargas en paralelo; el aviso "Sin
+  conexión" estaba montado DOS VECES en el móvil del coach; y las ~300 portadas
+  de vídeo de Recursos se pedían todas de golpe → `loading="lazy"`.
+
+**Refutado con medida** (no se toca): `plan_library:426` — "Elegir base" lee los
+planes enteros, sí, pero son ~20 ms y se abre unas pocas veces al día: del orden
+de 0,1 s de CPU diarios. Dos verificaciones independientes coinciden.
+
+**Queda medido y sin tocar** (para quien siga): el historial aún hace ~3
+consultas por revisión (diario, ejercicios y el índice de períodos anteriores);
+bajarlo exigiría más cirugía en `compute_period_summary`, que es la fuente de
+verdad de las métricas del informe y no conviene tocar más de lo necesario.
+
+Regresiones: `tests/test_auditoria_rendimiento.py` (7), con topes de consultas y
+comprobación de que los campos que las pantallas SÍ usan siguen llegando.

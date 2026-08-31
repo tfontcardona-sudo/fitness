@@ -348,17 +348,35 @@ def _meals_for_today(plan: Plan, client: Client, chosen: dict | None) -> list[di
     return slots_out
 
 
-def _resolve_session(db: Session, sess: dict, load_factor: float = 1.0) -> dict:
+def _biblioteca_de(db: Session, sesiones: list[dict]) -> dict[int, Exercise]:
+    """Los ejercicios de VARIAS sesiones en UNA consulta.
+
+    La pantalla de Entreno del portal resolvía la biblioteca una vez POR SESIÓN
+    (4-6 consultas por carga, con los mismos ejercicios repetidos entre días) y
+    es de las pantallas más visitadas del sistema: la abre cada cliente cada día
+    que entrena."""
+    ids = {e.get("exercise_id") for s in sesiones for e in (s.get("exercises") or [])
+           if e.get("exercise_id") is not None}
+    if not ids:
+        return {}
+    return {ex.id: ex for ex in db.scalars(select(Exercise).where(Exercise.id.in_(ids)))}
+
+
+def _resolve_session(db: Session, sess: dict, load_factor: float = 1.0,
+                     lib: dict[int, Exercise] | None = None) -> dict:
     """Convierte una sesión del plan (con exercise_id) en una sesión con nombres
     de ejercicio y vídeo resueltos desde la biblioteca. `load_factor` ajusta el
     peso sugerido a la SEMANA del mesociclo que vive el cliente (p. ej. 1.05 en
-    la semana de pico, 0.6 en la descarga), redondeado a 0,5 kg."""
-    ex_ids = [e.get("exercise_id") for e in sess.get("exercises", [])
-              if e.get("exercise_id") is not None]
-    lib = {
-        ex.id: ex
-        for ex in db.scalars(select(Exercise).where(Exercise.id.in_(ex_ids)))
-    } if ex_ids else {}
+    la semana de pico, 0.6 en la descarga), redondeado a 0,5 kg.
+
+    `lib` (opcional): biblioteca YA resuelta para varias sesiones a la vez."""
+    if lib is None:
+        ex_ids = [e.get("exercise_id") for e in sess.get("exercises", [])
+                  if e.get("exercise_id") is not None]
+        lib = {
+            ex.id: ex
+            for ex in db.scalars(select(Exercise).where(Exercise.id.in_(ex_ids)))
+        } if ex_ids else {}
     exercises = []
     for e in sess.get("exercises", []):
         ex = lib.get(e.get("exercise_id"))
@@ -448,7 +466,9 @@ def build_training_sessions(db: Session, client: Client) -> list[dict]:
     week = current_training_week(db, plan, today_local())
     factor = (week or {}).get("load_factor") or 1.0
     training = plan.training_json or {}
-    return [_resolve_session(db, s, factor) for s in training.get("sessions", [])]
+    sesiones = training.get("sessions", []) or []
+    lib = _biblioteca_de(db, sesiones)  # UNA consulta para todas las sesiones
+    return [_resolve_session(db, s, factor, lib) for s in sesiones]
 
 
 # ------------------------------------------------ recursos del portal ----
