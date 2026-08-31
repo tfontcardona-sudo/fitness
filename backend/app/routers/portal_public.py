@@ -270,17 +270,22 @@ def submit_anamnesis(
                 import json as _json
 
                 from app.routers.clients import _anamnesis_analysis_path
-                from app.services.anamnesis_extraction import client_portrait
 
+                # SIN congelar el retrato. Por esta vía el retrato lo hace
+                # `client_portrait`, que es una función DETERMINISTA de la
+                # ficha: no cuesta créditos y se puede rehacer cuando haga
+                # falta. Guardarlo aquí lo dejaba clavado en el momento del
+                # envío y ganaba siempre al recálculo en vivo, así que las
+                # correcciones del coach —la razón de que revise la ficha
+                # antes de generar— NO llegaban al prompt: el plan se hacía
+                # con el retrato equivocado. Quien lo lee (el prompt de
+                # generación y la pestaña del coach) lo compone al vuelo.
+                # El sidecar solo guarda el sello temporal; las
+                # contradicciones también se recalculan al leerlas.
                 _anamnesis_analysis_path(client.id).write_text(
                     _json.dumps({
-                        "deep_analysis": client_portrait({k: getattr(client, k, None) for k in (
-                            "sex", "goal_type", "level", "training_days",
-                            "session_max_min", "lifestyle_notes", "injuries_notes",
-                            "medical_notes", "medication_notes", "food_allergies",
-                            "food_dislikes")}),
-                        "contradictions": [c.detail for c in contras],
                         "at": datetime.now(timezone.utc).isoformat(),
+                        "origen": "formulario",
                     }, ensure_ascii=False), encoding="utf-8")
             except Exception:  # noqa: BLE001 — el sidecar nunca rompe el envío
                 pass
@@ -415,6 +420,16 @@ def portal_upload_anamnesis_pdf(
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "Tu anamnesis ya está registrada; escribe a tu coach para cambios.")
+    # Quien YA envió el formulario digital no puede reescribir su ficha por PDF.
+    # La lectura con IA pisa los campos con lo que extrae, así que este camino
+    # borraba en silencio las CORRECCIONES del coach (el criterio del sistema es
+    # que la ficha se revisa antes de generar: seguridad > automatización ciega).
+    # Mismo corte que el formulario, que responde 409 tras enviarse una vez.
+    # Sustituir un PDF por otro sigue permitido: ahí no hay revisión que perder.
+    if client.consent_signed_at is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Ya enviaste tu cuestionario; escribe a tu coach para cambios.")
 
     from app.routers.clients import ingest_anamnesis_pdf
     from app.services.storage import DocumentValidationError

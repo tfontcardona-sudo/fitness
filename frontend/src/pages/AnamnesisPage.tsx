@@ -180,6 +180,8 @@ export default function AnamnesisPage() {
   const [paso, setPaso] = useState(() => borrador?.paso ?? 0);
   // Solo para avisar de que se recuperó lo escrito (no molesta si es nuevo).
   const [recuperado, setRecuperado] = useState(() => borrador != null);
+  // ¿Se recuperó algo escrito? Decide cómo entra el pre-relleno del coach.
+  const hayBorrador = borrador != null;
   const [enviando, setEnviando] = useState(false);
   const [hecho, setHecho] = useState(false);
   // ¿Firmó el consentimiento? Lo dice el servidor. Es lo que exige para
@@ -252,18 +254,27 @@ export default function AnamnesisPage() {
         };
         setForm((f) => {
           const out = { ...f } as unknown as Record<string, unknown>;
+          const base = VACIO as unknown as Record<string, unknown>;
           for (const [k, v] of Object.entries(pre)) {
             if (v === undefined || v === null || v === "") continue;
             const actual = out[k];
-            if (actual === "" || actual === null || actual === undefined || actual === false) {
-              out[k] = v;
-            }
+            // SIN borrador el formulario está tal cual nace, así que lo que
+            // apuntó el coach entra aunque el campo traiga un valor POR
+            // DEFECTO ("Duración de sesión" nace en 60 y las casillas en
+            // false: con la regla de "solo si está vacío" esos campos no se
+            // pre-rellenaban NUNCA y el dato del coach se perdía).
+            // CON borrador solo se rellena lo que sigue en blanco: el cliente
+            // ya pasó por ahí y su respuesta manda sobre la del coach.
+            const libre = hayBorrador
+              ? (actual === "" || actual === null || actual === undefined)
+              : actual === base[k];
+            if (libre) out[k] = v;
           }
           return out as unknown as FormState;
         });
       })
       .catch(() => {});
-  }, [token]);
+  }, [token, hayBorrador]);
 
   // Cada cambio deja el borrador en el móvil del cliente: si cierra la
   // pestaña, le entra una llamada o se le va la app, al volver sigue donde

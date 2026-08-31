@@ -1030,19 +1030,59 @@ def get_anamnesis_analysis(client_id: int, db: Session = Depends(get_db)) -> dic
     resolver ANTES de generar el plan."""
     import json as _json
 
-    _client_or_404_docs(db, client_id)
+    cliente = _client_or_404_docs(db, client_id)
+
+    # LAS CONTRADICCIONES SE RECALCULAN, no se leen del sidecar. Son una función
+    # DETERMINISTA de la ficha (`detect_contradictions`), no salida de la IA:
+    # no cuestan créditos y se pueden mirar cuando haga falta. Servirlas
+    # congeladas desde el momento de la extracción las convertía en una foto
+    # fija que mentía en las dos direcciones: seguía avisando de algo que el
+    # coach ya había corregido, y callaba si era el propio coach quien
+    # introducía la contradicción al editar la ficha. Y todo esto ANTES de
+    # generar el plan, que es justo cuando hay que resolverlas.
+    contradicciones: list[str] = []
+    try:
+        from app.services.anamnesis_extraction import detect_contradictions
+
+        perfil = {k: getattr(cliente, k, None) for k in (
+            "sex", "birth_date", "height_cm", "start_weight_kg", "goal_type",
+            "goal_weight_kg", "goal_deadline", "level", "training_days",
+            "session_max_min", "training_place", "lifestyle_notes",
+            "sport_history", "injuries_notes", "medical_notes",
+            "medication_notes", "food_allergies", "food_dislikes", "food_likes")}
+        contradicciones = [c.detail for c in detect_contradictions(perfil)]
+    except Exception:  # noqa: BLE001 — nunca rompe la ficha
+        contradicciones = []
+
+    def _retrato_en_vivo() -> str | None:
+        """Retrato determinista de la ficha ACTUAL (vía formulario, o reserva).
+        No cuesta créditos, así que refleja siempre lo último que corrigió el
+        coach — que es justo lo que hay que mirar antes de generar."""
+        try:
+            from app.services.anamnesis_extraction import client_portrait
+
+            return client_portrait({k: getattr(cliente, k, None) for k in (
+                "sex", "goal_type", "level", "training_days", "session_max_min",
+                "lifestyle_notes", "injuries_notes", "medical_notes",
+                "medication_notes", "food_allergies", "food_dislikes")}) or None
+        except Exception:  # noqa: BLE001
+            return None
+
     try:
         ruta = _anamnesis_analysis_path(client_id)
         if ruta.exists():
             datos = _json.loads(ruta.read_text(encoding="utf-8"))
             return {
-                "deep_analysis": datos.get("deep_analysis"),
-                "contradictions": datos.get("contradictions") or [],
+                # El retrato del sidecar es el que se PAGÓ a la IA (vía PDF).
+                # Si no lo hay —vía formulario—, se compone al vuelo.
+                "deep_analysis": datos.get("deep_analysis") or _retrato_en_vivo(),
+                "contradictions": contradicciones,
                 "read_at": datos.get("at"),
             }
     except Exception:  # noqa: BLE001 — un sidecar roto no rompe la ficha
         pass
-    return {"deep_analysis": None, "contradictions": [], "read_at": None}
+    return {"deep_analysis": _retrato_en_vivo(),
+            "contradictions": contradicciones, "read_at": None}
 
 
 @router.post("/{client_id}/send-portal-access")

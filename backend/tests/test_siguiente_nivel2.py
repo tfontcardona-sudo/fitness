@@ -566,6 +566,26 @@ def test_subir_pdf_no_borra_el_consentimiento_rgpd(http, db, tmp_path, monkeypat
     assert any(n.endswith(".pdf") and "consentimiento" not in n for n in nombres)
 
 
+def test_quien_ya_envio_el_cuestionario_no_puede_reescribir_su_ficha_por_pdf(
+        http, db, tmp_path, monkeypatch):
+    """El PDF se LEE con IA y esa lectura PISA los campos de la ficha. Quien ya
+    mandó el formulario digital tiene una ficha que el coach puede haber
+    revisado y corregido: dejar entrar un PDF por detrás borraba esas
+    correcciones en silencio. El formulario ya responde 409 tras enviarse; el
+    PDF hacía la misma promesa y no la cumplía."""
+    import app.services.storage as st
+
+    monkeypatch.setattr(st, "storage_root", lambda: tmp_path)
+    c = _make_client(db, status="onboarding")
+    c.consent_signed_at = datetime.now(timezone.utc)   # envió el formulario
+    db.commit()
+
+    r = http.post(f"/api/p/{c.portal_token}/anamnesis-pdf",
+                  files={"file": ("anamnesis.pdf", b"%PDF-1.4 nueva", "application/pdf")})
+    assert r.status_code == 409, r.text
+    assert "coach" in r.json()["detail"]
+
+
 # --- Memoria de vetos: útil, pero SIN datos de nadie -------------------------
 
 def test_la_memoria_de_vetos_no_lleva_datos_del_cliente(tmp_path, monkeypatch):
@@ -687,6 +707,75 @@ def test_el_estado_del_cuestionario_dice_si_hay_consentimiento():
         from app.models import ProgressPhoto
 
         db.execute(delete(ProgressPhoto).where(ProgressPhoto.client_id == cid))
+        db.execute(delete(Client).where(Client.id == cid))
+        db.commit()
+        db.close()
+
+
+def test_las_contradicciones_y_el_retrato_siguen_a_la_ficha_corregida():
+    """Los dos son funciones DETERMINISTAS de la ficha —no salida de la IA, no
+    cuestan créditos— y se servían congelados desde el momento del envío. Eso
+    los convertía en una foto fija que mentía en las dos direcciones: seguían
+    avisando de algo que el coach ya había corregido, y callaban si era él
+    quien introducía la contradicción al editar. Y el retrato congelado ganaba
+    al recálculo en vivo, así que las correcciones del coach —la razón de que
+    revise la ficha antes de generar— NO llegaban al prompt."""
+    import os
+    import uuid
+    from datetime import date, timedelta
+
+    from fastapi.testclient import TestClient
+    from sqlalchemy import delete
+
+    from app.db import SessionLocal
+    from app.main import app
+    from app.models import Client
+    from app.security import create_access_token, new_portal_token
+
+    db = SessionLocal()
+    marca = uuid.uuid4().hex[:8]
+    # Objetivo imposible: perder 17 kg en un mes. Contradicción determinista.
+    c = Client(full_name=f"Contradice {marca}", email=f"contra-{marca}@test.local",
+               package_tier="full", billing_period="1m", status="active",
+               portal_token="tmp", payment_status="paid", sex="male",
+               birth_date=date.today() - timedelta(days=365 * 30), height_cm=178,
+               start_weight_kg=95.0, goal_type="fat_loss", goal_weight_kg=78.0,
+               goal_deadline=date.today() + timedelta(days=30),
+               level="beginner", training_days=3)
+    db.add(c)
+    db.flush()
+    c.portal_token = new_portal_token(c.id)
+    db.commit()
+    cid = c.id
+    db.close()
+
+    auth = {"Authorization": f"Bearer {create_access_token(os.environ.get('ADMIN_1_USER', 'coach1'))}"}
+    try:
+        with TestClient(app) as http:
+            r = http.get(f"/api/clients/{cid}/anamnesis-analysis", headers=auth).json()
+            assert r["contradictions"], "un objetivo imposible tiene que avisar"
+            assert r["deep_analysis"], "sin sidecar, el retrato se compone al vuelo"
+            assert "perder grasa" in r["deep_analysis"]
+
+            # El COACH corrige el plazo: la contradicción tiene que apagarse.
+            db = SessionLocal()
+            db.get(Client, cid).goal_deadline = date.today() + timedelta(days=300)
+            db.commit()
+            db.close()
+            r2 = http.get(f"/api/clients/{cid}/anamnesis-analysis", headers=auth).json()
+            assert not r2["contradictions"], (
+                f"sigue avisando de algo ya corregido: {r2['contradictions']}")
+
+            # Y si el coach cambia el objetivo, el retrato lo refleja.
+            db = SessionLocal()
+            db.get(Client, cid).goal_type = "muscle_gain"
+            db.commit()
+            db.close()
+            r3 = http.get(f"/api/clients/{cid}/anamnesis-analysis", headers=auth).json()
+            assert "ganar músculo" in r3["deep_analysis"], (
+                f"el retrato se quedó en el objetivo viejo: {r3['deep_analysis']}")
+    finally:
+        db = SessionLocal()
         db.execute(delete(Client).where(Client.id == cid))
         db.commit()
         db.close()
