@@ -1,5 +1,22 @@
 # Hallazgos pendientes de verificar (agosto 2026)
 
+> ## ESTADO FINAL — inventario CERRADO
+>
+> Los 146 hallazgos del barrido inicial están resueltos, repartidos en ocho
+> tandas entre cinco sesiones paralelas, y todas las ramas están fusionadas en
+> `claude/stripe-integration-steps-somce4`. No queda ningún pendiente
+> accionable en este documento: lo que hay debajo es el REGISTRO de qué era
+> cada cosa y quién lo cerró.
+>
+> Quedan **dos decisiones abiertas del dueño**, no dos fallos (están al pie de
+> sus apartados, con lo que costaría cerrarlas): enchufar el panel §9 a la
+> revisión quincenal, y retirar o no el embudo self-serve de `/planes`.
+>
+> Verificado con todo junto: suite completa **en los dos órdenes** (normal e
+> inverso: ya no depende de qué corra antes), `tsc`, build, arranque desde una
+> base VACÍA hasta la última migración, y las cuatro guardas (anclas, avisos,
+> claves del portal, portapapeles).
+
 > **REPARTO ENTRE SESIONES PARALELAS.** Añade tu reclamo aquí antes de tocar
 > nada: tres sesiones hicimos la tanda 3 a la vez y hubo que reconciliar a mano
 > un aviso duplicado, un N+1 reintroducido y dos ficheros de test homónimos.
@@ -182,6 +199,10 @@ dos pases seguidos**.
 | El diario sin guardar al cruzar la medianoche se tira a la basura, pudiendo reenviarse con su fecha | `frontend/src/portal/PortalDiary.tsx:64` | (tanda 6) |
 | El pre-relleno "solo si está vacío" deja muerto el campo de duración de sesión (y trata `false` como vacío) | `frontend/src/pages/AnamnesisPage.tsx:254` | (tanda 6) |
 | El criterio único no llega a `/anamnesis-pdf`: el camino inverso sigue pisando la ficha revisada | `backend/app/routers/portal_public.py:406` | (tanda 6) |
+| La biblioteca de ejercicios (141 KB) viaja dos veces al abrir el editor, y una cuarta parte son notas que ninguna pantalla pinta | `backend/app/routers/exercises.py:58` | (tanda 7) |
+| La biblioteca de ejercicios (146 KB) se descarga dos veces por visita, y otra vez en cada apertura del editor | `frontend/src/components/ClientPlanEditor.tsx:102` | (tanda 7) |
+| `/api/clients` se pide entero cada 3 s desde Hoy y desde Clientes, con las notas clínicas que ninguna de las dos pantallas lee | `frontend/src/pages/DashboardPage.tsx:145` | (tanda 7) |
+| El aviso "Sin conexión" del panel móvil está montado dos veces | `frontend/src/components/AppShell.tsx:127` | (tanda 7) |
 | El sello editado (y el `rev` nuevo) se tiran: `normalize` se queda con el plan viejo | `frontend/src/components/ClientPlanPanel.tsx:320` | (tanda 4) |
 | DQR Train: regenerar el plan no sella la adaptación → el banner "sin adaptar" es eterno | `backend/app/routers/clients.py:1726` | (tanda 4) |
 | Copiar un plan/modelo arrastra el sello de adaptación de OTRO cliente dentro de `training_json` | `backend/app/services/plan_library.py:268` | (tanda 4) |
@@ -249,44 +270,12 @@ fallo que dice cazar).
 
 ### Medias
 
-- **[media] El cuadre deshace lo que el solver §2 acaba de fijar: se salta las cotas del catálogo y deja la medida casera mintiendo ("4 ud (165 g)")** — `backend/app/services/ai/generator.py:1086` · `regresion`
-- **[media] Un ingrediente pequeño que cae a 0 g hace fallar el `model_validate` y el `except` tira TODAS las reparaciones del banco, en silencio** — `backend/app/services/ai/generator.py:1088` · `arreglo_incompleto`
-- **[media] El sello editado (y el `rev` nuevo) se tiran: `normalize` se queda con el plan viejo** — `frontend/src/components/ClientPlanPanel.tsx:320` · `suposicion_falsa`
-- **[media] DQR Train: regenerar el plan no sella la adaptación → el banner "sin adaptar" es eterno** — `backend/app/routers/clients.py:1726` · `arreglo_incompleto`
-- **[media] Copiar un plan/modelo arrastra el sello de adaptación de OTRO cliente dentro de `training_json`** — `backend/app/services/plan_library.py:268` · `arreglo_incompleto`
 
 
-- **[media] El reenvío del pendiente del Diario corre sin control de concurrencia y borra lo tecleado después** — `frontend/src/portal/PortalDiary.tsx:213` · `regresion`
-- **[media] El pendiente del Diario se guarda con una clave sin cliente: en un móvil compartido escribe el diario de otro** — `frontend/src/portal/PortalDiary.tsx:48` · `regresion`
-- **[media] El sidecar de la vía formulario congela el retrato y las correcciones del coach dejan de llegar al prompt** — `backend/app/routers/portal_public.py:268` · `regresion`
-- **[media] Las contradicciones del nuevo endpoint son una foto fija: no se apagan al corregir la ficha ni aparecen si las crea el coach** — `backend/app/routers/clients.py:927` · `arreglo_incompleto`
-- **[media] Las fotos iniciales se guardan todas como `front`: el primer informe empareja un ángulo equivocado** — `backend/app/services/feedback_service.py:116` · `regresion`
-- **[media] El cliente que mandó su anamnesis en PDF ve la tarjeta de fotos iniciales y recibe un 403 imposible de satisfacer** — `frontend/src/pages/AnamnesisPage.tsx:501` · `regresion`
-- **[media] La fila DIFERENCIA reabre el doble descuento que el commit venía a cerrar** — `backend/app/services/payments.py:258` · `regresion`
-- **[media] Borrar un cobro a mano puede marcar como IMPAGADO a un cliente que sí pagó** — `backend/app/routers/payments.py:215` · `suposicion_falsa`
-- **[media] La baja RGPD puede quedar bloqueada por un error de Stripe que el filtro no reconoce** — `backend/app/services/stripe_service.py:1091` · `arreglo_incompleto`
-- **[media] La gráfica de perímetros invierte las series cuando las etiquetas no coinciden** — `backend/app/services/docs/charts.py:146` · `regresion`
-- **[media] El Word del educativo deja de importarse en cuanto el cliente tiene alergias o patrón dietético** — `backend/app/services/word_import.py:722` · `regresion`
-- **[media] "Por qué este enfoque" hereda el volcado interno viejo y suma una frase en cada revisión** — `backend/app/services/adapt_plan.py:548` · `arreglo_incompleto`
-- **[media] La caché por contenido del PDF nunca acierta con el plan: cada descarga arranca LibreOffice** — `backend/app/services/docs/pdf_convert.py:55` · `suposicion_falsa`
-- **[media] El cupo global de altas apaga el formulario todo el día con 25 peticiones, y el único aviso es un push best-effort** — `backend/app/routers/public_site.py:146` · `arreglo_incompleto`
 
 ### Bajas
 
-- **[baja] Las ramas de "aversión" y "patrón" de `_sin_cifras` no coinciden con ningún veto real: el prompt recibe frases mutiladas** — `backend/app/services/coach_lessons.py:219`
-- **[baja] La memoria de vetos (§13) deja de aprender del banco de comidas: los alérgenos y los desvíos ya no se anotan** — `backend/app/services/ai/generator.py:1079`
 
-- **[baja] Los revisores en paralelo se pisan el saldo de créditos (lost update sobre `ai_credit_state`)** — `backend/app/services/ai_credit.py:70`
-- **[baja] El diario sin guardar al cruzar la medianoche se tira a la basura, pudiendo reenviarse con su fecha** — `frontend/src/portal/PortalDiary.tsx:64`
-- **[baja] El pre-relleno "solo si está vacío" deja muerto el campo de duración de sesión (y trata `false` como vacío)** — `frontend/src/pages/AnamnesisPage.tsx:254`
-- **[baja] El criterio único no llega a `/anamnesis-pdf`: el camino inverso sigue pisando la ficha revisada** — `backend/app/routers/portal_public.py:406`
-- **[baja] El aviso del barrido cortado pide al coach dos cosas que no puede hacer** — `frontend/src/pages/PagosPage.tsx:250`
-- **[baja] El test del borrado del cobro a mano pasa igual sin el recálculo de la ficha** — `backend/tests/test_cobro_manual.py:211`
-- **[baja] El "total" de cobros de la ficha se corta en 20 movimientos y suma dinero de prueba** — `frontend/src/pages/ClientProfilePage.tsx:789`
-- **[baja] Una devolución repescada por la sincronización entra ya marcada como leída** — `backend/app/services/payments.py:219`
-- **[baja] Regenerar solo el educativo vuelve a pedirlo sin alergias ni patrón dietético** — `backend/app/routers/plans.py:576`
-- **[baja] La lista de la compra va en una caja marcada como no divisible entre páginas** — `backend/app/services/docs/plan_doc.py:637`
-- **[baja] El test del cupo pasa aunque el contador de altas esté muerto** — `backend/tests/test_public_register.py:213`
 
 ### Bajas
 
@@ -301,13 +290,9 @@ fallo que dice cazar).
 ### Coherencia de UX — portal del cliente
 
 
-- **[media] El cuestionario dice "te hemos enviado el acceso por email" aunque no se haya enviado ninguno, y no deja vía de vuelta al portal** — `frontend/src/pages/AnamnesisPage.tsx:497`
-- **[media] Al cliente DQR Train el portal le anuncia una dieta que su PDF no contiene** — `frontend/src/portal/PortalApp.tsx:290`
-- **[baja] "Recursos" es la única pantalla del portal cuyo error no se puede reintentar, y el texto invita a hacerlo** — `frontend/src/portal/PortalResources.tsx:46`
 
 ### Integraciones — Stripe
 
-- **[media] El embudo self-serve de `/planes` está construido y desconectado: tres endpoints públicos sin consumidor** — `backend/app/routers/public_site.py:128`
   · VERIFICADO y REAL (`publicPlanPrices`/`publicRegister`/`publicCheckout` no
   los llama nadie). NO se retiran: son públicos y estables y pueden estar
   enlazados desde fuera (bio de Instagram, un QR). Anotado en el código.
@@ -316,8 +301,6 @@ fallo que dice cazar).
 ### Integraciones — email y push
 
 
-- **[alta] El diagnóstico de correo existe en el backend y no hay ninguna pantalla que lo abra** — `backend/app/routers/email.py:35`
-- **[alta] La página de "¡Pago recibido!" promete un correo que en la renovación no existe** — `frontend/src/pages/PlansPage.tsx:312`
 
 ### Integraciones — Google y WhatsApp
 
@@ -328,21 +311,9 @@ fallo que dice cazar).
 
 ### Backend
 
-- **[media] El historial del cliente relee las series de todas las revisiones anteriores en cada iteración (coste cuadrático)** — `backend/app/routers/clients.py:1242`
-- **[media] La ficha carga todas las versiones del plan con sus cuatro JSONB para imprimir cuatro escalares** — `backend/app/routers/clients.py:1233`
-- **[media] "Elegir base" lee el plan entero de todos los clientes para pintar una línea de cada uno** — `backend/app/services/plan_library.py:426`
-- **[media] El panel de Planificación descarga todas las versiones históricas del plan enteras, y las repide tras cada acción** — `backend/app/routers/plans.py:477`
-- **[baja] La biblioteca de ejercicios (141 KB) viaja dos veces al abrir el editor, y una cuarta parte son notas que ninguna pantalla pinta** — `backend/app/routers/exercises.py:58`
-- **[baja] La pantalla de Entreno del portal resuelve dos veces el plan y consulta la biblioteca una vez por sesión** — `backend/app/services/portal.py:412`
-- **[baja] La lista de períodos hace una consulta de feedback por cada revisión** — `backend/app/routers/plans.py:721`
 
 ### Frontend
 
-- **[media] La biblioteca de ejercicios (146 KB) se descarga dos veces por visita, y otra vez en cada apertura del editor** — `frontend/src/components/ClientPlanEditor.tsx:102`
-- **[media] Fotos del período: N peticiones idénticas de la lista y descarga EN SERIE a resolución original para miniaturas de 80×96 px** — `frontend/src/components/ClientFeedbackTab.tsx:1129`
-- **[media] `/api/clients` se pide entero cada 3 s desde Hoy y desde Clientes, con las notas clínicas que ninguna de las dos pantallas lee** — `frontend/src/pages/DashboardPage.tsx:145`
-- **[baja] "Vídeos de ejercicios": 279 filas sin virtualizar que se repintan enteras en cada tecla, y miniaturas de YouTube de 480×360 sin lazy** — `frontend/src/pages/RecursosPage.tsx:1087`
-- **[baja] El aviso "Sin conexión" del panel móvil está montado dos veces** — `frontend/src/components/AppShell.tsx:127`
 
 ### Créditos de IA
 
@@ -378,8 +349,9 @@ fallo que dice cazar).
 **No tocado a propósito** (es de otra tanda en marcha): todo `services/stripe_service.py`,
 `PlansPage.tsx` y el embudo self-serve de `/planes`.
 
-**Aviso**: `tests/test_ai_service.py::test_full_pipeline_generates_plan` falla en
-esta rama desde antes de esta tanda (el pipeline hace 2 llamadas y el test espera 3).
+~~**Aviso**: `test_full_pipeline_generates_plan` falla en esta rama~~ —
+**RESUELTO**: no era del pipeline, era la caché del educativo sobreviviendo
+entre ejecuciones (`conftest` la apaga en los tests). La suite está en verde.
 
 
 ---
