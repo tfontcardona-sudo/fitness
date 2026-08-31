@@ -616,18 +616,11 @@ def _send_videocall_reminder(db: Session, client: Client, vc, brand_name: str,
         "title": brand_name, "body": client_body, "count": 1,
         "url": vc.meet_url or f"{base}/p/{client.portal_token}", "tag": "dq-videollamada",
     })
-<<<<<<< HEAD
     # Tag ÚNICA POR LLAMADA. Con una tag compartida, el móvil sustituye el
     # aviso anterior por el nuevo: dos clientes con videollamada el mismo día
     # y el coach solo veía UNA notificación. Es el mismo fallo que ya se
     # corrigió en los cobros. (Dentro de la misma llamada sí interesa que se
     # sustituyan: "mañana" y "en 1 hora" hablan de la misma cita.)
-=======
-    # Tag POR VIDEOLLAMADA: con una tag fija ("dq-vc-coach"), dos clientes con
-    # llamada el mismo día generaban dos avisos con la misma tag y el móvil del
-    # coach solo enseñaba el último — el primero desaparecía sin haberse leído.
-    # Es el mismo criterio que ya usa `dq-vc-propuesta-{client.id}`.
->>>>>>> origin/claude/tanda3-pendiente-de-tanda1
     n += send_to_coach(db, {
         "title": "Videollamada", "body": coach_body, "count": 1,
         "url": vc.meet_url or f"{base}/clientes/{client.id}?tab=feedback",
@@ -792,7 +785,6 @@ def run_coach_digest(db: Session, now: datetime | None = None) -> dict:
     # silenciando la app — y con ella los avisos inmediatos que sí valen
     # dinero. Se envía cuando hay algo NUEVO, y una vez al día de cortesía si
     # todo sigue igual.
-<<<<<<< HEAD
     # HUELLA COMO HASH, no como lista literal. `record_job` guarda el detalle
     # recortado a 300 caracteres, y la lista de claves los pasa con ~10 alertas
     # abiertas: a partir de ahí se comparaba la huella ENTERA contra una
@@ -800,18 +792,6 @@ def run_coach_digest(db: Session, now: datetime | None = None) -> dict:
     # barrido aunque no hubiera cambiado nada — que es justo el machaqueo que
     # esta dedup existe para evitar. Un hash cabe siempre.
     huella = _huella_de_alertas(alerts)
-=======
-    # La huella se guarda HASHEADA, no en crudo: `record_job` recorta el detalle
-    # a 300 caracteres y la lista de claves los pasa enseguida (con ~10 alertas
-    # abiertas ya se corta). Dos conjuntos de alertas DISTINTOS que coincidían en
-    # los primeros 300 caracteres se leían como "sin novedades" y el resumen se
-    # silenciaba justo cuando había algo nuevo que contar. Un sha256 ocupa 64
-    # caracteres pase lo que pase.
-    huella = hashlib.sha256(
-        "|".join(sorted(str(a.get("key") or a.get("kind")) for a in alerts))
-        .encode("utf-8")
-    ).hexdigest()
->>>>>>> origin/claude/tanda3-pendiente-de-tanda1
     try:
         from app.services.job_state import estado_de_los_trabajos, record_job
 

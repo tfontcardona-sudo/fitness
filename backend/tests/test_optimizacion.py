@@ -233,17 +233,17 @@ def test_el_historial_sigue_dando_las_mismas_cifras(cliente_con_historial):
     """La caché compartida no puede cambiar el resultado: mismas cifras que
     calculando cada revisión por separado."""
     from app.db import SessionLocal
-    from app.services.feedback_service import (
-        compute_period_summary,
-        sets_por_periodo_de_cliente,
-    )
+    # Al fusionar las dos sesiones que hicieron esto en paralelo se quedó UNA
+    # implementación: `sets_por_periodo(db, [ids])`, que agrupa por período los
+    # ids que se le pasan (la otra los sacaba del cliente entero).
+    from app.services.feedback_service import compute_period_summary, sets_por_periodo
 
     db, c, _, periodos = cliente_con_historial
     db2 = SessionLocal()
     try:
-        cache = sets_por_periodo_de_cliente(db2, c.id)
+        cache = sets_por_periodo(db2, [p.id for p in periodos])
         for p in periodos:
-            con = compute_period_summary(db2, p.id, sets_por_periodo=cache)
+            con = compute_period_summary(db2, p.id, cache_sets=cache)
             sin = compute_period_summary(db2, p.id)
             assert con["strength"] == sin["strength"]
             assert con["weight"] == sin["weight"]
@@ -355,14 +355,20 @@ def test_la_lista_ligera_deja_fuera_las_notas_clinicas(http, cliente_con_histori
     finally:
         db2.close()
 
-    entera = {x["id"]: x for x in http.get("/api/clients", headers=_auth()).json()}[c.id]
+    # El LISTADO no las lleva NUNCA, se pida como se pida. Al fusionar las dos
+    # sesiones que atacaron esto en paralelo se escogió la exclusión permanente
+    # antes que el `?light=1` opcional: no depende de que cada llamador se
+    # acuerde de pedirla, y ninguna de las dos pantallas que consumen la lista
+    # (Hoy y Clientes) pinta una sola de estas notas.
+    lista = {x["id"]: x for x in http.get("/api/clients", headers=_auth()).json()}[c.id]
     ligera = {x["id"]: x for x in http.get("/api/clients?light=1", headers=_auth()).json()}[c.id]
-    assert entera["medical_notes"] and entera["injuries_notes"]
-    assert ligera["medical_notes"] is None and ligera["injuries_notes"] is None
+    for campo in ("medical_notes", "injuries_notes"):
+        assert not lista.get(campo), f"{campo} sigue viajando en el listado"
+        assert not ligera.get(campo)
     # Lo que las dos pantallas SÍ pintan sigue estando.
-    assert ligera["full_name"] == entera["full_name"]
-    assert ligera["status"] == entera["status"]
-    assert ligera["has_published_plan"] == entera["has_published_plan"]
+    assert ligera["full_name"] == lista["full_name"]
+    assert ligera["status"] == lista["status"]
+    assert ligera["has_published_plan"] == lista["has_published_plan"]
     # Y la FICHA nunca se recorta.
     ficha = http.get(f"/api/clients/{c.id}", headers=_auth()).json()
     assert ficha["medical_notes"] and ficha["injuries_notes"]

@@ -195,7 +195,6 @@ def test_el_resumen_del_coach_no_se_repite_cada_tres_horas(sidecar, monkeypatch)
         db.close()
 
 
-<<<<<<< HEAD
 def test_un_correo_que_falla_no_consume_el_intento(monkeypatch):
     """`EmailLog` anota los tres desenlaces: `sent`, `failed` (SMTP caído) y
     `disabled` (los correos apagados, del cliente o del servidor). Los
@@ -247,7 +246,6 @@ def test_un_correo_que_falla_no_consume_el_intento(monkeypatch):
     finally:
         db.execute(delete(EmailLog).where(EmailLog.client_id == c.id))
         db.execute(delete(Client).where(Client.id == c.id))
-=======
 # --- Tanda 3: lo que la vigilancia NO miraba ---------------------------------
 
 def test_un_trabajo_secundario_muerto_dias_tambien_se_canta(sidecar):
@@ -268,7 +266,10 @@ def test_un_trabajo_secundario_muerto_dias_tambien_se_canta(sidecar):
     ruta.write_text(json.dumps(datos), encoding="utf-8")
 
     motivo = sidecar.automatismos_parados()
-    assert motivo and "recordatorios del cliente" in motivo
+    # (La etiqueta la fija `QUE_SE_PIERDE`: al fusionar las dos sesiones que
+    # hicieron esta vigilancia se quedó "del portal", que es como el producto
+    # llama a esa pantalla.)
+    assert motivo and "recordatorios del portal" in motivo
 
 
 def test_saltarse_una_vuelta_de_un_secundario_no_alarma(sidecar):
@@ -318,8 +319,8 @@ def test_un_trabajo_que_fallo_y_ademas_dejo_de_correr_escala_a_parado(sidecar):
 
     motivo = sidecar.automatismos_parados()
     assert motivo and "no se ejecuta" in motivo and "72 h" in motivo
-    # …sin perder el porqué: el último intento reventó.
-    assert "errores" in motivo
+    # …sin perder el porqué: el último intento reventó, y se dice cuál fue.
+    assert "OperationalError" in motivo
 
 
 # --- Tanda 3: la huella del resumen del coach --------------------------------
@@ -398,12 +399,10 @@ def test_la_peticion_se_avisa_aunque_no_haya_plan_ni_el_cliente_este_activo():
             db.query(ChangeRequest).filter_by(client_id=c.id).delete()
             db.flush()
             db.delete(c)
->>>>>>> origin/claude/tanda3-pendiente-de-tanda1
         db.commit()
         db.close()
 
 
-<<<<<<< HEAD
 def test_la_dedup_del_resumen_del_coach_aguanta_muchas_alertas(tmp_path, monkeypatch):
     """`record_job` guarda el detalle recortado a 300 caracteres. La huella era
     la lista literal de claves de alerta, que los pasa con ~10 alertas
@@ -489,7 +488,6 @@ def test_un_trabajo_que_lleva_dias_fallando_lo_dice(sidecar):
     viejo = sidecar.automatismos_parados(ahora)
     assert viejo and "120 h sin completarse" in viejo, viejo
     assert viejo != reciente, "el aviso tiene que escalar, no repetirse igual"
-=======
 @needs_db
 def test_la_racha_del_portal_cuenta_lo_mismo_que_el_motor():
     """La racha tenía su PROPIO predicado en SQL (`is_not(None)`), que da por
@@ -607,4 +605,3 @@ def test_quien_registra_a_diario_pero_no_se_pesa_se_avisa_a_tiempo():
         db.delete(c)
         db.commit()
         db.close()
->>>>>>> origin/claude/tanda3-pendiente-de-tanda1

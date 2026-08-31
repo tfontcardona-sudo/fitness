@@ -19,7 +19,10 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import BrandConfig, Client, DailyLog, Exercise, Period, Plan, RecommendedProduct
+from app.models import (
+    BrandConfig, Client, DailyLog, Exercise, Period, Plan, RecommendedProduct,
+    WorkoutLog,
+)
 from app.services.storage import media_url
 
 # URLs que el portal renderiza como href/src: solo esquema http(s) — los datos
@@ -185,60 +188,19 @@ def streak_days(db, client_id: int, today: date) -> int:
     de teclear); el día de HOY aún sin rellenar no rompe la racha (se rompe al
     terminar el día en blanco). Tope de mirada: 90 días (más que de sobra y la
     consulta se mantiene barata)."""
-<<<<<<< HEAD
-    from sqlalchemy import and_, or_, select
-=======
-    from sqlalchemy import select
->>>>>>> origin/claude/tanda3-pendiente-de-tanda1
-
-    from app.models import DailyLog, Period
-
-    desde = today - timedelta(days=90)
-<<<<<<< HEAD
-    # Las SERIES de entreno también son un día registrado: quien más entrena
-    # (y un DQR Train no tiene diario de dieta) veía racha 0 y la palanca de
-    # adherencia se le volvía en contra.
-    tiene_series = (select(WorkoutLog.id)
-                    .where(WorkoutLog.daily_log_id == DailyLog.id)
-                    .exists())
-    # Espejo EXACTO de `push.diary_is_filled`, que descarta el vacío además del
-    # nulo. Con solo `is_not(None)`, una nota escrita y borrada dejaba el campo
-    # en cadena vacía: la racha contaba ese día y el motor de "sin registros"
-    # no, así que el portal decía "🔥 5 días" mientras el panel del coach
-    # avisaba de "sin registros desde hace 5 días". Los campos de texto se
-    # comparan también contra "" (los numéricos no admiten esa comparación).
-    def _relleno(col):
-        return col.is_not(None) if col.type.python_type is not str else and_(
-            col.is_not(None), col != "")
-
-    con_algo = [
-        _relleno(DailyLog.weight_kg), _relleno(DailyLog.sleep_hours),
-        _relleno(DailyLog.steps), _relleno(DailyLog.satiety_1_10),
-        _relleno(DailyLog.water_liters), _relleno(DailyLog.diet_adherence),
-        _relleno(DailyLog.energy_1_5), _relleno(DailyLog.mood_1_5),
-        _relleno(DailyLog.fatigue_1_5), _relleno(DailyLog.free_notes),
-        DailyLog.chosen_options_json.is_not(None),
-        tiene_series,
-    ]
-    dias = set(db.scalars(
-        select(DailyLog.log_date)
-=======
-    # La REGLA de "este día cuenta" es la del motor (`push.dias_registrados`), no
-    # una copia en SQL: la de aquí usaba `is_not(None)`, que da por bueno lo que
-    # el motor descarta —un `free_notes` vacío ("") o un `chosen_options_json`
-    # sin elegir nada ({}), filas que el autosave del portal crea con solo abrir
-    # la pantalla—. La racha contaba días que para el coach no existían, que es
-    # justo lo que la "única verdad" venía a evitar (y su comentario ya decía,
-    # sin ser verdad, que la racha la consumía).
     from app.services.push import dias_registrados
 
+    desde = today - timedelta(days=90)
+    # UNA SOLA DEFINICIÓN de "día registrado" en todo el sistema. Esta función
+    # llevaba su propia copia de la regla (diario relleno, comidas elegidas o
+    # series de entreno) y cualquier retoque en una de las dos dejaba al portal
+    # diciendo "🔥 5 días" mientras el panel del coach avisaba de "sin
+    # registros desde hace 5 días". La regla vive en `push.dias_registrados`.
     logs = list(db.scalars(
         select(DailyLog)
->>>>>>> origin/claude/tanda3-pendiente-de-tanda1
         .join(Period, DailyLog.period_id == Period.id)
         .where(Period.client_id == client_id,
-               DailyLog.log_date >= desde, DailyLog.log_date <= today)
-    ))
+               DailyLog.log_date >= desde, DailyLog.log_date <= today)))
     dias = dias_registrados(db, logs)
     if not dias:
         return 0
