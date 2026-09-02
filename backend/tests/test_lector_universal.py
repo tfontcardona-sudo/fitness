@@ -105,6 +105,11 @@ class ScriptedDocs:
             return yo.respuestas.pop(0)
 
         monkeypatch.setattr(AIClient, "_raw_call_with_blocks", _falso)
+        # Los endpoints construyen `AIClient()` sin clave explícita: sin una
+        # en settings el constructor corta con «Falta ANTHROPIC_API_KEY».
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
         return self
 
 
@@ -772,7 +777,7 @@ def test_importar_plan_con_fichero_ilegible_o_sin_nada_reconocible(http, db, mon
     ScriptedDocs([{"document_kind": "otro", "nutrition": None, "training": None,
                    "inventory": ["- Una carta"], "unmapped": [], "warnings": []}]).instalar(monkeypatch)
     r2 = http.post(f"/api/clients/{c.id}/plans/import-document", headers=_auth(),
-                   files={"file": ("carta.txt", b"Estimado cliente…", "text/plain")})
+                   files={"file": ("carta.txt", "Estimado cliente…".encode(), "text/plain")})
     assert r2.status_code == 422 and "No se ha reconocido" in r2.json()["detail"]
 
 
@@ -786,7 +791,7 @@ def test_menu_cerrado_por_dias_se_importa_en_modo_strict(http, db, monkeypatch):
     ScriptedDocs([doc]).instalar(monkeypatch)
     c = _cliente_completo(db)
     r = http.post(f"/api/clients/{c.id}/plans/import-document", headers=_auth(),
-                  files={"file": ("menu.txt", b"Lunes…", "text/plain")})
+                  files={"file": ("menu.txt", "Lunes…".encode(), "text/plain")})
     assert r.status_code == 200, r.text
     bank = r.json()["nutrition_json"]["meal_bank"]
     assert bank["mode"] == "strict" and [d["day"] for d in bank["days"]] == ["lunes", "martes"]

@@ -546,6 +546,13 @@ def comparar_pases(a: dict, b: dict, confianza_a: dict | None = None) -> dict:
                 f"{etiquetas[k]}: la extracción dice «{va if va is not None else '—'}» "
                 f"y la relectura ve «{vb}»")
     conf = dict(res.confidence)
+    # Dos lecturas INDEPENDIENTES que coinciden en un dato confirman el dato:
+    # la confianza sube aunque el extractor la declarara baja (manuscrito
+    # dudoso que la relectura leyó igual). `dual_pass_extract` se queda con la
+    # mínima por diseño; aquí la coincidencia es información nueva.
+    for k in CRITICOS_ESCALARES:
+        if sub_a.get(k) is not None and sub_a.get(k) == sub_b.get(k):
+            conf[k] = max(conf.get(k, 1.0), 0.9)
     for k in CRITICOS_LISTA:
         sa = {_norm_texto(x) for x in (a.get(k) or []) if _norm_texto(x)}
         sb = {_norm_texto(x) for x in (b.get(k) or []) if _norm_texto(x)}
