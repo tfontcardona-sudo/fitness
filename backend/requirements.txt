@@ -31,6 +31,11 @@ python-docx==1.1.2
 reportlab==4.4.0
 matplotlib==3.10.1
 pillow==11.2.1
+# Lector universal de documentos (anamnesis/adjuntos/planes en CUALQUIER
+# formato): pypdf cuenta y trocea PDFs largos (la API lee 100 págs por bloque);
+# openpyxl lee hojas de cálculo (LibreOffice Calc no está en la imagen).
+pypdf==5.4.0
+openpyxl==3.1.5
 
 # --- Email y plantillas ---
 aiosmtplib==4.0.1

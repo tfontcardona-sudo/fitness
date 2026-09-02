@@ -1,6 +1,7 @@
-"""Extracción de la anamnesis desde el PDF con IA (lectura nativa).
+"""Extracción de la anamnesis desde CUALQUIER documento con IA (lector universal).
 
-La IA lee el PDF oficial rellenado por el cliente y extrae:
+La IA lee el documento —el PDF oficial, el cuestionario de otro profesional, fotos
+de una hoja manuscrita, un Word, una hoja de cálculo o unas notas— y extrae:
 - Los campos ESTRUCTURADOS que el sistema necesita para calcular y generar
   (sexo, antropometría, objetivo, nivel, entrenamiento, dieta, preferencias).
 - Un ANÁLISIS cualitativo en profundidad (lesiones, hábitos, sueño, estrés,
@@ -13,6 +14,7 @@ grave. Por eso esto solo PRE-RELLENA; la decisión final es del coach.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 
 from pydantic import BaseModel, Field, field_validator
@@ -234,69 +236,141 @@ class AnamnesisExtraction(BaseModel):
         ),
     )
 
+    # --- Lector universal: qué ES el documento y qué se leyó de él ---------
+    # El documento ya no es necesariamente el PDF oficial: puede ser el
+    # cuestionario de otro profesional, una foto de una hoja manuscrita, un
+    # Word, un Excel o unas notas. Estos campos dejan constancia de qué había
+    # y de que se leyó ENTERO — el coach ve el inventario y lo que no cupo en
+    # ninguna casilla, en vez de fiarse de un formulario silencioso.
+    document_kind: str | None = Field(
+        None, description="anamnesis_dq|cuestionario_ajeno|notas|analitica|informe_medico|"
+                          "plan_dieta|plan_entreno|mixto|otro")
+    source_inventory: list[str] = Field(
+        default_factory=list,
+        description="Una línea corta por bloque/tema que CONTIENE el documento, en su "
+                    "orden (p. ej. '- Datos personales', '- Tabla de perímetros', "
+                    "'- Analítica 12/05/2026', '- Texto libre sobre motivación').")
+    unmapped_info: list[str] = Field(
+        default_factory=list,
+        description="Datos RELEVANTES para dieta, entreno o salud que no encajan en "
+                    "ningún campo del esquema, cada uno en una línea corta. Vacío si "
+                    "no hay nada.")
+    confidence: dict[str, float] = Field(
+        default_factory=dict,
+        description="Confianza 0-1 en los campos críticos que hayas rellenado: sex, "
+                    "birth_date, height_cm, start_weight_kg, goal_type, food_allergies, "
+                    "medication_notes, medical_notes, injuries_notes. 1 = está escrito "
+                    "claro y literal; 0,6 = inferido o manuscrito dudoso.")
 
-_EXTRACTION_SYSTEM = """Eres un dietista-entrenador experto leyendo la ficha de \
-ANAMNESIS oficial (marca DQ) que un cliente ha rellenado a mano. Tu tarea es EXTRAER \
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _confianza_acotada(cls, v):
+        if not isinstance(v, dict):
+            return {}
+        out: dict[str, float] = {}
+        for k, val in v.items():
+            try:
+                f = float(val)
+            except (TypeError, ValueError):
+                continue
+            out[str(k)] = min(1.0, max(0.0, f))
+        return out
+
+    @field_validator("source_inventory", "unmapped_info", mode="before")
+    @classmethod
+    def _listas_de_texto(cls, v):
+        """La IA a veces manda un párrafo o un dict en vez de una lista: se
+        acepta lo que sea y se normaliza a líneas — una lista rara no puede
+        tumbar la extracción entera (gotcha §5.10)."""
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [x.strip(" -•\t") for x in v.splitlines() if x.strip(" -•\t")]
+        if isinstance(v, dict):
+            return [f"{k}: {val}" for k, val in v.items()]
+        if isinstance(v, list):
+            return [str(x).strip() for x in v if str(x).strip()]
+        return []
+
+
+_EXTRACTION_SYSTEM = """Eres un dietista-entrenador experto. Te llega UN DOCUMENTO con \
+información de un cliente para su asesoría de nutrición y entrenamiento. Tu tarea es EXTRAER \
 toda la información del documento de forma fiel y estructurada, sin inventar nada.
+
+EL DOCUMENTO PUEDE TENER CUALQUIER FORMA. No busques casillas: busca INFORMACIÓN. Puede ser \
+la ficha de anamnesis oficial (marca DQ, ~10 páginas), el cuestionario de otro profesional con \
+otras secciones y otro orden, un formulario web exportado, unas notas escritas a mano y \
+fotografiadas con el móvil (varias fotos = un solo documento; léelas en orden), un Word, una \
+hoja de cálculo con celdas separadas por tabuladores, una conversación de WhatsApp copiada, o \
+un informe médico o una analítica. Mapea cada dato al campo del esquema POR SU SIGNIFICADO, esté \
+donde esté y se llame como se llame ("Peso", "Kg actuales", "peso hoy: 82" son lo mismo). \
+Ignora la maquetación, los logos y las instrucciones para quien rellena; lee texto impreso, \
+manuscrito, tablas, márgenes, casillas marcadas (☑/X/círculos) y anotaciones sueltas.
 
 REGLA DE ORO: si un dato no aparece, está en blanco o pone "no aplica", déjalo en null \
 (o lista/texto vacío). NUNCA inventes datos: un error en peso, lesiones o medicación \
 sería grave. El coach revisará todo antes de generar el plan. MAPEAR o INFERIR un valor \
-a partir de lo que el cliente escribió NO es inventar; es obligatorio.
+a partir de lo que el cliente escribió NO es inventar; es obligatorio. Si un número es \
+dudoso (manuscrito ilegible, dos valores distintos), pon el más probable y BAJA su confianza \
+en `confidence`; si no puedes decidir, null y cuéntalo en la nota de su sección.
 
 LECTURA EXHAUSTIVA, ESCRITURA SELECTIVA: la anamnesis es la BASE de toda la asesoría. \
 Lee el documento ENTERO, frase a frase, incluidos márgenes, anotaciones a mano, respuestas \
 fuera de su casilla y comentarios sueltos. Pero ESCRIBE selectivo: a las notas va lo que \
-tiene señal para dieta, entrenamiento o adherencia — no cada casilla del PDF. \
+tiene señal para dieta, entrenamiento o adherencia — no cada casilla del documento. \
 EXCEPCIÓN SIN RECORTE (seguridad): lesiones, patologías, alergias/intolerancias y \
 medicación se recogen SIEMPRE al completo. Y si el cliente escribió algo ambiguo o \
 contradictorio, recógelo tal cual en la nota de su sección (el coach decide), nunca lo omitas.
 
 CAMPOS ESTRUCTURADOS OBLIGATORIOS — recórrelos UNO A UNO y rellénalos SIEMPRE que el dato \
 aparezca en CUALQUIER parte del documento. NO dejes en null un campo cuyo dato esté presente:
-  · birth_date ← "Fecha de nacimiento": convierte DD/MM/AAAA a YYYY-MM-DD (12/03/1990 → 1990-03-12).
-  · sex ← "Sexo biológico": Hombre→"male", Mujer→"female" (Otro→null).
-  · phone ← "Teléfono": el móvil tal cual (con prefijo si lo escribe).
-  · height_cm ← "Altura"; start_weight_kg ← "Peso actual"; goal_weight_kg ← "Peso objetivo".
-  · initial_waist_cm / initial_hip_cm / initial_arm_cm / initial_thigh_cm ← "Perímetro \
-cintura / cadera / brazo relajado / muslo" (cm) de la antropometría inicial.
-  · goal_type ← "Motivo y objetivos" (NO hay casilla: INFIÉRELO del texto): perder grasa/definir/\
+  · birth_date ← fecha de nacimiento: convierte DD/MM/AAAA a YYYY-MM-DD (12/03/1990 → 1990-03-12). \
+Si solo hay la EDAD ("34 años"), deja birth_date en null y escribe "- Edad declarada: 34 años" \
+en lifestyle_notes (el coach pondrá la fecha).
+  · sex ← sexo biológico: Hombre/varón/masculino→"male", Mujer/femenino→"female" (Otro→null).
+  · phone ← teléfono/móvil tal cual (con prefijo si lo escribe).
+  · height_cm ← altura/talla/estatura (si viene en metros, 1,78 m → 178); start_weight_kg ← \
+peso actual; goal_weight_kg ← peso objetivo/deseado.
+  · initial_waist_cm / initial_hip_cm / initial_arm_cm / initial_thigh_cm ← perímetros \
+(cintura / cadera / brazo relajado / muslo) en cm de la antropometría inicial.
+  · goal_type ← objetivo (a menudo NO hay casilla: INFIÉRELO del texto): perder grasa/definir/\
 adelgazar→"fat_loss"; ganar músculo/volumen→"muscle_gain"; recomposición/tonificar→"recomp"; \
 mantener el peso (sin ganar ni perder)→"maintenance"; recuperarse de una lesión/operación y \
 volver a entrenar→"injury_recovery".
   · goal_deadline ← si el cliente declara un PLAZO o fecha para su objetivo ("para junio", \
 "en 3 meses", "para la boda del 12/09"), conviértelo a YYYY-MM-DD (aprox. si hace falta).
-  · level ← "Nivel auto-percibido en sala de pesas": Principiante→"beginner"; Intermedio→\
+  · level ← nivel en sala de pesas: Principiante/nunca/menos de 1 año→"beginner"; Intermedio→\
 "intermediate"; Avanzado→"advanced".
-  · training_place ← "Dónde entrenas": Gimnasio/gym→"gym"; Casa→"home"; Exterior→"outdoor".
-  · training_days ← cuenta los días marcados en "Días que puedes entrenar" (L M X J V S D).
+  · training_place ← dónde entrena: Gimnasio/gym/box→"gym"; Casa/domicilio→"home"; \
+Exterior/parque/calistenia→"outdoor".
+  · training_days ← días que puede entrenar por semana (cuenta los días marcados L M X J V S D \
+o el número que escriba).
   · daily_activity_level ← deduce la actividad DIARIA por el trabajo/estilo de vida: \
 oficina o sentado→"sedentary"; de pie o caminando a ratos (comercio, docencia)→"light"; \
 trabajo físico con muchos pasos→"active"; trabajo físico intenso (obra, mensajería, campo)→\
 "very_active". Si no hay información suficiente, déjalo en null.
-  · session_max_min ← "Duración media de la sesión", en minutos.
-  · diet_mode ← bloque de dieta: si menciona equivalencias/flexibilidad→"flexible_7"; si pide \
-menú cerrado→"strict". Si no está claro, usa "flexible_7".
-  · diet_pattern ← "Patrón alimentario": vegano→"vegano"; vegetariano→"vegetariano"; \
+  · session_max_min ← duración media/máxima de la sesión, en minutos ("1 h" → 60).
+  · diet_mode ← si menciona equivalencias/flexibilidad/opciones→"flexible_7"; si pide \
+menú cerrado/dieta pautada día a día→"strict". Si no está claro, usa "flexible_7".
+  · diet_pattern ← patrón alimentario: vegano→"vegano"; vegetariano→"vegetariano"; \
 pescetariano→"pescetariano"; sin cerdo→"sin_cerdo"; halal→"halal"; kosher→"kosher"; \
 omnívoro/"como de todo"/en blanco→null. Es SEGURIDAD: gobierna qué alimentos puede llevar su plan.
   · Si una respuesta de selección NO encaja en ningún valor del enum, deja el campo en null \
 PERO recoge el texto literal en la nota de su sección — que el coach vea que el cliente \
 contestó y qué escribió, nunca un campo vacío en silencio.
-  · meals_per_day ← "¿Cuántas comidas haces al día?". Si marca "Lo decidís vosotros" \
-o deja el bloque en blanco → meals_per_day=null y meal_schedule=[] (DELEGA el número y \
-reparto de comidas en el coach; la IA del plan elegirá el óptimo).
-  · meal_schedule: de "¿Cuáles?" (desayuno, media mañana, comida, merienda, cena, \
+  · meals_per_day ← nº de comidas al día. Si marca "Lo decidís vosotros" o no consta → \
+meals_per_day=null y meal_schedule=[] (DELEGA el número y reparto de comidas en el coach).
+  · meal_schedule: de las comidas que nombre (desayuno, media mañana, comida, merienda, cena, \
 pre-cama…) y del resto del documento, deduce las tomas y sus horas. Cada toma DEBE ser \
 un objeto con "slot" (1,2,3…), "name" ("Desayuno","Comida","Merienda","Cena"…) y "time" \
 ("HH:MM"). Si no hay horas exactas, propón horarios razonables coherentes con el nº de comidas.
   · equipment: SOLO si entrena en casa/exterior, lista el material declarado (mancuernas, barra, \
 banco, jaula, gomas, máquinas…). Si entrena en gimnasio, deja la lista vacía.
-  · food_likes / food_dislikes / food_allergies: de "Preferencias y aversiones" e "Historia \
-clínica" (alergias/intolerancias alimentarias). Listas de alimentos concretos.
+  · food_likes / food_dislikes / food_allergies: preferencias, aversiones y alergias/\
+intolerancias alimentarias, estén en la sección que estén. Listas de alimentos concretos.
 
 RESÚMENES POR SECCIÓN — FORMATO EN PUNTOS: cada campo es una lista de líneas cortas (una \
-por dato), empezando CADA línea con "- ". Nada de párrafos largos. Fiel al PDF, en español.
+por dato), empezando CADA línea con "- ". Nada de párrafos largos. Fiel al documento, en español.
 CALIDAD SOBRE CANTIDAD (el coach los lee de un vistazo antes de la asesoría):
   · ORDEN: dentro de cada sección, PRIMERO lo que condiciona el plan (lesiones activas, \
 patologías, alergias, medicación con efecto en dieta/entreno), después lo informativo.
@@ -308,33 +382,35 @@ misma información en dos campos.
   · Línea corta = dato + matiz imprescindible. Nada de frases de relleno ni obviedades.
 Lo CLÍNICO Y DE SEGURIDAD (lesiones, patologías, alergias, medicación) se conserva SIEMPRE \
 al completo aunque sea largo: ahí la fidelidad manda sobre la brevedad.
-  · injuries_notes ← "Historial de lesiones y movilidad": TODAS las lesiones, sin recorte \
-(seguridad). Una línea densa por lesión: "- [zona y lado] · [activa/resuelta, desde cuándo] · \
-evitar: [movimientos]". Máximo ~20 palabras por línea.
-  · medical_notes ← "Historia clínica" + "Salud digestiva y hormonal" + "Salud femenina (si \
-aplica)": patologías, antecedentes familiares, cirugías, intolerancias, tabaco/alcohol/otras \
-sustancias, analítica reciente; deposiciones/Bristol/síntomas digestivos; y ciclo menstrual/\
-embarazos/menopausia si aplica. PREFIJA cada línea con su tema para que se lea por bloques: \
-"- Clínica: …", "- Digestivo: …", "- Salud femenina: …", "- Hábitos tóxicos: …", "- Analítica: …".
-  · medication_notes ← "Medicación actual" + "Anticonceptivos hormonales", SIN recorte. \
+  · injuries_notes ← lesiones y movilidad (historial, dolores, cirugías ortopédicas, informes \
+de fisio): TODAS las lesiones, sin recorte (seguridad). Una línea densa por lesión: "- [zona y \
+lado] · [activa/resuelta, desde cuándo] · evitar: [movimientos]". Máximo ~20 palabras por línea.
+  · medical_notes ← historia clínica, salud digestiva y hormonal, salud femenina si aplica, \
+hábitos tóxicos y ANALÍTICAS: patologías, antecedentes familiares, cirugías, intolerancias, \
+tabaco/alcohol/otras sustancias, deposiciones/síntomas digestivos, ciclo menstrual/embarazos/\
+menopausia. PREFIJA cada línea con su tema: "- Clínica: …", "- Digestivo: …", "- Salud \
+femenina: …", "- Hábitos tóxicos: …". Si el documento trae una ANALÍTICA (o el cliente copia \
+valores), vuelca en "- Analítica (fecha): …" los marcadores FUERA DE RANGO con valor, unidad y \
+rango de referencia, y agrupa los normales en una sola línea ("resto normal: hemograma, …").
+  · medication_notes ← medicación actual y anticonceptivos hormonales, SIN recorte. \
 Formato: "- Nombre — dosis — frecuencia" (+ efecto relevante para dieta/entreno si lo hay). \
 Sin frases introductorias.
-  · current_supplements ← "Suplementación": "- Nombre — dosis — momento", una línea por \
+  · current_supplements ← suplementación: "- Nombre — dosis — momento", una línea por \
 suplemento, máximo 6; sin valoraciones.
-  · sport_history ← "Experiencia con pesas" + "Otros deportes" + "Ejercicios favoritos / que \
-detesta". MÁXIMO 5 viñetas: años y nivel real con los básicos; qué métodos funcionaron o \
-fallaron; otros deportes actuales con frecuencia (condicionan la recuperación); matiz técnico \
-a vigilar si lo hay; y SIEMPRE que el cliente los declare, "- Ejercicios: favoritos … / \
-detesta …" (el generador los respeta). Líneas cortas tipo "- Pesas: 2 años, técnica básica \
-cómoda" / "- Fútbol: 1 vez/semana".
-  · lifestyle_notes ← "Motivo y objetivos" (corto/largo plazo, qué funcionó o no, motivación/\
-confianza), "Logística y entorno alimentario", "Comida emocional", "Hidratación", "Tu trabajo \
-y tu día a día", "Sueño y recuperación", "Estrés y energía" y la auto-evaluación final. \
-PREFIJA cada línea con su tema, EMPEZANDO SIEMPRE por el motivo (es lo primero que lee el \
-coach): "- Motivo: …", "- Trabajo: …", "- Sueño: …", "- Estrés: …", "- Conducta alimentaria: …", \
-"- Logística: …", "- Hidratación: …", "- Horario de entreno: …" (la hora habitual a la que \
-entrena condiciona las comidas peri-entreno). MÁXIMO 6 viñetas en total, ordenadas por \
-impacto en la adherencia; máximo 1-2 líneas por tema; los temas sin nada relevante se omiten.
+  · sport_history ← experiencia con pesas, otros deportes, ejercicios favoritos / que detesta, \
+y si el documento trae una RUTINA o dieta previa, resúmela aquí en 1-2 líneas ("- Rutina \
+previa: torso-pierna 4 días, básicos con 60-80 kg"). MÁXIMO 5 viñetas: años y nivel real con \
+los básicos; qué métodos funcionaron o fallaron; otros deportes actuales con frecuencia; \
+matiz técnico a vigilar; y SIEMPRE que el cliente los declare, "- Ejercicios: favoritos … / \
+detesta …" (el generador los respeta).
+  · lifestyle_notes ← motivo y objetivos (corto/largo plazo, qué funcionó o no, motivación/\
+confianza), logística y entorno alimentario, comida emocional, hidratación, trabajo y día a \
+día, sueño y recuperación, estrés y energía, auto-evaluación. PREFIJA cada línea con su tema, \
+EMPEZANDO SIEMPRE por el motivo: "- Motivo: …", "- Trabajo: …", "- Sueño: …", "- Estrés: …", \
+"- Conducta alimentaria: …", "- Logística: …", "- Hidratación: …", "- Horario de entreno: …" \
+(la hora habitual a la que entrena condiciona las comidas peri-entreno). MÁXIMO 6 viñetas en \
+total, ordenadas por impacto en la adherencia; máximo 1-2 líneas por tema; los temas sin nada \
+relevante se omiten.
 
 SÍNTESIS:
   · deep_analysis: 3-5 líneas en puntos ("- …"), ORDENADAS de más a menos importante, máximo \
@@ -343,24 +419,225 @@ vigilar), no un tema: cruza objetivo, lesiones, hábitos, sueño, estrés y cond
 como material, sin obligación de cubrirlos todos. Sin repetir lo que ya está en los campos \
 estructurados ni relleno motivacional.
 
+CONSTANCIA DE LA LECTURA (lector universal):
+  · document_kind: qué ES el documento (anamnesis_dq | cuestionario_ajeno | notas | analitica \
+| informe_medico | plan_dieta | plan_entreno | mixto | otro).
+  · source_inventory: una línea corta por bloque o tema que contiene el documento, en su orden \
+("- Datos personales", "- Tabla de perímetros", "- Analítica 12/05/2026", "- Texto sobre \
+motivación"). Sirve para que el coach compruebe que se leyó ENTERO.
+  · unmapped_info: lo relevante para dieta/entreno/salud que NO encaja en ningún campo, una \
+línea por dato. Nada se pierde: si dudas de dónde va algo, ponlo aquí.
+  · confidence: 0-1 por campo crítico rellenado (sex, birth_date, height_cm, start_weight_kg, \
+goal_type, food_allergies, medication_notes, medical_notes, injuries_notes). 1 = literal y \
+claro; 0,6 = inferido o manuscrito dudoso. Omite los campos que dejaste en null.
+
 Devuelve SOLO un objeto JSON válido que cumpla el esquema. Sin texto adicional."""
 
-_EXTRACTION_USER = """Lee la ficha de anamnesis adjunta (PDF oficial DQ, ~10 páginas) y \
-extrae TODA la información en JSON según el esquema. Recorre el documento sección por \
-sección y rellena tanto los campos estructurados (antropometría, objetivo, entrenamiento, \
-dieta) como los resúmenes por sección (clínica, medicación, suplementos, deportes, lesiones, \
-estilo de vida). Lo que no encuentres o esté en blanco, déjalo en null; no inventes datos."""
+
+def _user_prompt(documento) -> str:
+    """El prompt de usuario describe el documento REAL (ya no «el PDF oficial
+    de 10 páginas»): la IA sabe si recibe un PDF, tres fotos o una hoja."""
+    que = getattr(documento, "descripcion", None) or "documento"
+    nombre = getattr(documento, "nombre", None) or "documento"
+    return (
+        f"Lee el documento adjunto («{nombre}», {que}) ENTERO y extrae TODA la información "
+        "en JSON según el esquema. Puede tener cualquier estructura: recórrelo de principio a "
+        "fin y rellena tanto los campos estructurados (antropometría, objetivo, entrenamiento, "
+        "dieta) como los resúmenes por sección (clínica, medicación, suplementos, deportes, "
+        "lesiones, estilo de vida), el inventario de lo que contiene y lo que no cupo en "
+        "ninguna casilla. Lo que no encuentres o esté en blanco, déjalo en null; no inventes datos."
+    )
 
 
-def extract_anamnesis_from_pdf(pdf_bytes: bytes, ai) -> AnamnesisExtraction:
-    """Lee el PDF con la IA y devuelve los datos extraídos validados."""
+# ------------------------------------------------- segundo pase (§5) -------
+# Tras extraer, un SEGUNDO pase relee el MISMO documento (cacheado → ~10 % del
+# coste) con otra pregunta: «comprueba estos campos críticos contra el
+# documento». Las discrepancias NO se resuelven solas: se enseñan al coach.
+# Es el `dual_pass_extract` del hardening §5, que estaba escrito y sin cablear.
+
+CRITICOS_ESCALARES = ("sex", "birth_date", "height_cm", "start_weight_kg", "goal_type")
+CRITICOS_LISTA = ("food_allergies",)
+CRITICOS_TEXTO = ("medication_notes", "medical_notes", "injuries_notes")
+
+
+class VerificacionCritica(BaseModel):
+    """Lo que el segundo pase VE en el documento para los campos críticos."""
+
+    sex: str | None = None
+    birth_date: date | None = None
+    height_cm: float | None = None
+    start_weight_kg: float | None = None
+    goal_type: str | None = None
+    food_allergies: list[str] = Field(default_factory=list)
+    medication_notes: str | None = None
+    medical_notes: str | None = None
+    injuries_notes: str | None = None
+    omissions: list[str] = Field(
+        default_factory=list,
+        description="Datos relevantes del documento que FALTAN en la extracción que te enseño")
+
+    _v_enum = field_validator("sex", "goal_type", mode="before")(
+        lambda cls, v, info: AnamnesisExtraction._normalize_enum.__func__(cls, v, info))  # type: ignore[attr-defined]
+
+    @field_validator("omissions", "food_allergies", mode="before")
+    @classmethod
+    def _listas(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [x.strip(" -•") for x in v.splitlines() if x.strip(" -•")]
+        if isinstance(v, list):
+            return [str(x).strip() for x in v if str(x).strip()]
+        return []
+
+
+_VERIFY_SYSTEM = """Eres el REVISOR de una extracción de datos clínicos y antropométricos. \
+Recibes el MISMO documento que leyó un primer extractor y su resultado para los campos \
+CRÍTICOS. Tu único trabajo: mirar el documento de nuevo, de forma independiente, y decir qué \
+ves TÚ para cada campo crítico —sin dejarte llevar por lo que dice la extracción— y qué datos \
+relevantes (clínicos, medicación, lesiones, alergias, antropometría, objetivo) están en el \
+documento y FALTAN en la extracción. Mismos formatos: sexo male|female, fecha YYYY-MM-DD, \
+altura en cm, peso en kg, objetivo fat_loss|muscle_gain|recomp|maintenance|injury_recovery, \
+alergias como lista de alimentos, notas como líneas "- …". Lo que no esté en el documento, \
+null o lista vacía. Nunca inventes. Devuelve SOLO el JSON del esquema."""
+
+
+def _norm_texto(v) -> str:
+    import unicodedata
+
+    s = "" if v is None else str(v).strip().lower()
+    return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
+
+
+def _escalar(v):
+    if isinstance(v, float):
+        return round(v, 1)
+    if isinstance(v, date):
+        return v.isoformat()
+    return v
+
+
+def comparar_pases(a: dict, b: dict, confianza_a: dict | None = None) -> dict:
+    """Compara la extracción (A) con el segundo pase (B) SOLO en lo crítico.
+    Escalares: igualdad (números a 1 decimal, fechas como texto). Alergias:
+    conjuntos normalizados. Notas clínicas: solo se avisa si un pase ve algo y
+    el otro nada (el texto libre nunca coincide letra a letra y compararlo
+    daría ruido). Devuelve discrepancias legibles, omisiones, confianza por
+    campo y `needs_review`."""
+    from app.services.anamnesis_extraction import dual_pass_extract
+
+    ca = {k: float(v) for k, v in (confianza_a or {}).items()}
+    sub_a = {k: _escalar(a.get(k)) for k in CRITICOS_ESCALARES}
+    sub_b = {k: _escalar(b.get(k)) for k in CRITICOS_ESCALARES}
+    res = dual_pass_extract(lambda: (sub_a, ca), lambda: sub_b)
+    etiquetas = {"sex": "sexo", "birth_date": "fecha de nacimiento", "height_cm": "altura",
+                 "start_weight_kg": "peso actual", "goal_type": "objetivo",
+                 "food_allergies": "alergias", "medication_notes": "medicación",
+                 "medical_notes": "historia clínica", "injuries_notes": "lesiones"}
+    discrepancias: list[str] = []
+    for k in CRITICOS_ESCALARES:
+        va, vb = sub_a.get(k), sub_b.get(k)
+        if va != vb:
+            # Solo cuenta si el 2º pase VIO algo (un null suyo es «no lo encontré»,
+            # que se recoge en omisiones si procede, no una contradicción).
+            if vb is None:
+                continue
+            discrepancias.append(
+                f"{etiquetas[k]}: la extracción dice «{va if va is not None else '—'}» "
+                f"y la relectura ve «{vb}»")
+    conf = dict(res.confidence)
+    for k in CRITICOS_LISTA:
+        sa = {_norm_texto(x) for x in (a.get(k) or []) if _norm_texto(x)}
+        sb = {_norm_texto(x) for x in (b.get(k) or []) if _norm_texto(x)}
+        if sa != sb and sb:
+            solo_b = sorted(sb - sa)
+            solo_a = sorted(sa - sb)
+            partes = []
+            if solo_b:
+                partes.append("la relectura añade " + ", ".join(solo_b))
+            if solo_a:
+                partes.append("la relectura no ve " + ", ".join(solo_a))
+            discrepancias.append(f"{etiquetas[k]}: " + "; ".join(partes))
+            conf[k] = min(ca.get(k, 1.0), 0.5)
+        else:
+            conf.setdefault(k, ca.get(k, 1.0))
+    for k in CRITICOS_TEXTO:
+        tiene_a, tiene_b = bool(_norm_texto(a.get(k))), bool(_norm_texto(b.get(k)))
+        if tiene_b and not tiene_a:
+            discrepancias.append(f"{etiquetas[k]}: la relectura encuentra datos y la "
+                                 f"extracción los dejó vacíos: «{str(b.get(k))[:160]}»")
+            conf[k] = min(ca.get(k, 1.0), 0.5)
+        else:
+            conf.setdefault(k, ca.get(k, 1.0))
+    omisiones = [str(x).strip() for x in (b.get("omissions") or []) if str(x).strip()]
+    criticos = set(CRITICOS_ESCALARES) | set(CRITICOS_LISTA) | set(CRITICOS_TEXTO)
+    needs_review = bool(discrepancias) or any(
+        conf.get(k, 1.0) < 0.85 for k in criticos if a.get(k) not in (None, [], ""))
+    return {"discrepancies": discrepancias, "omissions": omisiones,
+            "confidence": conf, "needs_review": needs_review}
+
+
+def verificar_extraccion(documento, extraida: AnamnesisExtraction, ai) -> dict:
+    """Segundo pase sobre el MISMO documento. Nunca lanza: si la IA falla, se
+    devuelve `{"skipped": motivo}` y la extracción sigue valiendo."""
     from app.config import settings
 
-    return ai.read_pdf_json(
+    a = extraida.model_dump()
+    resumen = {k: (a.get(k).isoformat() if isinstance(a.get(k), date) else a.get(k))
+               for k in (*CRITICOS_ESCALARES, *CRITICOS_LISTA, *CRITICOS_TEXTO)}
+    import json as _json
+
+    user = (
+        "Documento adjunto: el mismo que leyó el extractor. Esta fue su extracción de los "
+        "campos críticos:\n" + _json.dumps(resumen, ensure_ascii=False) +
+        "\n\nRelee el documento y devuelve lo que ves TÚ para esos campos, más `omissions` "
+        "con lo relevante que falte. SOLO el JSON."
+    )
+    try:
+        b = ai.read_document_json(
+            model=settings.model_heavy, system=_VERIFY_SYSTEM, user=user,
+            documento=documento, schema=VerificacionCritica, temperature=0,
+            max_tokens=2500,
+        )
+    except Exception as exc:  # noqa: BLE001 — el 2º pase nunca tumba la lectura
+        return {"skipped": f"segundo pase no disponible: {str(exc)[:160]}",
+                "discrepancies": [], "omissions": [], "confidence": dict(extraida.confidence),
+                "needs_review": False}
+    return comparar_pases(a, b.model_dump(), extraida.confidence)
+
+
+@dataclass
+class LecturaAnamnesis:
+    """Resultado completo de leer un documento como anamnesis."""
+
+    extraction: AnamnesisExtraction
+    verification: dict
+    documento: object
+
+
+def extract_anamnesis_from_document(documento, ai, *, verify: bool | None = None) -> LecturaAnamnesis:
+    """Lee un `Documento` de CUALQUIER formato/estructura y devuelve los datos
+    extraídos (validados) + la verificación del segundo pase."""
+    from app.config import settings
+
+    extraida = ai.read_document_json(
         model=settings.model_heavy,
         system=_EXTRACTION_SYSTEM,
-        user=_EXTRACTION_USER,
-        pdf_bytes=pdf_bytes,
+        user=_user_prompt(documento),
+        documento=documento,
         schema=AnamnesisExtraction,
         temperature=0,  # §14: extracción determinista (mismos datos → misma lectura)
     )
+    hacer = settings.extraction_double_pass if verify is None else verify
+    verificacion = (verificar_extraccion(documento, extraida, ai) if hacer
+                    else {"skipped": "desactivado", "discrepancies": [], "omissions": [],
+                          "confidence": dict(extraida.confidence), "needs_review": False})
+    return LecturaAnamnesis(extraida, verificacion, documento)
+
+
+def extract_anamnesis_from_pdf(pdf_bytes: bytes, ai) -> AnamnesisExtraction:
+    """Compatibilidad: lee un PDF con el lector universal (sin segundo pase)."""
+    from app.services.document_reader import normalizar
+
+    return extract_anamnesis_from_document(
+        normalizar(pdf_bytes, "anamnesis.pdf"), ai, verify=False).extraction

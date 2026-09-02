@@ -93,33 +93,75 @@ class DocumentValidationError(ValueError):
     """Documento no soportado o demasiado grande."""
 
 
-def save_document(client_id: int, raw: bytes, original_name: str) -> str:
-    """Guarda un documento (PDF) del cliente. Devuelve la ruta relativa.
+# Extensiones con las que se GUARDA un documento del cliente y su tipo MIME
+# para servirlo. Antes solo PDF: el lector universal acepta también Word,
+# fotos, hojas y texto, y cada uno se guarda con su extensión real.
+DOC_MEDIA_TYPES = {
+    "pdf": "application/pdf",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "doc": "application/msword", "odt": "application/vnd.oasis.opendocument.text",
+    "rtf": "application/rtf", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+    "png": "image/png", "webp": "image/webp", "gif": "image/gif",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "xlsm": "application/vnd.ms-excel.sheet.macroEnabled.12",
+    "csv": "text/csv", "tsv": "text/tab-separated-values", "txt": "text/plain",
+    "md": "text/markdown", "json": "application/json", "log": "text/plain",
+}
+
+
+def media_type_for(name: str) -> str:
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    return DOC_MEDIA_TYPES.get(ext, "application/octet-stream")
+
+
+def save_document(client_id: int, raw: bytes, original_name: str,
+                  *, ext: str | None = None) -> str:
+    """Guarda un documento del cliente y devuelve la ruta relativa.
 
     Conserva un nombre legible (saneado) para que el coach lo reconozca, con un
-    sufijo aleatorio que evita colisiones. Solo acepta PDF (la anamnesis oficial).
+    sufijo aleatorio que evita colisiones. Acepta CUALQUIER formato que el
+    lector universal sepa leer (PDF, Word, foto, hoja, texto): la extensión
+    se decide por la MAGIA del fichero (`detectar_tipo`), no por el nombre —
+    salvo que quien llama ya la conozca (`ext`, p. ej. las fotos normalizadas
+    a JPEG o unidas en un PDF).
     """
     if len(raw) > MAX_DOC_MB * 1024 * 1024:
         raise DocumentValidationError(f"El documento supera {MAX_DOC_MB} MB")
-    if raw[:5] != b"%PDF-":
-        raise DocumentValidationError("El archivo no es un PDF válido")
+    if not raw:
+        raise DocumentValidationError("El archivo está vacío")
+    if ext is None:
+        from app.services.document_reader import ACCEPTED_HUMAN, detectar_tipo
+
+        familia, ext_det = detectar_tipo(raw, original_name)
+        if familia == "heic":
+            raise DocumentValidationError(
+                "Las fotos HEIC del iPhone no se pueden leer: envíala como JPG "
+                "(Ajustes → Cámara → Formatos → «Más compatible»).")
+        if familia == "desconocido":
+            raise DocumentValidationError(
+                f"No reconozco el formato del archivo. Se admite {ACCEPTED_HUMAN}.")
+        ext = ext_det
+    ext = (ext or "pdf").lower().lstrip(".")
+    if ext not in DOC_MEDIA_TYPES:
+        raise DocumentValidationError(f"Formato .{ext} no admitido")
 
     import re
 
     stem = re.sub(r"[^A-Za-z0-9._-]", "_", (original_name or "documento").rsplit(".", 1)[0])[:60]
     stem = stem.strip("_") or "documento"
-    name = f"{stem}_{secrets.token_hex(4)}.pdf"
+    name = f"{stem}_{secrets.token_hex(4)}.{ext}"
     dest = client_dir(client_id, "documents") / name
     dest.write_bytes(raw)
     return str(dest.relative_to(storage_root()))
 
 
 def list_documents(client_id: int) -> list[dict]:
-    """Lista la anamnesis subida del cliente (solo el PDF, más reciente primero).
+    """Lista los documentos subidos del cliente (más reciente primero): la
+    anamnesis (una sola: cada subida reemplaza la anterior) y los adjuntos.
 
-    Se excluyen los archivos internos (sidecar `_anamnesis_analysis.json` y
-    cualquier `_*`) y todo lo que no sea PDF: la web solo debe mostrar la
-    anamnesis, y solo hay una por cliente (cada subida reemplaza la anterior).
+    Se excluyen los archivos internos (sidecars `_*.json`) y el justificante
+    RGPD. Desde el lector universal se listan TODOS los formatos admitidos
+    (PDF, Word, foto, hoja, texto), cada uno con su `format`.
     """
     folder = storage_root() / "clients" / str(client_id) / "documents"
     if not folder.exists():
@@ -131,7 +173,8 @@ def list_documents(client_id: int) -> list[dict]:
         # banner del portal y la IA intentaría "leerlo" como cuestionario).
         if f.name == "consentimiento_rgpd.pdf":
             continue
-        if f.is_file() and f.suffix.lower() == ".pdf" and not f.name.startswith("_"):
+        ext = f.suffix.lower().lstrip(".")
+        if f.is_file() and ext in DOC_MEDIA_TYPES and not f.name.startswith("_"):
             st = f.stat()
             items.append({
                 "name": f.name,
@@ -139,6 +182,7 @@ def list_documents(client_id: int) -> list[dict]:
                 # web daba la anamnesis por recibida al subir una analítica, y
                 # "Ver PDF" abría el informe de sangre en vez del cuestionario.
                 "kind": "adjunto" if f.name.startswith("adjunto_") else "anamnesis",
+                "format": ext,
                 "size_kb": round(st.st_size / 1024),
                 "uploaded_at": st.st_mtime,
                 "rel_path": str(f.relative_to(storage_root())),

@@ -52,7 +52,29 @@ def docx_bytes_to_pdf(docx_bytes: bytes, timeout: int = 120) -> bytes:
 
     Con caché por contenido y un tope de conversiones simultáneas.
     """
-    clave = _clave_de_contenido(docx_bytes)
+    return office_bytes_to_pdf(docx_bytes, "docx", timeout=timeout)
+
+
+# Extensiones que el LibreOffice de la imagen (writer + core) sabe abrir. Las
+# hojas de cálculo NO están aquí a propósito: Calc no viene instalado y el
+# lector universal las lee con openpyxl. Si algún día se añade Calc/Impress a
+# la imagen, basta con ampliar esta tupla.
+OFFICE_CONVERTIBLE = ("docx", "doc", "odt", "rtf", "dot", "dotx", "wps", "txt")
+
+
+def office_bytes_to_pdf(raw: bytes, ext: str, timeout: int = 120) -> bytes:
+    """Convierte un documento de oficina (bytes + extensión) a PDF con el mismo
+    LibreOffice, la misma caché y el mismo freno de concurrencia que el plan.
+
+    Es la puerta del LECTOR UNIVERSAL: un Word ajeno (la anamnesis de otro
+    profesional, una dieta hecha en Word) se convierte a PDF y la IA lo lee
+    NATIVAMENTE —tablas, columnas y maquetación incluidas— en vez de recibir
+    un volcado de texto plano que pierde la estructura.
+    """
+    ext = (ext or "docx").lower().lstrip(".")
+    if ext not in OFFICE_CONVERTIBLE:
+        raise RuntimeError(f"LibreOffice no puede convertir .{ext} en este servidor")
+    clave = _clave_de_contenido(raw) + f":{ext}"
     with _cache_lock:
         cacheado = _cache.get(clave)
     if cacheado is not None:
@@ -61,7 +83,9 @@ def docx_bytes_to_pdf(docx_bytes: bytes, timeout: int = 120) -> bytes:
         raise ConversionOcupada(
             "El servidor está preparando otros documentos. Inténtalo en un minuto.")
     try:
-        pdf = _convierte(docx_bytes, timeout)
+        # .docx sin `ext`: compatibilidad con quien sustituye `_convierte`
+        # (tests) con la firma de siempre (bytes, timeout).
+        pdf = _convierte(raw, timeout) if ext == "docx" else _convierte(raw, timeout, ext=ext)
     finally:
         _hueco.release()
     with _cache_lock:
@@ -96,9 +120,9 @@ def _clave_de_contenido(docx_bytes: bytes) -> str:
         return hashlib.sha1(docx_bytes).hexdigest()
 
 
-def _convierte(docx_bytes: bytes, timeout: int) -> bytes:
+def _convierte(docx_bytes: bytes, timeout: int, ext: str = "docx") -> bytes:
     with tempfile.TemporaryDirectory() as tmp:
-        docx_path = os.path.join(tmp, "plan.docx")
+        docx_path = os.path.join(tmp, f"plan.{ext}")
         with open(docx_path, "wb") as fh:
             fh.write(docx_bytes)
         # Perfil de usuario propio por conversión → evita bloqueos con concurrencia.

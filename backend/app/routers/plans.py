@@ -17,6 +17,8 @@ publicación a una llamada de IA en vivo (que puede orquestarse aparte).
 
 from datetime import date, datetime, timedelta, timezone
 
+from typing import Annotated, List
+
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from fastapi import File as FastFile
 from pydantic import BaseModel
@@ -1271,6 +1273,101 @@ def import_plan_word(
         "training_json": r["training_json"],
         # solo viaja si el Word trae cambios del educativo (píldoras/FAQ/técnica)
         "education_json": r["education_json"],
+    }
+
+
+# ------------------------------------------- plan desde CUALQUIER documento ----
+# El Word de ida y vuelta solo entiende NUESTRO .docx. Lo demás —la dieta en
+# Excel, la rutina que traía el cliente de otro entrenador en PDF, una foto de
+# una hoja con las comidas— entra por aquí: la IA TRANSCRIBE, el backend pone
+# las cifras (contrato del cliente, biblioteca de ejercicios, base de
+# alimentos) y el coach confirma antes de que exista el borrador.
+
+class PlanImportConfirmIn(BaseModel):
+    nutrition_json: dict | None = None
+    training_json: dict | None = None
+    origen: str = "un documento"
+
+
+@router.post("/api/clients/{client_id}/plans/import-document")
+def import_plan_document(
+    client_id: int,
+    file: Annotated[UploadFile | None, FastFile(description="Documento (cualquier formato)")] = None,
+    files: Annotated[List[UploadFile] | None, FastFile(description="Varias fotos = un documento")] = None,
+    db: Session = Depends(get_db),
+) -> dict:
+    """PREVIEW: lee el documento con IA y devuelve los JSON candidatos del plan
+    (cifras del backend), el resumen de lo reconocido y los avisos. NO
+    persiste: el coach confirma en `/import-document/confirm`."""
+    from app.services.ai.client import AIClient, AIGenerationError
+    from app.services.document_reader import DocumentoIlegible, normalizar_varios
+    from app.services.plan_import import build_plan_candidates, extract_plan_from_document
+    from app.services.plan_library import PlanLibraryError
+
+    client = _client_or_404(db, client_id)
+    subidos = [f for f in ([file] if file is not None else []) + list(files or []) if f is not None]
+    if not subidos:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "No has adjuntado ningún fichero.")
+    ficheros = [(f.file.read(25 * 1024 * 1024 + 1), f.filename) for f in subidos]
+    try:
+        documento = normalizar_varios(ficheros)
+    except DocumentoIlegible as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    try:
+        ext = extract_plan_from_document(documento, AIClient())
+    except AIGenerationError as exc:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            detail={"message": "La IA no pudo leer el documento.", "error": str(exc)},
+        ) from exc
+    try:
+        r = build_plan_candidates(db, client, ext, documento.nombre)
+    except PlanLibraryError as exc:
+        detalle = ({"message": str(exc), "missing": exc.missing} if exc.missing else str(exc))
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detalle) from exc
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    r["document_description"] = documento.descripcion
+    r["avisos"] = list(documento.avisos) + r["avisos"]
+    log_event(db, "client", client_id, "plan_document_previewed",
+              {"document": documento.nombre, "kind": ext.document_kind,
+               "resumen": {k: v for k, v in r["resumen"].items() if not isinstance(v, list)}})
+    db.commit()
+    return r
+
+
+@router.post("/api/clients/{client_id}/plans/import-document/confirm")
+def confirm_plan_document(client_id: int, body: PlanImportConfirmIn,
+                          db: Session = Depends(get_db)) -> dict:
+    """Crea el BORRADOR a partir de los JSON confirmados por el coach, por el
+    MISMO camino que copiar de la biblioteca (reescala al contrato, completa la
+    mitad que falte, avisos de seguridad, «copiado de …, revísalo»)."""
+    from app.services.plan_library import PlanLibraryError, copiar_a_cliente, resumen_plan
+
+    client = _client_or_404(db, client_id)
+    if not body.nutrition_json and not body.training_json:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "No hay nada que importar.")
+    if isinstance(body.nutrition_json, dict):
+        _sanitize_nutrition(body.nutrition_json)
+    try:
+        plan, avisos = copiar_a_cliente(
+            db, client, nutrition=body.nutrition_json, training=body.training_json,
+            education=None, origen=f"el documento «{body.origen[:80]}»")
+    except PlanLibraryError as exc:
+        detalle = ({"message": str(exc), "missing": exc.missing} if exc.missing else str(exc))
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detalle) from exc
+    plan.generated_by = "document"
+    db.commit()
+    db.refresh(plan)
+    return {
+        "id": plan.id, "month_index": plan.month_index, "version": plan.version,
+        "status": plan.status, "guardrail_flags": plan.guardrail_flags or [],
+        "nutrition": plan.nutrition_json, "training": plan.training_json,
+        "education": plan.education_json, "review": None,
+        "created_at": plan.created_at.isoformat() if plan.created_at else None,
+        "published_at": None,
+        "warnings": avisos,
+        "summary": resumen_plan(plan.nutrition_json, plan.training_json, plan.goal_type),
     }
 
 

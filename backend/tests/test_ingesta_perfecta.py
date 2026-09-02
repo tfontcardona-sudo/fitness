@@ -103,7 +103,11 @@ def test_adjunto_no_destruye_la_anamnesis(http, db):
                    data={"kind": "adjunto"},
                    files={"file": ("analitica_maria.pdf", PDF_MINIMO, "application/pdf")})
     assert r2.status_code == 200, r2.text
-    assert r2.json()["read_ok"] is None       # un adjunto NO se lee con IA
+    # El adjunto SÍ se lee ahora con IA (lector universal), best-effort: sin
+    # API la lectura falla y se dice (read_ok False + motivo), pero la subida
+    # vale igual y la anamnesis no se toca.
+    assert r2.json()["read_ok"] in (True, False)
+    assert r2.json()["read_ok"] or r2.json()["read_error"]
     docs = list_documents(c.id)
     assert len(docs) == 2                     # el panel enseña los dos
     anam = anamnesis_documents(c.id)

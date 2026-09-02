@@ -148,6 +148,12 @@ class Settings(BaseSettings):
     # Caché del contenido educativo por split (sidecar): el mismo split reutiliza
     # las píldoras/técnica/FAQ ya generadas → 0 créditos. false en tests.
     education_cache_enabled: bool = True
+    # Lector universal (§5 doble pase, por fin cableado): tras extraer la
+    # anamnesis de un documento, un SEGUNDO pase relee el mismo documento (ya
+    # cacheado → ~10 % del coste) y comprueba los campos críticos (sexo, fecha
+    # de nacimiento, altura, peso, objetivo, alergias, medicación, patologías,
+    # lesiones). Las discrepancias NO se resuelven solas: se enseñan al coach.
+    extraction_double_pass: bool = True
 
     @property
     def public_base_url(self) -> str:

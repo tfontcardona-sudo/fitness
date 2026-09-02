@@ -210,43 +210,46 @@ class AIClient:
         self, *, model: str, system: str, user: str, pdf_bytes: bytes,
         temperature: float | None = None,
     ) -> str:
-        """Una llamada al modelo incluyendo un PDF como documento adjunto.
-
-        Usa el bloque `document` de la API de Anthropic (lectura nativa de PDF).
-        Sobrescribible en tests.
-        """
+        """Una llamada al modelo con un PDF adjunto. Atajo histórico: hoy es un
+        caso particular de `_raw_call_with_blocks` (un solo bloque `document`)."""
         import base64
 
-        temperature = self._effective_temperature(model, temperature)
         b64 = base64.standard_b64encode(pdf_bytes).decode("ascii")
+        bloque = {
+            "type": "document",
+            "source": {"type": "base64", "media_type": "application/pdf", "data": b64},
+            # El PDF (~10 páginas en base64) es EL coste de la extracción:
+            # cachearlo hace que el reintento de validación lo LEA al 10% en
+            # vez de repagarlo entero.
+            "cache_control": {"type": "ephemeral"},
+        }
+        return self._raw_call_with_blocks(model=model, system=system, user=user,
+                                          bloques=[bloque], temperature=temperature)
+
+    def _raw_call_with_blocks(
+        self, *, model: str, system: "str | list", user: str, bloques: list[dict],
+        temperature: float | None = None, max_tokens: int | None = None,
+    ) -> str:
+        """Una llamada al modelo con CUALQUIER documento delante del texto:
+        bloques `document` (PDF), `image` (fotos) y `text` (hojas, Word en
+        reserva, texto) tal y como los produce `document_reader`. Es la ruta
+        del LECTOR UNIVERSAL: la IA recibe el documento en su forma nativa, sin
+        que el backend tenga que entender su estructura. Sobrescribible en tests.
+        """
+        temperature = self._effective_temperature(model, temperature)
         try:
             kwargs = {
                 "model": model,
-                "max_tokens": MAX_TOKENS,
+                "max_tokens": max_tokens or MAX_TOKENS,
                 "system": self._system_payload(system),
                 "messages": [{
                     "role": "user",
-                    "content": [
-                        {
-                            "type": "document",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "application/pdf",
-                                "data": b64,
-                            },
-                            # El PDF (~10 páginas en base64) es EL coste de la
-                            # extracción: cachearlo hace que el reintento de
-                            # validación lo LEA al 10% en vez de repagarlo entero.
-                            "cache_control": {"type": "ephemeral"},
-                        },
-                        {"type": "text", "text": user},
-                    ],
+                    "content": [*bloques, {"type": "text", "text": user}],
                 }],
             }
             if temperature is not None:
                 kwargs["temperature"] = temperature
-            # Misma red de seguridad del retry-sin-temperature que _raw_call
-            # (antes esta ruta llamaba a la API directamente — asimetría).
+            # Misma red de seguridad del retry-sin-temperature que _raw_call.
             resp = self._create_message(kwargs)
         except Exception as exc:
             translated = _translate_api_error(exc)
@@ -287,6 +290,56 @@ class AIClient:
             )
         raise AIGenerationError(
             "La IA no extrajo un JSON válido del PDF tras el reintento", last_error
+        )
+
+    def read_document_json(
+        self, *, model: str, system: "str | list", user: str, documento, schema: type[T],
+        temperature: float | None = None, max_tokens: int | None = None,
+    ) -> T:
+        """Lee un `Documento` (document_reader) de CUALQUIER formato, extrae y
+        valida contra el esquema. Reintenta una vez con el error inyectado; si
+        la respuesta se CORTÓ por longitud, sube el techo y pide brevedad (el
+        mismo trato que `generate_json`, que aquí faltaba: un documento largo
+        producía «JSON mal formado» sin serlo)."""
+        from app.services.document_reader import bloques_con_cache
+
+        bloques = bloques_con_cache(documento)
+        last_error: str | None = None
+        attempt_user = user
+        techo = max_tokens
+        for _ in range(2):
+            _corte.cortada = False
+            raw = self._raw_call_with_blocks(
+                model=model, system=system, user=attempt_user, bloques=bloques,
+                temperature=temperature, max_tokens=techo,
+            )
+            cortada = bool(getattr(_corte, "cortada", False))
+            try:
+                data = json.loads(_extract_json(raw))
+            except json.JSONDecodeError as exc:
+                last_error = ("la respuesta se CORTÓ por longitud (max_tokens)"
+                              if cortada else f"JSON mal formado: {exc}")
+            else:
+                try:
+                    return schema.model_validate(data)
+                except ValidationError as exc:
+                    last_error = _summarize_validation_error(exc)
+            if cortada:
+                techo = min(MAX_TOKENS_TECHO, (techo or MAX_TOKENS) * 2)
+                attempt_user = (
+                    f"{user}\n\n--- CORRECCIÓN REQUERIDA ---\n"
+                    "Tu respuesta anterior se quedó A MEDIAS: era demasiado larga "
+                    "y se cortó. Devuelve el MISMO JSON pero más COMPACTO — textos "
+                    "más breves, sin repetir— y completo, sin texto adicional."
+                )
+                continue
+            attempt_user = (
+                f"{user}\n\n--- CORRECCIÓN REQUERIDA ---\n"
+                f"Tu respuesta anterior falló la validación: {last_error}\n"
+                "Devuelve de nuevo SOLO el JSON corregido, sin texto adicional."
+            )
+        raise AIGenerationError(
+            "La IA no extrajo un JSON válido del documento tras el reintento", last_error
         )
 
     def generate_json(

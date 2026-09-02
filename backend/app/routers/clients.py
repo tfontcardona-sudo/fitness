@@ -7,6 +7,7 @@ import re
 import statistics
 import zipfile
 from datetime import date, datetime, timezone
+from typing import Annotated, List
 
 from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query,
                      Response, UploadFile, status)
@@ -924,18 +925,36 @@ def _client_or_404_docs(db: Session, client_id: int) -> Client:
 
 def ingest_anamnesis_pdf(db: Session, client_id: int, content: bytes,
                          filename: str, *, by: str = "coach") -> dict:
-    """Ingesta COMPLETA de la anamnesis en PDF: guarda el archivo (reemplaza el
-    anterior), lo lee con IA para pre-rellenar la ficha y envía al cliente su
-    acceso al portal la primera vez. Compartida por la subida del coach (ficha)
-    y la subida del PROPIO cliente (página pública /anamnesis/{token}).
+    """Compatibilidad: un solo fichero. Ver `ingest_anamnesis_document`."""
+    return ingest_anamnesis_document(db, client_id, [(content, filename)], by=by)
 
-    Lanza DocumentValidationError si el archivo no es un PDF válido."""
+
+def ingest_anamnesis_document(db: Session, client_id: int,
+                              ficheros: list[tuple[bytes, str | None]],
+                              *, by: str = "coach") -> dict:
+    """Ingesta COMPLETA de la anamnesis desde CUALQUIER documento: PDF, Word,
+    fotos del móvil (varias = un solo documento), hoja de cálculo o texto.
+    Guarda el archivo (reemplaza el anterior), lo lee con IA para pre-rellenar
+    la ficha y envía al cliente su acceso al portal la primera vez. Compartida
+    por la subida del coach (ficha) y la del PROPIO cliente (/anamnesis/{token}).
+
+    Lanza DocumentValidationError si el fichero no se puede leer (mensaje
+    pensado para enseñarlo tal cual)."""
+    from app.services.document_reader import DocumentoIlegible, normalizar_varios
+
+    # Normalizar ANTES de tocar nada: si el fichero es ilegible, la anamnesis
+    # anterior sigue intacta.
+    try:
+        documento = normalizar_varios(ficheros)
+    except DocumentoIlegible as exc:
+        raise DocumentValidationError(str(exc)) from exc
+
     # VALIDAR ANTES DE BORRAR: la anamnesis es el documento maestro. Antes se
     # borraba la anterior y LUEGO se validaba la nueva — un archivo corrupto o
     # demasiado grande destruía la anamnesis existente y dejaba al cliente sin
     # ninguna. Ahora primero se guarda la nueva (con validación dentro) y solo
     # después se retiran las versiones anteriores.
-    from app.services.storage import client_dir
+    from app.services.storage import DOC_MEDIA_TYPES, client_dir
     folder = client_dir(client_id, "documents")
     # El justificante RGPD del formulario digital vive en esta misma carpeta y
     # NO es una anamnesis: barrerlo aquí destruía la prueba legal del
@@ -946,17 +965,21 @@ def ingest_anamnesis_pdf(db: Session, client_id: int, content: bytes,
     # única vía que existía BORRABA la anamnesis y leía el informe de sangre
     # como si fuera la ficha (auditoría 27-08). Ver upload_client_document(kind).
     previous = [p for p in folder.iterdir()
-                if p.is_file() and p.suffix.lower() == ".pdf"
+                if p.is_file() and p.suffix.lower().lstrip(".") in DOC_MEDIA_TYPES
+                and not p.name.startswith("_")
                 and p.name != "consentimiento_rgpd.pdf"
                 and not p.name.startswith("adjunto_")]
-    rel = save_document(client_id, content, filename or "anamnesis.pdf")
+    rel = save_document(client_id, documento.contenido, documento.nombre,
+                        ext=documento.extension)
     # Una sola anamnesis por cliente: fuera las anteriores (la nueva ya está).
     for old in previous:
         try:
             old.unlink()
         except Exception:
             pass
-    log_event(db, "client", client_id, "document_uploaded", {"path": rel, "by": by})
+    log_event(db, "client", client_id, "document_uploaded",
+              {"path": rel, "by": by, "format": documento.extension,
+               "origen": documento.origen, "avisos": documento.avisos})
     db.commit()
     name = rel.rsplit("/", 1)[-1]
 
@@ -965,8 +988,9 @@ def ingest_anamnesis_pdf(db: Session, client_id: int, content: bytes,
     # el coach podrá pulsar "Leer con IA" o rellenar a mano.
     read_ok = False
     read_error = None
+    lectura: dict = {}
     try:
-        _do_read_anamnesis(client_id, db)
+        lectura = _do_read_anamnesis(client_id, db, documento=documento)
         read_ok = True
     except HTTPException as exc:
         read_error = exc.detail if isinstance(exc.detail, str) else (
@@ -1012,41 +1036,166 @@ def ingest_anamnesis_pdf(db: Session, client_id: int, content: bytes,
             db.rollback()
 
     return {"name": name, "rel_path": rel, "read_ok": read_ok,
-            "read_error": read_error, "portal_access": access_status}
+            "read_error": read_error, "portal_access": access_status,
+            "format": documento.extension, "document": documento.descripcion,
+            "avisos": list(documento.avisos),
+            "verification": lectura.get("verification") if lectura else None,
+            "document_kind": lectura.get("document_kind") if lectura else None,
+            "document_warning": lectura.get("document_warning") if lectura else None}
+
+
+def ingest_attachment(db: Session, client_id: int,
+                      ficheros: list[tuple[bytes, str | None]], *, by: str = "coach",
+                      leer: bool = True) -> dict:
+    """Guarda un ADJUNTO (analítica, informe, pauta previa) en cualquier
+    formato y lo LEE con IA: lo leído se vuelca en las notas de la ficha (bloque
+    marcado, idempotente), en su sidecar y en el contexto de generación.
+    La lectura es best-effort: si falla, el adjunto queda guardado y se puede
+    releer con «Leer» desde la ficha."""
+    from app.services.document_reader import DocumentoIlegible, normalizar_varios
+
+    try:
+        documento = normalizar_varios(ficheros)
+    except DocumentoIlegible as exc:
+        raise DocumentValidationError(str(exc)) from exc
+    nombre = documento.nombre
+    if not nombre.startswith("adjunto_"):
+        nombre = f"adjunto_{nombre}"
+    rel = save_document(client_id, documento.contenido, nombre, ext=documento.extension)
+    name = rel.rsplit("/", 1)[-1]
+    log_event(db, "client", client_id, "document_uploaded",
+              {"path": rel, "by": by, "kind": "adjunto", "format": documento.extension,
+               "avisos": documento.avisos})
+    db.commit()
+    out = {"name": name, "rel_path": rel, "read_ok": None, "read_error": None,
+           "portal_access": None, "format": documento.extension,
+           "document": documento.descripcion, "avisos": list(documento.avisos),
+           "attachment": None}
+    if leer:
+        res = _leer_adjunto(db, client_id, name, documento=documento)
+        out.update({"read_ok": res["read_ok"], "read_error": res["read_error"],
+                    "attachment": res["attachment"]})
+    return out
+
+
+def _leer_adjunto(db: Session, client_id: int, name: str, *, documento=None) -> dict:
+    """Lee UN adjunto con IA y lo fusiona en la ficha. Nunca lanza."""
+    from app.services import attachments as at
+    from app.services.ai.client import AIClient
+    from app.services.document_reader import DocumentoIlegible, normalizar
+
+    client = db.get(Client, client_id)
+    if client is None:
+        return {"read_ok": False, "read_error": "Cliente no encontrado", "attachment": None}
+    try:
+        if documento is None:
+            path = abs_path(f"clients/{client_id}/documents/{name}")
+            documento = normalizar(path.read_bytes(), name)
+        ext = at.extract_attachment(documento, AIClient())
+        tocadas = at.merge_into_client(client, ext, name)
+        db.flush()
+        at.save_sidecar(client_id, name, ext, documento.avisos)
+        log_event(db, "client", client_id, "attachment_read_ai",
+                  {"file": name, "kind": ext.document_kind, "fields": tocadas,
+                   "alerts": ext.alerts[:5], "n_labs": len(ext.lab_values)})
+        db.commit()
+        return {"read_ok": True, "read_error": None,
+                "attachment": at.resumen_para_ui(at.load_sidecars(client_id)[0]
+                                                 if at.load_sidecars(client_id) else
+                                                 {**ext.model_dump(), "file": name})}
+    except DocumentoIlegible as exc:
+        db.rollback()
+        return {"read_ok": False, "read_error": str(exc), "attachment": None}
+    except Exception as exc:  # noqa: BLE001 — la lectura nunca tumba la subida
+        db.rollback()
+        motivo = getattr(exc, "detail", None) or str(exc)
+        return {"read_ok": False, "read_error": str(motivo)[:300], "attachment": None}
 
 
 @router.post("/{client_id}/documents")
 def upload_client_document(
     client_id: int,
-    file: UploadFile = File(..., description="PDF de la anamnesis rellenada"),
+    file: Annotated[UploadFile | None, File(description="Documento (cualquier formato)")] = None,
+    files: Annotated[List[UploadFile] | None, File(description="Varios ficheros = un documento (fotos)")] = None,
     kind: str = Form("anamnesis"),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Sube un documento (PDF) y lo asocia al cliente.
+    """Sube un documento y lo asocia al cliente. CUALQUIER formato que el
+    lector universal sepa leer (PDF, Word, foto, hoja de cálculo, texto);
+    varias fotos en la misma subida se guardan como UN documento.
 
     `kind="anamnesis"` (por defecto): reemplaza la anamnesis y la lee con IA.
-    `kind="adjunto"`: documento ADICIONAL (analítica, informe médico…) — se
-    guarda con prefijo `adjunto_`, NO borra la anamnesis y NO se lee con IA.
-    Antes no existía hueco para un segundo documento y subir la analítica que
-    el propio PDF pide destruía la anamnesis (auditoría 27-08).
+    `kind="adjunto"`: documento ADICIONAL (analítica, informe médico, pauta
+    anterior…) — se guarda con prefijo `adjunto_`, NO borra la anamnesis y
+    también se LEE con IA: lo leído entra en las notas de la ficha y en el
+    contexto de la planificación (antes se guardaba y nadie lo leía).
     """
     _client_or_404_docs(db, client_id)
-    contenido = file.file.read(25 * 1024 * 1024 + 1)
+    subidos = [f for f in ([file] if file is not None else []) + list(files or []) if f is not None]
+    if not subidos:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "No has adjuntado ningún fichero.")
+    ficheros = [(f.file.read(25 * 1024 * 1024 + 1), f.filename) for f in subidos]
     try:
         if kind == "adjunto":
-            nombre = file.filename or "documento.pdf"
-            if not nombre.startswith("adjunto_"):
-                nombre = f"adjunto_{nombre}"
-            rel = save_document(client_id, contenido, nombre)
-            log_event(db, "client", client_id, "document_uploaded",
-                      {"path": rel, "by": "coach", "kind": "adjunto"})
-            db.commit()
-            return {"name": rel.rsplit("/", 1)[-1], "rel_path": rel,
-                    "read_ok": None, "read_error": None, "portal_access": None}
-        return ingest_anamnesis_pdf(db, client_id, contenido,
-                                    file.filename or "anamnesis.pdf", by="coach")
+            return ingest_attachment(db, client_id, ficheros, by="coach")
+        return ingest_anamnesis_document(db, client_id, ficheros, by="coach")
     except DocumentValidationError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+
+
+@router.post("/{client_id}/documents/{name}/read")
+def read_client_document(client_id: int, name: str, db: Session = Depends(get_db)) -> dict:
+    """(Re)lee un documento con IA. Un ADJUNTO: lo transcribe y lo fusiona en
+    la ficha. La ANAMNESIS: es el mismo «Leer con IA» de siempre."""
+    _client_or_404_docs(db, client_id)
+    if "/" in name or "\\" in name or ".." in name:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Nombre no válido")
+    path = abs_path(f"clients/{client_id}/documents/{name}")
+    if not path.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Documento no encontrado")
+    if not name.startswith("adjunto_"):
+        data = _do_read_anamnesis(client_id, db)
+        return {"read_ok": True, "read_error": None, "attachment": None,
+                "extracted": data, "verification": data.get("verification")}
+    res = _leer_adjunto(db, client_id, name)
+    if not res["read_ok"]:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                            detail={"message": "La IA no pudo leer el adjunto.",
+                                    "error": res["read_error"]})
+    return res
+
+
+@router.get("/{client_id}/attachments")
+def list_client_attachments(client_id: int, db: Session = Depends(get_db)) -> list[dict]:
+    """Los adjuntos LEÍDOS (resumen, alertas, marcadores fuera de rango)."""
+    from app.services import attachments as at
+
+    _client_or_404_docs(db, client_id)
+    return [at.resumen_para_ui(d) for d in at.load_sidecars(client_id)]
+
+
+@router.delete("/{client_id}/documents/{name}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_client_document(client_id: int, name: str, db: Session = Depends(get_db)) -> Response:
+    """Borra un documento. Si es un adjunto leído, su bloque desaparece de las
+    notas de la ficha y de su sidecar (lo que el coach escribió a mano queda)."""
+    from app.services import attachments as at
+
+    client = _client_or_404_docs(db, client_id)
+    if "/" in name or "\\" in name or ".." in name or name.startswith("_"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Nombre no válido")
+    path = abs_path(f"clients/{client_id}/documents/{name}")
+    if not path.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Documento no encontrado")
+    if name.startswith("adjunto_"):
+        at.remove_from_client(client, name)
+        at.delete_sidecar(client_id, name)
+    try:
+        path.unlink()
+    except OSError as exc:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"No se pudo borrar: {exc}") from exc
+    log_event(db, "client", client_id, "document_deleted", {"file": name})
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{client_id}/documents")
@@ -1111,6 +1260,15 @@ def get_anamnesis_analysis(client_id: int, db: Session = Depends(get_db)) -> dic
         except Exception:  # noqa: BLE001
             return None
 
+    # Adjuntos LEÍDOS (analítica, informes): su resumen y alertas van con el
+    # análisis, que es donde el coach mira antes de generar.
+    try:
+        from app.services import attachments as at
+
+        adjuntos = [at.resumen_para_ui(d) for d in at.load_sidecars(client_id)]
+    except Exception:  # noqa: BLE001
+        adjuntos = []
+
     try:
         ruta = _anamnesis_analysis_path(client_id)
         if ruta.exists():
@@ -1121,11 +1279,23 @@ def get_anamnesis_analysis(client_id: int, db: Session = Depends(get_db)) -> dic
                 "deep_analysis": datos.get("deep_analysis") or _retrato_en_vivo(),
                 "contradictions": contradicciones,
                 "read_at": datos.get("at"),
+                # Constancia de la lectura universal: qué era el documento, qué
+                # contenía, qué no cupo en ninguna casilla y qué dudó el 2º pase.
+                "verification": datos.get("verification") or {},
+                "source_inventory": datos.get("source_inventory") or [],
+                "unmapped_info": datos.get("unmapped_info") or [],
+                "document_kind": datos.get("document_kind"),
+                "document_warning": datos.get("document_warning"),
+                "document": datos.get("document"),
+                "attachments": adjuntos,
             }
     except Exception:  # noqa: BLE001 — un sidecar roto no rompe la ficha
         pass
     return {"deep_analysis": _retrato_en_vivo(),
-            "contradictions": contradicciones, "read_at": None}
+            "contradictions": contradicciones, "read_at": None,
+            "verification": {}, "source_inventory": [], "unmapped_info": [],
+            "document_kind": None, "document_warning": None, "document": None,
+            "attachments": adjuntos}
 
 
 @router.post("/{client_id}/send-portal-access")
@@ -1619,9 +1789,11 @@ def download_client_document(client_id: int, name: str, db: Session = Depends(ge
     path = abs_path(f"clients/{client_id}/documents/{name}")
     if not path.exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Documento no encontrado")
+    from app.services.storage import media_type_for
+
     return Response(
         content=path.read_bytes(),
-        media_type="application/pdf",
+        media_type=media_type_for(name),
         headers={"Content-Disposition": f'inline; filename="{name}"'},
     )
 
@@ -1812,6 +1984,17 @@ def generate_client_plan(
             deep_analysis = client_portrait(perfil) or None
         except Exception:
             deep_analysis = None
+    # Adjuntos LEÍDOS (analítica, informes médicos, pautas previas): sus
+    # hallazgos llegan al prompt del núcleo como contexto. Antes se guardaban
+    # y nadie los leía: una analítica con la glucosa alta no cambiaba nada.
+    try:
+        from app.services.attachments import attachment_context
+
+        ctx_adjuntos = attachment_context(client_id)
+    except Exception:  # noqa: BLE001
+        ctx_adjuntos = None
+    if ctx_adjuntos:
+        deep_analysis = ((deep_analysis + "\n\n") if deep_analysis else "") + ctx_adjuntos
 
     # Ajustes del ÚLTIMO feedback quincenal → el nuevo plan queda modificado en
     # consecuencia (dieta y entreno) según lo que el cliente registró.
@@ -2346,35 +2529,64 @@ def _anamnesis_analysis_path(client_id: int):
     return client_dir(client_id, "documents") / "_anamnesis_analysis.json"
 
 
-def _do_read_anamnesis(client_id: int, db: Session) -> dict:
-    """Lee el PDF más reciente del cliente con IA y pre-rellena su ficha.
-    Reutilizado por la subida (automático) y por el botón 'Leer con IA'."""
+_KINDS_NO_ANAMNESIS = {"analitica", "informe_medico", "plan_dieta", "plan_entreno"}
+
+
+def _do_read_anamnesis(client_id: int, db: Session, *, documento=None) -> dict:
+    """Lee la anamnesis del cliente con IA —el documento más reciente, en el
+    formato que sea— y pre-rellena su ficha. Reutilizado por la subida
+    (automático, con el documento ya normalizado) y por «Leer con IA»."""
     import json as _json
 
     from app.services.ai.client import AIClient, AIGenerationError
-    from app.services.ai.extraction import extract_anamnesis_from_pdf
+    from app.services.ai.extraction import extract_anamnesis_from_document
+    from app.services.document_reader import DocumentoIlegible, normalizar
 
     client = _client_or_404_docs(db, client_id)
     # Solo la ANAMNESIS: un adjunto (analítica) subido después no puede
-    # convertirse en "el PDF más reciente" que la IA lee como cuestionario.
+    # convertirse en "el documento más reciente" que la IA lee como cuestionario.
     from app.services.storage import anamnesis_documents
 
     docs = anamnesis_documents(client_id)
-    if not docs:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            "Sube primero la anamnesis (PDF) antes de leerla con IA.",
-        )
-    pdf_bytes = abs_path(docs[0]["rel_path"]).read_bytes()
+    if documento is None:
+        if not docs:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "Sube primero la anamnesis (PDF, Word, foto…) antes de leerla con IA.",
+            )
+        try:
+            documento = normalizar(abs_path(docs[0]["rel_path"]).read_bytes(), docs[0]["name"])
+        except DocumentoIlegible as exc:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    fuente = docs[0]["name"] if docs else documento.nombre
     try:
-        extracted = extract_anamnesis_from_pdf(pdf_bytes, AIClient())
+        lectura = extract_anamnesis_from_document(documento, AIClient())
     except AIGenerationError as exc:
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY,
             detail={"message": "La IA no pudo leer la anamnesis.", "error": str(exc)},
         ) from exc
+    extracted = lectura.extraction
+    verificacion = lectura.verification
 
     data = extracted.model_dump()
+    # Lo que no cupo en ninguna casilla NO se pierde: va a la ficha en una línea
+    # propia (reemplazable) y se enseña entero al coach.
+    sin_casilla = list(extracted.unmapped_info) + [
+        o for o in verificacion.get("omissions", []) if o not in extracted.unmapped_info]
+    if sin_casilla:
+        linea = "- Otros datos del documento: " + " · ".join(sin_casilla)[:700]
+        notas = extracted.lifestyle_notes or ""
+        notas = "\n".join(ln for ln in notas.splitlines()
+                          if not ln.startswith("- Otros datos del documento:"))
+        data["lifestyle_notes"] = (notas.rstrip("\n") + "\n" + linea).strip("\n")
+    # Si lo que se subió como anamnesis es en realidad otra cosa (una
+    # analítica, un plan), se vuelca igual lo que contiene, pero se AVISA.
+    aviso_doc = None
+    if (extracted.document_kind or "") in _KINDS_NO_ANAMNESIS:
+        aviso_doc = (f"El documento parece «{extracted.document_kind.replace('_', ' ')}», no un "
+                     "cuestionario de anamnesis: se ha volcado lo que contiene, pero revisa "
+                     "la ficha y sube el cuestionario (o este documento como ADJUNTO).")
     for f in [
         "sex", "birth_date", "phone", "height_cm", "start_weight_kg", "body_fat_pct",
         "initial_waist_cm", "initial_hip_cm", "initial_arm_cm", "initial_thigh_cm",
@@ -2410,8 +2622,15 @@ def _do_read_anamnesis(client_id: int, db: Session) -> dict:
     except Exception:
         contradicciones = []
     data["contradictions"] = contradicciones
+    data["verification"] = verificacion
+    data["document_warning"] = aviso_doc
+    data["document"] = {"name": fuente, "description": documento.descripcion,
+                        "avisos": list(documento.avisos)}
     log_event(db, "client", client_id, "anamnesis_read_ai",
-              {"source": docs[0]["name"], "contradictions": contradicciones})
+              {"source": fuente, "contradictions": contradicciones,
+               "document_kind": extracted.document_kind,
+               "needs_review": bool(verificacion.get("needs_review")),
+               "discrepancies": verificacion.get("discrepancies", [])[:6]})
     db.commit()
     try:
         _anamnesis_analysis_path(client_id).write_text(
@@ -2419,6 +2638,12 @@ def _do_read_anamnesis(client_id: int, db: Session) -> dict:
                 "deep_analysis": data.get("deep_analysis"),
                 "injuries_notes": data.get("injuries_notes"),
                 "contradictions": contradicciones,
+                "verification": verificacion,
+                "document_kind": extracted.document_kind,
+                "source_inventory": list(extracted.source_inventory),
+                "unmapped_info": sin_casilla,
+                "document_warning": aviso_doc,
+                "document": data["document"],
                 "at": datetime.now(timezone.utc).isoformat(),
             }, ensure_ascii=False),
             encoding="utf-8",
@@ -2430,13 +2655,25 @@ def _do_read_anamnesis(client_id: int, db: Session) -> dict:
 
 @router.post("/{client_id}/read-anamnesis")
 def read_anamnesis_with_ai(client_id: int, db: Session = Depends(get_db)) -> dict:
-    """Lee el PDF más reciente del cliente con IA y pre-rellena su ficha."""
+    """Lee la anamnesis más reciente del cliente (cualquier formato) con IA y
+    pre-rellena su ficha."""
     data = _do_read_anamnesis(client_id, db)
+    ver = data.get("verification") or {}
+    msg = "Anamnesis leída. Revisa los datos antes de generar el plan."
+    if ver.get("needs_review"):
+        msg = ("Anamnesis leída, con DUDAS en campos críticos: la relectura no coincide en "
+               f"{len(ver.get('discrepancies') or [])} dato(s). Revísalos antes de generar.")
     return {
         "extracted": data,
         "deep_analysis": data.get("deep_analysis"),
         "contradictions": data.get("contradictions") or [],
-        "message": "Anamnesis leída. Revisa los datos antes de generar el plan.",
+        "verification": ver,
+        "source_inventory": data.get("source_inventory") or [],
+        "unmapped_info": data.get("unmapped_info") or [],
+        "document_kind": data.get("document_kind"),
+        "document_warning": data.get("document_warning"),
+        "document": data.get("document"),
+        "message": msg,
     }
 
 
