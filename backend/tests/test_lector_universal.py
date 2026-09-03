@@ -434,6 +434,47 @@ def test_adjunto_se_fusiona_en_la_ficha_sin_pisar_y_de_forma_idempotente():
     assert c.medical_notes == "- Clínica: hipotiroidismo" and c.medication_notes == "- Eutirox 50"
 
 
+def test_el_bloque_del_adjunto_no_se_come_lo_que_el_coach_escribe_debajo():
+    """El bloque se AÑADE al final de la columna, así que todo lo que el coach
+    teclee después caía dentro de él: releer o borrar el adjunto le borraba sus
+    propias notas. Ahora el bloque va delimitado (cabecera + cierre) y se retira
+    EXACTAMENTE lo que se escribió."""
+    from types import SimpleNamespace
+
+    from app.services import attachments as at
+
+    def _cli(**kw):
+        base = dict(medical_notes=None, injuries_notes=None, medication_notes=None,
+                    current_supplements=None, sport_history=None, lifestyle_notes=None)
+        base.update(kw)
+        return SimpleNamespace(**base)
+
+    ext = _analitica()
+    c = _cli(medical_notes="- Clínica: hipotiroidismo (coach)")
+    at.merge_into_client(c, ext, "adjunto_analitica_ab12.pdf")
+    c.medical_notes += "\n- Clínica: alergia al ibuprofeno (coach, tras llamada)"
+    at.merge_into_client(c, ext, "adjunto_analitica_ab12.pdf")     # releer
+    assert "ibuprofeno" in c.medical_notes and c.medical_notes.count("[Adjunto:") == 1
+    at.remove_from_client(c, "adjunto_analitica_ab12.pdf")          # borrar
+    assert "hipotiroidismo" in c.medical_notes and "ibuprofeno" in c.medical_notes
+    assert "[Adjunto:" not in c.medical_notes and "Glucosa" not in c.medical_notes
+
+    # Nota del coach ENTRE dos adjuntos: borrar el primero no toca ni la nota
+    # ni el bloque del segundo.
+    c2 = _cli()
+    at.merge_into_client(c2, ext, "adjunto_a_1.pdf")
+    c2.medical_notes += "\n- Clínica: nota del coach entre adjuntos"
+    at.merge_into_client(c2, ext, "adjunto_b_2.pdf")
+    at.remove_from_client(c2, "adjunto_a_1.pdf")
+    assert "entre adjuntos" in c2.medical_notes
+    assert "[Adjunto: b_2]" in c2.medical_notes and "[Adjunto: a_1]" not in c2.medical_notes
+
+    # Un bloque sin cierre (escrito a mano) también se sabe retirar.
+    c3 = _cli(medical_notes="- Clínica: previa\n- [Adjunto: viejo_9] analitica\n- Analítica: algo")
+    at.remove_from_client(c3, "adjunto_viejo_9.pdf")
+    assert c3.medical_notes == "- Clínica: previa"
+
+
 def test_dos_adjuntos_conviven_y_el_contexto_para_la_ia_resume_los_leidos(tmp_path, monkeypatch):
     from types import SimpleNamespace
 
@@ -653,6 +694,60 @@ def test_el_adjunto_se_lee_entra_en_la_ficha_se_relee_y_se_borra(http, db, monke
     assert db.get(Client, c.id).medical_notes == "- Clínica: hipotiroidismo"
     assert db.get(Client, c.id).medication_notes is None
     assert guion.calls and guion.calls[0]["bloques"][0]["type"] == "document"
+
+
+@db_required
+def test_leer_la_anamnesis_no_borra_lo_que_aporto_un_adjunto(http, db, monkeypatch):
+    """La lectura SUSTITUYE las columnas de notas: se llevaba por delante el
+    bloque de la analítica (glucosa alta) y del fisio (evitar sentadilla),
+    mientras la ficha seguía diciendo «adjunto leído». Esos textos los leen el
+    filtro de ejercicios y la lista roja."""
+    from app.models import Client
+
+    c = _cliente(db, status="active")
+    ScriptedDocs([_analitica().model_dump()]).instalar(monkeypatch)
+    r = http.post(f"/api/clients/{c.id}/documents", headers=_auth(), data={"kind": "adjunto"},
+                  files={"file": ("analitica.pdf", _pdf(1), "application/pdf")})
+    assert r.status_code == 200 and r.json()["read_ok"] is True
+    # ahora llega el cuestionario y la IA reescribe las notas
+    ScriptedDocs([_EXTRACCION_WHATSAPP, _VERIFICACION_OK]).instalar(monkeypatch)
+    r2 = http.post(f"/api/clients/{c.id}/documents", headers=_auth(),
+                   files={"file": ("cuestionario.pdf", _pdf(1), "application/pdf")})
+    assert r2.status_code == 200 and r2.json()["read_ok"] is True
+    db.expire_all()
+    cli = db.get(Client, c.id)
+    assert "hipotiroidismo" in cli.medical_notes          # lo que leyó la anamnesis
+    assert "[Adjunto:" in cli.medical_notes               # y el bloque del adjunto
+    assert "Glucosa 101" in cli.medical_notes
+    assert "Metformina" in cli.medication_notes
+
+
+@db_required
+def test_si_la_ia_no_puede_leer_no_se_borra_la_anamnesis_anterior(http, db, monkeypatch):
+    """Con la API caída no sabemos qué se acaba de subir: el desvío a adjunto
+    no puede actuar, así que la anamnesis anterior se CONSERVA (como adjunto)
+    en vez de borrarse para siempre."""
+    from app.services.ai.client import AIClient
+    from app.services.storage import anamnesis_documents, list_documents
+
+    ScriptedDocs([_EXTRACCION_WHATSAPP, _VERIFICACION_OK]).instalar(monkeypatch)
+    c = _cliente(db)
+    r0 = http.post(f"/api/clients/{c.id}/documents", headers=_auth(),
+                   files={"file": ("cuestionario.pdf", _pdf(1), "application/pdf")})
+    assert r0.status_code == 200
+    viejo = anamnesis_documents(c.id)[0]["name"]
+
+    def _boom(self, **kw):
+        raise RuntimeError("API sin crédito")
+
+    monkeypatch.setattr(AIClient, "_raw_call_with_blocks", _boom)
+    r = http.post(f"/api/clients/{c.id}/documents", headers=_auth(),
+                  files={"file": ("analitica.pdf", _pdf(1), "application/pdf")})
+    assert r.status_code == 200 and r.json()["read_ok"] is False
+    nombres = [d["name"] for d in list_documents(c.id)]
+    assert f"adjunto_{viejo}" in nombres, nombres     # el cuestionario sigue ahí
+    assert any("se ha conservado entre los adjuntos" in a for a in r.json()["avisos"])
+    assert len(anamnesis_documents(c.id)) == 1        # y sigue habiendo UNA anamnesis
 
 
 @db_required

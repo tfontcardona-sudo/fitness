@@ -1022,16 +1022,33 @@ def ingest_anamnesis_document(db: Session, client_id: int,
     rel = save_document(client_id, documento.contenido, documento.nombre,
                         ext=documento.extension)
     # Una sola anamnesis por cliente: fuera las anteriores (la nueva ya está).
+    # PERO si la IA no pudo leer el documento (API caída, sin crédito) no
+    # sabemos qué es lo que acaban de subir: el desvío a adjunto no ha podido
+    # actuar y borrar el cuestionario anterior sería irreversible. En ese caso
+    # la anterior se CONSERVA como adjunto (nada se destruye) y se avisa.
+    conservadas: list[str] = []
     for old in previous:
         try:
-            old.unlink()
+            if lectura is None:
+                destino = old.with_name(f"adjunto_{old.name}")
+                old.rename(destino)
+                conservadas.append(destino.name)
+            else:
+                old.unlink()
         except Exception:
             pass
     log_event(db, "client", client_id, "document_uploaded",
               {"path": rel, "by": by, "format": documento.extension,
-               "origen": documento.origen, "avisos": documento.avisos})
+               "origen": documento.origen, "avisos": documento.avisos,
+               "conservadas": conservadas})
     db.commit()
     name = rel.rsplit("/", 1)[-1]
+    avisos_extra: list[str] = []
+    if conservadas:
+        avisos_extra.append(
+            "No se pudo leer el documento, así que no sabemos si es el cuestionario: "
+            "la anamnesis anterior se ha conservado entre los adjuntos por si acaso. "
+            "Cuando la lectura vuelva a funcionar, revísalo y borra el que sobre.")
 
     # Aplicar la lectura (ya hecha arriba) a la ficha. Si la lectura falló, la
     # subida sigue siendo válida (no rompe el proceso): el coach podrá pulsar
@@ -1089,7 +1106,7 @@ def ingest_anamnesis_document(db: Session, client_id: int,
     return {"name": name, "rel_path": rel, "read_ok": read_ok,
             "read_error": read_error, "portal_access": access_status,
             "format": documento.extension, "document": documento.descripcion,
-            "avisos": list(documento.avisos),
+            "avisos": list(documento.avisos) + avisos_extra,
             "verification": datos.get("verification") if datos else None,
             "document_kind": datos.get("document_kind") if datos else None,
             "document_warning": datos.get("document_warning") if datos else None,
@@ -2695,6 +2712,18 @@ def _aplicar_lectura(client_id: int, db: Session, documento, lectura, *, fuente:
             setattr(client, f, val)
     if data.get("meal_schedule"):
         client.meal_schedule = data["meal_schedule"]
+    # Los setattr de arriba SUSTITUYEN la columna entera, así que se llevaban
+    # por delante los bloques de los adjuntos ya leídos (la glucosa alta de la
+    # analítica, el «evitar sentadilla profunda» del fisio) mientras la ficha
+    # seguía diciendo «adjunto leído». Y esos textos los leen el filtro de
+    # ejercicios y la lista roja: perderlos no era solo cosmético. Se vuelven a
+    # escribir desde sus sidecars (idempotente).
+    try:
+        from app.services.attachments import reaplicar_sidecars
+
+        reaplicar_sidecars(client, client_id)
+    except Exception:  # noqa: BLE001 — nunca romper la lectura por esto
+        pass
     db.flush()
     # Contradicciones deterministas (§5, por fin cableado): plazo imposible,
     # objetivo que choca con su texto, dieta declarada vs alimentos que dice

@@ -223,6 +223,15 @@ def submit_anamnesis(
         if field == "meal_schedule" and not value:
             continue
         setattr(client, field, value)
+    # Igual que la lectura con IA: estos setattr sustituyen las columnas de
+    # notas enteras y se llevaban los bloques de los adjuntos ya leídos
+    # (analítica, informe del fisio). Se vuelven a escribir desde sus sidecars.
+    try:
+        from app.services.attachments import reaplicar_sidecars
+
+        reaplicar_sidecars(client, client.id)
+    except Exception:  # noqa: BLE001 — nunca romper el envío del formulario
+        pass
     client.consent_signed_at = datetime.now(timezone.utc)
 
     brand = db.scalar(select(BrandConfig).limit(1)) or BrandConfig()

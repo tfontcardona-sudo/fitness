@@ -560,6 +560,21 @@ npm run check:portapapeles  # una sola puerta al portapapeles (`lib/clipboard`)
      (fusión idempotente, borrado, contexto), endpoints de ficha y portal, plan
      ajeno (cifras del contrato, ejercicios sin biblioteca, alérgeno cazado,
      menú strict, 422s).
+   - **Tres fallos de PÉRDIDA DE DATOS que destapó la verificación adversarial**
+     (los tres con regresión): (1) el bloque `[Adjunto: …]` no tenía CIERRE y se
+     añade al final de la columna, así que se comía todo lo que el coach
+     escribiera debajo — releer o borrar el adjunto le borraba sus notas; ahora
+     va delimitado (`- [/Adjunto: stem]`, con backreference en el regex) y se
+     retira exactamente lo escrito (los bloques sin cierre también se saben
+     retirar). (2) La lectura de la anamnesis y el FORMULARIO DIGITAL sustituyen
+     las columnas de notas enteras y se llevaban los bloques de los adjuntos ya
+     leídos —la glucosa alta, el «evitar sentadilla profunda» del fisio—, que
+     además alimentan el filtro de ejercicios y la lista roja; ahora
+     `attachments.reaplicar_sidecars` los vuelve a escribir tras cada lectura.
+     (3) Con la IA caída no se puede clasificar el documento, así que el desvío
+     a adjunto no actuaba y una analítica subida por el botón de la anamnesis
+     BORRABA el cuestionario; ahora la anterior se CONSERVA como adjunto y se
+     avisa.
    - ⚠️ Gotchas nuevos: en tests, la IA falsa para documentos sustituye
      `AIClient._raw_call_with_blocks` y debe poner `settings.anthropic_api_key`
      (el constructor corta sin clave); `_convierte` se sigue llamando con la

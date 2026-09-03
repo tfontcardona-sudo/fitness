@@ -32,7 +32,19 @@ from pathlib import Path
 from pydantic import BaseModel, Field, field_validator
 
 MARCA = "[Adjunto: {stem}]"
-_RE_BLOQUE = re.compile(r"(?ms)^- \[Adjunto: (?P<stem>[^\]]+)\][^\n]*\n(?:(?!- \[Adjunto: )[^\n]*\n?)*")
+FIN = "- [/Adjunto: {stem}]"
+# El bloque de un adjunto va DELIMITADO por su cabecera y su cierre, con el
+# mismo `stem` en los dos (backreference). Sin cierre, el bloque se comía todo
+# lo que hubiera DEBAJO —incluida cualquier nota que el coach escribiera
+# después, porque el bloque se añade al final de la columna— y releer o borrar
+# el adjunto la destruía. Ahora se retira EXACTAMENTE lo que se escribió.
+_RE_BLOQUE = re.compile(
+    r"(?ms)^- \[Adjunto: (?P<stem>[^\]]+)\][^\n]*\n(?:[^\n]*\n)*?- \[/Adjunto: (?P=stem)\][^\n]*\n?")
+# Bloques ESCRITOS ANTES de existir el cierre (o cuyo cierre borró alguien al
+# editar a mano): se reconocen para poder retirarlos, pero solo hasta la
+# siguiente cabecera. Se usa únicamente si el bloque no aparece delimitado.
+_RE_BLOQUE_VIEJO = re.compile(
+    r"(?ms)^- \[Adjunto: (?P<stem>[^\]]+)\][^\n]*\n(?:(?!- \[/?Adjunto: )[^\n]*\n?)*")
 
 
 def _lista(v) -> list[str]:
@@ -297,12 +309,18 @@ def bloques_para_ficha(ext: AttachmentExtraction, stem: str) -> dict[str, list[s
 
 
 def _quitar_bloque(texto: str, stem: str) -> str:
-    """Elimina el bloque de ESTE adjunto (si ya estaba) sin tocar el resto."""
+    """Elimina el bloque de ESTE adjunto (si ya estaba) SIN tocar el resto: ni
+    lo de encima, ni lo de debajo, ni el bloque de otro adjunto."""
     if not texto:
         return ""
     def _keep(m):
         return "" if m.group("stem") == stem else m.group(0)
-    nuevo = _RE_BLOQUE.sub(_keep, texto + ("\n" if not texto.endswith("\n") else ""))
+    con_salto = texto + ("\n" if not texto.endswith("\n") else "")
+    nuevo = _RE_BLOQUE.sub(_keep, con_salto)
+    if nuevo == con_salto and f"- {MARCA.format(stem=stem)}" in texto:
+        # Bloque sin cierre (escrito antes de existir, o el cierre se borró al
+        # editar la ficha a mano): se retira hasta la siguiente cabecera.
+        nuevo = _RE_BLOQUE_VIEJO.sub(_keep, con_salto)
     return nuevo.strip("\n")
 
 
@@ -328,7 +346,7 @@ def merge_into_client(client, ext: AttachmentExtraction, nombre: str) -> list[st
     tocadas: list[str] = []
     for campo, lineas in bloques_para_ficha(ext, stem).items():
         actual = _quitar_bloque(getattr(client, campo, None) or "", stem)
-        bloque = _formatea(lineas)
+        bloque = _formatea(lineas) + "\n" + FIN.format(stem=stem)
         nuevo = (actual + "\n" + bloque).strip("\n") if actual else bloque
         setattr(client, campo, nuevo)
         tocadas.append(campo)
@@ -400,3 +418,23 @@ def resumen_para_ui(d: dict) -> dict:
                          for lv in fuera],
         "avisos_lectura": d.get("avisos_lectura") or [],
     }
+
+
+def reaplicar_sidecars(client, client_id: int) -> list[str]:
+    """Vuelve a escribir en la ficha los bloques de TODOS los adjuntos leídos.
+
+    Se llama después de cualquier lectura que SUSTITUYA las columnas de notas
+    (la anamnesis con IA, el formulario digital del portal): esas escrituras
+    reemplazan la columna entera y se llevaban por delante los bloques de los
+    adjuntos —la glucosa alta de la analítica, el «evitar sentadilla profunda»
+    del fisio— mientras la ficha seguía diciendo «adjunto leído». Y esos textos
+    los leen el filtro de ejercicios y la lista roja, así que perderlos no era
+    solo cosmético. Idempotente: cada bloque se retira y se vuelve a poner."""
+    tocadas: list[str] = []
+    for d in load_sidecars(client_id):
+        try:
+            ext = AttachmentExtraction.model_validate(d)
+        except Exception:  # noqa: BLE001 — un sidecar raro no rompe la ficha
+            continue
+        tocadas += merge_into_client(client, ext, d.get("file") or "")
+    return sorted(set(tocadas))
