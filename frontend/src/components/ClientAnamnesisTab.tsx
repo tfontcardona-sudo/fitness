@@ -3,15 +3,50 @@ import { ancla } from "../lib/anchors";
 import { ChevronDown, Eye, FileText, Pencil, Save, Sparkles } from "lucide-react";
 import { PeriodPhotosFolded } from "./ClientFeedbackTab";
 import { api, ApiError, getToken } from "../lib/api";
+import type { AttachmentSummary, DocumentInfo, DocumentVerification } from "../lib/api";
 import type { ClientOut } from "../types";
 import { ExpandableArea, Spinner, useToast } from "./ui";
 import { ACTIVITY_LABEL, ageFrom, DIET_LABEL, DIET_PATTERN_LABEL, GOAL_LABEL, LEVEL_LABEL, PLACE_LABEL } from "../lib/format";
 import { isCriticalLine, isRelevantClinical } from "../lib/clinical";
 
+/** Lo que dejó anotado la LECTURA del documento, además de la síntesis y las
+ *  contradicciones: la verificación por relectura, el inventario de lo que
+ *  contenía, los datos sin casilla y los adjuntos leídos. Todo opcional: si no
+ *  hay datos no se pinta ninguna tarjeta. */
+interface LecturaInfo {
+  verification: DocumentVerification | null;
+  source_inventory: string[];
+  unmapped_info: string[];
+  document_kind: string | null;
+  document_warning: string | null;
+  document: DocumentInfo | null;
+  attachments: AttachmentSummary[];
+}
+
+const LECTURA_VACIA: LecturaInfo = {
+  verification: null, source_inventory: [], unmapped_info: [],
+  document_kind: null, document_warning: null, document: null, attachments: [],
+};
+
+/** Normaliza lo que devuelven `anamnesisAnalysis` y `readAnamnesis` (mismas
+ *  claves, todas opcionales; `verification` puede llegar como `{}`). */
+function lecturaDe(a: Partial<LecturaInfo> | null | undefined): LecturaInfo {
+  return {
+    verification: a?.verification ?? null,
+    source_inventory: a?.source_inventory ?? [],
+    unmapped_info: a?.unmapped_info ?? [],
+    document_kind: a?.document_kind ?? null,
+    document_warning: a?.document_warning ?? null,
+    document: a?.document ?? null,
+    attachments: a?.attachments ?? [],
+  };
+}
+
 /**
  * Tab Anamnesis: ficha estructurada del cliente. Es la fuente de datos que la
  * IA usa para generar el plan. Puede rellenarse de dos formas:
- *  1. "Leer anamnesis con IA": lee el PDF subido y pre-rellena estos campos.
+ *  1. "Leer con IA": lee el documento subido (PDF, Word, fotos, Excel…) y
+ *     pre-rellena estos campos.
  *  2. A mano.
  * En ambos casos el coach revisa y corrige antes de generar (seguridad). El
  * PATCH del backend registra el diff campo a campo (audit trail).
@@ -25,25 +60,31 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
   // Contradicciones deterministas de la lectura (§5): plazo imposible, dieta
   // vs alimentos… — el coach las ve junto al análisis, nunca en silencio.
   const [contradicciones, setContradicciones] = useState<string[]>([]);
+  // Nombre del DOCUMENTO de anamnesis subido (PDF, Word, fotos…): el primero
+  // de tipo "anamnesis" de la lista, sea cual sea su formato.
   const [pdfName, setPdfName] = useState<string | null>(null);
+  // Verificación, inventario, datos sin casilla y adjuntos de la lectura.
+  const [lectura, setLectura] = useState<LecturaInfo>(LECTURA_VACIA);
   // Por defecto la ficha se VE (ordenada por colores, sin campos editables);
   // el formulario solo aparece si el coach pulsa "Editar datos".
   const [editMode, setEditMode] = useState(false);
 
-  // Nombre del PDF de anamnesis subido (para poder verlo/descargarlo desde aquí).
   useEffect(() => {
     // Solo el CUESTIONARIO: con los adjuntos (analítica, informes) en la
-    // lista, "Ver PDF" abría el informe de sangre en vez de la anamnesis.
+    // lista, "Ver documento" abría el informe de sangre en vez de la anamnesis.
     api.listClientDocuments(client.id, "anamnesis")
       .then((docs) => setPdfName(docs[0]?.name ?? null))
       .catch(() => setPdfName(null));
     // Y las contradicciones YA detectadas: se calculaban al leer la anamnesis
     // (o al enviarse el formulario), se guardaban… y solo se veían volviendo a
-    // pulsar "Leer con IA", que gasta créditos y pisa las correcciones.
+    // pulsar "Leer con IA", que gasta créditos y pisa las correcciones. Con
+    // ellas, la verificación por relectura y el inventario del documento.
+    setLectura(LECTURA_VACIA);
     api.anamnesisAnalysis(client.id)
       .then((a) => {
         setContradicciones(a.contradictions ?? []);
         setAnalysis((prev) => prev ?? a.deep_analysis ?? null);
+        setLectura(lecturaDe(a));
       })
       .catch(() => {});
   }, [client.id]);
@@ -61,7 +102,7 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
         window.open(url, "_blank");
         setTimeout(() => URL.revokeObjectURL(url), 60000);
       })
-      .catch(() => toast.push("No se pudo abrir el PDF", "error"));
+      .catch(() => toast.push("No se pudo abrir el documento", "error"));
   }
 
   function set<K extends keyof ClientOut>(key: K, value: ClientOut[K]) {
@@ -94,7 +135,7 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
     if (reading || !pdfName) return;
     // Con la ficha ya rellenada, releer PISA campos y gasta créditos: se avisa.
     if (client.goal_type &&
-        !window.confirm("La IA sobrescribirá los campos de la ficha con lo que lea del PDF y gastará créditos. ¿Seguir?")) {
+        !window.confirm("La IA sobrescribirá los campos de la ficha con lo que lea del documento y gastará créditos. ¿Seguir?")) {
       return;
     }
     setReading(true);
@@ -102,12 +143,16 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
       const res = await api.readAnamnesis(client.id);
       setAnalysis(res.deep_analysis);
       setContradicciones(res.contradictions ?? []);
+      setLectura(lecturaDe(res));
       setDraft({});
-      toast.push("Anamnesis leída. Revisa los datos antes de generar.");
+      // `message` ya dice si la relectura dejó dudas: se enseña tal cual.
+      const conDudas = Boolean(res.verification?.needs_review || res.document_warning);
+      toast.push(res.message || "Anamnesis leída. Revisa los datos antes de generar.",
+                 conDudas ? "error" : "ok");
       onSaved();
     } catch (e: any) {
       const detail = e?.detail ?? e?.data?.detail;
-      toast.push([detail?.message ?? e?.message ?? "No se pudo leer el PDF", detail?.error].filter(Boolean).join(" — "), "error");
+      toast.push([detail?.message ?? e?.message ?? "No se pudo leer el documento", detail?.error].filter(Boolean).join(" — "), "error");
     } finally {
       setReading(false);
     }
@@ -122,7 +167,7 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
           <Sparkles size={15} style={{ color: "var(--brand-accent)" }} />
           <p className="text-sm font-medium text-zinc-200">Anamnesis</p>
           {!client.goal_type && !pdfName && (
-            <span className="text-xs text-zinc-500">Sube el PDF y púlsalo para rellenar la ficha con IA.</span>
+            <span className="text-xs text-zinc-500">Sube la anamnesis (PDF, Word o fotos) y púlsalo para rellenar la ficha con IA.</span>
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -140,7 +185,7 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
           )}
           {pdfName && (
             <button onClick={openPdf} className="btn btn-ghost" title={pdfName}>
-              <FileText size={15} /> Ver PDF
+              <FileText size={15} /> Ver documento
             </button>
           )}
           <button onClick={() => setEditMode((e) => !e)} className="btn btn-ghost">
@@ -150,10 +195,10 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
           <button
             onClick={readWithAI}
             disabled={reading || !pdfName}
-            title={!pdfName ? "Sube antes el PDF de la anamnesis" : undefined}
+            title={!pdfName ? "Sube antes la anamnesis (PDF, Word o fotos)" : undefined}
             className="btn btn-primary"
           >
-            <Sparkles size={15} /> {reading ? "Leyendo PDF…" : "Leer con IA"}
+            <Sparkles size={15} /> {reading ? "Leyendo documento…" : "Leer con IA"}
           </button>
           <span {...ancla("anamnesis.revision")} aria-hidden className="sr-only" />
         </div>
