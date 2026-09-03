@@ -1185,6 +1185,11 @@ def upload_client_document(
     contexto de la planificación (antes se guardaba y nadie lo leía).
     """
     _client_or_404_docs(db, client_id)
+    # `kind` validado: un valor mal escrito no puede convertir un adjunto en
+    # «la anamnesis» por defecto y reemplazar el cuestionario.
+    if kind not in ("anamnesis", "adjunto"):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "kind debe ser «anamnesis» o «adjunto».")
     subidos = [f for f in ([file] if file is not None else []) + list(files or []) if f is not None]
     if not subidos:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "No has adjuntado ningún fichero.")
@@ -1208,7 +1213,15 @@ def read_client_document(client_id: int, name: str, db: Session = Depends(get_db
     if not path.exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Documento no encontrado")
     if not name.startswith("adjunto_"):
-        data = _do_read_anamnesis(client_id, db)
+        # Se lee ESE fichero (no «el más reciente»): con el nombre en la URL,
+        # el coach espera que se lea exactamente el que pulsó.
+        from app.services.document_reader import DocumentoIlegible, normalizar
+
+        try:
+            documento = normalizar(path.read_bytes(), name)
+        except DocumentoIlegible as exc:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+        data = _do_read_anamnesis(client_id, db, documento=documento)
         return {"read_ok": True, "read_error": None, "attachment": None,
                 "extracted": data, "verification": data.get("verification")}
     res = _leer_adjunto(db, client_id, name)
