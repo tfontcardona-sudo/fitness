@@ -216,6 +216,109 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
         </div>
       )}
 
+      {/* LO QUE DEJÓ LA LECTURA DEL DOCUMENTO. Ninguna tarjeta se pinta vacía:
+          aviso del documento (rojo), verificación por relectura (ámbar),
+          inventario plegado y adjuntos leídos. */}
+      {lectura.document_warning && (
+        <div className="card p-4"
+          style={{ borderColor: "#B3261E", background: "color-mix(in srgb, #B3261E 6%, transparent)" }}>
+          <p className="text-sm font-medium" style={{ color: "#B3261E" }}>{lectura.document_warning}</p>
+        </div>
+      )}
+
+      {(() => {
+        const disc = lectura.verification?.discrepancies ?? [];
+        const omis = lectura.verification?.omissions ?? [];
+        const skipped = lectura.verification?.skipped;
+        if (!disc.length && !omis.length) {
+          return skipped
+            ? <p className="text-xs text-zinc-500">Sin segunda lectura: {skipped}</p>
+            : null;
+        }
+        const n = disc.length || omis.length;
+        return (
+          <div className="card p-4" style={{ borderColor: "#9A6B15" }}>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide" style={{ color: "#9A6B15" }}>
+              ⚠ La relectura no coincide en {n} dato{n === 1 ? "" : "s"} crítico{n === 1 ? "" : "s"}
+            </p>
+            {disc.length > 0 && (
+              <ul className="list-disc space-y-0.5 pl-4 text-sm text-zinc-300">
+                {disc.map((d, i) => <li key={i}>{d}</li>)}
+              </ul>
+            )}
+            {omis.length > 0 && (
+              <>
+                <p className="mt-2 text-xs font-medium text-zinc-400">Datos que la relectura echa en falta</p>
+                <ul className="list-disc space-y-0.5 pl-4 text-sm text-zinc-300">
+                  {omis.map((o, i) => <li key={i}>{o}</li>)}
+                </ul>
+              </>
+            )}
+            <p className="mt-1 text-xs text-zinc-500">
+              Comprueba esos campos contra el documento antes de generar el plan.
+            </p>
+            {skipped && <p className="mt-1 text-xs text-zinc-500">Sin segunda lectura: {skipped}</p>}
+          </div>
+        );
+      })()}
+
+      {(lectura.source_inventory.length > 0 || lectura.unmapped_info.length > 0 || lectura.document) && (
+        <details className="card p-4">
+          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Qué contenía el documento ({lectura.source_inventory.length} bloque{lectura.source_inventory.length === 1 ? "" : "s"})
+          </summary>
+          {lectura.document && (
+            <p className="mt-2 text-xs text-zinc-500">
+              {[lectura.document.name, lectura.document.description].filter(Boolean).join(" · ")}
+            </p>
+          )}
+          {lectura.source_inventory.length > 0 && (
+            <ul className="mt-2 list-disc space-y-0.5 pl-4 text-sm text-zinc-300">
+              {lectura.source_inventory.map((s, i) => <li key={i}>{s}</li>)}
+            </ul>
+          )}
+          {lectura.unmapped_info.length > 0 && (
+            <>
+              <p className="mt-3 text-xs font-medium text-zinc-400">Datos sin casilla</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-4 text-sm text-zinc-300">
+                {lectura.unmapped_info.map((u, i) => <li key={i}>{u}</li>)}
+              </ul>
+            </>
+          )}
+          {lectura.document && lectura.document.avisos.length > 0 && (
+            <ul className="mt-3 space-y-0.5 text-xs" style={{ color: "#9A6B15" }}>
+              {lectura.document.avisos.map((a, i) => <li key={i}>⚠ {a}</li>)}
+            </ul>
+          )}
+        </details>
+      )}
+
+      {lectura.attachments.length > 0 && (
+        <div className="card p-4">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">Adjuntos leídos</p>
+          <ul className="space-y-2">
+            {lectura.attachments.map((a) => {
+              const fecha = a.document_date
+                ? (Number.isNaN(new Date(a.document_date).getTime())
+                    ? a.document_date
+                    : new Date(a.document_date).toLocaleDateString("es-ES"))
+                : null;
+              return (
+                <li key={a.file} className="text-sm text-zinc-300">
+                  <p>
+                    {[a.document_kind ?? a.title, fecha, a.summary[0]].filter(Boolean).join(" · ")
+                      || a.file}
+                  </p>
+                  {a.alerts.map((al, i) => (
+                    <p key={i} className="text-xs font-medium" style={{ color: "#9A6B15" }}>⚠ {al}</p>
+                  ))}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
       {analysis && (
         <div className="card p-4">
           <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">Análisis de la IA</p>
