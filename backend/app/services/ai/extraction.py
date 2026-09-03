@@ -535,6 +535,7 @@ def comparar_pases(a: dict, b: dict, confianza_a: dict | None = None) -> dict:
                  "food_allergies": "alergias", "medication_notes": "medicación",
                  "medical_notes": "historia clínica", "injuries_notes": "lesiones"}
     discrepancias: list[str] = []
+    desajustados: set[str] = set()
     for k in CRITICOS_ESCALARES:
         va, vb = sub_a.get(k), sub_b.get(k)
         if va != vb:
@@ -542,6 +543,7 @@ def comparar_pases(a: dict, b: dict, confianza_a: dict | None = None) -> dict:
             # que se recoge en omisiones si procede, no una contradicción).
             if vb is None:
                 continue
+            desajustados.add(k)
             discrepancias.append(
                 f"{etiquetas[k]}: la extracción dice «{va if va is not None else '—'}» "
                 f"y la relectura ve «{vb}»")
@@ -565,6 +567,7 @@ def comparar_pases(a: dict, b: dict, confianza_a: dict | None = None) -> dict:
             if solo_a:
                 partes.append("la relectura no ve " + ", ".join(solo_a))
             discrepancias.append(f"{etiquetas[k]}: " + "; ".join(partes))
+            desajustados.add(k)
             conf[k] = min(ca.get(k, 1.0), 0.5)
         else:
             conf.setdefault(k, ca.get(k, 1.0))
@@ -573,6 +576,7 @@ def comparar_pases(a: dict, b: dict, confianza_a: dict | None = None) -> dict:
         if tiene_b and not tiene_a:
             discrepancias.append(f"{etiquetas[k]}: la relectura encuentra datos y la "
                                  f"extracción los dejó vacíos: «{str(b.get(k))[:160]}»")
+            desajustados.add(k)
             conf[k] = min(ca.get(k, 1.0), 0.5)
         else:
             conf.setdefault(k, ca.get(k, 1.0))
@@ -583,8 +587,10 @@ def comparar_pases(a: dict, b: dict, confianza_a: dict | None = None) -> dict:
     # —la UI y el mensaje del endpoint los enseñan— porque una «duda» sin decir
     # en qué campo mandaba al coach a revisar la ficha entera.
     orden = (*CRITICOS_ESCALARES, *CRITICOS_LISTA, *CRITICOS_TEXTO)
+    # Un campo ya listado como desajuste no se repite como «confianza baja».
     poca_confianza = [k for k in orden
-                      if a.get(k) not in (None, [], "") and conf.get(k, 1.0) < 0.85]
+                      if k not in desajustados and a.get(k) not in (None, [], "")
+                      and conf.get(k, 1.0) < 0.85]
     needs_review = bool(discrepancias) or bool(poca_confianza)
     return {"discrepancies": discrepancias, "omissions": omisiones,
             "confidence": conf, "needs_review": needs_review,
