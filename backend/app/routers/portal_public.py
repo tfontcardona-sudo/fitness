@@ -448,7 +448,10 @@ def portal_upload_anamnesis_pdf(
     except DocumentValidationError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     # Al cliente solo le contamos lo que le afecta (nada de detalles internos).
-    return {"ok": True, "portal_access": res.get("portal_access")}
+    # `redirected_to`: lo que mandó no era el cuestionario (una analítica, un
+    # informe) — se guardó como adjunto y le falta la anamnesis.
+    return {"ok": True, "portal_access": res.get("portal_access"),
+            "redirected_to": res.get("redirected_to")}
 
 
 @router.post("/{token}/adjuntos")

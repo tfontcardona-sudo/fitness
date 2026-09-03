@@ -245,6 +245,15 @@ la seguridad del sistema (dietas/ejercicios mal calculados).
   `injuries_notes` como **sidecar JSON** en
   `clients/{id}/documents/_anamnesis_analysis.json`. En `generate-plan` ese
   análisis se carga y se pasa al prompt del núcleo para personalizar el plan.
+- **LECTOR UNIVERSAL (septiembre 2026):** la anamnesis ya NO tiene que ser el
+  PDF oficial. Cualquier fichero (PDF, Word, fotos —varias = un documento—,
+  Excel, texto) pasa por `services/document_reader.normalizar[_varios]` →
+  `AIClient.read_document_json` → `extraction.extract_anamnesis_from_document`
+  (prompt por SIGNIFICADO + doble pase de verificación). La subida LEE antes de
+  guardar y desvía a ADJUNTO lo que no es un cuestionario. Los adjuntos también
+  se leen (`services/attachments.py`) y entran en las notas de la ficha y en el
+  contexto de generación. Un plan AJENO se importa con `services/plan_import.py`
+  (la IA transcribe, el backend pone las cifras). Ver §9, entrada 02/03-09-2026.
 - **Al subir el PDF, la ficha se rellena en vivo sin recargar:** la subida lee con
   IA y `ClientDocuments` llama a `onUploaded` → el perfil refetchea el cliente y
   la pestaña Anamnesis muestra los campos al instante.
@@ -361,11 +370,19 @@ POST /api/clients                          Crear cliente.
 GET  /api/clients/{id}                     Ficha del cliente.
 PATCH /api/clients/{id}                    Editar ficha (registra diff en auditoría).
 
-POST /api/clients/{id}/documents           Subir anamnesis PDF (borra anterior +
-                                           la LEE con IA automáticamente).
+POST /api/clients/{id}/documents           Subir anamnesis (PDF/Word/fotos/Excel/texto; `file` o `files`;
+                                           LEE antes de reemplazar; desvía a adjunto lo que no es cuestionario)
+                                           o `kind=adjunto` (se LEE también).
 GET  /api/clients/{id}/documents           Listar documentos.
 GET  /api/clients/{id}/documents/{name}    Descargar un documento (requiere JWT).
-POST /api/clients/{id}/read-anamnesis      Leer el PDF con IA y rellenar la ficha.
+POST /api/clients/{id}/read-anamnesis      Leer la anamnesis (cualquier formato) con IA y rellenar la ficha.
+POST /api/clients/{id}/documents/{name}/read  (Re)leer un documento: adjunto → ficha; anamnesis → como arriba.
+DELETE /api/clients/{id}/documents/{name}  Borrar documento (un adjunto leído retira su bloque de la ficha).
+GET  /api/clients/{id}/attachments         Adjuntos LEÍDOS: resumen, alertas, marcadores fuera de rango.
+GET  /api/clients/{id}/anamnesis-analysis  Síntesis + contradicciones + verificación 2º pase + inventario + adjuntos.
+POST /api/clients/{id}/plans/import-document          PREVIEW de un plan desde un documento ajeno (IA transcribe).
+POST /api/clients/{id}/plans/import-document/confirm  Crea el borrador (camino de copiar_a_cliente).
+POST /api/p/{token}/adjuntos               (Portal) el cliente sube analítica/informes; se leen; push al coach.
 POST /api/clients/{id}/generate-plan       Generar el plan mensual con IA (borrador).
 
 GET  /api/anamnesis-template               Descargar la plantilla PDF en blanco.
@@ -406,7 +423,7 @@ GET  /api/p/{token}/feedback               (Portal) feedbacks ENVIADOS (sent_at)
 cd backend && python -m pytest tests/ -q
 ```
 
-- **749 tests en verde** en base de datos limpia y migrada a head, y también
+- **~790 tests en verde** en base de datos limpia y migrada a head, y también
   **en orden inverso** (`ls tests/test_*.py | sort -r`): correrlos al revés es
   la forma barata de destapar tests que solo pasan por lo que corrió antes
   (destapó dos fallos reales de aislamiento).
@@ -459,6 +476,93 @@ npm run check:portapapeles  # una sola puerta al portapapeles (`lib/clipboard`)
 ---
 
 ## 9. Trabajo pendiente / próximos pasos
+
+0000000000000000000000. ✅ **LECTOR UNIVERSAL DE DOCUMENTOS (02/03-09-2026).** Petición
+   del dueño: cualquier camino de DQR que lea información tiene que leer
+   CUALQUIER documento, con la estructura que sea, y hacer después lo que toque
+   (ficha, planificación, análisis). Hasta aquí la lectura estaba atada a dos
+   formas conocidas (el PDF oficial de la anamnesis y el Word que generamos) y
+   todo lo demás se rechazaba en la puerta («Solo se admiten archivos PDF») o
+   ni se leía (los adjuntos). Implementado y en verde:
+   - **`services/document_reader.py`** — normaliza CUALQUIER fichero a bloques
+     que la IA lee en su forma nativa: PDF → bloque `document` (troceado a 100
+     págs con pypdf); Word/ODT/RTF/DOC → LibreOffice a PDF (`office_bytes_to_pdf`,
+     tablas intactas) con RESERVA de texto de python-docx si la conversión falla;
+     fotos → enderezadas por EXIF, ≤1568 px, JPEG ≤5 MB, **varias fotos = UN
+     documento** (se guardan como un PDF de N páginas); Excel → tabla de texto
+     (openpyxl; Calc no está en la imagen); texto/CSV/MD tal cual. **La magia
+     manda sobre el nombre.** HEIC e ilegibles → `DocumentoIlegible` con mensaje
+     para humanos. Deps nuevas: `pypdf`, `openpyxl`.
+   - **`AIClient.read_document_json`** (+ `_raw_call_with_blocks`): la ÚNICA ruta
+     real para leer documentos (image/document/text), `cache_control` en el
+     último bloque, mismo trato del corte por longitud que `generate_json`.
+     `read_pdf_json`/`_raw_call_with_pdf` son ya atajos de esta.
+   - **Anamnesis desde cualquier forma** (`ai/extraction.py`): el prompt busca
+     INFORMACIÓN, no casillas (cuestionario de otro profesional, fotos de una
+     hoja manuscrita, WhatsApp pegado, Excel…); `document_kind`,
+     `source_inventory` (qué contenía), `unmapped_info` (lo sin casilla → va a
+     `lifestyle_notes` como «Otros datos del documento», no se pierde) y
+     `confidence` por campo crítico. **DOBLE PASE §5 por fin cableado**
+     (`verificar_extraccion` + `comparar_pases`, flag `EXTRACTION_DOUBLE_PASS`):
+     una relectura del MISMO documento (cacheado → ~10 %) comprueba los campos
+     críticos; las discrepancias se ENSEÑAN al coach (`verification` en la
+     respuesta, el sidecar y `GET /anamnesis-analysis`), nunca se resuelven
+     solas; dos lecturas que coinciden suben la confianza.
+   - **LEER ANTES DE GUARDAR + DESVÍO** (`ingest_anamnesis_document`): la subida
+     de la anamnesis lee el documento ANTES de tocar la anterior; si la IA lo
+     clasifica como analítica/informe/plan (`_KINDS_NO_ANAMNESIS`) se guarda
+     como ADJUNTO y se lee como tal (`redirected_to: "adjunto"`, aviso, push al
+     coach si vino del portal) — así una analítica subida por el botón
+     equivocado ni borra el cuestionario ni pisa la historia clínica. El 2º pase
+     no se paga en esos casos. «Leer con IA» sobre el fichero ya guardado
+     conserva el aviso `document_warning`.
+   - **Adjuntos LEÍDOS** (`services/attachments.py`): la analítica/informe que
+     antes se guardaba y nadie leía se transcribe (`AttachmentExtraction`:
+     marcadores con rango y bandera, clínica, lesiones, medicación, suplementos,
+     pautas previas, ALERTAS) y se fusiona en las notas de la ficha con un
+     BLOQUE MARCADO `[Adjunto: stem]` por adjunto — idempotente al releer, se
+     retira al borrar, nunca pisa lo del coach; la analítica va compacta (fuera
+     de rango una línea por marcador; normales agrupados). Sidecar
+     `_adjunto_<stem>.json`; `attachment_context()` entra en `deep_analysis`
+     de `generate-plan` (y por las notas, en el panel §9 y `safety_gate`).
+   - **Plan desde un documento AJENO** (`services/plan_import.py`): la IA
+     TRANSCRIBE (`PlanDocumentExtraction`); el backend pone las cifras — kcal/
+     macros del CONTRATO (`_contrato_del_destino`; si el documento declara
+     otras, se avisa), ejercicios contra la biblioteca (canónico+alias+palabras
+     clave, único candidato; lo demás se avisa y no entra), alimentos contra la
+     base con macros recalculados (sin gramos → se conserva lo escrito + aviso,
+     tag `macros_por_revisar`), tomas con hora por NOMBRE, «2 min» → 120 s,
+     menú por días → `strict`. PREVIEW sin persistir + CONFIRM → borrador por
+     `copiar_a_cliente` (reescala, completa, avisos de seguridad; cazó el
+     alérgeno «leche» de un cliente con lactosa en el primer smoke test).
+   - **Endpoints**: `POST /clients/{id}/documents` acepta `file` o `files` y
+     cualquier formato (kind anamnesis|adjunto; el adjunto SE LEE, best-effort);
+     `POST /clients/{id}/documents/{name}/read`; `DELETE /clients/{id}/documents/{name}`;
+     `GET /clients/{id}/attachments`; `GET /clients/{id}/documents/{name}` sirve
+     el MIME real; `GET /anamnesis-analysis` devuelve verificación/inventario/
+     sin casilla/adjuntos; `POST /clients/{id}/plans/import-document` (+
+     `/confirm`); portal: `POST /p/{token}/anamnesis-pdf` acepta `files` (fotos)
+     y `POST /p/{token}/adjuntos` (cualquier estado salvo inactivo, tope 12,
+     push al coach con lo hallado).
+   - **Frontend**: `lib/documentos.ts` (lista de aceptación compartida), subida
+     multi-fichero en `ClientDocuments` (badge de formato, resumen/alertas/
+     fuera de rango por adjunto, «Leer con IA», «Borrar»), pestaña Anamnesis con
+     discrepancias del 2º pase, aviso de documento, inventario y adjuntos
+     leídos; «Importar desde documento» en Planificación (preview + «Crear
+     borrador»); portal: anamnesis en PDF/Word/fotos y bloque «Analítica o
+     informes».
+   - **Tests**: `tests/test_lector_universal.py` — normalización de cada
+     formato, cliente IA con reintento, anamnesis desde notas de WhatsApp,
+     doble pase (coincidencia/discrepancia/fallo), desvío a adjunto, adjuntos
+     (fusión idempotente, borrado, contexto), endpoints de ficha y portal, plan
+     ajeno (cifras del contrato, ejercicios sin biblioteca, alérgeno cazado,
+     menú strict, 422s).
+   - ⚠️ Gotchas nuevos: en tests, la IA falsa para documentos sustituye
+     `AIClient._raw_call_with_blocks` y debe poner `settings.anthropic_api_key`
+     (el constructor corta sin clave); `_convierte` se sigue llamando con la
+     firma vieja para `.docx` (los tests lo sustituyen así); en este sandbox
+     LibreOffice no carga ficheros (la reserva de texto cubre) — en la imagen
+     Docker sí.
 
 000000000000000000000. ✅ **FUSIÓN DE LAS CINCO SESIONES + VERIFICACIÓN
    ADVERSARIAL DEL RESULTADO (31-08-2026). INVENTARIO A CERO.** Las ocho tandas

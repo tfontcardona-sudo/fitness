@@ -532,18 +532,43 @@ def test_diez_fotos_del_cuestionario_son_una_anamnesis_en_pdf(http, db, monkeypa
 
 
 @db_required
-def test_una_analitica_subida_como_anamnesis_avisa_pero_no_se_pierde(http, db, monkeypatch):
-    ext = {**_EXTRACCION_WHATSAPP, "document_kind": "analitica", "sex": None, "goal_type": None}
-    ScriptedDocs([ext, _VERIFICACION_OK]).instalar(monkeypatch)
+def test_una_analitica_subida_como_anamnesis_se_desvia_a_adjunto_sin_tocar_la_anamnesis(http, db, monkeypatch):
+    """El botón equivocado no puede costar el cuestionario: la subida LEE antes
+    de guardar y, si la IA ve una analítica/informe/plan, lo guarda como
+    ADJUNTO (fusión sin pisar), sin 2º pase y sin tocar la anamnesis."""
+    from app.models import Client
+    from app.services.storage import anamnesis_documents, list_documents
+
+    # 1) una anamnesis de verdad
+    ScriptedDocs([_EXTRACCION_WHATSAPP, _VERIFICACION_OK]).instalar(monkeypatch)
     c = _cliente(db)
+    r0 = http.post(f"/api/clients/{c.id}/documents", headers=_auth(),
+                   files={"file": ("cuestionario.pdf", _pdf(1), "application/pdf")})
+    assert r0.status_code == 200 and r0.json()["redirected_to"] is None
+    nombre_anamnesis = anamnesis_documents(c.id)[0]["name"]
+    db.expire_all()
+    notas_antes = db.get(Client, c.id).medical_notes
+    # 2) la analítica por el botón equivocado
+    ext = {**_EXTRACCION_WHATSAPP, "document_kind": "analitica", "sex": None,
+           "goal_type": None, "start_weight_kg": None}
+    guion = ScriptedDocs([ext, _analitica().model_dump()]).instalar(monkeypatch)
     r = http.post(f"/api/clients/{c.id}/documents", headers=_auth(),
                   files={"file": ("analitica.pdf", _pdf(1), "application/pdf")})
-    assert r.status_code == 200
-    assert "parece «analitica»" in r.json()["document_warning"]
+    assert r.status_code == 200, r.text
+    b = r.json()
+    assert b["redirected_to"] == "adjunto" and b["name"].startswith("adjunto_")
+    assert "parece «analitica»" in b["document_warning"] and "no se ha tocado" in b["document_warning"]
+    assert b["read_ok"] is True and b["attachment"]["document_kind"] == "analitica"
+    # una lectura de anamnesis (sin 2º pase, que sería gasto tirado) + una de adjunto
+    assert len(guion.calls) == 2 and "REVISOR" not in guion.calls[1]["system"]
+    # la anamnesis es la misma; la ficha conserva lo suyo y SUMA el bloque
+    assert [d["name"] for d in anamnesis_documents(c.id)] == [nombre_anamnesis]
+    assert sum(1 for d in list_documents(c.id) if d["kind"] == "adjunto") == 1
     db.expire_all()
-    from app.models import Client
-
-    assert "TSH 4.9" in db.get(Client, c.id).medical_notes
+    cli = db.get(Client, c.id)
+    assert cli.medical_notes.startswith(notas_antes.splitlines()[0])
+    assert "[Adjunto:" in cli.medical_notes and "Glucosa 101" in cli.medical_notes
+    assert cli.sex == "female" and cli.start_weight_kg == 68.4   # nada pisado
 
 
 @db_required
@@ -641,6 +666,25 @@ def test_el_cliente_sube_su_analitica_desde_el_portal_y_el_coach_se_entera(http,
     assert "Glucosa 101" in db.get(Client, c.id).medical_notes
     assert avisos and "ha subido un documento" in avisos[0]["title"]
     assert "Glucosa" in avisos[0]["body"]
+
+
+@db_required
+def test_el_cliente_que_manda_un_informe_como_anamnesis_no_lo_pierde_y_el_coach_lo_sabe(http, db, monkeypatch):
+    from app.services import push as push_svc
+    from app.services.storage import anamnesis_documents, list_documents
+
+    avisos = []
+    monkeypatch.setattr(push_svc, "send_to_coach", lambda db_, payload: avisos.append(payload))
+    ext = {**_EXTRACCION_WHATSAPP, "document_kind": "informe_medico"}
+    ScriptedDocs([ext, _analitica().model_dump()]).instalar(monkeypatch)
+    c = _cliente(db)
+    r = http.post(f"/api/p/{c.portal_token}/anamnesis-pdf",
+                  files={"file": ("informe.pdf", _pdf(1), "application/pdf")})
+    assert r.status_code == 200, r.text
+    assert r.json()["ok"] is True and r.json()["redirected_to"] == "adjunto"
+    assert anamnesis_documents(c.id) == []                     # sigue faltando el cuestionario
+    assert [d["kind"] for d in list_documents(c.id)] == ["adjunto"]
+    assert avisos and "Falta su cuestionario" in avisos[0]["body"]
 
 
 @db_required

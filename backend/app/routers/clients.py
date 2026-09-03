@@ -949,6 +949,56 @@ def ingest_anamnesis_document(db: Session, client_id: int,
     except DocumentoIlegible as exc:
         raise DocumentValidationError(str(exc)) from exc
 
+    # LEER ANTES DE GUARDAR. Así sabemos qué ES el documento antes de tocar
+    # la anamnesis que hubiera: si el coach (o el cliente) sube por aquí una
+    # analítica, un informe o un plan, NO puede borrarle el cuestionario ni
+    # pisar su historia clínica con el resumen de un análisis de sangre — se
+    # desvía al carril de ADJUNTOS, que fusiona sin pisar. La lectura es
+    # best-effort: si la IA falla, la subida vale igual y el coach lo verá.
+    lectura = None
+    read_error = None
+    try:
+        lectura = _extraer_anamnesis(documento)
+    except HTTPException as exc:
+        read_error = exc.detail if isinstance(exc.detail, str) else (
+            exc.detail.get("error") if isinstance(exc.detail, dict) else "Error al leer")
+    except Exception as exc:  # noqa: BLE001 — nunca dejar caer la subida
+        read_error = str(exc)
+
+    kind_leido = (lectura.extraction.document_kind or "") if lectura is not None else ""
+    if kind_leido in _KINDS_NO_ANAMNESIS:
+        from app.services.storage import anamnesis_documents as _anam_docs
+
+        res = ingest_attachment(db, client_id, None, by=by, documento=documento)
+        falta = not _anam_docs(client_id)
+        client = db.get(Client, client_id)
+        res["redirected_to"] = "adjunto"
+        res["document_kind"] = kind_leido
+        res["verification"] = None
+        res["document_warning"] = (
+            f"El documento parece «{kind_leido.replace('_', ' ')}», no un cuestionario de "
+            "anamnesis: se ha guardado como ADJUNTO y leído como tal; la anamnesis no se "
+            "ha tocado." + (" Falta el cuestionario." if falta else ""))
+        log_event(db, "client", client_id, "anamnesis_upload_redirected",
+                  {"kind": kind_leido, "file": res.get("name"), "by": by})
+        db.commit()
+        if by == "client" and client is not None:
+            try:
+                from app.services import push as push_svc
+
+                push_svc.send_to_coach(db, {
+                    "title": f"📎 {client.full_name} ha subido un documento",
+                    "count": 1,
+                    "body": (f"Lo envió como anamnesis pero es «{kind_leido.replace('_', ' ')}»: "
+                             "guardado como adjunto." + (" Falta su cuestionario." if falta else "")),
+                    "url": f"/clientes/{client.id}?tab=anamnesis",
+                    "tag": f"adjunto-{client.id}-{res.get('name')}",
+                })
+                db.commit()
+            except Exception:  # noqa: BLE001
+                db.rollback()
+        return res
+
     # VALIDAR ANTES DE BORRAR: la anamnesis es el documento maestro. Antes se
     # borraba la anterior y LUEGO se validaba la nueva — un archivo corrupto o
     # demasiado grande destruía la anamnesis existente y dejaba al cliente sin
@@ -983,21 +1033,22 @@ def ingest_anamnesis_document(db: Session, client_id: int,
     db.commit()
     name = rel.rsplit("/", 1)[-1]
 
-    # Tras subir, intentar leer la anamnesis con IA y pre-rellenar la ficha.
-    # Si la lectura falla, la subida sigue siendo válida (no rompe el proceso):
-    # el coach podrá pulsar "Leer con IA" o rellenar a mano.
+    # Aplicar la lectura (ya hecha arriba) a la ficha. Si la lectura falló, la
+    # subida sigue siendo válida (no rompe el proceso): el coach podrá pulsar
+    # "Leer con IA" o rellenar a mano.
     read_ok = False
-    read_error = None
-    lectura: dict = {}
-    try:
-        lectura = _do_read_anamnesis(client_id, db, documento=documento)
-        read_ok = True
-    except HTTPException as exc:
-        read_error = exc.detail if isinstance(exc.detail, str) else (
-            exc.detail.get("error") if isinstance(exc.detail, dict) else "Error al leer"
-        )
-    except Exception as exc:  # nunca dejar caer la subida por un fallo de lectura
-        read_error = str(exc)
+    datos: dict = {}
+    if lectura is not None:
+        try:
+            datos = _aplicar_lectura(client_id, db, documento, lectura, fuente=name)
+            read_ok = True
+        except HTTPException as exc:
+            read_error = exc.detail if isinstance(exc.detail, str) else (
+                exc.detail.get("error") if isinstance(exc.detail, dict) else "Error al aplicar"
+            )
+        except Exception as exc:  # noqa: BLE001 — nunca dejar caer la subida
+            db.rollback()
+            read_error = str(exc)
 
     # Acceso del cliente al portal: la PRIMERA vez que se registra la anamnesis
     # se le envía por email su acceso (usuario = email + contraseña + enlace de
@@ -1039,25 +1090,28 @@ def ingest_anamnesis_document(db: Session, client_id: int,
             "read_error": read_error, "portal_access": access_status,
             "format": documento.extension, "document": documento.descripcion,
             "avisos": list(documento.avisos),
-            "verification": lectura.get("verification") if lectura else None,
-            "document_kind": lectura.get("document_kind") if lectura else None,
-            "document_warning": lectura.get("document_warning") if lectura else None}
+            "verification": datos.get("verification") if datos else None,
+            "document_kind": datos.get("document_kind") if datos else None,
+            "document_warning": datos.get("document_warning") if datos else None,
+            "redirected_to": None}
 
 
 def ingest_attachment(db: Session, client_id: int,
-                      ficheros: list[tuple[bytes, str | None]], *, by: str = "coach",
-                      leer: bool = True) -> dict:
+                      ficheros: list[tuple[bytes, str | None]] | None, *, by: str = "coach",
+                      leer: bool = True, documento=None) -> dict:
     """Guarda un ADJUNTO (analítica, informe, pauta previa) en cualquier
     formato y lo LEE con IA: lo leído se vuelca en las notas de la ficha (bloque
     marcado, idempotente), en su sidecar y en el contexto de generación.
     La lectura es best-effort: si falla, el adjunto queda guardado y se puede
-    releer con «Leer» desde la ficha."""
+    releer con «Leer» desde la ficha. `documento` permite entrar con un
+    documento YA normalizado (el desvío desde la subida de la anamnesis)."""
     from app.services.document_reader import DocumentoIlegible, normalizar_varios
 
-    try:
-        documento = normalizar_varios(ficheros)
-    except DocumentoIlegible as exc:
-        raise DocumentValidationError(str(exc)) from exc
+    if documento is None:
+        try:
+            documento = normalizar_varios(ficheros or [])
+        except DocumentoIlegible as exc:
+            raise DocumentValidationError(str(exc)) from exc
     nombre = documento.nombre
     if not nombre.startswith("adjunto_"):
         nombre = f"adjunto_{nombre}"
@@ -2532,17 +2586,35 @@ def _anamnesis_analysis_path(client_id: int):
 _KINDS_NO_ANAMNESIS = {"analitica", "informe_medico", "plan_dieta", "plan_entreno"}
 
 
+def _extraer_anamnesis(documento):
+    """Lee el documento con IA (extracción + 2º pase). El 2º pase SOLO se paga
+    si el documento es un cuestionario: para una analítica o un plan que van a
+    desviarse a adjuntos sería gasto tirado. Lanza HTTPException 502 legible."""
+    from app.config import settings
+    from app.services.ai.client import AIClient, AIGenerationError
+    from app.services.ai.extraction import (extract_anamnesis_from_document,
+                                            verificar_extraccion)
+
+    try:
+        ai = AIClient()
+        lectura = extract_anamnesis_from_document(documento, ai, verify=False)
+        if settings.extraction_double_pass and \
+                (lectura.extraction.document_kind or "") not in _KINDS_NO_ANAMNESIS:
+            lectura.verification = verificar_extraccion(documento, lectura.extraction, ai)
+    except AIGenerationError as exc:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            detail={"message": "La IA no pudo leer la anamnesis.", "error": str(exc)},
+        ) from exc
+    return lectura
+
+
 def _do_read_anamnesis(client_id: int, db: Session, *, documento=None) -> dict:
     """Lee la anamnesis del cliente con IA —el documento más reciente, en el
-    formato que sea— y pre-rellena su ficha. Reutilizado por la subida
-    (automático, con el documento ya normalizado) y por «Leer con IA»."""
-    import json as _json
-
-    from app.services.ai.client import AIClient, AIGenerationError
-    from app.services.ai.extraction import extract_anamnesis_from_document
+    formato que sea— y pre-rellena su ficha («Leer con IA»)."""
     from app.services.document_reader import DocumentoIlegible, normalizar
 
-    client = _client_or_404_docs(db, client_id)
+    _client_or_404_docs(db, client_id)
     # Solo la ANAMNESIS: un adjunto (analítica) subido después no puede
     # convertirse en "el documento más reciente" que la IA lee como cuestionario.
     from app.services.storage import anamnesis_documents
@@ -2559,13 +2631,16 @@ def _do_read_anamnesis(client_id: int, db: Session, *, documento=None) -> dict:
         except DocumentoIlegible as exc:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     fuente = docs[0]["name"] if docs else documento.nombre
-    try:
-        lectura = extract_anamnesis_from_document(documento, AIClient())
-    except AIGenerationError as exc:
-        raise HTTPException(
-            status.HTTP_502_BAD_GATEWAY,
-            detail={"message": "La IA no pudo leer la anamnesis.", "error": str(exc)},
-        ) from exc
+    lectura = _extraer_anamnesis(documento)
+    return _aplicar_lectura(client_id, db, documento, lectura, fuente=fuente)
+
+
+def _aplicar_lectura(client_id: int, db: Session, documento, lectura, *, fuente: str) -> dict:
+    """Vuelca una lectura ya hecha en la ficha (no pisa con null), detecta
+    contradicciones, guarda el sidecar y devuelve los datos para la UI."""
+    import json as _json
+
+    client = _client_or_404_docs(db, client_id)
     extracted = lectura.extraction
     verificacion = lectura.verification
 
