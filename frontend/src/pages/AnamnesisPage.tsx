@@ -10,6 +10,7 @@ import {
   FileUp,
   Loader2,
 } from "lucide-react";
+import { ACEPTA_DOCUMENTOS } from "../lib/documentos";
 
 /**
  * Página PÚBLICA de la anamnesis (/anamnesis/{token}) — llega por el email o
@@ -189,10 +190,19 @@ export default function AnamnesisPage() {
   const [consentimientoFirmado, setConsentimientoFirmado] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tokenBad, setTokenBad] = useState(false);
-  // Vía PDF alternativa (plegada al pie).
-  const [file, setFile] = useState<File | null>(null);
+  // Vía alternativa (plegada al pie): PDF, Word o FOTOS del cuestionario.
+  // Varias fotos (una por página) viajan juntas como UN documento.
+  const [files, setFiles] = useState<File[]>([]);
   const [pdfState, setPdfState] = useState<"idle" | "uploading" | "done">("idle");
   const [pdfError, setPdfError] = useState<string | null>(null);
+  // El documento se guardó pero NO era el cuestionario (informe, analítica):
+  // se avisa sin dar la anamnesis por hecha.
+  const [pdfAviso, setPdfAviso] = useState<string | null>(null);
+  // Analítica o informes (opcional), solo con el consentimiento firmado.
+  const adjRef = useRef<HTMLInputElement>(null);
+  const [adjEstado, setAdjEstado] = useState<"idle" | "uploading" | "done">("idle");
+  const [adjError, setAdjError] = useState<string | null>(null);
+  const [adjSubidos, setAdjSubidos] = useState(0);
   // Fotos iniciales opcionales tras enviar.
   const [fotosSubidas, setFotosSubidas] = useState(0);
   const [subiendoFotos, setSubiendoFotos] = useState(false);
@@ -438,14 +448,54 @@ export default function AnamnesisPage() {
     setSubiendoFotos(false);
   }
 
+  /** Sube la anamnesis en cualquier formato. Un fichero va como `file`;
+   *  varios (fotos de cada página) como `files`, y el backend los trata como
+   *  UN documento. Si la IA ve que no es el cuestionario (informe, analítica)
+   *  lo guarda como adjunto y aquí NO se da la anamnesis por hecha. */
   async function uploadPdf() {
-    if (!file || pdfState === "uploading") return;
+    if (!files.length || pdfState === "uploading") return;
     setPdfError(null);
+    setPdfAviso(null);
     setPdfState("uploading");
     try {
       const fd = new FormData();
-      fd.append("file", file);
+      if (files.length === 1) fd.append("file", files[0]);
+      else for (const f of files) fd.append("files", f);
       const r = await fetch(`/api/p/${token}/anamnesis-pdf`, { method: "POST", body: fd });
+      let data: any = null;
+      try { data = await r.json(); } catch { /* respuesta sin cuerpo JSON */ }
+      if (!r.ok) {
+        throw new Error(typeof data?.detail === "string"
+          ? data.detail
+          : "No se pudo subir. Inténtalo de nuevo en un momento.");
+      }
+      if (data?.redirected_to === "adjunto") {
+        setPdfAviso("Hemos guardado tu documento (parece un informe o analítica), pero falta el cuestionario. Rellénalo aquí o sube la anamnesis.");
+        setFiles([]);
+        setPdfState("idle");
+        return;
+      }
+      setPdfState("done");
+      limpiarBorrador(token);
+      setHecho(true);
+    } catch (e: any) {
+      setPdfError(e?.message ?? "No se pudo subir. Inténtalo de nuevo en un momento.");
+      setPdfState("idle");
+    }
+  }
+
+  /** Analítica o informe (opcional): va a la ficha como ADJUNTO, el coach lo
+   *  ve allí. Al cliente no se le enseña ningún valor clínico. */
+  async function subirAdjunto(lista: FileList | null) {
+    const fs = Array.from(lista ?? []);
+    if (!fs.length || adjEstado === "uploading") return;
+    setAdjError(null);
+    setAdjEstado("uploading");
+    try {
+      const fd = new FormData();
+      if (fs.length === 1) fd.append("file", fs[0]);
+      else for (const f of fs) fd.append("files", f);
+      const r = await fetch(`/api/p/${token}/adjuntos`, { method: "POST", body: fd });
       if (!r.ok) {
         let msg = "No se pudo subir. Inténtalo de nuevo en un momento.";
         try {
@@ -454,12 +504,11 @@ export default function AnamnesisPage() {
         } catch { /* respuesta sin cuerpo JSON */ }
         throw new Error(msg);
       }
-      setPdfState("done");
-      limpiarBorrador(token);
-      setHecho(true);
+      setAdjSubidos((n) => n + 1);
+      setAdjEstado("done");
     } catch (e: any) {
-      setPdfError(e?.message ?? "No se pudo subir. Inténtalo de nuevo en un momento.");
-      setPdfState("idle");
+      setAdjError(e?.message ?? "No se pudo subir. Inténtalo de nuevo en un momento.");
+      setAdjEstado("idle");
     }
   }
 
@@ -572,6 +621,46 @@ export default function AnamnesisPage() {
                   <p className="mt-3 rounded-xl border p-3 text-center text-sm"
                     style={{ borderColor: "#C2453A", background: "#fdecea", color: "#8B1A2B" }}>
                     {fotosError}
+                  </p>
+                )}
+              </div>
+            )}
+            {/* ANALÍTICA O INFORMES (opcional): entran en la ficha como
+                adjuntos y el coach los ve allí. Aquí no se enseña ningún
+                valor clínico: solo "recibido". Mismo requisito de
+                consentimiento que las fotos (datos de salud). */}
+            {consentimientoFirmado && (
+              <div style={card}>
+                <p className="text-sm font-bold">
+                  <FileUp size={15} className="mr-1 inline" style={{ verticalAlign: "-2px" }} />
+                  Analítica o informes (opcional)
+                </p>
+                <p className="mt-1 text-sm opacity-70">
+                  Si tienes una analítica reciente o un informe médico/fisio, súbelo
+                  aquí (PDF o fotos): tu coach lo verá en tu ficha.
+                </p>
+                <input ref={adjRef} type="file" accept={ACEPTA_DOCUMENTOS} multiple className="hidden"
+                  onChange={(e) => { void subirAdjunto(e.target.files); e.target.value = ""; }} />
+                {adjEstado === "done" && (
+                  <p className="mt-3 rounded-xl border p-3 text-center text-sm font-medium"
+                    style={{ borderColor: "#cfe3cf", background: "#eef7ee", color: "#2E7D46" }}>
+                    Recibido ✓ — tu coach lo revisará
+                  </p>
+                )}
+                <button onClick={() => adjRef.current?.click()} disabled={adjEstado === "uploading"}
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-3 text-sm font-medium disabled:opacity-60"
+                  style={{ borderColor: "#cbbfa5" }}>
+                  {adjEstado === "uploading" ? <Loader2 size={16} className="animate-spin" /> : <FileUp size={16} />}
+                  {adjEstado === "uploading"
+                    ? "Subiendo…"
+                    : adjSubidos > 0
+                    ? `${adjSubidos} documento${adjSubidos === 1 ? "" : "s"} subido${adjSubidos === 1 ? "" : "s"} · subir otro`
+                    : "Subir analítica o informe"}
+                </button>
+                {adjError && (
+                  <p className="mt-3 rounded-xl border p-3 text-center text-sm"
+                    style={{ borderColor: "#C2453A", background: "#fdecea", color: "#8B1A2B" }}>
+                    {adjError}
                   </p>
                 )}
               </div>
@@ -875,37 +964,61 @@ export default function AnamnesisPage() {
               </div>
             </div>
 
-            {/* Vía alternativa: el PDF de siempre, plegado para no estorbar. */}
+            {/* Vía alternativa: el documento de siempre (PDF, Word o FOTOS de
+                la hoja rellenada), plegado para no estorbar. */}
             <details className="rounded-2xl border bg-white/60 px-5 py-4" style={{ borderColor: "#e6ddca" }}>
               <summary className="cursor-pointer text-sm font-semibold opacity-80">
-                ¿Prefieres rellenarla en PDF?
+                ¿Prefieres enviarla en PDF, Word o foto?
               </summary>
               <div className="mt-3 space-y-3">
+                <p className="text-sm opacity-70">
+                  Descarga la anamnesis, rellénala y súbela — o haz fotos de la hoja
+                  rellenada (todas las páginas en la misma subida).
+                </p>
                 <a href={`/api/p/${token}/anamnesis-template`}
                   className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white"
                   style={{ background: "#2E5E8C" }}>
                   <Download size={15} /> Descargar la anamnesis en PDF
                 </a>
-                <input ref={fileRef} type="file" accept="application/pdf" className="hidden"
-                  onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                <input ref={fileRef} type="file" accept={ACEPTA_DOCUMENTOS} multiple className="hidden"
+                  onChange={(e) => {
+                    setFiles(Array.from(e.target.files ?? []));
+                    setPdfError(null);
+                    setPdfAviso(null);
+                    e.target.value = "";
+                  }} />
                 <button onClick={() => fileRef.current?.click()}
                   className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-3 text-sm font-medium"
-                  style={{ borderColor: file ? "#2E7D46" : "#cbbfa5", color: file ? "#2E7D46" : undefined }}>
+                  style={{ borderColor: files.length ? "#2E7D46" : "#cbbfa5", color: files.length ? "#2E7D46" : undefined }}>
                   <FileUp size={16} />
-                  {file ? file.name : "Elegir el PDF rellenado"}
+                  <span className="min-w-0 truncate">
+                    {files.length > 1
+                      ? `${files.length} ficheros elegidos`
+                      : files[0]?.name ?? "Elegir el documento o las fotos"}
+                  </span>
                 </button>
+                {pdfAviso && (
+                  <p className="rounded-xl border p-3 text-center text-sm"
+                    style={{ borderColor: "#cbbfa5", background: "#efe7d6" }}>
+                    {pdfAviso}
+                  </p>
+                )}
                 {pdfError && (
                   <p className="rounded-xl border p-3 text-center text-sm"
                     style={{ borderColor: "#C2453A", background: "#fdecea", color: "#8B1A2B" }}>
                     {pdfError}
                   </p>
                 )}
-                <button onClick={uploadPdf} disabled={!file || pdfState === "uploading"}
+                <button onClick={uploadPdf} disabled={!files.length || pdfState === "uploading"}
                   className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
                   style={{ background: "#E8833A" }}>
                   {pdfState === "uploading"
                     ? <><Loader2 size={16} className="animate-spin" /> Subiendo…</>
-                    : "Enviar el PDF"}
+                    : files.length > 1
+                    ? (files.every((f) => f.type.startsWith("image/"))
+                        ? `Enviar ${files.length} fotos`
+                        : `Enviar ${files.length} ficheros`)
+                    : "Enviar el documento"}
                 </button>
               </div>
             </details>
