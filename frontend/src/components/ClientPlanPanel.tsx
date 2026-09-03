@@ -708,6 +708,9 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
         nutrition_json: docPreview.nutrition_json,
         training_json: docPreview.training_json,
         origen: docPreview.document,
+        // Lo que el Revisor determinista marcó como violación sobre el
+        // documento: sin esto el borrador nacía sin ese freno.
+        violaciones: docPreview.violaciones ?? [],
       });
       setDocPreview(null);
       // El borrador nuevo es lo que hay que enseñar (con un plan activo, el

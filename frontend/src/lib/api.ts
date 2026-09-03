@@ -288,6 +288,9 @@ export interface PlanImportPreview {
   document_kind: string | null;
   document: string;
   document_description: string;
+  /** Violaciones del Revisor determinista sobre lo importado: viajan al
+   *  confirmar para que el borrador quede RETENIDO hasta resolverlas. */
+  violaciones?: string[];
 }
 
 /** Un solo File → campo `file`; varios (p. ej. fotos de cada página) → cada
@@ -579,7 +582,7 @@ export const api = {
       _formDocumentos(files)),
   /** Confirma la preview: crea el BORRADOR. Devuelve lo mismo que copiar de
    *  la biblioteca (`applyFromLibrary`). */
-  confirmPlanDocument: (clientId: number, body: { nutrition_json: any | null; training_json: any | null; origen: string }) =>
+  confirmPlanDocument: (clientId: number, body: { nutrition_json: any | null; training_json: any | null; origen: string; violaciones?: string[] }) =>
     request<{
       id: number; month_index: number; version: number; status: string;
       guardrail_flags: string[]; nutrition: any; training: any; education: any;
