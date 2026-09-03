@@ -8,6 +8,7 @@ import type { ClientOut } from "../types";
 import { ExpandableArea, Spinner, useToast } from "./ui";
 import { ACTIVITY_LABEL, ageFrom, DIET_LABEL, DIET_PATTERN_LABEL, GOAL_LABEL, LEVEL_LABEL, PLACE_LABEL } from "../lib/format";
 import { isCriticalLine, isRelevantClinical } from "../lib/clinical";
+import { resumenDudas } from "../lib/documentos";
 
 /** Lo que dejó anotado la LECTURA del documento, además de la síntesis y las
  *  contradicciones: la verificación por relectura, el inventario de lo que
@@ -51,7 +52,13 @@ function lecturaDe(a: Partial<LecturaInfo> | null | undefined): LecturaInfo {
  * En ambos casos el coach revisa y corrige antes de generar (seguridad). El
  * PATCH del backend registra el diff campo a campo (audit trail).
  */
-export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client: ClientOut; onSaved: () => void; onDirtyChange?: (dirty: boolean) => void }) {
+export function ClientAnamnesisTab({ client, onSaved, onDirtyChange, reloadKey = 0 }: {
+  client: ClientOut; onSaved: () => void; onDirtyChange?: (dirty: boolean) => void;
+  /** Sube cuando la tarjeta lateral sube/relee/borra un documento: sin él la
+   *  pestaña seguía con el nombre del fichero BORRADO, «Leer con IA» apagado
+   *  tras la primera subida y la verificación nueva invisible. */
+  reloadKey?: number;
+}) {
   const toast = useToast();
   const [draft, setDraft] = useState<Partial<ClientOut>>({});
   const [busy, setBusy] = useState(false);
@@ -83,11 +90,11 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
     api.anamnesisAnalysis(client.id)
       .then((a) => {
         setContradicciones(a.contradictions ?? []);
-        setAnalysis((prev) => prev ?? a.deep_analysis ?? null);
+        setAnalysis(a.deep_analysis ?? null);
         setLectura(lecturaDe(a));
       })
       .catch(() => {});
-  }, [client.id]);
+  }, [client.id, reloadKey]);
 
   function openPdf() {
     if (!pdfName) return;
@@ -229,22 +236,36 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
       {(() => {
         const disc = lectura.verification?.discrepancies ?? [];
         const omis = lectura.verification?.omissions ?? [];
+        const bajos = lectura.verification?.low_confidence_labels ?? [];
         const skipped = lectura.verification?.skipped;
-        if (!disc.length && !omis.length) {
+        // Tres motivos de duda, cada uno con su nombre: desajustes entre las
+        // dos lecturas, campos con confianza baja (la relectura no los vio o
+        // el extractor los dio por dudosos) y datos echados en falta. Con
+        // solo confianza baja, antes no se pintaba nada y el toast decía
+        // «no coincide en 0 datos».
+        if (!disc.length && !omis.length && !bajos.length) {
           return skipped
             ? <p className="text-xs text-zinc-500">Sin segunda lectura: {skipped}</p>
             : null;
         }
-        const n = disc.length || omis.length;
         return (
           <div className="card p-4" style={{ borderColor: "#9A6B15" }}>
             <p className="mb-1 text-xs font-semibold uppercase tracking-wide" style={{ color: "#9A6B15" }}>
-              ⚠ La relectura no coincide en {n} dato{n === 1 ? "" : "s"} crítico{n === 1 ? "" : "s"}
+              ⚠ {resumenDudas(lectura.verification) ?? "La relectura deja dudas"}
             </p>
             {disc.length > 0 && (
-              <ul className="list-disc space-y-0.5 pl-4 text-sm text-zinc-300">
-                {disc.map((d, i) => <li key={i}>{d}</li>)}
-              </ul>
+              <>
+                <p className="mt-2 text-xs font-medium text-zinc-400">Datos en los que las dos lecturas no coinciden</p>
+                <ul className="list-disc space-y-0.5 pl-4 text-sm text-zinc-300">
+                  {disc.map((d, i) => <li key={i}>{d}</li>)}
+                </ul>
+              </>
+            )}
+            {bajos.length > 0 && (
+              <p className="mt-2 text-sm text-zinc-300">
+                <span className="text-xs font-medium text-zinc-400">Confianza baja en: </span>
+                {bajos.join(", ")}
+              </p>
             )}
             {omis.length > 0 && (
               <>

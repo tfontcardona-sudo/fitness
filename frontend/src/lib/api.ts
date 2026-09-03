@@ -220,6 +220,10 @@ export interface DocumentVerification {
   confidence?: Record<string, number>;
   needs_review?: boolean;
   skipped?: string;
+  // Campos críticos con confianza < 0,85 (clave interna y etiqueta en español):
+  // el motivo de una duda cuando no hay desajustes que contar.
+  low_confidence?: string[];
+  low_confidence_labels?: string[];
 }
 
 /** Descripción del documento leído ("PDF de 10 páginas", "3 fotos"…). */

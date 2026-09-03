@@ -2746,11 +2746,13 @@ def read_anamnesis_with_ai(client_id: int, db: Session = Depends(get_db)) -> dic
     """Lee la anamnesis más reciente del cliente (cualquier formato) con IA y
     pre-rellena su ficha."""
     data = _do_read_anamnesis(client_id, db)
+    from app.services.ai.extraction import resumen_de_dudas
+
     ver = data.get("verification") or {}
     msg = "Anamnesis leída. Revisa los datos antes de generar el plan."
-    if ver.get("needs_review"):
-        msg = ("Anamnesis leída, con DUDAS en campos críticos: la relectura no coincide en "
-               f"{len(ver.get('discrepancies') or [])} dato(s). Revísalos antes de generar.")
+    dudas = resumen_de_dudas(ver)
+    if dudas:
+        msg = f"Anamnesis leída, con DUDAS en campos críticos: {dudas}. Revísalos antes de generar."
     return {
         "extracted": data,
         "deep_analysis": data.get("deep_analysis"),

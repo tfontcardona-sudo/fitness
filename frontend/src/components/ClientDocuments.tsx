@@ -3,7 +3,7 @@ import { copiarConAviso } from "../lib/clipboard";
 import { CheckCircle2, Download, FileText, MessageCircle, Send, Sparkles, Trash2, Upload } from "lucide-react";
 import { api, getToken } from "../lib/api";
 import type { AttachmentSummary } from "../lib/api";
-import { ACEPTA_DOCUMENTOS } from "../lib/documentos";
+import { ACEPTA_DOCUMENTOS , resumenDudas } from "../lib/documentos";
 import { Spinner, useToast } from "./ui";
 import { anamnesisReminderMessage, openWhatsApp, portalAccessMessage, waPhone } from "../lib/whatsapp";
 import type { ClientOut } from "../types";
@@ -121,12 +121,9 @@ export function ClientDocuments({ client, onUploaded, onGoAnamnesis, portalUrl, 
           "error",
         );
       } else if (res.verification?.needs_review) {
-        const disc = res.verification.discrepancies ?? [];
-        const omis = res.verification.omissions ?? [];
-        const n = disc.length || omis.length;
-        toast.push(
-          `Leída con dudas: la relectura no coincide en ${n} dato${n === 1 ? "" : "s"} — revísalos`,
-          "error", accion);
+        // El motivo, por partes (desajustes / confianza baja en QUÉ campos /
+        // datos echados en falta): «no coincide en 0 datos» no orienta a nadie.
+        toast.push(`Leída con dudas: ${resumenDudas(res.verification)} — revísalo`, "error", accion);
       } else if (res.document_warning) {
         toast.push(res.document_warning, "error");
       } else if (res.read_ok) {

@@ -507,7 +507,10 @@ npm run check:portapapeles  # una sola puerta al portapapeles (`lib/clipboard`)
      una relectura del MISMO documento (cacheado → ~10 %) comprueba los campos
      críticos; las discrepancias se ENSEÑAN al coach (`verification` en la
      respuesta, el sidecar y `GET /anamnesis-analysis`), nunca se resuelven
-     solas; dos lecturas que coinciden suben la confianza.
+     solas; dos lecturas que coinciden suben la confianza. La duda dice EN QUÉ
+     campo (`low_confidence_labels` + `resumen_de_dudas`, espejo `resumenDudas`
+     en `lib/documentos.ts`): desajustes, confianza baja y datos echados en falta,
+     cada motivo con su nombre.
    - **LEER ANTES DE GUARDAR + DESVÍO** (`ingest_anamnesis_document`): la subida
      de la anamnesis lee el documento ANTES de tocar la anterior; si la IA lo
      clasifica como analítica/informe/plan (`_KINDS_NO_ANAMNESIS`) se guarda

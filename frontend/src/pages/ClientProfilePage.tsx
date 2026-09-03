@@ -559,7 +559,7 @@ export default function ClientProfilePage() {
               ficha de B (auditoría crítica: corrupción de datos entre fichas). */}
           <div key={`${client.id}-${tab}`} className="tab-panel">
             {tab === "resumen" && <ClientSummaryTab client={client} />}
-            {tab === "anamnesis" && <ClientAnamnesisTab client={client} onSaved={reload} onDirtyChange={setAnamnesisDirty} />}
+            {tab === "anamnesis" && <ClientAnamnesisTab client={client} onSaved={reload} onDirtyChange={setAnamnesisDirty} reloadKey={reloadKey} />}
             {tab === "planificacion" && <ClientPlanPanel client={client} onClientChanged={reload} onEditingChange={setPlanEditing} onGoTab={(t) => changeTab(t as Tab)} />}
             {tab === "seguimiento" && <ClientTrackingTab client={client} />}
             {tab === "feedback" && <ClientFeedbackTab client={client} onClientChanged={reload} onGoPlan={() => changeTab("planificacion")} />}

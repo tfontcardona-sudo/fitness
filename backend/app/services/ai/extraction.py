@@ -578,10 +578,40 @@ def comparar_pases(a: dict, b: dict, confianza_a: dict | None = None) -> dict:
             conf.setdefault(k, ca.get(k, 1.0))
     omisiones = [str(x).strip() for x in (b.get("omissions") or []) if str(x).strip()]
     criticos = set(CRITICOS_ESCALARES) | set(CRITICOS_LISTA) | set(CRITICOS_TEXTO)
-    needs_review = bool(discrepancias) or any(
-        conf.get(k, 1.0) < 0.85 for k in criticos if a.get(k) not in (None, [], ""))
+    # Campos críticos con la confianza por debajo del umbral §5 (0,85): la
+    # relectura no los vio, o el extractor los dio por dudosos. Van con nombre
+    # —la UI y el mensaje del endpoint los enseñan— porque una «duda» sin decir
+    # en qué campo mandaba al coach a revisar la ficha entera.
+    orden = (*CRITICOS_ESCALARES, *CRITICOS_LISTA, *CRITICOS_TEXTO)
+    poca_confianza = [k for k in orden
+                      if a.get(k) not in (None, [], "") and conf.get(k, 1.0) < 0.85]
+    needs_review = bool(discrepancias) or bool(poca_confianza)
     return {"discrepancies": discrepancias, "omissions": omisiones,
-            "confidence": conf, "needs_review": needs_review}
+            "confidence": conf, "needs_review": needs_review,
+            "low_confidence": poca_confianza,
+            "low_confidence_labels": [etiquetas[k] for k in poca_confianza]}
+
+
+def resumen_de_dudas(ver: dict) -> str | None:
+    """Frase para el coach con el POR QUÉ de la duda, por motivo: desajustes
+    de la relectura, campos con confianza baja y datos echados en falta. None
+    si no hay dudas. (Antes se contaban solo los desajustes: con confianza baja
+    y cero desajustes salía «no coincide en 0 datos».)"""
+    if not ver or not ver.get("needs_review"):
+        return None
+    partes = []
+    disc = ver.get("discrepancies") or []
+    if disc:
+        partes.append(f"la relectura no coincide en {len(disc)} dato{'s' if len(disc) != 1 else ''}")
+    bajos = ver.get("low_confidence_labels") or []
+    if bajos:
+        partes.append("confianza baja en " + ", ".join(bajos))
+    omis = ver.get("omissions") or []
+    if omis:
+        partes.append(f"{len(omis)} dato{'s' if len(omis) != 1 else ''} que la relectura echa en falta")
+    if not partes:
+        partes.append("la relectura deja dudas en algún campo crítico")
+    return "; ".join(partes)
 
 
 def verificar_extraccion(documento, extraida: AnamnesisExtraction, ai) -> dict:
@@ -609,7 +639,7 @@ def verificar_extraccion(documento, extraida: AnamnesisExtraction, ai) -> dict:
     except Exception as exc:  # noqa: BLE001 — el 2º pase nunca tumba la lectura
         return {"skipped": f"segundo pase no disponible: {str(exc)[:160]}",
                 "discrepancies": [], "omissions": [], "confidence": dict(extraida.confidence),
-                "needs_review": False}
+                "needs_review": False, "low_confidence": [], "low_confidence_labels": []}
     return comparar_pases(a, b.model_dump(), extraida.confidence)
 
 
@@ -638,7 +668,8 @@ def extract_anamnesis_from_document(documento, ai, *, verify: bool | None = None
     hacer = settings.extraction_double_pass if verify is None else verify
     verificacion = (verificar_extraccion(documento, extraida, ai) if hacer
                     else {"skipped": "desactivado", "discrepancies": [], "omissions": [],
-                          "confidence": dict(extraida.confidence), "needs_review": False})
+                          "confidence": dict(extraida.confidence), "needs_review": False,
+                          "low_confidence": [], "low_confidence_labels": []})
     return LecturaAnamnesis(extraida, verificacion, documento)
 
 

@@ -348,6 +348,32 @@ def test_el_segundo_pase_marca_discrepancias_criticas_sin_resolverlas_solo(monke
     assert lectura.extraction.food_allergies == ["frutos secos"]
 
 
+def test_una_duda_por_confianza_baja_dice_en_que_campo(monkeypatch):
+    """Sin desajustes pero con la relectura sin encontrar un dato crítico, la
+    duda existe (§5) y tiene que decir EN QUÉ campo: antes salía «la relectura
+    no coincide en 0 datos» y la ficha no pintaba nada."""
+    from app.services.ai.extraction import comparar_pases, resumen_de_dudas
+
+    r = comparar_pases({"sex": "male", "height_cm": 175.0, "start_weight_kg": 80.0,
+                        "food_allergies": []},
+                       {"sex": "male", "height_cm": 175.0, "start_weight_kg": None,
+                        "food_allergies": [], "omissions": []})
+    assert r["needs_review"] is True and r["discrepancies"] == []
+    assert r["low_confidence"] == ["start_weight_kg"]
+    assert r["low_confidence_labels"] == ["peso actual"]
+    assert resumen_de_dudas(r) == "confianza baja en peso actual"
+    # con todo coincidente, ninguna duda (y la confianza sube)
+    ok = comparar_pases({"sex": "male", "start_weight_kg": 80.0}, {"sex": "male", "start_weight_kg": 80.0})
+    assert ok["needs_review"] is False and resumen_de_dudas(ok) is None
+    assert ok["confidence"]["start_weight_kg"] >= 0.9
+    # varios motivos, cada uno con su nombre
+    mix = comparar_pases({"sex": "male", "start_weight_kg": 80.0},
+                         {"sex": "female", "start_weight_kg": None, "omissions": ["toma omeprazol"]})
+    txt = resumen_de_dudas(mix)
+    assert "no coincide en 1 dato" in txt and "confianza baja en peso actual" in txt
+    assert "1 dato que la relectura echa en falta" in txt
+
+
 def test_si_el_segundo_pase_falla_la_lectura_sigue_valiendo(monkeypatch):
     from app.services.ai.client import AIClient
     from app.services.ai.extraction import extract_anamnesis_from_document
