@@ -575,6 +575,24 @@ npm run check:portapapeles  # una sola puerta al portapapeles (`lib/clipboard`)
      a adjunto no actuaba y una analítica subida por el botón de la anamnesis
      BORRABA el cuestionario; ahora la anterior se CONSERVA como adjunto y se
      avisa.
+   - **Seis fallos más del importador de planes, confirmados y corregidos**: el
+     plan importado NO estaba en la lista de borradores «en construcción», así
+     que el primer guardado del editor lo PUBLICABA al cliente y `activate_plan`
+     borraba de paso los avisos de «copia:» (incluido el del ALÉRGENO) — ahora
+     hay UNA lista compartida (`plan_library.BORRADORES_EN_CONSTRUCCION`) que
+     usan la activación, el aprendizaje §13 y la alerta de «sin adaptar», y las
+     violaciones del Revisor determinista viajan al borrador con el prefijo
+     `violation:` que lo retiene. Los macros de un plato sin gramos se copiaban
+     del OBJETIVO de la toma (números que no salían de ningún alimento, y que
+     arrastraban el reescalado de las opciones buenas): ahora los gramos los
+     fija el `portion_solver` —el camino oficial— y, si algún alimento no está
+     en la base, el plato NO entra y se dice cuál. Un documento MIXTO (comidas
+     con día + sueltas) descartaba media dieta en silencio: el modo lo decide la
+     mayoría y no se tira nada. Un menú cerrado incompleto dejaba al cliente sin
+     comidas esos días: se completa la semana rotando y se avisa. Los topes (3
+     opciones por toma, 6 tomas) recortaban sin decirlo: 4 opciones y avisos de
+     todo lo que se queda fuera. Y la progresión, el cardio sin minutos y la
+     descarga que no encajan ya no se sustituyen en silencio.
    - ⚠️ Gotchas nuevos: en tests, la IA falsa para documentos sustituye
      `AIClient._raw_call_with_blocks` y debe poner `settings.anthropic_api_key`
      (el constructor corta sin clave); `_convierte` se sigue llamando con la

@@ -286,8 +286,10 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
     # tandas contaminaba las lecciones con ruido ("el coach siempre cambia X"
     # cuando estaba escribiendo X por primera vez). En cuanto el plan está
     # activo, sus ediciones sí son correcciones y sí se aprenden.
+    from app.services.plan_library import BORRADORES_EN_CONSTRUCCION
+
     es_construccion = (plan.status == "draft"
-                      and plan.generated_by in ("scaffold", "library"))
+                      and plan.generated_by in BORRADORES_EN_CONSTRUCCION)
     if diff_items and not es_construccion:
         try:
             from app.services.continuous_learning import classify_change_text, record_edit
@@ -310,9 +312,10 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
     # BASE SIN IA del cliente avanzado (generated_by="scaffold") se edita en
     # varias tandas antes de estar lista; activarla al primer guardado enviaría
     # al cliente un plan a medio hacer. Esa se activa SOLO con el botón Activar.
-    # …ni la COPIA de la biblioteca ("library"): también se adapta en varias
-    # tandas (cambiar el alérgeno señalado, quitar días…) antes de estar lista.
-    if plan.status == "draft" and plan.generated_by not in ("scaffold", "library"):
+    # …ni la COPIA de la biblioteca ("library") ni el plan IMPORTADO de un
+    # documento ajeno ("document"): también se adaptan en varias tandas
+    # (cambiar el alérgeno señalado, quitar días…) antes de estar listos.
+    if plan.status == "draft" and plan.generated_by not in BORRADORES_EN_CONSTRUCCION:
         from app.services.plan_activation import activate_plan
 
         # SEGURIDAD (auditoría 28-08): un borrador RETENIDO por los
@@ -1287,6 +1290,9 @@ class PlanImportConfirmIn(BaseModel):
     nutrition_json: dict | None = None
     training_json: dict | None = None
     origen: str = "un documento"
+    # Violaciones que devolvió la PREVIEW (Revisor determinista sobre lo
+    # importado): se guardan como flags que retienen el borrador.
+    violaciones: list[str] = []
 
 
 @router.post("/api/clients/{client_id}/plans/import-document")
@@ -1329,6 +1335,8 @@ def import_plan_document(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     r["document_description"] = documento.descripcion
     r["avisos"] = list(documento.avisos) + r["avisos"]
+    r["violaciones"] = [a[len("violation: "):] for a in r["avisos"]
+                        if str(a).startswith("violation: ")]
     log_event(db, "client", client_id, "plan_document_previewed",
               {"document": documento.nombre, "kind": ext.document_kind,
                "resumen": {k: v for k, v in r["resumen"].items() if not isinstance(v, list)}})
@@ -1357,6 +1365,13 @@ def confirm_plan_document(client_id: int, body: PlanImportConfirmIn,
         detalle = ({"message": str(exc), "missing": exc.missing} if exc.missing else str(exc))
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detalle) from exc
     plan.generated_by = "document"
+    # Las violaciones que detectó el Revisor determinista sobre el contenido
+    # importado viajan con el prefijo que RETIENE el borrador: aunque el coach
+    # pulse Activar, el guardado del editor no lo publica sin resolverlas.
+    if body.violaciones:
+        plan.guardrail_flags = list(plan.guardrail_flags or []) + [
+            v if str(v).startswith("violation:") else f"violation: {v}"
+            for v in body.violaciones[:12]]
     db.commit()
     db.refresh(plan)
     return {

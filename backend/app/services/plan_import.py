@@ -26,6 +26,7 @@ La IA no calcula; el coach confirma antes de que exista el borrador.
 """
 from __future__ import annotations
 
+import copy as _copy
 import re
 import unicodedata
 from types import SimpleNamespace
@@ -340,6 +341,34 @@ def _hora_de_toma(nombre: str, hora: str | None, indice: int, total: int) -> str
 
 # ------------------------------------------------------------ construir ----
 
+# Opciones por toma que admite el contrato (`FlexibleSlot`): el banco generado
+# usa 3, pero si el documento trae 4 no hay motivo para tirar la cuarta.
+MAX_OPCIONES = 4
+
+
+def _semana_completa(dias: dict[str, list[dict]], avisos: list[str]) -> dict[str, list[dict]]:
+    """Un menú CERRADO tiene que cubrir los 7 días: si el documento solo trae
+    unos cuantos, el portal se quedaba sin comidas el resto de la semana (y el
+    banco ni siquiera cumplía el contrato del sistema). Los días que faltan se
+    completan ROTANDO los que hay, y se dice cuáles son copia."""
+    presentes = [d for d in _DIAS if d in dias]
+    if not presentes or len(presentes) == 7:
+        return dias
+    copiados = []
+    i = 0
+    for d in _DIAS:
+        if d in dias:
+            continue
+        origen = presentes[i % len(presentes)]
+        i += 1
+        dias[d] = [{"slot": m["slot"], "dish": _copy.deepcopy(m["dish"])} for m in dias[origen]]
+        copiados.append(f"{d} (como {origen})")
+    avisos.append("El menú del documento solo cubría "
+                  f"{len(presentes)} de los 7 días: los demás se han completado repitiendo los "
+                  "que hay — " + ", ".join(copiados) + ". Cámbialos en el editor si hace falta.")
+    return dias
+
+
 _PROGRESION_DEFECTO = [
     {"week": 1, "intent": "Base", "load_pct": 100.0, "rir_target": "2",
      "volume_note": "Asienta técnica y cargas de referencia."},
@@ -410,6 +439,7 @@ def build_training(db: Session, client: Client, doc: DocTraining, avisos: list[s
     resumen["ejercicios_reconocidos"] = sum(len(s["exercises"]) for s in sesiones)
     resumen["ejercicios_sin_biblioteca"] = sin_lib
     resumen["ejercicios_asimilados"] = tomados
+    cardio_doc = doc.cardio or DocCardio()
     avisos.extend(sin_lib[:12])
     if len(sin_lib) > 12:
         avisos.append(f"… y {len(sin_lib) - 12} ejercicios más sin biblioteca.")
@@ -418,7 +448,6 @@ def build_training(db: Session, client: Client, doc: DocTraining, avisos: list[s
         return None
     pasos = {"sedentary": 7000, "light": 8000, "active": 9000,
              "very_active": 10000}.get(client.daily_activity_level or "", 8000)
-    cardio_doc = doc.cardio or DocCardio()
     cardio_ses = []
     for cs in cardio_doc.sessions:
         tipo = "hiit" if "hiit" in _norm(cs.type) or "interval" in _norm(cs.type) else "liss"
@@ -427,6 +456,18 @@ def build_training(db: Session, client: Client, doc: DocTraining, avisos: list[s
                                "times_per_week": max(1, min(7, cs.times_per_week or 2)),
                                "notes": None})
     progresion_txt = " ".join(doc.progression)[:400]
+    # Lo que el sistema NO puede representar tal cual se dice, no se traga en
+    # silencio: el coach tiene que saber qué se ha sustituido por lo estándar.
+    if doc.progression:
+        avisos.append("La progresión que describe el documento no encaja en el esquema de 4 "
+                      "semanas del sistema: queda la estándar (y su texto, en el porqué de la "
+                      "rutina). Ajústala en el editor si hace falta.")
+    sin_minutos = [cs for cs in cardio_doc.sessions if not cs.minutes]
+    if sin_minutos:
+        avisos.append(f"{len(sin_minutos)} sesión(es) de cardio del documento no dicen cuántos "
+                      "minutos duran: no se han importado.")
+    if doc.deload is None:
+        avisos.append("El documento no pauta descarga: se ha puesto la del sistema (semana 4).")
     training = {
         "split_name": (doc.split_name or f"Rutina de {len(sesiones)} días")[:80],
         "split_rationale": ("Rutina importada de un documento externo y adaptada al sistema: "
@@ -441,15 +482,44 @@ def build_training(db: Session, client: Client, doc: DocTraining, avisos: list[s
     try:
         from app.schemas.ai import TrainingCore
 
-        return TrainingCore.model_validate(training).model_dump()
+        training = TrainingCore.model_validate(training).model_dump()
     except ValidationError as exc:
         avisos.append("El entrenamiento importado no pasó el contrato del sistema: "
                       + str(exc).splitlines()[0][:160])
         return None
+    # MISMO Revisor determinista que el entreno generado: volumen por grupo,
+    # patrones, duración de sesión y ejercicios contraindicados por sus
+    # lesiones. Sus violaciones se devuelven con el prefijo que RETIENE el
+    # borrador (nada llega al cliente sin que el coach las resuelva).
+    try:
+        from app.services import injuries
+        from app.services.guardrails import check_training
+
+        rep = check_training(
+            training,
+            exercise_lookup={e.id: {"muscle_primary": e.muscle_primary,
+                                    "muscle_secondary": list(e.muscle_secondary or []),
+                                    "movement_pattern": e.movement_pattern,
+                                    "contraindications": list(e.contraindications or [])}
+                             for e in lib.values()},
+            client_contraindications=injuries.injury_contra_tags(
+                client.injuries_notes, client.medical_notes),
+            training_days_declared=client.training_days,
+            session_max_min=client.session_max_min,
+        )
+        resumen["violaciones_entreno"] = list(rep.violations)
+        avisos.extend(f"violation: {v}" for v in rep.violations)
+        avisos.extend(rep.warnings[:6])
+    except Exception:  # noqa: BLE001 — el chequeo nunca tumba la importación
+        pass
+    if any(e.get("start_weight_hint_kg") for s_ in training["sessions"] for e in s_["exercises"]):
+        avisos.append("Las cargas iniciales vienen del documento, no del historial de fuerza de "
+                      "este cliente: compruébalas antes de activar.")
+    return training
 
 
 def _opcion_desde(dm: DocMeal, target: dict, food_map: dict, avisos: list[str],
-                  resumen: dict, letra: str = "A") -> dict | None:
+                  resumen: dict, letra: str = "A", foods_by_id: dict | None = None) -> dict | None:
     from app.services.word_import import _ingredientes_aplicables, _macros_recalculados
 
     parsed = []
@@ -469,21 +539,39 @@ def _opcion_desde(dm: DocMeal, target: dict, food_map: dict, avisos: list[str],
     resumen.setdefault("alimentos_sin_gramos", []).extend(sin_gramos)
     resumen["alimentos_reconocidos"] = resumen.get("alimentos_reconocidos", 0) + (len(ings) - len(sin_base))
     macros = _macros_recalculados(parsed, food_map) if not sin_base and not sin_gramos else None
-    if macros is None:
-        # Sin base o sin gramos NO se inventan macros: la opción lleva el
-        # objetivo de su toma y se avisa para completarla en el editor.
-        from app.services.nutrition_scale import kcal_of
+    ajustada = False
+    if macros is None and not sin_base and foods_by_id:
+        # Faltan GRAMOS pero todos los alimentos están en la base: los pone el
+        # BACKEND con el solver de porciones, que es el camino oficial del
+        # sistema (la IA elige alimentos, el backend fija los gramos). Antes se
+        # copiaba el objetivo de la toma como si fueran los macros del plato:
+        # números que no salían de ningún alimento y que además arrastraban el
+        # reescalado de las opciones buenas de esa misma toma.
+        from app.services.portion_solver import snap_option_ingredients
 
-        p, c, f_ = float(target.get("protein_g", 0)), float(target.get("carbs_g", 0)), float(target.get("fat_g", 0))
-        macros = {"kcal": kcal_of(p, c, f_), "protein_g": p, "carbs_g": c, "fat_g": f_}
-        macros_estimados = True
-    else:
-        macros_estimados = False
+        try:
+            snap = snap_option_ingredients(ings, target, foods_by_id)
+        except Exception:  # noqa: BLE001 — el solver nunca tumba la importación
+            snap = None
+        if snap is not None:
+            ings, macros = snap[0], snap[1]
+            ajustada = True
+    if macros is None:
+        # No se puede saber qué lleva el plato (algún alimento no está en la
+        # base): NO se inventan sus macros ni entra en el banco — la toma se
+        # queda libre para el banco de reserva del sistema, que sí es seguro.
+        # Se avisa con nombre y apellidos para que el coach lo añada o lo
+        # escriba en el editor.
+        resumen.setdefault("platos_descartados", []).append(
+            f"{dm.name or 'plato'} ({', '.join(sin_base[:3])})")
+        return None
     titulo = (dm.name or ", ".join(i["food"] for i in ings[:3]))[:80]
+    if ajustada:
+        resumen.setdefault("platos_ajustados", []).append(titulo)
     return {
         "key": letra, "title": titulo, "ingredients": ings,
         "prep": (dm.notes or "")[:400], "prep_minutes": 0, "macros": macros,
-        "tags": ["importado"] + (["macros_por_revisar"] if macros_estimados else []),
+        "tags": ["importado"] + (["gramos_del_sistema"] if ajustada else []),
     }
 
 
@@ -530,15 +618,38 @@ def build_nutrition(db: Session, client: Client, doc: DocNutrition, avisos: list
         return slot_de_nombre.get(_norm(base)) or nut["meals"][min(orden, len(nut["meals"]) - 1)]["slot"]
 
     targets = {m["slot"]: m["target"] for m in nut["meals"]}
-    modo = "strict" if (por_dia and not sueltas) else "flexible_7"
+    foods_by_id = {f.id: {"id": f.id, "canonical_name": f.canonical_name,
+                          "protein_g": float(f.protein_g), "carbs_g": float(f.carbs_g),
+                          "fat_g": float(f.fat_g),
+                          "unit_grams": getattr(f, "unit_grams", None),
+                          "min_grams": getattr(f, "min_grams", None) or 0,
+                          "max_grams": getattr(f, "max_grams", None) or 400}
+                   for f in {x.id: x for x in food_map.values()}.values()}
+    # El modo lo decide la MAYORÍA de lo que trae el documento, no la simple
+    # presencia de comidas por día: un documento mixto (un menú por días + unas
+    # opciones sueltas) descartaba en silencio TODA una de las dos listas.
+    modo = "strict" if len(por_dia) > len(sueltas) else "flexible_7"
+    total_doc = len(doc.meals)
     if modo == "flexible_7":
+        # En flexible entran TODAS: las sueltas y las que traían día (como una
+        # opción más de su toma).
+        entradas = list(sueltas) + list(por_dia)
         opciones: dict[int, list[dict]] = {m["slot"]: [] for m in nut["meals"]}
-        for orden, dm in enumerate(sueltas):
+        recortadas: list[str] = []
+        for orden, dm in enumerate(entradas):
             slot = _slot_para(dm.name, orden)
-            letra = "ABC"[min(len(opciones[slot]), 2)]
-            op = _opcion_desde(dm, targets[slot], food_map, avisos, resumen, letra)
-            if op and len(opciones[slot]) < 3:
+            if len(opciones[slot]) >= MAX_OPCIONES:
+                recortadas.append(dm.name or f"comida {orden + 1}")
+                continue
+            letra = "ABCD"[len(opciones[slot])]
+            op = _opcion_desde(dm, targets[slot], food_map, avisos, resumen, letra, foods_by_id)
+            if op:
                 opciones[slot].append(op)
+        if recortadas:
+            avisos.append(
+                f"Cada toma admite {MAX_OPCIONES} opciones: se han dejado fuera "
+                + ", ".join(f"«{n}»" for n in recortadas[:6])
+                + (" …" if len(recortadas) > 6 else "") + ". Añádelas en el editor si las quieres.")
         nut["meal_bank"] = {"mode": "flexible_7", "slots": [
             {"slot": m["slot"], "fmt": "options", "options": opciones[m["slot"]],
              "weekly_examples": []} for m in nut["meals"]]}
@@ -547,15 +658,44 @@ def build_nutrition(db: Session, client: Client, doc: DocNutrition, avisos: list
         dias: dict[str, list[dict]] = {}
         for orden, dm in enumerate(por_dia):
             slug = _dia_slug(dm.day) or "lunes"
+            usados = {x["slot"] for x in dias.get(slug, [])}
             slot = _slot_para(dm.name, len(dias.get(slug, [])))
-            op = _opcion_desde(dm, targets[slot], food_map, avisos, resumen, "A")
+            if slot in usados:
+                # Dos platos para la misma toma del mismo día: el segundo
+                # SOBRESCRIBÍA al primero en silencio. Se queda el primero y
+                # se avisa del otro.
+                avisos.append(f"«{dm.name or 'comida'}» del {slug} repite la toma de otro plato: "
+                              "se ha quedado el primero, revísalo en el editor.")
+                continue
+            op = _opcion_desde(dm, targets[slot], food_map, avisos, resumen, "A", foods_by_id)
             if op:
                 op["key"] = None
                 dias.setdefault(slug, []).append({"slot": slot, "dish": op})
+        if sueltas:
+            avisos.append(
+                f"El documento es un menú por días y {len(sueltas)} comida(s) no decían de qué "
+                "día son: no se han importado. Añádelas en el editor.")
+        dias = _semana_completa(dias, avisos)
         nut["meal_bank"] = {"mode": "strict", "days": [
             {"day": d, "meals": sorted(dias[d], key=lambda x: x["slot"])}
             for d in _DIAS if d in dias]}
         resumen["comidas"] = sum(len(v) for v in dias.values())
+    # Nada se pierde en silencio: si el documento traía más comidas de las que
+    # han entrado, se dice cuántas y por qué.
+    if resumen.get("platos_descartados"):
+        pl = resumen["platos_descartados"]
+        avisos.append(
+            f"{len(pl)} plato(s) no han entrado porque algún alimento suyo no está en la base "
+            "(sus macros no se pueden calcular y el sistema no los inventa): "
+            + ", ".join(pl[:6]) + (" …" if len(pl) > 6 else "")
+            + ". Añade esos alimentos en Recursos y vuelve a importar, o escríbelos en el editor.")
+    if resumen.get("platos_ajustados"):
+        avisos.append(
+            f"{len(resumen['platos_ajustados'])} plato(s) venían sin gramos: los ha fijado el "
+            "sistema para cuadrar con el objetivo de su toma (los alimentos son los del documento).")
+    if total_doc and resumen.get("comidas", 0) < total_doc:
+        avisos.append(f"El documento trae {total_doc} comidas y se han importado "
+                      f"{resumen.get('comidas', 0)}: revisa los avisos de arriba.")
     if resumen.get("alimentos_sin_base"):
         unicos = sorted(set(resumen["alimentos_sin_base"]))
         avisos.append("Alimentos sin ficha en la base (sus macros no se recalculan; revísalos "

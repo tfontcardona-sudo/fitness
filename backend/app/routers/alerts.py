@@ -521,8 +521,10 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
                      or {})).get("period_index")
 
         if _adapted_idx(latest) != last_analyzed.period_index:
+            from app.services.plan_library import BORRADORES_EN_CONSTRUCCION
+
             if (latest is not None and latest.status == "draft"
-                    and latest.generated_by in ("scaffold", "library")):
+                    and latest.generated_by in BORRADORES_EN_CONSTRUCCION):
                 # El coach YA está montando el plan nuevo (base sin IA o copia
                 # de la biblioteca): gritarle "sin adaptar" mientras trabaja es
                 # falso ruido. Se le recuerda terminar y activar, en media.

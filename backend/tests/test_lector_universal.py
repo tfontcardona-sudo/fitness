@@ -29,6 +29,8 @@ def _db_available() -> bool:
 
 db_required = pytest.mark.skipif(not _db_available(), reason="Requiere PostgreSQL")
 
+_DIAS_SEMANA = ("lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo")
+
 
 # ------------------------------------------------------------ utilidades ----
 
@@ -896,11 +898,16 @@ def test_plan_ajeno_en_excel_se_transcribe_y_las_cifras_las_pone_el_backend(http
     assert any("declara 2300 kcal" in a for a in p["avisos"])
     # tomas del documento con sus horas (las que faltan, por nombre)
     assert [(m["name"], m["time"]) for m in nut["meals"]] == [("Desayuno", "08:00"), ("Comida", "14:00"), ("Cena", "21:00")]
-    # alimentos contra la base, macros recalculados; sin gramos → conservado + aviso
+    # Alimentos contra la base y macros RECALCULADOS desde ella. El plátano
+    # venía sin gramos: los pone el SOLVER del backend (la IA no calcula) y se
+    # dice; nunca se copian los macros del objetivo de la toma como si fueran
+    # los del plato.
     ops = {s["slot"]: s["options"] for s in nut["meal_bank"]["slots"]}
-    assert ops[1][0]["ingredients"][0]["food_id"] and ops[1][0]["ingredients"][2]["grams"] is None
-    assert "macros_por_revisar" in ops[1][0]["tags"] and "macros_por_revisar" not in ops[2][0]["tags"]
-    assert any("Plátano" in a for a in p["avisos"])
+    desayuno = ops[1][0]
+    assert desayuno["ingredients"][0]["food_id"] and desayuno["ingredients"][2]["grams"] > 0
+    assert "gramos_del_sistema" in desayuno["tags"] and "gramos_del_sistema" not in ops[2][0]["tags"]
+    assert desayuno["macros"] != nut["meals"][0]["target"]
+    assert any("venían sin gramos" in a for a in p["avisos"])
     # ejercicios: los de la biblioteca entran; el inventado se avisa y no entra
     assert p["resumen"]["ejercicios_reconocidos"] == 2 and p["resumen"]["sesiones"] == 2
     assert any("Ejercicio inventado XYZ" in a for a in p["avisos"])
@@ -921,6 +928,80 @@ def test_plan_ajeno_en_excel_se_transcribe_y_las_cifras_las_pone_el_backend(http
     assert any("ALÉRGENO" in w and "lactosa" in w for w in b["warnings"])
     plan = db.get(Plan, b["id"])
     assert plan.generated_by == "document" and len(plan.training_json["sessions"]) == 2
+
+
+@db_required
+def test_el_plan_importado_no_se_publica_solo_al_guardar_en_el_editor(http, db, monkeypatch):
+    """Un borrador «copiado, revísalo» se monta en varias tandas. El importado
+    no estaba en la lista de los que NO se activan al guardar: el primer PATCH
+    del editor lo PUBLICABA al cliente y `activate_plan` borraba de paso los
+    avisos de «copia:» — entre ellos el del ALÉRGENO."""
+    from app.models import Exercise, Plan
+
+    ej = db.query(Exercise).filter(Exercise.canonical_name.ilike("%press%banca%")).first()
+    ej2 = db.query(Exercise).filter(Exercise.canonical_name.ilike("%sentadilla%")).first()
+    ScriptedDocs([_plan_doc_json(ej.canonical_name, ej2.canonical_name)]).instalar(monkeypatch)
+    c = _cliente_completo(db)
+    prev = http.post(f"/api/clients/{c.id}/plans/import-document", headers=_auth(),
+                     files={"file": ("plan.txt", b"Desayuno: avena 60 g", "text/plain")}).json()
+    b = http.post(f"/api/clients/{c.id}/plans/import-document/confirm", headers=_auth(),
+                  json={"nutrition_json": prev["nutrition_json"],
+                        "training_json": prev["training_json"], "origen": prev["document"],
+                        "violaciones": prev.get("violaciones") or []}).json()
+    plan_id = b["id"]
+    assert any("ALÉRGENO" in w for w in b["warnings"])
+    # el coach toca UNA cosa en el editor y guarda
+    nut = dict(b["nutrition"])
+    nut["meals"][0]["time"] = "09:00"
+    r = http.patch(f"/api/plans/{plan_id}", headers=_auth(),
+                   json={"nutrition_json": nut, "base_rev": (nut.get("rev") or 0)})
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    plan = db.get(Plan, plan_id)
+    assert plan.status == "draft", "guardar en el editor NO puede publicar el importado"
+    assert plan.published_at is None
+    assert any("ALÉRGENO" in str(f) for f in (plan.guardrail_flags or []))
+
+
+@db_required
+def test_documento_mixto_no_tira_la_mitad_de_las_comidas(http, db, monkeypatch):
+    """Con comidas con día Y comidas sueltas, el modo lo decide la mayoría y la
+    otra lista no se descarta en silencio."""
+    doc = {"document_kind": "plan_dieta", "nutrition": {"meals": [
+        {"name": "Desayuno", "foods": [{"food": "Avena", "amount": "60 g"}]},
+        {"name": "Comida", "foods": [{"food": "Arroz", "amount": "120 g"}]},
+        {"name": "Cena", "day": "Lunes", "foods": [{"food": "Salmón", "amount": "150 g"}]},
+    ]}, "training": None, "inventory": [], "unmapped": [], "warnings": []}
+    ScriptedDocs([doc]).instalar(monkeypatch)
+    c = _cliente_completo(db)
+    r = http.post(f"/api/clients/{c.id}/plans/import-document", headers=_auth(),
+                  files={"file": ("mixto.txt", b"...", "text/plain")})
+    assert r.status_code == 200, r.text
+    p = r.json()
+    bank = p["nutrition_json"]["meal_bank"]
+    assert bank["mode"] == "flexible_7"                     # mayoría sin día
+    titulos = [o["title"] for s_ in bank["slots"] for o in s_["options"]]
+    assert {"Desayuno", "Comida", "Cena"} <= set(titulos)   # las TRES entran
+    assert p["resumen"]["comidas"] == 3
+
+
+@db_required
+def test_un_plato_con_un_alimento_desconocido_no_entra_y_se_dice(http, db, monkeypatch):
+    """Sin ficha en la base no se pueden calcular sus macros: NO se inventan
+    con el objetivo de la toma (arrastraban el reescalado de las opciones
+    buenas). El plato se queda fuera y el aviso lo nombra."""
+    doc = {"document_kind": "plan_dieta", "nutrition": {"meals": [
+        {"name": "Desayuno", "foods": [{"food": "Batido misterioso XYZ", "amount": "1 vaso"}]},
+        {"name": "Comida", "foods": [{"food": "Arroz", "amount": "120 g"}]},
+    ]}, "training": None, "inventory": [], "unmapped": [], "warnings": []}
+    ScriptedDocs([doc]).instalar(monkeypatch)
+    c = _cliente_completo(db)
+    p = http.post(f"/api/clients/{c.id}/plans/import-document", headers=_auth(),
+                  files={"file": ("d.txt", b"...", "text/plain")}).json()
+    titulos = [o["title"] for s_ in p["nutrition_json"]["meal_bank"]["slots"] for o in s_["options"]]
+    assert titulos == ["Comida"]
+    assert any("no está en la base" in a and "Desayuno" in a for a in p["avisos"])
+    assert any("se han importado 1" in a for a in p["avisos"])
 
 
 @db_required
@@ -959,5 +1040,11 @@ def test_menu_cerrado_por_dias_se_importa_en_modo_strict(http, db, monkeypatch):
                   files={"file": ("menu.txt", "Lunes…".encode(), "text/plain")})
     assert r.status_code == 200, r.text
     bank = r.json()["nutrition_json"]["meal_bank"]
-    assert bank["mode"] == "strict" and [d["day"] for d in bank["days"]] == ["lunes", "martes"]
-    assert len(bank["days"][0]["meals"]) == 2
+    # Un menú CERRADO tiene que cubrir los 7 días: el portal se quedaba sin
+    # comidas el resto de la semana. Los que faltan se completan repitiendo los
+    # que hay, y se dice cuáles son copia.
+    assert bank["mode"] == "strict" and [d["day"] for d in bank["days"]] == list(_DIAS_SEMANA)
+    assert len(bank["days"][0]["meals"]) == 2          # lunes: desayuno + cena
+    assert any("solo cubría 2 de los 7 días" in a for a in r.json()["avisos"])
+    copia = next(d for d in bank["days"] if d["day"] == "miercoles")
+    assert copia["meals"][0]["dish"]["title"] == bank["days"][0]["meals"][0]["dish"]["title"]
