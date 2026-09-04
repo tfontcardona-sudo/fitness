@@ -29,6 +29,9 @@ from app.services.email_templates import Brand
 _log = logging.getLogger("app.email")
 
 
+from app.services.branding import fila_de_marca
+
+
 def email_config_status() -> dict:
     """Resumen (sin secretos) de la configuración SMTP: qué está puesto y qué
     falta. Sirve para diagnosticar por qué no salen los correos."""
@@ -53,8 +56,8 @@ def email_config_status() -> dict:
     }
 
 
-def brand_from_config(db: Session) -> Brand:
-    cfg = db.scalar(select(BrandConfig).limit(1))
+def brand_from_config(db: Session, client=None) -> Brand:
+    cfg = fila_de_marca(db, client)
     if cfg is None:
         return Brand(name="Tu asesoría", color_primary="#6EE7B7", color_bg="#0A0A0F")
     # SIN logo en los emails: /storage no pasa por Caddy en producción, así que

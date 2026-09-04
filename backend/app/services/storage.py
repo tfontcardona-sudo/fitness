@@ -200,7 +200,11 @@ def anamnesis_documents(client_id: int) -> list[dict]:
             if not d["name"].startswith("adjunto_")]
 
 
-def save_brand_logo(raw: bytes, filename_hint: str) -> str:
+def save_brand_logo(raw: bytes, filename_hint: str, slug: str = "dqr") -> str:
+    """Logo de UNA marca. El nombre lleva su `slug` porque con dos marcas en el
+    mismo sistema un nombre fijo hacía que la segunda pisara el logo de la
+    primera. Los logos subidos antes de existir las marcas conservan su ruta en
+    la ficha y siguen sirviéndose; se renombran solos al volver a subirlos."""
     if len(raw) > 5 * 1024 * 1024:
         raise PhotoValidationError("El logo supera 5 MB")
     try:
@@ -210,7 +214,7 @@ def save_brand_logo(raw: bytes, filename_hint: str) -> str:
         raise PhotoValidationError("El archivo no es una imagen válida") from exc
     if img.format not in ALLOWED_FORMATS:
         raise PhotoValidationError("Formato no soportado (usa JPG, PNG o WebP)")
-    dest = brand_dir() / f"logo.{_EXT[img.format]}"
+    dest = brand_dir() / f"logo-{_slug(slug)}.{_EXT[img.format]}"
     img.save(dest, format=img.format)
     return str(dest.relative_to(storage_root()))
 
@@ -249,19 +253,26 @@ def _save_public_image(raw: bytes, dest_dir: Path, stem: str, what: str) -> str:
     return str(dest.relative_to(storage_root()))
 
 
-def save_links_photo(raw: bytes, filename_hint: str) -> str:
-    """Foto de fondo de la página pública de enlaces (/dq)."""
-    return _save_public_image(raw, media_dir("brand"), "links-photo", "La foto")
+def _slug(slug: str | None) -> str:
+    """Trozo de nombre de fichero seguro a partir del slug de la marca."""
+    import re as _re
+
+    return _re.sub(r"[^a-z0-9_-]", "-", (slug or "dqr").lower())[:40] or "dqr"
 
 
-def save_video_cover(raw: bytes, filename_hint: str) -> str:
-    """Portada ÚNICA para todos los vídeos de ejercicios."""
-    return _save_public_image(raw, media_dir("brand"), "video-cover", "La portada")
+def save_links_photo(raw: bytes, filename_hint: str, slug: str = "dqr") -> str:
+    """Foto de fondo de la página pública de enlaces (/dq), por marca."""
+    return _save_public_image(raw, media_dir("brand"), f"links-photo-{_slug(slug)}", "La foto")
 
 
-def save_plans_photo(raw: bytes, filename_hint: str) -> str:
-    """Foto de fondo de la página pública de planes (/planes)."""
-    return _save_public_image(raw, media_dir("brand"), "plans-photo", "La foto")
+def save_video_cover(raw: bytes, filename_hint: str, slug: str = "dqr") -> str:
+    """Portada ÚNICA para todos los vídeos de ejercicios, por marca."""
+    return _save_public_image(raw, media_dir("brand"), f"video-cover-{_slug(slug)}", "La portada")
+
+
+def save_plans_photo(raw: bytes, filename_hint: str, slug: str = "dqr") -> str:
+    """Foto de fondo de la página pública de planes (/planes), por marca."""
+    return _save_public_image(raw, media_dir("brand"), f"plans-photo-{_slug(slug)}", "La foto")
 
 
 MAX_VIDEO_MB = 300

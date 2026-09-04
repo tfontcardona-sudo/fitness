@@ -26,6 +26,10 @@ LEGACY_TIERS = {"start": "nutri", "pro": "full"}
 
 DEFAULT_TIER = "full"
 
+# Nombres comerciales de RESERVA. La verdad viva está en el perfil de MARCA
+# (`brand_config.service_labels`), porque el mismo sistema puede llevar dos
+# negocios con distinta identidad; estos valores son los de DQR y se usan si
+# aún no hay perfil en la base (tests sin migrar, arranque a medias).
 LABELS = {"nutri": "DQR Nutri", "train": "DQR Train", "full": "DQR Full"}
 TAGLINES = {
     "nutri": "solo nutrición",
@@ -62,9 +66,22 @@ def has_video_call(tier: str | None) -> bool:
     return normalize(tier) == "full"
 
 
-def label(tier: str | None) -> str:
-    return LABELS[normalize(tier)]
+def label(tier: str | None, marca=None) -> str:
+    """Nombre comercial del servicio SEGÚN LA MARCA. Sin `marca`, la activa
+    (el escaparate); con ella, la del cliente concreto — que es lo que hay que
+    pasar en su portal, sus documentos y sus emails."""
+    t = normalize(tier)
+    if marca is None:
+        from app.services.branding import marca_activa
+
+        marca = marca_activa()
+    return marca.label(t)
 
 
-def tagline(tier: str | None) -> str:
-    return TAGLINES[normalize(tier)]
+def tagline(tier: str | None, marca=None) -> str:
+    t = normalize(tier)
+    if marca is None:
+        from app.services.branding import marca_activa
+
+        marca = marca_activa()
+    return marca.tagline_de(t)

@@ -168,7 +168,12 @@ def test_seed_rellena_el_whatsapp_del_coach_solo_si_falta():
 
     with SessionLocal() as db:
         seed_brand(db)  # garantiza la fila de marca en BD recién creada
-        brand = db.scalar(select(BrandConfig).limit(1))
+        # La ACTIVA: con dos marcas (mig. 0044) un `limit(1)` suelto devolvía
+        # una cualquiera y el test miraba una fila distinta de la que escribe
+        # el seed.
+        from app.seeds.run import marca_activa_o_primera
+
+        brand = marca_activa_o_primera(db)
         original = brand.contact_phone
         try:
             brand.contact_phone = None

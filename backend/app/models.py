@@ -65,6 +65,11 @@ class Client(Base):
     package_tier: Mapped[str] = mapped_column(
         String(10), default="full", server_default=text("'full'"), nullable=False
     )
+    # MARCA con la que entró (mig. 0044). Su portal, sus documentos, sus emails
+    # y sus precios de renovación salen de AQUÍ, no de la marca activa: que el
+    # coach cambie el switch no puede cambiarle la marca a quien ya paga.
+    brand_id: Mapped[int | None] = mapped_column(
+        ForeignKey("brand_config.id", ondelete="SET NULL"), index=True)
     # Duración contratada del plan (decide qué precio de Stripe se cobra):
     # 1m (mensual) | 3m (trimestral) | 6m (semestral) | oferta (1 € el primer
     # mes → 120 €/mes en suscripción) | oferta2 (la misma oferta en 2 pagos de
@@ -448,6 +453,29 @@ class BrandConfig(Base):
     # Enlace de RESERVAS de videollamada del coach (página de citas de Google
     # Calendar/Meet, Calendly…): va en el WhatsApp de "agendar videollamada".
     meet_url: Mapped[str | None] = mapped_column(String(300))
+    # --- PERFIL DE MARCA (mig. 0044) -----------------------------------------
+    # `brand_config` dejó de ser una fila para ser un perfil por marca: el mismo
+    # sistema puede llevar dos negocios (p. ej. DQR y Professional Fitness) con
+    # la misma maquinaria y distinta identidad, tarifas y catálogo. `activa`
+    # marca la del ESCAPARATE (panel, landing, altas nuevas) y la base garantiza
+    # que solo hay una (índice único parcial). Ver services/branding.py.
+    slug: Mapped[str] = mapped_column(String(40), unique=True, default="dqr")
+    activa: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Nombres y eslóganes comerciales de los servicios ("DQR Full" …): antes
+    # estaban clavados en packages.py, sales_catalog.py y stripe_service.py.
+    service_labels: Mapped[dict | None] = mapped_column(JSONB)
+    service_taglines: Mapped[dict | None] = mapped_column(JSONB)
+    # TARIFAS en céntimos por plan × duración + las dos formas de la oferta.
+    prices: Mapped[dict | None] = mapped_column(JSONB)
+    # Prefijo de las `lookup_key` de Stripe ("dqr_full_1m" / "pf_full_1m"): es
+    # lo que impide que dos marcas se pisen los precios y, con ellos, las
+    # suscripciones que ya están cobrando.
+    stripe_prefix: Mapped[str | None] = mapped_column(String(16))
+    page_title: Mapped[str | None] = mapped_column(String(120))
+    app_name: Mapped[str | None] = mapped_column(String(60))
+    app_short_name: Mapped[str | None] = mapped_column(String(20))
+    # Qué variante de anamnesis usa (plantilla PDF + piel del formulario).
+    anamnesis_variant: Mapped[str | None] = mapped_column(String(20))
 
 
 # -------------------------------------------------- recommended_products ----

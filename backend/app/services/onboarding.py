@@ -13,7 +13,9 @@ from app.services import email_templates as tpl
 from app.services.audit import log_event
 from app.services.email_service import EmailService, brand_from_config
 
-TIER_LABEL = {"nutri": "DQR Nutri", "train": "DQR Train", "full": "DQR Full"}
+# El nombre del plan sale de la marca DEL CLIENTE (el mensaje es suyo).
+from app.services import packages as _pkgs
+from app.services.branding import marca_de_cliente
 
 
 def send_onboarding_email(db: Session, client: Client) -> str:
@@ -23,7 +25,7 @@ def send_onboarding_email(db: Session, client: Client) -> str:
     pay_url = f"{base}/api/pay/{client.portal_token}"
     anamnesis_url = f"{base}/anamnesis/{client.portal_token}"
     first = ((client.full_name or "").split() or [(client.email or "cliente").split("@")[0]])[0]
-    label = TIER_LABEL.get(client.package_tier, "tu plan")
+    label = _pkgs.label(client.package_tier, marca_de_cliente(client))
     brand = brand_from_config(db)
     # Quien YA ha pagado (checkout de Stripe) no puede recibir un correo cuyo
     # paso 1 sea "realiza el pago": genera desconfianza justo tras cobrar

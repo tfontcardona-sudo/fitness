@@ -380,10 +380,40 @@ class BrandConfigIn(BaseModel):
         return _clean_discount_code(v)
 
 
+class BrandProfileOut(BaseModel):
+    """Una marca en el selector del switch: lo justo para elegirla."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    slug: str
+    name: str
+    activa: bool
+    tagline: str | None = None
+    color_primary: str
+    color_secondary: str
+    logo_path: str | None = None
+    # Lo que distingue a un negocio de otro de un vistazo: cómo llama a sus
+    # servicios y a cuánto los vende.
+    service_labels: dict | None = None
+    prices: dict | None = None
+    stripe_prefix: str | None = None
+
+
 class BrandConfigOut(BrandConfigIn):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    slug: str = "dqr"
+    activa: bool = True
+    service_labels: dict | None = None
+    service_taglines: dict | None = None
+    prices: dict | None = None
+    stripe_prefix: str | None = None
+    page_title: str | None = None
+    app_name: str | None = None
+    app_short_name: str | None = None
+    anamnesis_variant: str | None = None
     logo_path: str | None
     links_photo_path: str | None = None
     video_cover_path: str | None = None

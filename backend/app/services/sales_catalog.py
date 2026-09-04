@@ -28,7 +28,13 @@ _log = logging.getLogger("app.sales")
 _CACHE: dict = {"data": None, "at": 0.0}
 _TTL_S = 120.0
 
-TIER_LABEL = {"train": "DQR Train", "nutri": "DQR Nutri", "full": "DQR Full"}
+# Los nombres salen de la MARCA activa (el escaparate del panel), no de una
+# constante: con dos negocios en el mismo sistema, "DQR Full" solo vale para uno.
+from app.services import packages as _pkgs
+
+
+def _tier_label(tier: str) -> str:
+    return _pkgs.label(tier)
 PERIOD_LABEL = {"1m": "Mensual", "3m": "Trimestral", "6m": "Semestral"}
 
 
@@ -137,7 +143,7 @@ def sales_catalog(*, refresh: bool = False) -> dict:
     total3 = ss.OFFER_FIRST_MONTH_CENTS + mensual * (ss.OFFER_CHARGES - 1)
     items.append(_item(
         key="oferta", kind="oferta", tier=ss.OFFER_TIER, period=ss.OFFER_PERIOD,
-        title="Oferta · en 3 pagos", tier_label=TIER_LABEL[ss.OFFER_TIER],
+        title="Oferta · en 3 pagos", tier_label=_tier_label(ss.OFFER_TIER),
         period_label="En 3 pagos",
         subtitle=(f"{_txt(ss.OFFER_FIRST_MONTH_CENTS)} hoy, luego "
                   f"{_txt(mensual)} y {_txt(mensual)}"),
@@ -153,7 +159,7 @@ def sales_catalog(*, refresh: bool = False) -> dict:
     cada = of2_cents if of2_cents is not None else ss.OFFER2_MONTHLY_CENTS
     items.append(_item(
         key="oferta2", kind="oferta", tier=ss.OFFER_TIER, period=ss.OFFER2_PERIOD,
-        title="Oferta · en 2 pagos", tier_label=TIER_LABEL[ss.OFFER_TIER],
+        title="Oferta · en 2 pagos", tier_label=_tier_label(ss.OFFER_TIER),
         period_label="En 2 pagos",
         subtitle=f"{_txt(cada)} hoy y {_txt(cada)} en un mes",
         charges=ss.OFFER2_CHARGES, total_cents=cada * ss.OFFER2_CHARGES,
@@ -173,8 +179,8 @@ def sales_catalog(*, refresh: bool = False) -> dict:
             al_mes = f" · {_txt(round(importe / n))}/mes" if n > 1 else ""
             items.append(_item(
                 key=f"{tier}-{period}", kind="plan", tier=tier, period=period,
-                title=f"{TIER_LABEL[tier]} · {PERIOD_LABEL[period]}",
-                tier_label=TIER_LABEL[tier], period_label=PERIOD_LABEL[period],
+                title=f"{_tier_label(tier)} · {PERIOD_LABEL[period]}",
+                tier_label=_tier_label(tier), period_label=PERIOD_LABEL[period],
                 per_month_cents=(round(importe / n) if n > 1 else None),
                 subtitle=f"{_txt(importe)} en un pago{al_mes} · no se renueva solo",
                 charges=1, total_cents=importe, first_cents=importe,

@@ -50,7 +50,18 @@ CANONICAL_AMOUNTS: dict[str, dict[str, int]] = {
     "nutri": {"1m": 7900, "3m": 20100, "6m": 37200},
     "full": {"1m": 12900, "3m": 33000, "6m": 60000},
 }
+# Nombres de RESERVA de los productos de Stripe: los vivos salen de la marca
+# activa (`_nombre_producto`), porque cada marca vende los suyos.
 PRODUCT_NAMES = {"train": "DQR Train", "nutri": "DQR Nutri", "full": "DQR Full"}
+
+
+def _nombre_producto(tier: str) -> str:
+    from app.services.branding import marca_activa
+
+    try:
+        return marca_activa().label(tier)
+    except Exception:  # noqa: BLE001 — Stripe no se queda sin nombre por esto
+        return PRODUCT_NAMES.get(tier, tier)
 PERIOD_LABEL = {"1m": "1 mes", "3m": "3 meses", "6m": "6 meses"}
 CURRENCY = "eur"
 
@@ -154,8 +165,8 @@ def ensure_canonical_prices(stripe, log=None) -> list[str]:
         product_id = products.get(tier)
         if not product_id:
             prod = stripe.Product.create(
-                name=PRODUCT_NAMES[tier], metadata={"dqr_tier": tier},
-                description=f"Asesoría {PRODUCT_NAMES[tier]} — pago por período",
+                name=_nombre_producto(tier), metadata={"dqr_tier": tier},
+                description=f"Asesoría {_nombre_producto(tier)} — pago por período",
             )
             product_id = prod["id"]
             products[tier] = product_id  # la oferta (más abajo) reusa el de Full

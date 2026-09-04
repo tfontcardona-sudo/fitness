@@ -43,7 +43,7 @@ _log = logging.getLogger("app.public")
 def public_landing(request: Request, db: Session = Depends(get_db)) -> LandingOut:
     """Datos públicos de la página de enlaces (/dq): marca, foto, afiliación y
     catálogo de productos (comprables con el código único del coach)."""
-    brand = db.scalar(select(BrandConfig).limit(1))
+    brand = fila_de_marca(db)
     if brand is None:  # BD recién creada sin seed: valores por defecto
         brand = BrandConfig()
     products = db.scalars(
@@ -96,6 +96,9 @@ def public_plan_prices(request: Request) -> dict:
 # clientes de verdad — y la cuenta puede acabar restringida por spam.
 # Configurable (PUBLIC_SIGNUPS_PER_DAY) para poder subirlo en una campaña.
 MAX_ALTAS_PUBLICAS_DIA = 25
+
+
+from app.services.branding import fila_de_marca
 
 
 def _altas_publicas_de_hoy(db: Session) -> int:

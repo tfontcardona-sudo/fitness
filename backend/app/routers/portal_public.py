@@ -78,6 +78,9 @@ MAX_FOTOS_CIERRE = 4
 _DUMMY_HASH = hash_password("timing-equalizer-not-a-real-password")
 
 
+from app.services.branding import fila_de_marca
+
+
 def _first_name(client: Client) -> str:
     """Primer nombre seguro (nunca IndexError con nombre en blanco)."""
     parts = (client.full_name or "").split()
@@ -143,7 +146,7 @@ def _needs_anamnesis(client: Client) -> bool:
 
 
 def _state(db: Session, client: Client) -> AnamnesisStateOut:
-    brand = db.scalar(select(BrandConfig).limit(1)) or BrandConfig()
+    brand = fila_de_marca(db) or BrandConfig()
     return AnamnesisStateOut(
         first_name=_first_name(client),
         anamnesis_done=_anamnesis_recibida(client),
@@ -234,7 +237,7 @@ def submit_anamnesis(
         pass
     client.consent_signed_at = datetime.now(timezone.utc)
 
-    brand = db.scalar(select(BrandConfig).limit(1)) or BrandConfig()
+    brand = fila_de_marca(db) or BrandConfig()
     pdf_rel = generate_consent_pdf(
         client.id, client.full_name, client.email, brand.name, client.consent_signed_at
     )

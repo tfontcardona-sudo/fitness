@@ -28,8 +28,11 @@ class FeedbackError(RuntimeError):
     """No se pudo generar el feedback (datos insuficientes o fallo de IA)."""
 
 
-def _doc_brand(db: Session) -> DocBrand:
-    cfg = db.scalar(select(BrandConfig).limit(1))
+from app.services.branding import fila_de_marca
+
+
+def _doc_brand(db: Session, client=None) -> DocBrand:
+    cfg = fila_de_marca(db, client)
     if cfg is None:
         return DocBrand(name="Tu asesoría", color_primary="#6EE7B7",
                         color_secondary="#8B9DF7", font_family="Inter")

@@ -66,6 +66,9 @@ class PlanOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+from app.services.branding import fila_de_marca
+
+
 def _client_or_404(db: Session, client_id: int) -> Client:
     c = db.get(Client, client_id)
     if not c:
@@ -1170,11 +1173,11 @@ def download_feedback_document(doc_id: int, db: Session = Depends(get_db)):
 
 # ------------------------------------------- documentos Word del plan (Fase 7) ----
 
-def _doc_brand(db: Session):
+def _doc_brand(db: Session, client=None):
     from app.models import BrandConfig
     from app.services.docs.word_base import DocBrand
 
-    cfg = db.scalar(select(BrandConfig).limit(1))
+    cfg = fila_de_marca(db, client)
     if cfg is None:
         return DocBrand(name="Tu asesoría", color_primary="#6EE7B7",
                         color_secondary="#8B9DF7", font_family="Inter")

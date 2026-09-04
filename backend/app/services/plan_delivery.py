@@ -21,12 +21,15 @@ logger = logging.getLogger("app.plan_delivery")
 DOCX_MEDIA = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
-def doc_brand(db: Session):
+from app.services.branding import fila_de_marca
+
+
+def doc_brand(db: Session, client=None):
     """DocBrand desde la configuración de marca (con logo si existe)."""
     from app.models import BrandConfig
     from app.services.docs.word_base import DocBrand
 
-    cfg = db.scalar(select(BrandConfig).limit(1))
+    cfg = fila_de_marca(db, client)
     if cfg is None:
         return DocBrand(name="Tu asesoría", color_primary="#E8833A",
                         color_secondary="#2E5E8C", font_family="Inter")
