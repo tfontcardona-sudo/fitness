@@ -3,20 +3,62 @@ import { ancla } from "../lib/anchors";
 import { ChevronDown, Eye, FileText, Pencil, Save, Sparkles } from "lucide-react";
 import { PeriodPhotosFolded } from "./ClientFeedbackTab";
 import { api, ApiError, getToken } from "../lib/api";
+import type { AttachmentSummary, DocumentInfo, DocumentVerification } from "../lib/api";
 import type { ClientOut } from "../types";
 import { ExpandableArea, Spinner, useToast } from "./ui";
 import { ACTIVITY_LABEL, ageFrom, DIET_LABEL, DIET_PATTERN_LABEL, GOAL_LABEL, LEVEL_LABEL, PLACE_LABEL } from "../lib/format";
 import { isCriticalLine, isRelevantClinical } from "../lib/clinical";
+import { resumenDudas } from "../lib/documentos";
+
+/** Lo que dejó anotado la LECTURA del documento, además de la síntesis y las
+ *  contradicciones: la verificación por relectura, el inventario de lo que
+ *  contenía, los datos sin casilla y los adjuntos leídos. Todo opcional: si no
+ *  hay datos no se pinta ninguna tarjeta. */
+interface LecturaInfo {
+  verification: DocumentVerification | null;
+  source_inventory: string[];
+  unmapped_info: string[];
+  document_kind: string | null;
+  document_warning: string | null;
+  document: DocumentInfo | null;
+  attachments: AttachmentSummary[];
+}
+
+const LECTURA_VACIA: LecturaInfo = {
+  verification: null, source_inventory: [], unmapped_info: [],
+  document_kind: null, document_warning: null, document: null, attachments: [],
+};
+
+/** Normaliza lo que devuelven `anamnesisAnalysis` y `readAnamnesis` (mismas
+ *  claves, todas opcionales; `verification` puede llegar como `{}`). */
+function lecturaDe(a: Partial<LecturaInfo> | null | undefined): LecturaInfo {
+  return {
+    verification: a?.verification ?? null,
+    source_inventory: a?.source_inventory ?? [],
+    unmapped_info: a?.unmapped_info ?? [],
+    document_kind: a?.document_kind ?? null,
+    document_warning: a?.document_warning ?? null,
+    document: a?.document ?? null,
+    attachments: a?.attachments ?? [],
+  };
+}
 
 /**
  * Tab Anamnesis: ficha estructurada del cliente. Es la fuente de datos que la
  * IA usa para generar el plan. Puede rellenarse de dos formas:
- *  1. "Leer anamnesis con IA": lee el PDF subido y pre-rellena estos campos.
+ *  1. "Leer con IA": lee el documento subido (PDF, Word, fotos, Excel…) y
+ *     pre-rellena estos campos.
  *  2. A mano.
  * En ambos casos el coach revisa y corrige antes de generar (seguridad). El
  * PATCH del backend registra el diff campo a campo (audit trail).
  */
-export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client: ClientOut; onSaved: () => void; onDirtyChange?: (dirty: boolean) => void }) {
+export function ClientAnamnesisTab({ client, onSaved, onDirtyChange, reloadKey = 0 }: {
+  client: ClientOut; onSaved: () => void; onDirtyChange?: (dirty: boolean) => void;
+  /** Sube cuando la tarjeta lateral sube/relee/borra un documento: sin él la
+   *  pestaña seguía con el nombre del fichero BORRADO, «Leer con IA» apagado
+   *  tras la primera subida y la verificación nueva invisible. */
+  reloadKey?: number;
+}) {
   const toast = useToast();
   const [draft, setDraft] = useState<Partial<ClientOut>>({});
   const [busy, setBusy] = useState(false);
@@ -25,28 +67,34 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
   // Contradicciones deterministas de la lectura (§5): plazo imposible, dieta
   // vs alimentos… — el coach las ve junto al análisis, nunca en silencio.
   const [contradicciones, setContradicciones] = useState<string[]>([]);
+  // Nombre del DOCUMENTO de anamnesis subido (PDF, Word, fotos…): el primero
+  // de tipo "anamnesis" de la lista, sea cual sea su formato.
   const [pdfName, setPdfName] = useState<string | null>(null);
+  // Verificación, inventario, datos sin casilla y adjuntos de la lectura.
+  const [lectura, setLectura] = useState<LecturaInfo>(LECTURA_VACIA);
   // Por defecto la ficha se VE (ordenada por colores, sin campos editables);
   // el formulario solo aparece si el coach pulsa "Editar datos".
   const [editMode, setEditMode] = useState(false);
 
-  // Nombre del PDF de anamnesis subido (para poder verlo/descargarlo desde aquí).
   useEffect(() => {
     // Solo el CUESTIONARIO: con los adjuntos (analítica, informes) en la
-    // lista, "Ver PDF" abría el informe de sangre en vez de la anamnesis.
+    // lista, "Ver documento" abría el informe de sangre en vez de la anamnesis.
     api.listClientDocuments(client.id, "anamnesis")
       .then((docs) => setPdfName(docs[0]?.name ?? null))
       .catch(() => setPdfName(null));
     // Y las contradicciones YA detectadas: se calculaban al leer la anamnesis
     // (o al enviarse el formulario), se guardaban… y solo se veían volviendo a
-    // pulsar "Leer con IA", que gasta créditos y pisa las correcciones.
+    // pulsar "Leer con IA", que gasta créditos y pisa las correcciones. Con
+    // ellas, la verificación por relectura y el inventario del documento.
+    setLectura(LECTURA_VACIA);
     api.anamnesisAnalysis(client.id)
       .then((a) => {
         setContradicciones(a.contradictions ?? []);
-        setAnalysis((prev) => prev ?? a.deep_analysis ?? null);
+        setAnalysis(a.deep_analysis ?? null);
+        setLectura(lecturaDe(a));
       })
       .catch(() => {});
-  }, [client.id]);
+  }, [client.id, reloadKey]);
 
   function openPdf() {
     if (!pdfName) return;
@@ -61,7 +109,7 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
         window.open(url, "_blank");
         setTimeout(() => URL.revokeObjectURL(url), 60000);
       })
-      .catch(() => toast.push("No se pudo abrir el PDF", "error"));
+      .catch(() => toast.push("No se pudo abrir el documento", "error"));
   }
 
   function set<K extends keyof ClientOut>(key: K, value: ClientOut[K]) {
@@ -94,7 +142,7 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
     if (reading || !pdfName) return;
     // Con la ficha ya rellenada, releer PISA campos y gasta créditos: se avisa.
     if (client.goal_type &&
-        !window.confirm("La IA sobrescribirá los campos de la ficha con lo que lea del PDF y gastará créditos. ¿Seguir?")) {
+        !window.confirm("La IA sobrescribirá los campos de la ficha con lo que lea del documento y gastará créditos. ¿Seguir?")) {
       return;
     }
     setReading(true);
@@ -102,12 +150,16 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
       const res = await api.readAnamnesis(client.id);
       setAnalysis(res.deep_analysis);
       setContradicciones(res.contradictions ?? []);
+      setLectura(lecturaDe(res));
       setDraft({});
-      toast.push("Anamnesis leída. Revisa los datos antes de generar.");
+      // `message` ya dice si la relectura dejó dudas: se enseña tal cual.
+      const conDudas = Boolean(res.verification?.needs_review || res.document_warning);
+      toast.push(res.message || "Anamnesis leída. Revisa los datos antes de generar.",
+                 conDudas ? "error" : "ok");
       onSaved();
     } catch (e: any) {
       const detail = e?.detail ?? e?.data?.detail;
-      toast.push([detail?.message ?? e?.message ?? "No se pudo leer el PDF", detail?.error].filter(Boolean).join(" — "), "error");
+      toast.push([detail?.message ?? e?.message ?? "No se pudo leer el documento", detail?.error].filter(Boolean).join(" — "), "error");
     } finally {
       setReading(false);
     }
@@ -122,7 +174,7 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
           <Sparkles size={15} style={{ color: "var(--brand-accent)" }} />
           <p className="text-sm font-medium text-zinc-200">Anamnesis</p>
           {!client.goal_type && !pdfName && (
-            <span className="text-xs text-zinc-500">Sube el PDF y púlsalo para rellenar la ficha con IA.</span>
+            <span className="text-xs text-zinc-500">Sube la anamnesis (PDF, Word o fotos) y púlsalo para rellenar la ficha con IA.</span>
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -140,7 +192,7 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
           )}
           {pdfName && (
             <button onClick={openPdf} className="btn btn-ghost" title={pdfName}>
-              <FileText size={15} /> Ver PDF
+              <FileText size={15} /> Ver documento
             </button>
           )}
           <button onClick={() => setEditMode((e) => !e)} className="btn btn-ghost">
@@ -150,10 +202,10 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
           <button
             onClick={readWithAI}
             disabled={reading || !pdfName}
-            title={!pdfName ? "Sube antes el PDF de la anamnesis" : undefined}
+            title={!pdfName ? "Sube antes la anamnesis (PDF, Word o fotos)" : undefined}
             className="btn btn-primary"
           >
-            <Sparkles size={15} /> {reading ? "Leyendo PDF…" : "Leer con IA"}
+            <Sparkles size={15} /> {reading ? "Leyendo documento…" : "Leer con IA"}
           </button>
           <span {...ancla("anamnesis.revision")} aria-hidden className="sr-only" />
         </div>
@@ -168,6 +220,123 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange }: { client:
             {contradicciones.map((c, i) => <li key={i}>{c}</li>)}
           </ul>
           <p className="mt-1 text-xs text-zinc-500">Revísalas con el cliente antes de generar el plan.</p>
+        </div>
+      )}
+
+      {/* LO QUE DEJÓ LA LECTURA DEL DOCUMENTO. Ninguna tarjeta se pinta vacía:
+          aviso del documento (rojo), verificación por relectura (ámbar),
+          inventario plegado y adjuntos leídos. */}
+      {lectura.document_warning && (
+        <div className="card p-4"
+          style={{ borderColor: "#B3261E", background: "color-mix(in srgb, #B3261E 6%, transparent)" }}>
+          <p className="text-sm font-medium" style={{ color: "#B3261E" }}>{lectura.document_warning}</p>
+        </div>
+      )}
+
+      {(() => {
+        const disc = lectura.verification?.discrepancies ?? [];
+        const omis = lectura.verification?.omissions ?? [];
+        const bajos = lectura.verification?.low_confidence_labels ?? [];
+        const skipped = lectura.verification?.skipped;
+        // Tres motivos de duda, cada uno con su nombre: desajustes entre las
+        // dos lecturas, campos con confianza baja (la relectura no los vio o
+        // el extractor los dio por dudosos) y datos echados en falta. Con
+        // solo confianza baja, antes no se pintaba nada y el toast decía
+        // «no coincide en 0 datos».
+        if (!disc.length && !omis.length && !bajos.length) {
+          return skipped
+            ? <p className="text-xs text-zinc-500">Sin segunda lectura: {skipped}</p>
+            : null;
+        }
+        return (
+          <div className="card p-4" style={{ borderColor: "#9A6B15" }}>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide" style={{ color: "#9A6B15" }}>
+              ⚠ {resumenDudas(lectura.verification) ?? "La relectura deja dudas"}
+            </p>
+            {disc.length > 0 && (
+              <>
+                <p className="mt-2 text-xs font-medium text-zinc-400">Datos en los que las dos lecturas no coinciden</p>
+                <ul className="list-disc space-y-0.5 pl-4 text-sm text-zinc-300">
+                  {disc.map((d, i) => <li key={i}>{d}</li>)}
+                </ul>
+              </>
+            )}
+            {bajos.length > 0 && (
+              <p className="mt-2 text-sm text-zinc-300">
+                <span className="text-xs font-medium text-zinc-400">Confianza baja en: </span>
+                {bajos.join(", ")}
+              </p>
+            )}
+            {omis.length > 0 && (
+              <>
+                <p className="mt-2 text-xs font-medium text-zinc-400">Datos que la relectura echa en falta</p>
+                <ul className="list-disc space-y-0.5 pl-4 text-sm text-zinc-300">
+                  {omis.map((o, i) => <li key={i}>{o}</li>)}
+                </ul>
+              </>
+            )}
+            <p className="mt-1 text-xs text-zinc-500">
+              Comprueba esos campos contra el documento antes de generar el plan.
+            </p>
+            {skipped && <p className="mt-1 text-xs text-zinc-500">Sin segunda lectura: {skipped}</p>}
+          </div>
+        );
+      })()}
+
+      {(lectura.source_inventory.length > 0 || lectura.unmapped_info.length > 0 || lectura.document) && (
+        <details className="card p-4">
+          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Qué contenía el documento ({lectura.source_inventory.length} bloque{lectura.source_inventory.length === 1 ? "" : "s"})
+          </summary>
+          {lectura.document && (
+            <p className="mt-2 text-xs text-zinc-500">
+              {[lectura.document.name, lectura.document.description].filter(Boolean).join(" · ")}
+            </p>
+          )}
+          {lectura.source_inventory.length > 0 && (
+            <ul className="mt-2 list-disc space-y-0.5 pl-4 text-sm text-zinc-300">
+              {lectura.source_inventory.map((s, i) => <li key={i}>{s}</li>)}
+            </ul>
+          )}
+          {lectura.unmapped_info.length > 0 && (
+            <>
+              <p className="mt-3 text-xs font-medium text-zinc-400">Datos sin casilla</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-4 text-sm text-zinc-300">
+                {lectura.unmapped_info.map((u, i) => <li key={i}>{u}</li>)}
+              </ul>
+            </>
+          )}
+          {lectura.document && lectura.document.avisos.length > 0 && (
+            <ul className="mt-3 space-y-0.5 text-xs" style={{ color: "#9A6B15" }}>
+              {lectura.document.avisos.map((a, i) => <li key={i}>⚠ {a}</li>)}
+            </ul>
+          )}
+        </details>
+      )}
+
+      {lectura.attachments.length > 0 && (
+        <div className="card p-4">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">Adjuntos leídos</p>
+          <ul className="space-y-2">
+            {lectura.attachments.map((a) => {
+              const fecha = a.document_date
+                ? (Number.isNaN(new Date(a.document_date).getTime())
+                    ? a.document_date
+                    : new Date(a.document_date).toLocaleDateString("es-ES"))
+                : null;
+              return (
+                <li key={a.file} className="text-sm text-zinc-300">
+                  <p>
+                    {[a.document_kind ?? a.title, fecha, a.summary[0]].filter(Boolean).join(" · ")
+                      || a.file}
+                  </p>
+                  {a.alerts.map((al, i) => (
+                    <p key={i} className="text-xs font-medium" style={{ color: "#9A6B15" }}>⚠ {al}</p>
+                  ))}
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
 

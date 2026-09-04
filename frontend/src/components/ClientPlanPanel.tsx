@@ -6,7 +6,8 @@ import { ancla, hrefCliente } from "../lib/anchors";
 import { copiarConAviso } from "../lib/clipboard";
 import { pin, pinId, syncScope } from "../lib/pins";
 import { api, getToken } from "../lib/api";
-import type { PlanSummary } from "../lib/api";
+import type { PlanImportPreview, PlanSummary } from "../lib/api";
+import { ACEPTA_DOCUMENTOS } from "../lib/documentos";
 import { manualUpdateMessage, openWhatsApp, planAndFeedbackMessage, planMessage, waPhone, waUrl } from "../lib/whatsapp";
 import { pkg } from "../lib/packages";
 import { CANONICAL_MEALS, mealKeysFromNames } from "../lib/meals";
@@ -662,6 +663,69 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
     }
   }
 
+  // ---- Importar una PLANIFICACIÓN desde un documento AJENO (la dieta o la
+  // rutina que traiga el cliente, en cualquier formato): la IA la transcribe,
+  // las cifras las pone el sistema y el coach confirma en una PREVIEW antes de
+  // que exista el borrador. Estado PROPIO: el `importPreview` de arriba es la
+  // vuelta del Word (edita el plan actual por PATCH); esto crea uno nuevo.
+  const [docPreview, setDocPreview] = useState<PlanImportPreview | null>(null);
+  const [importandoDoc, setImportandoDoc] = useState(false);
+  const [creandoDoc, setCreandoDoc] = useState(false);
+
+  function avisarErrorImportDoc(e: any, porDefecto: string) {
+    const detail = e?.detail ?? e?.data?.detail;
+    // Anamnesis incompleta (422 {message, missing}): el backend no puede poner
+    // las cifras sin esos datos. Se dice qué falta y se deja el recuadro.
+    if (Array.isArray(detail?.missing) && detail.missing.length) {
+      setMissing(detail.missing);
+      toast.push(`Su anamnesis está incompleta: falta ${detail.missing.join(", ")}`, "error");
+      return;
+    }
+    toast.push([detail?.message ?? e?.message ?? porDefecto, detail?.error]
+      .filter(Boolean).join(" — "), "error");
+  }
+
+  async function onDocPicked(lista: FileList | null | undefined) {
+    const files = Array.from(lista ?? []);
+    if (!files.length || importandoDoc) return;
+    setImportandoDoc(true);
+    try {
+      // Varias fotos de la misma dieta/rutina = UN documento.
+      const r = await api.importPlanDocument(client.id, files.length === 1 ? files[0] : files);
+      setDocPreview(r);
+    } catch (e: any) {
+      avisarErrorImportDoc(e, "No se pudo leer el documento");
+    } finally {
+      setImportandoDoc(false);
+    }
+  }
+
+  async function confirmarDoc() {
+    if (!docPreview || creandoDoc) return;
+    setCreandoDoc(true);
+    try {
+      const r = await api.confirmPlanDocument(client.id, {
+        nutrition_json: docPreview.nutrition_json,
+        training_json: docPreview.training_json,
+        origen: docPreview.document,
+        // Lo que el Revisor determinista marcó como violación sobre el
+        // documento: sin esto el borrador nacía sin ese freno.
+        violaciones: docPreview.violaciones ?? [],
+      });
+      setDocPreview(null);
+      // El borrador nuevo es lo que hay que enseñar (con un plan activo, el
+      // cliente sigue viendo el suyo hasta que el coach active este).
+      await recargarPlanes(r.id);
+      onClientChanged?.();
+      toast.push("Borrador creado desde el documento — revísalo y actívalo");
+      if (r.warnings?.length) toast.push(r.warnings[0], "error");
+    } catch (e: any) {
+      avisarErrorImportDoc(e, "No se pudo crear el borrador");
+    } finally {
+      setCreandoDoc(false);
+    }
+  }
+
   // ⚠️ HOOKS SIEMPRE ANTES de los return tempranos (cargando / sin plan /
   // edición). Este efecto vivía más abajo y violaba las Rules of Hooks: al
   // cargar el plan cambiaba el número de hooks entre renders y React tumbaba
@@ -727,14 +791,15 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
               </div>
             )}
 
-            {/* TRES caminos, siempre los tres, con su coste a la vista.
+            {/* CUATRO caminos, siempre los cuatro, con su coste a la vista.
                 Para el avanzado el orden cambia (su plan lo monta el coach),
                 pero las opciones son las mismas: la web ya no esconde el
-                "a mano" ni el "copiar" a nadie. */}
-            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                "a mano" ni el "copiar" a nadie. El cuarto es importar la
+                dieta/rutina que traiga el cliente desde un documento ajeno. */}
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
               {(client.level === "advanced"
-                ? (["mano", "copiar", "ia"] as const)
-                : (["ia", "mano", "copiar"] as const)
+                ? (["mano", "copiar", "documento", "ia"] as const)
+                : (["ia", "mano", "copiar", "documento"] as const)
               ).map((camino, i) => {
                 const principal = i === 0;
                 const boton = principal ? "btn btn-primary w-full" : "btn btn-ghost w-full";
@@ -769,6 +834,36 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                     </div>
                   );
                 }
+                if (camino === "documento") {
+                  return (
+                    <div key={camino} className="well flex flex-col gap-2 p-3.5">
+                      <p className="text-sm font-semibold text-zinc-100">Desde un documento ajeno · IA</p>
+                      <p className="flex-1 text-xs text-zinc-500">
+                        Sube la dieta o rutina que traiga el cliente (PDF, Word,
+                        fotos, Excel): la IA la transcribe, las cifras las pone el
+                        sistema y tú confirmas.
+                      </p>
+                      <label
+                        className={`${boton} cursor-pointer ${generating || importandoDoc ? "pointer-events-none opacity-60" : ""}`}
+                        title="Revisas lo reconocido antes de crear el borrador"
+                      >
+                        {importandoDoc ? <Spinner /> : <FileUp size={15} />}
+                        {importandoDoc ? "Leyendo…" : "Subir documento"}
+                        <input
+                          type="file"
+                          accept={ACEPTA_DOCUMENTOS}
+                          multiple
+                          className="hidden"
+                          disabled={generating || importandoDoc}
+                          onChange={(e) => {
+                            void onDocPicked(e.target.files);
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
+                    </div>
+                  );
+                }
                 return (
                   <div key={camino} className="well flex flex-col gap-2 p-3.5">
                     <p className="text-sm font-semibold text-zinc-100">Desde otro plan · 0 créditos</p>
@@ -784,6 +879,19 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                 );
               })}
             </div>
+            {importandoDoc && (
+              <p className="mt-2 text-xs text-zinc-500">
+                Leyendo el documento con IA · puede tardar un minuto
+              </p>
+            )}
+            {docPreview && (
+              <PreviewImportDoc
+                preview={docPreview}
+                creando={creandoDoc}
+                onCerrar={() => setDocPreview(null)}
+                onConfirmar={() => void confirmarDoc()}
+              />
+            )}
             <p className="mt-2 text-xs text-zinc-500">
               Nada llega al cliente hasta que pulses <b>Activar</b> (salvo la
               generación con IA, que activa sola). ¿Dieta hecha fuera? Prepara
@@ -969,6 +1077,14 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
           clienteId={client.id}
           onElegir={aplicarDeBiblioteca}
           onCerrar={() => setBiblioteca(false)}
+        />
+      )}
+      {docPreview && (
+        <PreviewImportDoc
+          preview={docPreview}
+          creando={creandoDoc}
+          onCerrar={() => setDocPreview(null)}
+          onConfirmar={() => void confirmarDoc()}
         />
       )}
       {retenido && (() => {
@@ -1313,6 +1429,27 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                       e.currentTarget.closest("details")?.removeAttribute("open");
                       onWordPicked(e.target.files?.[0]);
                       e.target.value = ""; // permite volver a subir el mismo archivo
+                    }}
+                  />
+                </label>
+                {/* La dieta/rutina que traiga el cliente, en cualquier formato:
+                    la IA la transcribe a un BORRADOR nuevo (el actual sigue
+                    activo hasta que el coach active el nuevo). */}
+                <label
+                  className="btn btn-ghost w-full cursor-pointer justify-start"
+                  title="La IA transcribe la dieta o rutina que traiga el cliente; las cifras las pone el sistema y tú confirmas"
+                >
+                  {importandoDoc ? <Spinner /> : <FileUp size={15} />} Importar desde documento
+                  <input
+                    type="file"
+                    accept={ACEPTA_DOCUMENTOS}
+                    multiple
+                    className="hidden"
+                    disabled={importandoDoc}
+                    onChange={(e) => {
+                      e.currentTarget.closest("details")?.removeAttribute("open");
+                      void onDocPicked(e.target.files);
+                      e.target.value = "";
                     }}
                   />
                 </label>
@@ -2761,6 +2898,169 @@ function SelectorDeBiblioteca({ clienteId, onElegir, onCerrar }: {
             </section>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** PREVIEW de la importación de un documento AJENO (dieta/rutina que trae el
+ *  cliente): qué reconoció la IA, qué se quedó fuera y los avisos, ANTES de
+ *  que exista el borrador. Las cifras (kcal/macros/gramos) las pone el
+ *  sistema; aquí solo se confirma la transcripción. */
+function PreviewImportDoc({ preview, creando, onCerrar, onConfirmar }: {
+  preview: PlanImportPreview;
+  creando: boolean;
+  onCerrar: () => void;
+  onConfirmar: () => void;
+}) {
+  const caja = useRef<HTMLDivElement>(null);
+  // Mientras se crea el borrador no se cierra por un clic fuera: perdería la
+  // preview y el borrador nacería igual, sin que el coach lo viera.
+  useDismiss(caja, onCerrar, !creando);
+  useModalFocus(caja, true);
+
+  const r = preview.resumen ?? {};
+  const hayNut = preview.nutrition_json != null;
+  const hayTrain = preview.training_json != null;
+  const hayEntreno = r.sesiones != null || r.ejercicios_reconocidos != null;
+  const hayComidas = r.comidas != null || r.alimentos_reconocidos != null;
+  const kcalAmbas = r.kcal_documento != null && r.kcal_contrato != null;
+  const lista = (xs: string[] | undefined) => (xs ?? []).filter(Boolean);
+  const sinBiblio = lista(r.ejercicios_sin_biblioteca);
+  const asimilados = lista(r.ejercicios_asimilados);
+  const sinBase = lista(r.alimentos_sin_base);
+  const sinGramos = lista(r.alimentos_sin_gramos);
+  const ambar = { color: "#9A6B15" };
+  const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div ref={caja} role="dialog" aria-modal="true" aria-label="Importar planificación desde un documento"
+        className="card w-full max-w-lg p-5" style={{ background: "var(--surface-raised)" }}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="truncate text-base font-semibold text-zinc-100" title={preview.document}>
+              Importar «{preview.document}»
+              {preview.document_description ? ` · ${preview.document_description}` : ""}
+            </h3>
+            <p className="mt-0.5 text-xs text-zinc-500">
+              La IA transcribe; kcal, macros y gramos los pone el sistema para este cliente.
+              {preview.document_kind ? ` Detectado: ${preview.document_kind}.` : ""}
+            </p>
+          </div>
+          <button onClick={onCerrar} aria-label="Cerrar" disabled={creando}
+            className="tap -m-1 shrink-0 p-1 text-zinc-500 hover:text-zinc-300">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="mt-3 max-h-[55vh] space-y-3 overflow-y-auto pr-1">
+          <section className="well p-3">
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Qué se ha reconocido
+            </p>
+            {!hayNut && !hayTrain ? (
+              <p className="text-sm text-zinc-400">
+                No se reconoció ni una dieta ni una rutina en el documento.
+              </p>
+            ) : (
+              <ul className="space-y-1.5 text-sm text-zinc-300">
+                {hayEntreno && (
+                  <li>
+                    <span className="font-medium text-zinc-100">Entrenamiento:</span>{" "}
+                    {plural(r.sesiones ?? 0, "sesión", "sesiones")} ·{" "}
+                    {plural(r.ejercicios_reconocidos ?? 0, "ejercicio reconocido", "ejercicios reconocidos")}
+                    {asimilados.length > 0 && (
+                      <p className="mt-0.5 text-xs text-zinc-500">
+                        Asimilados a la biblioteca: {asimilados.join(", ")}
+                      </p>
+                    )}
+                    {sinBiblio.length > 0 && (
+                      <p className="mt-0.5 text-xs" style={ambar}>
+                        Sin biblioteca ({sinBiblio.length}): {sinBiblio.join(", ")}
+                      </p>
+                    )}
+                  </li>
+                )}
+                {hayComidas && (
+                  <li>
+                    <span className="font-medium text-zinc-100">Nutrición:</span>{" "}
+                    {plural(r.comidas ?? 0, "comida", "comidas")} ·{" "}
+                    {plural(r.alimentos_reconocidos ?? 0, "alimento reconocido", "alimentos reconocidos")}
+                    {sinBase.length > 0 && (
+                      <p className="mt-0.5 text-xs" style={ambar}>
+                        Sin base de alimentos ({sinBase.length}): {sinBase.join(", ")}
+                      </p>
+                    )}
+                    {sinGramos.length > 0 && (
+                      <p className="mt-0.5 text-xs" style={ambar}>
+                        Sin gramos ({sinGramos.length}): {sinGramos.join(", ")}
+                      </p>
+                    )}
+                  </li>
+                )}
+                {kcalAmbas && (
+                  <li>
+                    <span className="font-medium text-zinc-100">Calorías:</span>{" "}
+                    kcal del documento {r.kcal_documento} → cifras del cliente {r.kcal_contrato}
+                  </li>
+                )}
+                {!hayEntreno && !hayComidas && (
+                  <li className="text-zinc-400">
+                    {hayNut ? "Dieta reconocida" : ""}{hayNut && hayTrain ? " · " : ""}{hayTrain ? "Rutina reconocida" : ""}
+                  </li>
+                )}
+              </ul>
+            )}
+          </section>
+
+          {preview.avisos.length > 0 && (
+            <div className="rounded-md border border-amber-700/50 bg-amber-900/20 p-2">
+              {preview.avisos.map((a, i) => (
+                <p key={i} className="flex items-start gap-2 text-xs text-amber-300">
+                  <AlertTriangle size={12} className="mt-0.5 shrink-0" /> {a}
+                </p>
+              ))}
+            </div>
+          )}
+
+          {(preview.inventory.length > 0 || preview.unmapped.length > 0) && (
+            <details className="text-sm">
+              <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Qué contenía el documento ({plural(preview.inventory.length, "bloque", "bloques")})
+              </summary>
+              {preview.inventory.length > 0 && (
+                <ul className="mt-2 list-disc space-y-0.5 pl-4 text-xs text-zinc-300">
+                  {preview.inventory.map((s, i) => <li key={i}>{s}</li>)}
+                </ul>
+              )}
+              {preview.unmapped.length > 0 && (
+                <>
+                  <p className="mt-2 text-xs font-medium text-zinc-400">Sin casilla en el plan</p>
+                  <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-zinc-300">
+                    {preview.unmapped.map((u, i) => <li key={i}>{u}</li>)}
+                  </ul>
+                </>
+              )}
+            </details>
+          )}
+        </div>
+
+        <p className="mt-3 text-[11px] text-zinc-500">
+          Se crea un BORRADOR: nada llega al cliente hasta que lo revises y lo actives.
+        </p>
+        <div className="mt-2 flex justify-end gap-2">
+          <button onClick={onCerrar} disabled={creando} className="btn btn-ghost !py-1.5 text-xs">
+            Cancelar
+          </button>
+          <button
+            onClick={onConfirmar}
+            disabled={creando || (!hayNut && !hayTrain)}
+            className="btn btn-primary !py-1.5 text-xs"
+          >
+            {creando ? <Spinner /> : <Save size={13} />} {creando ? "Creando…" : "Crear borrador"}
+          </button>
+        </div>
       </div>
     </div>
   );

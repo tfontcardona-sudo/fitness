@@ -31,6 +31,16 @@ from app.services.nutrition_scale import reconcile_nutrition, rescale_nutrition
 from app.services.periods import current_month_index, reference_weight_kg
 
 
+# BORRADORES QUE SE MONTAN EN VARIAS TANDAS: la base sin IA, la copia de la
+# biblioteca y el plan importado de un documento ajeno. Ninguno se activa por
+# el mero hecho de guardar en el editor (activarlo AVISA al cliente y borra los
+# avisos de «copia:», entre ellos el de alérgeno), ni sus ediciones son
+# «correcciones» de las que aprender, ni merecen la alerta de «sin adaptar»
+# mientras el coach los prepara. Una sola lista: al añadir un origen nuevo se
+# olvidaba en alguno de los tres sitios (le pasó a "document").
+BORRADORES_EN_CONSTRUCCION = ("scaffold", "library", "document")
+
+
 class PlanLibraryError(Exception):
     """Error accionable de la biblioteca (mensaje listo para el coach).
 

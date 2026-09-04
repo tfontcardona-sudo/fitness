@@ -1,21 +1,42 @@
 import { useEffect, useRef, useState } from "react";
 import { copiarConAviso } from "../lib/clipboard";
-import { CheckCircle2, Download, FileText, MessageCircle, Send, Upload } from "lucide-react";
+import { CheckCircle2, Download, FileText, MessageCircle, Send, Sparkles, Trash2, Upload } from "lucide-react";
 import { api, getToken } from "../lib/api";
-import { useToast } from "./ui";
+import type { AttachmentSummary } from "../lib/api";
+import { ACEPTA_DOCUMENTOS , resumenDudas } from "../lib/documentos";
+import { Spinner, useToast } from "./ui";
 import { anamnesisReminderMessage, openWhatsApp, portalAccessMessage, waPhone } from "../lib/whatsapp";
 import type { ClientOut } from "../types";
 
 interface DocItem {
   name: string;
+  kind?: string;
+  format?: string;
   size_kb: number;
   uploaded_at: number;
 }
 
+/** Etiqueta del badge de formato: lo que dice el backend (por la magia del
+ *  archivo) o, si falta, la extensión del nombre. */
+function formatoDe(d: DocItem): string {
+  const f = (d.format ?? (d.name.includes(".") ? d.name.split(".").pop() : "") ?? "").trim();
+  return f ? f.toUpperCase() : "DOC";
+}
+
+/** Nombre base de un fichero (los resúmenes pueden venir con ruta relativa). */
+const base = (p: string) => p.split("/").pop() ?? p;
+
+function fechaCorta(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("es-ES");
+}
+
 /**
- * Anamnesis (Camí A): el coach envía el enlace/PDF de la anamnesis al cliente y,
- * cuando este la devuelve rellenada, la sube aquí para conservarla asociada a su
- * ficha. Luego pasa los datos clave a la pestaña "Anamnesis" editable.
+ * Anamnesis y adjuntos del cliente. La anamnesis se sube en CUALQUIER formato
+ * (PDF, Word, fotos del cuestionario, Excel): la IA la lee y rellena la ficha.
+ * Los adjuntos (analítica, informes) también se leen y su contenido entra en
+ * las notas de la ficha. Luego el coach revisa en la pestaña "Anamnesis".
  */
 export function ClientDocuments({ client, onUploaded, onGoAnamnesis, portalUrl, anamnesisUrl }: {
   client: ClientOut;
@@ -30,20 +51,35 @@ export function ClientDocuments({ client, onUploaded, onGoAnamnesis, portalUrl, 
   const fileRef = useRef<HTMLInputElement>(null);
   const adjRef = useRef<HTMLInputElement>(null);
   const [docs, setDocs] = useState<DocItem[] | null>(null);
+  // Resúmenes de los adjuntos leídos con IA, por nombre base del fichero.
+  const [resumenes, setResumenes] = useState<Record<string, AttachmentSummary>>({});
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [releyendo, setReleyendo] = useState<string | null>(null);
+  const [borrando, setBorrando] = useState<string | null>(null);
 
   function load() {
     api.listClientDocuments(client.id).then(setDocs).catch(() => setDocs([]));
+    // Los resúmenes viajan aparte: si fallan, la lista de documentos se enseña
+    // igual (con "Sin leer" y el botón de leer).
+    api.listClientAttachments(client.id)
+      .then((lista) => {
+        const m: Record<string, AttachmentSummary> = {};
+        for (const a of lista) m[base(a.file)] = a;
+        setResumenes(m);
+      })
+      .catch(() => {});
   }
+
+  const resumenDe = (name: string): AttachmentSummary | undefined => resumenes[base(name)];
 
   // El CUESTIONARIO y los ADJUNTOS (analítica, informes) son cosas distintas:
   // con todo en un montón, subir una analítica plegaba la tarjeta con el check
   // "subida" y daba la anamnesis por recibida, mientras la campana seguía
   // diciendo que faltaba.
-  const anamnesis = (docs ?? []).filter((d) => (d as any).kind !== "adjunto");
-  const adjuntos = (docs ?? []).filter((d) => (d as any).kind === "adjunto");
+  const anamnesis = (docs ?? []).filter((d) => d.kind !== "adjunto");
+  const adjuntos = (docs ?? []).filter((d) => d.kind === "adjunto");
   useEffect(load, [client.id]);
 
   function downloadTemplate() {
@@ -63,18 +99,35 @@ export function ClientDocuments({ client, onUploaded, onGoAnamnesis, portalUrl, 
       .catch(() => toast.push("No se pudo descargar la plantilla", "error"));
   }
 
-  async function upload(file: File) {
-    if (busy) return;
-    if (!file.name.toLowerCase().endsWith(".pdf")) {
-      toast.push("Solo se admiten archivos PDF", "error");
-      return;
-    }
+  /** Primera línea útil de un adjunto leído (resumen o, si no, alerta). */
+  const primeraLinea = (a: AttachmentSummary | null | undefined): string | null =>
+    a?.summary?.[0] ?? a?.alerts?.[0] ?? null;
+
+  // Sube la ANAMNESIS en cualquier formato. Varios ficheros (fotos de cada
+  // página) van en la misma petición y el backend los trata como UN documento.
+  // La validación del formato la hace el backend por la magia del archivo.
+  async function upload(files: File[]) {
+    if (busy || !files.length) return;
     setBusy(true);
     try {
-      const res = await api.uploadClientDocument(client.id, file);
-      if (res.read_ok) {
-        toast.push("Anamnesis leída · revísala", "ok",
-                   onGoAnamnesis ? { label: "Revisar", onClick: onGoAnamnesis } : undefined);
+      const res = await api.uploadClientDocument(client.id, files.length === 1 ? files[0] : files);
+      const accion = onGoAnamnesis ? { label: "Revisar", onClick: onGoAnamnesis } : undefined;
+      if (res.redirected_to === "adjunto") {
+        // La IA vio una analítica/informe/plan: quedó como ADJUNTO y la
+        // anamnesis no se tocó. Se dice tal cual lo explica el backend.
+        toast.push(
+          res.document_warning
+            ?? "El documento parece un informe o analítica: se ha guardado como adjunto y la anamnesis no se ha tocado",
+          "error",
+        );
+      } else if (res.verification?.needs_review) {
+        // El motivo, por partes (desajustes / confianza baja en QUÉ campos /
+        // datos echados en falta): «no coincide en 0 datos» no orienta a nadie.
+        toast.push(`Leída con dudas: ${resumenDudas(res.verification)} — revísalo`, "error", accion);
+      } else if (res.document_warning) {
+        toast.push(res.document_warning, "error");
+      } else if (res.read_ok) {
+        toast.push("Anamnesis leída · revísala", "ok", accion);
       } else {
         toast.push("Anamnesis subida · falta leerla", "ok",
                    onGoAnamnesis ? { label: "Leer con IA", onClick: onGoAnamnesis } : undefined);
@@ -92,23 +145,74 @@ export function ClientDocuments({ client, onUploaded, onGoAnamnesis, portalUrl, 
   }
 
   // ADJUNTO (analítica, informe médico…): documento ADICIONAL. No sustituye la
-  // anamnesis ni se lee con IA — antes la única vía de subida BORRABA la
-  // anamnesis y leía el informe de sangre como si fuera el cuestionario.
-  async function uploadAdjunto(file: File) {
-    if (busy) return;
-    if (!file.name.toLowerCase().endsWith(".pdf")) {
-      toast.push("Solo se admiten archivos PDF", "error");
-      return;
-    }
+  // anamnesis — antes la única vía de subida BORRABA la anamnesis y leía el
+  // informe de sangre como si fuera el cuestionario. Ahora se lee con IA y su
+  // contenido entra en las notas de la ficha.
+  async function uploadAdjunto(files: File[]) {
+    if (busy || !files.length) return;
     setBusy(true);
     try {
-      await api.uploadClientDocument(client.id, file, "adjunto");
-      toast.push("Adjunto guardado (la anamnesis no se toca)");
+      const res = await api.uploadClientDocument(
+        client.id, files.length === 1 ? files[0] : files, "adjunto");
+      if (res.read_ok) {
+        const linea = primeraLinea(res.attachment);
+        toast.push(linea ? `Adjunto leído: ${linea}` : "Adjunto leído");
+        onUploaded?.(); // su bloque ya está en las notas de la ficha
+      } else {
+        const nombre = res.name;
+        toast.push(
+          `Adjunto guardado; la lectura falló (${res.read_error ?? "sin detalle"})`,
+          "error", { label: "Leer", onClick: () => { void releer(nombre); } });
+      }
       load();
     } catch (e: any) {
       toast.push(e?.message ?? "No se pudo subir el adjunto", "error");
     } finally {
       setBusy(false);
+    }
+  }
+
+  /** Relee un documento con IA (gasta créditos). Para un adjunto refresca su
+   *  resumen y su bloque en la ficha. */
+  async function releer(name: string) {
+    if (releyendo) return;
+    setReleyendo(name);
+    try {
+      const r = await api.readClientDocument(client.id, name);
+      if (r.read_ok) {
+        const linea = primeraLinea(r.attachment);
+        toast.push(linea ? `Adjunto leído: ${linea}` : "Documento leído");
+        onUploaded?.();
+      } else {
+        toast.push(`La lectura falló (${r.read_error ?? "sin detalle"})`, "error");
+      }
+      load();
+    } catch (e: any) {
+      toast.push(e?.message ?? "No se pudo leer el documento", "error");
+    } finally {
+      setReleyendo(null);
+    }
+  }
+
+  /** Borra un adjunto. Si estaba leído, el backend retira su bloque de las
+   *  notas de la ficha: se avisa antes y se refresca el perfil después. */
+  async function borrar(d: DocItem) {
+    if (borrando) return;
+    const leido = Boolean(resumenDe(d.name));
+    const pregunta = leido
+      ? `¿Borrar «${d.name}»? Estaba leído: su bloque se retirará de las notas de la ficha.`
+      : `¿Borrar «${d.name}»?`;
+    if (!window.confirm(pregunta)) return;
+    setBorrando(d.name);
+    try {
+      await api.deleteClientDocument(client.id, d.name);
+      toast.push(leido ? "Adjunto borrado · su bloque se ha retirado de la ficha" : "Adjunto borrado");
+      if (leido) onUploaded?.();
+      load();
+    } catch (e: any) {
+      toast.push(e?.message ?? "No se pudo borrar el adjunto", "error");
+    } finally {
+      setBorrando(null);
     }
   }
 
@@ -207,16 +311,73 @@ export function ClientDocuments({ client, onUploaded, onGoAnamnesis, portalUrl, 
 
   function openDoc(name: string) {
     // El endpoint exige JWT; abrimos con fetch→blob para adjuntar el header.
+    // El backend sirve el MIME real, así que el navegador abre PDF y fotos en
+    // la pestaña y descarga lo que no sabe pintar (Word, Excel).
     fetch(api.clientDocumentUrl(client.id, name), {
       headers: { Authorization: `Bearer ${getToken()}` },
     })
-      .then((r) => r.blob())
+      .then((r) => {
+        if (!r.ok) throw new Error(`Error ${r.status}`);
+        return r.blob();
+      })
       .then((blob) => {
         const url = URL.createObjectURL(blob);
         window.open(url, "_blank");
         setTimeout(() => URL.revokeObjectURL(url), 60000);
       })
       .catch(() => toast.push("No se pudo abrir el documento", "error"));
+  }
+
+  /** Lo que se ve bajo un ADJUNTO: su resumen (máx. 3 líneas), las alertas en
+   *  ámbar, los valores fuera de rango como chips y los botones de releer y
+   *  borrar. Sin resumen, "Sin leer" con el botón de leer. */
+  function detalleAdjunto(d: DocItem) {
+    const r = resumenDe(d.name);
+    const fuera = r?.out_of_range ?? [];
+    const cabecera = r
+      ? [r.document_kind, r.title, fechaCorta(r.document_date)].filter(Boolean).join(" · ")
+      : "";
+    return (
+      <div className="mt-2 space-y-1.5 pl-6">
+        {r ? (
+          <>
+            {cabecera && <p className="text-xs text-zinc-400">{cabecera}</p>}
+            {r.summary.slice(0, 3).map((s, i) => (
+              <p key={i} className="text-xs text-zinc-300">{s}</p>
+            ))}
+            {r.alerts.map((a, i) => (
+              <p key={i} className="text-xs font-medium" style={{ color: "#9A6B15" }}>⚠ {a}</p>
+            ))}
+            {fuera.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1">
+                {fuera.slice(0, 6).map((v) => (
+                  <span key={v} className="rounded-full px-2 py-0.5 text-[11px]"
+                    style={{ background: "color-mix(in srgb, #9A6B15 14%, transparent)", color: "#9A6B15" }}>
+                    {v}
+                  </span>
+                ))}
+                {fuera.length > 6 && (
+                  <span className="text-[11px] text-zinc-500">+{fuera.length - 6} más</span>
+                )}
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="text-xs text-zinc-500">Sin leer</p>
+        )}
+        <div className="flex flex-wrap gap-1.5">
+          <button onClick={() => void releer(d.name)} disabled={releyendo !== null || busy}
+            className="btn btn-ghost !px-2 !py-1 text-xs"
+            title={r ? "Volver a leerlo con IA (gasta créditos)" : "Leerlo con IA para que entre en la ficha"}>
+            {releyendo === d.name ? <Spinner className="!h-3 !w-3" /> : <Sparkles size={12} />} Leer con IA
+          </button>
+          <button onClick={() => void borrar(d)} disabled={borrando !== null}
+            className="btn btn-ghost !px-2 !py-1 text-xs text-zinc-400">
+            {borrando === d.name ? <Spinner className="!h-3 !w-3" /> : <Trash2 size={12} />} Borrar
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -235,7 +396,9 @@ export function ClientDocuments({ client, onUploaded, onGoAnamnesis, portalUrl, 
         )}
       </summary>
       <p className="mt-1 mb-4 text-xs text-zinc-500">
-        Descarga la anamnesis, envíala por correo y sube aquí la versión rellenada.
+        Sube la anamnesis en cualquier formato (PDF, Word, fotos del cuestionario,
+        Excel); la IA la lee y rellena la ficha. Los adjuntos (analítica, informes)
+        también se leen y entran en la ficha.
       </p>
 
       <button onClick={downloadTemplate} className="btn btn-ghost mb-2 w-full justify-start">
@@ -249,7 +412,8 @@ export function ClientDocuments({ client, onUploaded, onGoAnamnesis, portalUrl, 
         <MessageCircle size={15} style={{ color: "#25D366" }} /> Reenviarle su cuestionario
       </button>
 
-      {/* Zona de subida (arrastrar o clic) */}
+      {/* Zona de subida (arrastrar o clic). Admite varios ficheros: las fotos
+          de cada página del cuestionario viajan juntas como UN documento. */}
       <div
         onClick={() => fileRef.current?.click()}
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -257,8 +421,8 @@ export function ClientDocuments({ client, onUploaded, onGoAnamnesis, portalUrl, 
         onDrop={(e) => {
           e.preventDefault();
           setDragOver(false);
-          const f = e.dataTransfer.files?.[0];
-          if (f) upload(f);
+          const fs = Array.from(e.dataTransfer.files ?? []);
+          if (fs.length) void upload(fs);
         }}
         className="flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed py-6 text-center transition-colors"
         style={{
@@ -271,35 +435,38 @@ export function ClientDocuments({ client, onUploaded, onGoAnamnesis, portalUrl, 
           {busy
             ? "Subiendo y leyendo con IA…"
             : anamnesis.length > 0
-            ? "Arrastra otro PDF para reemplazar"
-            : "Arrastra el PDF aquí o haz clic"}
+            ? "Arrastra otro documento para reemplazar"
+            : "Arrastra la anamnesis aquí (PDF, Word, fotos o Excel) o haz clic"}
         </p>
       </div>
       <input
         ref={fileRef}
         type="file"
-        accept="application/pdf,.pdf"
+        accept={ACEPTA_DOCUMENTOS}
+        multiple
         hidden
         onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) upload(f);
+          const fs = Array.from(e.target.files ?? []);
+          if (fs.length) void upload(fs);
           e.target.value = "";
         }}
       />
 
       {/* Adjuntos: la analítica que el propio cuestionario pide, informes…
           Va aparte para que NUNCA sustituya a la anamnesis. */}
-      <button onClick={() => adjRef.current?.click()} className="btn btn-ghost mt-2 w-full justify-start text-xs">
+      <button onClick={() => adjRef.current?.click()} disabled={busy}
+        className="btn btn-ghost mt-2 w-full justify-start text-xs">
         <FileText size={14} className="text-zinc-500" /> Subir adjunto (analítica, informes…)
       </button>
       <input
         ref={adjRef}
         type="file"
-        accept="application/pdf,.pdf"
+        accept={ACEPTA_DOCUMENTOS}
+        multiple
         hidden
         onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) uploadAdjunto(f);
+          const fs = Array.from(e.target.files ?? []);
+          if (fs.length) void uploadAdjunto(fs);
           e.target.value = "";
         }}
       />
@@ -320,17 +487,27 @@ export function ClientDocuments({ client, onUploaded, onGoAnamnesis, portalUrl, 
               )}
               <ul className={titulo ? "mt-1.5 space-y-1.5" : "mt-4 space-y-1.5"}>
                 {lista.map((d) => (
-                  <li key={d.name}>
-                    <button
-                      onClick={() => openDoc(d.name)}
-                      className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left hover:bg-[var(--surface-raised)]"
-                    >
-                      <FileText size={15} style={{ color: "var(--brand-accent)" }} />
+                  <li key={d.name} className="rounded-lg px-3 py-2.5 hover:bg-[var(--surface-raised)]">
+                    <div className="flex items-center gap-2.5">
+                      <FileText size={15} className="shrink-0" style={{ color: "var(--brand-accent)" }} />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm text-zinc-200">{d.name}</span>
-                        <span className="text-xs text-zinc-500">{d.size_kb} KB</span>
+                        <span className="block truncate text-sm text-zinc-200" title={d.name}>{d.name}</span>
+                        <span className="flex items-center gap-1.5 text-xs text-zinc-500">
+                          <span
+                            className="rounded px-1.5 py-px text-[10px] font-semibold tracking-wide"
+                            style={{ background: "color-mix(in srgb, var(--brand-accent) 12%, transparent)", color: "var(--brand-accent)" }}
+                          >
+                            {formatoDe(d)}
+                          </span>
+                          {d.size_kb} KB
+                        </span>
                       </span>
-                    </button>
+                      <button onClick={() => openDoc(d.name)}
+                        className="btn btn-ghost shrink-0 !px-2 !py-1 text-xs" title="Abrir el documento">
+                        Ver
+                      </button>
+                    </div>
+                    {d.kind === "adjunto" && detalleAdjunto(d)}
                   </li>
                 ))}
               </ul>

@@ -197,6 +197,112 @@ async function request<T>(
   return res.json() as Promise<T>;
 }
 
+/** Resumen que deja la lectura con IA de un ADJUNTO (analítica, informe):
+ *  lo que enseña la tarjeta de documentos y la pestaña Anamnesis. */
+export interface AttachmentSummary {
+  file: string;
+  document_kind: string | null;
+  title: string | null;
+  document_date: string | null;
+  read_at: string | null;
+  summary: string[];
+  alerts: string[];
+  n_lab_values: number;
+  out_of_range: string[];
+  avisos_lectura: string[];
+}
+
+/** Segunda lectura de la anamnesis: en qué NO coincide con la primera. Puede
+ *  llegar como `{}` cuando no hubo verificación (todo opcional). */
+export interface DocumentVerification {
+  discrepancies?: string[];
+  omissions?: string[];
+  confidence?: Record<string, number>;
+  needs_review?: boolean;
+  skipped?: string;
+  // Campos críticos con confianza < 0,85 (clave interna y etiqueta en español):
+  // el motivo de una duda cuando no hay desajustes que contar.
+  low_confidence?: string[];
+  low_confidence_labels?: string[];
+}
+
+/** Descripción del documento leído ("PDF de 10 páginas", "3 fotos"…). */
+export interface DocumentInfo {
+  name: string;
+  description: string;
+  avisos: string[];
+}
+
+/** Respuesta de la subida de un documento del cliente (anamnesis o adjunto). */
+export interface UploadDocumentOut {
+  name: string;
+  rel_path: string;
+  read_ok: boolean | null;
+  read_error: string | null;
+  portal_access: string | null;
+  format: string;
+  document: string;
+  avisos: string[];
+  verification?: DocumentVerification | null;
+  document_kind?: string | null;
+  document_warning?: string | null;
+  attachment?: AttachmentSummary | null;
+  // Se subió como anamnesis pero la IA vio una analítica/informe/plan: quedó
+  // guardado como ADJUNTO y la anamnesis no se tocó.
+  redirected_to?: "adjunto";
+}
+
+/** Lo que devuelve el análisis de la anamnesis (lectura guardada). */
+export interface AnamnesisAnalysisOut {
+  deep_analysis: string | null;
+  contradictions: string[];
+  read_at: string | null;
+  verification?: DocumentVerification | null;
+  source_inventory?: string[];
+  unmapped_info?: string[];
+  document_kind?: string | null;
+  document_warning?: string | null;
+  document?: DocumentInfo | null;
+  attachments?: AttachmentSummary[];
+}
+
+/** PREVIEW de importar una planificación desde un documento ajeno (no persiste). */
+export interface PlanImportPreview {
+  nutrition_json: any | null;
+  training_json: any | null;
+  avisos: string[];
+  resumen: {
+    kcal_contrato?: number;
+    kcal_documento?: number | null;
+    comidas?: number;
+    alimentos_reconocidos?: number;
+    alimentos_sin_base?: string[];
+    alimentos_sin_gramos?: string[];
+    sesiones?: number;
+    ejercicios_reconocidos?: number;
+    ejercicios_sin_biblioteca?: string[];
+    ejercicios_asimilados?: string[];
+  };
+  inventory: string[];
+  unmapped: string[];
+  document_kind: string | null;
+  document: string;
+  document_description: string;
+  /** Violaciones del Revisor determinista sobre lo importado: viajan al
+   *  confirmar para que el borrador quede RETENIDO hasta resolverlas. */
+  violaciones?: string[];
+}
+
+/** Un solo File → campo `file`; varios (p. ej. fotos de cada página) → cada
+ *  uno en `files`: el backend los trata como UN documento. */
+function _formDocumentos(files: File | File[]): FormData {
+  const fd = new FormData();
+  const lista = Array.isArray(files) ? files : [files];
+  if (lista.length === 1) fd.append("file", lista[0]);
+  else for (const f of lista) fd.append("files", f);
+  return fd;
+}
+
 export interface PlanSummary {
   id: number;
   client_id: number;
@@ -298,24 +404,40 @@ export const api = {
   // sin él, subir una analítica daba la anamnesis por recibida y "Ver PDF"
   // abría el informe de sangre.
   listClientDocuments: (clientId: number, kind?: "anamnesis" | "adjunto") =>
-    request<{ name: string; kind?: string; size_kb: number; uploaded_at: number }[]>(
+    request<{ name: string; kind?: "anamnesis" | "adjunto" | string; format?: string;
+              size_kb: number; uploaded_at: number }[]>(
       "GET", `/clients/${clientId}/documents${kind ? `?kind=${kind}` : ""}`),
-  // Lo que dejó anotado la lectura de la anamnesis: la síntesis y las
-  // CONTRADICCIONES detectadas (se calculaban y no las veía nadie).
+  // Lo que dejó anotado la lectura de la anamnesis: la síntesis, las
+  // CONTRADICCIONES detectadas (se calculaban y no las veía nadie), la
+  // verificación por relectura, el inventario del documento y los adjuntos.
   anamnesisAnalysis: (clientId: number) =>
-    request<{ deep_analysis: string | null; contradictions: string[]; read_at: string | null }>(
-      "GET", `/clients/${clientId}/anamnesis-analysis`),
-  uploadClientDocument: (clientId: number, file: File, kind: "anamnesis" | "adjunto" = "anamnesis") => {
-    const fd = new FormData();
-    fd.append("file", file);
-    // "adjunto" = documento ADICIONAL (analítica, informe): no sustituye la
-    // anamnesis ni se lee con IA — antes subir la analítica la destruía.
+    request<AnamnesisAnalysisOut>("GET", `/clients/${clientId}/anamnesis-analysis`),
+  // Cualquier formato (PDF, Word, fotos, Excel, texto): el backend valida por
+  // la magia del archivo. Varias fotos en la misma subida = UN documento.
+  // "adjunto" = documento ADICIONAL (analítica, informe): no sustituye la
+  // anamnesis; se lee con IA y su contenido entra en las notas de la ficha.
+  uploadClientDocument: (clientId: number, files: File | File[],
+                         kind: "anamnesis" | "adjunto" = "anamnesis") => {
+    const fd = _formDocumentos(files);
     fd.append("kind", kind);
-    return request<{ name: string; read_ok: boolean | null; read_error: string | null; portal_access: string | null }>(
-      "POST", `/clients/${clientId}/documents`, fd);
+    return request<UploadDocumentOut>("POST", `/clients/${clientId}/documents`, fd);
   },
   clientDocumentUrl: (clientId: number, name: string) =>
     `/api/clients/${clientId}/documents/${encodeURIComponent(name)}`,
+  /** Relee un documento con IA. Adjunto → {read_ok, read_error, attachment};
+   *  anamnesis → {read_ok, extracted, verification}. */
+  readClientDocument: (clientId: number, name: string) =>
+    request<{ read_ok: boolean; read_error?: string | null;
+              attachment?: AttachmentSummary | null;
+              extracted?: any; verification?: DocumentVerification | null }>(
+      "POST", `/clients/${clientId}/documents/${encodeURIComponent(name)}/read`),
+  /** Borra un documento (204). Si era un adjunto leído, su bloque desaparece
+   *  de las notas de la ficha. */
+  deleteClientDocument: (clientId: number, name: string) =>
+    request<void>("DELETE", `/clients/${clientId}/documents/${encodeURIComponent(name)}`),
+  /** Resúmenes de los adjuntos ya leídos con IA. */
+  listClientAttachments: (clientId: number) =>
+    request<AttachmentSummary[]>("GET", `/clients/${clientId}/attachments`),
   // La pestaña Feedback pinta una tarjeta por revisión y CADA UNA pedía la
   // lista entera de fotos del cliente (con 6 revisiones, 6 peticiones idénticas
   // al abrir, y otra por tarjeta desplegada). Se comparte una sola petición en
@@ -450,6 +572,23 @@ export const api = {
       education_json: any | null;
     }>("POST", `/plans/${planId}/import-word`, fd);
   },
+  /** Importar una PLANIFICACIÓN desde un documento AJENO (la dieta o rutina
+   *  que traiga el cliente, en cualquier formato): la IA la transcribe, las
+   *  cifras las pone el sistema y aquí solo llega la PREVIEW (no persiste).
+   *  Varias fotos = un documento. 422 con {message, missing} si la anamnesis
+   *  está incompleta; 502 con {message, error} si la IA falló. */
+  importPlanDocument: (clientId: number, files: File | File[]) =>
+    request<PlanImportPreview>("POST", `/clients/${clientId}/plans/import-document`,
+      _formDocumentos(files)),
+  /** Confirma la preview: crea el BORRADOR. Devuelve lo mismo que copiar de
+   *  la biblioteca (`applyFromLibrary`). */
+  confirmPlanDocument: (clientId: number, body: { nutrition_json: any | null; training_json: any | null; origen: string; violaciones?: string[] }) =>
+    request<{
+      id: number; month_index: number; version: number; status: string;
+      guardrail_flags: string[]; nutrition: any; training: any; education: any;
+      review: any; created_at: string | null; published_at: string | null;
+      warnings: string[]; summary: string;
+    }>("POST", `/clients/${clientId}/plans/import-document/confirm`, body),
   updatePlan: (planId: number, patch: { nutrition_json?: any; training_json?: any; education_json?: any; base_rev?: number }) =>
     request<{ id: number; status: string; nutrition_json: any; training_json: any; education_json: any; guardrail_flags: string[] | null; month_index: number; version: number }>(
       "PATCH", `/plans/${planId}`, patch),
@@ -493,9 +632,19 @@ export const api = {
     request<{ available: boolean; weight_kg?: number; tdee?: number; adjustment_pct?: number;
       kcal?: number; protein_g?: number; carbs_g?: number; fat_g?: number; warnings?: string[] }>(
       "GET", `/clients/${clientId}/macro-recommendation`),
+  // `message` ya dice si la relectura dejó dudas; el resto es lo mismo que
+  // devuelve `anamnesisAnalysis` para pintar las tarjetas sin otra vuelta.
   readAnamnesis: (clientId: number) =>
-    request<{ extracted: any; deep_analysis: string | null; contradictions: string[]; message: string }>(
-      "POST", `/clients/${clientId}/read-anamnesis`),
+    request<{
+      extracted: any; deep_analysis: string | null; contradictions: string[]; message: string;
+      verification?: DocumentVerification | null;
+      source_inventory?: string[];
+      unmapped_info?: string[];
+      document_kind?: string | null;
+      document_warning?: string | null;
+      document?: DocumentInfo | null;
+      attachments?: AttachmentSummary[];
+    }>("POST", `/clients/${clientId}/read-anamnesis`),
 
   // --- peticiones de cambio del cliente (portal → coach) ---
   listChangeRequests: (clientId: number) =>

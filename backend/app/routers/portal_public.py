@@ -223,6 +223,15 @@ def submit_anamnesis(
         if field == "meal_schedule" and not value:
             continue
         setattr(client, field, value)
+    # Igual que la lectura con IA: estos setattr sustituyen las columnas de
+    # notas enteras y se llevaban los bloques de los adjuntos ya leídos
+    # (analítica, informe del fisio). Se vuelven a escribir desde sus sidecars.
+    try:
+        from app.services.attachments import reaplicar_sidecars
+
+        reaplicar_sidecars(client, client.id)
+    except Exception:  # noqa: BLE001 — nunca romper el envío del formulario
+        pass
     client.consent_signed_at = datetime.now(timezone.utc)
 
     brand = db.scalar(select(BrandConfig).limit(1)) or BrandConfig()
@@ -412,12 +421,14 @@ def portal_anamnesis_template(
 @limiter.limit("5/minute")
 def portal_upload_anamnesis_pdf(
     request: Request,
-    file: UploadFile = File(..., description="PDF de la anamnesis rellenada"),
+    file: Annotated[UploadFile | None, File(description="Anamnesis rellenada (cualquier formato)")] = None,
+    files: Annotated[List[UploadFile] | None, File(description="Varias fotos = un documento")] = None,
     client: Client = Depends(get_client_by_token),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Sube la anamnesis rellenada por el PROPIO cliente y la ingiere: se guarda
-    en su ficha, se lee con IA y se le envía su acceso al portal (email). Solo
+    """Sube la anamnesis rellenada por el PROPIO cliente —PDF, Word, fotos del
+    móvil (varias = un documento), hoja o texto— y la ingiere: se guarda en su
+    ficha, se lee con IA y se le envía su acceso al portal (email). Solo
     durante el onboarding; después, los cambios los gestiona el coach."""
     if client.status != "onboarding":
         raise HTTPException(
@@ -434,16 +445,81 @@ def portal_upload_anamnesis_pdf(
             status.HTTP_409_CONFLICT,
             "Ya enviaste tu cuestionario; escribe a tu coach para cambios.")
 
-    from app.routers.clients import ingest_anamnesis_pdf
+    from app.routers.clients import ingest_anamnesis_document
     from app.services.storage import DocumentValidationError
 
+    subidos = [f for f in ([file] if file is not None else []) + list(files or []) if f is not None]
+    if not subidos:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "No has adjuntado ningún fichero.")
+    ficheros = [(f.file.read(25 * 1024 * 1024 + 1), f.filename) for f in subidos]
     try:
-        res = ingest_anamnesis_pdf(db, client.id, file.file.read(25 * 1024 * 1024 + 1),
-                                   file.filename or "anamnesis.pdf", by="client")
+        res = ingest_anamnesis_document(db, client.id, ficheros, by="client")
     except DocumentValidationError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     # Al cliente solo le contamos lo que le afecta (nada de detalles internos).
-    return {"ok": True, "portal_access": res.get("portal_access")}
+    # `redirected_to`: lo que mandó no era el cuestionario (una analítica, un
+    # informe) — se guardó como adjunto y le falta la anamnesis.
+    return {"ok": True, "portal_access": res.get("portal_access"),
+            "redirected_to": res.get("redirected_to")}
+
+
+@router.post("/{token}/adjuntos")
+@limiter.limit("5/minute")
+def portal_upload_attachment(
+    request: Request,
+    file: Annotated[UploadFile | None, File(description="Analítica o informe (cualquier formato)")] = None,
+    files: Annotated[List[UploadFile] | None, File(description="Varias fotos = un documento")] = None,
+    client: Client = Depends(get_client_by_token),
+    db: Session = Depends(get_db),
+) -> dict:
+    """El cliente sube su ANALÍTICA o un informe (médico, fisio) — el propio
+    cuestionario se lo pide y no había por dónde. Cualquier formato; varias
+    fotos son un solo documento. Se guarda como adjunto (la anamnesis no se
+    toca), se LEE con IA y se avisa al coach con lo que se encontró."""
+    if client.status == "inactive":
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "Tu asesoría no está activa; escribe a tu coach.")
+    from app.routers.clients import ingest_attachment
+    from app.services.storage import DocumentValidationError
+
+    subidos = [f for f in ([file] if file is not None else []) + list(files or []) if f is not None]
+    if not subidos:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "No has adjuntado ningún fichero.")
+    # Tope de adjuntos por cliente: un bucle de subidas no llena el disco.
+    from app.services.storage import list_documents
+
+    if sum(1 for d in list_documents(client.id) if d.get("kind") == "adjunto") >= 12:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "Ya tienes 12 documentos subidos; pide a tu coach que revise los antiguos.")
+    ficheros = [(f.file.read(25 * 1024 * 1024 + 1), f.filename) for f in subidos]
+    try:
+        res = ingest_attachment(db, client.id, ficheros, by="client")
+    except DocumentValidationError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    # Push al coach: la analítica del cliente es información que cambia
+    # decisiones; con la lectura hecha, el aviso ya dice qué se encontró.
+    try:
+        from app.services import push as push_svc
+
+        adj = res.get("attachment") or {}
+        alertas = adj.get("alerts") or []
+        tipo = (adj.get("document_kind") or "documento").replace("_", " ")
+        cuerpo = (f"{tipo.capitalize()} leído: " + ("; ".join(alertas[:2]) if alertas else
+                  " ".join(adj.get("summary") or [])[:120] or "sin alertas."))
+        if not res.get("read_ok"):
+            cuerpo = "La lectura automática falló: ábrelo desde su ficha."
+        push_svc.send_to_coach(db, {
+            "title": f"📎 {client.full_name} ha subido un documento",
+            "count": 1, "body": cuerpo[:180],
+            "url": f"/clientes/{client.id}?tab=anamnesis",
+            "tag": f"adjunto-{client.id}-{res.get('name')}",
+        })
+        db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()
+    # Al cliente: lo justo (nada de valores clínicos de vuelta por la web).
+    return {"ok": True, "read_ok": res.get("read_ok"),
+            "name": res.get("name"), "document": res.get("document")}
 
 
 # ============================================================ portal (Fase 6) ====
