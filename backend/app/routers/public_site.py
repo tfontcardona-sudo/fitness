@@ -98,7 +98,7 @@ def public_plan_prices(request: Request) -> dict:
 MAX_ALTAS_PUBLICAS_DIA = 25
 
 
-from app.services.branding import fila_de_marca
+from app.services.branding import fila_de_marca, marca_activa
 
 
 def _altas_publicas_de_hoy(db: Session) -> int:
@@ -192,7 +192,12 @@ def public_register(request: Request, body: PublicRegisterIn,
             "Ya existe una asesoría activa con ese email. Escríbenos y te ayudamos.")
 
     if client is None:
+        # SELLO DE MARCA: el alta nace con la marca del ESCAPARATE. Sin esto,
+        # el cliente quedaría sin marca y su portal, sus documentos y sus
+        # precios de renovación seguirían al switch en vez de a lo contratado.
+        _marca_alta = marca_activa(db)
         client = Client(
+            brand_id=(_marca_alta.id if _marca_alta else None),
             full_name=body.full_name.strip(),
             email=email,
             phone=body.phone.strip(),

@@ -32,6 +32,7 @@ class ClientWeek:
     days_logged: int          # días con contenido REAL en los últimos 7
     weight_delta_kg: float | None  # último pesaje − primero (ventana 14 días)
     flags: list[str] = field(default_factory=list)
+    brand: str = ""           # marca del cliente; vacío si el sistema lleva una sola
 
 
 @dataclass
@@ -76,7 +77,22 @@ def _week_of(client: Client, db: Session, hoy) -> ClientWeek:
     return ClientWeek(
         client_id=client.id, name=client.full_name or client.email,
         status=client.status, days_logged=len(dias), weight_delta_kg=delta,
+        brand=_marca_de(client, db),
     )
+
+
+def _marca_de(client: Client, db: Session) -> str:
+    """Nombre de la marca del cliente, o "" si solo hay una.
+
+    El resumen semanal NO se filtra por la marca activa a propósito: es el
+    correo del lunes del coach y tiene que llevar a TODOS sus clientes —
+    cambiar el switch un viernes no puede dejar a media cartera sin vigilar.
+    Lo que sí hace falta es saber de qué negocio es cada fila."""
+    from app.services.branding import hay_varias_marcas, marca_de_cliente
+
+    if not hay_varias_marcas(db):
+        return ""
+    return marca_de_cliente(client, db).name
 
 
 def build_digest(db: Session, hoy=None) -> WeeklyDigest:

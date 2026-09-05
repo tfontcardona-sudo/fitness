@@ -299,10 +299,38 @@ def record_refunds_of_charge(db: Session, charge: dict, *,
 
 # ------------------------------------------------------------ consultas ----
 
+
+def filtro_de_marca(db: Session):
+    """Condición "este movimiento es de la marca ACTIVA", o `None` si no hay
+    nada que filtrar (una sola marca ⇒ el libro de caja es el de siempre).
+
+    El libro de caja se lleva POR NEGOCIO: los ingresos del mes, la gráfica y
+    el feed de Professional no pueden incluir el dinero de DQR. Los movimientos
+    SIN FICHA (huérfanos) salen SIEMPRE en las dos marcas a propósito: son
+    dinero que entró y que nadie ha sabido atribuir todavía, y esconderlo en la
+    marca que no toca es la forma de perderlo de vista para siempre.
+    """
+    from sqlalchemy import or_
+
+    from app.services.branding import cartera_de_la_marca
+
+    cartera = cartera_de_la_marca(db)
+    if cartera is None:
+        return None
+    return or_(Payment.client_id.is_(None),
+               Payment.client_id.in_(select(Client.id).where(cartera)))
+
+
+def _mas(db: Session, *filtros):
+    """Los filtros dados + el de la marca activa, listos para un `.where(*…)`."""
+    marca = filtro_de_marca(db)
+    return [*filtros, marca] if marca is not None else list(filtros)
+
+
 def unseen_count(db: Session) -> int:
     """Movimientos sin leer (el badge de la barra)."""
     return int(db.scalar(
-        select(func.count(Payment.id)).where(Payment.seen_at.is_(None))
+        select(func.count(Payment.id)).where(*_mas(db, Payment.seen_at.is_(None)))
     ) or 0)
 
 
@@ -320,8 +348,9 @@ def _neto_cents(db: Session, desde: datetime, hasta: datetime) -> tuple[int, int
     filas = db.execute(
         select(Payment.status, func.coalesce(func.sum(Payment.amount_cents), 0),
                func.count(Payment.id))
-        .where(Payment.paid_at >= desde, Payment.paid_at < hasta,
-               Payment.livemode.is_(True), Payment.status.in_(("paid", "refunded")))
+        .where(*_mas(db, Payment.paid_at >= desde, Payment.paid_at < hasta,
+                     Payment.livemode.is_(True),
+                     Payment.status.in_(("paid", "refunded"))))
         .group_by(Payment.status)
     ).all()
     total = 0
@@ -362,20 +391,20 @@ def summary(db: Session) -> dict:
     prev_total, _prev_cobros = _neto_cents(db, prev_ini, mes_ini)
 
     ultimo = db.scalar(
-        select(Payment).where(Payment.status == "paid")
+        select(Payment).where(*_mas(db, Payment.status == "paid"))
         .order_by(Payment.paid_at.desc()).limit(1)
     )
     # Movimientos de PRUEBA (clave sk_test_): se ven en el feed pero no suman.
     pruebas = int(db.scalar(
-        select(func.count(Payment.id)).where(Payment.livemode.is_(False))
+        select(func.count(Payment.id)).where(*_mas(db, Payment.livemode.is_(False)))
     ) or 0)
     # Cobros que Stripe no pudo pasar: lo que el coach tiene que perseguir.
     # Solo dinero REAL: un impago o un huérfano de una prueba con sk_test_
     # no puede encender avisos rojos en el panel (auditoría).
     fallidos = int(db.scalar(
-        select(func.count(Payment.id)).where(
-            Payment.status == "failed", Payment.paid_at >= mes_ini,
-            Payment.livemode.is_(True))
+        select(func.count(Payment.id)).where(*_mas(
+            db, Payment.status == "failed", Payment.paid_at >= mes_ini,
+            Payment.livemode.is_(True)))
     ) or 0)
     huerfanos = int(db.scalar(
         select(func.count(Payment.id)).where(
@@ -387,9 +416,9 @@ def summary(db: Session) -> dict:
     # Comisiones de Stripe del mes (solo cobros con fee consultado): permiten
     # enseñar el NETO real que llega al banco, no solo el bruto cobrado.
     mes_fees = int(db.scalar(
-        select(func.coalesce(func.sum(Payment.fee_cents), 0)).where(
-            Payment.paid_at >= mes_ini, Payment.paid_at < mes_fin,
-            Payment.livemode.is_(True), Payment.status == "paid")
+        select(func.coalesce(func.sum(Payment.fee_cents), 0)).where(*_mas(
+            db, Payment.paid_at >= mes_ini, Payment.paid_at < mes_fin,
+            Payment.livemode.is_(True), Payment.status == "paid"))
     ) or 0)
     return {
         "unseen": unseen_count(db),
@@ -402,7 +431,8 @@ def summary(db: Session) -> dict:
         "test_count": pruebas,
         "currency": "eur",
         "last_payment_at": ultimo.paid_at.isoformat() if ultimo else None,
-        "total_count": int(db.scalar(select(func.count(Payment.id))) or 0),
+        "total_count": int(db.scalar(
+            select(func.count(Payment.id)).where(*_mas(db))) or 0),
         "stripe_enabled": bool(settings.stripe_enabled),
     }
 
@@ -426,8 +456,9 @@ def monthly_series(db: Session, *, months: int = 6) -> list[dict]:
             func.coalesce(func.sum(Payment.amount_cents), 0),
             func.count(Payment.id),
         )
-        .where(Payment.paid_at >= ini_local.astimezone(timezone.utc),
-               Payment.livemode.is_(True), Payment.status.in_(("paid", "refunded")))
+        .where(*_mas(db, Payment.paid_at >= ini_local.astimezone(timezone.utc),
+                     Payment.livemode.is_(True),
+                     Payment.status.in_(("paid", "refunded"))))
         .group_by("mes", Payment.status)
     ).all()
     por_mes: dict[str, dict] = {}
@@ -459,7 +490,7 @@ def list_payments(db: Session, *, limit: int = 50, offset: int = 0,
 
     orphan=True: solo los cobros SIN ficha. El resumen avisaba de cuántos hay y
     no había forma de llegar a ellos desde la web."""
-    filtros = []
+    filtros = _mas(db)
     if status in STATUSES:
         filtros.append(Payment.status == status)
     if client_id:
@@ -485,7 +516,9 @@ def list_payments(db: Session, *, limit: int = 50, offset: int = 0,
 
 def mark_seen(db: Session, ids: list[int] | None = None) -> int:
     """Sella como leídos los movimientos indicados (o TODOS). Devuelve cuántos."""
-    q = select(Payment).where(Payment.seen_at.is_(None))
+    # Sellar "todo leído" en Professional no puede apagar el badge de los
+    # cobros de DQR: el coach no los ha visto.
+    q = select(Payment).where(*_mas(db, Payment.seen_at.is_(None)))
     if ids:
         q = q.where(Payment.id.in_(ids))
     filas = list(db.scalars(q))

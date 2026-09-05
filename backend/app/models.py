@@ -476,6 +476,14 @@ class BrandConfig(Base):
     app_short_name: Mapped[str | None] = mapped_column(String(20))
     # Qué variante de anamnesis usa (plantilla PDF + piel del formulario).
     anamnesis_variant: Mapped[str | None] = mapped_column(String(20))
+    # Dirección física (mig. 0045): una asesoría online no la necesita, un
+    # CENTRO sí — es de lo primero que busca su cliente.
+    contact_address: Mapped[str | None] = mapped_column(String(200))
+    # Servicios que la marca vende pero NO cobra por la web (entreno personal
+    # por horas, packs de sesiones): [{title, price, note?}]. Sin esto, la
+    # pantalla de Vender de un centro enseñaría un solo producto y parecería
+    # que el resto no existe.
+    extra_services: Mapped[list | None] = mapped_column(JSONB)
 
 
 # -------------------------------------------------- recommended_products ----
@@ -483,8 +491,9 @@ class RecommendedProduct(Base):
     """Producto recomendado por el coach (suplemento, material…) que se muestra
     en la sección "Recursos" del portal del cliente.
 
-    Catálogo ÚNICO (single-tenant): todos los clientes ven los productos con
-    `active=True`, ordenados por `sort_order`. La imagen puede ser un archivo
+    Catálogo por MARCA: cada cliente ve los productos con `active=True` de SU
+    marca (más los de `brand_id` NULL, que son para todas), ordenados por
+    `sort_order`. La imagen puede ser un archivo
     subido (`image_path`, servido por la API) o una URL externa (`image_url`);
     si hay archivo subido, tiene prioridad.
     """
@@ -492,6 +501,11 @@ class RecommendedProduct(Base):
     __tablename__ = "recommended_products"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Marca a la que pertenece el producto. NULL = para TODAS las marcas.
+    # Sin esto, los enlaces de afiliado de un negocio se veían en el portal de
+    # los clientes del otro (mig. 0046).
+    brand_id: Mapped[int | None] = mapped_column(
+        ForeignKey("brand_config.id", ondelete="SET NULL"), index=True)
     title: Mapped[str] = mapped_column(String(160))
     description: Mapped[str | None] = mapped_column(String(300))
     url: Mapped[str] = mapped_column(String(500))  # enlace de compra/afiliado

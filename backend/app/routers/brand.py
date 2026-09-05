@@ -85,7 +85,14 @@ def get_brand(db: Session = Depends(get_db)) -> BrandConfigOut:
 @router.put("", response_model=BrandConfigOut)
 def update_brand(body: BrandConfigIn, db: Session = Depends(get_db)) -> BrandConfigOut:
     brand = _brand(db)
-    for field, value in body.model_dump().items():
+    # `exclude_unset`: solo se escribe lo que el panel MANDA. Con el volcado
+    # completo, cualquier pantalla que enviara el formulario de siempre borraba
+    # los campos que no conoce — al añadir la dirección del centro, guardar los
+    # colores desde el panel la dejaba en blanco. Mismo criterio que el upsert
+    # parcial del diario del portal (gotcha §5.11). Para vaciar un campo a
+    # propósito hay que mandarlo explícitamente a null, que es lo que hace el
+    # formulario cuando el coach lo borra.
+    for field, value in body.model_dump(exclude_unset=True).items():
         setattr(brand, field, value)
     log_event(db, "brand", brand.id, "brand_updated", None)
     db.commit()

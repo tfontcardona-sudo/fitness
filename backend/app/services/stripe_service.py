@@ -77,6 +77,8 @@ OFFER_TIER = "full"                   # la oferta es SOLO del plan completo
 OFFER_MONTHLY_CENTS = 12000           # 120 €/mes el segundo y el tercer mes
 OFFER_FIRST_MONTH_CENTS = 100         # 1 € el primer mes
 OFFER_CHARGES = 3                     # nº de facturas (1 € + 120 + 120): a la 3ª, se cancela
+# Claves de RESERVA (marca DQR). Las vivas salen de la marca activa:
+# `_lookup_key(tier, period)` y los helpers de abajo.
 OFFER_LOOKUP = "dqr_full_oferta"      # lookup_key del precio RECURRENTE
 OFFER_COUPON_ID = "dqr_oferta_primer_mes"  # id estable del cupón (duration=once)
 
@@ -135,8 +137,22 @@ _LOOKUP_TTL_S = 600
 _lookup_cache: dict = {"at": 0.0, "ids": {}}
 
 
-def _lookup_key(tier: str, period: str) -> str:
-    return f"dqr_{tier}_{period}"
+def _marca():
+    """La marca ACTIVA (el escaparate). Nunca lanza: sin base, la de reserva."""
+    from app.services.branding import marca_activa, marca_por_defecto
+
+    try:
+        return marca_activa()
+    except Exception:  # noqa: BLE001
+        return marca_por_defecto()
+
+
+def _lookup_key(tier: str, period: str, marca=None) -> str:
+    """Clave del precio en Stripe, con el PREFIJO de la marca. Dos negocios en
+    el mismo Stripe no pueden compartir clave: si la compartieran, dar de alta
+    los precios de uno reescribiría los del otro — y con ellos lo que se cobra
+    a sus suscripciones vivas."""
+    return (marca or _marca()).lookup_key(tier, period)
 
 
 def ensure_canonical_prices(stripe, log=None) -> list[str]:
@@ -157,11 +173,18 @@ def ensure_canonical_prices(stripe, log=None) -> list[str]:
 
     products = {(p.get("metadata") or {}).get("dqr_tier"): p["id"]
                 for p in stripe.Product.list(active=True, limit=100)["data"]}
-    keys = ([_lookup_key(t, p) for t in TIER_ORDER for p in PERIOD_ORDER]
-            + [OFFER_LOOKUP, OFFER2_LOOKUP])
+    marca = _marca()
+    # SOLO lo que esta marca vende: un centro con un único plan mensual no
+    # tiene por qué pedirle a Stripe once precios que no existen.
+    keys = [marca.lookup_key(t, p) for t, p in marca.vende()]
+    if marca.vende_oferta():
+        keys += [marca.lookup_key(OFFER_TIER, OFFER_PERIOD),
+                 marca.lookup_key(OFFER_TIER, OFFER2_PERIOD)]
     existing = _prices_by_lookup(stripe, keys)
 
     for tier in TIER_ORDER:
+        if not any(marca.importe(tier, p) for p in PERIOD_ORDER):
+            continue              # plan que esta marca no ofrece
         product_id = products.get(tier)
         if not product_id:
             prod = stripe.Product.create(
@@ -170,11 +193,13 @@ def ensure_canonical_prices(stripe, log=None) -> list[str]:
             )
             product_id = prod["id"]
             products[tier] = product_id  # la oferta (más abajo) reusa el de Full
-            note(f"  + producto creado: {PRODUCT_NAMES[tier]} ({product_id})")
+            note(f"  + producto creado: {marca.label(tier)} ({product_id})")
         for period in PERIOD_ORDER:
-            key = _lookup_key(tier, period)
-            amount = CANONICAL_AMOUNTS[tier][period]
-            nickname = f"{PRODUCT_NAMES[tier]} · {PERIOD_LABEL[period]}"
+            amount = marca.importe(tier, period)
+            if not amount:
+                continue          # esta marca no vende ese plan × duración
+            key = marca.lookup_key(tier, period)
+            nickname = f"{marca.label(tier)} · {PERIOD_LABEL[period]}"
             pr = existing.get(key)
             if pr and pr["unit_amount"] == amount and pr["currency"] == CURRENCY:
                 note(f"  = {key}: ya existe con {amount / 100:.2f} € (sin cambios)")
@@ -327,8 +352,11 @@ def _price_by_lookup(tier: str, period: str) -> str:
         return _lookup_cache["ids"][key]
     try:
         stripe = _stripe()
-        keys = ([_lookup_key(t, p) for t in TIER_ORDER for p in PERIOD_ORDER]
-                + [OFFER_LOOKUP, OFFER2_LOOKUP])
+        marca_a = _marca()
+        keys = [marca_a.lookup_key(t, p) for t, p in marca_a.vende()]
+        if marca_a.vende_oferta():
+            keys += [marca_a.lookup_key(OFFER_TIER, OFFER_PERIOD),
+                     marca_a.lookup_key(OFFER_TIER, OFFER2_PERIOD)]
 
         def _list_prices() -> dict:
             return _prices_by_lookup(stripe, keys)
@@ -336,15 +364,20 @@ def _price_by_lookup(tier: str, period: str) -> str:
         found = _list_prices()
 
         def _desalineado() -> bool:
-            for t in TIER_ORDER:
-                for p in PERIOD_ORDER:
-                    pr = found.get(_lookup_key(t, p))
-                    if (pr is None or pr.get("unit_amount") != CANONICAL_AMOUNTS[t][p]
-                            or pr.get("currency") != CURRENCY):
-                        return True
+            for t, p in marca_a.vende():
+                pr = found.get(marca_a.lookup_key(t, p))
+                if (pr is None or pr.get("unit_amount") != marca_a.importe(t, p)
+                        or pr.get("currency") != CURRENCY):
+                    return True
             # Los precios recurrentes de la oferta (las dos formas de pago).
-            for lk, cents in ((OFFER_LOOKUP, OFFER_MONTHLY_CENTS),
-                              (OFFER2_LOOKUP, OFFER2_MONTHLY_CENTS)):
+            if not marca_a.vende_oferta():
+                return False      # marca sin oferta: no hay nada que alinear
+            for lk, cents in (
+                (marca_a.lookup_key(OFFER_TIER, OFFER_PERIOD),
+                 int(marca_a.oferta().get("monthly_cents") or OFFER_MONTHLY_CENTS)),
+                (marca_a.lookup_key(OFFER_TIER, OFFER2_PERIOD),
+                 int(marca_a.oferta("oferta2").get("monthly_cents") or OFFER2_MONTHLY_CENTS)),
+            ):
                 of = found.get(lk)
                 if (of is None or of.get("unit_amount") != cents
                         or of.get("currency") != CURRENCY
@@ -574,10 +607,14 @@ def get_plan_prices() -> dict:
                 except Exception as exc:  # precio borrado/ID malo: no rompe la página
                     _log.warning("Precio %s (%s %s) ilegible: %s", price_id, tier, period, exc)
 
-    for tier in _TIERS:  # reserva canónica para lo que Stripe no haya dado
+    marca_p = _marca()
+    for tier in _TIERS:  # reserva desde la MARCA para lo que Stripe no haya dado
         for period, months in _PERIOD_MONTHS.items():
             if tiers[tier][period] is None:
-                amount = CANONICAL_AMOUNTS[tier][period] / 100.0
+                cents = marca_p.importe(tier, period)
+                if not cents:
+                    continue      # esta marca no vende ese plan × duración
+                amount = cents / 100.0
                 tiers[tier][period] = {
                     "total": amount,
                     "months": months,
@@ -765,7 +802,14 @@ def _create_selfserve_client(db: Session, *, name: str, email: str,
                              phone: str | None, tier: str, period: str | None,
                              amount_cents: int | None = None) -> Client:
     """Crea el perfil de un cliente que se ha registrado y pagado por su cuenta."""
+    # SELLO DE MARCA: el alta nace con la marca del ESCAPARATE. Sin esto,
+    # el cliente quedaría sin marca y su portal, sus documentos y sus
+    # precios de renovación seguirían al switch en vez de a lo contratado.
+    from app.services.branding import marca_activa as _marca_del_escaparate
+
+    _marca_alta = _marca_del_escaparate(db)
     client = Client(
+        brand_id=(_marca_alta.id if _marca_alta else None),
         full_name=(name or email.split("@")[0]).strip(),
         email=email,
         phone=phone,

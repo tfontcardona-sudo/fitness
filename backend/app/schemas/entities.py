@@ -371,6 +371,8 @@ class BrandConfigIn(BaseModel):
     partner_discount_code: str | None = Field(default=None, max_length=40)
     # Enlace de reservas de videollamada (Google Calendar/Meet, Calendly…).
     meet_url: str | None = Field(default=None, max_length=300)
+    # Dirección física: la usa un CENTRO (Professional), no una asesoría online.
+    contact_address: str | None = Field(default=None, max_length=200)
 
     _v_partner_url = field_validator("partner_store_url", "meet_url")(_http_url_or_none)
 
@@ -398,6 +400,9 @@ class BrandProfileOut(BaseModel):
     service_labels: dict | None = None
     prices: dict | None = None
     stripe_prefix: str | None = None
+    # Lo que se cobra en el centro, no por la web (entreno personal, packs).
+    extra_services: list | None = None
+    contact_address: str | None = None
 
 
 class BrandConfigOut(BrandConfigIn):
@@ -414,6 +419,8 @@ class BrandConfigOut(BrandConfigIn):
     app_name: str | None = None
     app_short_name: str | None = None
     anamnesis_variant: str | None = None
+    contact_address: str | None = None
+    extra_services: list | None = None
     logo_path: str | None
     links_photo_path: str | None = None
     video_cover_path: str | None = None

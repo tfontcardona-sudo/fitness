@@ -629,9 +629,14 @@ def build_resources(db: Session, client: Client) -> dict:
                 "technique_notes": ex.technique_notes,
             })
 
+    # Productos de SU marca (más los genéricos, `brand_id` NULL). Un cliente no
+    # puede ver en su portal los enlaces de afiliado del otro negocio.
+    from app.services.branding import productos_de_la_marca
+
     product_rows = db.scalars(
         select(RecommendedProduct)
-        .where(RecommendedProduct.active.is_(True))
+        .where(RecommendedProduct.active.is_(True),
+               productos_de_la_marca(db, client))
         .order_by(RecommendedProduct.sort_order, RecommendedProduct.id)
     ).all()
 

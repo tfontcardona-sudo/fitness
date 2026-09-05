@@ -82,6 +82,8 @@ class Marca:
     app_name: str = ""
     app_short_name: str = ""
     anamnesis_variant: str = "dq"
+    contact_address: str | None = None
+    extra_services: list = field(default_factory=list)
     activa: bool = False
 
     # --- lo que pregunta el resto del sistema -------------------------------
@@ -100,6 +102,26 @@ class Marca:
 
     def oferta(self, clave: str = "oferta") -> dict:
         return dict((self.prices or {}).get(clave) or DEFAULTS["prices"].get(clave) or {})
+
+    def vende(self) -> list[tuple[str, str]]:
+        """(plan, duración) que ESTA marca vende de verdad, en orden.
+
+        Que un plan no esté en `prices` significa que no se vende: DQR ofrece
+        3 planes × 3 duraciones + 2 ofertas; Professional, un solo plan mensual.
+        El catálogo y el alta de precios en Stripe se leen de aquí, así que una
+        marca simple no arrastra once productos vacíos."""
+        out: list[tuple[str, str]] = []
+        for tier in ("train", "nutri", "full"):
+            for period in ("1m", "3m", "6m"):
+                if self.importe(tier, period):
+                    out.append((tier, period))
+        return out
+
+    def vende_oferta(self, clave: str = "oferta") -> bool:
+        """¿Esta marca tiene oferta de captación? DQR sí; un centro puede no
+        tenerla, y entonces sus enlaces y su catálogo no la mencionan."""
+        o = (self.prices or {}).get(clave) or {}
+        return bool(o.get("monthly_cents"))
 
     def lookup_key(self, tier: str, period: str) -> str:
         """Clave del precio en Stripe. El PREFIJO por marca es lo que impide que
@@ -130,6 +152,8 @@ def _marca_de_fila(fila: BrandConfig) -> Marca:
         app_name=getattr(fila, "app_name", None) or fila.name or DEFAULTS["app_name"],
         app_short_name=getattr(fila, "app_short_name", None) or DEFAULTS["app_short_name"],
         anamnesis_variant=getattr(fila, "anamnesis_variant", None) or DEFAULTS["anamnesis_variant"],
+        contact_address=getattr(fila, "contact_address", None),
+        extra_services=list(getattr(fila, "extra_services", None) or []),
         activa=bool(getattr(fila, "activa", False)),
     )
 
@@ -243,3 +267,74 @@ def fila_de_marca(db: Session, client=None) -> BrandConfig | None:
             return fila
     return (db.scalar(select(BrandConfig).where(BrandConfig.activa.is_(True)).limit(1))
             or db.scalar(select(BrandConfig).order_by(BrandConfig.id).limit(1)))
+
+
+def cartera_de_la_marca(db: Session):
+    """Condición SQL "este cliente es de la marca ACTIVA", o `None` si no hay
+    nada que filtrar.
+
+    Es lo que hace que el switch sea de verdad un CAMBIO DE NEGOCIO y no solo
+    un cambio de colores: con la marca de Professional puesta, el panel enseña
+    la cartera de Professional — la de DQR ni aparece ni se toca.
+
+    Devuelve `None` cuando solo hay un perfil de marca: entonces el panel es
+    exactamente el de siempre, sin un filtro que pueda esconder a nadie.
+
+    Los clientes SIN marca (`brand_id` a NULL: base antigua, o el perfil de su
+    marca borrado) caen en el PRIMER perfil por id, que es el original. Nunca
+    quedan huérfanos e invisibles en ninguna marca.
+    """
+    from sqlalchemy import or_
+
+    from app.models import Client
+
+    try:
+        perfiles = marcas(db)
+    except Exception:  # noqa: BLE001 — sin marcas legibles, no se filtra nada
+        return None
+    ids = [m.id for m in perfiles if m.id is not None]
+    if len(ids) < 2:
+        return None
+    activa = marca_activa(db)
+    if activa.id is None:
+        return None
+    cond = Client.brand_id == activa.id
+    if activa.id == min(ids):
+        cond = or_(cond, Client.brand_id.is_(None))
+    return cond
+
+
+def hay_varias_marcas(db: Session | None = None) -> bool:
+    """¿El sistema lleva más de un negocio? Lo que decide si las pantallas
+    enseñan a qué marca pertenece cada cosa."""
+    try:
+        return len([m for m in marcas(db) if m.id is not None]) > 1
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def productos_de_la_marca(db: Session, client=None):
+    """Condición SQL para los productos recomendados VISIBLES.
+
+    Con `client`, los de SU marca (la sellada en su ficha); sin él, los de la
+    marca activa. En ambos casos, más los de `brand_id` NULL, que son los
+    genéricos: uno que el coach quiere enseñar en los dos negocios.
+
+    Devuelve una condición siempre verdadera cuando solo hay un perfil de
+    marca: el catálogo es entonces el de siempre, sin nada escondido.
+    """
+    from sqlalchemy import or_, true
+
+    from app.models import RecommendedProduct
+
+    try:
+        perfiles = [m.id for m in marcas(db) if m.id is not None]
+    except Exception:  # noqa: BLE001
+        return true()
+    if len(perfiles) < 2:
+        return true()
+    marca = marca_de_cliente(client, db) if client is not None else marca_activa(db)
+    if marca.id is None:
+        return true()
+    return or_(RecommendedProduct.brand_id.is_(None),
+               RecommendedProduct.brand_id == marca.id)

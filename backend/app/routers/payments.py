@@ -40,6 +40,15 @@ router = APIRouter(prefix="/api/payments", tags=["payments"],
                    dependencies=[Depends(get_current_user)])
 
 
+def _slug_marca(db: Session) -> str:
+    """Identificador corto de la marca activa, para el nombre del CSV: con dos
+    negocios, dos archivos "pagos_dqr.csv" en la carpeta de descargas son el
+    mismo libro para el que los abre."""
+    from app.services.branding import marca_activa
+
+    return (marca_activa(db).slug or "dqr")
+
+
 def _to_out(pago, nombres: dict) -> PaymentOut:
     """Fila del libro → item del feed. El nombre a mostrar es el de la ficha si
     aún existe (puede haberse corregido tras el cobro) y, si no, el que dio
@@ -119,11 +128,15 @@ def export_csv(db: Session = Depends(get_db)):
     from app.config import settings as cfg
     from app.models import Payment
 
-    filas = db.execute(
-        select(Payment, Client.full_name)
-        .outerjoin(Client, Client.id == Payment.client_id)
-        .order_by(Payment.paid_at.desc())
-    ).all()
+    # El CSV de la gestoría es el de la marca ACTIVA: cada negocio lleva su
+    # libro. Con un solo perfil de marca el filtro no existe y sale todo.
+    _marca = pay_svc.filtro_de_marca(db)
+    _q = (select(Payment, Client.full_name)
+          .outerjoin(Client, Client.id == Payment.client_id)
+          .order_by(Payment.paid_at.desc()))
+    if _marca is not None:
+        _q = _q.where(_marca)
+    filas = db.execute(_q).all()
     tz = ZoneInfo(cfg.tz)
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=";")
@@ -161,7 +174,8 @@ def export_csv(db: Session = Depends(get_db)):
     contenido = "﻿" + buf.getvalue()  # BOM: Excel detecta UTF-8
     return Response(
         content=contenido, media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": 'attachment; filename="pagos_dqr.csv"'},
+        headers={"Content-Disposition":
+                 f'attachment; filename="pagos_{_slug_marca(db)}.csv"'},
     )
 
 
