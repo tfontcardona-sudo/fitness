@@ -391,3 +391,128 @@ def test_el_resumen_semanal_del_coach_lleva_a_todos_y_dice_de_que_marca(
     assert a.id in por_id and b.id in por_id
     assert por_id[a.id].brand and por_id[b.id].brand
     assert por_id[a.id].brand != por_id[b.id].brand
+
+
+# --------------------------------------------------------------------------
+# LA IDENTIDAD VISIBLE. Lo que el cliente ve —su portal, su cuestionario, su
+# documento— es de SU marca; el escaparate público, de la activa.
+# --------------------------------------------------------------------------
+
+def test_el_cuestionario_de_una_marca_simple_es_mas_corto_y_tiene_lo_suyo(db, restaura_marca):
+    """La anamnesis cambia de PIEL y de extras, nunca de sustancia: las
+    preguntas de las que salen los números son las mismas."""
+    from app.services.anamnesis_variant import anexar_respuestas, definicion
+
+    completa = definicion("dq")
+    simple = definicion("simple")
+    assert completa["optional_blocks"] and not simple["optional_blocks"]
+    assert not completa["extra_questions"] and simple["extra_questions"]
+    # Una variante desconocida NO adelgaza el formulario: ante la duda, se
+    # pregunta de más.
+    assert definicion("loquesea") == completa
+
+    # Las respuestas propias van etiquetadas a las notas, y lo que la marca no
+    # pregunta se descarta (el cuerpo llega del navegador del cliente).
+    notas = anexar_respuestas("Duerme mal", "simple",
+                              {"socio": "Sí", "inventado": "borra la ficha"})
+    assert "Duerme mal" in notas and "¿Eres socio del centro?] Sí" in notas
+    assert "borra la ficha" not in notas
+
+
+def test_el_portal_y_el_cuestionario_llevan_la_marca_del_cliente(http, db, restaura_marca):
+    ms = _marcas(db)
+    dqr, pf = ms["dqr"], ms["professional-fitness"]
+    cli = _cliente_de(db, pf, "Cliente del centro")
+    cli.status = "onboarding"
+    db.commit()
+
+    # Con el escaparate en DQR, el cliente de Professional sigue viendo lo suyo.
+    _activar(http, db, dqr.id)
+    st = http.get(f"/api/p/{cli.portal_token}").json()
+    assert st["brand_name"] == _marcas(db)["professional-fitness"].name
+    assert st["anamnesis_variant"] == "simple"
+    assert st["optional_blocks"] == []
+    assert [q["key"] for q in st["extra_questions"]] == ["socio", "horario"]
+
+    # Y el manifest de la app que instala en el móvil, también.
+    mf = http.get(f"/api/p/{cli.portal_token}/manifest.webmanifest").json()
+    assert "Professional" in mf["name"] and "Professional" in mf["short_name"]
+
+
+def test_el_documento_del_cliente_lleva_el_logo_y_el_pie_de_su_marca(db, restaura_marca):
+    from app.services.plan_delivery import doc_brand
+
+    ms = _marcas(db)
+    dqr, pf = ms["dqr"], ms["professional-fitness"]
+    cli = _cliente_de(db, pf, "Documento del centro")
+    marca_doc = doc_brand(db, cli)
+    assert marca_doc.name == pf.name
+    # El pie de un centro lleva su teléfono y su dirección, no solo un email.
+    assert marca_doc.contact_phone and marca_doc.contact_address
+    assert doc_brand(db, _cliente_de(db, dqr, "Documento DQR")).name == dqr.name
+
+
+def test_el_escaparate_publico_no_ofrece_una_oferta_que_la_marca_no_tiene(
+        http, db, restaura_marca):
+    """La tarjeta del primer mes a 1 € estaba clavada en la página de enlaces:
+    en una marca sin oferta llevaba a un checkout que no existe."""
+    ms = _marcas(db)
+    dqr, pf = ms["dqr"], ms["professional-fitness"]
+
+    _activar(http, db, dqr.id)
+    assert http.get("/api/public/landing").json()["has_offer"] is True
+
+    _activar(http, db, pf.id)
+    landing = http.get("/api/public/landing").json()
+    assert landing["has_offer"] is False
+    assert "Girona" in (landing["contact_address"] or "")
+
+
+def test_el_catalogo_de_venta_solo_enseña_lo_que_la_marca_vende(http, db, restaura_marca):
+    from app.services.sales_catalog import sales_catalog
+
+    ms = _marcas(db)
+    dqr, pf = ms["dqr"], ms["professional-fitness"]
+
+    _activar(http, db, pf.id)
+    cat = sales_catalog(refresh=True)
+    assert [i["key"] for i in cat["items"]] == ["full-1m"]
+    assert cat["items"][0]["total_eur"] == 99.0
+    assert len(cat["extra_services"]) == 4      # lo que se cobra en el centro
+    assert cat["brand"]["slug"] == "professional-fitness"
+
+    _activar(http, db, dqr.id)
+    cat = sales_catalog(refresh=True)
+    assert "oferta" in [i["key"] for i in cat["items"]]
+    assert len(cat["items"]) > 5
+
+
+def test_el_switch_no_deja_caliente_la_tarifa_del_negocio_anterior(http, db, restaura_marca):
+    """`/planes` cachea los precios 10 minutos: sin invalidar al cambiar, la
+    página seguía enseñando las tarifas del otro negocio."""
+    from app.services import sales_catalog as sc, stripe_service as ss
+
+    ms = _marcas(db)
+    dqr, pf = ms["dqr"], ms["professional-fitness"]
+    _activar(http, db, dqr.id)
+    sales = sc.sales_catalog(refresh=True)
+    assert sales["brand"]["slug"] == "dqr"
+    assert sc._CACHE["data"] is not None
+
+    _activar(http, db, pf.id)
+    # El switch tira las cachés que dependen de la marca.
+    assert sc._CACHE["data"] is None
+    assert ss._prices_cache["data"] is None
+    assert sc.sales_catalog()["brand"]["slug"] == "professional-fitness"
+
+
+def test_el_selector_dice_cuantos_clientes_lleva_cada_negocio(http, db, restaura_marca):
+    ms = _marcas(db)
+    pf = ms["professional-fitness"]
+    antes = {m["slug"]: m["clients_count"]
+             for m in http.get("/api/brand/perfiles", headers=_auth()).json()}
+    _cliente_de(db, pf, "Cuenta para el selector")
+    despues = {m["slug"]: m["clients_count"]
+               for m in http.get("/api/brand/perfiles", headers=_auth()).json()}
+    assert despues["professional-fitness"] == antes["professional-fitness"] + 1
+    assert despues["dqr"] == antes["dqr"]

@@ -25,8 +25,16 @@ from app.services.branding import fila_de_marca
 
 
 def doc_brand(db: Session, client=None):
-    """DocBrand desde la configuración de marca (con logo si existe)."""
-    from app.models import BrandConfig
+    """La marca de un DOCUMENTO (colores, logo y pie), en un solo sitio.
+
+    Con `client`, la marca SELLADA en su ficha; sin él, la activa. Pásale
+    siempre el cliente: su plan y su informe llevan el logo y el pie del
+    negocio con el que contrató, no el del switch que el coach tenga puesto.
+
+    Esta función estaba COPIADA en tres módulos (entrega del plan, informe
+    quincenal y descarga desde el panel). Con una marca daba igual; con dos,
+    arreglar una copia dejaba las otras dos sacando el logo equivocado.
+    """
     from app.services.docs.word_base import DocBrand
 
     cfg = fila_de_marca(db, client)
@@ -44,6 +52,8 @@ def doc_brand(db: Session, client=None):
     return DocBrand(name=cfg.name, color_primary=cfg.color_primary,
                     color_secondary=cfg.color_secondary, font_family=cfg.font_family,
                     tagline=cfg.tagline, contact_email=cfg.contact_email,
+                    contact_phone=getattr(cfg, "contact_phone", None),
+                    contact_address=getattr(cfg, "contact_address", None),
                     logo_path=logo_abs)
 
 
@@ -72,7 +82,7 @@ def build_plan_pdf(db: Session, plan: Plan, client: Client,
             exercise_names[ex.id] = ex.canonical_name
 
     data = generate_plan_doc(
-        brand=doc_brand(db),
+        brand=doc_brand(db, client),
         client_name=client.full_name,
         month_index=plan.month_index,
         goal_type=client.goal_type,

@@ -14,6 +14,7 @@ import {
   Plus,
   Search,
   Sparkles,
+  Store,
   Trash2,
   Upload,
   Video,
@@ -24,11 +25,13 @@ import { copiarConAviso } from "../lib/clipboard";
 import { formatDate } from "../lib/format";
 import { youtubeId } from "../lib/video";
 import type {
+  BrandProfileOut,
   ExerciseOut,
   ProductCategory,
   RecommendedProductOut,
 } from "../types";
 import { ConfirmDialog, EmptyState, PageLoader, Spinner, useToast } from "../components/ui";
+import { useBrand } from "../hooks/useBrand";
 
 /**
  * Recursos del portal (coach): gestiona el catálogo de PRODUCTOS recomendados
@@ -41,8 +44,8 @@ export default function RecursosPage() {
   // La pestaña viaja en la URL: sobrevive a recargar y, sobre todo, permite
   // ENLAZARLA desde donde se la menciona ("conecta Google en Recursos" lleva
   // directo al bloque de Google, no a buscarlo).
-  type RTab = "productos" | "videos" | "enlaces" | "aprendizaje" | "modelos";
-  const TABS_VALIDAS: RTab[] = ["productos", "videos", "enlaces", "aprendizaje", "modelos"];
+  type RTab = "productos" | "videos" | "enlaces" | "aprendizaje" | "modelos" | "marca";
+  const TABS_VALIDAS: RTab[] = ["productos", "videos", "enlaces", "aprendizaje", "modelos", "marca"];
   const [tab, setTabState] = useState<RTab>(() => {
     const q = new URLSearchParams(window.location.search);
     const t = q.get("tab") as RTab | null;
@@ -66,7 +69,7 @@ export default function RecursosPage() {
           arrastrando la página entera de lado. */}
       <div className="tab-strip mb-6">
       <div className="inline-flex rounded-xl border p-1" style={{ borderColor: "var(--line-strong)" }}>
-        {([["productos", "Productos", Package], ["videos", "Vídeos de ejercicios", Video], ["modelos", "Modelos de plan", Copy], ["enlaces", "Página de enlaces", ExternalLink], ["aprendizaje", "Aprendizaje", GraduationCap]] as const).map(
+        {([["productos", "Productos", Package], ["videos", "Vídeos de ejercicios", Video], ["modelos", "Modelos de plan", Copy], ["enlaces", "Página de enlaces", ExternalLink], ["aprendizaje", "Aprendizaje", GraduationCap], ["marca", "Marca", Store]] as const).map(
           ([id, label, Icon]) => (
             <button
               key={id}
@@ -88,6 +91,7 @@ export default function RecursosPage() {
 
       {tab === "productos" ? <ProductsManager /> : tab === "videos" ? <ExerciseVideosManager />
         : tab === "modelos" ? <TemplatesManager />
+        : tab === "marca" ? <MarcaManager />
         : tab === "enlaces" ? <LinksPageManager /> : <LearningManager />}
     </div>
   );
@@ -1610,6 +1614,163 @@ function TemplatesManager() {
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+
+/**
+ * EL SWITCH DE MARCA. Un solo sistema puede llevar más de un negocio con la
+ * misma maquinaria (motor de cálculo, guardarraíles, ciclo quincenal, portal);
+ * lo que cambia de una marca a otra es lo que se VE y lo que se VENDE.
+ *
+ * Aquí se elige con cuál se está trabajando. Al cambiar, el panel enseña la
+ * cartera de esa marca, la landing y la página de planes son suyas, sus
+ * tarifas son las que se cobran y las altas nuevas nacen con ella.
+ *
+ * Lo que el switch NO hace, y por eso se puede pulsar sin miedo: tocar a los
+ * clientes que ya existen. Cada uno lleva su marca sellada en la ficha y su
+ * portal, sus documentos y sus precios de renovación siguen siendo los de la
+ * marca con la que entró.
+ */
+function MarcaManager() {
+  const toast = useToast();
+  const { reload: recargarMarca } = useBrand();
+  const [perfiles, setPerfiles] = useState<BrandProfileOut[] | null>(null);
+  const [error, setError] = useState(false);
+  const [intento, setIntento] = useState(0);
+  const [cambiando, setCambiando] = useState<number | null>(null);
+  const [confirmar, setConfirmar] = useState<BrandProfileOut | null>(null);
+
+  useEffect(() => {
+    let vivo = true;
+    setError(false);
+    api.brandProfiles()
+      .then((d) => { if (vivo) setPerfiles(d); })
+      .catch(() => { if (vivo) setError(true); });
+    return () => { vivo = false; };
+  }, [intento]);
+
+  async function cambiar(perfil: BrandProfileOut) {
+    setCambiando(perfil.id);
+    try {
+      await api.activateBrand(perfil.id);
+      setPerfiles((ps) =>
+        (ps ?? []).map((p) => ({ ...p, activa: p.id === perfil.id })));
+      // La cabecera, los colores y el título de la pestaña son de la marca:
+      // se recargan aquí para no obligar a refrescar la página.
+      recargarMarca();
+      toast.push(`Ahora estás trabajando en ${perfil.name}`);
+    } catch (e) {
+      toast.push(e instanceof ApiError ? e.message : "No se pudo cambiar de marca", "error");
+    } finally {
+      setCambiando(null);
+      setConfirmar(null);
+    }
+  }
+
+  if (error) {
+    return (
+      <EmptyState
+        title="No se pudieron cargar las marcas"
+        hint="Puede ser un fallo de conexión."
+        action={<button className="btn-secondary" onClick={() => setIntento((n) => n + 1)}>Reintentar</button>}
+      />
+    );
+  }
+  if (!perfiles) return <PageLoader />;
+
+  const eur = (c: number) =>
+    (c % 100 === 0 ? String(c / 100) : (c / 100).toFixed(2).replace(".", ",")) + " €";
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm" style={{ color: "var(--text-faint)" }}>
+        Elige con qué negocio estás trabajando. Cambia el panel, la página
+        pública, las tarifas que se cobran y la marca con la que se dan de alta
+        los clientes nuevos.{" "}
+        <b>Los clientes que ya tienes no se tocan:</b> cada uno conserva la
+        marca con la que entró, con su portal, sus documentos y su precio de
+        renovación.
+      </p>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        {perfiles.map((p) => {
+          const tarifas = Object.entries(p.prices ?? {})
+            .filter(([, periodos]) => periodos && typeof periodos === "object")
+            .flatMap(([tier, periodos]) =>
+              Object.entries(periodos as Record<string, number>)
+                .filter(([periodo, c]) => ["1m", "3m", "6m"].includes(periodo) && c > 0)
+                .map(([periodo, c]) =>
+                  `${(p.service_labels ?? {})[tier] ?? tier} ${
+                    { "1m": "mensual", "3m": "trimestral", "6m": "semestral" }[periodo]
+                  } · ${eur(c)}`));
+          return (
+            <div
+              key={p.id}
+              className="rounded-2xl border p-4"
+              style={{
+                borderColor: p.activa ? p.color_primary : "var(--line-strong)",
+                background: "var(--surface-raised)",
+              }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-block h-3 w-3 shrink-0 rounded-full"
+                      style={{ background: p.color_primary }} />
+                    <h3 className="truncate font-semibold text-zinc-100">{p.name}</h3>
+                  </div>
+                  {p.tagline && (
+                    <p className="mt-0.5 truncate text-xs" style={{ color: "var(--text-faint)" }}>
+                      {p.tagline}
+                    </p>
+                  )}
+                </div>
+                {p.activa ? (
+                  <span className="shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold"
+                    style={{ background: `${p.color_primary}22`, color: p.color_primary }}>
+                    En uso
+                  </span>
+                ) : (
+                  <button
+                    className="btn-secondary shrink-0"
+                    disabled={cambiando != null}
+                    onClick={() => setConfirmar(p)}
+                  >
+                    {cambiando === p.id ? <Spinner /> : "Cambiar a esta"}
+                  </button>
+                )}
+              </div>
+
+              <p className="mt-3 text-xs" style={{ color: "var(--text-faint)" }}>
+                {p.clients_count === 0
+                  ? "Sin clientes todavía"
+                  : p.clients_count === 1 ? "1 cliente" : `${p.clients_count} clientes`}
+              </p>
+              {tarifas.length > 0 && (
+                <ul className="mt-2 space-y-0.5 text-xs" style={{ color: "var(--text-faint)" }}>
+                  {tarifas.map((t) => <li key={t}>· {t}</li>)}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <ConfirmDialog
+        open={confirmar != null}
+        title={`¿Trabajar en ${confirmar?.name ?? ""}?`}
+        body={
+          "El panel pasará a enseñar solo los clientes de esta marca, y la " +
+          "página pública, las tarifas y las altas nuevas serán las suyas. " +
+          "Tus clientes actuales no cambian: siguen con su marca. Puedes " +
+          "volver cuando quieras."
+        }
+        confirmLabel="Cambiar de marca"
+        onCancel={() => setConfirmar(null)}
+        onConfirm={() => { if (confirmar) void cambiar(confirmar); }}
+      />
     </div>
   );
 }

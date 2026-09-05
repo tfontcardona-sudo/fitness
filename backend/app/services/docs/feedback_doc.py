@@ -65,7 +65,10 @@ def generate_feedback_doc(
 
     # Cabecera + pie + número de página en las páginas interiores: un informe
     # de 6-8 páginas sin numerar leía como un borrador (el plan ya los lleva).
-    setup_branded_pages(doc, banner_path=None, footer_text=brand.name)
+    # Mismo pie que el plan: nombre y lema de la marca del cliente.
+    setup_branded_pages(doc, banner_path=None,
+                        footer_text=brand.name + (f" · {brand.tagline}"
+                                                  if brand.tagline else ""))
 
     # Portada con las FECHAS del período ("Del 1 al 14 de agosto") y el
     # objetivo REAL del cliente: "Período 7" no le dice nada.

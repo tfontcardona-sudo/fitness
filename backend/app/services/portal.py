@@ -597,7 +597,7 @@ def build_resources(db: Session, client: Client) -> dict:
                 if isinstance(eid, int) and eid not in seen:
                     seen.add(eid)
                     ordered_ids.append(eid)
-    brand = fila_de_marca(db)
+    brand = fila_de_marca(db, client)
     cover = media_url(brand.video_cover_path) if brand else None
     # Código de descuento ÚNICO del coach: si está configurado (Recursos →
     # Página de enlaces) manda sobre el de cada producto — cambiarlo allí lo

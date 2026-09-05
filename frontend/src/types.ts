@@ -416,6 +416,45 @@ export interface BrandConfigOut {
   plans_photo_path: string | null;
   // Enlace de reservas de la videollamada (Google Calendar/Meet, Calendly…).
   meet_url: string | null;
+  // --- PERFIL DE MARCA (el switch). Un sistema, dos negocios. ---
+  slug: string;
+  activa: boolean;
+  /** Nombres comerciales de los servicios de ESTA marca ({tier: nombre}). */
+  service_labels: Record<string, string>;
+  service_taglines: Record<string, string>;
+  /** Tarifas propias ({tier: {periodo: céntimos}}). Lo que no está, no se vende. */
+  prices: Record<string, Record<string, number>>;
+  stripe_prefix: string;
+  /** Título de la pestaña del navegador. */
+  page_title: string;
+  app_name: string;
+  app_short_name: string;
+  /** Versión del cuestionario inicial ("dq" completa, "simple" de centro). */
+  anamnesis_variant: string;
+  /** Dirección del local, si la marca tiene uno. */
+  contact_address: string | null;
+  /** Lo que la marca vende pero NO cobra por la web ({title, price}). */
+  extra_services: { title: string; price: string }[];
+}
+
+/** GET /api/brand/perfiles — el selector del switch. */
+export interface BrandProfileOut {
+  id: number;
+  slug: string;
+  name: string;
+  tagline: string | null;
+  color_primary: string;
+  color_secondary: string;
+  logo_path: string | null;
+  activa: boolean;
+  service_labels: Record<string, string> | null;
+  /** Tarifas de ESTA marca ({tier: {periodo: céntimos}}). Lo que no está, no se vende. */
+  prices: Record<string, Record<string, number>> | null;
+  stripe_prefix: string | null;
+  extra_services: { title: string; price: string }[] | null;
+  contact_address: string | null;
+  /** Clientes que lleva este negocio (lo que se quiere ver antes de cambiar). */
+  clients_count: number;
 }
 
 /** Videollamada quincenal de un cliente Pro. El cliente propone → el coach
@@ -480,6 +519,10 @@ export interface LandingOut {
   /** Contacto público del coach: /planes abre WhatsApp con este teléfono. */
   contact_phone: string | null;
   contact_email: string | null;
+  /** Dirección del local, si la marca tiene uno (un centro, no una asesoría). */
+  contact_address: string | null;
+  /** ¿Esta marca tiene oferta de captación? Si no, su tarjeta no se pinta. */
+  has_offer: boolean;
   products: { title: string; url: string; category: string; image_url: string | null }[];
 }
 

@@ -172,9 +172,21 @@ def marca_por_defecto() -> Marca:
 
 def invalidar() -> None:
     """El switch (y cualquier edición de la marca) tira la caché: el cambio se
-    ve al instante, no dentro de medio minuto."""
+    ve al instante, no dentro de medio minuto.
+
+    Y con ella las cachés que DEPENDEN de la marca: el catálogo de venta del
+    panel y los precios públicos de /planes. Sin esto, tras pulsar el switch la
+    página de planes seguía enseñando hasta diez minutos las tarifas del
+    negocio anterior."""
     with _lock:
         _cache.update({"at": 0.0, "por_id": {}, "activa": None})
+    try:
+        from app.services import sales_catalog, stripe_service
+
+        sales_catalog._CACHE.update({"data": None, "at": 0.0, "marca": None})
+        stripe_service._prices_cache.update({"at": 0.0, "data": None, "marca": None})
+    except Exception:  # noqa: BLE001 — invalidar una caché no puede tumbar nada
+        pass
 
 
 def _refrescar(db: Session) -> None:

@@ -21,9 +21,13 @@ export function useBrand(): BrandState {
 export function BrandProvider({ children }: { children: ReactNode }) {
   const [brand, setBrand] = useState<BrandConfigOut | null>(null);
 
-  const aplica = (colorPrimary: string, colorSecondary: string) => {
+  const aplica = (colorPrimary: string, colorSecondary: string, titulo?: string | null) => {
     document.documentElement.style.setProperty("--brand-accent", colorPrimary);
     document.documentElement.style.setProperty("--brand-accent-2", colorSecondary);
+    // El TÍTULO de la pestaña también es de la marca: con dos negocios en el
+    // mismo sistema, "DQ · Asesorías Fitness" clavado en el index.html decía
+    // el nombre del otro. El del index queda solo como valor de arranque.
+    if (titulo) document.title = titulo;
   };
 
   const load = () => {
@@ -35,7 +39,7 @@ export function BrandProvider({ children }: { children: ReactNode }) {
       api.publicLanding()
         .then((l) => {
           setBrand({ ...(l as any), portal_theme: "dark" } as BrandConfigOut);
-          aplica(l.color_primary, l.color_secondary);
+          aplica(l.color_primary, l.color_secondary, l.name);
         })
         .catch(() => { /* sin marca todavía: quedan los defaults del CSS */ });
       return;
@@ -44,7 +48,7 @@ export function BrandProvider({ children }: { children: ReactNode }) {
       .getBrand()
       .then((b) => {
         setBrand(b);
-        aplica(b.color_primary, b.color_secondary);
+        aplica(b.color_primary, b.color_secondary, b.page_title || b.name);
       })
       .catch(() => {
         /* sin marca todavía: se mantienen los defaults del CSS */

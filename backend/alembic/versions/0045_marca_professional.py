@@ -77,7 +77,11 @@ def upgrade() -> None:
             " prices = CAST(:precios AS jsonb),"
             " extra_services = CAST(:extra AS jsonb),"
             " page_title = 'Professional · Centre Salut & Fitness',"
-            " app_name = 'Professional', app_short_name = 'Professional'"
+            " app_name = 'Professional', app_short_name = 'Professional',"
+            # Anamnesis SENCILLA: las mismas preguntas de las que salen los
+            # números (quitar una rompe el plan), sin los bloques opcionales y
+            # con las preguntas propias del centro.
+            " anamnesis_variant = 'simple'"
             " WHERE slug = 'professional-fitness'"),
         {"labels": json.dumps(_LABELS_PF, ensure_ascii=False),
          "taglines": json.dumps(_TAGLINES_PF, ensure_ascii=False),

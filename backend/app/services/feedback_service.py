@@ -32,22 +32,11 @@ from app.services.branding import fila_de_marca
 
 
 def _doc_brand(db: Session, client=None) -> DocBrand:
-    cfg = fila_de_marca(db, client)
-    if cfg is None:
-        return DocBrand(name="Tu asesoría", color_primary="#6EE7B7",
-                        color_secondary="#8B9DF7", font_family="Inter")
-    logo_abs = None
-    if cfg.logo_path:
-        try:
-            logo_abs = str(abs_path(cfg.logo_path))
-        except Exception:
-            logo_abs = None
-    return DocBrand(
-        name=cfg.name, color_primary=cfg.color_primary,
-        color_secondary=cfg.color_secondary, font_family=cfg.font_family,
-        tagline=cfg.tagline, contact_email=cfg.contact_email, logo_path=logo_abs,
-    )
+    """Delega en la ÚNICA función de marca de documentos (`plan_delivery`):
+    tres copias del mismo código eran tres sitios donde arreglar el logo."""
+    from app.services.plan_delivery import doc_brand
 
+    return doc_brand(db, client)
 
 def _prev_period(db: Session, period: Period) -> Period | None:
     return db.scalar(
@@ -400,7 +389,7 @@ def _goal_label_es(goal: str | None) -> str | None:
 def _write_feedback_doc(db: Session, client: Client, period: Period, inputs: dict, ai_out) -> str:
     """Genera el .docx con las gráficas + el texto (de la IA o editado) y lo guarda."""
     docx = generate_feedback_doc(
-        brand=_doc_brand(db), client_name=client.full_name, period_index=period.period_index,
+        brand=_doc_brand(db, client), client_name=client.full_name, period_index=period.period_index,
         period_label=_period_label(period), goal_label=_goal_label_es(client.goal_type),
         # Lo contratado manda también en el DOCUMENTO (ya mandaba en el prompt
         # de la IA): a un cliente de solo entrenamiento no se le puede reprochar

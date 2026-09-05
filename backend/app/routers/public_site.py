@@ -46,9 +46,12 @@ def public_landing(request: Request, db: Session = Depends(get_db)) -> LandingOu
     brand = fila_de_marca(db)
     if brand is None:  # BD recién creada sin seed: valores por defecto
         brand = BrandConfig()
+    # El escaparate público es el de la marca ACTIVA, productos incluidos.
+    from app.services.branding import productos_de_la_marca
+
     products = db.scalars(
         select(RecommendedProduct)
-        .where(RecommendedProduct.active.is_(True))
+        .where(RecommendedProduct.active.is_(True), productos_de_la_marca(db))
         .order_by(RecommendedProduct.sort_order, RecommendedProduct.id)
     ).all()
     return LandingOut(
@@ -66,6 +69,10 @@ def public_landing(request: Request, db: Session = Depends(get_db)) -> LandingOu
         partner_discount_code=brand.partner_discount_code,
         contact_phone=brand.contact_phone,
         contact_email=brand.contact_email,
+        # La dirección solo la tiene una marca con local: la página de enlaces
+        # de un centro sin decir dónde está no sirve de mucho.
+        contact_address=getattr(brand, "contact_address", None),
+        has_offer=marca_activa(db).vende_oferta(),
         products=[LandingProductOut(
             title=p.title, url=p.url, category=p.category,
             image_url=product_image_url(p),

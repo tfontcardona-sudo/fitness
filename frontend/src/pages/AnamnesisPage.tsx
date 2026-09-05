@@ -118,6 +118,22 @@ const PATTERNS = [
 
 const PASOS = ["Tú", "Objetivo", "Entreno", "Salud", "Comida", "Enviar"] as const;
 
+/** Piel y variante del cuestionario, servidas por el backend según la marca. */
+interface PreguntaMarca { key: string; label: string; placeholder?: string }
+interface Marca {
+  brand_name: string;
+  logo_url: string | null;
+  optional_blocks: string[];
+  extra_questions: PreguntaMarca[];
+}
+// Mientras carga el estado (o si la red falla) se pinta la versión COMPLETA:
+// ante la duda se pregunta de más, nunca de menos.
+const MARCA_POR_DEFECTO: Marca = {
+  brand_name: "", logo_url: null,
+  optional_blocks: ["priority_zones", "exercise_prefs", "meal_times_text"],
+  extra_questions: [],
+};
+
 // Campos → etiqueta en español para traducir los 422 del backend.
 const FIELD_ES: Record<string, string> = {
   sex: "Sexo", birth_date: "Fecha de nacimiento", height_cm: "Altura",
@@ -152,23 +168,28 @@ const BORRADOR_TTL_MS = 30 * 24 * 3600 * 1000;   // 30 días
 const borradorKey = (token: string | undefined) =>
   `dqr.anamnesis.borrador.${(token ?? "").slice(0, 16)}`;
 
-function guardarBorrador(token: string | undefined, form: FormState, paso: number): void {
+function guardarBorrador(token: string | undefined, form: FormState, paso: number,
+                         extra: Record<string, string>): void {
   try {
     localStorage.setItem(borradorKey(token),
-      JSON.stringify({ form, paso, ts: Date.now() }));
+      JSON.stringify({ form, paso, extra, ts: Date.now() }));
   } catch { /* sin almacenamiento (modo privado): se pierde, como antes */ }
 }
 function limpiarBorrador(token: string | undefined): void {
   try { localStorage.removeItem(borradorKey(token)); } catch { /* nada que hacer */ }
 }
-function leerBorrador(token: string | undefined): { form: FormState; paso: number } | null {
+function leerBorrador(token: string | undefined):
+    { form: FormState; paso: number; extra: Record<string, string> } | null {
   try {
     const raw = localStorage.getItem(borradorKey(token));
     if (!raw) return null;
     const d = JSON.parse(raw);
     if (!d?.form || typeof d.form !== "object") return null;
     if (Date.now() - (d.ts ?? 0) > BORRADOR_TTL_MS) return null;
-    return { form: { ...VACIO, ...d.form }, paso: Number(d.paso) || 0 };
+    // Las respuestas a las preguntas propias de la marca también se guardan:
+    // si no, recargar dejaba el formulario entero menos esas dos casillas.
+    return { form: { ...VACIO, ...d.form }, paso: Number(d.paso) || 0,
+             extra: (d.extra && typeof d.extra === "object") ? d.extra : {} };
   } catch { return null; }
 }
 
@@ -203,6 +224,12 @@ export default function AnamnesisPage() {
   const [adjEstado, setAdjEstado] = useState<"idle" | "uploading" | "done">("idle");
   const [adjError, setAdjError] = useState<string | null>(null);
   const [adjSubidos, setAdjSubidos] = useState(0);
+  // LA MARCA del cuestionario: su logo, su nombre y QUÉ versión del formulario
+  // toca. Lo obligatorio es igual para todas (de ahí salen los números del
+  // plan); lo que cambia son los bloques opcionales y las preguntas propias.
+  const [marca, setMarca] = useState<Marca>(MARCA_POR_DEFECTO);
+  const muestra = (bloque: string) => marca.optional_blocks.includes(bloque);
+  const [extra, setExtra] = useState<Record<string, string>>(() => borrador?.extra ?? {});
   // Fotos iniciales opcionales tras enviar.
   const [fotosSubidas, setFotosSubidas] = useState(0);
   const [subiendoFotos, setSubiendoFotos] = useState(false);
@@ -221,6 +248,15 @@ export default function AnamnesisPage() {
         // Contador REAL de fotos ya subidas: sin esto, quien volvía al enlace
         // veía "Subir mis fotos" a cero y el rechazo por límite era invisible.
         if (typeof st?.photos_count === "number") setFotosSubidas(st.photos_count);
+        if (st) {
+          setMarca({
+            brand_name: st.brand_name ?? "",
+            logo_url: st.logo_url ?? null,
+            optional_blocks: Array.isArray(st.optional_blocks)
+              ? st.optional_blocks : MARCA_POR_DEFECTO.optional_blocks,
+            extra_questions: Array.isArray(st.extra_questions) ? st.extra_questions : [],
+          });
+        }
       })
       .catch(() => { /* fallo de red: el backend re-valida al enviar */ });
     fetch(`/api/p/${token}/anamnesis/prefill`)
@@ -291,8 +327,8 @@ export default function AnamnesisPage() {
   // estaba (y en el mismo paso).
   useEffect(() => {
     if (hecho) return;
-    guardarBorrador(token, form, paso);
-  }, [token, form, paso, hecho]);
+    guardarBorrador(token, form, paso, extra);
+  }, [token, form, paso, extra, hecho]);
 
   const set = (patch: Partial<FormState>) => {
     setError(null);
@@ -369,6 +405,13 @@ export default function AnamnesisPage() {
       strict_free_meal_enabled: f.strict_free_meal_enabled,
       lifestyle_notes: f.lifestyle_notes.trim() || null,
       consent_accepted: true,
+      // Respuestas a las preguntas PROPIAS de la marca. Solo viajan las que la
+      // marca pregunta de verdad (el backend descarta el resto igualmente).
+      extra_answers: Object.fromEntries(
+        marca.extra_questions
+          .map((q) => [q.key, (extra[q.key] ?? "").trim()])
+          .filter(([, valor]) => valor),
+      ),
     };
     try {
       const r = await fetch(`/api/p/${token}/anamnesis`, {
@@ -543,8 +586,14 @@ export default function AnamnesisPage() {
     <div style={{ minHeight: "100vh", background: "#f6f1e7", color: "#26211a" }}>
       <div className="mx-auto max-w-lg px-5 py-8">
         <header className="mb-6 flex flex-col items-center text-center">
-          <img src="/dq-logo.png" alt="" className="h-12 w-auto rounded-xl shadow-sm" />
+          {/* El logo sale de la MARCA: con dos negocios, el logo clavado
+              enseñaba el del otro a quien entra por el centro. */}
+          <img src={marca.logo_url || "/dq-logo.png"} alt={marca.brand_name}
+            className="h-12 w-auto rounded-xl shadow-sm" />
           <h1 className="mt-3 text-2xl font-bold">Tu cuestionario inicial</h1>
+          {marca.brand_name && (
+            <p className="mt-0.5 text-sm font-semibold opacity-80">{marca.brand_name}</p>
+          )}
           {!hecho && !tokenBad && (
             <p className="mt-1 max-w-md text-sm opacity-70">6 pasos · unos minutos</p>
           )}
@@ -559,7 +608,7 @@ export default function AnamnesisPage() {
               <b>Seguimos donde lo dejaste.</b> Lo que habías escrito se guardó en
               este móvil.{" "}
               <button
-                onClick={() => { limpiarBorrador(token); setForm(VACIO); setPaso(0); setRecuperado(false); }}
+                onClick={() => { limpiarBorrador(token); setForm(VACIO); setExtra({}); setPaso(0); setRecuperado(false); }}
                 className="underline"
               >
                 Empezar de cero
@@ -762,11 +811,12 @@ export default function AnamnesisPage() {
                       value={form.goal_deadline} onChange={(e) => set({ goal_deadline: e.target.value })} />
                   </div>
                 </div>
+                {muestra("priority_zones") && (
                 <div>
                   {label("Zonas que quieres priorizar", true)}
                   <input type="text" placeholder="p. ej. glúteo, abdomen, hombros" className={inputCls} style={inputStyle}
                     value={form.priority_zones} onChange={(e) => set({ priority_zones: e.target.value })} />
-                </div>
+                </div>)}
               </>)}
 
               {paso === 2 && (<>
@@ -827,11 +877,23 @@ export default function AnamnesisPage() {
                   <textarea rows={2} placeholder="Qué has entrenado antes, otros deportes…" className={inputCls} style={inputStyle}
                     value={form.sport_history} onChange={(e) => set({ sport_history: e.target.value })} />
                 </div>
+                {muestra("exercise_prefs") && (
                 <div>
                   {label("Ejercicios favoritos y ejercicios que detestas", true)}
                   <textarea rows={2} placeholder="p. ej. me encanta el peso muerto; odio las búlgaras" className={inputCls} style={inputStyle}
                     value={form.exercise_prefs} onChange={(e) => set({ exercise_prefs: e.target.value })} />
-                </div>
+                </div>)}
+                {/* Preguntas PROPIAS de la marca (un centro: si eres socio, qué
+                    días vienes). Van aquí porque hablan de cómo entrena. */}
+                {marca.extra_questions.map((q) => (
+                  <div key={q.key}>
+                    {label(q.label, true)}
+                    <input type="text" placeholder={q.placeholder ?? ""} maxLength={500}
+                      className={inputCls} style={inputStyle}
+                      value={extra[q.key] ?? ""}
+                      onChange={(e) => setExtra((x) => ({ ...x, [q.key]: e.target.value }))} />
+                  </div>
+                ))}
               </>)}
 
               {paso === 3 && (<>
@@ -888,11 +950,12 @@ export default function AnamnesisPage() {
                     </select>
                   </div>
                 </div>
+                {muestra("meal_times_text") && (
                 <div>
                   {label("¿A qué horas sueles comer?", true)}
                   <input type="text" placeholder="p. ej. desayuno 7:00, como a las 15h, ceno tarde (turnos)" className={inputCls} style={inputStyle}
                     value={form.meal_times_text} onChange={(e) => set({ meal_times_text: e.target.value })} />
-                </div>
+                </div>)}
                 <div>
                   {label("Alergias o intolerancias", true)}
                   <input type="text" placeholder="p. ej. lactosa, frutos secos (separa con comas)" className={inputCls} style={inputStyle}

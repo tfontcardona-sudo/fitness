@@ -49,8 +49,25 @@ def _brand(db: Session) -> BrandConfig:
 @router.get("/perfiles", response_model=list[BrandProfileOut])
 def list_profiles(db: Session = Depends(get_db)) -> list[BrandProfileOut]:
     """Las marcas que hay y cuál está activa (el selector del switch)."""
+    from sqlalchemy import func
+
+    from app.models import Client
+
     filas = db.scalars(select(BrandConfig).order_by(BrandConfig.id)).all()
-    return [BrandProfileOut.model_validate(f) for f in filas]
+    # Clientes por marca, en UNA consulta. Los que no tienen marca (base
+    # antigua) cuentan en el primer perfil, que es donde los enseña el panel.
+    por_marca = dict(db.execute(
+        select(Client.brand_id, func.count(Client.id)).group_by(Client.brand_id)).all())
+    primera = filas[0].id if filas else None
+    sin_marca = por_marca.pop(None, 0)
+    if primera is not None:
+        por_marca[primera] = por_marca.get(primera, 0) + sin_marca
+    out = []
+    for f in filas:
+        perfil = BrandProfileOut.model_validate(f)
+        perfil.clients_count = int(por_marca.get(f.id, 0))
+        out.append(perfil)
+    return out
 
 
 @router.post("/{brand_id}/activar", response_model=BrandConfigOut)

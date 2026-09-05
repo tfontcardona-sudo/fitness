@@ -77,6 +77,9 @@ export default function LinksPage() {
           {/* OFERTA de la campaña de story/post ("link en la bio" → aquí):
               arriba del todo y con su gancho, para que el que viene del
               carrusel la encuentre al primer toque. */}
+          {/* Solo si la marca TIENE oferta: estaba clavada, y en una marca sin
+              ella el botón llevaba a un checkout que no existe. */}
+          {data?.has_offer !== false && (
           <Link to="/oferta"
             className="flex w-full flex-col items-center justify-center rounded-2xl px-5 py-4 text-white shadow-xl transition-transform active:scale-[0.97]"
             style={{ background: "#C2453A" }}>
@@ -84,7 +87,7 @@ export default function LinksPage() {
             <span className="mt-0.5 text-xs font-semibold text-white/85">
               Plan completo · plazas limitadas
             </span>
-          </Link>
+          </Link>)}
 
           {/* Trabaja conmigo → página de planes con pago */}
           <Link to="/planes"
@@ -157,7 +160,11 @@ export default function LinksPage() {
           </div>
         )}
 
-        <p className="mt-10 text-xs text-white/50">Pago seguro con Stripe</p>
+        {/* Dónde está el centro: una marca con local tiene que decirlo. */}
+        {data?.contact_address && (
+          <p className="mt-8 text-xs text-white/60">{data.contact_address}</p>
+        )}
+        <p className="mt-4 text-xs text-white/50">Pago seguro con Stripe</p>
       </div>
     </div>
   );

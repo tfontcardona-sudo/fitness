@@ -861,8 +861,15 @@ def _contact_section(doc: Document, brand: DocBrand) -> None:
     """Cierre profesional del documento: cómo resolver dudas y dónde seguir el
     día a día. Antes el PDF terminaba en seco tras la suplementación/FAQ."""
     lineas: list = []
+    # El contacto sale de la MARCA. Un centro con local se contacta por
+    # WhatsApp y se visita; una asesoría online, por email. Se pinta lo que la
+    # marca tenga puesto, sin inventar ninguna de las dos cosas.
+    if getattr(brand, "contact_phone", None):
+        lineas.append(("WhatsApp", brand.contact_phone))
     if brand.contact_email:
         lineas.append(("Escríbeme", brand.contact_email))
+    if getattr(brand, "contact_address", None):
+        lineas.append(("Dónde estamos", brand.contact_address))
     lineas.append(("Tu portal", "registra tu día a día (peso, comidas y entrenos) "
                    "desde el enlace de tu portal — es lo que me permite ajustarte "
                    "el plan en cada revisión."))

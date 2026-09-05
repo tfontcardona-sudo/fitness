@@ -146,7 +146,7 @@ def _needs_anamnesis(client: Client) -> bool:
 
 
 def _state(db: Session, client: Client) -> AnamnesisStateOut:
-    brand = fila_de_marca(db) or BrandConfig()
+    brand = fila_de_marca(db, client) or BrandConfig()
     return AnamnesisStateOut(
         first_name=_first_name(client),
         anamnesis_done=_anamnesis_recibida(client),
@@ -161,7 +161,19 @@ def _state(db: Session, client: Client) -> AnamnesisStateOut:
         color_bg=brand.color_bg,
         font_family=brand.font_family,
         portal_theme=brand.portal_theme,
+        logo_url=portal_svc.media_url(brand.logo_path),
+        **_variante_de_anamnesis(brand),
     )
+
+
+def _variante_de_anamnesis(brand) -> dict:
+    """Qué versión del cuestionario toca: los bloques opcionales que quiere
+    esta marca y sus preguntas propias. Lo OBLIGATORIO no se toca — de ahí
+    salen los números del plan y quitarlo no simplifica, rompe."""
+    from app.services.anamnesis_variant import definicion
+
+    variante = getattr(brand, "anamnesis_variant", None) or "dq"
+    return {"anamnesis_variant": variante, **definicion(variante)}
 
 
 @router.get("/{token}", response_model=AnamnesisStateOut)
@@ -197,6 +209,7 @@ def submit_anamnesis(
 
     data = body.model_dump()
     data.pop("consent_accepted")
+    respuestas_marca = data.pop("extra_answers", None)
     priority_zones = data.pop("priority_zones", None)
     if priority_zones:
         prefix = f"[Zonas a priorizar] {priority_zones}"
@@ -217,6 +230,16 @@ def submit_anamnesis(
         data["lifestyle_notes"] = (
             f"{data['lifestyle_notes']}\n{linea}" if data.get("lifestyle_notes") else linea
         )
+    # Preguntas PROPIAS de la marca (si un centro pregunta si eres socio, la
+    # respuesta tiene que llegar a la ficha). Mismo camino que las zonas a
+    # priorizar: texto etiquetado en las notas, sin columnas nuevas.
+    if respuestas_marca:
+        from app.services.anamnesis_variant import anexar_respuestas
+
+        marca_fila = fila_de_marca(db, client)
+        data["lifestyle_notes"] = anexar_respuestas(
+            data.get("lifestyle_notes"),
+            getattr(marca_fila, "anamnesis_variant", None), respuestas_marca)
     data["current_weight_kg"] = data["start_weight_kg"]
 
     for field, value in data.items():
@@ -237,7 +260,10 @@ def submit_anamnesis(
         pass
     client.consent_signed_at = datetime.now(timezone.utc)
 
-    brand = fila_de_marca(db) or BrandConfig()
+    # El consentimiento RGPD es una PRUEBA LEGAL: tiene que ir a nombre del
+    # negocio con el que el cliente contrató, no del que esté activo en el
+    # panel el día que lo firma.
+    brand = fila_de_marca(db, client) or BrandConfig()
     pdf_rel = generate_consent_pdf(
         client.id, client.full_name, client.email, brand.name, client.consent_signed_at
     )
@@ -567,7 +593,10 @@ def portal_state_full(
         package_tier=client.package_tier,
         has_plan=plan is not None,
         period=portal_svc.period_info(period, portal_svc.today_local()),
-        brand=PortalBrand(**portal_svc.brand_payload(db)),
+        # La marca DEL CLIENTE: los colores, el logo y el nombre de su
+        # portal son los del negocio con el que contrató, pase lo que
+        # pase con el switch del panel.
+        brand=PortalBrand(**portal_svc.brand_payload(db, client)),
         # Banner del portal: se muestra ya (sin esperar los 15 min del push).
         photos_pending=photos_pending(db, client, min_minutes=0),
         needs_anamnesis=_needs_anamnesis(client),
@@ -1528,13 +1557,19 @@ def portal_manifest(
     sin tener que guardar el enlace. Tematizado con la marca."""
     from fastapi.responses import JSONResponse
 
-    brand = portal_svc.brand_payload(db)
+    # La marca DEL CLIENTE (la sellada en su ficha), no la del escaparate: la
+    # app que se instala en su móvil es la del negocio con el que contrató.
+    from app.services.branding import marca_de_cliente
+
+    brand = portal_svc.brand_payload(db, client)
+    marca = marca_de_cliente(client, db)
     light = brand.get("portal_theme") == "light"
-    # Identidad de la app instalada: "DQR" grande (etiqueta bajo el icono) y
-    # "Assessories" como subtítulo (nombre completo en splash/ajustes).
+    # Identidad de la app instalada: el nombre corto es la etiqueta bajo el
+    # icono y el largo, el del splash y los ajustes. Los dos salen del perfil
+    # de marca (estaban clavados a "DQR").
     manifest = {
-        "name": brand.get("name") or "DQR · Assessories",
-        "short_name": "DQR",
+        "name": marca.app_name or brand.get("name") or "Tu asesoría",
+        "short_name": marca.app_short_name or marca.name or "Portal",
         "description": "Tu portal de seguimiento: entreno, diario y revisión quincenal.",
         "lang": "es",
         "start_url": f"/p/{client.portal_token}",

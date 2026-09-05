@@ -564,7 +564,7 @@ def open_invoice_url(client: Client) -> str | None:
 # ---------------------------------------------------------------- precios ----
 
 _PERIOD_MONTHS = {"1m": 1, "3m": 3, "6m": 6}
-_prices_cache: dict = {"at": 0.0, "data": None}
+_prices_cache: dict = {"at": 0.0, "data": None, "marca": None}
 _PRICES_TTL_S = 600  # los precios cambian poco; 10 min de caché evita latencia
 
 
@@ -581,16 +581,27 @@ def get_plan_prices() -> dict:
     """
     import time
 
-    if _prices_cache["data"] is not None and time.time() - _prices_cache["at"] < _PRICES_TTL_S:
+    marca_p = _marca()
+    # La caché lleva la MARCA: al cambiar el switch, /planes no puede seguir
+    # sirviendo hasta diez minutos las tarifas del otro negocio.
+    if (_prices_cache["data"] is not None
+            and _prices_cache.get("marca") == marca_p.slug
+            and time.time() - _prices_cache["at"] < _PRICES_TTL_S):
         return _prices_cache["data"]
 
     tiers: dict = {t: {p: None for p in _PERIOD_MONTHS} for t in _TIERS}
     currency = "eur"
     leidos_de_stripe = 0
+    # Lo que ESTA marca vende de verdad. Sin esto se consultaba a Stripe plan a
+    # plan para las nueve combinaciones y un id heredado del .env (compartido
+    # entre marcas) podía colar en /planes el precio del otro negocio.
+    vendibles = set(marca_p.vende())
     if settings.stripe_enabled:
         stripe = _stripe()
         for tier in _TIERS:
             for period, months in _PERIOD_MONTHS.items():
+                if (tier, period) not in vendibles:
+                    continue
                 price_id = _resolve_price_id(tier, period)
                 if not price_id:
                     continue
@@ -607,7 +618,6 @@ def get_plan_prices() -> dict:
                 except Exception as exc:  # precio borrado/ID malo: no rompe la página
                     _log.warning("Precio %s (%s %s) ilegible: %s", price_id, tier, period, exc)
 
-    marca_p = _marca()
     for tier in _TIERS:  # reserva desde la MARCA para lo que Stripe no haya dado
         for period, months in _PERIOD_MONTHS.items():
             if tiers[tier][period] is None:
@@ -626,7 +636,7 @@ def get_plan_prices() -> dict:
     # no se cachea: la siguiente visita reintenta leer los reales en vez de
     # servir la reserva 10 minutos.
     if not (settings.stripe_enabled and leidos_de_stripe == 0):
-        _prices_cache.update(at=time.time(), data=data)
+        _prices_cache.update(at=time.time(), data=data, marca=marca_p.slug)
     return data
 
 

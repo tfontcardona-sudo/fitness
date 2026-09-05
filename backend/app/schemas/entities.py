@@ -167,6 +167,11 @@ class AnamnesisSubmit(BaseModel):
     # RGPD
     consent_accepted: Literal[True]  # checkbox obligatorio
 
+    # Respuestas a las preguntas PROPIAS de la marca ({clave: texto}). Se
+    # anexan etiquetadas a las notas del cliente; las claves que la variante no
+    # pregunta se descartan (el cuerpo llega del navegador).
+    extra_answers: dict[str, str] | None = None
+
 
 class ClientUpdate(BaseModel):
     """Edición por el coach (anamnesis editable con audit trail)."""
@@ -403,6 +408,9 @@ class BrandProfileOut(BaseModel):
     # Lo que se cobra en el centro, no por la web (entreno personal, packs).
     extra_services: list | None = None
     contact_address: str | None = None
+    # Cuántos clientes lleva cada negocio: es lo que el coach quiere ver ANTES
+    # de cambiar el switch (el panel pasa a enseñar solo esa cartera).
+    clients_count: int = 0
 
 
 class BrandConfigOut(BrandConfigIn):
@@ -479,6 +487,13 @@ class LandingOut(BaseModel):
     # este teléfono para pedir información (los precios no se publican).
     contact_phone: str | None = None
     contact_email: str | None = None
+    # Dirección del local, si la marca tiene uno (un centro, no una asesoría
+    # online): la página de enlaces de un gimnasio tiene que decir dónde está.
+    contact_address: str | None = None
+    # ¿Esta marca tiene oferta de captación? La tarjeta del primer mes a 1 €
+    # estaba clavada en la página: en una marca sin oferta llevaba a un
+    # checkout que no existe.
+    has_offer: bool = True
     # Catálogo de productos recomendados (comprables con el código de arriba).
     products: list[LandingProductOut] = []
 
@@ -677,6 +692,16 @@ class AnamnesisStateOut(BaseModel):
     color_bg: str
     font_family: str
     portal_theme: Theme
+    # La PIEL de la marca en el formulario: su logo arriba (antes solo se
+    # aplicaban los colores) y qué versión del cuestionario se pinta.
+    logo_url: str | None = None
+    anamnesis_variant: str = "dq"
+    # Bloques OPCIONALES que esta marca quiere (zonas a priorizar, ejercicios
+    # favoritos, horarios de comida). Lo obligatorio no está aquí: es igual
+    # para todas porque de ahí salen los números del plan.
+    optional_blocks: list[str] = Field(default_factory=list)
+    # Preguntas PROPIAS de la marca ({key, label, placeholder}).
+    extra_questions: list[dict] = Field(default_factory=list)
 
 
 class PhotoOut(BaseModel):
