@@ -768,10 +768,22 @@ def run_coach_digest(db: Session, now: datetime | None = None) -> dict:
 
     from app.routers.alerts import client_alerts
 
+    # El resumen al móvil del coach recorre a TODOS sus clientes, de las dos
+    # marcas: es la red de seguridad. La campana del panel sí se filtra (enseña
+    # el negocio en el que estás), así que aquí se dice de qué marca es cada
+    # aviso — si no, el coach lee un nombre que no encuentra en su lista.
+    from app.services.branding import hay_varias_marcas, marca_de_cliente
+
+    varias = hay_varias_marcas(db)
     alerts: list[dict] = []
     for client in db.scalars(select(Client).where(Client.status != "inactive")):
         try:
-            alerts.extend(client_alerts(db, client, now_local.date()))
+            propias = client_alerts(db, client, now_local.date())
+            if varias and propias:
+                sufijo = f" ({marca_de_cliente(client, db).name})"
+                for a in propias:
+                    a["client_name"] = (a.get("client_name") or "") + sufijo
+            alerts.extend(propias)
         except Exception:  # un cliente con datos raros no tumba el resumen entero
             logger.exception("alertas ilegibles del cliente %s en el digest", client.id)
     if not alerts:

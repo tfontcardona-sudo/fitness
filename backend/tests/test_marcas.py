@@ -589,3 +589,42 @@ def test_la_marca_simple_no_paga_el_educativo_que_no_va_a_imprimir():
     assert len(simple.calls) == 2
     assert plan_s.education is None
     assert plan_s.nutrition.target_kcal == plan.nutrition.target_kcal
+
+
+def test_lo_que_el_coach_corrige_en_un_negocio_no_moldea_los_planes_del_otro(
+        http, db, restaura_marca, tmp_path, monkeypatch):
+    """Las LECCIONES (§13) se destilan de las ediciones del coach y se inyectan
+    en el prompt de generación. Con un solo sidecar, las manías de un negocio
+    acababan escribiendo los planes del otro."""
+    from app.models import Plan
+    from app.services import coach_lessons as cl
+    from app.services.continuous_learning import record_edit
+
+    ms = _marcas(db)
+    dqr, pf = ms["dqr"], ms["professional-fitness"]
+    monkeypatch.setattr(cl, "_sidecar_path",
+                        lambda slug="": tmp_path / f"lecciones-{slug or 'x'}.json")
+
+    # Seis ediciones sobre el plan de un cliente de DQR.
+    cli = _cliente_de(db, dqr, "Edita en DQR")
+    plan = Plan(client_id=cli.id, month_index=1, version=1, status="draft")
+    db.add(plan)
+    db.flush()
+    for i in range(6):
+        record_edit(db, plan_id=plan.id, category="seleccion_alimentos",
+                    note=f"Cambio {i}: quita el pavo del desayuno", commit=False)
+    db.commit()
+
+    from tests.test_siguiente_nivel2 import _ScriptedAI
+
+    _activar(http, db, dqr.id)
+    ia = _ScriptedAI({"lessons": ["Prefiere desayunos sin fiambre."]})
+    assert cl.distill_lessons(db, ai=ia)["lessons"]
+    assert "sin fiambre" in cl.lessons_reference("dqr")
+    # Professional no ha corregido nada: su prompt no lleva las de DQR.
+    assert cl.lessons_reference("professional-fitness") == ""
+
+    # Y las ediciones que se destilan son las de la marca activa: en
+    # Professional no hay ninguna, así que no se inventa lecciones ajenas.
+    _activar(http, db, pf.id)
+    assert cl._recent_edits(db) == []

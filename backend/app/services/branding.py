@@ -213,7 +213,14 @@ def _con_sesion(db: Session | None):
 
 
 def marcas(db: Session | None = None) -> list[Marca]:
-    """Todos los perfiles, en orden. Para el selector del panel."""
+    """Todos los perfiles, en orden.
+
+    Respeta la caché igual que `marca_activa` (el switch la invalida). Sin
+    esto iba a la base en CADA llamada, y desde que el filtro de cartera y el
+    de productos preguntan "¿cuántas marcas hay?", eso era una consulta por
+    cliente en los barridos que recorren la cartera entera."""
+    if _vigente():
+        return list(_cache["por_id"].values())
     ses, propia = _con_sesion(db)
     try:
         _refrescar(ses)

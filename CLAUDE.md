@@ -471,11 +471,79 @@ npm run check:portapapeles  # una sola puerta al portapapeles (`lib/clipboard`)
 - **Sin migraciones innecesarias:** el análisis cualitativo se guarda como
   sidecar JSON precisamente para evitar tocar Alembic. Si necesitas un campo
   nuevo en BD, valora antes si un sidecar o un JSONB existente sirve.
-- **Single-tenant:** un solo coach (DQ). No hay multi-cliente a nivel de coach.
+- **Single-tenant, DOS MARCAS:** un solo coach, pero el sistema puede llevar
+  más de un negocio con la misma maquinaria (ver la ronda del SWITCH en el §9).
+  Regla de oro: `marca_activa()` es el ESCAPARATE (panel, landing, altas
+  nuevas) y `marca_de_cliente()` es la marca SELLADA en la ficha (portal,
+  documentos, emails, renovación). Confundirlas es cambiarle la marca a quien
+  ya paga. Todo pasa por `services/branding.py`.
 
 ---
 
 ## 9. Trabajo pendiente / próximos pasos
+
+00000000000000000000000. ✅ **EL SWITCH DE MARCA: un sistema, dos negocios** (septiembre 2026) —
+   el dueño pidió poder cambiar de **DQR** a **Professional** (Centre Salut &
+   Fitness, Girona · Lidia Miralpeix i Toni Pérez) sin tocar DQR. La maquinaria
+   es la MISMA (motor de cálculo, guardarraíles, ciclo quincenal, portal); lo
+   que cambia es lo que se **ve** y lo que se **vende**.
+   - **Una sola puerta: `services/branding.py`.** Dos preguntas que NO hay que
+     confundir: `marca_activa()` = el ESCAPARATE (panel, landing, /planes,
+     altas nuevas — lo que cambia el switch) y `marca_de_cliente()` = la marca
+     SELLADA en la ficha (`clients.brand_id`, mig. 0044). Un cliente que ya
+     paga conserva su marca, su portal, sus documentos y su precio de
+     renovación pase lo que pase con el switch. `fila_de_marca(db, client)`
+     para quien necesita la fila ORM; caché de 30 s con copias inmutables
+     (nunca filas del ORM: se quedan detached).
+   - **Migraciones 0044-0047**: `brand_config` pasa a multi-fila (slug, activa,
+     service_labels/taglines, prices, stripe_prefix, page_title, app_name,
+     app_short_name, anamnesis_variant, contact_address, extra_services,
+     doc_variant) con **índice único parcial `WHERE activa`** — que solo haya
+     UNA marca activa lo garantiza la BASE, no el cuidado de quien programe.
+     `clients.brand_id` y `recommended_products.brand_id` con backfill.
+   - **Stripe blindado**: las `lookup_key` llevan PREFIJO por marca
+     (`dqr_full_1m` / `pf_full_1m`). Si se compartieran, activar una marca
+     reescribiría el precio de la otra y con él las suscripciones vivas.
+     `ensure_canonical_prices` solo crea lo que la marca vende.
+   - **Cada negocio, su cartera**: listado de clientes, campana de alertas,
+     agenda de videollamadas, libro de caja (feed, ingresos, gráfica, CSV,
+     "marcar leído") y productos de Recursos se filtran por la marca activa
+     (`branding.cartera_de_la_marca` / `productos_de_la_marca`). **Con un solo
+     perfil de marca no se filtra nada** y todo es como siempre. Los pagos
+     HUÉRFANOS salen en las dos a propósito. Los **jobs, push y emails NO se
+     filtran**: cambiar el switch un viernes no puede dejar a media cartera sin
+     atender (el resumen semanal y el digest del coach dicen de qué marca es
+     cada línea).
+   - **Identidad**: portal, manifest de la PWA, cuestionario, consentimiento
+     RGPD, push y documentos leen la marca DEL CLIENTE. `doc_brand` estaba
+     COPIADA en tres módulos y dos copias no recibían el cliente (el plan salía
+     con el logo del negocio activo): ahora es una sola.
+   - **Anamnesis por marca** (`services/anamnesis_variant.py`): lo OBLIGATORIO
+     es igual para todas —de esas preguntas salen los números y quitarlas no
+     simplifica, rompe—; cambian los bloques OPCIONALES y las preguntas propias
+     de la marca (respuestas etiquetadas en las notas, sin migración). Variante
+     desconocida ⇒ la completa.
+   - **Documento por marca** (`doc_variant`): 'simple' quita índice, tarjeta
+     del plato y sección educativa; se queda el PLAN entero. Y si no se
+     imprime el educativo, **no se genera** (una llamada a la IA menos).
+   - **Lecciones del coach por marca**: sidecar `_coach_lessons-{slug}.json` y
+     ediciones filtradas por cartera — lo que el coach corrige en un negocio no
+     moldea los planes del otro.
+   - **El switch**: Recursos → pestaña **Marca** (tarifas y nº de clientes de
+     cada negocio, confirmación que explica qué pasa y qué no) →
+     `POST /api/brand/{id}/activar`. `branding.invalidar()` tira también las
+     cachés de catálogo y precios públicos.
+   - **Bug corregido de camino**: `PUT /api/brand` escribía TODOS los campos
+     con el volcado completo del cuerpo — guardar los colores BORRABA la
+     dirección del centro. Pasa a `exclude_unset` (gotcha §5.11).
+   - Tests: `tests/test_marcas.py` (23).
+   - ⚠️ **Pendiente al dar de alta Professional de verdad**: subir su logo
+     (Marca → logo, se guarda como `logo-professional-fitness.*`), rellenar su
+     email de contacto si lo tiene, y dejar que `ensure_canonical_prices` cree
+     su precio `pf_full_1m` en Stripe al primer cobro (o lanzarlo a mano).
+     `GET /api/clients/{id}` NO filtra por marca a propósito: un enlace
+     antiguo o un aviso siguen abriendo la ficha aunque el switch esté en el
+     otro negocio.
 
 0000000000000000000000. ✅ **LECTOR UNIVERSAL DE DOCUMENTOS (02/03-09-2026).** Petición
    del dueño: cualquier camino de DQR que lea información tiene que leer

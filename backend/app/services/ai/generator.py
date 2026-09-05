@@ -118,6 +118,8 @@ class ClientContext:
     # educativo no se imprime en ninguna parte y generarlo es pagar una llamada
     # a la IA para tirarla a la basura.
     documento_simple: bool = False
+    # Marca del cliente: decide de qué sidecar salen las LECCIONES del coach.
+    marca_slug: str | None = None
 
 
 @dataclass
@@ -915,7 +917,9 @@ def generate_monthly_plan(
     try:
         from app.services.coach_lessons import lessons_reference, vetos_reference
 
-        _lecciones = lessons_reference() + vetos_reference()
+        # Las lecciones de la marca DEL CLIENTE (no las de la activa): lo que
+        # el coach corrigió en un negocio no debe moldear los planes del otro.
+        _lecciones = lessons_reference(getattr(ctx, "marca_slug", None)) + vetos_reference()
     except Exception:  # noqa: BLE001 — el aprendizaje nunca bloquea generar
         _lecciones = ""
 

@@ -43,17 +43,20 @@ def delete_lesson(index: int, db: Session = Depends(get_db)) -> dict:
     from datetime import datetime, timezone
 
     from app.services.audit import log_event
-    from app.services.coach_lessons import _sidecar_path, load_lessons
+    from app.services.coach_lessons import _sidecar_path, _slug_marca, load_lessons
 
-    data = load_lessons()
+    # La lección se borra del sidecar de la marca en la que está trabajando el
+    # coach: cada negocio tiene el suyo.
+    _slug = _slug_marca(db)
+    data = load_lessons(_slug)
     lessons = list(data.get("lessons") or [])
     if not (0 <= index < len(lessons)):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Esa lección ya no existe")
     quitada = lessons.pop(index)
     data["lessons"] = lessons
     data["updated_at"] = datetime.now(timezone.utc).isoformat()
-    _sidecar_path().write_text(json.dumps(data, ensure_ascii=False, indent=2),
-                               encoding="utf-8")
+    _sidecar_path(_slug).write_text(
+        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     log_event(db, "learning", 0, "coach_lesson_deleted", {"lesson": quitada[:200]})
     db.commit()
     return {"lessons": lessons, "removed": quitada}

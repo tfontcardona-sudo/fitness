@@ -57,7 +57,8 @@ router = APIRouter(
 )
 
 
-from app.services.branding import cartera_de_la_marca, marca_activa
+from app.services.branding import (cartera_de_la_marca, marca_activa,
+                                   marca_de_cliente)
 from app.services.plan_delivery import documento_simple
 
 
@@ -2180,6 +2181,7 @@ def generate_client_plan(
         # Si la marca del cliente entrega el documento reducido, el educativo no
         # se imprime: no se genera y se ahorra una llamada a la IA por plan.
         documento_simple=documento_simple(db, client),
+        marca_slug=marca_de_cliente(client, db).slug,
     )
     # Paquete Start = solo nutrición: la IA no genera entrenamiento (ni el
     # educativo de entreno). Full/Pro generan el plan completo.

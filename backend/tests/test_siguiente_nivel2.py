@@ -232,7 +232,9 @@ def test_lecciones_se_destilan_y_filtran_numeros(db, monkeypatch, tmp_path):
     from app.services import coach_lessons as cl
     from app.services.continuous_learning import record_edit
 
-    monkeypatch.setattr(cl, "_sidecar_path", lambda: tmp_path / "lecciones.json")
+    # El sidecar lleva ahora la marca (cada negocio aprende de lo suyo): el
+    # doble acepta el slug y lo ignora, que es lo que este test quiere probar.
+    monkeypatch.setattr(cl, "_sidecar_path", lambda slug="": tmp_path / "lecciones.json")
     c = _make_client(db)
     plan = Plan(client_id=c.id, month_index=1, version=1, status="draft")
     db.add(plan)
@@ -262,7 +264,7 @@ def test_lecciones_llegan_al_prompt_de_generacion(monkeypatch):
     import app.services.coach_lessons as cl
 
     monkeypatch.setattr(cl, "load_lessons",
-                        lambda: {"lessons": ["Evita el brócoli en las cenas."]})
+                        lambda slug=None: {"lessons": ["Evita el brócoli en las cenas."]})
     bloque = cl.lessons_reference()
     assert "Evita el brócoli" in bloque
 
