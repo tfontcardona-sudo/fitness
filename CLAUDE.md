@@ -423,7 +423,7 @@ GET  /api/p/{token}/feedback               (Portal) feedbacks ENVIADOS (sent_at)
 cd backend && python -m pytest tests/ -q
 ```
 
-- **793 tests en verde** en base de datos limpia y migrada a head, y también
+- **816 tests en verde** en base de datos limpia y migrada a head, y también
   **en orden inverso** (`ls tests/test_*.py | sort -r`): correrlos al revés es
   la forma barata de destapar tests que solo pasan por lo que corrió antes
   (destapó dos fallos reales de aislamiento).
