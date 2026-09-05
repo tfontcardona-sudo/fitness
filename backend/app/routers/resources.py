@@ -169,10 +169,14 @@ def _get_or_404(db: Session, product_id: int) -> RecommendedProduct:
 )
 def list_products(db: Session = Depends(get_db)) -> list[RecommendedProductOut]:
     """Todos los productos (activos e inactivos), en el orden en que se muestran."""
+    # El catálogo de la MARCA ACTIVA (más los genéricos): lo que el coach edita
+    # aquí es lo que verán los clientes de esa marca en su portal.
+    from app.services.branding import productos_de_la_marca
+
     rows = db.scalars(
-        select(RecommendedProduct).order_by(
-            RecommendedProduct.sort_order, RecommendedProduct.id
-        )
+        select(RecommendedProduct)
+        .where(productos_de_la_marca(db))
+        .order_by(RecommendedProduct.sort_order, RecommendedProduct.id)
     ).all()
     return [_out(p) for p in rows]
 
@@ -186,7 +190,13 @@ def list_products(db: Session = Depends(get_db)) -> list[RecommendedProductOut]:
 def create_product(body: RecommendedProductIn, db: Session = Depends(get_db)) -> RecommendedProductOut:
     # Se añade al final del catálogo (mayor sort_order + 1).
     max_order = db.scalar(select(func.max(RecommendedProduct.sort_order)))
+    # Nace en la marca ACTIVA: el coach lo está dando de alta desde el panel de
+    # ese negocio. (`brand_id` NULL queda para los genéricos ya existentes.)
+    from app.services.branding import marca_activa
+
+    _marca = marca_activa(db)
     p = RecommendedProduct(
+        brand_id=_marca.id,
         title=body.title,
         description=body.description,
         url=body.url,

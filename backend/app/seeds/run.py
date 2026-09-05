@@ -71,10 +71,19 @@ def seed_foods(db) -> int:
     return len(missing)
 
 
+def marca_activa_o_primera(db):
+    """La marca del ESCAPARATE. Con varios perfiles (mig. 0044), un `limit(1)`
+    sin orden devolvía una cualquiera: el seed escribía en la marca equivocada."""
+    return (db.scalar(select(BrandConfig).where(BrandConfig.activa.is_(True)).limit(1))
+            or db.scalar(select(BrandConfig).order_by(BrandConfig.id).limit(1)))
+
+
 def seed_brand(db) -> bool:
     if db.scalar(select(func.count()).select_from(BrandConfig)):
         return False
-    db.add(BrandConfig())  # defaults premium de H.1 definidos en el modelo
+    # defaults premium de H.1 definidos en el modelo; nace ACTIVA porque es la
+    # única (sin marca activa no hay escaparate).
+    db.add(BrandConfig(slug="dqr", activa=True))
     db.commit()
     return True
 
@@ -86,7 +95,7 @@ COACH_WHATSAPP = "+34 634 79 32 50"
 
 
 def seed_coach_contact(db) -> bool:
-    brand = db.scalar(select(BrandConfig).limit(1))
+    brand = marca_activa_o_primera(db)
     if brand is None or (brand.contact_phone or "").strip():
         return False
     brand.contact_phone = COACH_WHATSAPP

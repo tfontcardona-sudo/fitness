@@ -32,6 +32,9 @@ _HTTP_RE = re.compile(r"^https?://", re.IGNORECASE)
 _MEDIA_PREFIX = "/api/media/"
 
 
+from app.services.branding import fila_de_marca
+
+
 def _playable(url: str | None) -> str | None:
     """URL que el portal puede poner en un href/src, o None.
 
@@ -239,8 +242,8 @@ def period_info(period: Period | None, today: date) -> dict | None:
     }
 
 
-def brand_payload(db: Session) -> dict:
-    cfg = db.scalar(select(BrandConfig).limit(1))
+def brand_payload(db: Session, client=None) -> dict:
+    cfg = fila_de_marca(db, client)
     if cfg is None:
         return {
             "name": "Tu asesoría", "color_primary": "#E8833A",
@@ -594,7 +597,7 @@ def build_resources(db: Session, client: Client) -> dict:
                 if isinstance(eid, int) and eid not in seen:
                     seen.add(eid)
                     ordered_ids.append(eid)
-    brand = db.scalar(select(BrandConfig).limit(1))
+    brand = fila_de_marca(db, client)
     cover = media_url(brand.video_cover_path) if brand else None
     # Código de descuento ÚNICO del coach: si está configurado (Recursos →
     # Página de enlaces) manda sobre el de cada producto — cambiarlo allí lo
@@ -626,9 +629,14 @@ def build_resources(db: Session, client: Client) -> dict:
                 "technique_notes": ex.technique_notes,
             })
 
+    # Productos de SU marca (más los genéricos, `brand_id` NULL). Un cliente no
+    # puede ver en su portal los enlaces de afiliado del otro negocio.
+    from app.services.branding import productos_de_la_marca
+
     product_rows = db.scalars(
         select(RecommendedProduct)
-        .where(RecommendedProduct.active.is_(True))
+        .where(RecommendedProduct.active.is_(True),
+               productos_de_la_marca(db, client))
         .order_by(RecommendedProduct.sort_order, RecommendedProduct.id)
     ).all()
 

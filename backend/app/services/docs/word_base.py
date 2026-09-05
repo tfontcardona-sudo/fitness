@@ -34,6 +34,10 @@ class DocBrand:
     font_family: str
     tagline: str | None = None
     contact_email: str | None = None
+    # Un centro con local se contacta por WhatsApp y se visita: el documento de
+    # una marca así no puede cerrar solo con un email.
+    contact_phone: str | None = None
+    contact_address: str | None = None
     logo_path: str | None = None  # ruta absoluta a imagen, opcional
 
 

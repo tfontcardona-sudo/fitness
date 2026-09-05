@@ -443,7 +443,11 @@ def coach_weekly_summary(brand: Brand, digest) -> tuple[str, str]:
         avisos = ", ".join(c.flags) if c.flags else "—"
         filas.append(
             "<tr>"
-            f"<td style='padding:6px 10px;border-bottom:1px solid #eee'>{_esc(c.name)}</td>"
+            f"<td style='padding:6px 10px;border-bottom:1px solid #eee'>{_esc(c.name)}"
+            # Con dos negocios en el mismo sistema, saber de cuál es
+            # cada fila. Con uno solo, `brand` viene vacío y no se pinta.
+            + (f"<span style='color:#888;font-size:12px'> · {_esc(c.brand)}</span>"
+               if getattr(c, 'brand', '') else "") + "</td>"
             f"<td style='padding:6px 10px;border-bottom:1px solid #eee;text-align:center'>{c.days_logged}/7</td>"
             f"<td style='padding:6px 10px;border-bottom:1px solid #eee;text-align:center'>{_esc(peso) or '—'}</td>"
             f"<td style='padding:6px 10px;border-bottom:1px solid #eee'>{_esc(avisos)}</td>"

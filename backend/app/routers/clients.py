@@ -57,6 +57,11 @@ router = APIRouter(
 )
 
 
+from app.services.branding import (cartera_de_la_marca, marca_activa,
+                                   marca_de_cliente)
+from app.services.plan_delivery import documento_simple
+
+
 def _links(client: Client) -> PortalLinkOut:
     base = settings.public_base_url
     return PortalLinkOut(
@@ -302,7 +307,12 @@ def create_client(body: ClientCreate, db: Session = Depends(get_db)) -> ClientCr
     if db.scalar(select(Client).where(func.lower(Client.email) == email)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Ya existe un cliente con ese email")
 
+    # SELLO DE MARCA: el alta nace con la marca del ESCAPARATE. Sin esto,
+    # el cliente quedaría sin marca y su portal, sus documentos y sus
+    # precios de renovación seguirían al switch en vez de a lo contratado.
+    _marca_alta = marca_activa(db)
     client = Client(
+        brand_id=(_marca_alta.id if _marca_alta else None),
         full_name=body.full_name.strip(),
         email=email,
         phone=body.phone,
@@ -386,6 +396,13 @@ def list_clients(
                                     "las notas largas"),
 ) -> list[ClientOut]:
     stmt = select(Client).order_by(Client.created_at.desc())
+    # La cartera es de la MARCA ACTIVA: con dos negocios en el mismo sistema, el
+    # panel de Professional no puede enseñar (ni dejar abrir) los clientes de
+    # DQR. Con un solo perfil de marca no filtra nada y el listado es el de
+    # siempre.
+    _cartera = cartera_de_la_marca(db)
+    if _cartera is not None:
+        stmt = stmt.where(_cartera)
     if status_filter:
         stmt = stmt.where(Client.status == status_filter)
     if q:
@@ -2161,6 +2178,10 @@ def generate_client_plan(
         goal_weight_kg=client.goal_weight_kg,
         strict_free_meal=bool(client.strict_free_meal_enabled),
         goal_deadline=client.goal_deadline.isoformat() if client.goal_deadline else None,
+        # Si la marca del cliente entrega el documento reducido, el educativo no
+        # se imprime: no se genera y se ahorra una llamada a la IA por plan.
+        documento_simple=documento_simple(db, client),
+        marca_slug=marca_de_cliente(client, db).slug,
     )
     # Paquete Start = solo nutrición: la IA no genera entrenamiento (ni el
     # educativo de entreno). Full/Pro generan el plan completo.

@@ -43,12 +43,15 @@ _log = logging.getLogger("app.public")
 def public_landing(request: Request, db: Session = Depends(get_db)) -> LandingOut:
     """Datos públicos de la página de enlaces (/dq): marca, foto, afiliación y
     catálogo de productos (comprables con el código único del coach)."""
-    brand = db.scalar(select(BrandConfig).limit(1))
+    brand = fila_de_marca(db)
     if brand is None:  # BD recién creada sin seed: valores por defecto
         brand = BrandConfig()
+    # El escaparate público es el de la marca ACTIVA, productos incluidos.
+    from app.services.branding import productos_de_la_marca
+
     products = db.scalars(
         select(RecommendedProduct)
-        .where(RecommendedProduct.active.is_(True))
+        .where(RecommendedProduct.active.is_(True), productos_de_la_marca(db))
         .order_by(RecommendedProduct.sort_order, RecommendedProduct.id)
     ).all()
     return LandingOut(
@@ -66,6 +69,10 @@ def public_landing(request: Request, db: Session = Depends(get_db)) -> LandingOu
         partner_discount_code=brand.partner_discount_code,
         contact_phone=brand.contact_phone,
         contact_email=brand.contact_email,
+        # La dirección solo la tiene una marca con local: la página de enlaces
+        # de un centro sin decir dónde está no sirve de mucho.
+        contact_address=getattr(brand, "contact_address", None),
+        has_offer=marca_activa(db).vende_oferta(),
         products=[LandingProductOut(
             title=p.title, url=p.url, category=p.category,
             image_url=product_image_url(p),
@@ -96,6 +103,9 @@ def public_plan_prices(request: Request) -> dict:
 # clientes de verdad — y la cuenta puede acabar restringida por spam.
 # Configurable (PUBLIC_SIGNUPS_PER_DAY) para poder subirlo en una campaña.
 MAX_ALTAS_PUBLICAS_DIA = 25
+
+
+from app.services.branding import fila_de_marca, marca_activa
 
 
 def _altas_publicas_de_hoy(db: Session) -> int:
@@ -189,7 +199,12 @@ def public_register(request: Request, body: PublicRegisterIn,
             "Ya existe una asesoría activa con ese email. Escríbenos y te ayudamos.")
 
     if client is None:
+        # SELLO DE MARCA: el alta nace con la marca del ESCAPARATE. Sin esto,
+        # el cliente quedaría sin marca y su portal, sus documentos y sus
+        # precios de renovación seguirían al switch en vez de a lo contratado.
+        _marca_alta = marca_activa(db)
         client = Client(
+            brand_id=(_marca_alta.id if _marca_alta else None),
             full_name=body.full_name.strip(),
             email=email,
             phone=body.phone.strip(),

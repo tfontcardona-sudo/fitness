@@ -841,13 +841,28 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
 @router.get("/alerts")
 def list_alerts(db: Session = Depends(get_db)) -> dict:
     """Todas las alertas pendientes, más graves primero."""
-    clients = db.scalars(select(Client).order_by(Client.full_name)).all()
+    # Solo la cartera de la MARCA ACTIVA: la campana del panel de Professional
+    # no puede sonar por un cliente de DQR (ni al revés). Los AVISOS DE SISTEMA
+    # —automatismos parados— sí salen siempre: son del servidor, no de un
+    # negocio. Ojo: esto es lo que el coach VE; los recordatorios automáticos a
+    # los clientes (jobs, push, emails) siguen corriendo para TODOS, que si no
+    # cambiar el switch dejaría a media cartera sin atender.
+    from app.services.branding import cartera_de_la_marca
+
+    _cartera = cartera_de_la_marca(db)
+    _q = select(Client).order_by(Client.full_name)
+    if _cartera is not None:
+        _q = _q.where(_cartera)
+    clients = db.scalars(_q).all()
     # La lista de productos de Recursos es la MISMA para todos los clientes: se
     # consultaba una vez POR CLIENTE en cada barrido.
     from app.models import RecommendedProduct
 
+    from app.services.branding import productos_de_la_marca
+
     _titulos = list(db.scalars(
-        select(RecommendedProduct.title).where(RecommendedProduct.active.is_(True))))
+        select(RecommendedProduct.title)
+        .where(RecommendedProduct.active.is_(True), productos_de_la_marca(db))))
     # Todo lo que mira cada alerta, de una vez para TODOS los clientes: siete
     # consultas en lugar de siete por cliente.
     _datos = _EnLote(db, clients)
@@ -935,11 +950,17 @@ def video_calls_agenda(db: Session = Depends(get_db)) -> dict:
     from app.services.portal import format_when_es, today_local
 
     today = today_local()
-    rows = db.scalars(
-        select(VideoCall).where(VideoCall.status == "scheduled",
-                                VideoCall.scheduled_at.is_not(None))
-        .order_by(VideoCall.scheduled_at.asc())
-    ).all()
+    from app.services.branding import cartera_de_la_marca
+
+    _cartera = cartera_de_la_marca(db)
+    _q = (select(VideoCall).where(VideoCall.status == "scheduled",
+                                  VideoCall.scheduled_at.is_not(None))
+          .order_by(VideoCall.scheduled_at.asc()))
+    if _cartera is not None:
+        # La agenda del panel es la de la marca ACTIVA: el coach no ve en la
+        # de Professional las videollamadas de sus clientes de DQR.
+        _q = _q.where(VideoCall.client_id.in_(select(Client.id).where(_cartera)))
+    rows = db.scalars(_q).all()
     out = []
     for vc in rows:
         client = db.get(Client, vc.client_id)

@@ -63,6 +63,7 @@ import type {
   WhatsAppRoundOut,
   AiCreditOut,
   BrandConfigOut,
+  BrandProfileOut,
   CoachAlert,
   ChangeRequestOut,
   ClientCreate,
@@ -833,6 +834,10 @@ export const api = {
 
   // --- brand ---
   getBrand: () => request<BrandConfigOut>("GET", "/brand"),
+  // EL SWITCH: qué marcas hay y cambiar el escaparate a otra.
+  brandProfiles: () => request<BrandProfileOut[]>("GET", "/brand/perfiles"),
+  activateBrand: (brandId: number) =>
+    request<BrandConfigOut>("POST", `/brand/${brandId}/activar`),
   // El PUT lleva SOLO los campos de BrandConfigIn: las rutas de archivos
   // subidos (logo, fotos, portada) se gestionan por sus endpoints de subida.
   updateBrand: (body: Omit<BrandConfigOut, "id" | "logo_path" | "links_photo_path"

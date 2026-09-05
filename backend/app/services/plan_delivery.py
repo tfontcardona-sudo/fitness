@@ -21,12 +21,23 @@ logger = logging.getLogger("app.plan_delivery")
 DOCX_MEDIA = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
-def doc_brand(db: Session):
-    """DocBrand desde la configuración de marca (con logo si existe)."""
-    from app.models import BrandConfig
+from app.services.branding import fila_de_marca
+
+
+def doc_brand(db: Session, client=None):
+    """La marca de un DOCUMENTO (colores, logo y pie), en un solo sitio.
+
+    Con `client`, la marca SELLADA en su ficha; sin él, la activa. Pásale
+    siempre el cliente: su plan y su informe llevan el logo y el pie del
+    negocio con el que contrató, no el del switch que el coach tenga puesto.
+
+    Esta función estaba COPIADA en tres módulos (entrega del plan, informe
+    quincenal y descarga desde el panel). Con una marca daba igual; con dos,
+    arreglar una copia dejaba las otras dos sacando el logo equivocado.
+    """
     from app.services.docs.word_base import DocBrand
 
-    cfg = db.scalar(select(BrandConfig).limit(1))
+    cfg = fila_de_marca(db, client)
     if cfg is None:
         return DocBrand(name="Tu asesoría", color_primary="#E8833A",
                         color_secondary="#2E5E8C", font_family="Inter")
@@ -41,7 +52,16 @@ def doc_brand(db: Session):
     return DocBrand(name=cfg.name, color_primary=cfg.color_primary,
                     color_secondary=cfg.color_secondary, font_family=cfg.font_family,
                     tagline=cfg.tagline, contact_email=cfg.contact_email,
+                    contact_phone=getattr(cfg, "contact_phone", None),
+                    contact_address=getattr(cfg, "contact_address", None),
                     logo_path=logo_abs)
+
+
+def documento_simple(db: Session, client=None) -> bool:
+    """¿Esta marca quiere el documento reducido? Lo dice su perfil
+    (`doc_variant`), no el tipo de plan: es una decisión de marca."""
+    cfg = fila_de_marca(db, client)
+    return (getattr(cfg, "doc_variant", None) or "completo") == "simple"
 
 
 def build_plan_pdf(db: Session, plan: Plan, client: Client,
@@ -69,7 +89,10 @@ def build_plan_pdf(db: Session, plan: Plan, client: Client,
             exercise_names[ex.id] = ex.canonical_name
 
     data = generate_plan_doc(
-        brand=doc_brand(db),
+        brand=doc_brand(db, client),
+        # Cuánto documento quiere la marca DEL CLIENTE: la simple se queda con
+        # el plan (sin índice, tarjeta del plato ni sección educativa).
+        simple=documento_simple(db, client),
         client_name=client.full_name,
         month_index=plan.month_index,
         goal_type=client.goal_type,

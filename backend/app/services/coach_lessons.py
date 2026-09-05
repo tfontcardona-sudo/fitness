@@ -49,18 +49,37 @@ class LessonsOutput(BaseModel):
     lessons: list[str] = Field(min_length=1, max_length=8)
 
 
-def _sidecar_path() -> Path:
+def _slug_marca(db: Session | None = None) -> str:
+    """Marca a la que pertenecen las lecciones. Con un solo perfil devuelve ""
+    y el sidecar es el de siempre (`_coach_lessons.json`), sin migrar nada."""
+    try:
+        from app.services.branding import hay_varias_marcas, marca_activa
+
+        if not hay_varias_marcas(db):
+            return ""
+        return marca_activa(db).slug or ""
+    except Exception:  # noqa: BLE001 — el aprendizaje nunca rompe nada
+        return ""
+
+
+def _sidecar_path(slug: str = "") -> Path:
+    """Sidecar de lecciones DE UNA MARCA.
+
+    Cada negocio aprende de SUS correcciones: las manías de un coach no pueden
+    colarse en el prompt de generación del otro. Sin marca (o con una sola) se
+    conserva el nombre de siempre y las lecciones ya destiladas siguen valiendo.
+    """
     from app.services.storage import storage_root
 
     d = storage_root() / "brand"
     d.mkdir(parents=True, exist_ok=True)
-    return d / "_coach_lessons.json"
+    return d / (f"_coach_lessons-{slug}.json" if slug else "_coach_lessons.json")
 
 
-def load_lessons() -> dict:
+def load_lessons(slug: str | None = None) -> dict:
     """Contenido actual del sidecar ({} si no existe o está corrupto)."""
     try:
-        p = _sidecar_path()
+        p = _sidecar_path(_slug_marca() if slug is None else slug)
         if p.exists():
             return json.loads(p.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001 — un sidecar roto no rompe la generación
@@ -68,11 +87,13 @@ def load_lessons() -> dict:
     return {}
 
 
-def lessons_reference() -> str:
+def lessons_reference(slug: str | None = None) -> str:
     """Bloque de LECCIONES para el prompt de generación ('' si no hay).
     Se añade al user prompt (no al system): así no invalida la caché del
-    system prompt y puede cambiar entre generaciones."""
-    data = load_lessons()
+    system prompt y puede cambiar entre generaciones.
+
+    `slug`: la marca DEL CLIENTE para el que se genera. Sin él, la activa."""
+    data = load_lessons(slug)
     lessons = [x for x in (data.get("lessons") or []) if isinstance(x, str) and x.strip()]
     if not lessons:
         return ""
@@ -85,11 +106,18 @@ def lessons_reference() -> str:
 
 
 def _recent_edits(db: Session) -> list[tuple[PlanEdit, str | None]]:
+    from app.models import Client
+    from app.services.branding import cartera_de_la_marca
+
+    q = (select(PlanEdit, Plan.goal_type)
+         .join(Plan, Plan.id == PlanEdit.plan_id))
+    # Solo las correcciones hechas sobre planes de ESTA marca: destilar las de
+    # los dos negocios juntos metería el criterio de uno en los planes del otro.
+    cartera = cartera_de_la_marca(db)
+    if cartera is not None:
+        q = q.join(Client, Client.id == Plan.client_id).where(cartera)
     filas = db.execute(
-        select(PlanEdit, Plan.goal_type)
-        .join(Plan, Plan.id == PlanEdit.plan_id)
-        .order_by(PlanEdit.id.desc())
-        .limit(MAX_EDITS_FOR_PROMPT)
+        q.order_by(PlanEdit.id.desc()).limit(MAX_EDITS_FOR_PROMPT)
     ).all()
     return [(pe, goal) for pe, goal in filas]
 
@@ -104,7 +132,7 @@ def distill_lessons(db: Session, ai=None) -> dict:
     filas = _recent_edits(db)
     if len(filas) < MIN_EDITS:
         return {"skipped": f"solo {len(filas)} ediciones (mínimo {MIN_EDITS})",
-                **load_lessons()}
+                **load_lessons(_slug_marca(db))}
 
     # Muestra agrupada por categoría (recorta ruido y tokens).
     por_categoria: dict[str, list[str]] = {}
@@ -167,15 +195,15 @@ def distill_lessons(db: Session, ai=None) -> dict:
         # conservan las lecciones buenas anteriores) ni se avanza
         # last_edit_id — el siguiente refresco lo reintenta.
         return {"skipped": "la IA no produjo lecciones válidas (todas con cifras)",
-                **load_lessons()}
+                **load_lessons(_slug_marca(db))}
     data = {
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "source_edits": len(filas),
         "last_edit_id": max_id,
         "lessons": limpias,
     }
-    _sidecar_path().write_text(json.dumps(data, ensure_ascii=False, indent=2),
-                               encoding="utf-8")
+    _sidecar_path(_slug_marca(db)).write_text(
+        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     return data
 
 
@@ -323,12 +351,15 @@ def maybe_refresh(db: Session) -> dict | None:
     """Re-destila SOLO si hay suficientes ediciones nuevas desde la última vez.
     Pensado para el mantenimiento diario: best-effort, nunca lanza."""
     try:
-        actual = load_lessons()
+        actual = load_lessons(_slug_marca(db))
         ultimo = int(actual.get("last_edit_id") or 0)
         max_id = int(db.scalar(select(func.max(PlanEdit.id))) or 0)
-        nuevas = db.scalar(
+        # Las ediciones que cuentan para re-destilar son las de ESTA marca:
+        # con las de las dos, el negocio con más movimiento disparaba el
+        # refresco del otro y le regeneraba unas lecciones que no han cambiado.
+        nuevas = int(db.scalar(
             select(func.count()).select_from(PlanEdit).where(PlanEdit.id > ultimo)
-        ) or 0
+        ) or 0)
         if max_id <= ultimo or nuevas < REFRESH_MIN_NEW_EDITS:
             return None
         return distill_lessons(db)

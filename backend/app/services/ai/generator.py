@@ -114,6 +114,12 @@ class ClientContext:
     # (el CÁLCULO sigue siendo del backend; si el plazo es poco realista, el
     # plan lo gestiona en el rationale, no acelerando el déficit).
     goal_deadline: str | None = None
+    # ¿La marca del cliente entrega el documento REDUCIDO? Entonces el contenido
+    # educativo no se imprime en ninguna parte y generarlo es pagar una llamada
+    # a la IA para tirarla a la basura.
+    documento_simple: bool = False
+    # Marca del cliente: decide de qué sidecar salen las LECCIONES del coach.
+    marca_slug: str | None = None
 
 
 @dataclass
@@ -911,7 +917,9 @@ def generate_monthly_plan(
     try:
         from app.services.coach_lessons import lessons_reference, vetos_reference
 
-        _lecciones = lessons_reference() + vetos_reference()
+        # Las lecciones de la marca DEL CLIENTE (no las de la activa): lo que
+        # el coach corrigió en un negocio no debe moldear los planes del otro.
+        _lecciones = lessons_reference(getattr(ctx, "marca_slug", None)) + vetos_reference()
     except Exception:  # noqa: BLE001 — el aprendizaje nunca bloquea generar
         _lecciones = ""
 
@@ -969,10 +977,13 @@ def generate_monthly_plan(
 
         education_t: EducationOutput | None = None
         try:
-            education_t = _education_with_cache(
-                ai, split_name=tcore.training.split_name, variant="train",
-                user=_education_user_prompt_training(tcore.training),
-            )
+            # Misma regla que en el plan completo: si la marca entrega el
+            # documento reducido, el educativo no se imprime y no se paga.
+            if not getattr(ctx, "documento_simple", False):
+                education_t = _education_with_cache(
+                    ai, split_name=tcore.training.split_name, variant="train",
+                    user=_education_user_prompt_training(tcore.training),
+                )
         except AIGenerationError:
             # El educativo es complementario: su fallo no tumba el plan.
             flags.append("aviso: no se pudo generar el contenido educativo")
@@ -1207,7 +1218,9 @@ def generate_monthly_plan(
     # ③ Educativo (solo con entrenamiento: las píldoras y la biomecánica giran
     #    en torno al entreno; en solo-nutrición no aplica).
     education: EducationOutput | None = None
-    if include_training:
+    # Una marca con documento simple no imprime el educativo: no se genera (una
+    # llamada a la IA menos por plan, sin perder nada visible).
+    if include_training and not getattr(ctx, "documento_simple", False):
         try:
             education = _education_with_cache(
                 ai, split_name=core.training.split_name, variant="full",

@@ -50,7 +50,18 @@ CANONICAL_AMOUNTS: dict[str, dict[str, int]] = {
     "nutri": {"1m": 7900, "3m": 20100, "6m": 37200},
     "full": {"1m": 12900, "3m": 33000, "6m": 60000},
 }
+# Nombres de RESERVA de los productos de Stripe: los vivos salen de la marca
+# activa (`_nombre_producto`), porque cada marca vende los suyos.
 PRODUCT_NAMES = {"train": "DQR Train", "nutri": "DQR Nutri", "full": "DQR Full"}
+
+
+def _nombre_producto(tier: str) -> str:
+    from app.services.branding import marca_activa
+
+    try:
+        return marca_activa().label(tier)
+    except Exception:  # noqa: BLE001 — Stripe no se queda sin nombre por esto
+        return PRODUCT_NAMES.get(tier, tier)
 PERIOD_LABEL = {"1m": "1 mes", "3m": "3 meses", "6m": "6 meses"}
 CURRENCY = "eur"
 
@@ -66,6 +77,8 @@ OFFER_TIER = "full"                   # la oferta es SOLO del plan completo
 OFFER_MONTHLY_CENTS = 12000           # 120 €/mes el segundo y el tercer mes
 OFFER_FIRST_MONTH_CENTS = 100         # 1 € el primer mes
 OFFER_CHARGES = 3                     # nº de facturas (1 € + 120 + 120): a la 3ª, se cancela
+# Claves de RESERVA (marca DQR). Las vivas salen de la marca activa:
+# `_lookup_key(tier, period)` y los helpers de abajo.
 OFFER_LOOKUP = "dqr_full_oferta"      # lookup_key del precio RECURRENTE
 OFFER_COUPON_ID = "dqr_oferta_primer_mes"  # id estable del cupón (duration=once)
 
@@ -124,8 +137,22 @@ _LOOKUP_TTL_S = 600
 _lookup_cache: dict = {"at": 0.0, "ids": {}}
 
 
-def _lookup_key(tier: str, period: str) -> str:
-    return f"dqr_{tier}_{period}"
+def _marca():
+    """La marca ACTIVA (el escaparate). Nunca lanza: sin base, la de reserva."""
+    from app.services.branding import marca_activa, marca_por_defecto
+
+    try:
+        return marca_activa()
+    except Exception:  # noqa: BLE001
+        return marca_por_defecto()
+
+
+def _lookup_key(tier: str, period: str, marca=None) -> str:
+    """Clave del precio en Stripe, con el PREFIJO de la marca. Dos negocios en
+    el mismo Stripe no pueden compartir clave: si la compartieran, dar de alta
+    los precios de uno reescribiría los del otro — y con ellos lo que se cobra
+    a sus suscripciones vivas."""
+    return (marca or _marca()).lookup_key(tier, period)
 
 
 def ensure_canonical_prices(stripe, log=None) -> list[str]:
@@ -146,24 +173,33 @@ def ensure_canonical_prices(stripe, log=None) -> list[str]:
 
     products = {(p.get("metadata") or {}).get("dqr_tier"): p["id"]
                 for p in stripe.Product.list(active=True, limit=100)["data"]}
-    keys = ([_lookup_key(t, p) for t in TIER_ORDER for p in PERIOD_ORDER]
-            + [OFFER_LOOKUP, OFFER2_LOOKUP])
+    marca = _marca()
+    # SOLO lo que esta marca vende: un centro con un único plan mensual no
+    # tiene por qué pedirle a Stripe once precios que no existen.
+    keys = [marca.lookup_key(t, p) for t, p in marca.vende()]
+    if marca.vende_oferta():
+        keys += [marca.lookup_key(OFFER_TIER, OFFER_PERIOD),
+                 marca.lookup_key(OFFER_TIER, OFFER2_PERIOD)]
     existing = _prices_by_lookup(stripe, keys)
 
     for tier in TIER_ORDER:
+        if not any(marca.importe(tier, p) for p in PERIOD_ORDER):
+            continue              # plan que esta marca no ofrece
         product_id = products.get(tier)
         if not product_id:
             prod = stripe.Product.create(
-                name=PRODUCT_NAMES[tier], metadata={"dqr_tier": tier},
-                description=f"Asesoría {PRODUCT_NAMES[tier]} — pago por período",
+                name=_nombre_producto(tier), metadata={"dqr_tier": tier},
+                description=f"Asesoría {_nombre_producto(tier)} — pago por período",
             )
             product_id = prod["id"]
             products[tier] = product_id  # la oferta (más abajo) reusa el de Full
-            note(f"  + producto creado: {PRODUCT_NAMES[tier]} ({product_id})")
+            note(f"  + producto creado: {marca.label(tier)} ({product_id})")
         for period in PERIOD_ORDER:
-            key = _lookup_key(tier, period)
-            amount = CANONICAL_AMOUNTS[tier][period]
-            nickname = f"{PRODUCT_NAMES[tier]} · {PERIOD_LABEL[period]}"
+            amount = marca.importe(tier, period)
+            if not amount:
+                continue          # esta marca no vende ese plan × duración
+            key = marca.lookup_key(tier, period)
+            nickname = f"{marca.label(tier)} · {PERIOD_LABEL[period]}"
             pr = existing.get(key)
             if pr and pr["unit_amount"] == amount and pr["currency"] == CURRENCY:
                 note(f"  = {key}: ya existe con {amount / 100:.2f} € (sin cambios)")
@@ -316,8 +352,11 @@ def _price_by_lookup(tier: str, period: str) -> str:
         return _lookup_cache["ids"][key]
     try:
         stripe = _stripe()
-        keys = ([_lookup_key(t, p) for t in TIER_ORDER for p in PERIOD_ORDER]
-                + [OFFER_LOOKUP, OFFER2_LOOKUP])
+        marca_a = _marca()
+        keys = [marca_a.lookup_key(t, p) for t, p in marca_a.vende()]
+        if marca_a.vende_oferta():
+            keys += [marca_a.lookup_key(OFFER_TIER, OFFER_PERIOD),
+                     marca_a.lookup_key(OFFER_TIER, OFFER2_PERIOD)]
 
         def _list_prices() -> dict:
             return _prices_by_lookup(stripe, keys)
@@ -325,15 +364,20 @@ def _price_by_lookup(tier: str, period: str) -> str:
         found = _list_prices()
 
         def _desalineado() -> bool:
-            for t in TIER_ORDER:
-                for p in PERIOD_ORDER:
-                    pr = found.get(_lookup_key(t, p))
-                    if (pr is None or pr.get("unit_amount") != CANONICAL_AMOUNTS[t][p]
-                            or pr.get("currency") != CURRENCY):
-                        return True
+            for t, p in marca_a.vende():
+                pr = found.get(marca_a.lookup_key(t, p))
+                if (pr is None or pr.get("unit_amount") != marca_a.importe(t, p)
+                        or pr.get("currency") != CURRENCY):
+                    return True
             # Los precios recurrentes de la oferta (las dos formas de pago).
-            for lk, cents in ((OFFER_LOOKUP, OFFER_MONTHLY_CENTS),
-                              (OFFER2_LOOKUP, OFFER2_MONTHLY_CENTS)):
+            if not marca_a.vende_oferta():
+                return False      # marca sin oferta: no hay nada que alinear
+            for lk, cents in (
+                (marca_a.lookup_key(OFFER_TIER, OFFER_PERIOD),
+                 int(marca_a.oferta().get("monthly_cents") or OFFER_MONTHLY_CENTS)),
+                (marca_a.lookup_key(OFFER_TIER, OFFER2_PERIOD),
+                 int(marca_a.oferta("oferta2").get("monthly_cents") or OFFER2_MONTHLY_CENTS)),
+            ):
                 of = found.get(lk)
                 if (of is None or of.get("unit_amount") != cents
                         or of.get("currency") != CURRENCY
@@ -520,7 +564,7 @@ def open_invoice_url(client: Client) -> str | None:
 # ---------------------------------------------------------------- precios ----
 
 _PERIOD_MONTHS = {"1m": 1, "3m": 3, "6m": 6}
-_prices_cache: dict = {"at": 0.0, "data": None}
+_prices_cache: dict = {"at": 0.0, "data": None, "marca": None}
 _PRICES_TTL_S = 600  # los precios cambian poco; 10 min de caché evita latencia
 
 
@@ -537,16 +581,27 @@ def get_plan_prices() -> dict:
     """
     import time
 
-    if _prices_cache["data"] is not None and time.time() - _prices_cache["at"] < _PRICES_TTL_S:
+    marca_p = _marca()
+    # La caché lleva la MARCA: al cambiar el switch, /planes no puede seguir
+    # sirviendo hasta diez minutos las tarifas del otro negocio.
+    if (_prices_cache["data"] is not None
+            and _prices_cache.get("marca") == marca_p.slug
+            and time.time() - _prices_cache["at"] < _PRICES_TTL_S):
         return _prices_cache["data"]
 
     tiers: dict = {t: {p: None for p in _PERIOD_MONTHS} for t in _TIERS}
     currency = "eur"
     leidos_de_stripe = 0
+    # Lo que ESTA marca vende de verdad. Sin esto se consultaba a Stripe plan a
+    # plan para las nueve combinaciones y un id heredado del .env (compartido
+    # entre marcas) podía colar en /planes el precio del otro negocio.
+    vendibles = set(marca_p.vende())
     if settings.stripe_enabled:
         stripe = _stripe()
         for tier in _TIERS:
             for period, months in _PERIOD_MONTHS.items():
+                if (tier, period) not in vendibles:
+                    continue
                 price_id = _resolve_price_id(tier, period)
                 if not price_id:
                     continue
@@ -563,10 +618,13 @@ def get_plan_prices() -> dict:
                 except Exception as exc:  # precio borrado/ID malo: no rompe la página
                     _log.warning("Precio %s (%s %s) ilegible: %s", price_id, tier, period, exc)
 
-    for tier in _TIERS:  # reserva canónica para lo que Stripe no haya dado
+    for tier in _TIERS:  # reserva desde la MARCA para lo que Stripe no haya dado
         for period, months in _PERIOD_MONTHS.items():
             if tiers[tier][period] is None:
-                amount = CANONICAL_AMOUNTS[tier][period] / 100.0
+                cents = marca_p.importe(tier, period)
+                if not cents:
+                    continue      # esta marca no vende ese plan × duración
+                amount = cents / 100.0
                 tiers[tier][period] = {
                     "total": amount,
                     "months": months,
@@ -578,7 +636,7 @@ def get_plan_prices() -> dict:
     # no se cachea: la siguiente visita reintenta leer los reales en vez de
     # servir la reserva 10 minutos.
     if not (settings.stripe_enabled and leidos_de_stripe == 0):
-        _prices_cache.update(at=time.time(), data=data)
+        _prices_cache.update(at=time.time(), data=data, marca=marca_p.slug)
     return data
 
 
@@ -754,7 +812,14 @@ def _create_selfserve_client(db: Session, *, name: str, email: str,
                              phone: str | None, tier: str, period: str | None,
                              amount_cents: int | None = None) -> Client:
     """Crea el perfil de un cliente que se ha registrado y pagado por su cuenta."""
+    # SELLO DE MARCA: el alta nace con la marca del ESCAPARATE. Sin esto,
+    # el cliente quedaría sin marca y su portal, sus documentos y sus
+    # precios de renovación seguirían al switch en vez de a lo contratado.
+    from app.services.branding import marca_activa as _marca_del_escaparate
+
+    _marca_alta = _marca_del_escaparate(db)
     client = Client(
+        brand_id=(_marca_alta.id if _marca_alta else None),
         full_name=(name or email.split("@")[0]).strip(),
         email=email,
         phone=phone,

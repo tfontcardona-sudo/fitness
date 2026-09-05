@@ -430,7 +430,10 @@ def notify_plan_published(db: Session, client: Client, *, republished: bool = Fa
     Silencioso si el push no está configurado o el cliente no tiene dispositivos."""
     if not push_configured():
         return 0
-    brand = portal_svc.brand_payload(db)
+    # La marca DEL CLIENTE, no la del escaparate: quien contrató con una marca
+    # no puede recibir avisos con el nombre de la otra porque el coach haya
+    # cambiado el switch.
+    brand = portal_svc.brand_payload(db, client)
     base = settings.public_base_url.rstrip("/")
     nombre = (client.full_name or "").split()[0] if client.full_name else None
     mes = None
@@ -561,8 +564,11 @@ def run_video_call_reminders(db: Session, now: datetime | None = None) -> dict:
     now_local = now_utc.astimezone(tz)
     today = now_local.date()
 
-    brand = portal_svc.brand_payload(db)
-    brand_name = brand.get("name", "Tu asesoría")
+    def _marca_de(client) -> str:
+        """Nombre de la marca DEL CLIENTE. Se sacaba una sola vez para todo el
+        barrido: con dos negocios, al de una marca le llegaba el nombre de la
+        otra."""
+        return portal_svc.brand_payload(db, client).get("name") or "Tu asesoría"
 
     def _already(call_id: int, tag: str) -> bool:
         return bool(db.scalar(select(AuditLog.id).where(
@@ -589,7 +595,7 @@ def run_video_call_reminders(db: Session, now: datetime | None = None) -> dict:
             tag = f"day:{vc.scheduled_for.isoformat()}"
             if not _already(vc.id, tag):
                 sent += _send_videocall_reminder(
-                    db, client, vc, brand_name,
+                    db, client, vc, _marca_de(client),
                     client_body=f"Mañana a las {hora} tienes tu videollamada de revisión. ¡Te espero!",
                     coach_body=f"{first}: videollamada MAÑANA a las {hora}.")
                 log_event(db, "video_call", vc.id, "vc_reminder", {"tag": tag})
@@ -599,7 +605,7 @@ def run_video_call_reminders(db: Session, now: datetime | None = None) -> dict:
             tag = f"hour:{sched_local.strftime('%Y%m%d%H')}"
             if not _already(vc.id, tag):
                 sent += _send_videocall_reminder(
-                    db, client, vc, brand_name,
+                    db, client, vc, _marca_de(client),
                     client_body=f"En 1 hora (a las {hora}) es tu videollamada de revisión. ¡Prepárate!",
                     coach_body=f"{first}: videollamada EN 1 HORA (a las {hora}).")
                 log_event(db, "video_call", vc.id, "vc_reminder", {"tag": tag})
@@ -693,7 +699,6 @@ def run_push_reminders(db: Session, now: datetime | None = None) -> dict:
         return {"skipped": f"fuera de horario activo ({now_local:%H:%M})"}
 
     today = now_local.date()
-    brand = portal_svc.brand_payload(db)
     base = settings.public_base_url.rstrip("/")
 
     client_ids = db.scalars(
@@ -712,7 +717,10 @@ def run_push_reminders(db: Session, now: datetime | None = None) -> dict:
         if pending["count"] == 0:
             continue
         payload = build_reminder_payload(
-            pending, brand.get("name", ""), f"{base}/p/{client.portal_token}"
+            # Marca DEL CLIENTE: el recordatorio lo firma el negocio con el
+            # que contrató, no el que el coach tenga puesto en el panel.
+            pending, portal_svc.brand_payload(db, client).get("name", ""),
+            f"{base}/p/{client.portal_token}"
         )
         ok = send_to_client(db, client, payload)
         if ok:
@@ -760,10 +768,22 @@ def run_coach_digest(db: Session, now: datetime | None = None) -> dict:
 
     from app.routers.alerts import client_alerts
 
+    # El resumen al móvil del coach recorre a TODOS sus clientes, de las dos
+    # marcas: es la red de seguridad. La campana del panel sí se filtra (enseña
+    # el negocio en el que estás), así que aquí se dice de qué marca es cada
+    # aviso — si no, el coach lee un nombre que no encuentra en su lista.
+    from app.services.branding import hay_varias_marcas, marca_de_cliente
+
+    varias = hay_varias_marcas(db)
     alerts: list[dict] = []
     for client in db.scalars(select(Client).where(Client.status != "inactive")):
         try:
-            alerts.extend(client_alerts(db, client, now_local.date()))
+            propias = client_alerts(db, client, now_local.date())
+            if varias and propias:
+                sufijo = f" ({marca_de_cliente(client, db).name})"
+                for a in propias:
+                    a["client_name"] = (a.get("client_name") or "") + sufijo
+            alerts.extend(propias)
         except Exception:  # un cliente con datos raros no tumba el resumen entero
             logger.exception("alertas ilegibles del cliente %s en el digest", client.id)
     if not alerts:

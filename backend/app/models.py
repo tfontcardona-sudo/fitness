@@ -65,6 +65,11 @@ class Client(Base):
     package_tier: Mapped[str] = mapped_column(
         String(10), default="full", server_default=text("'full'"), nullable=False
     )
+    # MARCA con la que entró (mig. 0044). Su portal, sus documentos, sus emails
+    # y sus precios de renovación salen de AQUÍ, no de la marca activa: que el
+    # coach cambie el switch no puede cambiarle la marca a quien ya paga.
+    brand_id: Mapped[int | None] = mapped_column(
+        ForeignKey("brand_config.id", ondelete="SET NULL"), index=True)
     # Duración contratada del plan (decide qué precio de Stripe se cobra):
     # 1m (mensual) | 3m (trimestral) | 6m (semestral) | oferta (1 € el primer
     # mes → 120 €/mes en suscripción) | oferta2 (la misma oferta en 2 pagos de
@@ -448,6 +453,41 @@ class BrandConfig(Base):
     # Enlace de RESERVAS de videollamada del coach (página de citas de Google
     # Calendar/Meet, Calendly…): va en el WhatsApp de "agendar videollamada".
     meet_url: Mapped[str | None] = mapped_column(String(300))
+    # --- PERFIL DE MARCA (mig. 0044) -----------------------------------------
+    # `brand_config` dejó de ser una fila para ser un perfil por marca: el mismo
+    # sistema puede llevar dos negocios (p. ej. DQR y Professional Fitness) con
+    # la misma maquinaria y distinta identidad, tarifas y catálogo. `activa`
+    # marca la del ESCAPARATE (panel, landing, altas nuevas) y la base garantiza
+    # que solo hay una (índice único parcial). Ver services/branding.py.
+    slug: Mapped[str] = mapped_column(String(40), unique=True, default="dqr")
+    activa: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Nombres y eslóganes comerciales de los servicios ("DQR Full" …): antes
+    # estaban clavados en packages.py, sales_catalog.py y stripe_service.py.
+    service_labels: Mapped[dict | None] = mapped_column(JSONB)
+    service_taglines: Mapped[dict | None] = mapped_column(JSONB)
+    # TARIFAS en céntimos por plan × duración + las dos formas de la oferta.
+    prices: Mapped[dict | None] = mapped_column(JSONB)
+    # Prefijo de las `lookup_key` de Stripe ("dqr_full_1m" / "pf_full_1m"): es
+    # lo que impide que dos marcas se pisen los precios y, con ellos, las
+    # suscripciones que ya están cobrando.
+    stripe_prefix: Mapped[str | None] = mapped_column(String(16))
+    page_title: Mapped[str | None] = mapped_column(String(120))
+    app_name: Mapped[str | None] = mapped_column(String(60))
+    app_short_name: Mapped[str | None] = mapped_column(String(20))
+    # Qué variante de anamnesis usa (plantilla PDF + piel del formulario).
+    anamnesis_variant: Mapped[str | None] = mapped_column(String(20))
+    # Cuánto documento quiere esta marca (mig. 0047): "completo" (índice,
+    # tarjeta del plato y sección educativa) o "simple" (solo el plan). Los
+    # NÚMEROS no dependen de esto: salen del mismo motor en las dos.
+    doc_variant: Mapped[str | None] = mapped_column(String(20))
+    # Dirección física (mig. 0045): una asesoría online no la necesita, un
+    # CENTRO sí — es de lo primero que busca su cliente.
+    contact_address: Mapped[str | None] = mapped_column(String(200))
+    # Servicios que la marca vende pero NO cobra por la web (entreno personal
+    # por horas, packs de sesiones): [{title, price, note?}]. Sin esto, la
+    # pantalla de Vender de un centro enseñaría un solo producto y parecería
+    # que el resto no existe.
+    extra_services: Mapped[list | None] = mapped_column(JSONB)
 
 
 # -------------------------------------------------- recommended_products ----
@@ -455,8 +495,9 @@ class RecommendedProduct(Base):
     """Producto recomendado por el coach (suplemento, material…) que se muestra
     en la sección "Recursos" del portal del cliente.
 
-    Catálogo ÚNICO (single-tenant): todos los clientes ven los productos con
-    `active=True`, ordenados por `sort_order`. La imagen puede ser un archivo
+    Catálogo por MARCA: cada cliente ve los productos con `active=True` de SU
+    marca (más los de `brand_id` NULL, que son para todas), ordenados por
+    `sort_order`. La imagen puede ser un archivo
     subido (`image_path`, servido por la API) o una URL externa (`image_url`);
     si hay archivo subido, tiene prioridad.
     """
@@ -464,6 +505,11 @@ class RecommendedProduct(Base):
     __tablename__ = "recommended_products"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Marca a la que pertenece el producto. NULL = para TODAS las marcas.
+    # Sin esto, los enlaces de afiliado de un negocio se veían en el portal de
+    # los clientes del otro (mig. 0046).
+    brand_id: Mapped[int | None] = mapped_column(
+        ForeignKey("brand_config.id", ondelete="SET NULL"), index=True)
     title: Mapped[str] = mapped_column(String(160))
     description: Mapped[str | None] = mapped_column(String(300))
     url: Mapped[str] = mapped_column(String(500))  # enlace de compra/afiliado

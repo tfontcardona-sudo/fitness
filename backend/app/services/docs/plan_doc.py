@@ -420,7 +420,14 @@ def generate_plan_doc(
     include_training: bool = False, include_nutrition: bool = True,
     diet_pattern: str | None = None,
     generated_on: _date | None = None,
+    simple: bool = False,
 ) -> bytes:
+    """`simple=True` (marcas que quieren el plan y poco más): fuera el índice,
+    la tarjeta del plato saludable y la sección educativa. Se queda el PLAN
+    entero —objetivos, cifras del día, tomas y opciones, suplementación,
+    sesiones con series/repeticiones/progresión, cardio, deload y contacto—,
+    que es lo que el cliente necesita para entrenar y comer. Los NÚMEROS son
+    los mismos: salen del mismo motor y pasan los mismos guardarraíles."""
     # El documento lleva lo que el cliente tenga contratado: dieta, entreno o las
     # dos cosas. include_nutrition=False es el plan `train` (documento SOLO de
     # entrenamiento, sin un "PLAN NUTRICIONAL" lleno de ceros).
@@ -481,8 +488,9 @@ def generate_plan_doc(
                meta=f"Mes {month_index} · {_goal_label(goal_type)}")
         macros = nutrition.get("macros", {})
 
-        _indice(doc, _indice_nutricion(nutrition, include_training,
-                                       blocked, diet_pattern))
+        if not simple:
+            _indice(doc, _indice_nutricion(nutrition, include_training,
+                                           blocked, diet_pattern))
 
         section_bar(doc, "Objetivos", WINE)
         info_box(doc, _objetivo_pairs(goal_type), fill=CREAM, label_color=WINE)
@@ -557,13 +565,14 @@ def generate_plan_doc(
         )
 
         # El plato saludable (plantilla + foto)
-        section_bar(doc, "El plato saludable", BLUE)
-        _nota(doc, "La regla para el día que comes fuera y no puedes pesar nada.")
-        # La foto del plato va DENTRO de la caja y la caja entera es indivisible
-        # (cant_split): si no cabe, la tarjeta completa salta a la página siguiente
-        # con su barra — la foto nunca queda sola en un fragmento de caja.
-        info_box(doc, PLATO_TEXT, fill=CREAM, label_color=WINE,
-                 cant_split=True, image_path=str(ASSETS / "plate.png"))
+        if not simple:
+            section_bar(doc, "El plato saludable", BLUE)
+            _nota(doc, "La regla para el día que comes fuera y no puedes pesar nada.")
+            # La foto del plato va DENTRO de la caja y la caja entera es indivisible
+            # (cant_split): si no cabe, la tarjeta completa salta a la página siguiente
+            # con su barra — la foto nunca queda sola en un fragmento de caja.
+            info_box(doc, PLATO_TEXT, fill=CREAM, label_color=WINE,
+                     cant_split=True, image_path=str(ASSETS / "plate.png"))
 
         # Comidas detalladas (flexible) — como el ejemplo: comida/cena con sistema de
         # equivalencias por grupos; el resto, 3 opciones numeradas en prosa (sin kcal).
@@ -742,8 +751,9 @@ def generate_plan_doc(
 
 
     if not include_training or not training:
-        _education_section(doc, education, include_training=False,
-                           blocked=blocked, diet_pattern=diet_pattern)
+        if not simple:
+            _education_section(doc, education, include_training=False,
+                               blocked=blocked, diet_pattern=diet_pattern)
         _contact_section(doc, brand)
         buf = io.BytesIO()
         doc.save(buf)
@@ -848,8 +858,9 @@ def generate_plan_doc(
                    "vuelvas más fuerte.")
         info_box(doc, [training["deload_instructions"]])
 
-    _education_section(doc, education, include_training=True,
-                       blocked=blocked, diet_pattern=diet_pattern)
+    if not simple:
+        _education_section(doc, education, include_training=True,
+                           blocked=blocked, diet_pattern=diet_pattern)
     _contact_section(doc, brand)
 
     buf = io.BytesIO()
@@ -861,8 +872,15 @@ def _contact_section(doc: Document, brand: DocBrand) -> None:
     """Cierre profesional del documento: cómo resolver dudas y dónde seguir el
     día a día. Antes el PDF terminaba en seco tras la suplementación/FAQ."""
     lineas: list = []
+    # El contacto sale de la MARCA. Un centro con local se contacta por
+    # WhatsApp y se visita; una asesoría online, por email. Se pinta lo que la
+    # marca tenga puesto, sin inventar ninguna de las dos cosas.
+    if getattr(brand, "contact_phone", None):
+        lineas.append(("WhatsApp", brand.contact_phone))
     if brand.contact_email:
         lineas.append(("Escríbeme", brand.contact_email))
+    if getattr(brand, "contact_address", None):
+        lineas.append(("Dónde estamos", brand.contact_address))
     lineas.append(("Tu portal", "registra tu día a día (peso, comidas y entrenos) "
                    "desde el enlace de tu portal — es lo que me permite ajustarte "
                    "el plan en cada revisión."))
