@@ -516,3 +516,76 @@ def test_el_selector_dice_cuantos_clientes_lleva_cada_negocio(http, db, restaura
                for m in http.get("/api/brand/perfiles", headers=_auth()).json()}
     assert despues["professional-fitness"] == antes["professional-fitness"] + 1
     assert despues["dqr"] == antes["dqr"]
+
+
+def test_la_marca_simple_entrega_un_plan_mas_corto_con_las_mismas_cifras(
+        http, db, restaura_marca):
+    """"No tan elaborada, pero que cumpla su función": la variante simple deja
+    fuera el índice, la tarjeta del plato y la sección educativa. Lo que NO
+    cambia son los números — salen del mismo motor en las dos marcas."""
+    from app.services.docs.plan_doc import generate_plan_doc
+    from app.services.docs.word_base import DocBrand
+    from app.services.plan_delivery import documento_simple
+
+    ms = _marcas(db)
+    dqr, pf = ms["dqr"], ms["professional-fitness"]
+    assert documento_simple(db, _cliente_de(db, pf, "Doc simple")) is True
+    assert documento_simple(db, _cliente_de(db, dqr, "Doc completo")) is False
+
+    marca = DocBrand(name="X", color_primary="#F2C230", color_secondary="#2E2E2E",
+                     font_family="Inter")
+    nutricion = {
+        "target_kcal": 2200,
+        "macros": {"protein_g": 165, "carbs_g": 220, "fat_g": 73},
+        "meals": [{"slot": 1, "name": "Desayuno", "time": "08:00"}],
+    }
+    educacion = {"pills": [{"title": "Proteína", "body": "Reparte la proteína."}],
+                 "faq": [{"q": "¿Puedo saltarme una comida?", "a": "Mejor no."}]}
+    comun = dict(brand=marca, client_name="Cliente", month_index=1,
+                 goal_type="fat_loss", diet_mode="flexible_7", nutrition=nutricion,
+                 training={}, education=educacion)
+    completo = generate_plan_doc(**comun)
+    corto = generate_plan_doc(**comun, simple=True)
+    assert len(corto) < len(completo)
+
+    from io import BytesIO
+
+    from docx import Document
+
+    # Las barras de sección van en mayúsculas en el documento.
+    texto = lambda b: "\n".join(  # noqa: E731
+        p.text for p in Document(BytesIO(b)).paragraphs).upper()
+    t_completo, t_corto = texto(completo), texto(corto)
+    for fuera in ("EN ESTE DOCUMENTO", "EL PLATO SALUDABLE", "PREGUNTAS FRECUENTES"):
+        assert fuera in t_completo, fuera
+        assert fuera not in t_corto, fuera
+    # Y sigue siendo un PLAN: cifras del día y contacto están en las dos.
+    for dentro in ("RESUMEN ENERGÉTICO DIARIO", "CUALQUIER DUDA, AQUÍ ME TIENES"):
+        assert dentro in t_corto, dentro
+
+
+def test_la_marca_simple_no_paga_el_educativo_que_no_va_a_imprimir():
+    """Ahorro real de créditos: si el documento no lleva la sección educativa,
+    generarla es pagar una llamada a la IA para tirarla a la basura."""
+    import dataclasses
+
+    from tests.test_ai_service import (
+        ScriptedClient, _ctx, _flexible_meals_json, _valid_core_json,
+    )
+
+    from app.services.ai.generator import generate_monthly_plan
+
+    # Marca completa: tres llamadas (núcleo, comidas y educativo).
+    from tests.test_ai_service import _education_json
+
+    completo = ScriptedClient([_valid_core_json(), _flexible_meals_json(), _education_json()])
+    plan = generate_monthly_plan(_ctx(), completo, include_training=True)
+    assert len(completo.calls) == 3 and plan.education is not None
+
+    # Marca simple: dos. Y el plan sale igual (mismas cifras, mismo entreno).
+    ctx_simple = dataclasses.replace(_ctx(), documento_simple=True)
+    simple = ScriptedClient([_valid_core_json(), _flexible_meals_json()])
+    plan_s = generate_monthly_plan(ctx_simple, simple, include_training=True)
+    assert len(simple.calls) == 2
+    assert plan_s.education is None
+    assert plan_s.nutrition.target_kcal == plan.nutrition.target_kcal

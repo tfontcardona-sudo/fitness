@@ -476,6 +476,10 @@ class BrandConfig(Base):
     app_short_name: Mapped[str | None] = mapped_column(String(20))
     # Qué variante de anamnesis usa (plantilla PDF + piel del formulario).
     anamnesis_variant: Mapped[str | None] = mapped_column(String(20))
+    # Cuánto documento quiere esta marca (mig. 0047): "completo" (índice,
+    # tarjeta del plato y sección educativa) o "simple" (solo el plan). Los
+    # NÚMEROS no dependen de esto: salen del mismo motor en las dos.
+    doc_variant: Mapped[str | None] = mapped_column(String(20))
     # Dirección física (mig. 0045): una asesoría online no la necesita, un
     # CENTRO sí — es de lo primero que busca su cliente.
     contact_address: Mapped[str | None] = mapped_column(String(200))

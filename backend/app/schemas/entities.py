@@ -427,6 +427,8 @@ class BrandConfigOut(BrandConfigIn):
     app_name: str | None = None
     app_short_name: str | None = None
     anamnesis_variant: str | None = None
+    # Cuánto documento quiere la marca: "completo" o "simple" (mig. 0047).
+    doc_variant: str | None = None
     contact_address: str | None = None
     extra_services: list | None = None
     logo_path: str | None

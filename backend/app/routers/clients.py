@@ -58,6 +58,7 @@ router = APIRouter(
 
 
 from app.services.branding import cartera_de_la_marca, marca_activa
+from app.services.plan_delivery import documento_simple
 
 
 def _links(client: Client) -> PortalLinkOut:
@@ -2176,6 +2177,9 @@ def generate_client_plan(
         goal_weight_kg=client.goal_weight_kg,
         strict_free_meal=bool(client.strict_free_meal_enabled),
         goal_deadline=client.goal_deadline.isoformat() if client.goal_deadline else None,
+        # Si la marca del cliente entrega el documento reducido, el educativo no
+        # se imprime: no se genera y se ahorra una llamada a la IA por plan.
+        documento_simple=documento_simple(db, client),
     )
     # Paquete Start = solo nutrición: la IA no genera entrenamiento (ni el
     # educativo de entreno). Full/Pro generan el plan completo.

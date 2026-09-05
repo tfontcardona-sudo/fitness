@@ -431,6 +431,8 @@ export interface BrandConfigOut {
   app_short_name: string;
   /** Versión del cuestionario inicial ("dq" completa, "simple" de centro). */
   anamnesis_variant: string;
+  /** Cuánto documento quiere la marca ("completo" o "simple"). */
+  doc_variant: string;
   /** Dirección del local, si la marca tiene uno. */
   contact_address: string | null;
   /** Lo que la marca vende pero NO cobra por la web ({title, price}). */

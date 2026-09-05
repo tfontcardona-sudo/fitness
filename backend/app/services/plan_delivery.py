@@ -57,6 +57,13 @@ def doc_brand(db: Session, client=None):
                     logo_path=logo_abs)
 
 
+def documento_simple(db: Session, client=None) -> bool:
+    """¿Esta marca quiere el documento reducido? Lo dice su perfil
+    (`doc_variant`), no el tipo de plan: es una decisión de marca."""
+    cfg = fila_de_marca(db, client)
+    return (getattr(cfg, "doc_variant", None) or "completo") == "simple"
+
+
 def build_plan_pdf(db: Session, plan: Plan, client: Client,
                    fmt: str = "pdf") -> tuple[bytes, str, str]:
     """Devuelve (contenido, media_type, filename) del plan.
@@ -83,6 +90,9 @@ def build_plan_pdf(db: Session, plan: Plan, client: Client,
 
     data = generate_plan_doc(
         brand=doc_brand(db, client),
+        # Cuánto documento quiere la marca DEL CLIENTE: la simple se queda con
+        # el plan (sin índice, tarjeta del plato ni sección educativa).
+        simple=documento_simple(db, client),
         client_name=client.full_name,
         month_index=plan.month_index,
         goal_type=client.goal_type,
