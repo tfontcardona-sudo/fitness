@@ -393,14 +393,21 @@ def make_ai_reviewer(
          "cache_control": {"type": "ephemeral"}},
     ]
 
+    from app.services.ai_credit import proposito
+
     def reviewer(role: dict) -> ReviewerVerdict:
-        out = ai_client.generate_json(
-            model=settings.model_light, system=system_blocks,
-            user=f"Eres «{role['name']}». Tu rúbrica: {role['rubric']}",
-            schema=ReviewerOutput,
-            temperature=0,  # §14: cada revisor juzga de forma determinista
-            max_tokens=2000,  # JSON de 0-6 hallazgos: techo holgado anti-desbocadas
-        )
+        # El propósito del gasto se marca AQUÍ DENTRO, no fuera del panel: los
+        # roles corren en hilos de un pool y los contextvars no cruzan solos,
+        # así que puesto fuera el gasto de 7 de los 8 revisores se apuntaba
+        # como "otras llamadas" y el panel parecía barato.
+        with proposito("revision"):
+            out = ai_client.generate_json(
+                model=settings.model_light, system=system_blocks,
+                user=f"Eres «{role['name']}». Tu rúbrica: {role['rubric']}",
+                schema=ReviewerOutput,
+                temperature=0,  # §14: cada revisor juzga de forma determinista
+                max_tokens=2000,  # JSON de 0-6 hallazgos: techo holgado
+            )
         hallazgos = [ReviewFinding(
             severity=h.severidad, description=h.descripcion,
             title=(h.titulo or "").strip(), action=(h.accion or "").strip(),

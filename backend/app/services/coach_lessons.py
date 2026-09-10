@@ -202,8 +202,11 @@ def distill_lessons(db: Session, ai=None) -> dict:
                  "conserva lo que las correcciones siguen confirmando, corrige lo "
                  "que ahora se ve distinto y quita lo que ya no pasa):\n"
                  + "\n".join(f"- {x}" for x in previas))
-    out = ai.generate_json(model=settings.model_light, system=system, user=user,
-                           schema=LessonsOutput, temperature=0, max_tokens=800)
+    from app.services.ai_credit import proposito
+
+    with proposito("lecciones"):
+        out = ai.generate_json(model=settings.model_light, system=system, user=user,
+                               schema=LessonsOutput, temperature=0, max_tokens=800)
 
     # Filtro determinista de seguridad: fuera lecciones con cifras de kcal/g
     # (por si el modelo se salta la regla) y tope de longitud.

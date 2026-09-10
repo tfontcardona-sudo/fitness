@@ -991,3 +991,29 @@ export interface LearningPatternsOut {
     fijo: { signal: string; etiqueta: string }[];
   } | null;
 }
+
+
+/** GET /api/ai-credit/history — en qué se van los créditos. */
+export interface AiCreditHistoryOut {
+  days: number;
+  /** Una línea por propósito, de más a menos caro. */
+  breakdown: {
+    purpose: string; label: string; cost_usd: number; calls: number;
+    /** % del gasto de la ventana. */
+    share: number;
+  }[];
+  /** El extracto: las últimas llamadas, una a una. */
+  events: {
+    id: number; at: string; purpose: string; label: string;
+    client_id: number | null;
+    /** Puede faltar tras una baja RGPD: el apunte contable sobrevive sin nombre. */
+    client_name: string | null;
+    model: string; cost_usd: number;
+    input_tokens: number; output_tokens: number;
+  }[];
+  /** Lo que el coach ha ido pagando. */
+  topups: {
+    id: number; at: string; amount_usd: number;
+    balance_before_usd: number | null; note: string | null;
+  }[];
+}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { Coins, ExternalLink, Pencil } from "lucide-react";
 import { api, keepIfSame } from "../lib/api";
 import { useDismiss } from "../lib/useDismiss";
@@ -80,18 +81,22 @@ export function AiCreditButton({ collapsed }: { collapsed: boolean }) {
 
   const [inputError, setInputError] = useState<string | null>(null);
   const save = async () => {
-    // Campo vacío = CANCELAR, no "saldo $0" (Number("") es 0 y apuntaba el
-    // saldo a cero sin querer); entrada inválida avisa en vez de no responder.
+    // Campo vacío = CANCELAR, no "recarga de 0" (Number("") es 0); entrada
+    // inválida avisa en vez de no responder.
     if (draft.trim() === "") { setEditing(false); setInputError(null); return; }
     const value = Number(draft.replace(",", "."));
-    if (!Number.isFinite(value) || value < 0) {
-      setInputError("Escribe un número válido (p. ej. 25 o 12,50)");
+    if (!Number.isFinite(value) || value <= 0) {
+      setInputError("Escribe lo que has pagado (p. ej. 25 o 12,50)");
       return;
     }
     setInputError(null);
     setSaving(true);
     try {
-      setCredit(await api.setAiCredit(value));
+      // SUMA, no sustituye: el coach teclea la cifra del RECIBO y el sistema
+      // hace la cuenta con lo que quedaba. Antes tenía que calcular él
+      // "quedaban 12, meto 50, escribo 62", y una resta mal hecha dejaba el
+      // aviso de saldo bajo mintiendo semanas.
+      setCredit(await api.topUpAiCredit(value));
       setEditing(false);
     } catch {
       // se mantiene el editor abierto para reintentar
@@ -101,7 +106,7 @@ export function AiCreditButton({ collapsed }: { collapsed: boolean }) {
   };
 
   const startEdit = () => {
-    setDraft(remaining !== null ? String(remaining) : "");
+    setDraft("");
     setEditing(true);
     setOpen(true);
   };
@@ -185,7 +190,7 @@ export function AiCreditButton({ collapsed }: { collapsed: boolean }) {
           ) : (
             <div style={{ color: "var(--text-faint)" }}
                  title="Anthropic no publica el saldo por API">
-              Apunta tu saldo (✎) para ver el disponible.
+              Apunta lo que recargues y el sistema lleva la cuenta.
             </div>
           )}
 
@@ -231,8 +236,17 @@ export function AiCreditButton({ collapsed }: { collapsed: boolean }) {
               className="tap rounded-lg px-2 py-1 font-semibold"
               style={{ color: "var(--text-faint)" }}
             >
-              Apuntar saldo
+              He recargado
             </button>
+            {/* El desglose de EN QUÉ se va no cabe aquí: vive en su libro. */}
+            <Link
+              to="/creditos"
+              onClick={closeAll}
+              className="tap ml-auto rounded-lg px-2 py-1 font-semibold"
+              style={{ color: "var(--text-faint)" }}
+            >
+              Ver historial
+            </Link>
           </div>
         </div>
       )}
@@ -245,7 +259,7 @@ export function AiCreditButton({ collapsed }: { collapsed: boolean }) {
           <input
             autoFocus
             inputMode="decimal"
-            placeholder="Saldo en $"
+            placeholder="He pagado… ($)"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {

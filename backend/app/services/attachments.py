@@ -189,10 +189,13 @@ def extract_attachment(documento, ai) -> AttachmentExtraction:
 
     user = (f"Lee el adjunto («{documento.nombre}», {documento.descripcion}) ENTERO y "
             "transcríbelo en el JSON del esquema. Si es una analítica, todos los marcadores.")
-    return ai.read_document_json(
-        model=settings.model_heavy, system=_SYSTEM, user=user, documento=documento,
-        schema=AttachmentExtraction, temperature=0, max_tokens=6000,
-    )
+    from app.services.ai_credit import proposito
+
+    with proposito("adjunto"):
+        return ai.read_document_json(
+            model=settings.model_heavy, system=_SYSTEM, user=user, documento=documento,
+            schema=AttachmentExtraction, temperature=0, max_tokens=6000,
+        )
 
 
 # ---------------------------------------------------------------- sidecar ----

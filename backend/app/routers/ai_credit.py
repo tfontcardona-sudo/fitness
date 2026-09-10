@@ -72,8 +72,47 @@ def get_ai_credit(db: Session = Depends(get_db)) -> AiCreditOut:
     return _out(get_state(db), db)
 
 
+class AiTopUpIn(BaseModel):
+    amount_usd: float = Field(gt=0, le=100_000)
+    note: str | None = Field(default=None, max_length=200)
+
+
+@router.post("/topup", response_model=AiCreditOut)
+def topup_ai_credit(body: AiTopUpIn, db: Session = Depends(get_db)) -> AiCreditOut:
+    """"He recargado X $": el sistema hace la cuenta.
+
+    Anthropic no publica el saldo por API, así que esto es lo más automático
+    que puede ser sin mentir: el coach teclea LO QUE HA PAGADO —la cifra del
+    recibo— y el saldo pasa a ser lo que quedaba más lo nuevo. Antes tenía que
+    hacer la suma él, y una resta mal hecha dejaba el aviso de saldo bajo
+    mintiendo durante semanas."""
+    from app.services.ai_credit import anotar_recarga
+
+    res = anotar_recarga(db, body.amount_usd, note=body.note)
+    log_event(db, "ai_credit", 0, "ai_credit_topup", res)
+    db.commit()
+    return _out(get_state(db), db)
+
+
+@router.get("/history")
+def ai_credit_history(days: int = 30, limit: int = 60,
+                      db: Session = Depends(get_db)) -> dict:
+    """EN QUÉ se ha gastado: desglose por propósito, extracto de las últimas
+    llamadas y las recargas pagadas."""
+    from app.services.ai_credit import desglose, movimientos, recargas
+
+    return {
+        "days": max(1, min(days, 365)),
+        "breakdown": desglose(db, days=days),
+        "events": movimientos(db, limit=limit),
+        "topups": recargas(db),
+    }
+
+
 @router.put("", response_model=AiCreditOut)
 def set_ai_credit(body: AiCreditIn, db: Session = Depends(get_db)) -> AiCreditOut:
+    """Fija el saldo EXACTO (corrección a mano). Para una recarga normal está
+    `/topup`, que suma sin obligar a calcular nada."""
     state = get_state(db)
     state.balance_usd = body.balance_usd
     state.spent_usd = 0.0

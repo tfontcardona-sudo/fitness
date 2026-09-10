@@ -884,8 +884,11 @@ def _education_with_cache(ai: AIClient, *, split_name: str, variant: str,
         except Exception:  # noqa: BLE001 — la caché nunca rompe la generación
             cache_file = None
 
-    edu = ai.generate_json(model=_cfg.model_light, system=system_prompt_education(),
-                           user=user, schema=EducationOutput)
+    from app.services.ai_credit import proposito
+
+    with proposito("educativo"):
+        edu = ai.generate_json(model=_cfg.model_light, system=system_prompt_education(),
+                               user=user, schema=EducationOutput)
     if cache_file is not None:
         try:
             data = _json.loads(cache_file.read_text(encoding="utf-8")) if cache_file.exists() else {}
@@ -1146,13 +1149,16 @@ def generate_monthly_plan(
     # ② Comidas según diet_mode
     schema = MealsFlexibleOutput if ctx.diet_mode == "flexible_7" else MealsStrictOutput
     try:
-        meals = ai.generate_json(
-            model=model, system=system_prompt_meals(),
-            # Las lecciones del coach también aquí: la llamada que ELIGE los
-            # alimentos era justo la que no las recibía.
-            user=_meals_user_prompt(ctx, core, food_catalog) + _lecciones,
-            schema=schema,
-        )
+        from app.services.ai_credit import proposito as proposito_de
+
+        with proposito_de("comidas"):
+            meals = ai.generate_json(
+                model=model, system=system_prompt_meals(),
+                # Las lecciones del coach también aquí: la llamada que ELIGE los
+                # alimentos era justo la que no las recibía.
+                user=_meals_user_prompt(ctx, core, food_catalog) + _lecciones,
+                schema=schema,
+            )
     except AIGenerationError as exc:
         raise PlanGenerationError(f"banco de comidas: {exc}") from exc
 

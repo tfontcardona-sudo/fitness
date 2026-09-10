@@ -663,14 +663,17 @@ def extract_anamnesis_from_document(documento, ai, *, verify: bool | None = None
     extraídos (validados) + la verificación del segundo pase."""
     from app.config import settings
 
-    extraida = ai.read_document_json(
-        model=settings.model_heavy,
-        system=_EXTRACTION_SYSTEM,
-        user=_user_prompt(documento),
-        documento=documento,
-        schema=AnamnesisExtraction,
-        temperature=0,  # §14: extracción determinista (mismos datos → misma lectura)
-    )
+    from app.services.ai_credit import proposito
+
+    with proposito("anamnesis"):
+        extraida = ai.read_document_json(
+            model=settings.model_heavy,
+            system=_EXTRACTION_SYSTEM,
+            user=_user_prompt(documento),
+            documento=documento,
+            schema=AnamnesisExtraction,
+            temperature=0,  # §14: extracción determinista (misma lectura siempre)
+        )
     hacer = settings.extraction_double_pass if verify is None else verify
     verificacion = (verificar_extraccion(documento, extraida, ai) if hacer
                     else {"skipped": "desactivado", "discrepancies": [], "omissions": [],

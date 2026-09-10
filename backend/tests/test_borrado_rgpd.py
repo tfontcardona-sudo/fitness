@@ -77,6 +77,12 @@ TABLAS_QUE_CUELGAN = {
     "progress_photos", "push_subscriptions", "video_calls", "whatsapp_sends",
     # a través de períodos / planes / diarios
     "daily_logs", "feedback_docs", "workout_logs", "plan_edits",
+    # CONTABILIDAD, no dato personal: el apunte de gasto de IA se DESLIGA del
+    # cliente (ON DELETE SET NULL) y sobrevive sin nombre. Borrarlo falsearía
+    # el libro de créditos —ese dinero se gastó de verdad— y lo que queda
+    # (modelo, tokens, coste, para qué) no identifica a nadie. Mismo criterio
+    # que el libro de caja y el histórico de envíos.
+    "ai_usage_events",
 }
 
 
@@ -651,5 +657,49 @@ def test_stripe_caido_no_bloquea_para_siempre_la_baja_rgpd(http, auth, monkeypat
                                    AuditLog.event == "subscription_cancelled")).all()
         assert eventos, "la declaración del coach no quedó en la auditoría"
         assert "a mano" in str(eventos[-1].detail_json)
+    finally:
+        db.close()
+
+
+@needs_db
+def test_la_baja_desliga_el_gasto_de_ia_pero_no_borra_el_apunte(http, auth):
+    """El gasto de IA es CONTABILIDAD. Al dar de baja a un cliente su apunte se
+    queda sin dueño (sin nombre, sin nada que le identifique), pero no
+    desaparece: ese dinero se gastó de verdad y borrarlo dejaría el libro de
+    créditos mintiendo."""
+    import uuid
+
+    from sqlalchemy import select
+
+    from app.db import SessionLocal
+    from app.models import AiUsageEvent
+
+    email = f"gasto-{uuid.uuid4().hex[:8]}@example.com"
+    r = http.post("/api/clients", headers=auth,
+                  json={"full_name": "Gasto IA", "email": email})
+    assert r.status_code in (200, 201), r.text
+    cid = r.json()["client"]["id"]
+
+    marca = f"modelo-{uuid.uuid4().hex[:8]}"
+    db = SessionLocal()
+    try:
+        db.add(AiUsageEvent(model=marca, input_tokens=10, output_tokens=5,
+                            cost_usd=0.01, purpose="plan", client_id=cid))
+        db.commit()
+    finally:
+        db.close()
+
+    # La baja exige teclear el nombre completo (doble confirmación RGPD).
+    r = http.delete(f"/api/clients/{cid}", headers=auth,
+                    params={"confirm": "Gasto IA"})
+    assert r.status_code == 204, r.text
+
+    db = SessionLocal()
+    try:
+        ev = db.scalars(select(AiUsageEvent).where(AiUsageEvent.model == marca)).one()
+        assert ev.client_id is None, "el apunte sigue apuntando a un cliente borrado"
+        assert ev.cost_usd == 0.01, "el importe gastado no puede desaparecer"
+        db.delete(ev)
+        db.commit()
     finally:
         db.close()

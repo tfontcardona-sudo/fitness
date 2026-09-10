@@ -219,10 +219,13 @@ def extract_plan_from_document(documento, ai) -> PlanDocumentExtraction:
     user = (f"Transcribe la planificación del documento adjunto («{documento.nombre}», "
             f"{documento.descripcion}) ENTERA en el JSON del esquema. Todas las comidas y todos "
             "los ejercicios, con sus cantidades tal cual. No calcules nada.")
-    return ai.read_document_json(
-        model=settings.model_heavy, system=_SYSTEM, user=user, documento=documento,
-        schema=PlanDocumentExtraction, temperature=0, max_tokens=12000,
-    )
+    from app.services.ai_credit import proposito
+
+    with proposito("documento"):
+        return ai.read_document_json(
+            model=settings.model_heavy, system=_SYSTEM, user=user, documento=documento,
+            schema=PlanDocumentExtraction, temperature=0, max_tokens=12000,
+        )
 
 
 # ------------------------------------------------------------- utilidades ----

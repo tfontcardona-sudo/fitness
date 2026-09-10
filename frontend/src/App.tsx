@@ -13,6 +13,7 @@ const ClientsPage = lazy(() => import("./pages/ClientsPage"));
 const ClientProfilePage = lazy(() => import("./pages/ClientProfilePage"));
 const RecursosPage = lazy(() => import("./pages/RecursosPage"));
 const PagosPage = lazy(() => import("./pages/PagosPage"));
+const CreditosPage = lazy(() => import("./pages/CreditosPage"));
 const VenderPage = lazy(() => import("./pages/VenderPage"));
 const PortalApp = lazy(() => import("./portal/PortalApp"));
 const PortalLogin = lazy(() => import("./portal/PortalLogin"));
@@ -82,6 +83,7 @@ function CoachApp() {
         <Route path="clientes" element={<ClientsPage />} />
         <Route path="clientes/:id" element={<ClientProfilePage />} />
         <Route path="pagos" element={<PagosPage />} />
+        <Route path="creditos" element={<CreditosPage />} />
         <Route path="vender" element={<VenderPage />} />
         <Route path="recursos" element={<RecursosPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
