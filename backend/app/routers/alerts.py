@@ -902,6 +902,28 @@ def list_alerts(db: Session = Depends(get_db)) -> dict:
     except Exception:  # noqa: BLE001 — el chequeo no puede tumbar las alertas
         pass
 
+    # SE HAN ACABADO LOS CRÉDITOS: lo dice la propia API de Anthropic al
+    # fallar. Sin este aviso, el coach lo descubría al pulsar "Generar" y ver un
+    # error en inglés — con la mitad de la mañana perdida si era el día de los
+    # planes. Se apaga SOLO en cuanto una llamada vuelve a funcionar.
+    try:
+        from app.services.ai_credit import get_state, sin_credito
+
+        estado = get_state(db)
+        if sin_credito(estado):
+            alerts.insert(0, {
+                "client_id": 0, "client_name": "Sistema",
+                "kind": "sin_creditos", "severity": "alta",
+                "message": "Sin créditos de IA: no se puede generar ni leer nada.",
+                "tab": "resumen", "action": "Recargar créditos",
+                "target": None,
+                "fix": "Recarga en la consola de Anthropic y confirma el importe "
+                       "aquí: el saldo se pone al día solo.",
+                "to": "/creditos", "key": "sistema:sin_creditos",
+            })
+    except Exception:  # noqa: BLE001 — el chequeo no puede tumbar las alertas
+        pass
+
     # LEADS FRENADOS POR EL CUPO: cuando el formulario público llega al tope del
     # día, quien intenta darse de alta se va con un "escríbenos". Sus datos se
     # anotan (`public_signup_blocked`) pero no crean ficha: sin este aviso el

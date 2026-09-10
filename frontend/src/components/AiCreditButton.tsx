@@ -72,9 +72,12 @@ export function AiCreditButton({ collapsed }: { collapsed: boolean }) {
 
   const remaining = credit?.remaining_usd ?? null;
   const balance = credit?.balance_usd ?? null;
-  const spent = credit?.spent_usd ?? 0;
+  const spent = credit?.gasto_desde_recarga_usd ?? credit?.spent_usd ?? 0;
   const plansLeft = credit?.plans_left ?? null;
-  const low = remaining !== null && remaining < 5;
+  // AGOTADO no es "queda poco": lo dice la API de Anthropic al fallar. Manda
+  // sobre cualquier estimación local del saldo (que puede ir por detrás).
+  const agotado = !!credit?.sin_credito_desde;
+  const low = agotado || (remaining !== null && remaining < 5);
   // % consumido del saldo apuntado (para la barra).
   const usedPct =
     balance && balance > 0 ? Math.min(100, Math.max(0, (spent / balance) * 100)) : null;
@@ -113,8 +116,9 @@ export function AiCreditButton({ collapsed }: { collapsed: boolean }) {
 
   // Subtítulo: si hay saldo, disponible (+ planes). Si no, el gasto REAL
   // acumulado, que ya es en vivo sin apuntar nada.
-  const subtitle =
-    remaining !== null
+  const subtitle = agotado
+    ? "SE HAN ACABADO · recarga"
+    : remaining !== null
       ? `Quedan ${fmtUsd(remaining)}${plansLeft !== null ? ` · ~${plansLeft} planes` : ""}`
       : spent > 0
         ? `Gastado ${fmtSmall(spent)} · apunta tu saldo`

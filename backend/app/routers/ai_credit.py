@@ -15,9 +15,11 @@ from app.deps import get_current_user
 from app.models import utcnow
 from app.services.ai_credit import (
     RECHARGE_URL,
+    gasto_desde_la_recarga,
     get_state,
     plans_left,
     remaining_usd,
+    ultima_recarga_usd,
     usage_summary,
 )
 from app.services.audit import log_event
@@ -42,6 +44,17 @@ class AiCreditOut(BaseModel):
     last_call_at: datetime | None = None
     avg_cost_per_plan_usd: float | None = None
     plans_left: int | None = None
+    # SE ACABÓ EL CRÉDITO: lo dice la propia API de Anthropic, no una
+    # estimación. Se apaga solo cuando una llamada vuelve a funcionar.
+    sin_credito_desde: datetime | None = None
+    ultimo_error: str | None = None
+    # El gasto que se está restando, y si es la cifra REAL de Anthropic (Cost
+    # API con clave de administración) o la estimación por tokens.
+    gasto_desde_recarga_usd: float = 0.0
+    gasto_es_real: bool = False
+    informe_de_coste: bool = False
+    # Lo que se pagó la última vez: es lo que propone el botón de recargar.
+    ultima_recarga_usd: float | None = None
 
 
 class AiCreditIn(BaseModel):
@@ -49,8 +62,11 @@ class AiCreditIn(BaseModel):
 
 
 def _out(state, db: Session) -> AiCreditOut:
+    from app.services import ai_cost_report
+
     rem = remaining_usd(state)
     usage = usage_summary(db)
+    gasto, es_real = gasto_desde_la_recarga(state)
     return AiCreditOut(
         balance_usd=state.balance_usd,
         spent_usd=round(state.spent_usd or 0.0, 4),
@@ -64,11 +80,23 @@ def _out(state, db: Session) -> AiCreditOut:
         last_call_at=usage["last_call_at"],
         avg_cost_per_plan_usd=usage["avg_cost_per_plan_usd"],
         plans_left=plans_left(rem, usage["avg_cost_per_plan_usd"]),
+        sin_credito_desde=state.sin_credito_desde,
+        ultimo_error=state.ultimo_error,
+        gasto_desde_recarga_usd=gasto,
+        gasto_es_real=es_real,
+        informe_de_coste=ai_cost_report.disponible(),
+        ultima_recarga_usd=ultima_recarga_usd(db),
     )
 
 
 @router.get("", response_model=AiCreditOut)
 def get_ai_credit(db: Session = Depends(get_db)) -> AiCreditOut:
+    # Si hay clave de administración, se pone al día el gasto REAL de Anthropic
+    # (estrangulado a una lectura por minuto dentro del propio servicio, que es
+    # lo que recomienda Anthropic). Sin clave no hace nada y no cuesta nada.
+    from app.services.ai_cost_report import refrescar_gasto_real
+
+    refrescar_gasto_real(db)
     return _out(get_state(db), db)
 
 
@@ -116,7 +144,14 @@ def set_ai_credit(body: AiCreditIn, db: Session = Depends(get_db)) -> AiCreditOu
     state = get_state(db)
     state.balance_usd = body.balance_usd
     state.spent_usd = 0.0
-    state.updated_at = utcnow()
+    ahora = utcnow()
+    state.updated_at = ahora
+    # Igual que en una recarga: la cifra nueva ya está limpia, así que el
+    # informe de coste vuelve a contar desde aquí (si no, se restaría dos veces).
+    state.spent_real_usd = 0.0 if state.spent_real_at is not None else None
+    state.spent_real_desde = ahora
+    state.sin_credito_desde = None
+    state.ultimo_error = None
     log_event(db, "ai_credit", state.id, "ai_credit_set", {"balance_usd": body.balance_usd})
     db.commit()
     db.refresh(state)

@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     # Modelo del FEEDBACK quincenal (solo redacta; no calcula). Vacío = usa el
     # pesado. Ponlo a un modelo intermedio para ahorrar sin apenas riesgo.
     model_feedback: str = ""
+    # Clave de ADMINISTRACIÓN de la organización (sk-ant-admin…). OPCIONAL y
+    # distinta de la de arriba: no sirve para llamar al modelo, solo para leer
+    # el informe de coste real (Cost API). Con ella, el gasto que enseña el
+    # panel deja de ser una estimación por tokens y pasa a ser la cifra que
+    # factura Anthropic. Sin ella todo sigue funcionando con la estimación.
+    anthropic_admin_key: str = ""
 
     # --- Base de datos ---
     database_url: str = "postgresql+psycopg://fitness:fitness@db:5432/fitness"

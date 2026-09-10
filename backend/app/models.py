@@ -670,9 +670,10 @@ class ChangeRequest(Base):
 class AiCreditState(Base):
     """Saldo de créditos de la API de Anthropic (fila única).
 
-    Anthropic NO expone el saldo por API: el coach lo apunta al recargar y el
-    sistema descuenta el coste estimado (tokens reales × precio del modelo) de
-    cada llamada a la IA. Restante = balance_usd - spent_usd.
+    Anthropic NO expone el SALDO por API (sí el COSTE, ver `spent_real_usd`):
+    el coach apunta lo que paga al recargar y el sistema descuenta lo gastado
+    desde entonces. Restante = balance_usd - gasto, y el gasto es el real de
+    Anthropic si hay clave de administración, o la estimación por tokens si no.
     """
 
     __tablename__ = "ai_credit_state"
@@ -681,6 +682,16 @@ class AiCreditState(Base):
     balance_usd: Mapped[float | None] = mapped_column(Float)  # None = sin configurar
     spent_usd: Mapped[float] = mapped_column(Float, default=0.0)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Crédito AGOTADO: lo dice la propia API ("credit balance is too low"). Se
+    # sella al fallar y se borra solo en cuanto una llamada vuelve a funcionar.
+    sin_credito_desde: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ultimo_error: Mapped[str | None] = mapped_column(String(300))
+    # Gasto REAL leído de la Cost API de Anthropic desde la última recarga
+    # (requiere clave de administración). Cuando existe, manda sobre la
+    # estimación de `spent_usd`.
+    spent_real_usd: Mapped[float | None] = mapped_column(Float)
+    spent_real_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    spent_real_desde: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class AiUsageEvent(Base):

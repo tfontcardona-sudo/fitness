@@ -509,6 +509,25 @@ def notify_coach_pay_link_failed(db: Session, *, que: str, motivo: str) -> int:
     return send_to_coach(db, payload)
 
 
+def notify_coach_sin_creditos(db: Session, *, motivo: str = "") -> int:
+    """Avisa al COACH de que se han acabado los créditos de la IA.
+
+    Es el aviso más urgente que puede dar el sistema: sin crédito no se genera
+    un plan, no se lee una anamnesis y no sale un informe quincenal. Llega al
+    móvil para que no se descubra al pulsar «Generar»."""
+    if not push_configured():
+        return 0
+    base = settings.public_base_url.rstrip("/")
+    payload = {
+        "title": "🪫 Sin créditos de IA",
+        "body": "Recarga en Anthropic · nada de IA funciona hasta entonces",
+        "count": 1,
+        "url": f"{base}/creditos",
+        "tag": "dq-sin-creditos",
+    }
+    return send_to_coach(db, payload)
+
+
 def notify_coach_video_call_proposed(db: Session, client: Client, when_label: str) -> int:
     """Avisa al COACH (push) de que un cliente propuso día/hora de videollamada.
     Al tocar, abre el panel del coach. Silencioso sin push/dispositivos."""

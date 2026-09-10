@@ -1,10 +1,16 @@
 """Créditos de la API de Anthropic — contabilidad local (fila única).
 
-Anthropic NO expone el saldo de créditos por API, así que el portal lo lleva
-en local: el coach apunta el saldo cuando recarga y cada llamada a la IA
-descuenta su coste estimado (tokens reales de la respuesta × precio oficial
-del modelo). El botón del sidebar muestra `balance - gastado` y enlaza a la
-página de recarga de la consola de Anthropic.
+Anthropic NO expone el SALDO de créditos por API (sí el COSTE: ver
+`services/ai_cost_report.py`), así que el saldo se lleva en local: el coach
+confirma de un toque lo que ha pagado al recargar y el sistema resta lo
+gastado desde entonces — el gasto REAL de Anthropic si hay clave de
+administración, o la estimación por tokens (respuesta × precio de tarifa) si
+no la hay.
+
+Y cuando el crédito se acaba de verdad no hay que adivinarlo: la propia API lo
+dice («credit balance is too low»). Ese error sella `sin_credito_desde`, que
+enciende el aviso del panel y se apaga SOLO en cuanto una llamada vuelve a
+funcionar.
 """
 
 from __future__ import annotations
@@ -104,11 +110,23 @@ def get_state(db: Session) -> AiCreditState:
     return state
 
 
+def gasto_desde_la_recarga(state: AiCreditState) -> tuple[float, bool]:
+    """Lo gastado desde la última recarga, y si es la cifra REAL de Anthropic.
+
+    Con clave de administración el informe de coste manda: es lo que Anthropic
+    factura. Sin ella, la estimación por tokens de siempre."""
+    real = state.spent_real_usd
+    if real is not None and state.spent_real_at is not None:
+        return round(float(real), 4), True
+    return round(float(state.spent_usd or 0.0), 4), False
+
+
 def remaining_usd(state: AiCreditState) -> float | None:
-    """Saldo restante estimado; None mientras el coach no configure el saldo."""
+    """Saldo restante; None mientras el coach no confirme una recarga."""
     if state.balance_usd is None:
         return None
-    return round(state.balance_usd - (state.spent_usd or 0.0), 2)
+    gasto, _ = gasto_desde_la_recarga(state)
+    return round(state.balance_usd - gasto, 2)
 
 
 def record_usage(model: str, input_tokens: int, output_tokens: int,
@@ -149,6 +167,86 @@ def record_usage(model: str, input_tokens: int, output_tokens: int,
     except Exception:  # noqa: BLE001 — contabilidad best-effort
         pass
 
+
+
+# ------------------------------------------------------ crédito agotado ----
+# El sistema no adivina cuándo se acaba el crédito: lo dice la API.
+
+
+def es_error_de_credito(mensaje: str | None) -> bool:
+    """¿Este error de la API es «te has quedado sin crédito»?
+
+    Se exige la frase completa de saldo bajo: «billing» a secas sale también en
+    errores que no son de saldo, y encender el cartel rojo por uno de esos
+    dejaría al coach recargando un crédito que no le falta."""
+    texto = (mensaje or "").lower()
+    return "credit balance is too low" in texto or "insufficient credit" in texto
+
+
+# Espejo en memoria de "¿está encendido el cartel?". Sin él, `marcar_con_credito`
+# abriría una sesión de base de datos en CADA llamada buena a la IA (y el panel
+# de revisión hace 8-10 seguidas) solo para comprobar algo que casi siempre es
+# «no hay nada que apagar». None = aún no se ha mirado.
+_cartel_encendido: bool | None = None
+
+
+def marcar_sin_credito(mensaje: str) -> None:
+    """Sella el momento en que la API dijo que no queda crédito.
+
+    Best-effort y con sesión propia, como el resto de la contabilidad: esto se
+    llama desde dentro del manejador de un error que ya va camino del coach."""
+    global _cartel_encendido
+    try:
+        from app.db import SessionLocal
+        from app.models import utcnow
+
+        with SessionLocal() as db:
+            state = get_state(db)
+            primera_vez = state.sin_credito_desde is None
+            if primera_vez:
+                state.sin_credito_desde = utcnow()
+            state.ultimo_error = (mensaje or "")[:300]
+            db.commit()
+            if primera_vez:
+                # Solo la PRIMERA vez: si no, cada acción de IA que falle
+                # mientras no hay crédito manda su propio aviso al móvil.
+                try:
+                    from app.services.push import notify_coach_sin_creditos
+
+                    notify_coach_sin_creditos(db, motivo=mensaje or "")
+                except Exception:  # noqa: BLE001
+                    pass
+        _cartel_encendido = True
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def marcar_con_credito() -> None:
+    """Una llamada que FUNCIONA es la prueba de que ya hay crédito: apaga el
+    cartel sin que nadie tenga que pulsar nada."""
+    global _cartel_encendido
+    if _cartel_encendido is False:
+        return  # nada que apagar, y sin tocar la base
+    try:
+        from app.db import SessionLocal
+
+        with SessionLocal() as db:
+            state = get_state(db)
+            if state.sin_credito_desde is None and not state.ultimo_error:
+                _cartel_encendido = False
+                return
+            state.sin_credito_desde = None
+            state.ultimo_error = None
+            db.commit()
+        _cartel_encendido = False
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def sin_credito(state: AiCreditState) -> bool:
+    global _cartel_encendido
+    _cartel_encendido = state.sin_credito_desde is not None
+    return _cartel_encendido
 
 # ------------------------------------------------------- consumo en vivo ----
 
@@ -298,6 +396,21 @@ def movimientos(db: Session, *, limit: int = 60) -> list[dict]:
     } for ev, nombre in filas]
 
 
+def ultima_recarga_usd(db: Session) -> float | None:
+    """Lo que se pagó la última vez. Es lo que se propone la siguiente: casi
+    siempre se recarga lo mismo, y así confirmar es UN toque en vez de teclear
+    una cifra que hay que ir a buscar al recibo."""
+    from app.models import AiCreditTopUp
+
+    try:
+        fila = db.scalars(
+            select(AiCreditTopUp).order_by(AiCreditTopUp.created_at.desc()).limit(1)
+        ).first()
+    except Exception:  # noqa: BLE001
+        return None
+    return round(float(fila.amount_usd), 2) if fila else None
+
+
 def recargas(db: Session, *, limit: int = 24) -> list[dict]:
     """Lo que el coach ha ido pagando de créditos."""
     from app.models import AiCreditTopUp
@@ -334,10 +447,21 @@ def anotar_recarga(db: Session, amount_usd: float, *, note: str | None = None) -
     # El gasto vuelve a cero porque el saldo nuevo YA lo tiene descontado: el
     # historial de llamadas (ai_usage_events) conserva el detalle intacto.
     state.spent_usd = 0.0
-    state.updated_at = utcnow()
+    ahora = utcnow()
+    state.updated_at = ahora
+    # El informe de coste vuelve a contar DESDE AQUÍ; si no, la próxima lectura
+    # traería el gasto del ciclo anterior y se descontaría dos veces.
+    state.spent_real_usd = 0.0 if state.spent_real_at is not None else None
+    state.spent_real_desde = ahora
+    state.spent_real_at = ahora if state.spent_real_at is not None else None
+    # Recargar es exactamente la prueba de que vuelve a haber crédito.
+    state.sin_credito_desde = None
+    state.ultimo_error = None
     db.add(AiCreditTopUp(amount_usd=float(amount_usd), balance_before_usd=antes,
                          note=(note or None)))
     db.commit()
     db.refresh(state)
+    global _cartel_encendido
+    _cartel_encendido = False
     return {"balance_usd": state.balance_usd, "added_usd": float(amount_usd),
             "balance_before_usd": antes}
