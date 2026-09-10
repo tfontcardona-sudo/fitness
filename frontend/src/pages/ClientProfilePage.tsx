@@ -15,6 +15,7 @@ import { ClientSummaryTab } from "../components/ClientSummaryTab";
 import { ClientAnamnesisTab } from "../components/ClientAnamnesisTab";
 import { ClientDocuments } from "../components/ClientDocuments";
 import { MarcadorDeAncla } from "../components/Pins";
+import { LoSiguiente, useAvisosDelCliente } from "../components/LoSiguiente";
 import { ancla, irYMarcar } from "../lib/anchors";
 import { copiarConAviso } from "../lib/clipboard";
 import { ClientPlanPanel } from "../components/ClientPlanPanel";
@@ -124,6 +125,12 @@ export default function ClientProfilePage() {
     load();
     setReloadKey((k) => k + 1);
   }, [load]);
+
+  // QUÉ TOCA AHORA con este cliente. El backend ya calculaba sus avisos, pero
+  // solo se veían agregados en la campana, mezclados con los de los otros
+  // treinta: el coach entraba a una ficha y tenía que deducir el estado
+  // abriendo pestañas. Un solo barrido alimenta la barra Y los puntos.
+  const { alertas: avisosCliente, tabs: tabsConAviso } = useAvisosDelCliente(clientId);
 
   // Refresco cada 3 s (pestaña visible): la ficha siempre al día. Se PAUSA
   // mientras se edita la anamnesis (borrador sin guardar): un refresco en medio
@@ -533,6 +540,7 @@ export default function ClientProfilePage() {
         <div className="min-w-0 lg:col-start-2 lg:row-start-1 lg:row-span-2">
           {/* Barra de pestañas PEGAJOSA: al hacer scroll de un plan largo, la
               navegación entre secciones sigue siempre accesible. */}
+          <LoSiguiente alertas={avisosCliente} onGoTab={(t: string) => changeTab(t as Tab)} />
           <div className="profile-tabs mb-5 flex gap-1 border-b" style={{ borderColor: "var(--line)", position: "sticky", top: 0, zIndex: 10, background: "var(--bg)" }}>
             {(["resumen", "anamnesis", "planificacion", "seguimiento", "feedback", "historial"] as Tab[]).map((t) => (
               <button
@@ -542,6 +550,13 @@ export default function ClientProfilePage() {
                 style={{ color: tab === t ? "#26211A" : "var(--text-faint)" }}
               >
                 {t === "resumen" ? "Resumen" : t === "anamnesis" ? "Anamnesis" : t === "planificacion" ? "Planificación" : t === "seguimiento" ? "Seguimiento" : t === "feedback" ? "Feedback" : "Historial"}
+                {/* Punto: esta pestaña tiene algo pendiente. Se ve DÓNDE hay
+                    que ir sin entrar a mirar en cada una. */}
+                {tabsConAviso.has(t) && t !== tab && (
+                  <span aria-label="tiene algo pendiente"
+                    className="absolute right-1 top-1.5 h-1.5 w-1.5 rounded-full"
+                    style={{ background: "var(--brand-accent)" }} />
+                )}
                 {tab === t && (
                   <span
                     className="absolute inset-x-2 -bottom-px h-0.5 rounded-full"

@@ -8,12 +8,14 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
+  Search,
   Users,
   Wallet,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useBrand } from "../hooks/useBrand";
 import { ALERTS_REFRESH_MS, api } from "../lib/api";
+import { BuscadorRapido, useBuscadorRapido } from "./BuscadorRapido";
 import { useAppUpdate } from "../lib/appUpdate";
 import { AlertsBell } from "./AlertsBell";
 import { PinDock } from "./Pins";
@@ -115,6 +117,13 @@ export default function AppShell() {
   const [collapsed, setCollapsed] = useState(
     () => typeof window !== "undefined" && window.innerWidth < 768,
   );
+  // BUSCADOR RÁPIDO (⌘K): saltar a cualquier cliente sin volver a la cartera.
+  // Era la fricción más cara del panel — diez revisiones un lunes eran treinta
+  // clics que no hacían nada.
+  const buscador = useBuscadorRapido();
+  // El logo del PANEL también sale de la marca (estaba clavado a DQ, así que
+  // el otro negocio trabajaba bajo un logo ajeno).
+  const logoPanel = api.mediaUrl(brand?.logo_path ?? null) ?? "/dq-logo.png";
 
   // ---- MÓVIL: sin sidebar — navegación inferior tipo app (como el portal) ----
   if (isMobile) {
@@ -122,6 +131,15 @@ export default function AppShell() {
       <div className="flex h-screen flex-col overflow-hidden">
         <main className="coach-mobile relative flex-1 overflow-y-auto pb-24" style={{ background: "var(--bg)" }}>
           {updateBanner}
+          <button
+            onClick={buscador.abrir}
+            aria-label="Buscar cliente"
+            className="tap fixed right-3 top-3 z-30 rounded-full border p-2"
+            style={{ background: "var(--surface)", borderColor: "var(--line-strong)",
+                     color: "var(--text-faint)" }}
+          >
+            <Search size={17} />
+          </button>
           <AlertsBell />
           {sinConexion && <BandaSinConexion />}
           <PinDock />
@@ -164,6 +182,7 @@ export default function AppShell() {
             Salir
           </button>
         </nav>
+        <BuscadorRapido open={buscador.open} onClose={buscador.cerrar} />
       </div>
     );
   }
@@ -181,7 +200,7 @@ export default function AppShell() {
         style={{ borderColor: "var(--line)", width: collapsed ? 64 : 232, background: "var(--surface)" }}
       >
         <div className="flex h-16 items-center gap-3 border-b px-4" style={{ borderColor: "var(--line)" }}>
-          <img src="/dq-logo.png" alt="DQ" className="h-8 w-auto shrink-0 rounded-md" />
+          <img src={logoPanel} alt="" className="h-8 w-auto shrink-0 rounded-md" />
           {!collapsed && (
             <span className="truncate text-sm font-semibold tracking-wide text-zinc-100">
               {brand?.name ?? "Asesorías"}
@@ -190,6 +209,25 @@ export default function AppShell() {
         </div>
 
         <nav className="mt-2 flex-1 space-y-1 px-2.5">
+          {/* Buscar va ARRIBA del todo: es lo que más se usa y lo que menos se
+              encontraba. El atajo se enseña porque un atajo que no se ve no
+              existe. */}
+          <button
+            onClick={(e) => { e.stopPropagation(); buscador.abrir(); }}
+            title={collapsed ? "Buscar (⌘K)" : undefined}
+            aria-label="Buscar cliente o sección"
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors hover:text-zinc-100"
+            style={{ color: "var(--text-faint)" }}
+          >
+            <Search size={18} className="shrink-0" />
+            {!collapsed && (
+              <>
+                <span className="flex-1 text-left">Buscar</span>
+                <kbd className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
+                     style={{ background: "var(--surface-raised)" }}>⌘K</kbd>
+              </>
+            )}
+          </button>
           {NAV.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
@@ -264,6 +302,7 @@ export default function AppShell() {
         <PinDock />
         <Outlet />
       </main>
+      <BuscadorRapido open={buscador.open} onClose={buscador.cerrar} />
     </div>
   );
 }

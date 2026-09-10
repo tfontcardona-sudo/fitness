@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Bell, Check, Smartphone } from "lucide-react";
-import { ALERTS_REFRESH_MS, api, keepIfSame } from "../lib/api";
+import { api } from "../lib/api";
+import { useAlertas } from "../lib/alertasCompartidas";
 import {
   coachPushActive,
   coachPushSubscribed,
@@ -24,7 +25,6 @@ export function AlertsBell() {
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
-  const [alerts, setAlerts] = useState<CoachAlert[] | null>(null);
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   useDismiss(panelRef, () => setOpen(false), open);
@@ -61,29 +61,24 @@ export function AlertsBell() {
     }
   }
 
-  const load = useCallback(() => {
-    // keepIfSame: no re-renderiza la campana cada 3 s si las alertas no cambian.
-    api.listAlerts().then((r) => {
-      setAlerts((prev) => keepIfSame(prev, r.alerts));
-      // Los recordatorios anclados heredan la verdad del backend: los que ya
-      // no están en esta lista es que están RESUELTOS y se borran solos. Solo
-      // se sincroniza si la petición fue bien (un fallo de red no puede
-      // barrer recordatorios vivos).
-      syncScope("alerts", r.alerts.map((a) => a.key).filter(Boolean));
-    }).catch(() => {});
+  // Los recordatorios anclados heredan la verdad del backend: los que ya no
+  // están en la lista es que están RESUELTOS y se borran solos. Solo se
+  // sincroniza tras una petición BUENA (un fallo de red no puede barrer
+  // recordatorios vivos), que es lo que garantiza la fuente compartida.
+  const sincronizarPins = useCallback((as: CoachAlert[]) => {
+    syncScope("alerts", as.map((a) => a.key).filter(Boolean));
   }, []);
 
-  // Al montar, al navegar (una acción resuelta debe apagar su alerta al
-  // instante), al abrir la campana y de fondo cada 20 s — siempre al día sin
-  // martillear el servidor.
+  // FUENTE COMPARTIDA: un solo temporizador y una sola petición para todo el
+  // panel. `/api/alerts` recorre la cartera entera, y con la barra de "lo
+  // siguiente" en la ficha había vuelto a haber dos barridos por el mismo dato
+  // (el fallo que ya costó una auditoría).
+  const { alerts, recargar: load } = useAlertas(sincronizarPins);
+
+  // Al navegar (una acción resuelta debe apagar su alerta al instante) y al
+  // abrir la campana.
   useEffect(load, [load, location.pathname, location.search]);
   useEffect(() => { if (open) load(); }, [open, load]);
-  useEffect(() => {
-    const t = window.setInterval(() => {
-      if (!document.hidden) load();
-    }, ALERTS_REFRESH_MS);
-    return () => window.clearInterval(t);
-  }, [load]);
 
   const count = alerts?.length ?? 0;
   const high = alerts?.filter((a) => a.severity === "alta").length ?? 0;

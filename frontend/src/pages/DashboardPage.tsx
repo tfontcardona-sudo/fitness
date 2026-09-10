@@ -20,6 +20,7 @@ import {
   Video,
 } from "lucide-react";
 import { ALERTS_REFRESH_MS, api, keepIfSame, REFRESH_MS } from "../lib/api";
+import { useAlertas } from "../lib/alertasCompartidas";
 import type { ClientOut, CoachAlert, VideoCallAgendaItem } from "../types";
 import { PageLoader, SectionHeader, StatusBadge } from "../components/ui";
 import { hrefCliente } from "../lib/anchors";
@@ -134,7 +135,10 @@ const agendaHora = (iso: string) =>
 
 export default function DashboardPage() {
   const [clients, setClients] = useState<ClientOut[] | null>(null);
-  const [alerts, setAlerts] = useState<CoachAlert[]>([]);
+  // Alertas de la fuente COMPARTIDA: un solo temporizador y una sola petición
+  // para todo el panel (`/api/alerts` recorre la cartera entera).
+  const { alerts: alertsRaw } = useAlertas();
+  const alerts = useMemo(() => alertsRaw ?? [], [alertsRaw]);
   const alertasDeSistema = alerts.filter((a) => a.client_id === 0);
   const [agenda, setAgenda] = useState<VideoCallAgendaItem[]>([]);
   // Un fallo de red NO se disfraza de "Todo al día": banner explícito.
@@ -148,12 +152,10 @@ export default function DashboardPage() {
         .then((cs) => { setLoadFailed(false); setClients((prev) => keepIfSame(prev, cs)); })
         .catch(() => { setLoadFailed(true); setClients((c) => c ?? []); });
     };
-    // Alertas + agenda: barrido pesado (todos los clientes con sus planes y
-    // períodos), aparte y más espaciado que el refresco de la lista.
+    // La AGENDA sí es suya; las ALERTAS vienen de la fuente compartida (ver
+    // abajo): este barrido recorre la cartera entera y lo pedían la campana,
+    // la ficha y esta pantalla por separado.
     const loadSlow = () => {
-      api.listAlerts()
-        .then((r) => setAlerts((prev) => keepIfSame(prev, r.alerts)))
-        .catch(() => {});
       api.videoCallsAgenda()
         .then((r) => setAgenda((prev) => keepIfSame(prev, r.calls)))
         .catch(() => {});
