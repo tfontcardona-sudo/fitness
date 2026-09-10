@@ -255,6 +255,11 @@ def brand_payload(db: Session, client=None) -> dict:
         "color_secondary": cfg.color_secondary, "color_bg": cfg.color_bg,
         "font_family": cfg.font_family, "portal_theme": cfg.portal_theme,
         "logo_path": cfg.logo_path,
+        # URL SERVIBLE del logo. `logo_path` es una ruta de disco y el portal no
+        # puede pintarla: los logos viejos cuelgan de `brand/`, que Caddy no
+        # sirve. Se da ya resuelta (None si no hay logo servible) para que la
+        # pantalla no tenga que saber nada de esto.
+        "logo_url": media_url(cfg.logo_path),
     }
 
 

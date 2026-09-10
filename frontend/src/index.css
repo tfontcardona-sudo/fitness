@@ -615,3 +615,64 @@ a.portal-note:active{transform:translateY(1px)}
   content-visibility: auto;
   contain-intrinsic-size: auto 86px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PORTAL · CAPA PREMIUM
+   El sistema de tinta, elevación y escala tipográfica ya estaba (y su
+   contraste está medido: NO se toca). Lo que faltaba era el acabado — que la
+   pantalla se sienta de una app cara y no de un formulario: cifras que se leen
+   de un vistazo, superficies con luz propia, botones que responden al dedo.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* CIFRAS. En una app de entreno todo son números —kilos, series, días— y se
+   comparan en vertical. Sin ancho tabular, "111" y "999" no ocupan lo mismo y
+   la columna baila; sin `slashed-zero`, el 0 y la O se confunden a tamaño
+   pequeño. */
+.portal-root .tabular-nums,
+.portal-root .p-metric,
+.portal-root input[inputmode="decimal"],
+.portal-root input[inputmode="numeric"] {
+  font-variant-numeric: tabular-nums slashed-zero;
+  font-feature-settings: "tnum" 1, "zero" 1;
+}
+
+/* SUPERFICIE. Una tarjeta plana sobre un fondo plano no tiene jerarquía: el
+   filo de luz superior la despega del fondo sin recurrir a una sombra dura,
+   que es lo que hace que una interfaz parezca barata. */
+.portal-root .portal-card {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.5), transparent 38%),
+                    var(--p-surface);
+}
+.portal-root.portal-dark .portal-card {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent 38%),
+                    var(--p-surface);
+}
+
+/* "TU SEMANA" es lo primero que se lee: se distingue con un filo de acento a la
+   izquierda, no con un color de fondo (que competiría con el resto). */
+.portal-root .portal-semana {
+  border-left: 3px solid var(--p-accent);
+  box-shadow: var(--p-hair), var(--p-e-3);
+}
+
+/* BOTONES. Un botón que no responde al dedo se pulsa dos veces. El hundido es
+   inmediato (75 ms) y la vuelta, suave: así se percibe sólido, no elástico. */
+.portal-root button:not(:disabled) {
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.18s ease, background-color 0.18s ease, color 0.18s ease;
+}
+.portal-root button:not(:disabled):active {
+  transform: scale(0.975);
+  transition-duration: 0.075s;
+}
+
+/* Un dato que cambia (kilos, días, racha) merece que se note que ha cambiado:
+   medio segundo de énfasis y fuera. */
+@keyframes p-bump { 0% { transform: none } 38% { transform: scale(1.06) } 100% { transform: none } }
+.portal-root .p-bump { animation: p-bump 0.42s cubic-bezier(0.16, 1, 0.3, 1); }
+
+/* Quien haya pedido menos animación en su móvil, la tiene. */
+@media (prefers-reduced-motion: reduce) {
+  .portal-root .p-bump { animation: none; }
+  .portal-root button:not(:disabled):active { transform: none; }
+}

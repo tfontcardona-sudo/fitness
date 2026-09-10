@@ -627,6 +627,9 @@ export interface PortalBrand {
   font_family: string;
   portal_theme: Theme;
   logo_path: string | null;
+  /** URL ya servible del logo (el backend la resuelve; `logo_path` es una ruta
+   *  de disco que el navegador no puede pintar). */
+  logo_url?: string | null;
 }
 
 export interface PortalPeriodInfo {
@@ -1016,4 +1019,25 @@ export interface AiCreditHistoryOut {
     id: number; at: string; amount_usd: number;
     balance_before_usd: number | null; note: string | null;
   }[];
+}
+
+
+/** GET /api/p/{token}/semana — lo que el cliente hizo, y qué le conviene ahora.
+ *  Todo calculado en el backend con las MISMAS reglas que ve el coach. */
+export interface PortalSemana {
+  dias_registrados: number;
+  dias_objetivo: number;
+  series: number;
+  /** Cómo va el peso en la QUINCENA (con la semana, el ruido diario manda). */
+  peso_delta_kg: number | null;
+  racha: number;
+  /** La última sesión con series, para llegar al gimnasio sabiendo de dónde vienes. */
+  ultima_sesion: {
+    fecha: string; dia: string; series: number;
+    top_ejercicio: string | null;
+    top_peso_kg: number | null;
+    top_reps: number | null;
+  } | null;
+  /** Máximo tres: una lista larga se lee como un muro y no se lee ninguna. */
+  consejos: { texto: string; tono: "info" | "bien" | "ojo" }[];
 }

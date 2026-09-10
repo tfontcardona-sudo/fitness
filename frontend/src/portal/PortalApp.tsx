@@ -13,6 +13,7 @@ import { PortalDiary } from "./PortalDiary";
 import { PortalClose } from "./PortalClose";
 import { PortalProgress } from "./PortalProgress";
 import { PortalResources } from "./PortalResources";
+import PortalSemanaCard from "./PortalSemana";
 import { PortalToastProvider, usePortalToast } from "./PortalToast";
 import {
   enablePush,
@@ -186,7 +187,13 @@ export default function PortalApp({ token }: { token: string }) {
         {/* Cabecera con marca */}
         <header className="portal-header relative z-[1] flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-3">
-            <img src="/dq-logo.png" alt="" className="h-9 w-auto shrink-0 rounded-lg shadow-sm" />
+            {/* El logo sale de la MARCA del cliente. Estaba clavado a
+                /dq-logo.png, así que quien entraba por el otro negocio veía el
+                logo ajeno — y no era descuido: el logo se guardaba en una
+                carpeta que Caddy no sirve, así que no había forma de pintarlo.
+                Ahora el backend da la URL ya resuelta. */}
+            <img src={state.brand.logo_url || "/dq-logo.png"}
+              alt="" className="h-9 w-auto shrink-0 rounded-lg shadow-sm" />
             <div className="min-w-0">
               <p className="p-eyebrow truncate">{state.brand.name}</p>
               <h1 className="p-title truncate">Hola, {state.first_name}</h1>
@@ -306,6 +313,12 @@ export default function PortalApp({ token }: { token: string }) {
           <WelcomeSetup api={apiClient} token={token} accent={state.brand.color_primary}
             secondary={state.brand.color_secondary} />
           <EscribirAlCoach api={apiClient} accent={state.brand.color_primary} />
+          {/* Lo que YA ha hecho, antes que lo que le queda: un portal que solo
+              enseña deberes cansa. Se remonta con la fecha de negocio para que
+              una PWA resucitada días después no enseñe la semana vieja. */}
+          {state.period != null && (
+            <PortalSemanaCard key={`sem-${state.today ?? ""}-${stateVersion}`} api={apiClient} />
+          )}
           {/* key={effTab+fecha}: transición suave al cambiar de pestaña Y
               remontaje si cambia la FECHA DE NEGOCIO — una PWA resucitada días
               después registraba en el día viejo, pisándolo en silencio

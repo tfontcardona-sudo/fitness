@@ -19,10 +19,25 @@ import { useEffect, useRef, useState } from "react";
  * En desarrollo (sin bundle hasheado) queda desactivado.
  */
 
-const BUNDLE_ACTUAL = (() => {
-  const el = document.querySelector('script[type="module"]');
-  const src = el?.getAttribute("src") ?? "";
-  return src.includes("/assets/") ? src : null;
+/**
+ * La HUELLA de la versión que está corriendo: el bundle de JavaScript Y la hoja
+ * de estilos, los dos hasheados por Vite.
+ *
+ * ⚠️ Mirar solo el JavaScript dejaba fuera los despliegues de SOLO CSS —una
+ * ronda de diseño entera, por ejemplo—: el hash del bundle no cambia, la
+ * comprobación decía "no hay nada nuevo" y el cliente con la app instalada
+ * seguía viendo el portal viejo hasta que la cerrara del todo. Justo lo que
+ * esto existe para evitar.
+ */
+const HUELLA_ACTUAL: string[] = (() => {
+  const out: string[] = [];
+  const js = document.querySelector('script[type="module"]')?.getAttribute("src") ?? "";
+  if (js.includes("/assets/")) out.push(js);
+  document.querySelectorAll('link[rel="stylesheet"]').forEach((el) => {
+    const href = el.getAttribute("href") ?? "";
+    if (href.includes("/assets/")) out.push(href);
+  });
+  return out;
 })();
 
 // Tras este tiempo en segundo plano, la vuelta a la app recarga sola si hay
@@ -36,7 +51,7 @@ export function useAppUpdate(): { ready: boolean; apply: () => void } {
   const ocultoDesde = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!BUNDLE_ACTUAL) return;
+    if (HUELLA_ACTUAL.length === 0) return;
     let vivo = true;
 
     const hayVersionNueva = async (): Promise<boolean> => {
@@ -44,7 +59,9 @@ export function useAppUpdate(): { ready: boolean; apply: () => void } {
         const res = await fetch("/", { cache: "no-store" });
         if (!res.ok) return false;
         const html = await res.text();
-        return vivo && !html.includes(BUNDLE_ACTUAL);
+        // Basta con que UNA de las piezas haya cambiado de hash: un despliegue
+        // que solo toca los estilos es un despliegue igual.
+        return vivo && HUELLA_ACTUAL.some((pieza) => !html.includes(pieza));
       } catch {
         return false; // sin red: ya se comprobará a la vuelta
       }
