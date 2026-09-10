@@ -116,6 +116,18 @@ async def lifespan(app: FastAPI):
                 "Si aún no existen, ejecuta scripts/setup_stripe_prices.py.",
                 ", ".join(_missing))
 
+    # Rescate de las imágenes de marca que quedaron en `brand/` (no servible).
+    # Va aquí y no en una migración de Alembic porque mueve FICHEROS del disco,
+    # no filas: Alembic corre también contra bases sin ese storage delante.
+    try:
+        from app.db import SessionLocal
+        from app.services.media_legacy import migrar_imagenes_de_marca
+
+        with SessionLocal() as _db:
+            migrar_imagenes_de_marca(_db)
+    except Exception:  # noqa: BLE001 — nunca puede impedir el arranque
+        logging.getLogger("app.media").warning("Rescate de imágenes de marca omitido")
+
     # El scheduler se desactiva en tests/CI con SCHEDULER_ENABLED=false.
     # Vive en Settings como el resto de la config (una sola fuente de verdad).
     scheduler_on = settings.scheduler_enabled

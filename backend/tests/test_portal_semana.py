@@ -201,3 +201,99 @@ def test_el_logo_de_la_marca_por_fin_se_puede_servir():
     ruta = save_brand_logo(buf.getvalue(), "logo.png", "marca-de-prueba")
     assert ruta.startswith("media/"), "fuera de media/ no hay forma de servirlo"
     assert media_url(ruta) == "/api/media/brand/logo-marca-de-prueba.png"
+
+
+# ---------------------------------------------------------------- lo de hoy --
+
+def test_lo_de_hoy_dice_que_toca_y_que_ya_esta_hecho(db):
+    """El portal abría con tarjetas informativas y media pantalla en blanco: lo
+    que se viene a saber —«¿qué tengo que hacer ahora?»— no estaba escrito."""
+    from datetime import date, timedelta
+
+    from app.models import Client, DailyLog, Period, Plan, utcnow
+    from app.security import new_portal_token
+    from app.services.portal import DAY_LABELS
+    from app.services.portal_semana import lo_de_hoy
+
+    hoy = date.today()
+    entreno = {"split": "Torso/Pierna", "days_per_week": 2, "sessions": [
+        {"day": DAY_LABELS[hoy.weekday()], "name": "Torso A",
+         "exercises": [{"name": "Press banca", "sets": 4, "reps": "8"}]},
+    ]}
+    c = Client(full_name="Hoy Toca", email=f"hoy-{utcnow().timestamp()}@example.com",
+               status="active", package_tier="full", portal_token="x")
+    db.add(c); db.flush()
+    c.portal_token = new_portal_token(c.id)
+    plan = Plan(client_id=c.id, month_index=1, version=1, status="published",
+                generated_by="ai", nutrition_json={}, training_json=entreno)
+    db.add(plan); db.flush()
+    per = Period(client_id=c.id, plan_id=plan.id, period_index=1,
+                 starts_on=hoy - timedelta(days=3), ends_on=hoy + timedelta(days=10),
+                 status="open")
+    db.add(per); db.flush()
+
+    try:
+        estado = lo_de_hoy(db, c, per, hoy)
+        assert estado["entrena_hoy"] is True
+        assert estado["sesion"] == "Torso A"      # el nombre, no «hoy entrenas»
+        assert estado["entreno_hecho"] is False
+        assert estado["diario_hecho"] is False
+
+        # Con el diario ya escrito, la línea se marca como hecha.
+        db.add(DailyLog(period_id=per.id, log_date=hoy, weight_kg=80.0))
+        db.commit()
+        assert lo_de_hoy(db, c, per, hoy)["diario_hecho"] is True
+
+        # Un día SIN sesión no inventa un entreno que no toca.
+        manana = hoy + timedelta(days=1)
+        assert lo_de_hoy(db, c, per, manana)["entrena_hoy"] is False
+    finally:
+        db.query(DailyLog).filter_by(period_id=per.id).delete()
+        db.delete(per); db.delete(plan); db.delete(c); db.commit()
+
+
+def test_sin_periodo_abierto_no_hay_nada_que_hacer_hoy(db):
+    from datetime import date
+
+    from app.models import Client, utcnow
+    from app.services.portal_semana import lo_de_hoy
+
+    c = Client(full_name="Sin Periodo", email=f"sp-{utcnow().timestamp()}@example.com",
+               status="active", package_tier="full", portal_token="y")
+    estado = lo_de_hoy(db, c, None, date.today())
+    assert estado == {"entrena_hoy": False, "sesion": None, "entreno_hecho": False,
+                      "diario_hecho": False, "toca_revision": False}
+
+
+def test_un_ejercicio_sin_id_de_biblioteca_conserva_su_nombre(db):
+    """«Ejercicio ?» es lo que veía el cliente cuando el plan traía el nombre
+    escrito pero el ejercicio no estaba en la biblioteca (plan a mano, o
+    importado de un documento ajeno)."""
+    from datetime import date, timedelta
+
+    from app.models import Client, Period, Plan, utcnow
+    from app.security import new_portal_token
+    from app.services.portal import DAY_LABELS, build_training_sessions
+
+    hoy = date.today()
+    entreno = {"split": "Full body", "days_per_week": 1, "sessions": [
+        {"day": DAY_LABELS[hoy.weekday()], "name": "Día A",
+         "exercises": [{"name": "Sentadilla búlgara", "sets": 3, "rep_range": "10"}]},
+    ]}
+    c = Client(full_name="Sin Biblioteca", email=f"sb-{utcnow().timestamp()}@example.com",
+               status="active", package_tier="full", portal_token="z")
+    db.add(c); db.flush()
+    c.portal_token = new_portal_token(c.id)
+    plan = Plan(client_id=c.id, month_index=1, version=1, status="published",
+                generated_by="coach", nutrition_json={}, training_json=entreno)
+    db.add(plan); db.flush()
+    per = Period(client_id=c.id, plan_id=plan.id, period_index=1,
+                 starts_on=hoy - timedelta(days=1), ends_on=hoy + timedelta(days=12),
+                 status="open")
+    db.add(per); db.commit()
+    try:
+        sesiones = build_training_sessions(db, c, plan)
+        nombres = [e["name"] for s in sesiones for e in s["exercises"]]
+        assert "Sentadilla búlgara" in nombres, nombres
+    finally:
+        db.delete(per); db.delete(plan); db.delete(c); db.commit()

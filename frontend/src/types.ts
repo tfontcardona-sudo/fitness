@@ -504,6 +504,18 @@ export interface AiCreditOut {
   last_call_at: string | null;
   avg_cost_per_plan_usd: number | null;
   plans_left: number | null;
+  /** SE ACABÓ EL CRÉDITO: lo dice la propia API de Anthropic al fallar, no una
+   *  estimación. Se apaga solo en cuanto una llamada vuelve a funcionar. */
+  sin_credito_desde: string | null;
+  ultimo_error: string | null;
+  /** El gasto que se está restando del saldo, y si es la cifra REAL de
+   *  Anthropic (informe de coste) o la estimación por tokens. */
+  gasto_desde_recarga_usd: number;
+  gasto_es_real: boolean;
+  /** ¿Hay clave de administración configurada para leer el coste real? */
+  informe_de_coste: boolean;
+  /** Lo pagado la última vez: es lo que propone el botón de recargar. */
+  ultima_recarga_usd: number | null;
 }
 
 /** GET /api/public/landing — datos públicos de la página de enlaces (/dq). */
@@ -1040,4 +1052,15 @@ export interface PortalSemana {
   } | null;
   /** Máximo tres: una lista larga se lee como un muro y no se lee ninguna. */
   consejos: { texto: string; tono: "info" | "bien" | "ojo" }[];
+  /** QUÉ TOCA HOY y qué ya está hecho. El portal enseñaba tarjetas
+   *  informativas y media pantalla en blanco: al abrirlo no se sabía qué había
+   *  que hacer ahora. */
+  hoy?: {
+    entrena_hoy: boolean;
+    /** Nombre de la sesión del día ("Torso A"), si el plan lo trae. */
+    sesion: string | null;
+    entreno_hecho: boolean;
+    diario_hecho: boolean;
+    toca_revision: boolean;
+  };
 }

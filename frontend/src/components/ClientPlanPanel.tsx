@@ -1001,6 +1001,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
         clientId: client.id,
         clientName: client.full_name,
         label: aviso.titulo,
+        motivo: aviso.detalle || aviso.titulo,
         hint: aviso.accion,
         href: hrefCliente(client.id, pestana, anclaDestino),
         target: anclaDestino,

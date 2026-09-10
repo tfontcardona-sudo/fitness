@@ -73,6 +73,19 @@ def _translate_api_error(exc: Exception) -> "AIGenerationError | None":
         return None
     if isinstance(exc, APIError):
         msg = getattr(exc, "message", None) or str(exc)
+        # SE HA ACABADO EL CRÉDITO. Hasta aquí esto era un 502 más y el coach
+        # tenía que leerse el mensaje en inglés para enterarse de por qué no le
+        # generaba el plan. Se sella para que el panel lo diga en grande, con su
+        # botón de recargar — y se apaga solo cuando una llamada vuelve a ir.
+        from app.services.ai_credit import es_error_de_credito, marcar_sin_credito
+
+        if es_error_de_credito(msg):
+            marcar_sin_credito(msg)
+            return AIGenerationError(
+                "Se han acabado los créditos de la API de Anthropic. Recarga en "
+                "console.anthropic.com y vuelve a intentarlo (el panel de "
+                "Créditos tiene el botón)."
+            )
         return AIGenerationError(f"La API de Anthropic devolvió un error: {msg}")
     return None
 
@@ -126,10 +139,14 @@ class AIClient:
         Con prompt caching, los tokens cacheados van en campos aparte y con otro
         precio (escritura ×1,25; lectura ×0,1): se convierten a "tokens de
         entrada equivalentes" para que el saldo local siga cuadrando."""
+        from app.services.ai_credit import marcar_con_credito, record_usage
+
+        # La respuesta ha llegado: hay crédito. Si el cartel de "sin créditos"
+        # estaba encendido, se apaga aquí — sin que el coach pulse nada.
+        marcar_con_credito()
         usage = getattr(resp, "usage", None)
         if usage is None:
             return
-        from app.services.ai_credit import record_usage
 
         entrada = float(getattr(usage, "input_tokens", 0) or 0)
         entrada += 1.25 * float(getattr(usage, "cache_creation_input_tokens", 0) or 0)

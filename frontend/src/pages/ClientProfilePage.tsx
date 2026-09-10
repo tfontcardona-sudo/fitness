@@ -27,6 +27,19 @@ import { BILLING_PERIODS, PACKAGES, PACKAGE_ORDER, billingLabel, pkg } from "../
 
 type Tab = "resumen" | "anamnesis" | "planificacion" | "seguimiento" | "feedback" | "historial";
 
+/** ÚLTIMO RECURSO de los avisos: si un aviso no trae ancla propia (o su ancla
+ *  no existe en el estado en que salta), marca el apartado del que habla. Los
+ *  nombres los pone el backend en `_ANCLA_DE_PESTANA`; van escritos uno a uno
+ *  a propósito, para que `npm run check:anclas` los encuentre. */
+const ANCLA_DE_PESTANA: Record<Tab, string> = {
+  resumen: "tab.resumen",
+  anamnesis: "tab.anamnesis",
+  planificacion: "tab.planificacion",
+  seguimiento: "tab.seguimiento",
+  feedback: "tab.feedback",
+  historial: "tab.historial",
+};
+
 export default function ClientProfilePage() {
   const { id } = useParams();
   const clientId = Number(id);
@@ -572,7 +585,12 @@ export default function ClientProfilePage() {
               el borrador a medias de la anamnesis del cliente A sobrevivía al
               salto al perfil de B y "Guardar" volcaba los datos de A sobre la
               ficha de B (auditoría crítica: corrupción de datos entre fichas). */}
-          <div key={`${client.id}-${tab}`} className="tab-panel">
+          {/* `data-ancla="tab.<pestaña>"` — ÚLTIMO RECURSO de los avisos: un aviso
+              sin ancla propia (o cuyo ancla no existe en el estado en que salta)
+              marca al menos el apartado del que habla, en vez de dejar al coach
+              en la pestaña correcta sin saber dónde mirar. Lo pone el backend
+              en `_ANCLA_DE_PESTANA`; `npm run check:anclas` comprueba que estén. */}
+          <div key={`${client.id}-${tab}`} className="tab-panel" data-ancla={ANCLA_DE_PESTANA[tab]}>
             {tab === "resumen" && <ClientSummaryTab client={client} />}
             {tab === "anamnesis" && <ClientAnamnesisTab client={client} onSaved={reload} onDirtyChange={setAnamnesisDirty} reloadKey={reloadKey} />}
             {tab === "planificacion" && <ClientPlanPanel client={client} onClientChanged={reload} onEditingChange={setPlanEditing} onGoTab={(t) => changeTab(t as Tab)} />}

@@ -108,13 +108,74 @@ def _pesajes(logs: list[DailyLog]) -> list[tuple[date, float]]:
     return [(lg.log_date, float(lg.weight_kg)) for lg in logs if lg.weight_kg]
 
 
+def lo_de_hoy(db: Session, client: Client, periodo: Period | None, hoy: date) -> dict:
+    """QUÉ TOCA HOY y qué está ya hecho: entrenar, el diario, la revisión.
+
+    El portal enseñaba una lista de tarjetas informativas y dejaba media
+    pantalla en blanco: al abrirlo no se sabía «¿qué tengo que hacer ahora?».
+    Esto lo dice en tres líneas, con lo hecho marcado.
+
+    Determinista y con las MISMAS reglas que el resto del sistema: «día
+    registrado» lo decide `push.dias_registrados` y la sesión del día sale del
+    plan publicado, igual que la pantalla de Entreno."""
+    fuera = {"entrena_hoy": False, "sesion": None, "entreno_hecho": False,
+             "diario_hecho": False, "toca_revision": False}
+    if periodo is None or periodo.status != "open":
+        return fuera
+    if not (periodo.starts_on <= hoy <= periodo.ends_on):
+        # Período vencido y sin cerrar: lo único que toca es la revisión.
+        from app.services import portal as portal_svc
+
+        info = portal_svc.period_info(periodo, hoy) or {}
+        fuera["toca_revision"] = bool(info.get("can_close"))
+        return fuera
+
+    from app.services import portal as portal_svc
+    from app.services.push import diary_is_filled, has_session_on
+
+    log = db.scalar(select(DailyLog).where(
+        DailyLog.period_id == periodo.id, DailyLog.log_date == hoy))
+    fuera["diario_hecho"] = bool(diary_is_filled(log))
+
+    plan = portal_svc.published_plan_for_period(db, periodo)
+    if plan is not None and has_session_on(plan.training_json, hoy):
+        fuera["entrena_hoy"] = True
+        fuera["sesion"] = _nombre_de_la_sesion(plan.training_json, hoy)
+        if log is not None:
+            fuera["entreno_hecho"] = bool(db.scalar(
+                select(WorkoutLog.id).where(WorkoutLog.daily_log_id == log.id).limit(1)))
+
+    info = portal_svc.period_info(periodo, hoy) or {}
+    fuera["toca_revision"] = bool(info.get("can_close"))
+    return fuera
+
+
+def _nombre_de_la_sesion(training: dict | None, hoy: date) -> str | None:
+    """«Torso A» — para que el cliente sepa qué le espera sin abrir nada.
+
+    Con el MISMO lector de días que `push.has_session_on` y que la pantalla de
+    Entreno (`portal.dia_de_sesion`): dos formas de leer "¿es hoy?" acaban
+    siempre en una pantalla diciendo que hoy entrenas y otra diciendo que no."""
+    if not isinstance(training, dict):
+        return None
+    from app.services import portal as portal_svc
+
+    etiqueta = portal_svc.DAY_LABELS[hoy.weekday()].lower()
+    for sesion in training.get("sessions") or []:
+        if not isinstance(sesion, dict):
+            continue
+        if portal_svc.dia_de_sesion(sesion) == etiqueta:
+            return str(sesion.get("name") or "").strip() or None
+    return None
+
+
 def resumen(db: Session, client: Client, hoy: date) -> dict:
     """Lo que el cliente ha hecho, con sus consejos. Sin IA y sin sorpresas:
     si no hay datos, se dice que no los hay en vez de rellenar con humo."""
     periodo = _periodo_vivo(db, client.id)
     vacio = {"dias_registrados": 0, "dias_objetivo": DIAS_SEMANA, "series": 0,
              "peso_delta_kg": None, "ultima_sesion": None, "consejos": [],
-             "racha": 0}
+             "racha": 0, "hoy": lo_de_hoy(db, client, None, hoy)}
     if periodo is None:
         return vacio
 
@@ -142,6 +203,7 @@ def resumen(db: Session, client: Client, hoy: date) -> dict:
         "peso_delta_kg": delta,
         "ultima_sesion": _ultima_sesion(db, logs),
         "racha": streak_days(db, client.id, hoy),
+        "hoy": lo_de_hoy(db, client, periodo, hoy),
     }
     datos["consejos"] = [
         {"texto": c.texto, "tono": c.tono}

@@ -108,6 +108,21 @@ _DESTINO: dict[str, tuple[str, str]] = {
 }
 
 
+# ÚLTIMO RECURSO PARA EL DESTINO. Un aviso sin ancla deja al coach en la
+# pestaña correcta y sin saber dónde mirar — y eso pasa el día que alguien
+# añade un tipo de aviso nuevo y olvida darle su `target`. Con esto, TODO aviso
+# marca al menos el apartado del que habla: la pestaña entera se rodea en rojo
+# y la nota explica por qué. Es peor que señalar el campo exacto, y muchísimo
+# mejor que no señalar nada.
+_ANCLA_DE_PESTANA: dict[str, str] = {
+    "resumen": "tab.resumen",
+    "anamnesis": "tab.anamnesis",
+    "planificacion": "tab.planificacion",
+    "seguimiento": "tab.seguimiento",
+    "feedback": "tab.feedback",
+}
+
+
 def _alert(client: Client, kind: str, severity: str, message: str, tab: str,
            action: str, *, target: str | None = None, fix: str | None = None,
            to: str | None = None) -> dict:
@@ -123,6 +138,12 @@ def _alert(client: Client, kind: str, severity: str, message: str, tab: str,
     if por_defecto:
         target = target or por_defecto[0]
         fix = fix or por_defecto[1]
+    # Red de seguridad: ningún aviso se queda sin sitio al que llevar ni sin
+    # explicación. Los que apuntan FUERA de la ficha (`to`) no la necesitan.
+    if not target and not to:
+        target = _ANCLA_DE_PESTANA.get(tab)
+    if not fix:
+        fix = message
     return {
         "client_id": client.id, "client_name": client.full_name,
         "kind": kind, "severity": severity, "message": message,
@@ -898,6 +919,28 @@ def list_alerts(db: Session = Depends(get_db)) -> dict:
                 # el motivo completo. Sin `to`, la campana construía
                 # /clientes/0 y aterrizaba en "no se pudo cargar el cliente".
                 "to": "/", "key": "sistema:jobs_parados",
+            })
+    except Exception:  # noqa: BLE001 — el chequeo no puede tumbar las alertas
+        pass
+
+    # SE HAN ACABADO LOS CRÉDITOS: lo dice la propia API de Anthropic al
+    # fallar. Sin este aviso, el coach lo descubría al pulsar "Generar" y ver un
+    # error en inglés — con la mitad de la mañana perdida si era el día de los
+    # planes. Se apaga SOLO en cuanto una llamada vuelve a funcionar.
+    try:
+        from app.services.ai_credit import get_state, sin_credito
+
+        estado = get_state(db)
+        if sin_credito(estado):
+            alerts.insert(0, {
+                "client_id": 0, "client_name": "Sistema",
+                "kind": "sin_creditos", "severity": "alta",
+                "message": "Sin créditos de IA: no se puede generar ni leer nada.",
+                "tab": "resumen", "action": "Recargar créditos",
+                "target": None,
+                "fix": "Recarga en la consola de Anthropic y confirma el importe "
+                       "aquí: el saldo se pone al día solo.",
+                "to": "/creditos", "key": "sistema:sin_creditos",
             })
     except Exception:  # noqa: BLE001 — el chequeo no puede tumbar las alertas
         pass

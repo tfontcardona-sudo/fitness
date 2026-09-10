@@ -7,6 +7,7 @@ import { ChevronRight } from "lucide-react";
  *  apertura y un chevron que gira. Si nunca se ha tocado, usa `defaultOpen`. */
 export function MemoDetails({
   memoKey, defaultOpen = false, summary, children, className, style, summaryClassName,
+  sinChevron = false,
 }: {
   memoKey: string;
   defaultOpen?: boolean;
@@ -15,6 +16,8 @@ export function MemoDetails({
   className?: string;
   style?: React.CSSProperties;
   summaryClassName?: string;
+  /** El envoltorio pinta su propio indicador (ver `Plegable`). */
+  sinChevron?: boolean;
 }) {
   const storeKey = `dq_open_${memoKey}`;
   const [open, setOpen] = useState<boolean>(() => {
@@ -61,11 +64,13 @@ export function MemoDetails({
         aria-expanded={open}
         className={`flex w-full cursor-pointer items-center gap-2 text-left ${summaryClassName ?? ""}`}
       >
-        <ChevronRight
-          size={14}
-          className="shrink-0 opacity-60 transition-transform duration-200"
-          style={{ transform: open ? "rotate(90deg)" : "none" }}
-        />
+        {!sinChevron && (
+          <ChevronRight
+            size={14}
+            className="shrink-0 opacity-60 transition-transform duration-200"
+            style={{ transform: open ? "rotate(90deg)" : "none" }}
+          />
+        )}
         <span className="min-w-0 flex-1">{summary}</span>
       </button>
       <div

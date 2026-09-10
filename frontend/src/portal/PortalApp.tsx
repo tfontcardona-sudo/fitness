@@ -13,7 +13,8 @@ import { PortalDiary } from "./PortalDiary";
 import { PortalClose } from "./PortalClose";
 import { PortalProgress } from "./PortalProgress";
 import { PortalResources } from "./PortalResources";
-import PortalSemanaCard from "./PortalSemana";
+import PortalSemanaCard, { useSemana } from "./PortalSemana";
+import PortalHoy from "./PortalHoy";
 import { PortalToastProvider, usePortalToast } from "./PortalToast";
 import {
   enablePush,
@@ -52,6 +53,10 @@ export default function PortalApp({ token }: { token: string }) {
   // Sube en cada recarga del estado: los hijos con fetch propio (videollamada)
   // se refrescan a la vez que el resto del portal.
   const [stateVersion, setStateVersion] = useState(0);
+  // «Lo de hoy» y «Tu semana» salen del MISMO viaje al servidor: dos peticiones
+  // por los mismos datos es pagar dos veces y arriesgarse a que una tarjeta
+  // diga una cosa y la de al lado otra.
+  const semana = useSemana(apiClient);
   const [error, setError] = useState<string | null>(null);
   // 404 = token inválido/caducado (sesión fuera). Cualquier otro fallo (red,
   // 500, 429) es TEMPORAL: se ofrece reintentar sin tocar la sesión — antes
@@ -185,7 +190,10 @@ export default function PortalApp({ token }: { token: string }) {
     <PortalToastProvider light={light}>
       <div className={`portal-root ${light ? "" : "portal-dark"} mx-auto flex min-h-screen max-w-md flex-col`}>
         {/* Cabecera con marca */}
-        <header className="portal-header relative z-[1] flex items-center justify-between gap-2">
+        {/* Cabecera CON CUERPO: banda de marca con degradado, no una franja
+            transparente sobre el fondo. Es lo primero que se ve y era lo que
+            hacía que el portal se leyera como una página, no como una app. */}
+        <header className="portal-header portal-hero relative z-[1] flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-3">
             {/* El logo sale de la MARCA del cliente. Estaba clavado a
                 /dq-logo.png, así que quien entraba por el otro negocio veía el
@@ -270,6 +278,12 @@ export default function PortalApp({ token }: { token: string }) {
           {/* Onboarding sin anamnesis: antes el cliente entraba a un portal
               con pestañas vacías y NINGÚN camino hacia el cuestionario
               (auditoría del ciclo). El enlace usa su mismo token. */}
+          {/* LO PRIMERO: qué toca hoy. Antes había que deducirlo de las
+              pestañas, y el portal abría con tarjetas informativas y media
+              pantalla en blanco. */}
+          {semana?.hoy && state.period != null && (
+            <PortalHoy hoy={semana.hoy} onIr={(t) => setTab(t)} />
+          )}
           {state.needs_anamnesis && (
             <a href={`/anamnesis/${token}`}
               className="portal-note portal-note--action">
@@ -317,7 +331,7 @@ export default function PortalApp({ token }: { token: string }) {
               enseña deberes cansa. Se remonta con la fecha de negocio para que
               una PWA resucitada días después no enseñe la semana vieja. */}
           {state.period != null && (
-            <PortalSemanaCard key={`sem-${state.today ?? ""}-${stateVersion}`} api={apiClient} />
+            <PortalSemanaCard key={`sem-${state.today ?? ""}-${stateVersion}`} datos={semana} />
           )}
           {/* key={effTab+fecha}: transición suave al cambiar de pestaña Y
               remontaje si cambia la FECHA DE NEGOCIO — una PWA resucitada días

@@ -73,11 +73,18 @@ def test_dos_alergenos_en_tomas_distintas_son_dos_problemas():
     assert t2["key"] != t3["key"], "el ancla debe entrar en la clave"
 
 
-def test_un_aviso_sin_destino_no_inventa_ninguno():
+def test_un_aviso_sin_destino_propio_marca_al_menos_su_apartado():
+    """Antes, un tipo de aviso sin registrar salía SIN destino y sin nota: te
+    dejaba en la pestaña correcta sin saber dónde mirar ni por qué. Ahora hay
+    red de seguridad: marca el apartado del que habla y usa su propio mensaje
+    como explicación. Sigue siendo peor que señalar el campo exacto —por eso
+    `check:anclas` exige que cada tipo tenga el suyo—, pero nadie se queda
+    delante de un aviso mudo."""
     c = _cliente_falso()
     a = al._alert(c, "kind_que_no_existe", "media", "x", "resumen", "Ver")
-    assert a["target"] is None and a["fix"] is None
-    assert a["key"] == "42:kind_que_no_existe:"
+    assert a["target"] == "tab.resumen"
+    assert a["fix"] == "x"
+    assert a["key"] == "42:kind_que_no_existe:tab.resumen"
 
 
 def test_el_objetivo_se_valora_donde_se_resuelve_de_verdad():
