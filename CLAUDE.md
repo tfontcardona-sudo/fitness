@@ -551,8 +551,9 @@ npm run check:alertas       # una sola fuente de /api/alerts (barrido caro)
      `exercise_id` —plan a mano o importado de un documento ajeno— le salía al
      cliente como «Ejercicio ?» teniendo el nombre escrito al lado. Ahora:
      biblioteca → lo que escribió el coach → el número.
-   - **860 tests** en verde en los DOS órdenes, `tsc`, build y las **seis**
-     guardas (`check:botones` es nueva). Tests: `test_creditos_sin_saldo.py` (12),
+   - **860 tests** en verde en los DOS órdenes, `tsc`, build y las **siete**
+     guardas (`check:botones` es nueva; las otras seis ya estaban).
+     Tests: `test_creditos_sin_saldo.py` (12),
      `test_media_legacy.py` (2), `test_avisos_con_destino.py` (5), y tres más en
      `test_portal_semana.py`.
 
