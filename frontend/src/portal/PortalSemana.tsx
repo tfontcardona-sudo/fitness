@@ -15,9 +15,11 @@ import type { portalApi } from "./portalApi";
  * Todo lo calcula el backend de forma determinista, con las mismas reglas que
  * ve el coach: las dos pantallas no pueden contradecirse.
  */
-export default function PortalSemanaCard({ api }: { api: ReturnType<typeof portalApi> }) {
+/** Una sola petición para las DOS tarjetas que salen de `/semana` («Lo de hoy»
+ *  y «Tu semana»): pedirlo dos veces era pagar dos viajes por los mismos datos
+ *  y arriesgarse a que las dos tarjetas contaran cosas distintas. */
+export function useSemana(api: ReturnType<typeof portalApi>): Semana | null {
   const [datos, setDatos] = useState<Semana | null>(null);
-
   useEffect(() => {
     let vivo = true;
     api.semana()
@@ -27,7 +29,10 @@ export default function PortalSemanaCard({ api }: { api: ReturnType<typeof porta
       .catch(() => { /* sin resumen, sin ruido */ });
     return () => { vivo = false; };
   }, [api]);
+  return datos;
+}
 
+export default function PortalSemanaCard({ datos }: { datos: Semana | null }) {
   if (!datos) return null;
   const { dias_registrados: dias, dias_objetivo: meta, series, peso_delta_kg: delta } = datos;
   const nada = dias === 0 && series === 0 && !datos.ultima_sesion;
@@ -50,8 +55,8 @@ export default function PortalSemanaCard({ api }: { api: ReturnType<typeof porta
           <Cifra valor={`${dias}/${meta}`} etiqueta="días" />
           <Cifra valor={String(series)} etiqueta={series === 1 ? "serie" : "series"} />
           <Cifra
-            valor={delta === null ? "—" : `${delta > 0 ? "+" : "−"}${fmtKg(Math.abs(delta))}`}
-            etiqueta="peso"
+            valor={delta === null ? "—" : `${delta > 0 ? "+" : "−"}${fmtKgCorto(Math.abs(delta))}`}
+            etiqueta="kg de peso"
             icono={delta === null ? null : delta > 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
           />
         </div>
@@ -90,19 +95,27 @@ export default function PortalSemanaCard({ api }: { api: ReturnType<typeof porta
   );
 }
 
+/** Una cifra de un vistazo. La clave está en `p-tile-valor`: la cifra NO puede
+ *  partirse. «−1,4 kg» salía en dos líneas («−1,4» / «kg») y una cifra rota se
+ *  lee peor que una cifra pequeña. */
 function Cifra({ valor, etiqueta, icono }: {
   valor: string; etiqueta: string; icono?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl px-2 py-2 text-center" style={{ background: "var(--p-accent-wash)" }}>
-      <div className="flex items-center justify-center gap-1 text-xl font-bold tabular-nums"
-           style={{ color: "var(--p-ink)" }}>
+    <div className="p-tile">
+      <div className="p-tile-valor">
         {icono}
-        {valor}
+        <span>{valor}</span>
       </div>
-      <div className="text-[11px] font-medium" style={{ color: "var(--p-ink-mute)" }}>{etiqueta}</div>
+      <div className="p-tile-etiqueta">{etiqueta}</div>
     </div>
   );
+}
+
+/** Los kilos SIN unidad, para una tarjeta estrecha: la etiqueta ya la dice. */
+function fmtKgCorto(n: number): string {
+  const r = Math.round(n * 10) / 10;
+  return (Number.isInteger(r) ? String(r) : r.toFixed(1)).replace(".", ",");
 }
 
 /** Los kilos, en español y sin decimales de más: "62,5 kg", "60 kg". */

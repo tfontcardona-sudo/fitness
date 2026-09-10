@@ -110,14 +110,28 @@ def get_state(db: Session) -> AiCreditState:
     return state
 
 
+# Cuánto vale una lectura del informe de coste antes de dejar de fiarse de ella.
+# Sin este plazo, quitar la clave de administración del `.env` congelaba el
+# gasto para siempre: el saldo dejaba de bajar y el coach se quedaba mirando una
+# cifra que ya no se movía.
+REAL_FRESCO_HORAS = 24
+
+
 def gasto_desde_la_recarga(state: AiCreditState) -> tuple[float, bool]:
     """Lo gastado desde la última recarga, y si es la cifra REAL de Anthropic.
 
     Con clave de administración el informe de coste manda: es lo que Anthropic
-    factura. Sin ella, la estimación por tokens de siempre."""
+    factura. Sin ella —o si la última lectura ya es vieja— la estimación por
+    tokens de siempre, que sigue acumulándose en paralelo."""
+    from datetime import datetime, timedelta, timezone
+
     real = state.spent_real_usd
-    if real is not None and state.spent_real_at is not None:
-        return round(float(real), 4), True
+    leido = state.spent_real_at
+    if real is not None and leido is not None:
+        if leido.tzinfo is None:
+            leido = leido.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) - leido <= timedelta(hours=REAL_FRESCO_HORAS):
+            return round(float(real), 4), True
     return round(float(state.spent_usd or 0.0), 4), False
 
 

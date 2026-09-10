@@ -64,17 +64,22 @@ def _limpia_el_cartel(db):
     """Cada test arranca con el cartel apagado (la fila es única y global)."""
     from app.services import ai_credit
 
-    estado = ai_credit.get_state(db)
-    estado.sin_credito_desde = None
-    estado.ultimo_error = None
-    db.commit()
-    ai_credit._cartel_encendido = None
+    def _limpia():
+        estado = ai_credit.get_state(db)
+        estado.sin_credito_desde = None
+        estado.ultimo_error = None
+        # La fila es ÚNICA y global: dejar puesta la lectura del informe de
+        # coste hacía que el siguiente test leyera el gasto real (0) en vez de
+        # su estimación, y fallara por algo que no había tocado.
+        estado.spent_real_usd = None
+        estado.spent_real_at = None
+        estado.spent_real_desde = None
+        db.commit()
+        ai_credit._cartel_encendido = None
+
+    _limpia()
     yield
-    estado = ai_credit.get_state(db)
-    estado.sin_credito_desde = None
-    estado.ultimo_error = None
-    db.commit()
-    ai_credit._cartel_encendido = None
+    _limpia()
 
 
 def test_solo_el_error_de_saldo_enciende_el_cartel():
@@ -294,6 +299,24 @@ def test_el_informe_no_se_pide_mas_de_una_vez_por_minuto(db, monkeypatch):
     assert ai_cost_report.refrescar_gasto_real(db, forzar=True) == 3.25
     assert veces["n"] == 2
     ai_cost_report._reset_estrangulador()
+
+
+def test_una_lectura_vieja_del_informe_deja_de_mandar(db):
+    """Si se quita la clave de administración, la última cifra real se queda
+    congelada. Sin plazo, el saldo dejaba de bajar para siempre y el coach
+    miraba un número que ya no se movía."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.services.ai_credit import (REAL_FRESCO_HORAS, gasto_desde_la_recarga,
+                                        get_state)
+
+    estado = get_state(db)
+    estado.spent_usd = 9.0
+    estado.spent_real_usd = 2.0
+    estado.spent_real_at = datetime.now(timezone.utc) - timedelta(
+        hours=REAL_FRESCO_HORAS + 1)
+    db.commit()
+    assert gasto_desde_la_recarga(get_state(db)) == (9.0, False)
 
 
 def test_el_panel_avisa_de_que_no_hay_creditos_y_lleva_a_recargar(db, http):

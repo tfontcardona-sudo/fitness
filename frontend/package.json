@@ -12,7 +12,8 @@
     "lint:hooks": "eslint src",
     "check:claves": "node scripts/check-claves.mjs",
     "check:portapapeles": "node scripts/check-portapapeles.mjs",
-    "check:alertas": "node scripts/check-alertas.mjs"
+    "check:alertas": "node scripts/check-alertas.mjs",
+    "check:botones": "node scripts/check-botones.mjs"
   },
   "dependencies": {
     "date-fns": "^3.6.0",

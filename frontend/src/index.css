@@ -764,3 +764,173 @@ button.btn-primary, button.btn-secondary, button.btn-ghost, button.btn-blue {
   padding: 14px;
 }
 .plegable-acciones { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DESPLEGABLES QUE SE VE QUE SE PULSAN (todo el panel del coach)
+
+   Queja del dueño: «los botones del apartado de recursos donde sale el
+   historial no se ven bien marcados, y es difícil interactuar… es solo un
+   pequeño ejemplo de diferentes cosas que se pueden ver durante todo el uso».
+   Tenía razón, y el arreglo no era ir uno por uno: había TREINTA desplegables
+   escritos como un título gris de 12 px con `cursor:pointer`. Eso no parece un
+   control, parece texto — y quien no sabe que ahí hay algo, no pulsa.
+
+   Aquí se les da a todos, de una vez, lo que hace que se lean como un control:
+   un triángulo que gira, altura de dedo, y respuesta al pasar por encima y al
+   pulsar. El portal tiene su propio sistema y queda fuera; los que ya van
+   dentro de una barra marcada (`.plegable-barra`) tampoco se tocan.
+   ═══════════════════════════════════════════════════════════════════════ */
+summary:not(.plegable-barra) { cursor: pointer; }
+:where(:not(.portal-root)) details > summary:not(.plegable-barra) {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding-inline: 8px;
+  padding-block: 6px;
+  margin-inline: -8px;
+  border-radius: 10px;
+  list-style: none;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+:where(:not(.portal-root)) details > summary:not(.plegable-barra)::-webkit-details-marker { display: none; }
+/* El triángulo: pequeño, del color del texto, y girado 90° al abrirse. Va
+   ANTES del contenido para que el ojo lo encuentre siempre en el mismo sitio. */
+:where(:not(.portal-root)) details > summary:not(.plegable-barra)::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 0; height: 0;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  opacity: 0.55;
+  transition: transform 0.2s ease, opacity 0.15s ease;
+}
+:where(:not(.portal-root)) details[open] > summary:not(.plegable-barra)::before {
+  transform: rotate(90deg);
+  opacity: 0.9;
+}
+@media (hover: hover) {
+  :where(:not(.portal-root)) details > summary:not(.plegable-barra):hover {
+    background: var(--surface-raised);
+  }
+  :where(:not(.portal-root)) details > summary:not(.plegable-barra):hover::before { opacity: 1; }
+}
+:where(:not(.portal-root)) details > summary:not(.plegable-barra):focus-visible {
+  outline: 2px solid var(--brand-accent-2);
+  outline-offset: 1px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PORTAL · CUERPO (segunda capa)
+
+   Queja del dueño: «el portal no tiene que verse tan plano o tan vacío como si
+   estuviera generado con IA de forma rápida; tiene que verse elaborado, con
+   cuerpo, como las apps actuales». Lo que faltaba, mirando la pantalla real:
+
+   - la cabecera era una franja plana sobre el fondo, sin peso;
+   - las cifras iban en cajas de un solo color, sin relieve, y «−1,4 kg» se
+     partía en dos líneas;
+   - los títulos de sección eran texto en negrita, sin nada que los separe;
+   - todas las tarjetas pesaban lo mismo: nada dice «esto es lo importante».
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* -- Cabecera con cuerpo: banda de marca, no una franja transparente ------- */
+.portal-hero {
+  position: relative;
+  margin: -24px calc(-1 * var(--p-pad-page)) 6px;
+  padding: 26px var(--p-pad-page) 18px;
+  border-radius: 0 0 26px 26px;
+  background:
+    radial-gradient(90% 120% at 88% -20%,
+      color-mix(in srgb, var(--p-accent) 42%, transparent), transparent 58%),
+    radial-gradient(80% 100% at 0% 0%,
+      color-mix(in srgb, var(--p-accent-2) 26%, transparent), transparent 62%),
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--p-accent-2) 12%, var(--p-surface)) 0%,
+      var(--p-surface) 92%);
+  box-shadow: inset 0 -1px 0 var(--p-line), var(--p-e-2);
+}
+.portal-root.portal-dark .portal-hero {
+  background:
+    radial-gradient(90% 120% at 88% -20%,
+      color-mix(in srgb, var(--p-accent) 26%, transparent), transparent 58%),
+    radial-gradient(80% 100% at 0% 0%,
+      color-mix(in srgb, var(--p-accent-2) 30%, transparent), transparent 62%),
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--p-accent-2) 16%, var(--p-surface)) 0%,
+      var(--p-surface) 92%);
+}
+
+/* -- Cifras con relieve, y que NUNCA se parten ---------------------------- */
+.p-tile {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px;
+  min-height: 66px;
+  padding: 10px 6px;
+  border-radius: 14px;
+  border: 1px solid var(--p-line);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--p-accent-wash) 70%, var(--p-surface)) 0%,
+    var(--p-surface) 100%);
+  box-shadow: var(--p-hair), var(--p-e-1);
+}
+.p-tile-valor {
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  font-size: clamp(1.05rem, 5.2vw, 1.35rem);
+  font-weight: 750;
+  line-height: 1.1;
+  color: var(--p-ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;          /* «−1,4 kg» en dos líneas: nunca más */
+}
+.p-tile-etiqueta {
+  font-size: 11px; font-weight: 600; letter-spacing: .01em;
+  color: var(--p-ink-mute);
+  text-align: center; line-height: 1.2;
+  white-space: nowrap;
+}
+
+/* -- Títulos de sección: con su filete, no texto suelto ------------------- */
+.p-section {
+  display: flex; align-items: center; gap: 10px;
+  margin: 22px 0 10px;
+  font-size: 12px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--p-ink-mute);
+}
+.p-section::after {
+  content: ""; flex: 1 1 auto; height: 1px;
+  background: linear-gradient(90deg, var(--p-line), transparent);
+}
+.p-section > .p-section-ico { color: var(--p-accent-ink); flex: 0 0 auto; }
+
+/* -- La tarjeta de lo que toca HOY: la única que pesa de verdad ----------- */
+.portal-hoy {
+  border-radius: var(--p-r-xl);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--p-accent) 8%, var(--p-surface)) 0%, var(--p-surface) 62%);
+  border: 1px solid color-mix(in srgb, var(--p-accent) 24%, var(--p-line));
+  box-shadow: var(--p-hair), var(--p-e-3);
+}
+.portal-hoy-fila {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border-top: 1px solid var(--p-line);
+  text-align: left;
+}
+.portal-hoy-fila:first-of-type { border-top: 0; }
+.portal-hoy-ico {
+  display: flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; flex: 0 0 auto;
+  border-radius: 11px;
+  background: var(--p-accent-wash); color: var(--p-accent-ink);
+}
+.portal-hoy-ico[data-hecho="true"] {
+  background: color-mix(in srgb, var(--p-ok) 16%, transparent); color: var(--p-ok);
+}
+.portal-hoy-texto { min-width: 0; flex: 1 1 auto; }
+.portal-hoy-titulo { display: block; font-size: 14px; font-weight: 650; color: var(--p-ink); line-height: 1.3; }
+.portal-hoy-sub { display: block; margin-top: 1px; font-size: 12px; color: var(--p-ink-mute); line-height: 1.3; }

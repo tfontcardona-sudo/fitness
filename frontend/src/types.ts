@@ -1052,4 +1052,15 @@ export interface PortalSemana {
   } | null;
   /** Máximo tres: una lista larga se lee como un muro y no se lee ninguna. */
   consejos: { texto: string; tono: "info" | "bien" | "ojo" }[];
+  /** QUÉ TOCA HOY y qué ya está hecho. El portal enseñaba tarjetas
+   *  informativas y media pantalla en blanco: al abrirlo no se sabía qué había
+   *  que hacer ahora. */
+  hoy?: {
+    entrena_hoy: boolean;
+    /** Nombre de la sesión del día ("Torso A"), si el plan lo trae. */
+    sesion: string | null;
+    entreno_hecho: boolean;
+    diario_hecho: boolean;
+    toca_revision: boolean;
+  };
 }

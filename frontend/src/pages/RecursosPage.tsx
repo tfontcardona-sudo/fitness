@@ -75,11 +75,18 @@ export default function RecursosPage() {
             <button
               key={id}
               onClick={() => setTab(id)}
-              className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+              // La pestaña que NO está activa llevaba solo texto gris: no se
+              // leía como algo pulsable. Ahora todas tienen borde y fondo; la
+              // activa se distingue por el color de marca, no por ser la única
+              // que parece un control.
+              className="flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
+              aria-pressed={tab === id}
               style={
                 tab === id
-                  ? { background: "var(--surface-raised)", color: "var(--brand-accent)" }
-                  : { color: "var(--text-faint)" }
+                  ? { background: "var(--surface-raised)", color: "var(--brand-accent)",
+                      borderColor: "var(--brand-accent)" }
+                  : { color: "var(--text-dim)", borderColor: "var(--line-strong)",
+                      background: "var(--surface)" }
               }
             >
               <Icon size={16} />
@@ -767,8 +774,8 @@ function DiagnosticoCorreo() {
           </div>
 
           {datos.recent.length > 0 && (
-            <details className="mt-4">
-              <summary className="cursor-pointer text-xs text-zinc-400">
+            <details className="mt-4" open>
+              <summary className="text-xs font-semibold" style={{ color: "var(--text-dim)" }}>
                 Últimos {datos.recent.length} intentos
               </summary>
               <ul className="mt-2 space-y-1 text-xs">

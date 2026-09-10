@@ -425,7 +425,15 @@ def _resolve_session(db: Session, sess: dict, load_factor: float = 1.0,
         # cliente. Mejor una sesión con un hueco que un portal roto.
         exercises.append({
             "exercise_id": _entero(e.get("exercise_id"), None),
-            "name": ex.canonical_name if ex else f"Ejercicio {e.get('exercise_id') or '?'}",
+            # El nombre, por orden de fiabilidad: el de la biblioteca, el que
+            # escribió el coach en el propio plan y, solo si no hay ninguno, el
+            # número. Sin el segundo, un ejercicio sin `exercise_id` —plan hecho
+            # a mano, importado de un documento ajeno o con un ejercicio que no
+            # está en la biblioteca— le salía al cliente como «Ejercicio ?»
+            # teniendo su nombre escrito al lado.
+            "name": (ex.canonical_name if ex
+                     else (_texto(e.get("name")) or _texto(e.get("exercise_name"))
+                           or f"Ejercicio {e.get('exercise_id') or '?'}")),
             "sets": _entero(e.get("sets"), 0), "rep_range": _texto(e.get("rep_range")),
             "rir": _texto(e.get("rir")),
             "rest_sec": _entero(e.get("rest_sec"), 90),
