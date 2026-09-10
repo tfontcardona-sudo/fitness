@@ -101,6 +101,9 @@ escribas en commits ni en este documento). Variables que existen:
 
 ```
 ANTHROPIC_API_KEY      # clave real de Anthropic (sk-ant-api03-…)
+ANTHROPIC_ADMIN_KEY    # OPCIONAL (sk-ant-admin…): NO llama al modelo, solo lee el
+                       # informe de COSTE. Con ella, el panel de créditos enseña lo
+                       # que Anthropic factura de verdad en vez de una estimación.
 MODEL_HEAVY            # claude-opus-4-8        (generación de planes, lectura PDF)
 MODEL_LIGHT            # claude-haiku-4-5-…     (tareas ligeras)
 JWT_SECRET             # firma de tokens del coach
@@ -423,7 +426,7 @@ GET  /api/p/{token}/feedback               (Portal) feedbacks ENVIADOS (sent_at)
 cd backend && python -m pytest tests/ -q
 ```
 
-- **838 tests en verde** en base de datos limpia y migrada a head, y también
+- **860 tests en verde** en base de datos limpia y migrada a head, y también
   **en orden inverso** (`ls tests/test_*.py | sort -r`): correrlos al revés es
   la forma barata de destapar tests que solo pasan por lo que corrió antes
   (destapó dos fallos reales de aislamiento).
@@ -456,6 +459,7 @@ npm run check:anclas        # cada destino del backend tiene su ancla en la web
 npm run check:avisos        # los avisos del panel, en español y sin duplicar
 npm run check:claves        # toda clave guardada del portal lleva el token
 npm run check:portapapeles  # una sola puerta al portapapeles (`lib/clipboard`)
+npm run check:botones       # ni una palabra recortada ni partida en un botón
 npm run check:alertas       # una sola fuente de /api/alerts (barrido caro)
 ```
 
@@ -482,6 +486,75 @@ npm run check:alertas       # una sola fuente de /api/alerts (barrido caro)
 ---
 
 ## 9. Trabajo pendiente / próximos pasos
+
+0000000000000000000000000. ✅ **LO QUE SE VE Y LO QUE AVISA (10-09-2026).** Cinco
+   peticiones del dueño en un mensaje, con una condición por delante: «quiero
+   que lo despliegues y lo apliques tú todo, yo no tengo que hacer nada».
+   - **CERO PASOS MANUALES**: los logos de marca que quedaron en `storage/brand/`
+     (carpeta que Caddy no sirve: la imagen estaba subida y no se veía) se mueven
+     SOLOS a `storage/media/` al arrancar (`services/media_legacy.py`, llamado en
+     el lifespan). Idempotente; una ruta que apunta a un hueco se limpia en vez
+     de dejar un 404 por carga. Va ahí y no en Alembic porque mueve FICHEROS.
+   - **CRÉDITOS, TERCERA VUELTA** (mig. **0050**). (1) Quedarse sin crédito se
+     descubría pulsando «Generar» y leyendo un 502 en inglés: ahora lo dice la
+     propia API (`credit balance is too low`), se sella en `ai_credit_state`,
+     sale como aviso de sistema con destino `/creditos`, llega al móvil por push
+     UNA vez y **se apaga solo** en cuanto una llamada vuelve a funcionar (espejo
+     en memoria: el camino bueno no toca la base). Solo la frase real de saldo
+     bajo lo enciende — «billing» a secas sale en errores que no son de saldo.
+     (2) El gasto era una estimación por tokens. Anthropic no publica el saldo ni
+     las recargas, pero **sí el COSTE**: con `ANTHROPIC_ADMIN_KEY` (opcional),
+     `services/ai_cost_report.py` lee `GET /v1/organizations/cost_report` por
+     HTTP crudo —no está en las librerías— y el restante cuadra con la factura;
+     una lectura por minuto (lo que recomienda Anthropic) y **caduca a las 24 h**
+     (sin plazo, quitar la clave congelaba el gasto para siempre). La pantalla
+     dice cuál de las dos cifras está mirando. (3) Recargar es UN toque: el
+     importe de la última viene ya escrito, y recargar reinicia la ventana del
+     informe (si no, el gasto del ciclo anterior se restaría dos veces).
+   - **AVISOS DE VERDAD INTELIGENTES**: pulsar un aviso lleva al elemento
+     CONCRETO y lo rodea con un **recuadro rojo** (era el naranja de marca, el
+     mismo de los botones: se leía como decoración), con una nota del mismo color
+     que dice **POR QUÉ** (el aviso tal cual: «⚠ ALÉRGENO… (toma 1, contiene
+     avena)») además de cómo se arregla, X para cerrarla y **se va sola al
+     empezar a editar** esa parte (`anchors.alEditar`). Lo delicado es lo
+     contrario —que NO se vaya por un roce—: el foco a secas y un clic en
+     cualquier sitio no cuentan. Y para que valga «en todas las infinitas
+     combinaciones», `_alert` da a todo aviso sin ancla propia la de su apartado
+     (`_ANCLA_DE_PESTANA` → `tab.*`) y usa su mensaje como explicación si no trae
+     otra: es IMPOSIBLE emitir un aviso mudo. Verificado en navegador de punta a
+     punta (recuadro `rgb(194,69,58)`, nota con el motivo, se apaga al primer
+     `input`). `check:anclas` pasa de 17 a **25** comprobaciones.
+   - **BOTONES QUE CABEN**: auditado en navegador real (360 px y escritorio;
+     panel, portal, páginas públicas, modal de alta, editor del plan y menú Más)
+     midiendo el ancho REAL del texto contra su hueco — cero recortes y cero
+     páginas que se desplacen de lado. La regla global que lo garantiza
+     (`min-width:max-content`, sin guionado, sin puntos suspensivos dentro de un
+     botón) va blindada con **`npm run check:botones`**. ⚠️ Ese guardián se
+     tragó su propia falsificación al principio: buscaba las reglas en un bloque
+     que INCLUYE el comentario que las nombra en prosa. Ahora se comprueba sobre
+     el CSS sin comentarios.
+   - **BOTONES MARCADOS Y MENOS FRICCIÓN**: había TREINTA desplegables escritos
+     como un título gris de 12 px con `cursor:pointer` — eso no parece un
+     control. Ahora TODOS los del panel llevan triángulo que gira, altura de dedo
+     y respuesta al pasar por encima (una regla, no treinta ediciones); las
+     pestañas de Recursos tienen borde también cuando no están activas; el
+     historial de correos abre de entrada; y el historial de créditos usa el
+     nuevo **`components/Plegable.tsx`** (barra de ancho completo, 48 px, borde y
+     fondo) sobre el `MemoDetails` y el acordeón de siempre.
+   - **EL PORTAL, CON CUERPO**: cabecera con banda de marca en degradado;
+     **«LO DE HOY»** lo primero (qué toca —con el nombre de la sesión— y qué está
+     hecho, `portal_semana.lo_de_hoy`, en la MISMA petición que «Tu semana»);
+     cifras con relieve que ya no se parten («−1,4 kg» salía en dos líneas);
+     títulos de sección con filete; y el diario agrupado en tarjetas en vez de
+     nueve campos sueltos sobre el fondo.
+   - **Fallo real que destapó el navegador**: un ejercicio con NOMBRE pero sin
+     `exercise_id` —plan a mano o importado de un documento ajeno— le salía al
+     cliente como «Ejercicio ?» teniendo el nombre escrito al lado. Ahora:
+     biblioteca → lo que escribió el coach → el número.
+   - **860 tests** en verde en los DOS órdenes, `tsc`, build y las **seis**
+     guardas (`check:botones` es nueva). Tests: `test_creditos_sin_saldo.py` (12),
+     `test_media_legacy.py` (2), `test_avisos_con_destino.py` (5), y tres más en
+     `test_portal_semana.py`.
 
 000000000000000000000000. ✅ **APRENDIZAJE INTEGRAL, CRÉDITOS, PORTAL PREMIUM Y
    PANEL REDISTRIBUIDO** (septiembre 2026) — cuatro encargos del dueño en una

@@ -340,6 +340,13 @@ export function PortalDiary({ api, token, brand, periodStatus = null, businessTo
           onChange={(v) => update({ water_liters: v })} accent={brand.color_secondary} />
       </div>
 
+      {/* AGRUPADO EN TARJETAS. El diario era una lista de campos sueltos sobre
+          el fondo: correcta, pero plana — y con nueve preguntas seguidas se
+          hace larga. En tres bloques con su rótulo se lee de un vistazo y se
+          sabe cuánto queda. */}
+      <section className="portal-card p-4">
+        <h3 className="p-section" style={{ marginTop: 0 }}>Tu día</h3>
+      <div className="space-y-4">
       <Field label="Pasos / cardio del día" htmlFor="diary-steps">
         <input
           id="diary-steps"
@@ -377,11 +384,19 @@ export function PortalDiary({ api, token, brand, periodStatus = null, businessTo
         </div>
       </Field>
       )}
+      </div>
+      </section>
 
-      <ScaleField label="Energía" value={form.energy_1_5} onChange={(v) => update({ energy_1_5: v })} accent={brand.color_primary} />
-      <ScaleField label="Ánimo" value={form.mood_1_5} onChange={(v) => update({ mood_1_5: v })} accent={brand.color_primary} />
-      <ScaleField label="Fatiga" value={form.fatigue_1_5} onChange={(v) => update({ fatigue_1_5: v })} accent={brand.color_primary} invert />
+      <section className="portal-card p-4">
+        <h3 className="p-section" style={{ marginTop: 0 }}>Cómo te has sentido</h3>
+        <div className="space-y-4">
+          <ScaleField label="Energía" value={form.energy_1_5} onChange={(v) => update({ energy_1_5: v })} accent={brand.color_primary} />
+          <ScaleField label="Ánimo" value={form.mood_1_5} onChange={(v) => update({ mood_1_5: v })} accent={brand.color_primary} />
+          <ScaleField label="Fatiga" value={form.fatigue_1_5} onChange={(v) => update({ fatigue_1_5: v })} accent={brand.color_primary} invert />
+        </div>
+      </section>
 
+      <section className="portal-card p-4">
       <Field label="Notas (opcional)" htmlFor="diary-notes">
         <textarea
           id="diary-notes"
@@ -392,6 +407,7 @@ export function PortalDiary({ api, token, brand, periodStatus = null, businessTo
           onChange={(e) => update({ free_notes: e.target.value })}
         />
       </Field>
+      </section>
 
       {!readOnly && (
         <p className="pb-2 text-center text-xs opacity-40" aria-live="polite">
