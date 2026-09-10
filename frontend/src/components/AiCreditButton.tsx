@@ -5,11 +5,14 @@ import { api, keepIfSame } from "../lib/api";
 import { useDismiss } from "../lib/useDismiss";
 import type { AiCreditOut } from "../types";
 
+/** El símbolo DETRÁS y la coma decimal, como se escribe en español y como lo
+ *  escribe el resto del panel: el botón ponía "$90,50" y la pantalla de al lado
+ *  "90,50 $" para el mismo número. */
 const fmtUsd = (n: number) =>
-  `$${n.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  `${n.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
 
-/** Un gasto real de $0,004 no debe verse como "$0,00" (parecería que no gasta). */
-const fmtSmall = (n: number) => (n > 0 && n < 0.01 ? "<$0,01" : fmtUsd(n));
+/** Un gasto real de 0,004 $ no debe verse como "0,00 $" (parecería que no gasta). */
+const fmtSmall = (n: number) => (n > 0 && n < 0.01 ? "<0,01 $" : fmtUsd(n));
 
 const fmtWhen = (iso: string | null) => {
   if (!iso) return null;

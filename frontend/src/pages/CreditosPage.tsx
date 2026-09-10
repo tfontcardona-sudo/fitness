@@ -216,7 +216,7 @@ export default function CreditosPage() {
                 <div className="flex items-baseline justify-between gap-3 text-sm">
                   <span className="min-w-0 flex-1" style={{ color: "var(--ink)" }}>{b.label}</span>
                   <span className="shrink-0 text-xs" style={{ color: "var(--text-faint)" }}>
-                    {b.calls} llamadas
+                    {b.calls} {b.calls === 1 ? "llamada" : "llamadas"}
                   </span>
                   <span className="shrink-0 font-semibold tabular-nums" style={{ color: "var(--ink)" }}>
                     {fmt(b.cost_usd)}
@@ -309,8 +309,9 @@ export default function CreditosPage() {
 /** Importes pequeños con los decimales que hacen falta: 0,004 $ no es "0 $". */
 function fmt(v: number | null): string {
   if (v === null || !Number.isFinite(v)) return "—";
+  if (v === 0) return "0 $";           // "0,0000 $" era precisión sobre la nada
   const abs = Math.abs(v);
-  const dec = abs >= 0.01 ? 2 : 4;
+  const dec = abs >= 0.01 ? 2 : 4;     // 0,004 $ no puede leerse como "0,00 $"
   return `${v.toFixed(dec).replace(".", ",")} $`;
 }
 
