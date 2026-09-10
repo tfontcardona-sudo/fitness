@@ -423,7 +423,7 @@ GET  /api/p/{token}/feedback               (Portal) feedbacks ENVIADOS (sent_at)
 cd backend && python -m pytest tests/ -q
 ```
 
-- **816 tests en verde** en base de datos limpia y migrada a head, y también
+- **838 tests en verde** en base de datos limpia y migrada a head, y también
   **en orden inverso** (`ls tests/test_*.py | sort -r`): correrlos al revés es
   la forma barata de destapar tests que solo pasan por lo que corrió antes
   (destapó dos fallos reales de aislamiento).
@@ -456,6 +456,7 @@ npm run check:anclas        # cada destino del backend tiene su ancla en la web
 npm run check:avisos        # los avisos del panel, en español y sin duplicar
 npm run check:claves        # toda clave guardada del portal lleva el token
 npm run check:portapapeles  # una sola puerta al portapapeles (`lib/clipboard`)
+npm run check:alertas       # una sola fuente de /api/alerts (barrido caro)
 ```
 
 ---
@@ -481,6 +482,62 @@ npm run check:portapapeles  # una sola puerta al portapapeles (`lib/clipboard`)
 ---
 
 ## 9. Trabajo pendiente / próximos pasos
+
+000000000000000000000000. ✅ **APRENDIZAJE INTEGRAL, CRÉDITOS, PORTAL PREMIUM Y
+   PANEL REDISTRIBUIDO** (septiembre 2026) — cuatro encargos del dueño en una
+   ronda, con checkpoint entre cada uno.
+   - **APRENDIZAJE (§13 al máximo).** La decisión de fondo: **los patrones NO
+     los saca un modelo**. Que el coach corrija siempre lo mismo es una CUENTA
+     sobre sus ediciones, y las cuentas las hace el backend — 0 créditos, igual
+     que los números del plan. Cada edición guarda ahora su `signal` (el campo
+     normalizado), su `source` (editor, copia, modelo, documento, Word, swap,
+     revisión) y su `detail` ("pollo → pavo"), todo derivado del texto de forma
+     determinista (mig. 0048); un cambio de CIFRAS no cuenta como preferencia.
+     `services/coach_patterns.py` cuenta campos recurrentes (exige repetirse en
+     planes DISTINTOS: cinco correcciones del mismo plan son una tarde de
+     trabajo), sustituciones (agrupadas sin acentos ni mayúsculas) y lo que NO
+     se toca. De ahí sale el **modelo que se propone solo**: fija lo estable y
+     deja SEÑALADO lo que siempre se corrige, sin adivinarle un valor. Y ahora
+     se aprende de las COPIAS, los MODELOS y los planes IMPORTADOS (antes
+     excluidos en bloque); la base en blanco sigue fuera —eso es construir, no
+     corregir—. Las lecciones reciben los patrones ya contados y las lecciones
+     anteriores para afinarlas: aprende SOBRE lo aprendido (historial de 10
+     tandas). Panel: Recursos → Aprendizaje → "Tus costumbres, contadas".
+   - **CRÉDITOS (mig. 0049).** Cada llamada se apunta con su PROPÓSITO y su
+     cliente; el propósito viaja por CONTEXTO (encadenar un parámetro por
+     decenas de firmas era garantizar que a alguna se le olvidara). ⚠️ Los
+     revisores del panel corren en hilos de un pool y los contextvars NO cruzan
+     solos: la marca se pone DENTRO del revisor, o el gasto de 7 de los 8 se
+     apuntaba como "otras llamadas". `/creditos`: desglose por propósito con
+     barra, extracto llamada a llamada y recargas. Anthropic NO publica el
+     saldo por API (no se puede leer solo): se teclea LO PAGADO y el sistema
+     suma. El apunte de gasto es contabilidad — la baja RGPD lo DESLIGA
+     (ON DELETE SET NULL) pero no lo borra.
+   - **PORTAL PREMIUM.** "Tu semana" (`services/portal_semana.py`): días
+     registrados, series, peso de la QUINCENA (con 7 días el ruido se come la
+     señal), racha y el recordatorio de la última sesión CON kilos. Los
+     consejos son REGLAS sobre sus datos, máximo tres. Determinista y con las
+     mismas reglas que el panel. **El logo de marca por fin se ve**: se
+     guardaba bajo `brand/`, que Caddy no sirve — por eso estaba clavado en el
+     código; ahora va bajo `media/` y el backend da `logo_url` resuelta. **La
+     actualización en caliente miraba solo el bundle JS**: un despliegue de
+     solo CSS no cambiaba ese hash y el cliente seguía con el portal viejo.
+   - **PANEL REDISTRIBUIDO.** **⌘K / Ctrl+K**: saltar a cualquier cliente desde
+     donde sea (la fricción más cara y más invisible: diez revisiones eran
+     treinta clics). **"Lo siguiente"** en la ficha: qué toca AHORA con este
+     cliente y el botón que lo hace, visible desde cualquier pestaña, más un
+     PUNTO en la pestaña que tiene algo pendiente. El logo del panel también
+     sale de la marca.
+   - ⚠️ **GUARDA NUEVA `npm run check:alertas`**: `/api/alerts` recorre la
+     cartera ENTERA y ya iba por su TERCER barrido paralelo (campana +
+     dashboard + la barra nueva). Todo pasa por `lib/alertasCompartidas.ts`:
+     un temporizador, una petición, suscriptores.
+   - **Bug de paso**: una fila de ejercicio con `aliases` a NULL tumbaba con un
+     500 el listado ENTERO de la biblioteca (y con él el panel de planificación
+     y el editor) — mismo fallo que ya costó caro en el feed de pagos: la
+     validación estricta va en la ENTRADA.
+   - Tests: `test_aprendizaje_integral.py` (9), `test_creditos_historial.py`
+     (6), `test_portal_semana.py` (6) + regresión RGPD del gasto.
 
 00000000000000000000000. ✅ **EL SWITCH DE MARCA: un sistema, dos negocios** (septiembre 2026) —
    el dueño pidió poder cambiar de **DQR** a **Professional** (Centre Salut &

@@ -12,6 +12,7 @@ import type {
   PeriodCloseIn,
   PlanChanges,
   PortalPlanOut,
+  PortalSemana,
   PortalResources,
   PortalState,
   PushPending,
@@ -153,6 +154,9 @@ export function portalApi(token: string) {
       }>(
         "GET", `${base}/workout-history`,
       ),
+    /** TU SEMANA: lo hecho + los consejos que salen de sus propios datos.
+     *  Determinista en el backend — no gasta créditos. */
+    semana: () => req<PortalSemana>("GET", `${base}/semana`),
     plan: () => req<PortalPlanOut>("GET", `${base}/plan`),
     resources: () => req<PortalResources>("GET", `${base}/resources`),
     progress: () => req<PortalProgress>("GET", `${base}/progress`),

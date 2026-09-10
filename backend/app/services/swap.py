@@ -227,6 +227,11 @@ def apply_swap(
                       f" → {new_ex.name}"
                       + (f" (motivo: {reason})" if reason else "")
                       + (" · excluido permanentemente" if permanent else "")),
+                # El swap es la sustitución de ejercicio más explícita que hay:
+                # se guarda con su señal y su pareja, que es de donde sale
+                # "siempre cambias X por Y".
+                signal="entreno.ejercicio", source="swap",
+                detail=f"{old_ex.name if old_ex else old_exercise_id} → {new_ex.name}"[:200],
                 commit=False,
             )
     except Exception:  # noqa: BLE001 — el aprendizaje nunca rompe el swap

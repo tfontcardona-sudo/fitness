@@ -182,18 +182,21 @@ def generate_feedback_analysis(payload: dict, ai, nutrition_only: bool = False,
         _lecciones = lessons_reference()
     except Exception:  # noqa: BLE001
         _lecciones = ""
-    out = ai.generate_json(
-        # Configurable (MODEL_FEEDBACK): esta llamada solo REDACTA — los
-        # números vienen calculados — así que admite un modelo más barato
-        # sin tocar la seguridad. Vacío = el pesado de siempre.
-        model=(settings.model_feedback or settings.model_heavy),
-        system=_SYSTEM + (_NUTRITION_ONLY_NOTE if nutrition_only else "")
-        + (_TRAINING_ONLY_NOTE if training_only else ""),
-        user=_user_prompt(payload) + _lecciones,
-        schema=FeedbackAIOutput,
-        temperature=0,  # §14: la lectura de la revisión quincenal es determinista
-        max_tokens=4000,  # informe ≈1.500 tokens: techo holgado anti-desbocadas
-    )
+    from app.services.ai_credit import proposito
+
+    with proposito("feedback"):
+        out = ai.generate_json(
+            # Configurable (MODEL_FEEDBACK): esta llamada solo REDACTA — los
+            # números vienen calculados — así que admite un modelo más barato
+            # sin tocar la seguridad. Vacío = el pesado de siempre.
+            model=(settings.model_feedback or settings.model_heavy),
+            system=_SYSTEM + (_NUTRITION_ONLY_NOTE if nutrition_only else "")
+            + (_TRAINING_ONLY_NOTE if training_only else ""),
+            user=_user_prompt(payload) + _lecciones,
+            schema=FeedbackAIOutput,
+            temperature=0,  # §14: la revisión quincenal se lee determinista
+            max_tokens=4000,  # informe ≈1.500 tokens: techo holgado
+        )
     # Saneo defensivo: este texto va verbatim al PDF y a WhatsApp.
     out.natural_analysis = _clean_text(out.natural_analysis) or ""
     out.closing_message = _clean_text(out.closing_message) or ""

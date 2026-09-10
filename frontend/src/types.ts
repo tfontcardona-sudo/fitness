@@ -627,6 +627,9 @@ export interface PortalBrand {
   font_family: string;
   portal_theme: Theme;
   logo_path: string | null;
+  /** URL ya servible del logo (el backend la resuelve; `logo_path` es una ruta
+   *  de disco que el navegador no puede pintar). */
+  logo_url?: string | null;
 }
 
 export interface PortalPeriodInfo {
@@ -952,4 +955,89 @@ export interface SalesCatalogOut {
   stripe_enabled: boolean;
   test_mode: boolean;          // claves de PRUEBA: los enlaces no cobran de verdad
   items: SalesItem[];
+}
+
+
+/** GET /api/learning/patterns — lo que el sistema ha aprendido observando al
+ *  coach. Todo contado sobre sus ediciones reales: no cuesta créditos. */
+export interface LearningPatternsOut {
+  ediciones_totales: number;
+  /** Campos que corrige una y otra vez, del más al menos frecuente. */
+  campos: {
+    signal: string;
+    etiqueta: string;
+    veces: number;
+    /** En cuántos planes DISTINTOS lo tocó (una tarde de correcciones sobre un
+     *  mismo plan no es una costumbre). */
+    planes: number;
+    /** ¿Sigue pasando? Un patrón de hace ocho meses ya no le describe. */
+    vivo: boolean;
+    ultima: string | null;
+    origenes: Record<string, number>;
+    frase: string;
+  }[];
+  /** "Siempre cambias X por Y". */
+  sustituciones: {
+    de: string; a: string; veces: number; signal: string;
+    etiqueta: string; frase: string;
+  }[];
+  /** Lo que NO toca: lo que un modelo puede dar por bueno. */
+  estables: { signal: string; etiqueta: string }[];
+  min_repeticiones: number;
+  /** El modelo que el sistema propone crearle (null si aún no hay material). */
+  sugerencia_modelo: {
+    plan_id: number;
+    titulo: string;
+    porque: string;
+    resumen: string;
+    abierto: { signal: string; etiqueta: string; veces: number }[];
+    fijo: { signal: string; etiqueta: string }[];
+  } | null;
+}
+
+
+/** GET /api/ai-credit/history — en qué se van los créditos. */
+export interface AiCreditHistoryOut {
+  days: number;
+  /** Una línea por propósito, de más a menos caro. */
+  breakdown: {
+    purpose: string; label: string; cost_usd: number; calls: number;
+    /** % del gasto de la ventana. */
+    share: number;
+  }[];
+  /** El extracto: las últimas llamadas, una a una. */
+  events: {
+    id: number; at: string; purpose: string; label: string;
+    client_id: number | null;
+    /** Puede faltar tras una baja RGPD: el apunte contable sobrevive sin nombre. */
+    client_name: string | null;
+    model: string; cost_usd: number;
+    input_tokens: number; output_tokens: number;
+  }[];
+  /** Lo que el coach ha ido pagando. */
+  topups: {
+    id: number; at: string; amount_usd: number;
+    balance_before_usd: number | null; note: string | null;
+  }[];
+}
+
+
+/** GET /api/p/{token}/semana — lo que el cliente hizo, y qué le conviene ahora.
+ *  Todo calculado en el backend con las MISMAS reglas que ve el coach. */
+export interface PortalSemana {
+  dias_registrados: number;
+  dias_objetivo: number;
+  series: number;
+  /** Cómo va el peso en la QUINCENA (con la semana, el ruido diario manda). */
+  peso_delta_kg: number | null;
+  racha: number;
+  /** La última sesión con series, para llegar al gimnasio sabiendo de dónde vienes. */
+  ultima_sesion: {
+    fecha: string; dia: string; series: number;
+    top_ejercicio: string | null;
+    top_peso_kg: number | null;
+    top_reps: number | null;
+  } | null;
+  /** Máximo tres: una lista larga se lee como un muro y no se lee ninguna. */
+  consejos: { texto: string; tono: "info" | "bien" | "ojo" }[];
 }

@@ -398,6 +398,17 @@ class PlanEdit(Base):
     plan_id: Mapped[int] = mapped_column(ForeignKey("plans.id"), index=True)
     category: Mapped[str] = mapped_column(String(30), index=True)
     field_path: Mapped[str | None] = mapped_column(String(120))  # dónde se editó
+    # SEÑAL: el campo normalizado ("nutricion.kcal", "entreno.ejercicio"). Es la
+    # clave por la que se cuentan los PATRONES — la categoría sola dice "corrige
+    # el cálculo", la señal dice QUÉ campo (mig. 0048).
+    signal: Mapped[str | None] = mapped_column(String(60), index=True)
+    # ORIGEN: editor del panel | Word | documento ajeno | copia de otro cliente |
+    # modelo aplicado | swap | ajustes de la revisión. Cambiar lo COPIADO y
+    # corregir a la IA no son lo mismo y no pueden ir en la misma bolsa.
+    source: Mapped[str | None] = mapped_column(String(20), index=True)
+    # La sustitución en limpio ("pollo → pavo"): de aquí sale "siempre cambias
+    # X por Y".
+    detail: Mapped[str | None] = mapped_column(String(200))
     before_json: Mapped[dict | None] = mapped_column(JSONB)
     after_json: Mapped[dict | None] = mapped_column(JSONB)
     note: Mapped[str | None] = mapped_column(Text)               # el "por qué" en 1 clic
@@ -687,6 +698,34 @@ class AiUsageEvent(Base):
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
     cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    # PARA QUÉ era la llamada (mig. 0049): generar el plan, leer la anamnesis,
+    # el panel de revisión, el informe quincenal… Saber cuánto se gasta sin
+    # saber en qué no deja decidir nada.
+    purpose: Mapped[str | None] = mapped_column(String(24), index=True)
+    # De quién era, cuando aplica. ON DELETE SET NULL: la baja RGPD borra al
+    # cliente y el apunte contable sobrevive sin su nombre.
+    client_id: Mapped[int | None] = mapped_column(
+        ForeignKey("clients.id", ondelete="SET NULL"), index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, index=True
+    )
+
+
+class AiCreditTopUp(Base):
+    """Cada recarga de créditos que el coach paga (mig. 0049).
+
+    Anthropic no expone el saldo por API, así que el sistema no puede leerlo
+    solo. Lo que sí puede es llevar el LIBRO: se apunta lo que se paga y se
+    resta lo que se gasta, de modo que el coach nunca tenga que hacer la cuenta
+    de "me quedaban 12, he metido 50, escribo 62".
+    """
+
+    __tablename__ = "ai_credit_topups"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    amount_usd: Mapped[float] = mapped_column(Float)
+    balance_before_usd: Mapped[float | None] = mapped_column(Float)
+    note: Mapped[str | None] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, index=True
     )

@@ -32,13 +32,19 @@ from app.services.periods import current_month_index, reference_weight_kg
 
 
 # BORRADORES QUE SE MONTAN EN VARIAS TANDAS: la base sin IA, la copia de la
-# biblioteca y el plan importado de un documento ajeno. Ninguno se activa por
-# el mero hecho de guardar en el editor (activarlo AVISA al cliente y borra los
-# avisos de «copia:», entre ellos el de alérgeno), ni sus ediciones son
-# «correcciones» de las que aprender, ni merecen la alerta de «sin adaptar»
-# mientras el coach los prepara. Una sola lista: al añadir un origen nuevo se
-# olvidaba en alguno de los tres sitios (le pasó a "document").
-BORRADORES_EN_CONSTRUCCION = ("scaffold", "library", "document")
+# biblioteca, el modelo aplicado y el plan importado de un documento ajeno.
+# Ninguno se activa por el mero hecho de guardar en el editor (activarlo AVISA
+# al cliente y borra los avisos de «copia:», entre ellos el de alérgeno), ni
+# merecen la alerta de «sin adaptar» mientras el coach los prepara. Una sola
+# lista: al añadir un origen nuevo se olvidaba en alguno de los sitios (le pasó
+# a "document").
+#
+# ⚠️ Que un borrador esté "en construcción" ya NO significa que sus ediciones no
+# se aprendan. Escribir una BASE EN BLANCO por primera vez sigue sin ser una
+# corrección, pero lo que se cambia de una copia, de un modelo o de un plan
+# importado sí dice algo del coach (§13, aprendizaje integral). Quien decide
+# eso es `plans.py`, mirando el generador concreto.
+BORRADORES_EN_CONSTRUCCION = ("scaffold", "library", "template", "document")
 
 
 class PlanLibraryError(Exception):

@@ -1074,6 +1074,26 @@ def portal_diary_get(
     }
 
 
+@router.get("/{token}/semana", response_model=dict)
+@limiter.limit("120/minute")
+def portal_semana(
+    request: Request,
+    client: Client = Depends(get_client_by_token),
+    db: Session = Depends(get_db),
+) -> dict:
+    """TU SEMANA: lo que el cliente hizo y qué le conviene hacer ahora.
+
+    El portal enseñaba lo que toca HOY; esto es lo de atrás —días registrados,
+    series, cómo va el peso, la última sesión con sus kilos— y los consejos que
+    salen de sus propios datos. Todo determinista: ni una llamada a la IA, y
+    contado con las MISMAS reglas que usa el panel del coach, para que las dos
+    pantallas nunca se contradigan."""
+    from app.services.portal import today_local
+    from app.services.portal_semana import resumen
+
+    return resumen(db, client, today_local())
+
+
 @router.get("/{token}/workout-history", response_model=dict)
 @limiter.limit("120/minute")
 def portal_workout_history(

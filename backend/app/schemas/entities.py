@@ -337,6 +337,18 @@ class ExerciseOut(ExerciseIn):
     # portal además re-filtra las URLs al construir los recursos.
     _v_urls = field_validator("video_url", "image_url")(_passthrough)
 
+    # …y lo mismo con las LISTAS a NULL. Una fila con `aliases` en NULL —una
+    # importación vieja, una inserción a mano— tumbaba con un 500 el listado
+    # ENTERO de la biblioteca, y con él el panel de planificación y el editor.
+    # Es el mismo fallo que ya costó caro en el feed de pagos: la validación
+    # estricta va en la ENTRADA; a la salida, un dato raro de UNA fila no puede
+    # dejar sin pantalla al coach.
+    @field_validator("aliases", "muscle_secondary", "contraindications",
+                     mode="before")
+    @classmethod
+    def _listas_nulas(cls, v):
+        return [] if v is None else v
+
 
 class ExerciseListOut(ExerciseOut):
     """La BIBLIOTECA ENTERA (283 ejercicios) sin las dos notas largas.
@@ -727,6 +739,9 @@ class PortalBrand(BaseModel):
     font_family: str
     portal_theme: Theme
     logo_path: str | None = None
+    # URL ya servible del logo (None si no hay o si es de las viejas, que
+    # cuelgan de una carpeta que Caddy no sirve).
+    logo_url: str | None = None
 
 
 class PortalPeriodInfo(BaseModel):

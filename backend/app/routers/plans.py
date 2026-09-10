@@ -284,23 +284,29 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
 
     # §13 (hardening): captura de las ediciones del coach para el aprendizaje
     # continuo. Best-effort con savepoint: si algo falla NUNCA corrompe la edición.
-    # SOLO CORRECCIONES (auditoría 28-08): montar a mano una base/copia en
-    # borrador es CONSTRUCCIÓN, no una corrección de la IA — aprender de esas
-    # tandas contaminaba las lecciones con ruido ("el coach siempre cambia X"
-    # cuando estaba escribiendo X por primera vez). En cuanto el plan está
-    # activo, sus ediciones sí son correcciones y sí se aprenden.
+    #
+    # QUÉ SE APRENDE Y QUÉ NO. Escribir por primera vez el contenido de una BASE
+    # EN BLANCO (`scaffold`) es CONSTRUCCIÓN, no una corrección: aprender de esa
+    # tanda enseñaba ruido ("el coach siempre cambia X" cuando lo estaba
+    # escribiendo por primera vez). Pero lo que se cambia de un plan COPIADO de
+    # otro cliente, de un MODELO aplicado o de un plan AJENO importado sí dice
+    # algo —qué se aprovecha y qué no vale nunca tal cual—, que es justo lo que
+    # el coach quiere que el sistema note. Cada uno con su ORIGEN, para poder
+    # pesarlos distinto.
     from app.services.plan_library import BORRADORES_EN_CONSTRUCCION
 
-    es_construccion = (plan.status == "draft"
-                      and plan.generated_by in BORRADORES_EN_CONSTRUCCION)
+    _ORIGEN_POR_GENERADOR = {"library": "copia", "template": "modelo",
+                             "document": "documento", "word_import": "word"}
+    es_construccion = (plan.status == "draft" and plan.generated_by == "scaffold")
     if diff_items and not es_construccion:
         try:
             from app.services.continuous_learning import classify_change_text, record_edit
 
+            _origen = _ORIGEN_POR_GENERADOR.get(plan.generated_by or "", "edicion")
             with db.begin_nested():
                 for it in diff_items[:20]:
                     record_edit(db, plan_id=plan.id, category=classify_change_text(it),
-                                note=it, commit=False)
+                                note=it, source=_origen, commit=False)
         except Exception:  # noqa: BLE001 — captura best-effort
             pass
     # Revisión del plan tras la edición: sube el contador de concurrencia para
@@ -315,9 +321,10 @@ def update_plan(plan_id: int, body: PlanUpdateIn, db: Session = Depends(get_db))
     # BASE SIN IA del cliente avanzado (generated_by="scaffold") se edita en
     # varias tandas antes de estar lista; activarla al primer guardado enviaría
     # al cliente un plan a medio hacer. Esa se activa SOLO con el botón Activar.
-    # …ni la COPIA de la biblioteca ("library") ni el plan IMPORTADO de un
-    # documento ajeno ("document"): también se adaptan en varias tandas
-    # (cambiar el alérgeno señalado, quitar días…) antes de estar listos.
+    # …ni la COPIA de la biblioteca ("library"), ni el MODELO aplicado
+    # ("template"), ni el plan IMPORTADO de un documento ajeno ("document"):
+    # también se adaptan en varias tandas (cambiar el alérgeno señalado, quitar
+    # días…) antes de estar listos.
     if plan.status == "draft" and plan.generated_by not in BORRADORES_EN_CONSTRUCCION:
         from app.services.plan_activation import activate_plan
 
@@ -1029,6 +1036,7 @@ def edit_feedback(doc_id: int, body: FeedbackEditIn, db: Session = Depends(get_d
                         before=old_adjust, after=body.plan_adjustments,
                         note="el coach corrigió los ajustes propuestos por la "
                              "revisión: " + (nuevos or "los dejó vacíos"),
+                        source="revision",
                         commit=False,
                     )
                 db.commit()

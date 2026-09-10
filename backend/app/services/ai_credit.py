@@ -9,12 +9,69 @@ página de recarga de la consola de Anthropic.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import AiCreditState
 
 RECHARGE_URL = "https://console.anthropic.com/settings/billing"
+
+# ------------------------------------------------------- en qué se gasta ----
+# PARA QUÉ era cada llamada. Sin esto el coach ve "este mes 14 $" y no puede
+# hacer nada con ese dato: si se le fue en generar planes, en leer anamnesis o
+# en el panel de revisión son tres conclusiones distintas.
+PURPOSES: dict[str, str] = {
+    "plan": "Generar la planificación",
+    "comidas": "Elegir las comidas",
+    "educativo": "Contenido educativo",
+    "anamnesis": "Leer la anamnesis",
+    "adjunto": "Leer un adjunto",
+    "documento": "Leer un plan de fuera",
+    "revision": "Panel de revisión",
+    "feedback": "Informe quincenal",
+    "objetivo": "Análisis de objetivo",
+    "lecciones": "Aprender de tus correcciones",
+    "whatsapp": "Mensajes de WhatsApp",
+    "otro": "Otras llamadas",
+}
+
+
+def etiqueta_de_proposito(clave: str | None) -> str:
+    return PURPOSES.get(clave or "otro", PURPOSES["otro"])
+
+
+# El propósito viaja por CONTEXTO, no por parámetro: `generate_json` se llama
+# desde decenas de sitios y encadenar un argumento por todos ellos era la forma
+# segura de que a alguno se le olvidara y el apunte saliera sin etiqueta.
+_PROPOSITO: "ContextVar[tuple[str, int | None]]" = ContextVar(
+    "proposito_ia", default=("otro", None))
+
+
+@contextmanager
+def proposito(clave: str, client_id: int | None = None):
+    """Marca para qué son las llamadas a la IA de este bloque (y de quién).
+
+    ⚠️ Los `contextvars` NO cruzan a los hilos de un ThreadPoolExecutor por su
+    cuenta: donde se paraleliza (el panel de revisión) hay que arrancar cada
+    tarea con `contextvars.copy_context().run(...)`, que es lo que hace que el
+    apunte de cada revisor salga etiquetado."""
+    _, cliente_actual = _PROPOSITO.get()
+    # El CLIENTE se hereda: el endpoint lo fija una vez ("esto es de Mario") y
+    # los bloques de dentro solo afinan el propósito ("ahora las comidas") sin
+    # tener que volver a pasarlo — que es como se perdía.
+    token = _PROPOSITO.set((clave if clave in PURPOSES else "otro",
+                            client_id if client_id is not None else cliente_actual))
+    try:
+        yield
+    finally:
+        _PROPOSITO.reset(token)
+
+
+def proposito_actual() -> tuple[str, int | None]:
+    return _PROPOSITO.get()
 
 # Precio oficial (USD por millón de tokens: entrada, salida) por familia.
 _PRICES: tuple[tuple[str, tuple[float, float]], ...] = (
@@ -54,7 +111,8 @@ def remaining_usd(state: AiCreditState) -> float | None:
     return round(state.balance_usd - (state.spent_usd or 0.0), 2)
 
 
-def record_usage(model: str, input_tokens: int, output_tokens: int) -> None:
+def record_usage(model: str, input_tokens: int, output_tokens: int,
+                 purpose: str | None = None, client_id: int | None = None) -> None:
     """Acumula el coste de una llamada y deja su rastro para el consumo en vivo.
     Sesión propia y a prueba de fallos: la contabilidad JAMÁS puede romper una
     generación de plan."""
@@ -80,9 +138,12 @@ def record_usage(model: str, input_tokens: int, output_tokens: int) -> None:
                 .where(AiCreditState.id == state.id)
                 .values(spent_usd=func.coalesce(AiCreditState.spent_usd, 0.0) + cost)
             )
+            ctx_purpose, ctx_client = proposito_actual()
             db.add(AiUsageEvent(
                 model=model or "?", input_tokens=input_tokens or 0,
                 output_tokens=output_tokens or 0, cost_usd=cost,
+                purpose=(purpose or ctx_purpose or "otro"),
+                client_id=(client_id if client_id is not None else ctx_client),
             ))
             db.commit()
     except Exception:  # noqa: BLE001 — contabilidad best-effort
@@ -172,3 +233,111 @@ def plans_left(remaining: float | None, avg_cost_per_plan: float | None) -> int 
     if remaining is None or not avg_cost_per_plan or avg_cost_per_plan <= 0:
         return None
     return max(0, int(remaining // avg_cost_per_plan))
+
+
+# ------------------------------------------------------------- historial ----
+
+def desglose(db: Session, *, days: int = 30) -> list[dict]:
+    """EN QUÉ se fue el dinero en la ventana: una línea por propósito, con su
+    gasto, sus llamadas y su peso sobre el total. Ordenado de más a menos caro,
+    que es como se lee para decidir dónde recortar."""
+    from datetime import timedelta
+
+    from app.models import AiUsageEvent
+
+    try:
+        since = _utcnow() - timedelta(days=max(1, days))
+        filas = db.execute(
+            select(AiUsageEvent.purpose,
+                   func.coalesce(func.sum(AiUsageEvent.cost_usd), 0.0),
+                   func.count(AiUsageEvent.id))
+            .where(AiUsageEvent.created_at >= since)
+            .group_by(AiUsageEvent.purpose)
+        ).all()
+    except Exception:  # noqa: BLE001 — el historial nunca tumba la pantalla
+        return []
+    total = sum(float(c or 0.0) for _, c, _ in filas) or 0.0
+    out = [{
+        "purpose": (p or "otro"),
+        "label": etiqueta_de_proposito(p),
+        "cost_usd": round(float(c or 0.0), 4),
+        "calls": int(n or 0),
+        "share": round(100.0 * float(c or 0.0) / total, 1) if total else 0.0,
+    } for p, c, n in filas]
+    out.sort(key=lambda x: -x["cost_usd"])
+    return out
+
+
+def movimientos(db: Session, *, limit: int = 60) -> list[dict]:
+    """Las últimas llamadas, una a una: cuándo, para qué, de quién y cuánto.
+    El «extracto» de los créditos — el equivalente al feed de cobros, pero del
+    dinero que SALE."""
+    from app.models import AiUsageEvent, Client
+
+    try:
+        filas = db.execute(
+            select(AiUsageEvent, Client.full_name)
+            .outerjoin(Client, Client.id == AiUsageEvent.client_id)
+            .order_by(AiUsageEvent.created_at.desc())
+            .limit(max(1, min(limit, 200)))
+        ).all()
+    except Exception:  # noqa: BLE001
+        return []
+    return [{
+        "id": ev.id,
+        "at": ev.created_at,
+        "purpose": ev.purpose or "otro",
+        "label": etiqueta_de_proposito(ev.purpose),
+        "client_id": ev.client_id,
+        # El nombre puede faltar (baja RGPD): el apunte contable sobrevive sin él.
+        "client_name": nombre,
+        "model": ev.model,
+        "cost_usd": round(float(ev.cost_usd or 0.0), 4),
+        "input_tokens": ev.input_tokens or 0,
+        "output_tokens": ev.output_tokens or 0,
+    } for ev, nombre in filas]
+
+
+def recargas(db: Session, *, limit: int = 24) -> list[dict]:
+    """Lo que el coach ha ido pagando de créditos."""
+    from app.models import AiCreditTopUp
+
+    try:
+        filas = db.scalars(
+            select(AiCreditTopUp).order_by(AiCreditTopUp.created_at.desc())
+            .limit(max(1, min(limit, 100)))
+        ).all()
+    except Exception:  # noqa: BLE001
+        return []
+    return [{"id": r.id, "at": r.created_at, "amount_usd": round(r.amount_usd, 2),
+             "balance_before_usd": (round(r.balance_before_usd, 2)
+                                    if r.balance_before_usd is not None else None),
+             "note": r.note} for r in filas]
+
+
+def anotar_recarga(db: Session, amount_usd: float, *, note: str | None = None) -> dict:
+    """Suma una recarga al saldo. Es la cuenta que el coach hacía a mano.
+
+    Anthropic NO expone el saldo por API, así que el sistema no puede leerlo
+    solo. Lo que sí puede es llevar el libro: se apunta lo PAGADO (la cifra del
+    recibo, que es la única que el coach tiene delante) y el saldo pasa a ser
+    «lo que quedaba + lo que acabas de meter». Antes había que teclear la suma,
+    y una resta mal hecha dejaba el aviso de saldo bajo mintiendo durante
+    semanas.
+    """
+    from app.models import AiCreditTopUp, utcnow
+
+    state = get_state(db)
+    antes = remaining_usd(state)
+    base = antes if antes is not None else 0.0
+    state.balance_usd = round(base + float(amount_usd), 4)
+    # El gasto vuelve a cero porque el saldo nuevo YA lo tiene descontado: el
+    # historial de llamadas (ai_usage_events) conserva el detalle intacto.
+    state.spent_usd = 0.0
+    state.updated_at = utcnow()
+    db.add(AiCreditTopUp(amount_usd=float(amount_usd), balance_before_usd=antes,
+                         note=(note or None)))
+    db.commit()
+    db.refresh(state)
+    return {"balance_usd": state.balance_usd, "added_usd": float(amount_usd),
+            "balance_before_usd": antes}

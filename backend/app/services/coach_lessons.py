@@ -153,6 +153,28 @@ def distill_lessons(db: Session, ai=None) -> dict:
         lineas.extend(f"  · {n}" for n in notas)
     corpus = "\n".join(lineas)
 
+    # LOS PATRONES YA CONTADOS van delante de los ejemplos crudos. Es la mitad
+    # del trabajo hecha sin gastar un crédito: en vez de pedirle al modelo que
+    # descubra lo repetido leyendo cien frases, se le dice lo que se repite y se
+    # le pide que lo explique como una preferencia.
+    try:
+        from app.services import coach_patterns
+
+        pat = coach_patterns.resumen(db)
+        hechos = ([f"- {s['frase']}" for s in pat["sustituciones"][:6]]
+                  + [f"- {c['frase']}" for c in pat["campos"][:8]])
+        if hechos:
+            corpus = ("PATRONES YA CONTADOS (hechos, no interpretaciones):\n"
+                      + "\n".join(hechos) + "\n\n" + corpus)
+    except Exception:  # noqa: BLE001 — sin patrones se destila como siempre
+        pass
+
+    # LO QUE YA APRENDIÓ. Sin esto, cada refresco empezaba de cero y las
+    # lecciones bailaban de una tanda a otra; con esto el sistema construye
+    # SOBRE lo aprendido, que es lo que pidió el dueño: que mejore con el uso.
+    previas = [x for x in (load_lessons(_slug_marca(db)).get("lessons") or [])
+               if isinstance(x, str) and x.strip()][:8]
+
     from app.config import settings
 
     if ai is None:
@@ -175,8 +197,16 @@ def distill_lessons(db: Session, ai=None) -> dict:
         "Responde SOLO con JSON: {\"lessons\": [\"…\", …]}"
     )
     user = f"CORRECCIONES DEL COACH (agrupadas por tipo):\n{corpus}"
-    out = ai.generate_json(model=settings.model_light, system=system, user=user,
-                           schema=LessonsOutput, temperature=0, max_tokens=800)
+    if previas:
+        user += ("\n\nLO QUE YA HABÍAS APRENDIDO DE ÉL (afínalo con lo nuevo; "
+                 "conserva lo que las correcciones siguen confirmando, corrige lo "
+                 "que ahora se ve distinto y quita lo que ya no pasa):\n"
+                 + "\n".join(f"- {x}" for x in previas))
+    from app.services.ai_credit import proposito
+
+    with proposito("lecciones"):
+        out = ai.generate_json(model=settings.model_light, system=system, user=user,
+                               schema=LessonsOutput, temperature=0, max_tokens=800)
 
     # Filtro determinista de seguridad: fuera lecciones con cifras de kcal/g
     # (por si el modelo se salta la regla) y tope de longitud.
@@ -196,11 +226,20 @@ def distill_lessons(db: Session, ai=None) -> dict:
         # last_edit_id — el siguiente refresco lo reintenta.
         return {"skipped": "la IA no produjo lecciones válidas (todas con cifras)",
                 **load_lessons(_slug_marca(db))}
+    # HISTORIAL: cada tanda de lecciones deja constancia de la anterior. Sirve
+    # para ver cómo ha ido cambiando el criterio aprendido (y para volver atrás
+    # si una tanda sale peor que la que había).
+    anterior = load_lessons(_slug_marca(db))
+    historial = list(anterior.get("history") or [])
+    if anterior.get("lessons"):
+        historial.append({"updated_at": anterior.get("updated_at"),
+                          "lessons": anterior.get("lessons")})
     data = {
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "source_edits": len(filas),
         "last_edit_id": max_id,
         "lessons": limpias,
+        "history": historial[-10:],       # las diez últimas tandas
     }
     _sidecar_path(_slug_marca(db)).write_text(
         json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")

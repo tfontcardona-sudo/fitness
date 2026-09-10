@@ -203,20 +203,16 @@ def anamnesis_documents(client_id: int) -> list[dict]:
 def save_brand_logo(raw: bytes, filename_hint: str, slug: str = "dqr") -> str:
     """Logo de UNA marca. El nombre lleva su `slug` porque con dos marcas en el
     mismo sistema un nombre fijo hacía que la segunda pisara el logo de la
-    primera. Los logos subidos antes de existir las marcas conservan su ruta en
-    la ficha y siguen sirviéndose; se renombran solos al volver a subirlos."""
-    if len(raw) > 5 * 1024 * 1024:
-        raise PhotoValidationError("El logo supera 5 MB")
-    try:
-        img = Image.open(io.BytesIO(raw))
-        img.load()
-    except (UnidentifiedImageError, OSError) as exc:
-        raise PhotoValidationError("El archivo no es una imagen válida") from exc
-    if img.format not in ALLOWED_FORMATS:
-        raise PhotoValidationError("Formato no soportado (usa JPG, PNG o WebP)")
-    dest = brand_dir() / f"logo-{_slug(slug)}.{_EXT[img.format]}"
-    img.save(dest, format=img.format)
-    return str(dest.relative_to(storage_root()))
+    primera.
+
+    ⚠️ VA BAJO `media/`, no bajo `brand/`. Caddy solo proxya `/api/*`, así que
+    lo que cuelga de `brand/` NO se puede servir en producción: el logo se
+    subía, se guardaba… y no se veía en ninguna parte —ni en el portal del
+    cliente, ni en la vista previa del panel, ni en la landing—, que es la razón
+    por la que el logo estaba clavado en el código. Los logos subidos antes
+    conservan su ruta vieja (y siguen sin poder servirse, igual que hasta hoy);
+    se arreglan solos al volver a subirlos."""
+    return _save_public_image(raw, media_dir("brand"), f"logo-{_slug(slug)}", "El logo")
 
 
 # --------------------------------------------------------------- media ----

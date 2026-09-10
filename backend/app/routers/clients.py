@@ -57,6 +57,8 @@ router = APIRouter(
 )
 
 
+from app.services import coach_patterns
+from app.services.ai_credit import proposito
 from app.services.branding import (cartera_de_la_marca, marca_activa,
                                    marca_de_cliente)
 from app.services.plan_delivery import documento_simple
@@ -2182,6 +2184,10 @@ def generate_client_plan(
         # se imprime: no se genera y se ahorra una llamada a la IA por plan.
         documento_simple=documento_simple(db, client),
         marca_slug=marca_de_cliente(client, db).slug,
+        # Las COSTUMBRES del coach, contadas de sus propias correcciones. Es
+        # aprendizaje sin coste: son cuentas sobre `plan_edits`, no una llamada
+        # a la IA (§13, aprendizaje integral).
+        patrones_del_coach=coach_patterns.bloque_para_prompt(db),
     )
     # Paquete Start = solo nutrición: la IA no genera entrenamiento (ni el
     # educativo de entreno). Full/Pro generan el plan completo.
@@ -2191,9 +2197,13 @@ def generate_client_plan(
     # para que la IA seleccione por food_id y el solver fije los gramos.
     food_catalog = _food_catalog_for(db, client)
     try:
-        generated = generate_monthly_plan(
-            ctx, AIClient(), include_training=include_training,
-            food_catalog=food_catalog, include_nutrition=include_nutrition)
+        # Todo el gasto de esta generación queda apuntado a ESTE cliente y, por
+        # dentro, a su tramo (núcleo, comidas, educativo): así el historial dice
+        # en qué se va el dinero y no solo cuánto.
+        with proposito("plan", client.id):
+            generated = generate_monthly_plan(
+                ctx, AIClient(), include_training=include_training,
+                food_catalog=food_catalog, include_nutrition=include_nutrition)
     except PlanGenerationError as exc:
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY,
@@ -2682,7 +2692,10 @@ def _do_read_anamnesis(client_id: int, db: Session, *, documento=None) -> dict:
         except DocumentoIlegible as exc:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     fuente = docs[0]["name"] if docs else documento.nombre
-    lectura = _extraer_anamnesis(documento)
+    # El gasto de esta lectura queda apuntado a SU cliente (el propósito
+    # concreto lo pone el propio lector por dentro).
+    with proposito("anamnesis", client_id):
+        lectura = _extraer_anamnesis(documento)
     return _aplicar_lectura(client_id, db, documento, lectura, fuente=fuente)
 
 
