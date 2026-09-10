@@ -57,6 +57,7 @@ router = APIRouter(
 )
 
 
+from app.services import coach_patterns
 from app.services.branding import (cartera_de_la_marca, marca_activa,
                                    marca_de_cliente)
 from app.services.plan_delivery import documento_simple
@@ -2182,6 +2183,10 @@ def generate_client_plan(
         # se imprime: no se genera y se ahorra una llamada a la IA por plan.
         documento_simple=documento_simple(db, client),
         marca_slug=marca_de_cliente(client, db).slug,
+        # Las COSTUMBRES del coach, contadas de sus propias correcciones. Es
+        # aprendizaje sin coste: son cuentas sobre `plan_edits`, no una llamada
+        # a la IA (§13, aprendizaje integral).
+        patrones_del_coach=coach_patterns.bloque_para_prompt(db),
     )
     # Paquete Start = solo nutrición: la IA no genera entrenamiento (ni el
     # educativo de entreno). Full/Pro generan el plan completo.

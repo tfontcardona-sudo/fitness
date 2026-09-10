@@ -398,6 +398,17 @@ class PlanEdit(Base):
     plan_id: Mapped[int] = mapped_column(ForeignKey("plans.id"), index=True)
     category: Mapped[str] = mapped_column(String(30), index=True)
     field_path: Mapped[str | None] = mapped_column(String(120))  # dónde se editó
+    # SEÑAL: el campo normalizado ("nutricion.kcal", "entreno.ejercicio"). Es la
+    # clave por la que se cuentan los PATRONES — la categoría sola dice "corrige
+    # el cálculo", la señal dice QUÉ campo (mig. 0048).
+    signal: Mapped[str | None] = mapped_column(String(60), index=True)
+    # ORIGEN: editor del panel | Word | documento ajeno | copia de otro cliente |
+    # modelo aplicado | swap | ajustes de la revisión. Cambiar lo COPIADO y
+    # corregir a la IA no son lo mismo y no pueden ir en la misma bolsa.
+    source: Mapped[str | None] = mapped_column(String(20), index=True)
+    # La sustitución en limpio ("pollo → pavo"): de aquí sale "siempre cambias
+    # X por Y".
+    detail: Mapped[str | None] = mapped_column(String(200))
     before_json: Mapped[dict | None] = mapped_column(JSONB)
     after_json: Mapped[dict | None] = mapped_column(JSONB)
     note: Mapped[str | None] = mapped_column(Text)               # el "por qué" en 1 clic

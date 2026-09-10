@@ -102,6 +102,7 @@ def apply_from_library(body: ApplyIn, db: Session = Depends(get_db)) -> dict:
     if client is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Cliente no encontrado")
 
+    desde_modelo = False
     if body.plan_id is not None:
         origen_plan = db.get(Plan, body.plan_id)
         if origen_plan is None:
@@ -123,6 +124,7 @@ def apply_from_library(body: ApplyIn, db: Session = Depends(get_db)) -> dict:
         nutrition, training, education = (
             tpl.nutrition_json, tpl.training_json, tpl.education_json)
         origen = f"el modelo «{tpl.title}»"
+        desde_modelo = True
 
     try:
         plan, avisos = copiar_a_cliente(
@@ -132,6 +134,11 @@ def apply_from_library(body: ApplyIn, db: Session = Depends(get_db)) -> dict:
         detalle = ({"message": str(exc), "missing": exc.missing}
                    if exc.missing else str(exc))
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detalle) from exc
+    # Copiar de otro CLIENTE y aplicar un MODELO no son lo mismo para el
+    # aprendizaje: lo que cambias de un modelo tuyo dice que el modelo está
+    # incompleto; lo que cambias de otro cliente dice que ese plan no encajaba.
+    if desde_modelo:
+        plan.generated_by = "template"
     db.commit()
     db.refresh(plan)
     return {

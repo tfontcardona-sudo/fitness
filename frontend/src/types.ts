@@ -953,3 +953,41 @@ export interface SalesCatalogOut {
   test_mode: boolean;          // claves de PRUEBA: los enlaces no cobran de verdad
   items: SalesItem[];
 }
+
+
+/** GET /api/learning/patterns — lo que el sistema ha aprendido observando al
+ *  coach. Todo contado sobre sus ediciones reales: no cuesta créditos. */
+export interface LearningPatternsOut {
+  ediciones_totales: number;
+  /** Campos que corrige una y otra vez, del más al menos frecuente. */
+  campos: {
+    signal: string;
+    etiqueta: string;
+    veces: number;
+    /** En cuántos planes DISTINTOS lo tocó (una tarde de correcciones sobre un
+     *  mismo plan no es una costumbre). */
+    planes: number;
+    /** ¿Sigue pasando? Un patrón de hace ocho meses ya no le describe. */
+    vivo: boolean;
+    ultima: string | null;
+    origenes: Record<string, number>;
+    frase: string;
+  }[];
+  /** "Siempre cambias X por Y". */
+  sustituciones: {
+    de: string; a: string; veces: number; signal: string;
+    etiqueta: string; frase: string;
+  }[];
+  /** Lo que NO toca: lo que un modelo puede dar por bueno. */
+  estables: { signal: string; etiqueta: string }[];
+  min_repeticiones: number;
+  /** El modelo que el sistema propone crearle (null si aún no hay material). */
+  sugerencia_modelo: {
+    plan_id: number;
+    titulo: string;
+    porque: string;
+    resumen: string;
+    abierto: { signal: string; etiqueta: string; veces: number }[];
+    fijo: { signal: string; etiqueta: string }[];
+  } | null;
+}

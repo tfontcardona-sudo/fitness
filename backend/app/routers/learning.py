@@ -32,7 +32,58 @@ def get_lessons(db: Session = Depends(get_db)) -> dict:
         "source_edits": data.get("source_edits") or 0,
         "total_edits": total,
         "min_edits": MIN_EDITS,
+        # Tandas anteriores: se ve cómo ha ido afinándose el criterio aprendido.
+        "history": data.get("history") or [],
     }
+
+
+@router.get("/patterns")
+def get_patterns(db: Session = Depends(get_db)) -> dict:
+    """LOS PATRONES: qué campos corrige siempre, qué cambia por qué y qué no
+    toca nunca. Contado sobre sus propias ediciones, sin gastar un crédito —
+    por eso se puede pedir tantas veces como haga falta."""
+    from app.services import coach_patterns
+
+    datos = coach_patterns.resumen(db)
+    datos["sugerencia_modelo"] = coach_patterns.sugerencia_de_modelo(db)
+    return datos
+
+
+@router.post("/patterns/model")
+def crear_modelo_desde_patrones(db: Session = Depends(get_db)) -> dict:
+    """Crea el MODELO de plan que sale de sus patrones: la estructura de un plan
+    suyo de verdad, con una nota de qué revisar al aplicarlo (lo que siempre
+    acaba cambiando). 0 créditos: es una copia y unas cuentas."""
+    from app.models import Plan, PlanTemplate
+    from app.services import coach_patterns
+    from app.services.audit import log_event
+
+    sug = coach_patterns.sugerencia_de_modelo(db)
+    if not sug:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Todavía no hay patrones suficientes: corrige unos cuantos planes "
+            "más y el sistema sabrá qué dejarte abierto.")
+    base = db.get(Plan, sug["plan_id"])
+    if base is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            "El plan del que salía el modelo ya no existe.")
+    nota = coach_patterns.nota_del_modelo(sug)
+    tpl = PlanTemplate(
+        title=sug["titulo"],
+        summary=(f"{sug['resumen']} · {nota}")[:200] if sug["resumen"] else nota[:200],
+        nutrition_json=base.nutrition_json,
+        training_json=base.training_json,
+        education_json=base.education_json,
+    )
+    db.add(tpl)
+    db.flush()
+    log_event(db, "learning", tpl.id, "plan_template_from_patterns",
+              {"plan_id": base.id, "abierto": [c["signal"] for c in sug["abierto"]]})
+    db.commit()
+    db.refresh(tpl)
+    return {"id": tpl.id, "title": tpl.title, "summary": tpl.summary,
+            "abierto": sug["abierto"], "fijo": sug["fijo"], "nota": nota}
 
 
 @router.delete("/lessons/{index}")

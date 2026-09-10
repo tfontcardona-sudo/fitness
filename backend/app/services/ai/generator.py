@@ -120,6 +120,10 @@ class ClientContext:
     documento_simple: bool = False
     # Marca del cliente: decide de qué sidecar salen las LECCIONES del coach.
     marca_slug: str | None = None
+    # Bloque de COSTUMBRES contadas de las correcciones reales del coach
+    # (services/coach_patterns.bloque_para_prompt). Lo calcula el endpoint con
+    # la sesión de base de datos; aquí solo se pega al user prompt.
+    patrones_del_coach: str = ""
 
 
 @dataclass
@@ -920,6 +924,9 @@ def generate_monthly_plan(
         # Las lecciones de la marca DEL CLIENTE (no las de la activa): lo que
         # el coach corrigió en un negocio no debe moldear los planes del otro.
         _lecciones = lessons_reference(getattr(ctx, "marca_slug", None)) + vetos_reference()
+        # Y los PATRONES contados: hechos (no interpretaciones de un modelo),
+        # calculados sin gastar un crédito. Van juntos en el mismo user prompt.
+        _lecciones += getattr(ctx, "patrones_del_coach", "") or ""
     except Exception:  # noqa: BLE001 — el aprendizaje nunca bloquea generar
         _lecciones = ""
 

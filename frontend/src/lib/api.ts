@@ -62,6 +62,7 @@ export function keepIfSame<T>(prev: T, next: T): T {
 import type {
   WhatsAppRoundOut,
   AiCreditOut,
+  LearningPatternsOut,
   BrandConfigOut,
   BrandProfileOut,
   CoachAlert,
@@ -827,6 +828,16 @@ export const api = {
   /** Borra UNA lección con la que el coach no está de acuerdo. */
   deleteLearningLesson: (index: number) =>
     request<{ lessons: string[]; removed: string }>("DELETE", `/learning/lessons/${index}`),
+  /** PATRONES: qué corrige siempre, qué cambia por qué y qué no toca nunca.
+   *  Se cuenta sobre sus propias ediciones — 0 créditos, se puede pedir a
+   *  discreción. */
+  learningPatterns: () => request<LearningPatternsOut>("GET", "/learning/patterns"),
+  /** Crea el modelo de plan que sale de sus patrones (0 créditos). */
+  createModelFromPatterns: () =>
+    request<{ id: number; title: string; summary: string | null; nota: string;
+              abierto: { signal: string; etiqueta: string; veces: number }[];
+              fijo: { signal: string; etiqueta: string }[] }>(
+      "POST", "/learning/patterns/model"),
 
   getAiCredit: () => request<AiCreditOut>("GET", "/ai-credit"),
   setAiCredit: (balance_usd: number) =>

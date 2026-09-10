@@ -26,6 +26,7 @@ import { formatDate } from "../lib/format";
 import { youtubeId } from "../lib/video";
 import type {
   BrandProfileOut,
+  LearningPatternsOut,
   ExerciseOut,
   ProductCategory,
   RecommendedProductOut,
@@ -207,6 +208,151 @@ function LearningManager() {
           </p>
         )}
       </div>
+
+      {/* LOS PATRONES van DEBAJO de las lecciones a propósito: las lecciones
+          las redacta la IA (interpretación), los patrones son cuentas sobre lo
+          que el coach ha hecho de verdad. Lo segundo sostiene a lo primero. */}
+      <PatronesDelCoach />
+    </div>
+  );
+}
+
+/* ------------------------------------------------- patrones del coach ------ */
+
+/**
+ * LO QUE EL SISTEMA HA APRENDIDO OBSERVÁNDOLE. No son opiniones de un modelo:
+ * son sus propias correcciones contadas — qué campo toca en cuántos planes
+ * distintos, qué cambia por qué, y qué no toca nunca. Por eso no cuesta
+ * créditos y se puede mirar cuando quiera.
+ *
+ * Y de ahí sale la propuesta que pidió el dueño: un MODELO de plan que fije lo
+ * estable y deje señalado lo que siempre acaba corrigiendo, para no tener que
+ * volver a corregirlo.
+ */
+function PatronesDelCoach() {
+  const toast = useToast();
+  const [pat, setPat] = useState<LearningPatternsOut | null>(null);
+  const [error, setError] = useState(false);
+  const [intento, setIntento] = useState(0);
+  const [creando, setCreando] = useState(false);
+
+  useEffect(() => {
+    let vivo = true;
+    setError(false);
+    api.learningPatterns()
+      .then((d) => { if (vivo) setPat(d); })
+      .catch(() => { if (vivo) setError(true); });
+    return () => { vivo = false; };
+  }, [intento]);
+
+  async function crearModelo() {
+    setCreando(true);
+    try {
+      const r = await api.createModelFromPatterns();
+      toast.push(`Modelo «${r.title}» creado · está en Modelos de plan`);
+    } catch (e) {
+      toast.push(e instanceof ApiError ? e.message : "No se pudo crear el modelo", "error");
+    } finally {
+      setCreando(false);
+    }
+  }
+
+  if (error) {
+    return (
+      <div className="card flex flex-col items-center gap-3 p-6 text-sm text-zinc-400">
+        No se pudieron cargar los patrones.
+        <button className="btn btn-ghost" onClick={() => setIntento((n) => n + 1)}>Reintentar</button>
+      </div>
+    );
+  }
+  if (!pat) return null;
+
+  const hayAlgo = pat.campos.length > 0 || pat.sustituciones.length > 0;
+  return (
+    <div className="card p-5">
+      <h2 className="text-base font-semibold text-zinc-100">Tus costumbres, contadas</h2>
+      <p className="mt-1 text-sm text-zinc-500">
+        De tus {pat.ediciones_totales} correcciones · sin gastar créditos
+      </p>
+
+      {!hayAlgo ? (
+        <p className="mt-4 rounded-xl border p-4 text-sm text-zinc-400"
+           style={{ borderColor: "var(--line-strong)" }}>
+          Aún no hay costumbres que contar. Un patrón necesita repetirse{" "}
+          {pat.min_repeticiones} veces en planes distintos.
+        </p>
+      ) : (
+        <>
+          {pat.sustituciones.length > 0 && (
+            <div className="mt-4">
+              <p className="mb-2 text-xs font-bold uppercase tracking-wider text-zinc-500">
+                Lo que cambias siempre
+              </p>
+              <ul className="space-y-2">
+                {pat.sustituciones.slice(0, 8).map((s, i) => (
+                  <li key={i} className="flex items-center gap-2 rounded-xl border p-3 text-sm"
+                      style={{ borderColor: "var(--line-strong)" }}>
+                    <span className="min-w-0 flex-1 text-zinc-200">
+                      <span className="text-zinc-500 line-through">{s.de}</span>
+                      {" → "}
+                      <b>{s.a}</b>
+                    </span>
+                    <span className="shrink-0 text-xs text-zinc-500">{s.veces}×</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {pat.campos.length > 0 && (
+            <div className="mt-4">
+              <p className="mb-2 text-xs font-bold uppercase tracking-wider text-zinc-500">
+                Lo que retocas en casi todos los planes
+              </p>
+              <ul className="space-y-2">
+                {pat.campos.slice(0, 8).map((c) => (
+                  <li key={c.signal} className="rounded-xl border p-3 text-sm"
+                      style={{ borderColor: "var(--line-strong)" }}>
+                    <div className="flex items-center gap-2">
+                      <span className="min-w-0 flex-1 text-zinc-200">{c.frase}</span>
+                      {!c.vivo && (
+                        <span className="shrink-0 text-xs text-zinc-600" title="Hace meses que no pasa">
+                          antiguo
+                        </span>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {pat.estables.length > 0 && (
+            <p className="mt-4 text-xs text-zinc-500">
+              No tocas: {pat.estables.slice(0, 6).map((e) => e.etiqueta).join(" · ")}
+            </p>
+          )}
+        </>
+      )}
+
+      {/* La propuesta: un modelo hecho a su medida, con lo que siempre corrige
+          señalado para revisar. Es lo que pidió con sus palabras. */}
+      {pat.sugerencia_modelo && (
+        <div className="mt-5 rounded-xl border p-4"
+             style={{ borderColor: "var(--brand-accent)", background: "var(--surface-raised)" }}>
+          <p className="text-sm font-semibold text-zinc-100">
+            Te propongo un modelo: «{pat.sugerencia_modelo.titulo}»
+          </p>
+          <p className="mt-1 text-sm text-zinc-400">{pat.sugerencia_modelo.porque}</p>
+          <p className="mt-2 text-sm text-zinc-300">
+            Se queda como está lo que no tocas, y te deja señalado para revisar:{" "}
+            <b>{pat.sugerencia_modelo.abierto.map((c) => c.etiqueta).join(", ")}</b>.
+          </p>
+          <button onClick={crearModelo} disabled={creando} className="btn btn-primary mt-3">
+            {creando ? <Spinner /> : null} Crear este modelo · 0 créditos
+          </button>
+        </div>
+      )}
     </div>
   );
 }
