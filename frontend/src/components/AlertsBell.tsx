@@ -97,6 +97,7 @@ export function AlertsBell() {
       clientId: a.client_id,
       clientName: a.client_name,
       label: a.action,
+      motivo: a.message,
       hint: a.fix || a.message,
       href: destino,
       target: a.target || undefined,

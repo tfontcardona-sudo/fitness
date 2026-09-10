@@ -35,6 +35,10 @@ export interface Pin {
   label: string;
   /** Cómo se arregla — se enseña pegado al elemento marcado. */
   hint?: string;
+  /** POR QUÉ está marcado esto: el aviso tal cual lo dio el sistema. Sin él, la
+   *  nota decía qué hacer («Revisar cliente») pero no qué pasa («30 días sin
+   *  actividad»), que es justo lo que hace falta para decidir. */
+  motivo?: string;
   /** A dónde lleva el clic. */
   href: string;
   /** Ancla del elemento a marcar (ver lib/anchors.ts). */

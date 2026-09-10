@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { ChevronDown, Pin as PinIcon, X } from "lucide-react";
-import { desmarcarTodo, irYMarcar } from "../lib/anchors";
+import { AlertTriangle, ChevronDown, Pin as PinIcon, X } from "lucide-react";
+import { alEditar, desmarcarTodo, irYMarcar } from "../lib/anchors";
 import { useDismiss } from "../lib/useDismiss";
 import { getPins, subscribePins, unpin, type Pin } from "../lib/pins";
+
+/** El rojo del recuadro (ver `--ancla-color` en index.css). La nota va del
+ *  mismo color: son la misma pieza, y una nota naranja junto a un recuadro
+ *  rojo parecían dos avisos distintos. */
+const MARCA = "#C2453A";
 
 /* ------------------------------------------------------------------ hook --- */
 
@@ -71,21 +76,27 @@ function NotaDeAncla({ pin, el, onClose }: { pin: Pin; el: HTMLElement; onClose:
       className="card animate-rise fixed z-[60] p-3"
       style={{
         left: izquierda, top: arriba, width: ANCHO,
-        borderColor: "color-mix(in srgb, var(--brand-accent) 55%, transparent)",
-        boxShadow: "var(--shadow-2)",
+        borderColor: MARCA, boxShadow: "var(--shadow-2)",
       }}
     >
       <div className="flex items-start gap-2">
-        <PinIcon size={14} className="mt-0.5 shrink-0" style={{ color: "var(--brand-accent)" }} />
+        <AlertTriangle size={14} className="mt-0.5 shrink-0" style={{ color: MARCA }} />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-zinc-100">{pin.label}</p>
-          {pin.hint && <p className="mt-1 text-xs text-zinc-400">{pin.hint}</p>}
-          <p className="mt-2 text-[11px] text-zinc-500">
-            El recordatorio se irá solo en cuanto lo arregles.
+          <p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>{pin.label}</p>
+          {/* POR QUÉ está marcado (el aviso tal cual) y CÓMO se arregla. Sin el
+              porqué, la nota decía «Revisar cliente» y no «30 días sin
+              actividad», que es lo que hace falta para decidir. */}
+          {pin.motivo && pin.motivo !== pin.hint && (
+            <p className="mt-1 text-xs font-medium" style={{ color: MARCA }}>{pin.motivo}</p>
+          )}
+          {pin.hint && <p className="mt-1 text-xs" style={{ color: "var(--text-dim)" }}>{pin.hint}</p>}
+          <p className="mt-2 text-[11px]" style={{ color: "var(--text-faint)" }}>
+            Empieza a editarlo y este aviso se va solo.
           </p>
         </div>
-        <button onClick={onClose} aria-label="Cerrar la marca"
-          className="tap -m-1 shrink-0 rounded-lg p-1 text-zinc-500 hover:text-zinc-200">
+        <button onClick={onClose} aria-label="Cerrar el aviso"
+          className="tap -m-1 shrink-0 rounded-lg p-1"
+          style={{ color: "var(--text-faint)" }}>
           <X size={14} />
         </button>
       </div>
@@ -100,15 +111,18 @@ function NotaSuelta({ pin, onClose }: { pin: Pin; onClose: () => void }) {
   return createPortal(
     <div role="status"
       className="card animate-rise fixed left-1/2 top-4 z-[60] w-[320px] max-w-[calc(100vw-2rem)] -translate-x-1/2 p-3"
-      style={{ borderColor: "color-mix(in srgb, var(--brand-accent) 55%, transparent)", boxShadow: "var(--shadow-2)" }}>
+      style={{ borderColor: MARCA, boxShadow: "var(--shadow-2)" }}>
       <div className="flex items-start gap-2">
-        <PinIcon size={14} className="mt-0.5 shrink-0" style={{ color: "var(--brand-accent)" }} />
+        <AlertTriangle size={14} className="mt-0.5 shrink-0" style={{ color: MARCA }} />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-zinc-100">{pin.label}</p>
-          {pin.hint && <p className="mt-1 text-xs text-zinc-400">{pin.hint}</p>}
+          <p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>{pin.label}</p>
+          {pin.motivo && pin.motivo !== pin.hint && (
+            <p className="mt-1 text-xs font-medium" style={{ color: MARCA }}>{pin.motivo}</p>
+          )}
+          {pin.hint && <p className="mt-1 text-xs" style={{ color: "var(--text-dim)" }}>{pin.hint}</p>}
         </div>
         <button onClick={onClose} aria-label="Cerrar el recordatorio"
-          className="tap -m-1 shrink-0 rounded-lg p-1 text-zinc-500 hover:text-zinc-200">
+          className="tap -m-1 shrink-0 rounded-lg p-1" style={{ color: "var(--text-faint)" }}>
           <X size={14} />
         </button>
       </div>
@@ -148,6 +162,21 @@ export function MarcadorDeAncla({ clientId, target }: { clientId: number; target
       desmarcarTodo();
     };
   }, [target, clientId]);
+
+  // «Y al empezar a editar esa parte, el aviso se va». En cuanto el coach
+  // teclea en lo señalado, cambia un desplegable o pulsa el botón de dentro, el
+  // recuadro rojo, la nota y el recordatorio desaparecen: ya está en ello, y a
+  // partir de ahí solo estorban. El aviso de la campana sigue hasta que el
+  // problema se arregle de verdad — quien decide eso es el backend, no un clic.
+  const idPin = pin?.id;
+  useEffect(() => {
+    if (!el || !idPin) return;
+    return alEditar(el, () => {
+      desmarcarTodo();
+      setEl(null);
+      unpin(idPin);
+    });
+  }, [el, idPin]);
 
   // El problema se RESOLVIÓ mientras mirabas: fuera la marca, sin ceremonia.
   // Solo si llegó a haber recordatorio: un enlace pegado a mano (con ?ir= pero

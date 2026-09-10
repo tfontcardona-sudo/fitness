@@ -229,6 +229,84 @@ t("la agrupación NO depende de cuántos elementos tenga la lista", () => {
   assert.equal(vecina.open, true, "se coló fuera de su lista por ser hija única");
 });
 
+/* ------------------ el recuadro rojo: se va al empezar a editar, no antes --- */
+// Petición del dueño: «al editar y empezar a editar esa parte, ya se va ese
+// aviso». Lo delicado es lo contrario: que NO se vaya por un roce cualquiera.
+// Una marca que se apaga sola sin haber tocado nada es peor que no marcar.
+
+function elementoFalso() {
+  const oyentes = new Map();
+  const el = {
+    addEventListener: (t, fn) => { (oyentes.get(t) ?? oyentes.set(t, []).get(t)).push(fn); },
+    removeEventListener: (t, fn) => {
+      const l = oyentes.get(t) ?? [];
+      const i = l.indexOf(fn);
+      if (i >= 0) l.splice(i, 1);
+    },
+    lanzar: (t, destino) => {
+      for (const fn of [...(oyentes.get(t) ?? [])]) fn({ type: t, target: destino });
+    },
+    vivos: () => [...oyentes.values()].reduce((n, l) => n + l.length, 0),
+  };
+  return el;
+}
+
+const tocado = (etiqueta, dentroDeBoton) => ({
+  closest: (sel) => (dentroDeBoton && /button/.test(sel) ? { tag: etiqueta } : null),
+});
+
+t("teclear en lo marcado apaga el aviso", () => {
+  const el = elementoFalso();
+  let veces = 0;
+  anchors.alEditar(el, () => { veces++; });
+  el.lanzar("input", tocado("input", false));
+  assert.equal(veces, 1, "escribir no apagó el aviso");
+});
+
+t("cambiar un desplegable o una casilla también cuenta", () => {
+  const el = elementoFalso();
+  let veces = 0;
+  anchors.alEditar(el, () => { veces++; });
+  el.lanzar("change", tocado("select", false));
+  assert.equal(veces, 1, "cambiar un select no apagó el aviso");
+});
+
+t("pulsar el BOTÓN señalado cuenta como empezar a arreglarlo", () => {
+  // Hay avisos que señalan un botón ("Generar", "Publicar"): ahí, pulsarlo ES
+  // ponerse a ello.
+  const el = elementoFalso();
+  let veces = 0;
+  anchors.alEditar(el, () => { veces++; });
+  el.lanzar("click", tocado("button", true));
+  assert.equal(veces, 1, "pulsar el botón marcado no apagó el aviso");
+});
+
+t("un clic en cualquier sitio de lo marcado NO lo apaga", () => {
+  const el = elementoFalso();
+  let veces = 0;
+  anchors.alEditar(el, () => { veces++; });
+  el.lanzar("click", tocado("div", false));   // leer, seleccionar texto, rozar
+  assert.equal(veces, 0, "se apagó sin que se tocara nada editable");
+});
+
+t("apagar el aviso suelta sus oyentes y no vuelve a dispararse", () => {
+  const el = elementoFalso();
+  let veces = 0;
+  const soltar = anchors.alEditar(el, () => { veces++; });
+  el.lanzar("input", tocado("input", false));
+  el.lanzar("input", tocado("input", false));
+  assert.equal(veces, 1, "se disparó dos veces");
+  assert.equal(el.vivos(), 0, "se quedaron oyentes colgados en el elemento");
+  soltar();
+});
+
+t("el recuadro es ROJO, no el naranja de marca", () => {
+  const css = readFileSync("src/index.css", "utf8");
+  const linea = css.split("\n").find((l) => l.includes("[data-ancla]{scroll-margin"));
+  assert.ok(linea && /--ancla-color:\s*#[cC]2453[aA]/.test(linea),
+    "el color del recuadro dejó de ser el rojo de aviso");
+});
+
 /* -------------------------- el backend y la web hablan del mismo sitio --- */
 // Si alguien añade un aviso con destino y olvida poner el `data-ancla` en la
 // pantalla, el aviso llevaría a la pestaña y no marcaría nada. Esto lo caza.
@@ -255,6 +333,69 @@ t("cada destino del backend tiene su ancla en la web", () => {
   const huerfanos = declarados.filter((d) => !fuente.includes(`"${d}"`) && !fuente.includes(`\`${d}\``));
   assert.deepEqual(huerfanos, [],
     `estos avisos dicen a dónde ir pero ahí no hay nada que marcar: ${huerfanos.join(", ")}`);
+});
+
+t("NINGÚN aviso se queda sin sitio al que llevar", () => {
+  // Petición del dueño: que esto funcione «en todas las infinitas
+  // combinaciones que pueden haber de alertas y avisos posibles». La forma de
+  // que sea cierto no es revisar los avisos de uno en uno, es que sea
+  // IMPOSIBLE emitir uno sin destino. Aquí se comprueba cada tipo de aviso que
+  // el backend puede emitir: o lo lleva en `_DESTINO`, o su llamada pasa un
+  // `target=` propio, o apunta fuera de la ficha con `to=`. Y para lo que se
+  // escape queda la red de `_ANCLA_DE_PESTANA`, que se comprueba abajo.
+  const alerts = readFileSync("../backend/app/routers/alerts.py", "utf8");
+  // Hasta `_ANCLA_DE_PESTANA`, no hasta `def _alert(`: la red de seguridad vive
+  // en medio y sus claves son nombres de pestaña, no tipos de aviso — colarlas
+  // aquí daría por bueno un aviso llamado "resumen" que no lleva a ningún sitio.
+  const mapa = alerts.slice(alerts.indexOf("_DESTINO: dict"), alerts.indexOf("_ANCLA_DE_PESTANA"));
+  const conDestino = new Set([...mapa.matchAll(/^ {4}"([a-z_]+)":/gm)].map((m) => m[1]));
+
+  // Cada llamada a _alert(...) con su tipo y el texto de sus argumentos.
+  const llamadas = [];
+  for (const m of alerts.matchAll(/_alert\(/g)) {
+    let i = m.index + m[0].length, prof = 1;
+    while (i < alerts.length && prof > 0) {
+      if (alerts[i] === "(") prof++;
+      else if (alerts[i] === ")") prof--;
+      i++;
+    }
+    llamadas.push(alerts.slice(m.index, i));
+  }
+  assert.ok(llamadas.length >= 20, `se leyeron muy pocos avisos: ${llamadas.length}`);
+
+  const sinDestino = [];
+  for (const cuerpo of llamadas) {
+    const kind = cuerpo.match(/_alert\(\s*\n?\s*client,\s*\n?\s*"([a-z_]+)"/)?.[1];
+    if (!kind) continue;
+    const propio = /\btarget\s*=/.test(cuerpo) || /\bto\s*=/.test(cuerpo);
+    if (!propio && !conDestino.has(kind)) sinDestino.push(kind);
+  }
+  assert.deepEqual([...new Set(sinDestino)], [],
+    `estos avisos no saben a dónde llevar: ${[...new Set(sinDestino)].join(", ")}`);
+
+  // Los avisos de SISTEMA (sin cliente) se montan a mano: tienen que llevar
+  // `to`, porque su arreglo no está en la ficha de nadie.
+  const sistema = [...alerts.matchAll(/"kind":\s*"([a-z_]+)"/g)].map((m) => m[1]);
+  for (const kind of sistema) {
+    const trozo = alerts.slice(Math.max(0, alerts.indexOf(`"kind": "${kind}"`) - 200),
+                               alerts.indexOf(`"kind": "${kind}"`) + 900);
+    assert.ok(/"to":\s*"/.test(trozo), `el aviso de sistema ${kind} no lleva a ninguna pantalla`);
+  }
+});
+
+t("la red de seguridad marca al menos el apartado del que habla el aviso", () => {
+  const alerts = readFileSync("../backend/app/routers/alerts.py", "utf8");
+  const red = alerts.slice(alerts.indexOf("_ANCLA_DE_PESTANA"), alerts.indexOf("def _alert("));
+  const anclas = [...new Set([...red.matchAll(/"(tab\.[a-z]+)"/g)].map((m) => m[1]))];
+  assert.ok(anclas.length >= 5, `la red de seguridad se quedó corta: ${anclas.length}`);
+  const fuente = listar("src").map((f) => readFileSync(f, "utf8")).join("\n");
+  const huerfanas = anclas.filter((a) => !fuente.includes(`"${a}"`));
+  assert.deepEqual(huerfanas, [],
+    `estas pestañas no se pueden marcar: ${huerfanas.join(", ")}`);
+  // Y el aviso siempre lleva su explicación: si no hay `fix`, se usa el
+  // mensaje. Un recuadro rojo sin decir por qué no es un aviso, es un susto.
+  assert.ok(/if not fix:\n\s+fix = message/.test(alerts),
+    "un aviso sin `fix` se quedaría marcando en rojo sin explicar por qué");
 });
 
 for (const nombre of ok) console.log(`✓ ${nombre}`);

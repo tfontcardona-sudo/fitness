@@ -106,13 +106,55 @@ function marcarConCss(nombre: string): void {
   }
   const valor = nombre.replace(/["\\]/g, "\\$&");
   const sel = `[${ATRIBUTO}="${valor}"]`;
+  // RECUADRO ROJO, no un resaltado suave: es lo que pidió el dueño y es lo
+  // correcto — «aquí hay algo mal» tiene que leerse desde el otro lado de la
+  // pantalla, sin confundirse con el naranja de marca que ya usan los botones.
   hoja.textContent = [
     `${sel}{position:relative;border-radius:12px;`,
-    `outline:2px solid var(--ancla-color);outline-offset:3px;`,
-    `background-color:color-mix(in srgb,var(--ancla-color) 8%,transparent)}`,
+    `outline:2.5px solid var(--ancla-color);outline-offset:3px;`,
+    `box-shadow:0 0 0 5px color-mix(in srgb,var(--ancla-color) 16%,transparent);`,
+    `background-color:color-mix(in srgb,var(--ancla-color) 7%,transparent)}`,
     `${sel}::after{content:"";position:absolute;inset:-3px;border-radius:14px;`,
     `pointer-events:none;animation:ancla-latido 1.6s ease-out 3}`,
   ].join("");
+}
+
+/**
+ * «Y al empezar a editar esa parte, el aviso se va».
+ *
+ * Avisa la PRIMERA vez que el coach toca de verdad lo señalado: teclear en un
+ * campo, cambiar un desplegable, marcar una casilla o pulsar un botón de
+ * dentro. Es la señal honesta de «ya lo estoy mirando»; a partir de ahí, el
+ * recuadro rojo y su nota estorban más que ayudan.
+ *
+ * Lo que NO cuenta: el foco a secas (el navegador puede darlo al desplazarse o
+ * al abrirse un desplegable) ni un clic en cualquier sitio. Una marca que se
+ * apaga sola sin que hayas tocado nada es peor que no marcar.
+ */
+export function alEditar(el: HTMLElement, cb: () => void): () => void {
+  let vivo = true;
+  const disparar = () => {
+    if (!vivo) return;
+    vivo = false;
+    quitar();
+    cb();
+  };
+  const alPulsar = (e: Event) => {
+    const destino = e.target as HTMLElement | null;
+    // Un botón (o un enlace de acción) DENTRO de lo señalado: en un aviso que
+    // apunta a «Generar» o «Publicar», pulsarlo ES empezar a arreglarlo.
+    if (destino?.closest("button, a[href], [role='button'], summary")) disparar();
+  };
+  const alEscribir = () => disparar();
+  el.addEventListener("input", alEscribir);
+  el.addEventListener("change", alEscribir);
+  el.addEventListener("click", alPulsar);
+  function quitar() {
+    el.removeEventListener("input", alEscribir);
+    el.removeEventListener("change", alEscribir);
+    el.removeEventListener("click", alPulsar);
+  }
+  return () => { vivo = false; quitar(); };
 }
 
 /**

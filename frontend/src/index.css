@@ -565,8 +565,11 @@ a.portal-note:active{transform:translateY(1px)}
    y el color de marca. La MARCA en sí la enciende una hoja inyectada con el
    selector exacto del elemento señalado (ver lib/anchors.ts): una clase no
    sirve, React reescribe className en cada refresco y se la llevaba. */
-[data-ancla]{scroll-margin:120px;--ancla-color:var(--brand-accent)}
-.portal-root [data-ancla]{--ancla-color:var(--p-accent)}
+/* ROJO, y el mismo rojo en el panel y en el portal: el recuadro dice «esto de
+   aquí está mal». El naranja de marca ya lo llevan los botones y se leía como
+   decoración. */
+[data-ancla]{scroll-margin:120px;--ancla-color:#C2453A}
+.portal-root [data-ancla]{--ancla-color:#C2453A}
 @keyframes ancla-latido{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--ancla-color) 34%,transparent)}100%{box-shadow:0 0 0 12px transparent}}
 
 /* ---- PANEL DEL COACH: apartados marcados, no una lista plana -------------

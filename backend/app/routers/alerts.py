@@ -108,6 +108,21 @@ _DESTINO: dict[str, tuple[str, str]] = {
 }
 
 
+# ÚLTIMO RECURSO PARA EL DESTINO. Un aviso sin ancla deja al coach en la
+# pestaña correcta y sin saber dónde mirar — y eso pasa el día que alguien
+# añade un tipo de aviso nuevo y olvida darle su `target`. Con esto, TODO aviso
+# marca al menos el apartado del que habla: la pestaña entera se rodea en rojo
+# y la nota explica por qué. Es peor que señalar el campo exacto, y muchísimo
+# mejor que no señalar nada.
+_ANCLA_DE_PESTANA: dict[str, str] = {
+    "resumen": "tab.resumen",
+    "anamnesis": "tab.anamnesis",
+    "planificacion": "tab.planificacion",
+    "seguimiento": "tab.seguimiento",
+    "feedback": "tab.feedback",
+}
+
+
 def _alert(client: Client, kind: str, severity: str, message: str, tab: str,
            action: str, *, target: str | None = None, fix: str | None = None,
            to: str | None = None) -> dict:
@@ -123,6 +138,12 @@ def _alert(client: Client, kind: str, severity: str, message: str, tab: str,
     if por_defecto:
         target = target or por_defecto[0]
         fix = fix or por_defecto[1]
+    # Red de seguridad: ningún aviso se queda sin sitio al que llevar ni sin
+    # explicación. Los que apuntan FUERA de la ficha (`to`) no la necesitan.
+    if not target and not to:
+        target = _ANCLA_DE_PESTANA.get(tab)
+    if not fix:
+        fix = message
     return {
         "client_id": client.id, "client_name": client.full_name,
         "kind": kind, "severity": severity, "message": message,
