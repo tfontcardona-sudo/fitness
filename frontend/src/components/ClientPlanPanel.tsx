@@ -1404,6 +1404,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                 className="absolute right-0 z-20 mt-1 w-60 rounded-xl border p-1 shadow-lg"
                 style={{ borderColor: "var(--line-strong)", background: "var(--surface)" }}
               >
+                <GrupoMenu label="Versiones" />
                 <button
                   onClick={(e) => {
                     e.currentTarget.closest("details")?.removeAttribute("open");
@@ -1412,10 +1413,12 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                     api.planHistory(plan.id).then(setHist).catch(() => setHist([]));
                   }}
                   className="btn btn-ghost w-full justify-start"
-                  title="Restaurar una versión anterior"
+                  title="Ver y restaurar versiones anteriores de este plan"
                 >
                   <Archive size={15} /> Historial de versiones
                 </button>
+
+                <GrupoMenu label="Biblioteca · reutilizar en otros clientes" />
                 <button
                   onClick={(e) => {
                     e.currentTarget.closest("details")?.removeAttribute("open");
@@ -1430,9 +1433,9 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                       .catch((err: any) => toast.push(err?.message ?? "No se pudo guardar", "error"));
                   }}
                   className="btn btn-ghost w-full justify-start"
-                  title="Reutilizarlo como base para otros clientes (0 créditos)"
+                  title="Guarda ESTE plan como modelo, para partir de él con cualquier cliente (0 créditos)"
                 >
-                  <Copy size={15} /> Guardar como modelo
+                  <Copy size={15} /> Guardar este plan como modelo
                 </button>
                 <button
                   onClick={(e) => {
@@ -1440,10 +1443,12 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                     setBiblioteca(true);
                   }}
                   className="btn btn-ghost w-full justify-start"
-                  title="Crea un borrador desde un modelo u otro cliente; el actual sigue activo hasta que actives el nuevo"
+                  title="Crea un borrador desde un modelo guardado o el plan de otro cliente; el actual sigue activo hasta que actives el nuevo"
                 >
-                  <Archive size={15} /> Empezar desde otro plan
+                  <Archive size={15} /> Copiar de un modelo o de otro cliente
                 </button>
+
+                <GrupoMenu label="Word · ida y vuelta" />
                 <button
                   onClick={(e) => {
                     e.currentTarget.closest("details")?.removeAttribute("open");
@@ -1451,36 +1456,44 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                   }}
                   disabled={accionDoc !== null}
                   className="btn btn-ghost w-full justify-start disabled:opacity-60"
-                  title="Editar el plan en Word"
+                  title="Descarga el plan en Word para editarlo a mano"
                 >
                   {accionDoc === "docx" ? <Spinner /> : <FileText size={15} />}
-                  {accionDoc === "docx" ? "Preparando…" : "Word editable"}
+                  {accionDoc === "docx" ? "Preparando…" : "Descargar Word editable"}
                 </button>
-                <label
-                  className="btn btn-ghost w-full cursor-pointer justify-start"
-                  title="Revisar cambios antes de aplicarlos"
-                >
-                  {importing ? <Spinner /> : <FileUp size={15} />} Subir Word editado
-                  <input
-                    type="file"
-                    accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    className="hidden"
-                    disabled={importing}
-                    onChange={(e) => {
-                      e.currentTarget.closest("details")?.removeAttribute("open");
-                      onWordPicked(e.target.files?.[0]);
-                      e.target.value = ""; // permite volver a subir el mismo archivo
-                    }}
-                  />
-                </label>
+                {/* Si el atajo de "Subir Word editado" ya está a la vista en la
+                    fila principal (justo tras descargarlo), no lo dupliques
+                    aquí: dos botones para la misma acción a la vez confunde
+                    más de lo que ayuda. */}
+                {!wordDescargado && (
+                  <label
+                    className="btn btn-ghost w-full cursor-pointer justify-start"
+                    title="Sube el Word ya editado: se revisan los cambios antes de aplicarlos"
+                  >
+                    {importing ? <Spinner /> : <FileUp size={15} />} Subir Word editado
+                    <input
+                      type="file"
+                      accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      className="hidden"
+                      disabled={importing}
+                      onChange={(e) => {
+                        e.currentTarget.closest("details")?.removeAttribute("open");
+                        onWordPicked(e.target.files?.[0]);
+                        e.target.value = ""; // permite volver a subir el mismo archivo
+                      }}
+                    />
+                  </label>
+                )}
+
+                <GrupoMenu label="Documento de otro origen" />
                 {/* La dieta/rutina que traiga el cliente, en cualquier formato:
                     la IA la transcribe a un BORRADOR nuevo (el actual sigue
                     activo hasta que el coach active el nuevo). */}
                 <label
                   className="btn btn-ghost w-full cursor-pointer justify-start"
-                  title="La IA transcribe la dieta o rutina que traiga el cliente; las cifras las pone el sistema y tú confirmas"
+                  title="La IA transcribe la dieta o rutina que traiga el cliente (PDF, Word, fotos…); las cifras las pone el sistema y tú confirmas"
                 >
-                  {importandoDoc ? <Spinner /> : <FileUp size={15} />} Importar desde documento
+                  {importandoDoc ? <Spinner /> : <FileUp size={15} />} Importar plan ajeno
                   <input
                     type="file"
                     accept={ACEPTA_DOCUMENTOS}
@@ -2816,6 +2829,18 @@ function Rasgo({ label, valor }: { label: string; valor: string }) {
       <span className="font-semibold uppercase tracking-wide text-zinc-500">{label}</span>{" "}
       <span className="text-zinc-300">{valor}</span>
     </span>
+  );
+}
+
+/** Separador con etiqueta dentro del menú "Más" de Planificación: agrupa
+ *  acciones emparentadas (Versiones / Biblioteca / Word / Documento ajeno)
+ *  para que el desplegable se lea de un vistazo en vez de como una lista
+ *  plana de seis verbos sueltos. */
+function GrupoMenu({ label }: { label: string }) {
+  return (
+    <p className="mb-0.5 mt-1.5 px-2.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-500 first:mt-0.5">
+      {label}
+    </p>
   );
 }
 
