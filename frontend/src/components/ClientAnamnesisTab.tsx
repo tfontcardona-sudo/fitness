@@ -77,6 +77,10 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange, reloadKey =
   // Por defecto la ficha se VE (ordenada por colores, sin campos editables);
   // el formulario solo aparece si el coach pulsa "Editar datos".
   const [editMode, setEditMode] = useState(false);
+  // "Adjuntos leídos" es la única lista de esta pestaña sin el pliegue que
+  // ya llevan VNotes/VCard: un cliente con varias analíticas volcaba todas a
+  // la vez, con TODAS sus alertas ámbar desplegadas.
+  const [showAllAdjuntos, setShowAllAdjuntos] = useState(false);
 
   useEffect(() => {
     // Solo el CUESTIONARIO: con los adjuntos (analítica, informes) en la
@@ -316,11 +320,20 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange, reloadKey =
         </details>
       )}
 
-      {lectura.attachments.length > 0 && (
+      {lectura.attachments.length > 0 && (() => {
+        // Mismo criterio que VNotes: nunca se pliega uno con alerta — el corte
+        // visible respeta que las analíticas fuera de rango se vean siempre.
+        const conAlerta = lectura.attachments.filter((a) => a.alerts.length > 0).length;
+        const cut = Math.max(2, conAlerta);
+        const visibles = showAllAdjuntos ? lectura.attachments : lectura.attachments.slice(0, cut);
+        const ocultos = lectura.attachments.length - visibles.length;
+        return (
         <div className="card p-4">
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">Adjuntos leídos</p>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Adjuntos leídos {lectura.attachments.length > 1 ? `· ${lectura.attachments.length}` : ""}
+          </p>
           <ul className="space-y-2">
-            {lectura.attachments.map((a) => {
+            {visibles.map((a) => {
               const fecha = a.document_date
                 ? (Number.isNaN(new Date(a.document_date).getTime())
                     ? a.document_date
@@ -339,8 +352,17 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange, reloadKey =
               );
             })}
           </ul>
+          {ocultos > 0 && (
+            <button
+              onClick={() => setShowAllAdjuntos(true)}
+              className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-300"
+            >
+              <ChevronDown size={13} /> Ver todos ({ocultos} más)
+            </button>
+          )}
         </div>
-      )}
+        );
+      })()}
 
       {analysis && (
         <div className="card p-4">

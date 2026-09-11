@@ -407,12 +407,9 @@ export default function ClientProfilePage() {
                 </dd>
               </div>
               <PhoneRow client={client} onSaved={reload} />
-              <Row label="Edad" value={age ? `${age} años` : "—"} />
               {/* Filas HIPERMEDIA: pulsar el dato lleva al apartado que lo trata. */}
               <Row label="Objetivo" value={client.goal_type ? GOAL_LABEL[client.goal_type] : "—"}
                 onGo={() => changeTab("planificacion")} />
-              <Row label="Nivel" value={client.level ? LEVEL_LABEL[client.level] : "—"}
-                onGo={() => changeTab("anamnesis")} />
               {hasTraining && (
                 <Row label="Entreno" value={client.training_place ? PLACE_LABEL[client.training_place] : "—"}
                   onGo={() => changeTab("anamnesis")} />
@@ -421,12 +418,26 @@ export default function ClientProfilePage() {
               <Row label="Dieta" value={planDiet ?? "—"}
                 faint={planDiet == null ? "se llena al generar la planificación" : undefined}
                 onGo={() => changeTab("planificacion")} />
-              {/* Antigüedad del cliente: cuánto lleva en la asesoría, de un vistazo. */}
-              <Row label="Cliente desde" value={formatDate(client.created_at)}
-                faint={relativeDays(client.created_at)} />
-              {client.payment_status === "paid" && client.paid_at && (
-                <Row label="Último pago" value={formatDate(client.paid_at)} />
-              )}
+              {/* Lo de un vistazo (Plan/Pago/Teléfono/Objetivo/Dieta) queda
+                  arriba; lo de consulta ocasional (edad, nivel, antigüedad,
+                  último pago) se pliega — mismo criterio que "Cobros" justo
+                  debajo, que ya vivía tras su propio desplegable. */}
+              <details className="pt-1">
+                <summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-zinc-300">
+                  Más datos
+                </summary>
+                <div className="mt-2 space-y-2.5">
+                  <Row label="Edad" value={age ? `${age} años` : "—"} />
+                  <Row label="Nivel" value={client.level ? LEVEL_LABEL[client.level] : "—"}
+                    onGo={() => changeTab("anamnesis")} />
+                  {/* Antigüedad del cliente: cuánto lleva en la asesoría. */}
+                  <Row label="Cliente desde" value={formatDate(client.created_at)}
+                    faint={relativeDays(client.created_at)} />
+                  {client.payment_status === "paid" && client.paid_at && (
+                    <Row label="Último pago" value={formatDate(client.paid_at)} />
+                  )}
+                </div>
+              </details>
             </dl>
             {/* CUÁNTO ha pagado este cliente: el backend ya filtraba el feed
                 por cliente y ninguna pantalla lo pedía, así que "¿le cobré la

@@ -652,22 +652,26 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
                 {Array.isArray(content.plan_adjustments) && content.plan_adjustments.length > 0 && (
                   <div>
                     <SubTitle icon={Sparkles} text="Decisiones para la próxima quincena" />
+                    {/* Mismo criterio que "Fuerza": las primeras 3 a la vista,
+                        el resto plegado — una revisión a fondo puede traer
+                        6-8 decisiones y no todas piden la misma atención. */}
                     <div className="space-y-1 text-sm">
-                      {content.plan_adjustments.map((a: any, i: number) => (
-                        <div key={i} className="rounded-lg px-3 py-2" style={{ background: "var(--surface-raised)" }}>
-                          <div className="flex flex-wrap items-baseline gap-2">
-                            {a.area && (
-                              <span className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
-                                style={{ background: "color-mix(in srgb, var(--brand-accent) 14%, transparent)", color: "var(--brand-accent)" }}>
-                                {a.area}
-                              </span>
-                            )}
-                            <span className="font-medium text-zinc-200">{a.change}</span>
-                          </div>
-                          {a.reason && <p className="mt-0.5 text-xs text-zinc-500">{a.reason}</p>}
-                        </div>
+                      {content.plan_adjustments.slice(0, 3).map((a: any, i: number) => (
+                        <PlanAdjustmentRow key={i} a={a} />
                       ))}
                     </div>
+                    {content.plan_adjustments.length > 3 && (
+                      <details className="mt-1">
+                        <summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-zinc-300">
+                          Ver las {content.plan_adjustments.length} decisiones
+                        </summary>
+                        <div className="mt-1 space-y-1 text-sm">
+                          {content.plan_adjustments.slice(3).map((a: any, i: number) => (
+                            <PlanAdjustmentRow key={i} a={a} />
+                          ))}
+                        </div>
+                      </details>
+                    )}
                   </div>
                 )}
                 {/* La narrativa de los cambios repite las decisiones con más
@@ -1103,6 +1107,25 @@ function FbArea({ label, value, onChange, rows = 3 }: { label: string; value: st
 
 /** Fila de fuerza de un ejercicio (e1RM + delta + detalle). Compartida entre
  *  el top 3 visible y la lista completa plegada. */
+/** Una fila de "Decisiones para la próxima quincena" — extraída para poder
+ *  repetirla igual en la parte visible y en la plegada. */
+function PlanAdjustmentRow({ a }: { a: any }) {
+  return (
+    <div className="rounded-lg px-3 py-2" style={{ background: "var(--surface-raised)" }}>
+      <div className="flex flex-wrap items-baseline gap-2">
+        {a.area && (
+          <span className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+            style={{ background: "color-mix(in srgb, var(--brand-accent) 14%, transparent)", color: "var(--brand-accent)" }}>
+            {a.area}
+          </span>
+        )}
+        <span className="font-medium text-zinc-200">{a.change}</span>
+      </div>
+      {a.reason && <p className="mt-0.5 text-xs text-zinc-500">{a.reason}</p>}
+    </div>
+  );
+}
+
 function StrengthRow({ s }: { s: any }) {
   return (
     <li className="rounded-lg px-3 py-2" style={{ background: "var(--surface-raised)" }}>
