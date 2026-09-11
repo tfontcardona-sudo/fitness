@@ -986,9 +986,10 @@ def list_alerts(db: Session = Depends(get_db)) -> dict:
 
 @router.get("/video-calls/agenda")
 def video_calls_agenda(db: Session = Depends(get_db)) -> dict:
-    """Agenda de videollamadas AGENDADAS (con Meet): día, hora, cliente y enlace.
-    Salen ordenadas por fecha y permanecen hasta que el coach las confirma como
-    realizadas (las ya pasadas sin confirmar salen marcadas para revisar)."""
+    """Agenda de CITAS agendadas: videollamadas (con su Meet) y visitas al
+    centro (con su dirección). Día, hora y cliente, ordenadas por fecha; se
+    quedan hasta que el coach las confirma como realizadas (las ya pasadas sin
+    confirmar salen marcadas para revisar)."""
     from app.models import VideoCall
     from app.services.portal import format_when_es, today_local
 
@@ -1003,12 +1004,15 @@ def video_calls_agenda(db: Session = Depends(get_db)) -> dict:
         # La agenda del panel es la de la marca ACTIVA: el coach no ve en la
         # de Professional las videollamadas de sus clientes de DQR.
         _q = _q.where(VideoCall.client_id.in_(select(Client.id).where(_cartera)))
+    from app.services import citas
+
     rows = db.scalars(_q).all()
     out = []
     for vc in rows:
         client = db.get(Client, vc.client_id)
         if client is None or client.status == "inactive":
             continue
+        modo = citas.modo_de_cita(vc)
         out.append({
             "id": vc.id,
             "client_id": vc.client_id,
@@ -1017,6 +1021,10 @@ def video_calls_agenda(db: Session = Depends(get_db)) -> dict:
             "when_label": format_when_es(vc.scheduled_at),
             "duration_min": vc.duration_min,
             "meet_url": vc.meet_url,
+            # Qué cita es y DÓNDE: una visita al centro no tiene enlace al que
+            # unirse, tiene una dirección a la que ir.
+            "modo": modo,
+            "lugar": citas.lugar(db, client) if modo == citas.PRESENCIAL else None,
             "is_past": vc.scheduled_for is not None and vc.scheduled_for < today,
         })
     return {"calls": out, "count": len(out)}

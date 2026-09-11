@@ -61,7 +61,7 @@ from app.services import coach_patterns
 from app.services.ai_credit import proposito
 from app.services.branding import (cartera_de_la_marca, marca_activa,
                                    marca_de_cliente)
-from app.services.plan_delivery import documento_simple
+from app.services.plan_delivery import documento_sin_educativo
 
 
 def _links(client: Client) -> PortalLinkOut:
@@ -1520,6 +1520,58 @@ def _confirm_meet(db: Session, client: Client, vc, *, start_aware: datetime,
             logging.getLogger("app.google").exception("push de videollamada fallido")
 
 
+def _confirmar_visita(db: Session, client: Client, vc, *, start_aware: datetime,
+                     duration_min: int) -> None:
+    """Confirma una VISITA AL CENTRO: deja la cita en 'scheduled' y avisa al
+    cliente con la DIRECCIÓN en vez de un enlace. NO hace commit.
+
+    No toca Google a propósito: un centro no tiene por qué tener una cuenta
+    conectada, y exigirla dejaba a Professional sin poder cerrar una sola cita
+    (el ciclo se quedaba atascado en «pendiente de agendar» para siempre)."""
+    from zoneinfo import ZoneInfo
+
+    from app.services import citas
+    from app.services import email_templates as tpl
+    from app.services import push as push_svc
+    from app.services.email_service import EmailService, brand_from_config
+    from app.services.portal import format_when_es
+
+    if start_aware.tzinfo is None:
+        start_aware = start_aware.replace(tzinfo=ZoneInfo(settings.tz))
+    when_label = format_when_es(start_aware)
+    donde = citas.lugar(db, client)
+
+    vc.status = "scheduled"
+    vc.modo = citas.PRESENCIAL
+    vc.scheduled_at = start_aware
+    vc.scheduled_for = start_aware.date()
+    vc.duration_min = duration_min
+    # Una visita no tiene enlace ni evento: si venía de una videollamada
+    # reconvertida, se limpian (un Meet muerto en la tarjeta es peor que nada).
+    vc.meet_url = None
+    vc.google_event_id = None
+    vc.google_html_link = None
+    log_event(db, "client", client.id, "visita_presencial_agendada",
+              {"period_index": vc.period_index, "at": start_aware.isoformat()})
+
+    brand = brand_from_config(db)
+    _parts = (client.full_name or "").split()
+    first_name = _parts[0] if _parts else "hola"
+    try:
+        subject, html = tpl.visita_presencial_agendada(
+            brand, first_name, when_label, donde, duration_min)
+        EmailService(db).send(to=client.email, subject=subject, html=html,
+                              kind="visita_presencial_agendada", client=client)
+    except Exception:  # noqa: BLE001 — el aviso nunca tumba el agendado
+        import logging
+        logging.getLogger("app.citas").exception("email de visita fallido")
+    try:
+        push_svc.notify_visita_presencial(db, client, when_label, donde)
+    except Exception:  # noqa: BLE001
+        import logging
+        logging.getLogger("app.citas").exception("push de visita fallido")
+
+
 def _future_local(raw: datetime) -> datetime:
     """Normaliza a la zona del coach y exige que sea futura (si no, 422)."""
     from zoneinfo import ZoneInfo
@@ -1552,10 +1604,9 @@ def schedule_video_call_meet(client_id: int, body: VideoCallMeetIn,
     from app.schemas.entities import VideoCallOut
     from app.services import google_calendar as gcal
 
+    from app.services import citas
+
     client = _client_or_404_docs(db, client_id)
-    if not gcal.is_connected(db):
-        raise HTTPException(status.HTTP_409_CONFLICT,
-                            "Conecta tu cuenta de Google en Ajustes para agendar por Meet.")
     if body.duration_min < 5 or body.duration_min > 240:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             "La duración debe estar entre 5 y 240 minutos.")
@@ -1566,7 +1617,17 @@ def schedule_video_call_meet(client_id: int, body: VideoCallMeetIn,
     if vc is None:
         vc = VideoCall(client_id=client_id, period_index=body.period_index)
         db.add(vc)
-    _confirm_meet(db, client, vc, start_aware=start_aware, duration_min=body.duration_min)
+    modo = citas.modo_de_cita(vc) if vc.id else citas.modo_de_marca(db, client)
+    if modo == citas.PRESENCIAL:
+        _confirmar_visita(db, client, vc, start_aware=start_aware,
+                          duration_min=body.duration_min)
+    else:
+        if not gcal.is_connected(db):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "Conecta tu cuenta de Google en Ajustes para agendar por Meet.")
+        _confirm_meet(db, client, vc, start_aware=start_aware,
+                      duration_min=body.duration_min)
     db.commit()
     db.refresh(vc)
     return VideoCallOut.model_validate(vc).model_dump(mode="json")
@@ -1594,15 +1655,23 @@ def accept_video_call(client_id: int, call_id: int, body: VideoCallAcceptIn,
     if vc.scheduled_at is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             "No hay una fecha propuesta que aceptar.")
+    from app.services import citas
+
     client = _client_or_404_docs(db, client_id)
-    if not gcal.is_connected(db):
-        raise HTTPException(status.HTTP_409_CONFLICT,
-                            "Conecta tu cuenta de Google en Ajustes para agendar por Meet.")
     if body.duration_min < 5 or body.duration_min > 240:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             "La duración debe estar entre 5 y 240 minutos.")
     start_aware = _future_local(vc.scheduled_at)
-    _confirm_meet(db, client, vc, start_aware=start_aware, duration_min=body.duration_min)
+    if citas.es_presencial(vc):
+        _confirmar_visita(db, client, vc, start_aware=start_aware,
+                          duration_min=body.duration_min)
+    else:
+        if not gcal.is_connected(db):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "Conecta tu cuenta de Google en Ajustes para agendar por Meet.")
+        _confirm_meet(db, client, vc, start_aware=start_aware,
+                      duration_min=body.duration_min)
     db.commit()
     db.refresh(vc)
     return VideoCallOut.model_validate(vc).model_dump(mode="json")
@@ -2180,9 +2249,9 @@ def generate_client_plan(
         goal_weight_kg=client.goal_weight_kg,
         strict_free_meal=bool(client.strict_free_meal_enabled),
         goal_deadline=client.goal_deadline.isoformat() if client.goal_deadline else None,
-        # Si la marca del cliente entrega el documento reducido, el educativo no
-        # se imprime: no se genera y se ahorra una llamada a la IA por plan.
-        documento_simple=documento_simple(db, client),
+        # Si el documento de la marca del cliente no imprime el educativo, no se
+        # genera: una llamada a la IA menos por plan, sin perder nada visible.
+        documento_simple=documento_sin_educativo(db, client),
         marca_slug=marca_de_cliente(client, db).slug,
         # Las COSTUMBRES del coach, contadas de sus propias correcciones. Es
         # aprendizaje sin coste: son cuentas sobre `plan_edits`, no una llamada

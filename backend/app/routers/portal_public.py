@@ -655,7 +655,7 @@ def portal_video_call(
         ).order_by(VideoCall.scheduled_for.asc()).limit(1)
     )
     if sched is not None and sched.scheduled_at:
-        return {"state": "scheduled", "call": {
+        return {"state": "scheduled", **_modo_de(db, client, sched), "call": {
             "scheduled_at": sched.scheduled_at.isoformat(),
             "when_label": portal_svc.format_when_es(sched.scheduled_at),
             "duration_min": sched.duration_min,
@@ -671,17 +671,31 @@ def portal_video_call(
         VideoCall.client_id == client.id,
         VideoCall.period_index == last_review.period_index))
     if vc is None:
-        return {"state": "book", "period_index": last_review.period_index}
+        return {"state": "book", "period_index": last_review.period_index,
+                **_modo_de(db, client, None)}
     if vc.status == "proposed" and vc.scheduled_at:
-        return {"state": "proposed", "call": {
+        return {"state": "proposed", **_modo_de(db, client, vc), "call": {
             "scheduled_at": vc.scheduled_at.isoformat(),
             "when_label": portal_svc.format_when_es(vc.scheduled_at),
         }}
     if vc.status == "pending_manual":
-        return {"state": "pending_manual"}
+        return {"state": "pending_manual", **_modo_de(db, client, vc)}
     if vc.status in ("proposed",):  # propuesta sin fecha (no debería): reofrecer
-        return {"state": "book", "period_index": last_review.period_index}
+        return {"state": "book", "period_index": last_review.period_index,
+                **_modo_de(db, client, None)}
     return {"state": "none"}
+
+
+def _modo_de(db: Session, client: Client, vc) -> dict:
+    """Qué es esta cita y dónde. Si ya existe la fila manda lo SELLADO en ella;
+    si aún no hay cita, lo que hace hoy la marca del cliente."""
+    from app.services import citas
+
+    modo = citas.modo_de_cita(vc) if vc is not None else citas.modo_de_marca(db, client)
+    out = {"modo": modo, "modo_label": citas.etiqueta(modo)}
+    if modo == citas.PRESENCIAL:
+        out["lugar"] = citas.lugar(db, client)
+    return out
 
 
 class VideoCallProposeIn(BaseModel):
@@ -719,15 +733,21 @@ def portal_video_call_propose(
     vc = db.scalar(select(VideoCall).where(
         VideoCall.client_id == client.id,
         VideoCall.period_index == last_review.period_index))
+    from app.services import citas
+
+    modo = citas.modo_de_cita(vc) if vc is not None else citas.modo_de_marca(db, client)
+    que_es = citas.etiqueta(modo)
     if vc is not None and vc.status in ("scheduled", "done"):
-        raise HTTPException(status.HTTP_409_CONFLICT,
-                            "Tu videollamada ya está agendada")
+        raise HTTPException(status.HTTP_409_CONFLICT, f"Tu {que_es} ya está agendada")
     if vc is not None and vc.status == "pending_manual":
         raise HTTPException(status.HTTP_409_CONFLICT,
-                            "Tu coach está agendando la videollamada contigo")
+                            f"Tu coach está agendando la {que_es} contigo")
     if vc is None:
         vc = VideoCall(client_id=client.id, period_index=last_review.period_index)
         db.add(vc)
+    # El modo se SELLA aquí con el de la marca del cliente: cambiar el switch
+    # después no convierte en llamada una visita ya acordada.
+    vc.modo = modo
     vc.status = "proposed"
     vc.scheduled_at = start_aware
     vc.scheduled_for = start_aware.date()
@@ -743,7 +763,7 @@ def portal_video_call_propose(
     except Exception:  # el push nunca debe tumbar la propuesta
         pass
     db.commit()
-    return {"state": "proposed", "call": {
+    return {"state": "proposed", **_modo_de(db, client, vc), "call": {
         "scheduled_at": start_aware.isoformat(),
         "when_label": portal_svc.format_when_es(start_aware),
     }}
@@ -778,8 +798,12 @@ def portal_video_call_reschedule(
         ).order_by(VideoCall.scheduled_for.asc()).limit(1)
     )
     if vc is None:
-        raise HTTPException(status.HTTP_409_CONFLICT,
-                            "No tienes ninguna videollamada agendada para reprogramar")
+        from app.services import citas
+
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"No tienes ninguna {citas.etiqueta(citas.modo_de_marca(db, client))} "
+            "agendada para reprogramar")
 
     tz = ZoneInfo(settings.tz)
     raw = body.start_at
@@ -814,7 +838,7 @@ def portal_video_call_reschedule(
     except Exception:  # el push nunca debe tumbar la reprogramación
         pass
     db.commit()
-    return {"state": "proposed", "call": {
+    return {"state": "proposed", **_modo_de(db, client, vc), "call": {
         "scheduled_at": start_aware.isoformat(),
         "when_label": portal_svc.format_when_es(start_aware),
     }}

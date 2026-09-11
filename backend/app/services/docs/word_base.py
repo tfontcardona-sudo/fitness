@@ -350,7 +350,8 @@ def clean_table(doc: Document, headers: list[str], rows: list[list[str]],
                 brand: DocBrand, col_widths: list[int] | None = None,
                 header_color: str | None = None, header_colors: list[str] | None = None,
                 header_text_color: str = "0A0A0F", font_pt: float = 9.5,
-                cant_split_rows: bool = True, keep_together: bool = True):
+                cant_split_rows: bool = True, keep_together: bool = True,
+                row_fills: tuple[str, str] = ("FFFFFF", "F5F0E8")):
     """Tabla limpia con cabecera de color, ancho explícito y padding (skill).
 
     header_color: color único de la cabecera (por defecto el de marca).
@@ -362,7 +363,10 @@ def clean_table(doc: Document, headers: list[str], rows: list[list[str]],
         de recortarse y perder contenido.
     keep_together: True intenta mantener la tabla entera en una página. Ponlo a
         False en tablas potencialmente largas (semanal, grupos de alimentos,
-        cambios) para que paginen limpiamente repitiendo la cabecera."""
+        cambios) para que paginen limpiamente repitiendo la cabecera.
+    row_fills: (par, impar) — el zebrado de las filas. Por defecto el crema de
+        DQR; una marca con otra paleta pasa el suyo. SIEMPRE opaco: sobre
+        relleno transparente el texto se lee encima de lo que haya detrás."""
     spacer(doc, SPACE_INNER)
     table = doc.add_table(rows=1, cols=len(headers))
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -390,7 +394,8 @@ def clean_table(doc: Document, headers: list[str], rows: list[list[str]],
             _set_cell_margins(cells[i])
             # SIEMPRE relleno opaco (blanco/crema) para que el texto sea legible
             # aunque la fila quede sobre la banda de comida de la cabecera.
-            _shade_cell(cells[i], "F5F0E8" if r_idx % 2 == 1 else "FFFFFF")
+            _shade_cell(cells[i], (row_fills[1] if r_idx % 2 == 1
+                                   else row_fills[0]).lstrip("#"))
             # Valor LISTA = varias líneas en la celda, cada una su párrafo, con
             # etiqueta opcional en negrita: [("Cereales", "avena, arroz…"), …]
             # — el formato de subgrupos del plan de referencia.

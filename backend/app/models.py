@@ -491,6 +491,10 @@ class BrandConfig(Base):
     # tarjeta del plato y sección educativa) o "simple" (solo el plan). Los
     # NÚMEROS no dependen de esto: salen del mismo motor en las dos.
     doc_variant: Mapped[str | None] = mapped_column(String(20))
+    # Cómo son las citas de revisión de esta marca (mig. 0052): "videollamada"
+    # (por defecto, y lo que hace una asesoría online) o "presencial" — una
+    # VISITA al centro, sin Meet y sin depender de que haya un Google conectado.
+    cita_modo: Mapped[str | None] = mapped_column(String(16))
     # Dirección física (mig. 0045): una asesoría online no la necesita, un
     # CENTRO sí — es de lo primero que busca su cliente.
     contact_address: Mapped[str | None] = mapped_column(String(200))
@@ -609,6 +613,10 @@ class VideoCall(Base):
     meet_url: Mapped[str | None] = mapped_column(String(500))
     google_event_id: Mapped[str | None] = mapped_column(String(255))
     google_html_link: Mapped[str | None] = mapped_column(String(500))
+    # "videollamada" (NULL incluido: es lo de siempre) o "presencial" — visita
+    # al centro. Se SELLA al crear la cita con el modo de la marca del cliente:
+    # cambiar la marca no puede convertir en llamada una visita ya confirmada.
+    modo: Mapped[str | None] = mapped_column(String(16))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow

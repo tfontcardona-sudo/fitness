@@ -57,11 +57,31 @@ def doc_brand(db: Session, client=None):
                     logo_path=logo_abs)
 
 
-def documento_simple(db: Session, client=None) -> bool:
-    """¿Esta marca quiere el documento reducido? Lo dice su perfil
-    (`doc_variant`), no el tipo de plan: es una decisión de marca."""
+def variante_de_documento(db: Session, client=None) -> str:
+    """Qué DOCUMENTO le toca a este cliente. Lo dice el perfil de su marca
+    (`doc_variant`), no el tipo de plan: es una decisión de marca.
+
+    · 'completo' — el documento de DQR con todo su material de consulta.
+    · 'simple'   — el mismo, sin índice, plato ni sección educativa.
+    · 'professional' — otro documento entero (`plan_doc_pf`): negro y dorado,
+      estructura propia y la sección del ciclo del centro.
+    """
     cfg = fila_de_marca(db, client)
-    return (getattr(cfg, "doc_variant", None) or "completo") == "simple"
+    return (getattr(cfg, "doc_variant", None) or "completo").strip().lower()
+
+
+def documento_simple(db: Session, client=None) -> bool:
+    """¿La versión reducida del documento de DQR?"""
+    return variante_de_documento(db, client) == "simple"
+
+
+def documento_sin_educativo(db: Session, client=None) -> bool:
+    """¿El documento de esta marca IMPRIME la sección educativa?
+
+    Ni el reducido de DQR ni el de Professional la llevan. Lo que no se
+    imprime no se genera: es una llamada a la IA menos por plan, sin perder
+    nada que el cliente vaya a leer."""
+    return variante_de_documento(db, client) in ("simple", "professional")
 
 
 def build_plan_pdf(db: Session, plan: Plan, client: Client,
@@ -88,11 +108,9 @@ def build_plan_pdf(db: Session, plan: Plan, client: Client,
         for ex in db.scalars(select(Exercise).where(Exercise.id.in_(ex_ids))):
             exercise_names[ex.id] = ex.canonical_name
 
-    data = generate_plan_doc(
+    variante = variante_de_documento(db, client)
+    comun = dict(
         brand=doc_brand(db, client),
-        # Cuánto documento quiere la marca DEL CLIENTE: la simple se queda con
-        # el plan (sin índice, tarjeta del plato ni sección educativa).
-        simple=documento_simple(db, client),
         client_name=client.full_name,
         month_index=plan.month_index,
         goal_type=client.goal_type,
@@ -118,6 +136,20 @@ def build_plan_pdf(db: Session, plan: Plan, client: Client,
         # botón y la fecha no identificaba nada).
         generated_on=(plan.created_at.date() if getattr(plan, "created_at", None) else None),
     )
+
+    if variante == "professional":
+        # Documento PROPIO de Professional: el centro entrega otra cosa, no el
+        # de DQR repintado. Las cifras y los filtros son los mismos; lo que
+        # cambia es lo que el cliente lee. `education` no viaja: este documento
+        # no lleva sección educativa (se da en la sala).
+        from app.services.docs.plan_doc_pf import generate_plan_doc_pf
+
+        comun.pop("education", None)
+        data = generate_plan_doc_pf(**comun)
+    else:
+        # Cuánto documento quiere la marca DEL CLIENTE: la simple se queda con
+        # el plan (sin índice, tarjeta del plato ni sección educativa).
+        data = generate_plan_doc(simple=(variante == "simple"), **comun)
 
     ascii_name = unicodedata.normalize("NFKD", client.full_name).encode("ascii", "ignore").decode()
     safe = "".join(c if c.isalnum() else "_" for c in ascii_name).strip("_").lower() or "cliente"

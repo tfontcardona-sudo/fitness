@@ -416,6 +416,9 @@ export interface BrandConfigOut {
   plans_photo_path: string | null;
   // Enlace de reservas de la videollamada (Google Calendar/Meet, Calendly…).
   meet_url: string | null;
+  /** Cómo son las citas de revisión de esta marca: "videollamada" (por defecto)
+   *  o "presencial" — una visita al centro, sin Meet y sin Google. */
+  cita_modo?: "videollamada" | "presencial" | null;
   // --- PERFIL DE MARCA (el switch). Un sistema, dos negocios. ---
   slug: string;
   activa: boolean;
@@ -473,9 +476,12 @@ export interface VideoCallOut {
   duration_min?: number | null;
   meet_url?: string | null;
   google_html_link?: string | null;
+  /** "videollamada" (por defecto y para los datos de siempre) o "presencial"
+   *  — una VISITA al centro: sin Meet y sin Google. */
+  modo?: "videollamada" | "presencial" | null;
 }
 
-/** Fila de la agenda de videollamadas del coach (Panel). */
+/** Fila de la AGENDA del coach (Panel): videollamadas y visitas al centro. */
 export interface VideoCallAgendaItem {
   id: number;
   client_id: number;
@@ -484,6 +490,9 @@ export interface VideoCallAgendaItem {
   when_label: string;     // "jueves 21 de julio a las 17:00"
   duration_min: number | null;
   meet_url: string | null;
+  modo?: "videollamada" | "presencial" | null;
+  /** Dirección del centro (solo en las presenciales). */
+  lugar?: string | null;
   is_past: boolean;       // pasada sin confirmar (a marcar como realizada)
 }
 

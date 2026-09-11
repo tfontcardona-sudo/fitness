@@ -3,7 +3,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { Link } from "react-router-dom";
 import { libre } from "../lib/accordion";
 import { ancla } from "../lib/anchors";
-import { Sparkles, AlertTriangle, Download, MessageSquare, MessageCircle, Mail, Video, Target, TrendingUp, BarChart3, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
+import { Sparkles, AlertTriangle, Download, MessageSquare, MessageCircle, Mail, Video, MapPin, Target, TrendingUp, BarChart3, CheckCircle2, Pencil, Save, X, Copy } from "lucide-react";
 import { api, getToken } from "../lib/api";
 import { feedbackBody, feedbackMessage, openWhatsApp, videoCallModifyMessage, videoCallScheduledMessage, waPhone } from "../lib/whatsapp";
 import { copiarConAviso } from "../lib/clipboard";
@@ -385,6 +385,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
             periodIndex={vc.period_index}
             call={vc}
             googleConnected={googleConnected}
+            marcaPresencial={brand?.cita_modo === "presencial"}
             onModify={modifyVideoCall}
             onShareMeet={shareMeetWhatsApp}
             onChanged={loadCalls}
@@ -414,6 +415,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
               periodIndex={lastReviewIdx}
               call={callForLastReview}
               googleConnected={googleConnected}
+              marcaPresencial={brand?.cita_modo === "presencial"}
               onModify={modifyVideoCall}
               onShareMeet={shareMeetWhatsApp}
               onChanged={loadCalls}
@@ -426,6 +428,7 @@ export function ClientFeedbackTab({ client, onClientChanged, onGoPlan }: { clien
           periodIndex={lastReviewIdx}
           call={callForLastReview}
           googleConnected={googleConnected}
+          marcaPresencial={brand?.cita_modo === "presencial"}
           onModify={modifyVideoCall}
           onShareMeet={shareMeetWhatsApp}
           onChanged={loadCalls}
@@ -737,16 +740,25 @@ function localToday(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
-function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify, onShareMeet, onChanged }: {
+function VideoCallCycle({ clientId, periodIndex, call, googleConnected, marcaPresencial,
+                         onModify, onShareMeet, onChanged }: {
   clientId: number;
   periodIndex: number;
   call: VideoCallOut | null;
   googleConnected: boolean;
+  /** La marca de ESTE cliente hace visitas al centro, no videollamadas. Solo
+   *  decide cuando aún no hay cita: si la fila existe, manda lo sellado en
+   *  ella (una visita acordada no se convierte en llamada por un switch). */
+  marcaPresencial: boolean;
   onModify: (call: VideoCallOut) => void;
   onShareMeet: (call: VideoCallOut) => void;
   onChanged: () => void;
 }) {
   const toast = useToast();
+  const presencial = call ? call.modo === "presencial" : marcaPresencial;
+  // A una visita al centro no le hace falta Google: exigirlo dejaba el ciclo
+  // de un gimnasio atascado para siempre en «pendiente de agendar».
+  const listoParaAgendar = presencial || googleConnected;
   const [gDate, setGDate] = useState("");       // agendar a mano: día
   const [gTime, setGTime] = useState("17:00");  // …hora
   const [gDur, setGDur] = useState(30);         // …duración (min)
@@ -785,7 +797,7 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
     </select>
   );
 
-  const notConnectedNote = !googleConnected ? (
+  const notConnectedNote = !listoParaAgendar ? (
     <p className="text-[11px]" style={{ color: "#9A6B15" }}>
       Sin Google no hay Meet.{" "}
       <Link to="/recursos?tab=enlaces" className="font-semibold underline underline-offset-2">
@@ -807,16 +819,18 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
         {durationSelect}
         <button
           className="btn btn-primary !px-3 !py-1.5 text-xs"
-          disabled={!gDate || !gTime || busy || !googleConnected || gDatePast}
-          title={!googleConnected ? "Conecta Google en Recursos → Página de enlaces"
+          disabled={!gDate || !gTime || busy || !listoParaAgendar || gDatePast}
+          title={!listoParaAgendar ? "Conecta Google en Recursos → Página de enlaces"
             : !gDate || !gTime ? "Elige el día y la hora"
             : gDatePast ? "Fecha pasada · elige otra" : undefined}
           onClick={() => run(
             () => api.scheduleVideoCallMeet(clientId, periodIndex, `${gDate}T${gTime}`, gDur),
-            "Videollamada agendada en Meet y enlace enviado al cliente",
+            presencial ? "Visita agendada · el cliente ya tiene el día y la dirección"
+                       : "Videollamada agendada en Meet y enlace enviado al cliente",
           )}
         >
-          <Video size={13} /> Agendar con Meet
+          {presencial ? <><MapPin size={13} /> Agendar la visita</>
+                      : <><Video size={13} /> Agendar con Meet</>}
         </button>
       </div>
       {gDatePast && (
@@ -831,7 +845,8 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
       {...ancla(call ? `feedback.videollamada.${call.id}` : "feedback.videollamada")}
       style={{ background: `color-mix(in srgb, ${VC_COLOR} 7%, transparent)`, border: `1px solid color-mix(in srgb, ${VC_COLOR} 25%, transparent)` }}>
       <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide" style={{ color: VC_COLOR }}>
-        <Video size={13} /> Videollamada quincenal
+        {presencial ? <MapPin size={13} /> : <Video size={13} />}
+        {presencial ? "Visita quincenal en el centro" : "Videollamada quincenal"}
         {call?.status === "done" && <CheckCircle2 size={13} style={{ color: "#2E7D46" }} />}
       </div>
 
@@ -861,13 +876,15 @@ function VideoCallCycle({ clientId, periodIndex, call, googleConnected, onModify
             {durationSelect}
             <button
               className="btn btn-primary !px-3 !py-1.5 text-xs"
-              disabled={busy || !googleConnected}
+              disabled={busy || !listoParaAgendar}
               onClick={() => run(
                 () => api.acceptVideoCall(clientId, call.id, gDur),
-                "Videollamada agendada en Meet y enlace enviado al cliente",
+                presencial ? "Visita confirmada · el cliente ya tiene el día y la dirección"
+                           : "Videollamada agendada en Meet y enlace enviado al cliente",
               )}
             >
-              <CheckCircle2 size={13} /> Aceptar y crear Meet
+              <CheckCircle2 size={13} />
+              {presencial ? "Aceptar la visita" : "Aceptar y crear Meet"}
             </button>
             <button className="btn btn-ghost !px-3 !py-1.5 text-xs" disabled={busy}
               onClick={() => onModify(call)}>

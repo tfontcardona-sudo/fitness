@@ -482,10 +482,83 @@ npm run check:alertas       # una sola fuente de /api/alerts (barrido caro)
   nuevas) y `marca_de_cliente()` es la marca SELLADA en la ficha (portal,
   documentos, emails, renovación). Confundirlas es cambiarle la marca a quien
   ya paga. Todo pasa por `services/branding.py`.
+  Lo que cambia de una marca a otra: colores y logo, tarifas y servicios,
+  CUESTIONARIO (`anamnesis_variant`; el de Professional es una pantalla propia),
+  DOCUMENTO del cliente (`doc_variant`; `plan_doc_pf` para Professional) y el
+  tipo de CITA de revisión (`cita_modo`: videollamada o visita al centro, vía
+  `services/citas.py`). Lo que NO cambia nunca: los números.
 
 ---
 
 ## 9. Trabajo pendiente / próximos pasos
+
+00000000000000000000000000. ✅ **PROFESSIONAL, COMO TRABAJA DE VERDAD (11-09-2026).**
+   Tras hablar con el centro (Lidia i Toni · Centre Salut & Fitness, Girona), su
+   negocio resultó ser OTRO del que se dedujo de una foto de tarifas, y el dueño
+   pidió aplicarlo entero al perfil del switch: «la estructura y las preguntas no
+   tienen que parecerse en nada a DQR, pero el sistema interno es el mismo».
+   Migraciones **0051** (el perfil) y **0052** (la cita presencial).
+   - **EL NEGOCIO**: **Pack Premium 129,90 €/mes** con RENOVACIÓN MENSUAL —no hay
+     programas cerrados de 3 o 6 meses como en DQR, ni oferta de captación—, y el
+     **plan de gimnasio (60 €/mes) NO es asesoría**: es acceso a la sala, así que
+     va con lo que se cobra EN EL CENTRO (`extra_services`) y no como producto de
+     la web. Se dejó a propósito el cobro en pago único con recordatorio de
+     renovación: pasar la marca a suscripción es empezar a cobrar solo la tarjeta
+     de alguien, y eso no se hace sin que lo pida el dueño.
+   - **CUESTIONARIO PROPIO** (`pages/AnamnesisProfesional.tsx`, variante
+     `professional`). Es una PANTALLA APARTE, no un `if` dentro de la de DQR:
+     con un solo formulario parametrizado, cada retoque de un negocio arriesga
+     el del otro. Cinco bloques, el lenguaje del mostrador («Bajar grasa ·
+     marcar más y verme mejor», no «recomposición corporal») y solo LO BÁSICO:
+     el centro ve al cliente en la sala, así que lo que no hace falta por
+     escrito para planificar se pregunta en persona. Lo obligatorio no se toca —
+     de esas preguntas salen los números y quitarlas no simplifica, rompe.
+     `/anamnesis/:token` pasa por `AnamnesisRouter`, que mira la marca SELLADA
+     en la ficha (no el switch) y carga el formulario que toca.
+     ⚠️ **Bug real que destapó el navegador**: los campos de peso y altura eran
+     `<input type="number">` y un navegador RECHAZA la coma en silencio — «63,5»
+     dejaba el campo vacío y el cliente no entendía por qué no le dejaba seguir.
+     Es el mismo gotcha que el portal ya tenía resuelto (`useDecimalField`):
+     texto + `inputMode="decimal"`.
+   - **DOCUMENTO PROPIO** (`services/docs/plan_doc_pf.py`, `doc_variant =
+     'professional'`): negro y dorado, y una ESTRUCTURA que no es la de DQR —
+     portada (DQR no tiene), «Tu mes en una página» con las cifras en fichas
+     para fotografiarlas, la dieta en ORDEN DEL DÍA, cada sesión como ficha,
+     «Cómo se lee tu rutina» (un cliente de gimnasio de barrio no tiene por qué
+     saber qué es un RIR) y **«Cómo trabajamos esto»**, el ciclo del centro, que
+     en DQR no existe. Fuera el índice, los grupos de alimentos, el plato
+     saludable, las ideas y el educativo — que además, al no imprimirse, **ya no
+     se genera** (`documento_sin_educativo`: una llamada a la IA menos por plan).
+     Las CIFRAS son las mismas: mismo motor, mismos guardarraíles, mismo filtro
+     de alérgenos (con test).
+     ⚠️ **«Subir Word editado» sigue funcionando** porque las TABLAS de datos
+     conservan las cabeceras que `word_import` reconoce (son nombres de columna,
+     no estructura) y las barras que anclan cajas editables se traducen con
+     **`word_import._ALIAS_BARRA`**. Si añades una barra con caja a un documento
+     de marca, añádela ahí o el coach editará el Word y sus cambios se perderán
+     EN SILENCIO. Las barras de comida y de día mandan sobre el alias (una toma
+     llamada «Suplementos» es un recetario, no el bloque de suplementación).
+   - **LA REVISIÓN DE UN CENTRO ES UNA VISITA** (`services/citas.py`, mig. 0052):
+     `brand_config.cita_modo` dice qué hace la marca y `video_calls.modo` SELLA
+     lo acordado en esa cita (mismo criterio que la marca del cliente: si mañana
+     el centro pasara a hacerlas por vídeo, la visita ya confirmada sigue siendo
+     una visita). Una visita **no toca Google**: ese era el nudo —un gimnasio no
+     tiene por qué tener una cuenta conectada, y exigirla dejaba el ciclo
+     atascado para siempre en «pendiente de agendar»—. El cliente propone desde
+     su portal y ve el día y la DIRECCIÓN («Cómo llegar»), no un «Unirme»; el
+     coach acepta desde el panel sin Google; la agenda y el email/push llevan la
+     dirección en vez del enlace.
+   - Verificado: **871 tests** en los dos órdenes, `tsc`, build, las siete
+     guardas, arranque desde base VACÍA hasta 0052 y una sola cabeza. El
+     cuestionario, recorrido en navegador real a 390 px y a 1280 px (cero
+     desbordes, cero botones recortados, cero errores de consola) y **enviado de
+     verdad**: la ficha quedó con sus cifras y las preguntas del centro
+     etiquetadas en las notas. Tests: `tests/test_professional.py` (11), con las
+     dos regresiones críticas comprobadas quitando su arreglo.
+   - ⚠️ **Lo único que necesita un fichero del dueño**: el LOGO de Professional
+     (Recursos → Marca → logo). Mientras no esté, el cuestionario y el documento
+     imprimen el rótulo «PROFESSIONAL» en dorado, que es digno, pero el logo de
+     verdad no me lo puedo inventar.
 
 0000000000000000000000000. ✅ **LO QUE SE VE Y LO QUE AVISA (10-09-2026).** Cinco
    peticiones del dueño en un mensaje, con una condición por delante: «quiero

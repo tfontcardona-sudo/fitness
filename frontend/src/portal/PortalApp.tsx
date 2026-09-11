@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSinConexion } from "../lib/offline";
 import { activarAcordeon } from "../lib/accordion";
 import { useSearchParams } from "react-router-dom";
-import { Bell, BellOff, CalendarCheck, Camera, Check, ChevronDown, Dumbbell, FileText, LineChart, Library, LogOut, MessageSquare, NotebookPen, Share, Smartphone, Video, X } from "lucide-react";
+import { Bell, BellOff, CalendarCheck, Camera, Check, ChevronDown, Dumbbell, FileText, LineChart, Library, LogOut, MapPin, MessageSquare, NotebookPen, Share, Smartphone, Video, X } from "lucide-react";
 import { portalApi, portalSession, PortalError } from "./portalApi";
 import type { VideoCallStatus } from "./portalApi";
 import { pkg } from "../lib/packages";
@@ -425,12 +425,16 @@ function portalLocalToday(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-/** Videollamada de revisión en el portal (Pro). Se muestra sobre cualquier
- *  pestaña para que no pase por alto. Estados:
+/** La CITA de revisión en el portal (Pro). Se muestra sobre cualquier pestaña
+ *  para que no pase por alto. Estados:
  *   - book: al enviar la revisión, el cliente PROPONE día y hora.
  *   - proposed: propuesta enviada, esperando confirmación del coach.
  *   - pending_manual: el coach la agenda (te escribirá por WhatsApp).
- *   - scheduled: agendada → botón "Unirme" (Google Meet). */
+ *   - scheduled: agendada → "Unirme" (Meet) o la DIRECCIÓN (visita al centro).
+ *
+ *  Según la marca del cliente la cita es una VIDEOLLAMADA (asesoría online) o
+ *  una VISITA AL CENTRO. Lo dice el backend en `modo`; aquí solo cambia lo que
+ *  se lee y lo que se ofrece: a una visita no te «unes», vas. */
 function VideoCallBanner({ api, accent, refreshKey = 0 }: { api: ReturnType<typeof portalApi>; accent: string; refreshKey?: number }) {
   const toast = usePortalToast();
   const [vc, setVc] = useState<VideoCallStatus | null>(null);
@@ -453,9 +457,11 @@ function VideoCallBanner({ api, accent, refreshKey = 0 }: { api: ReturnType<type
     background: `color-mix(in srgb, ${accent} 12%, transparent)`,
     border: `1px solid color-mix(in srgb, ${accent} 35%, transparent)`,
   } as const;
+  const presencial = vc.modo === "presencial";
   const header = (
     <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest" style={{ color: accent }}>
-      <Video size={13} /> Videollamada de revisión
+      {presencial ? <MapPin size={13} /> : <Video size={13} />}
+      {presencial ? "Revisión en el centro" : "Videollamada de revisión"}
     </div>
   );
 
@@ -496,8 +502,22 @@ function VideoCallBanner({ api, accent, refreshKey = 0 }: { api: ReturnType<type
         <p className="mt-1 text-sm font-semibold">Confirmada por tu coach</p>
         <p className="mt-0.5 text-sm font-medium capitalize">{vc.call.when_label}</p>
         {vc.call.duration_min ? <p className="text-[11px] opacity-50">{vc.call.duration_min} min</p> : null}
+        {presencial && vc.lugar && (
+          <p className="mt-1.5 flex items-start gap-1.5 text-sm">
+            <MapPin size={14} className="mt-0.5 shrink-0" style={{ color: accent }} />
+            <span>{vc.lugar}</span>
+          </p>
+        )}
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          {vc.call.meet_url && (
+          {presencial && vc.lugar && (
+            <a href={`https://maps.google.com/?q=${encodeURIComponent(vc.lugar)}`}
+              target="_blank" rel="noopener noreferrer"
+              className="tap inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white"
+              style={{ background: accent }}>
+              <MapPin size={15} /> Cómo llegar
+            </a>
+          )}
+          {!presencial && vc.call.meet_url && (
             <a href={vc.call.meet_url} target="_blank" rel="noopener noreferrer"
               className="tap inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white"
               style={{ background: accent }}>
@@ -540,7 +560,9 @@ function VideoCallBanner({ api, accent, refreshKey = 0 }: { api: ReturnType<type
     return (
       <div className="mb-4 rounded-2xl p-4" style={box}>
         {header}
-        <p className="mt-1 text-sm">Elige día y hora</p>
+        <p className="mt-1 text-sm">
+          {presencial ? "Elige cuándo te viene bien pasarte" : "Elige día y hora"}
+        </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <input type="date" className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: `color-mix(in srgb, ${accent} 35%, transparent)`, background: "transparent" }}
             value={date} min={portalLocalToday()} onChange={(e) => setDate(e.target.value)} />

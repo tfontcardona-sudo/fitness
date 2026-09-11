@@ -41,6 +41,31 @@ _VARIANTES: dict[str, dict] = {
              "placeholder": "Ej.: lunes, miércoles y viernes por la tarde"},
         ],
     },
+    # PROFESSIONAL (Centre Salut & Fitness). Su cuestionario es corto a
+    # propósito: el centro ve al cliente en la sala, así que lo que no sea
+    # imprescindible para planificar se pregunta en persona, no en un
+    # formulario. Aquí queda LO BÁSICO —de lo que salen las cifras y la
+    # seguridad— más las tres cosas que un centro con local sí necesita saber
+    # por escrito: desde cuándo entrena, qué días viene y qué le ha frenado
+    # otras veces.
+    #
+    # ⚠️ Las preguntas propias son DISTINTAS de las de 'simple' aunque el
+    # negocio se parezca: compartir la variante habría hecho que retocar el
+    # cuestionario de un centro cambiara el del otro.
+    "professional": {
+        "optional_blocks": ["priority_zones"],
+        "extra_questions": [
+            {"key": "experiencia", "label": "¿Cuánto tiempo llevas entrenando?",
+             "placeholder": "Nunca / menos de un año / dos años / más"},
+            {"key": "disponibilidad",
+             "label": "¿Qué días y a qué hora puedes venir al centro?",
+             "placeholder": "Ej.: lunes, miércoles y viernes a partir de las 18 h"},
+            {"key": "obstaculo",
+             "label": "¿Qué te ha frenado otras veces?",
+             "placeholder": "Falta de tiempo, no saber qué hacer, lesiones, "
+                            "dejarlo a las pocas semanas…"},
+        ],
+    },
 }
 
 

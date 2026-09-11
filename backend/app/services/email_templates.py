@@ -242,6 +242,29 @@ def video_call_scheduled(brand: Brand, first_name: str, when_label: str,
     return subject, _shell(brand, "Videollamada agendada", body, meet_url, "Unirme a la videollamada")
 
 
+def visita_presencial_agendada(brand: Brand, first_name: str, when_label: str,
+                               donde: str | None, duration_min: int) -> tuple[str, str]:
+    """Confirmación de una VISITA AL CENTRO (revisión presencial).
+
+    El equivalente de `video_call_scheduled` para una marca con local: en vez de
+    un enlace de Meet, la DIRECCIÓN — que es lo que el cliente necesita para
+    presentarse."""
+    first_name = _esc(first_name)
+    when = _esc(when_label)
+    subject = f"Tu revisión en el centro: {when_label} · {brand.name}"
+    body = (
+        f"<p>Hola {first_name}, ya tenemos día para tu <strong>revisión en el "
+        f"centro</strong>:</p>"
+        f"<p style='font-size:18px'><strong>{when}</strong> "
+        f"<span style='color:#6b7280'>({duration_min} min)</span></p>"
+    )
+    if donde:
+        body += (f"<p style='font-size:15px'><strong>Dónde:</strong> {_esc(donde)}</p>")
+    body += ("<p>Repasamos cómo ha ido la quincena, resolvemos dudas y ajustamos "
+             "lo que haga falta. Si no puedes venir, avísanos y lo movemos.</p>")
+    return subject, _shell(brand, "Revisión agendada", body)
+
+
 def video_call_reminder(brand: Brand, first_name: str, when_label: str,
                         meet_url: str) -> tuple[str, str]:
     """Recordatorio (día antes) de la videollamada, con el enlace de Meet."""
