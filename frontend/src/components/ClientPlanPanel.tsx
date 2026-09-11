@@ -19,6 +19,8 @@ import type { Destino } from "../lib/findings";
 import { agrupar, resumirDetalle, resumenCorto, toAviso, traducirFlags } from "../lib/findings";
 import { MemoDetails } from "./MemoDetails";
 import { ClientPlanEditor } from "./ClientPlanEditor";
+import { pielDe } from "../lib/marca";
+import { useBrand } from "../hooks/useBrand";
 import type { ClientOut, ExerciseOut, FoodSearchResult, FoodSwapResult, GoalType } from "../types";
 
 interface PlanReview {
@@ -116,6 +118,12 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
   const hasTraining = info.hasTraining;
   const hasNutrition = info.hasNutrition;
   const byEmail = info.delivery === "email";
+  // Professional es un centro con sala: el coach mira primero el
+  // ENTRENAMIENTO (lo que se hace HOY en la sala), la dieta después — al
+  // revés que DQR, una asesoría online donde la dieta manda. Mismo criterio
+  // que ya aplica el documento de la anamnesis (`anamnesis_doc_pf.py`).
+  const piel = pielDe(useBrand().brand?.skin);
+  const entrenoPrimero = piel === "professional";
   const [plan, setPlan] = useState<PlanData | null>(null);
   const [exMap, setExMap] = useState<Record<number, string>>({});
   // Vídeo de cada ejercicio (biblioteca): botón directo en la rutina.
@@ -1969,8 +1977,13 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
         </details>
       ) : null}
 
-      {/* Nutrición (los planes Train no la incluyen: sin tarjeta de ceros) */}
-      {hasNutrition && (
+      {/* Nutrición y Entrenamiento cambian de ORDEN según la marca activa:
+          Professional es un centro con sala — el coach mira primero lo que se
+          hace HOY en el gimnasio; DQR es asesoría online, donde la dieta va
+          primero. Mismo criterio que ya aplica el documento de la anamnesis. */}
+      {(() => {
+      // Nutrición (los planes Train no la incluyen: sin tarjeta de ceros)
+      const nutricionSection = hasNutrition && (
       <div className="card p-5">
         <SectionTitle icon={Utensils} title="Nutrición" ancla="nutricion.macros"
           onEdit={() => { setEditFocus("nutrition"); setEditing(true); }} />
@@ -2076,14 +2089,14 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
           </MemoDetails>
         )}
       </div>
-      )}
+      );
 
-      {/* El BANCO DE COMIDAS no ocupa pantalla por defecto (va completo en el
-          PDF del cliente), pero SÍ existe plegado: cuando un aviso señala una
-          toma concreta ("hay lentejas en la toma 2"), el desplegable se abre
-          solo y esa toma queda marcada. Sin eso, el coach leía el problema y
-          no tenía dónde verlo. */}
-      {hasNutrition && (
+      // El BANCO DE COMIDAS no ocupa pantalla por defecto (va completo en el
+      // PDF del cliente), pero SÍ existe plegado: cuando un aviso señala una
+      // toma concreta ("hay lentejas en la toma 2"), el desplegable se abre
+      // solo y esa toma queda marcada. Sin eso, el coach leía el problema y
+      // no tenía dónde verlo.
+      const bancoSection = hasNutrition && (
         <BancoDeComidas
           nut={nut}
           clientId={client.id}
@@ -2098,11 +2111,11 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
             }
           }}
         />
-      )}
+      );
 
-      {/* Entrenamiento — azul de marca (como sus chips de ajustes).
-          El paquete Start es solo nutrición: no se muestra el entrenamiento. */}
-      {hasTraining && (
+      // Entrenamiento — azul de marca (como sus chips de ajustes).
+      // El paquete Start es solo nutrición: no se muestra el entrenamiento.
+      const entrenoSection = hasTraining && (
       <div className="card p-5">
         <SectionTitle icon={Dumbbell} title={`Entrenamiento${tr.split_name ? ` · ${tr.split_name}` : ""}`} accent="var(--brand-accent-2)" ancla="entreno.sesiones"
           onEdit={() => { setEditFocus("training"); setEditing(true); }} />
@@ -2233,7 +2246,12 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
           </div>
         )}
       </div>
-      )}
+      );
+
+      return entrenoPrimero
+        ? <>{entrenoSection}{nutricionSection}{bancoSection}</>
+        : <>{nutricionSection}{bancoSection}{entrenoSection}</>;
+      })()}
 
       {/* PUNTOS IMPORTANTES del cliente (anamnesis): lo que condiciona el plan */}
       <ImportantPointsCard client={client} onGoTab={onGoTab} />
