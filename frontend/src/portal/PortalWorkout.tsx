@@ -682,7 +682,10 @@ export function PortalWorkout({ api, token, brand, periodStatus = null, business
                     <button
                       type="button"
                       onClick={() => startRest(ex.rest_sec as number, ex.name)}
-                      className="mt-1 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold"
+                      // 28 px medidos en el navegador. Es el botón que se
+                      // pulsa CON LAS MANOS OCUPADAS entre serie y serie: es
+                      // justo donde no se puede fallar el toque.
+                      className="mt-1 inline-flex min-h-[40px] items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold"
                       style={{
                         background: `color-mix(in srgb, ${brand.color_secondary} 10%, transparent)`,
                         color: brand.color_secondary,

@@ -688,6 +688,13 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
     # siguiente período ya se haya abierto): una llamada no puede olvidarse.
     from app.services.portal import format_when_es
 
+    # CÓMO SE LLAMA ESTO EN SU NEGOCIO. En un centro la revisión es una VISITA
+    # a la sala: el panel decía "el cliente propuso videollamada" y "se crea el
+    # Meet con invitación" para una cita en la que no hay ni Meet ni enlace. La
+    # cita manda sobre la marca (una visita confirmada sigue siendo una visita
+    # aunque el negocio cambie mañana), igual que en el resto del ciclo.
+    from app.services import citas
+
     videollamadas = datos.videollamadas(db, client)
     if pkgs.has_video_call(client.package_tier):
         last_review = next(
@@ -696,10 +703,15 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
             vc = next((v for v in videollamadas
                        if v.period_index == last_review.period_index), None)
             if vc is None:
+                # La marca se pregunta AQUÍ y no arriba: este barrido recorre la
+                # cartera entera y la marca de un cliente sin `brand_id` cuesta
+                # una consulta. Solo hace falta en esta rama.
+                cita_marca = citas.etiqueta(citas.modo_de_marca(db, client))
                 out.append(_alert(
                     client, "video_call_wait", "media",
-                    f"Revisión #{last_review.period_index} · esperando su propuesta de videollamada",
-                    "feedback", "Agendar videollamada"))
+                    f"Revisión #{last_review.period_index} · esperando su propuesta "
+                    f"de {cita_marca}",
+                    "feedback", f"Agendar {cita_marca}"))
 
     # TODAS las videollamadas vivas — de cualquier revisión y aunque el cliente
     # ya no sea Pro: una propuesta sin responder o una llamada agendada no puede
@@ -707,35 +719,43 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
     # huérfanas y desaparecían de las alertas para siempre).
     for vc in [v for v in videollamadas
                if v.status in ("proposed", "pending_manual", "scheduled")]:
+        cita = citas.etiqueta(citas.modo_de_cita(vc))
+        Cita = citas.etiqueta(citas.modo_de_cita(vc), mayuscula=True)
+        presencial = citas.es_presencial(vc)
         if vc.status == "proposed" and vc.scheduled_at is not None:
             out.append(_alert(
                 client, "video_call_proposed", "alta",
-                f"El cliente propuso videollamada: {format_when_es(vc.scheduled_at)}. "
+                f"El cliente propuso {cita}: {format_when_es(vc.scheduled_at)}. "
                 "Acéptala o modifícala.",
                 "feedback", "Aceptar o modificar",
                 target=f"feedback.videollamada.{vc.id}",
-                fix="Acéptala y se crea el Meet con invitación, o modifícala "
-                    "para acordar otra hora por WhatsApp."))
+                fix=("Acéptala y se le confirma con el día y la dirección, "
+                     if presencial else
+                     "Acéptala y se crea el Meet con invitación, ")
+                    + "o modifícala para acordar otra hora por WhatsApp."))
         elif vc.status == "pending_manual":
             out.append(_alert(
                 client, "video_call_manual", "alta",
-                "Videollamada a agendar a mano (acordado por WhatsApp): escribe el día y la hora.",
+                f"{Cita} a agendar a mano (acordado por WhatsApp): escribe el día y la hora.",
                 "feedback", "Agendar día y hora",
                 target=f"feedback.videollamada.{vc.id}",
-                fix="Escribe el día y la hora acordados y se crea el Meet."))
+                fix="Escribe el día y la hora acordados"
+                    + (" y se le confirma la visita." if presencial
+                       else " y se crea el Meet.")))
         elif vc.status == "scheduled" and vc.scheduled_for is not None:
             if vc.scheduled_for == today + timedelta(days=1):
                 out.append(_alert(
                     client, "video_call_tomorrow", "alta",
-                    f"Videollamada MAÑANA ({vc.scheduled_for.strftime('%d/%m')}).",
-                    "feedback", "Ver videollamada",
+                    f"{Cita} MAÑANA ({vc.scheduled_for.strftime('%d/%m')}).",
+                    "feedback", f"Ver {cita}",
                     target=f"feedback.videollamada.{vc.id}",
-                    fix="Prepara la revisión antes de la llamada."))
+                    fix="Prepara la revisión antes"
+                        + (" de que venga." if presencial else " de la llamada.")))
             elif vc.scheduled_for <= today:
                 out.append(_alert(
                     client, "video_call_confirm", "alta",
-                    "¿Se realizó la videollamada? Confírmala, o reagéndala si no pudo ser.",
-                    "feedback", "Confirmar videollamada",
+                    f"¿Se hizo la {cita}? Confírmala, o reagéndala si no pudo ser.",
+                    "feedback", "Confirmar",
                     target=f"feedback.videollamada.{vc.id}",
                     fix="Márcala como hecha, o reagéndala si no pudo ser."))
 

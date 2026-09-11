@@ -508,6 +508,14 @@ class BrandConfig(Base):
     # pantalla de Vender de un centro enseñaría un solo producto y parecería
     # que el resto no existe.
     extra_services: Mapped[list | None] = mapped_column(JSONB)
+    # QUÉ USA ESTE NEGOCIO (mig. 0054): lo que el panel y el portal le enseñan.
+    # Guarda SOLO lo que no se puede deducir de otro dato —hoy `productos` (el
+    # catálogo de afiliación) y `enlaces` (la página del perfil de Instagram)—,
+    # porque las videollamadas ya las dice `cita_modo`, la oferta sus `prices`,
+    # el educativo `doc_variant` y el cuestionario en PDF `anamnesis_variant`.
+    # Vacío = lo usa todo, así que una marca nueva no se queda sin nada.
+    # Se pregunta por `branding.Marca.usa()`, nunca leyendo el diccionario.
+    features: Mapped[dict | None] = mapped_column(JSONB)
 
 
 # -------------------------------------------------- recommended_products ----

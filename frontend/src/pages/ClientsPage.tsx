@@ -488,6 +488,23 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
       (d) => PACKAGE_ORDER.some((t) => (precios[t] ?? {})[d]));
     return con.length ? con : todas;
   }, [precios]);
+  // Y los PLANES que vende. El alta ofrecía los tres de DQR en cualquier
+  // negocio: en un centro que solo tiene su Pack Premium, dar de alta con
+  // "Train" o "Nutri" es crear un cliente con un plan que nadie cobra y que su
+  // propia página no anuncia. Si la marca no declara tarifas, los tres (es lo
+  // que había, y una marca a medio configurar no se queda sin poder dar altas).
+  const planesDeLaMarca = useMemo(() => {
+    if (!precios) return PACKAGE_ORDER;
+    const con = PACKAGE_ORDER.filter((t) => Object.entries(precios[t] ?? {})
+      .some(([d, c]) => ["1m", "3m", "6m"].includes(d) && Number(c) > 0));
+    return con.length ? con : PACKAGE_ORDER;
+  }, [precios]);
+  // Si la marca no vende el plan que viene puesto por defecto, se cae al
+  // primero que sí venda: sin esto no quedaría NINGUNO marcado y el cliente
+  // nacería con un plan que esa marca no tiene.
+  useEffect(() => {
+    if (!planesDeLaMarca.includes(tier)) setTier(planesDeLaMarca[0]);
+  }, [planesDeLaMarca, tier]);
   // ¿Tiene esta marca oferta de captación? DQR sí; un centro puede no tenerla.
   const vendeOferta = Boolean(precios?.oferta?.monthly_cents);
   const vendeOferta2 = Boolean(precios?.oferta2?.monthly_cents);
@@ -561,7 +578,7 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
               <div>
                 <label className="label">Plan contratado</label>
                 <div className="mt-1 space-y-2">
-                  {PACKAGE_ORDER.map((t) => {
+                  {planesDeLaMarca.map((t) => {
                     const p = PACKAGES[t];
                     const sel = tier === t;
                     return (
@@ -617,10 +634,16 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
               <div>
                 <label className="label">Nivel del cliente</label>
                 <div className="mt-1.5 grid grid-cols-3 gap-2">
+                  {/* EL NIVEL ES DEL CLIENTE, no del modo de trabajar. Decía
+                      "la IA genera su plan" / "plan del coach, sin IA" como si
+                      fuera una regla del sistema: los dos caminos están
+                      disponibles para cualquier cliente y los elige el coach en
+                      cada plan. Lo que el nivel sí cambia es lo que se le
+                      pauta: el filtro de ejercicios y la progresión. */}
                   {([
-                    ["beginner", "Principiante", "la IA genera su plan"],
-                    ["intermediate", "Intermedio", "la IA genera su plan"],
-                    ["advanced", "Avanzado", "plan del coach, sin IA"],
+                    ["beginner", "Principiante", "ejercicios básicos"],
+                    ["intermediate", "Intermedio", "progresión estándar"],
+                    ["advanced", "Avanzado", "ejercicios y cargas avanzadas"],
                   ] as const).map(([value, label, hint]) => {
                     const sel = level === value;
                     return (

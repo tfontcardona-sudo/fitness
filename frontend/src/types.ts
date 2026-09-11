@@ -323,6 +323,12 @@ export interface ClientOut {
   /** Cómo llama SU marca a lo contratado ("DQR Full", "Pack Premium"). Lo pone
    *  el backend: la marca que manda es la SELLADA en su ficha, no el switch. */
   plan_label?: string | null;
+  /** Lo que vende SU marca (la sellada en su ficha): planes y duraciones entre
+   *  los que se le puede mover. Incluye siempre lo que tiene contratado. */
+  plan_options?: string[];
+  billing_options?: string[];
+  /** Qué usa su marca — mismo contrato que `BrandConfigOut.usa`. */
+  brand_usa?: Partial<Record<FuncionDeMarca, boolean>>;
   strict_free_meal_enabled: boolean;
   status: ClientStatus;
   emails_enabled: boolean;
@@ -396,7 +402,17 @@ export interface RecommendedProductUpdate {
   discount_code?: string | null;
 }
 
+/** Los APARTADOS que puede tener un negocio. El switch no cambia solo la
+ *  identidad: cambia el modo de trabajar, y un centro con local no usa el
+ *  catálogo de afiliación ni la página de enlaces de una asesoría online. */
+export type FuncionDeMarca =
+  | "productos" | "enlaces" | "videollamadas" | "oferta" | "educativo" | "anamnesis_pdf";
+
 export interface BrandConfigOut {
+  /** Qué usa este negocio. Lo resuelve el backend (declarado + deducido de
+   *  `cita_modo`, `prices`, `doc_variant` y `anamnesis_variant`): el panel
+   *  pregunta, no deduce. Ausente = todo, como una marca sin declarar. */
+  usa?: Partial<Record<FuncionDeMarca, boolean>>;
   id: number;
   name: string;
   logo_path: string | null;
@@ -458,6 +474,8 @@ export interface BrandProfileOut {
   logo_path: string | null;
   activa: boolean;
   skin: string | null;
+  /** Qué apartados tiene este negocio: el switch no cambia solo la identidad. */
+  usa?: Partial<Record<FuncionDeMarca, boolean>>;
   service_labels: Record<string, string> | null;
   /** Tarifas de ESTA marca ({tier: {periodo: céntimos}}). Lo que no está, no se vende. */
   prices: Record<string, Record<string, number>> | null;
@@ -535,6 +553,9 @@ export interface AiCreditOut {
 
 /** GET /api/public/landing — datos públicos de la página de enlaces (/dq). */
 export interface LandingOut {
+  /** Qué usa este negocio: la página de enlaces es de quien vende por
+   *  Instagram, así que la de un centro con local no lleva a ninguna parte. */
+  usa?: Partial<Record<FuncionDeMarca, boolean>>;
   name: string;
   tagline: string | null;
   color_primary: string;
@@ -894,7 +915,13 @@ export interface WhatsAppRoundItem {
   phone: string | null;
   tier: PackageTier;
   brief_key: string;
+  /** De qué va SU mensaje: el tema que sale de sus datos o, si no hay nada
+   *  que destacar, el brief general del día. */
   brief_tema: string;
+  /** POR QUÉ le toca ese tema: el dato que lo dispara ("Duerme 5,4 h de
+   *  media…"). Null cuando el mensaje es el genérico del día. */
+  motivo?: string | null;
+  personalizado?: boolean;
   text: string;
   already_sent: boolean;
 }
@@ -908,6 +935,8 @@ export interface WhatsAppRoundOut {
   pool_size: number;
   items: WhatsAppRoundItem[];
   pending: number;
+  /** Cuántos mensajes de hoy salen de los datos del propio cliente. */
+  personalizados?: number;
 }
 
 /** --- Pagos (libro de caja de Stripe) — espejo de schemas/entities.py --- */

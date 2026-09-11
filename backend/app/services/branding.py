@@ -54,6 +54,20 @@ DEFAULTS = {
     "skin": "dqr",
 }
 
+# ------------------------------------------------ lo que usa cada negocio ----
+# Las CLAVES de `features`, con su regla. Un negocio no es solo una identidad:
+# también es un modo de trabajar, y el panel enseñaba el de DQR con
+# Professional activa —el catálogo de afiliación, la página de enlaces del
+# perfil de Instagram, la conexión con Google— para un centro que vende en el
+# mostrador y revisa a su gente en la sala.
+#
+# La regla de oro: lo que YA lo dice otro dato NO se declara, se DEDUCE. Dos
+# verdades sobre lo mismo acaban contradiciéndose (la marca diría que hace
+# videollamadas y sus citas serían visitas), así que aquí solo se guarda lo que
+# no está dicho en ningún otro sitio.
+FEATURES = ("productos", "enlaces", "videollamadas", "oferta", "educativo",
+            "anamnesis_pdf")
+
 _TTL_S = 30.0
 _lock = threading.Lock()
 _cache: dict = {"at": 0.0, "por_id": {}, "activa": None}
@@ -88,6 +102,14 @@ class Marca:
     skin: str = "dqr"
     contact_address: str | None = None
     extra_services: list = field(default_factory=list)
+    # Cómo es la cita de revisión ("videollamada" | "presencial") y cuánto
+    # documento quiere la marca ("completo" | "simple"). Vivían solo en la fila
+    # del ORM, así que quien tenía la `Marca` no podía preguntarlo sin volver a
+    # la base — y de ellos se deducen la mitad de las respuestas de `usa()`.
+    cita_modo: str | None = None
+    doc_variant: str | None = None
+    # Lo que este negocio USA, solo en lo que no se deduce. Vacío = todo.
+    features: dict = field(default_factory=dict)
     activa: bool = False
 
     # --- lo que pregunta el resto del sistema -------------------------------
@@ -127,10 +149,51 @@ class Marca:
         o = (self.prices or {}).get(clave) or {}
         return bool(o.get("monthly_cents"))
 
+    def usa(self, clave: str) -> bool:
+        """¿Este negocio usa esto? La ÚNICA pregunta, para panel y portal.
+
+        Primero lo que la marca haya DECLARADO (`features`); si no dice nada,
+        lo que se DEDUCE de cómo trabaja; y si tampoco hay nada que deducir,
+        que sí. El orden importa: una marca puede apagar a mano algo que por
+        defecto tendría, pero nunca encender una videollamada en un negocio
+        cuyas citas son visitas —eso no sería una opción, sería una mentira—,
+        así que lo deducido manda sobre lo declarado en sus cuatro claves.
+        """
+        if clave in _DEDUCIDAS:
+            return _DEDUCIDAS[clave](self)
+        declarado = (self.features or {}).get(clave)
+        # Lo no declarado se USA: un negocio nuevo no se queda sin pantallas
+        # por no haber rellenado una lista, y añadir una función al sistema no
+        # obliga a repasar todas las marcas.
+        return True if declarado is None else bool(declarado)
+
+    def lo_que_usa(self) -> dict:
+        """Las respuestas de golpe, para el contrato del frontend."""
+        return {c: self.usa(c) for c in FEATURES}
+
     def lookup_key(self, tier: str, period: str) -> str:
         """Clave del precio en Stripe. El PREFIJO por marca es lo que impide que
         dos marcas se pisen los precios (y, con ellos, las suscripciones vivas)."""
         return f"{self.stripe_prefix or 'dqr'}_{tier}_{period}"
+
+
+# Lo que NO se declara porque ya está dicho en otro sitio. Cada regla lee el
+# dato que manda, así que no puede desincronizarse de él.
+_DEDUCIDAS = {
+    # Una VISITA al centro no es una videollamada: ni agenda de Meet, ni
+    # Google que conectar, ni «videollamada de revisión» prometida en la web.
+    "videollamadas": lambda m: (m.cita_modo or "videollamada").strip().lower()
+    != "presencial",
+    # La oferta de captación la tiene quien la vende, en cualquiera de sus dos
+    # formas de pago.
+    "oferta": lambda m: m.vende_oferta() or m.vende_oferta("oferta2"),
+    # El bloque educativo del documento del cliente (y su llamada a la IA).
+    "educativo": lambda m: (m.doc_variant or "completo").strip().lower() == "completo",
+    # El cuestionario en PDF: el fichero oficial es el de DQR. Ofrecérselo al
+    # cliente de otro negocio es mandarle el cuestionario —con su marca— de una
+    # asesoría con la que no ha contratado nada.
+    "anamnesis_pdf": lambda m: (m.anamnesis_variant or "dq").strip().lower() == "dq",
+}
 
 
 def _marca_de_fila(fila: BrandConfig) -> Marca:
@@ -159,6 +222,9 @@ def _marca_de_fila(fila: BrandConfig) -> Marca:
         skin=getattr(fila, "skin", None) or DEFAULTS["skin"],
         contact_address=getattr(fila, "contact_address", None),
         extra_services=list(getattr(fila, "extra_services", None) or []),
+        cita_modo=getattr(fila, "cita_modo", None),
+        doc_variant=getattr(fila, "doc_variant", None),
+        features=dict(getattr(fila, "features", None) or {}),
         activa=bool(getattr(fila, "activa", False)),
     )
 

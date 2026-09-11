@@ -507,7 +507,21 @@ def get_client(client_id: int, db: Session = Depends(get_db)) -> ClientOut:
     from app.services import packages as _pkgs
     from app.services.branding import marca_de_cliente
 
-    out.plan_label = _pkgs.label(client.package_tier, marca_de_cliente(client, db))
+    marca = marca_de_cliente(client, db)
+    out.plan_label = _pkgs.label(client.package_tier, marca)
+    # Lo que SU marca vende, más lo suyo (que puede ser de antes). Sin esto el
+    # selector del perfil ofrecía los tres planes y las tres duraciones de DQR
+    # en cualquier negocio.
+    vende = marca.vende()
+    out.plan_options = [t for t in ("train", "nutri", "full")
+                        if any(v[0] == t for v in vende) or t == client.package_tier]
+    periodos = [p for p in ("1m", "3m", "6m") if any(v[1] == p for v in vende)]
+    # Cada forma de pagar la oferta por separado: una marca puede vender solo
+    # una de las dos, y ofrecer la que no vende es prometer un precio que no hay.
+    periodos += [c for c in ("oferta", "oferta2") if marca.vende_oferta(c)]
+    out.billing_options = periodos + ([client.billing_period]
+                                      if client.billing_period not in periodos else [])
+    out.brand_usa = marca.lo_que_usa()
     return out
 
 
@@ -912,12 +926,15 @@ def delete_client(
                                   "origen": origen.replace(nombre_borrado, _borrado)}
 
     # Los mensajes de WhatsApp redactados para él viven en un JSON por día,
-    # con su id como clave: se quita la suya sin tocar las de los demás.
+    # con su id como clave: se quita la suya sin tocar las de los demás. Y con
+    # ella el TEMA que se le asignó cada día (de qué había que hablarle: su
+    # sueño, su adherencia), que es un dato suyo aunque no lleve su nombre.
+    from app.services.whatsapp_round import sin_cliente
+
     for ronda in db.scalars(select(WhatsAppRound)):
-        textos = ronda.texts_json or {}
-        if str(client_id) in textos:
-            nuevos = {k: v for k, v in textos.items() if k != str(client_id)}
-            ronda.texts_json = nuevos
+        limpio = sin_cliente(ronda.texts_json, client_id)
+        if limpio != (ronda.texts_json or {}):
+            ronda.texts_json = limpio
 
     db.delete(client)
 

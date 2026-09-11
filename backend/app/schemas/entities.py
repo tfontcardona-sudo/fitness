@@ -8,7 +8,8 @@ import re
 from datetime import date, datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import (BaseModel, ConfigDict, EmailStr, Field, computed_field,
+                      field_validator)
 
 
 def _http_url_or_none(v: str | None) -> str | None:
@@ -285,6 +286,17 @@ class ClientOut(BaseModel):
     # propósito (un enlace antiguo o un aviso abren la ficha igual), así que el
     # panel no puede deducirla — y ponía "DQR Full" a todo el mundo.
     plan_label: str | None = None
+    # QUÉ VENDE SU MARCA: los planes y las duraciones entre los que el coach
+    # puede moverle. El selector ofrecía SIEMPRE los tres planes de DQR y sus
+    # tres duraciones, así que en un centro que solo vende una cuota mensual se
+    # le podía poner a un cliente un "DQR Train semestral" que nadie cobra.
+    # Incluye siempre lo que el cliente tiene contratado, aunque su marca ya no
+    # lo venda: quitárselo de la lista sería cambiárselo sin querer.
+    plan_options: list[str] = Field(default_factory=list)
+    billing_options: list[str] = Field(default_factory=list)
+    # Qué usa SU marca (la sellada en su ficha, no la del switch): lo que se
+    # le puede ofrecer a ESTE cliente. Mismo contrato que `BrandConfigOut.usa`.
+    brand_usa: dict = Field(default_factory=dict)
     strict_free_meal_enabled: bool
     status: ClientStatus
     emails_enabled: bool
@@ -405,6 +417,27 @@ class BrandConfigIn(BaseModel):
         return _clean_discount_code(v)
 
 
+def _lo_que_usa(perfil) -> dict:
+    """QUÉ APARTADOS tiene este negocio, resueltos por la única puerta que hay.
+
+    Reconstruye la `Marca` con los campos de los que salen las respuestas y le
+    pregunta a ella: la regla de "un centro no hace videollamadas" vive en
+    `branding`, no repetida aquí. Si se copiara, el día que cambie una acabaría
+    diciendo el backend una cosa y el panel otra.
+    """
+    from app.services.branding import Marca
+
+    return Marca(
+        id=getattr(perfil, "id", None), slug=getattr(perfil, "slug", "") or "",
+        name=getattr(perfil, "name", "") or "",
+        prices=dict(getattr(perfil, "prices", None) or {}),
+        anamnesis_variant=getattr(perfil, "anamnesis_variant", None),
+        doc_variant=getattr(perfil, "doc_variant", None),
+        cita_modo=getattr(perfil, "cita_modo", None),
+        features=dict(getattr(perfil, "features", None) or {}),
+    ).lo_que_usa()
+
+
 class BrandProfileOut(BaseModel):
     """Una marca en el selector del switch: lo justo para elegirla."""
 
@@ -430,6 +463,19 @@ class BrandProfileOut(BaseModel):
     # Cuántos clientes lleva cada negocio: es lo que el coach quiere ver ANTES
     # de cambiar el switch (el panel pasa a enseñar solo esa cartera).
     clients_count: int = 0
+    # Y qué APARTADOS tiene: el switch no cambia solo la identidad, cambia el
+    # modo de trabajar. Enseñarlo en la confirmación evita la sorpresa de
+    # cambiar y encontrarse media pantalla distinta sin saber por qué.
+    cita_modo: str | None = None
+    doc_variant: str | None = None
+    anamnesis_variant: str | None = None
+    features: dict | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def usa(self) -> dict:
+        """Lo que este negocio usa. Ver `BrandConfigOut.usa`."""
+        return _lo_que_usa(self)
 
 
 class BrandConfigOut(BrandConfigIn):
@@ -454,10 +500,11 @@ class BrandConfigOut(BrandConfigIn):
     skin: str | None = None
     # Cuánto documento quiere la marca: "completo" o "simple" (mig. 0047).
     doc_variant: str | None = None
-    # "videollamada" | "presencial": cómo son las citas de revisión de la marca.
-    cita_modo: str | None = None
     contact_address: str | None = None
     extra_services: list | None = None
+    # Lo DECLARADO por la marca sobre lo que usa (mig. 0054). El panel no lo
+    # lee: pregunta por `usa`, que además deduce lo que ya dicen otros campos.
+    features: dict | None = None
     logo_path: str | None
     links_photo_path: str | None = None
     video_cover_path: str | None = None
@@ -467,6 +514,13 @@ class BrandConfigOut(BrandConfigIn):
     # http(s) guardada en DB no puede tumbar con 500 el GET de la marca —
     # la validación estricta es de ENTRADA.
     _v_partner_url = field_validator("partner_store_url", "meet_url")(_passthrough)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def usa(self) -> dict:
+        """QUÉ USA ESTE NEGOCIO: la pregunta que hace el panel para saber qué
+        apartados tiene que enseñar. Declarado + deducido, en un solo sitio."""
+        return _lo_que_usa(self)
 
 
 # ------------------------------------------------- registro público (landing) ----
@@ -535,6 +589,10 @@ class LandingOut(BaseModel):
     # estaba clavada en la página: en una marca sin oferta llevaba a un
     # checkout que no existe.
     has_offer: bool = True
+    # QUÉ USA ESTE NEGOCIO (mismo contrato que el panel): la página de enlaces
+    # es de quien vende por Instagram, así que la de un centro con local no
+    # lleva a ninguna parte y se manda a su página de planes.
+    usa: dict = Field(default_factory=dict)
     # Catálogo de productos recomendados (comprables con el código de arriba).
     products: list[LandingProductOut] = []
 

@@ -439,7 +439,11 @@ export default function VenderPage() {
             : "Planes sueltos · un solo pago, no se renuevan"}
         </h2>
         <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[30rem] border-separate" style={{ borderSpacing: "0 0.4rem" }}>
+          {/* `min-w-[30rem]` forzaba 480 px de tabla SIEMPRE: una marca que
+              vende una sola duración tiene dos columnas y aun así se salía de
+              un móvil de 390 px, con su botón de precio fuera de la pantalla.
+              `min-w-max` la hace tan ancha como su contenido, ni un píxel más. */}
+          <table className="w-full min-w-max border-separate" style={{ borderSpacing: "0 0.4rem" }}>
             <thead>
               <tr className="text-[11px] uppercase tracking-wide" style={{ color: "var(--text-faint)" }}>
                 <th className="w-24 text-left font-bold">Plan</th>

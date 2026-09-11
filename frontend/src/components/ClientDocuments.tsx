@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { copiarConAviso } from "../lib/clipboard";
 import { CheckCircle2, Download, FileText, MessageCircle, Send, Sparkles, Trash2, Upload } from "lucide-react";
 import { api, getToken } from "../lib/api";
+import { usaLaMarca } from "../lib/marca";
 import type { AttachmentSummary } from "../lib/api";
 import { ACEPTA_DOCUMENTOS , resumenDudas } from "../lib/documentos";
 import { Spinner, useToast } from "./ui";
@@ -401,9 +402,16 @@ export function ClientDocuments({ client, onUploaded, onGoAnamnesis, portalUrl, 
         también se leen y entran en la ficha.
       </p>
 
-      <button onClick={downloadTemplate} className="btn btn-ghost mb-2 w-full justify-start">
-        <Download size={15} className="text-zinc-500" /> Descargar anamnesis (PDF)
-      </button>
+      {/* El PDF oficial es el de DQR, con su marca dentro. Ofrecérselo al
+          cliente de otro negocio —cuyo cuestionario, además, es una pantalla y
+          no un papel— es mandarle el formulario de una asesoría con la que no
+          ha contratado nada. Lo dice SU marca, no la del switch. */}
+      {usaLaMarca(client.brand_usa, "anamnesis_pdf") && (
+        <button type="button" onClick={downloadTemplate}
+          className="btn btn-ghost mb-2 w-full justify-start">
+          <Download size={15} className="text-zinc-500" /> Descargar anamnesis (PDF)
+        </button>
+      )}
 
       {/* REENVIAR el cuestionario: es la petición más repetida del panel
           ("reenvíale el enlace si hace falta") y no existía en ninguna

@@ -65,7 +65,7 @@ export function WhatsAppRound() {
     <div className="card p-5">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between gap-3 text-left"
+        className="flex min-h-[44px] w-full items-center justify-between gap-3 text-left"
         aria-expanded={open}
       >
         <span className="flex items-center gap-2">
@@ -111,9 +111,28 @@ export function WhatsAppRound() {
             <>
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs"
                 style={{ color: "var(--text-faint)" }}>
+                {/* EL TITULAR DE LA RONDA. Decía siempre "mensaje 34 de 100"
+                    aunque a la mitad de la cartera se le esté escribiendo de
+                    algo suyo: lo que importa es a cuántos se les habla de lo
+                    suyo y a cuántos les toca el tema general. */}
                 <span>
-                  Mensaje {round.brief_index + 1} de {round.pool_size} ·{" "}
-                  <strong style={{ color: "var(--text)" }}>{round.brief_tema}</strong>
+                  {(round.personalizados ?? 0) > 0 && (
+                    <>
+                      <strong style={{ color: "var(--text)" }}>
+                        {round.personalizados} de {round.items.length}
+                      </strong>{" "}
+                      sobre lo suyo
+                    </>
+                  )}
+                  {/* El «·» solo cuando hay las DOS cosas: con toda la cartera
+                      personalizada la línea acababa en un punto suelto. */}
+                  {(round.personalizados ?? 0) > 0
+                    && (round.personalizados ?? 0) < round.items.length ? " · " : null}
+                  {(round.personalizados ?? 0) < round.items.length && (
+                    <>
+                      Tema general: <strong style={{ color: "var(--text)" }}>{round.brief_tema}</strong>
+                    </>
+                  )}
                 </span>
                 <button
                   onClick={() => {
@@ -170,6 +189,21 @@ export function WhatsAppRound() {
                       </button>
                     )}
                   </div>
+                  {/* DE QUÉ VA Y POR QUÉ. El coach revisa antes de enviar: si
+                      no ve el dato que ha motivado el mensaje, no puede saber
+                      si el texto le cuadra o si la IA se lo ha inventado. */}
+                  <p className="mb-1.5 text-[11px] leading-snug" style={{ color: "var(--text-faint)" }}>
+                    {it.personalizado ? (
+                      <>
+                        <span className="font-semibold" style={{ color: "var(--brand-accent)" }}>
+                          Sobre lo suyo
+                        </span>
+                        {" · "}{it.motivo}
+                      </>
+                    ) : (
+                      <>Tema general · {it.brief_tema}</>
+                    )}
+                  </p>
                   <textarea
                     value={drafts[it.client_id] ?? ""}
                     onChange={(e) =>

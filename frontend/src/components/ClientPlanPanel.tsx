@@ -410,10 +410,11 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
 
   async function generate(meals?: string[]) {
     if (generating) return;
-    // Cliente avanzado: la IA es la vía EXCEPCIONAL y además auto-activa — se
-    // confirma siempre para que el gasto y el envío no pillen por sorpresa.
-    if (client.level === "advanced" &&
-        !window.confirm("¿Generar? Gasta créditos · queda ACTIVO")) {
+    // SE CONFIRMA SIEMPRE, sea cual sea el nivel del cliente. Antes solo se
+    // preguntaba al avanzado, como si al resto le diera igual gastar créditos
+    // y publicarle un plan de golpe: es el MISMO gasto y el MISMO envío en los
+    // dos casos, y el nivel no es un permiso, solo una recomendación.
+    if (!window.confirm("¿Generar con IA? Gasta créditos · el plan queda ACTIVO")) {
       return;
     }
     setGenerating(true);
@@ -768,9 +769,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
           <div className="flex-1">
             <h3 className="text-base font-semibold text-zinc-100">Planificación mensual</h3>
             <p className="mt-1 text-sm text-zinc-400">
-              {client.level === "advanced"
-                ? "La montas tú, sin IA"
-                : `Genera con IA · queda ACTIVO`}
+              Con IA o a mano · tú eliges
             </p>
 
             {missing && (
@@ -791,22 +790,33 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
               </div>
             )}
 
-            {/* CUATRO caminos, siempre los cuatro, con su coste a la vista.
-                Para el avanzado el orden cambia (su plan lo monta el coach),
-                pero las opciones son las mismas: la web ya no esconde el
-                "a mano" ni el "copiar" a nadie. El cuarto es importar la
-                dieta/rutina que traiga el cliente desde un documento ajeno. */}
+            {/* CUATRO caminos, los mismos y en el MISMO orden para todos. El
+                nivel del cliente ya no decide por el coach: solo señala cuál
+                suele encajarle ("Recomendado"), que es lo que el nivel es —una
+                recomendación—, no un permiso. Antes, al avanzado se le movía
+                la IA al último sitio y se le cambiaba el botón principal sin
+                decirle por qué; a los demás no se les preguntaba ni al gastar
+                créditos. El cuarto camino es importar la dieta o la rutina que
+                traiga ya hecha en un documento ajeno. */}
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              {(client.level === "advanced"
-                ? (["mano", "copiar", "documento", "ia"] as const)
-                : (["ia", "mano", "copiar", "documento"] as const)
-              ).map((camino, i) => {
-                const principal = i === 0;
+              {(["ia", "mano", "copiar", "documento"] as const).map((camino) => {
+                const recomendado = camino === (client.level === "advanced" ? "mano" : "ia");
+                const principal = recomendado;
                 const boton = principal ? "btn btn-primary w-full" : "btn btn-ghost w-full";
                 if (camino === "ia") {
                   return (
                     <div key={camino} className="well flex flex-col gap-2 p-3.5">
-                      <p className="text-sm font-semibold text-zinc-100">Con IA</p>
+                      <p className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-zinc-100">
+                      Con IA
+                      {recomendado && (
+                        <span className="rounded-full px-1.5 py-0.5 text-[10px] font-bold"
+                          style={{ background: "color-mix(in srgb, var(--brand-accent) 16%, transparent)",
+                                  color: "var(--brand-accent)" }}
+                          title="Lo habitual con un cliente de su nivel. Puedes usar cualquiera de los cuatro.">
+                            Recomendado
+                          </span>
+                      )}
+                    </p>
                       <p className="flex-1 text-xs text-zinc-500">
                         El sistema lo genera entero y queda activo. Gasta créditos.
                       </p>
@@ -821,7 +831,17 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                 if (camino === "mano") {
                   return (
                     <div key={camino} className="well flex flex-col gap-2 p-3.5">
-                      <p className="text-sm font-semibold text-zinc-100">A mano · 0 créditos</p>
+                      <p className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-zinc-100">
+                      A mano · 0 créditos
+                      {recomendado && (
+                        <span className="rounded-full px-1.5 py-0.5 text-[10px] font-bold"
+                          style={{ background: "color-mix(in srgb, var(--brand-accent) 16%, transparent)",
+                                  color: "var(--brand-accent)" }}
+                          title="Lo habitual con un cliente de su nivel. Puedes usar cualquiera de los cuatro.">
+                            Recomendado
+                          </span>
+                      )}
+                    </p>
                       <p className="flex-1 text-xs text-zinc-500">
                         El sistema deja los números, comidas y sesiones preparados;
                         tú lo terminas en el editor o en Word y lo activas.
@@ -837,7 +857,17 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                 if (camino === "documento") {
                   return (
                     <div key={camino} className="well flex flex-col gap-2 p-3.5">
-                      <p className="text-sm font-semibold text-zinc-100">Desde un documento ajeno · IA</p>
+                      <p className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-zinc-100">
+                      Desde un documento ajeno · IA
+                      {recomendado && (
+                        <span className="rounded-full px-1.5 py-0.5 text-[10px] font-bold"
+                          style={{ background: "color-mix(in srgb, var(--brand-accent) 16%, transparent)",
+                                  color: "var(--brand-accent)" }}
+                          title="Lo habitual con un cliente de su nivel. Puedes usar cualquiera de los cuatro.">
+                            Recomendado
+                          </span>
+                      )}
+                    </p>
                       <p className="flex-1 text-xs text-zinc-500">
                         Sube la dieta o rutina que traiga el cliente (PDF, Word,
                         fotos, Excel): la IA la transcribe, las cifras las pone el
@@ -866,7 +896,17 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                 }
                 return (
                   <div key={camino} className="well flex flex-col gap-2 p-3.5">
-                    <p className="text-sm font-semibold text-zinc-100">Desde otro plan · 0 créditos</p>
+                    <p className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-zinc-100">
+                      Desde otro plan · 0 créditos
+                      {recomendado && (
+                        <span className="rounded-full px-1.5 py-0.5 text-[10px] font-bold"
+                          style={{ background: "color-mix(in srgb, var(--brand-accent) 16%, transparent)",
+                                  color: "var(--brand-accent)" }}
+                          title="Lo habitual con un cliente de su nivel. Puedes usar cualquiera de los cuatro.">
+                            Recomendado
+                          </span>
+                      )}
+                    </p>
                     <p className="flex-1 text-xs text-zinc-500">
                       Copia un modelo guardado o el plan de otro cliente; las
                       cifras se recalculan para este.
@@ -1651,14 +1691,11 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
       <MealStructureCard
         currentNames={(Array.isArray(nut.meals) ? nut.meals : []).map((m: any) => m?.name ?? "")}
         generating={generating}
-        // Cliente AVANZADO: regenerar con otras comidas rehace la BASE sin IA
-        // (0 créditos, sigue en borrador); al resto se lo regenera la IA.
-        onRegenerate={(keys) => (client.level === "advanced" ? void scaffold(keys) : generate(keys))}
-        // La base sin IA del avanzado es gratis y no pisa nada publicado; en el
-        // resto, regenerar GASTA créditos y sustituye la versión actual.
-        confirmText={client.level === "advanced" ? null
-          : "¿Regenerar el plan con estas comidas? Gasta créditos de IA y sustituye "
-            + "la versión actual, ediciones manuales incluidas (queda en el historial)."}
+        // LOS DOS CAMINOS, A LA VISTA. Este botón hacía una cosa u otra según
+        // el nivel del cliente y sin decirlo: al avanzado le rehacía la base a
+        // mano y al resto le gastaba créditos. Ahora se elige, para cualquier
+        // cliente, y cada botón dice lo que cuesta.
+        onRegenerate={(keys, conIa) => (conIa ? generate(keys) : void scaffold(keys))}
       />
       )}
 
@@ -2383,13 +2420,12 @@ function MealStructureCard({
   currentNames,
   generating,
   onRegenerate,
-  confirmText,
 }: {
   currentNames: string[];
   generating: boolean;
-  onRegenerate: (keys: string[]) => void;
-  /** Confirmación previa (gasto de créditos + pisa ediciones); null = directo. */
-  confirmText?: string | null;
+  /** `conIa` decide el camino: con IA (gasta créditos y sustituye la versión
+   *  actual) o rehaciendo la base a mano (0 créditos, queda en borrador). */
+  onRegenerate: (keys: string[], conIa: boolean) => void;
 }) {
   const currentKeys = mealKeysFromNames(currentNames);
   const [sel, setSel] = useState<string[]>(currentKeys);
@@ -2422,7 +2458,7 @@ function MealStructureCard({
       </summary>
 
       <p className="mt-2 text-xs text-zinc-500">
-        Marca qué comidas hace el cliente. Al regenerar, la IA reparte los macros
+        Marca qué comidas hace el cliente. Al rehacerlo, los macros se reparten
         entre las tomas elegidas y toda la planificación se readapta.
       </p>
 
@@ -2457,13 +2493,25 @@ function MealStructureCard({
         <button
           type="button"
           onClick={() => {
-            if (confirmText && !window.confirm(confirmText)) return;
-            onRegenerate(orderedKeys);
+            if (!window.confirm(
+              "¿Regenerar el plan con estas comidas? Gasta créditos de IA y "
+              + "sustituye la versión actual, ediciones manuales incluidas "
+              + "(queda en el historial).")) return;
+            onRegenerate(orderedKeys, true);
           }}
           disabled={generating || tooFew || !changed}
           className="btn btn-primary"
         >
-          <Sparkles size={15} /> {generating ? "Regenerando…" : "Regenerar con estas comidas"}
+          <Sparkles size={15} /> {generating ? "Regenerando…" : "Regenerar con IA"}
+        </button>
+        <button
+          type="button"
+          onClick={() => onRegenerate(orderedKeys, false)}
+          disabled={generating || tooFew || !changed}
+          className="btn btn-ghost"
+          title="Rehace la base con estas tomas y la deja en borrador para que la termines tú"
+        >
+          <Pencil size={15} /> Rehacer a mano · 0 créditos
         </button>
         {tooFew ? (
           <span className="text-xs text-zinc-500">Selecciona al menos 2 comidas.</span>
@@ -2522,19 +2570,20 @@ function GoalStageCard({ client, currentMonth, onClientChanged, onRegenerated }:
     }
   }
 
-  async function changeAndRegenerate() {
+  async function changeAndRegenerate(conIa: boolean) {
     if (!newGoal || changing) return;
     setChanging(true);
     try {
       await api.changeGoal(client.id, { goal_type: newGoal });
-      toast.push(`Objetivo ${GOAL_LABEL[newGoal as GoalType]} · generando plan…`);
+      toast.push(`Objetivo ${GOAL_LABEL[newGoal as GoalType]} · preparando plan…`);
       onClientChanged?.();
-      if (client.level === "advanced") {
-        // Avanzado: el objetivo nuevo rehace la BASE sin IA (0 créditos) y
-        // queda en borrador — el coach la termina y la activa.
+      // LO ELIGE EL COACH, no el nivel del cliente: antes, al avanzado se le
+      // rehacía la base sin IA y al resto se le generaba y publicaba el plan
+      // entero, con el mismo botón y sin avisar de la diferencia.
+      if (!conIa) {
         await api.scaffoldPlan(client.id, currentMonth + 1);
         await onRegenerated();
-        toast.push("Base del objetivo nuevo lista");
+        toast.push("Base del objetivo nuevo lista · termínala y actívala");
       } else {
         await api.generatePlan(client.id, currentMonth + 1);
         await onRegenerated();
@@ -2610,12 +2659,20 @@ function GoalStageCard({ client, currentMonth, onClientChanged, onRegenerated }:
           </select>
           {!confirming ? (
             <button onClick={() => setConfirming(true)} disabled={!newGoal || changing} className="btn btn-primary">
-              <Sparkles size={14} /> Cambiar objetivo y regenerar plan
+              <Sparkles size={14} /> Cambiar objetivo y rehacer el plan
             </button>
           ) : (
-            <button onClick={changeAndRegenerate} disabled={changing} className="btn btn-primary">
-              {changing ? "Cambiando y generando… (1-2 min)" : `Confirmar: ${newGoal ? GOAL_LABEL[newGoal as GoalType] : ""} y regenerar TODO`}
-            </button>
+            <>
+              <button onClick={() => void changeAndRegenerate(true)} disabled={changing}
+                className="btn btn-primary">
+                {changing ? "Cambiando y generando… (1-2 min)" : "Confirmar y generar con IA"}
+              </button>
+              <button onClick={() => void changeAndRegenerate(false)} disabled={changing}
+                className="btn btn-ghost"
+                title="Cambia el objetivo y deja la base preparada en borrador para que la termines tú">
+                Confirmar y prepararla a mano · 0 créditos
+              </button>
+            </>
           )}
           {due != null && (
             <button onClick={keepGoal} disabled={changing} className="btn btn-ghost">
@@ -2625,8 +2682,11 @@ function GoalStageCard({ client, currentMonth, onClientChanged, onRegenerated }:
         </div>
         {confirming && !changing && (
           <p className="text-xs text-zinc-500">
-            Se cambiará el objetivo, se generará una planificación completamente nueva ({hasTraining ? "dieta y entrenamiento" : "dieta"}) con todo su historial en cuenta, y la actual quedará archivada abajo
-            con su objetivo y duración.
+            Se cambia el objetivo a <b>{newGoal ? GOAL_LABEL[newGoal as GoalType] : ""}</b> y se
+            rehace la planificación entera ({hasTraining ? "dieta y entrenamiento" : "dieta"}) con
+            todo su historial en cuenta; la actual queda archivada abajo con su objetivo y
+            duración. Con IA gasta créditos y queda ACTIVA; a mano son 0 créditos y queda en
+            borrador para que la termines tú.
           </p>
         )}
       </div>

@@ -21,6 +21,8 @@
  *   portal a quien ya está pagando.
  */
 
+import type { FuncionDeMarca } from "../types";
+
 export type Piel = "dqr" | "professional";
 
 const PIELES: readonly Piel[] = ["dqr", "professional"] as const;
@@ -60,6 +62,30 @@ export function aplicarPiel(piel: Piel): void {
 export function logoDeMarca(logoUrl: string | null | undefined, piel: Piel): string | null {
   if (logoUrl) return logoUrl;
   return piel === "professional" ? null : "/dq-logo.png";
+}
+
+/* ------------------------------------------------------- lo que usa la marca --
+ * QUÉ APARTADOS TIENE ESTE NEGOCIO.
+ *
+ * La piel cambiaba cómo se VE el panel y no lo que ENSEÑA: con el centro
+ * activo seguían ahí el catálogo de afiliación, la página de enlaces del
+ * perfil de Instagram, la conexión con Google y los tres planes de DQR en el
+ * alta. Un negocio no es solo una identidad, también es un modo de trabajar.
+ *
+ * La respuesta la da el BACKEND (`usa` en el contrato de marca), que junta lo
+ * declarado con lo que ya dicen otros datos suyos. Aquí no se deduce nada: si
+ * el panel dedujera por su cuenta, el día que cambie una regla diría una cosa
+ * el servidor y otra la pantalla.
+ */
+
+/** ¿Este negocio usa esto? Sin respuesta —la marca aún no ha llegado— vale
+ *  que SÍ: es lo que había antes de que esto existiera, y hacer desaparecer un
+ *  apartado a mitad de carga es peor que enseñarlo. */
+export function usaLaMarca(
+  usa: Partial<Record<FuncionDeMarca, boolean>> | null | undefined,
+  clave: FuncionDeMarca,
+): boolean {
+  return usa?.[clave] !== false;
 }
 
 /* ------------------------------------------------------------------ colores --

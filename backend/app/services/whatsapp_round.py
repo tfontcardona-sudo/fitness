@@ -1,9 +1,20 @@
 """Ronda diaria de seguimiento por WhatsApp.
 
-Cada día toca UN brief del pool de 100 (rotación sin repetir; al llegar a 100
-vuelve a empezar). Para cada cliente activo, la IA REDACTA ese brief adaptado a
-esa persona: su nombre, su plan, cómo le está yendo, la hora del día y el día de
-la semana. El coach revisa la ronda y va enviando.
+PRIMERO SE MIRA A CADA CLIENTE; el pool es el plan B.
+
+Para cada cliente activo se calcula de qué hay que hablarle HOY a partir de sus
+datos (`services/client_focus`): si duerme cinco horas, del sueño; si ha
+entrenado uno de sus cuatro días, de eso; si dejó una pregunta en su diario, se
+le responde. El tema sale de REGLAS sobre lo que consta, no del criterio de un
+modelo, y viaja al prompt con el dato exacto que lo justifica.
+
+Solo cuando no hay nada que destacar —el cliente va bien y al día— entra el
+brief del día del pool de 100 (rotación sin repetir), que es un tema general
+que le vale a cualquiera. Inventarle un problema a quien no lo tiene sería
+peor que mandarle algo genérico.
+
+En los dos casos la IA hace lo mismo: REDACTARLO como una persona. El coach
+revisa la ronda y va enviando.
 
 El envío es asistido (se abre WhatsApp con el texto escrito): no se manda nada
 solo, y así ningún mensaje sale sin que el coach lo haya visto.
@@ -13,7 +24,7 @@ texto de reserva correcto (nunca un mensaje vacío ni un error).
 """
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
@@ -22,6 +33,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Client, WhatsAppRound, WhatsAppSend
 from app.services import packages as pkgs
+from app.services.client_focus import Foco, focos_de
 from app.services.whatsapp_pool import POOL, Brief, applies_to, brief_for_index
 
 TZ = ZoneInfo("Europe/Madrid")
@@ -132,14 +144,27 @@ SYSTEM = (
 )
 
 
-def _user_prompt(brief: Brief, ctx: dict, *, franja: str, dia_semana: str) -> str:
+def _user_prompt(brief: Brief, ctx: dict, *, franja: str, dia_semana: str,
+                 foco: Foco | None = None) -> str:
     import json
 
     # JSON compacto (sin indent): mismo contenido, ~25% menos tokens de entrada.
     ctx_json = json.dumps(ctx, ensure_ascii=False, separators=(",", ":"))
+    if foco is not None:
+        # EL DATO VA LITERAL. Es la diferencia entre "¿qué tal duermes?" y
+        # "veo que llevas la semana en cinco horas y media": lo segundo es lo
+        # que hace que el cliente se sienta mirado, y es justo lo que la IA no
+        # puede deducir sola sin inventarse la cifra.
+        tema = f"TEMA DE HOY (de ESTE cliente): {foco.tema}\n"
+        guia = f"QUÉ DEBE CONSEGUIR: {foco.guia}\n"
+        dato = (f"EL DATO QUE LO MOTIVA (menciónalo tal cual, sin redondear ni "
+                f"adornar): {foco.dato}\n")
+    else:
+        tema = f"TEMA DE HOY: {brief.tema}\n"
+        guia = f"QUÉ DEBE CONSEGUIR: {brief.guia}\n"
+        dato = ""
     return (
-        f"TEMA DE HOY: {brief.tema}\n"
-        f"QUÉ DEBE CONSEGUIR: {brief.guia}\n\n"
+        tema + guia + dato + "\n"
         f"MOMENTO: {dia_semana}, franja de {franja}. Saluda acorde a la hora.\n\n"
         f"CLIENTE (usa solo lo que haya aquí):\n{ctx_json}\n\n"
         "Escribe SOLO el texto del mensaje, sin comillas ni explicaciones."
@@ -149,18 +174,25 @@ def _user_prompt(brief: Brief, ctx: dict, *, franja: str, dia_semana: str) -> st
 _DIAS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
 
 
-def fallback_text(brief: Brief, ctx: dict) -> str:
-    """Texto de reserva si la IA no está disponible: correcto y humano, aunque
-    menos personalizado. Nunca se envía un mensaje vacío."""
-    return f"¡Hola {ctx.get('nombre', '')}! {brief.guia.rstrip('.')}. ¿Cómo lo llevas?".replace("  ", " ")
+def fallback_text(brief: Brief, ctx: dict, foco: Foco | None = None) -> str:
+    """Texto de reserva si la IA no está disponible.
+
+    Con foco sigue siendo PERSONAL aunque no lo haya escrito un modelo: lleva
+    su dato y una pregunta. Es lo que se manda el día que la API está caída, y
+    ese día el cliente no tiene por qué recibir un mensaje peor."""
+    nombre = ctx.get("nombre", "")
+    if foco is not None and foco.reserva:
+        return f"¡Hola {nombre}! {foco.reserva}".replace("  ", " ")
+    return f"¡Hola {nombre}! {brief.guia.rstrip('.')}. ¿Cómo lo llevas?".replace("  ", " ")
 
 
-def compose_for_client(brief: Brief, ctx: dict, *, ai=None, now: datetime | None = None) -> str:
+def compose_for_client(brief: Brief, ctx: dict, *, ai=None, now: datetime | None = None,
+                       foco: Foco | None = None) -> str:
     """Redacta el mensaje de ESTE cliente. Con `ai=None` (o si la IA falla)
     devuelve el texto de reserva."""
     now = now or datetime.now(TZ)
     if ai is None:
-        return fallback_text(brief, ctx)
+        return fallback_text(brief, ctx, foco)
     try:
         from app.config import settings
 
@@ -168,13 +200,13 @@ def compose_for_client(brief: Brief, ctx: dict, *, ai=None, now: datetime | None
             model=settings.model_light,
             system=SYSTEM,
             user=_user_prompt(brief, ctx, franja=franja_of(now),
-                              dia_semana=_DIAS[now.weekday()]),
+                              dia_semana=_DIAS[now.weekday()], foco=foco),
             max_tokens=300,  # ~40 palabras de salida: techo anti-desbocadas
         )
         text = (raw or "").strip().strip('"').strip()
-        return text or fallback_text(brief, ctx)
+        return text or fallback_text(brief, ctx, foco)
     except Exception:  # noqa: BLE001 — un fallo de IA no deja al coach sin ronda
-        return fallback_text(brief, ctx)
+        return fallback_text(brief, ctx, foco)
 
 
 def build_round(db: Session, *, ai=None, now: datetime | None = None,
@@ -187,50 +219,70 @@ def build_round(db: Session, *, ai=None, now: datetime | None = None,
     encaja con el brief del día reciben el SIGUIENTE brief que sí les aplica.
     """
     now = now or datetime.now(TZ)
-    round_row = get_or_create_round(db, today=now.date())
+    hoy = now.date()
+    round_row = get_or_create_round(db, today=hoy)
     sent_ids = set(db.scalars(
         select(WhatsAppSend.client_id).where(WhatsAppSend.round_id == round_row.id)
     ))
-    cached: dict = dict(round_row.texts_json or {}) if not force else {}
+    guardado: dict = dict(round_row.texts_json or {}) if not force else {}
+    cached = {k: v for k, v in guardado.items() if k != _CLAVE_FOCOS}
+    focos_de_hoy: dict = dict(guardado.get(_CLAVE_FOCOS) or {})
+    recientes = _focos_recientes(db, hoy)
 
     clients = active_clients(db)
-    # Contextos y briefs en el hilo principal (la sesión de BD no es thread-safe);
-    # a los hilos solo va la LLAMADA de redacción.
+    # Contextos, focos y briefs en el hilo principal (la sesión de BD no es
+    # thread-safe); a los hilos solo va la LLAMADA de redacción.
     prepared = []
     for client in clients:
         has_n = pkgs.has_nutrition(client.package_tier)
         has_t = pkgs.has_training(client.package_tier)
         brief = _brief_for_client(round_row.brief_index, has_nutrition=has_n, has_training=has_t)
-        prepared.append((client, brief, client_context(db, client)))
+        foco = _foco_del_dia(db, client, hoy=hoy, has_nutrition=has_n, has_training=has_t,
+                             recientes=recientes.get(client.id, []))
+        if foco is not None:
+            focos_de_hoy[str(client.id)] = foco.key
+        prepared.append((client, brief, client_context(db, client), foco))
 
-    missing = [(c, b, ctx) for c, b, ctx in prepared if str(c.id) not in cached]
+    missing = [t for t in prepared if str(t[0].id) not in cached]
     if missing:
         if ai is not None and len(missing) > 1:
             from concurrent.futures import ThreadPoolExecutor
 
             with ThreadPoolExecutor(max_workers=4) as pool:
                 texts = list(pool.map(
-                    lambda t: compose_for_client(t[1], t[2], ai=ai, now=now), missing))
+                    lambda t: compose_for_client(t[1], t[2], ai=ai, now=now, foco=t[3]),
+                    missing))
         else:
-            texts = [compose_for_client(b, ctx, ai=ai, now=now) for _, b, ctx in missing]
-        for (client, _b, _ctx), text in zip(missing, texts):
+            texts = [compose_for_client(b, ctx, ai=ai, now=now, foco=f)
+                     for _, b, ctx, f in missing]
+        for (client, _b, _ctx, _f), text in zip(missing, texts):
             cached[str(client.id)] = text
-        round_row.texts_json = cached
+    if missing or focos_de_hoy != (guardado.get(_CLAVE_FOCOS) or {}):
+        # Los focos se guardan JUNTO a los textos (misma columna, clave
+        # reservada): sirven para no repetirle el mismo tema dos días seguidos
+        # y no merecen una migración propia.
+        round_row.texts_json = {**cached, _CLAVE_FOCOS: focos_de_hoy}
         db.commit()
 
     items = []
-    for client, brief, _ctx in prepared:
+    for client, brief, _ctx, foco in prepared:
         items.append({
             "client_id": client.id,
             "name": client.full_name,
             "phone": client.phone,
             "tier": pkgs.normalize(client.package_tier),
-            "brief_key": brief.key,
-            "brief_tema": brief.tema,
+            "brief_key": foco.key if foco else brief.key,
+            "brief_tema": foco.tema if foco else brief.tema,
+            # POR QUÉ le toca este tema: el coach ve el dato antes de enviar y
+            # puede corregir el mensaje si no le cuadra. Un mensaje que no se
+            # entiende no se manda.
+            "motivo": foco.dato if foco else None,
+            "personalizado": foco is not None,
             "text": cached.get(str(client.id), ""),
             "already_sent": client.id in sent_ids,
         })
     return {
+        "personalizados": sum(1 for i in items if i["personalizado"]),
         "round_id": round_row.id,
         "date": round_row.round_date.isoformat(),
         "brief_index": round_row.brief_index,
@@ -240,6 +292,71 @@ def build_round(db: Session, *, ai=None, now: datetime | None = None,
         "items": items,
         "pending": sum(1 for i in items if not i["already_sent"]),
     }
+
+
+# Clave reservada dentro de `texts_json` para la memoria de temas. Los demás
+# nombres del diccionario son ids de cliente (numéricos): no pueden chocar.
+_CLAVE_FOCOS = "_focos"
+# Cuántos días atrás se mira para no repetirle el mismo tema.
+_DIAS_SIN_REPETIR = 3
+
+
+def sin_cliente(texts_json: dict | None, client_id: int) -> dict:
+    """El JSON de una ronda SIN nada de este cliente (baja RGPD).
+
+    Vive aquí y no en el endpoint de la baja porque es esta función la que
+    conoce la forma del diccionario: su texto va con su id como clave, y el
+    TEMA que se le asignó ese día —de qué había que hablarle: su sueño, su
+    adherencia— dentro de `_focos`. Es un dato suyo aunque no lleve su nombre,
+    y quien borra un cliente no tiene por qué saberse esa estructura.
+    """
+    datos = dict(texts_json or {})
+    focos = {k: v for k, v in (datos.get(_CLAVE_FOCOS) or {}).items()
+             if k != str(client_id)}
+    out = {k: v for k, v in datos.items()
+           if k not in (str(client_id), _CLAVE_FOCOS)}
+    if focos:
+        out[_CLAVE_FOCOS] = focos
+    return out
+
+
+def _focos_recientes(db: Session, hoy: date) -> dict[int, list[str]]:
+    """Qué tema le tocó a cada cliente en las últimas rondas.
+
+    Repetirle «¿qué tal duermes?» tres mañanas seguidas es exactamente la
+    sensación de plantilla que esto viene a quitar. Una sola consulta para
+    toda la ronda: esto corre con la cartera entera delante.
+    """
+    filas = db.scalars(
+        select(WhatsAppRound)
+        .where(WhatsAppRound.round_date < hoy,
+               WhatsAppRound.round_date >= hoy - timedelta(days=_DIAS_SIN_REPETIR))
+    ).all()
+    out: dict[int, list[str]] = {}
+    for fila in filas:
+        for cid, key in ((fila.texts_json or {}).get(_CLAVE_FOCOS) or {}).items():
+            try:
+                out.setdefault(int(cid), []).append(str(key))
+            except (TypeError, ValueError):
+                continue
+    return out
+
+
+def _foco_del_dia(db: Session, client, *, hoy: date, has_nutrition: bool,
+                  has_training: bool, recientes: list[str]) -> Foco | None:
+    """El tema de hoy para este cliente, o None si no hay nada que destacar.
+
+    Lo URGENTE se repite sin complejos (prioridad 1-2): si lleva cuatro días
+    sin aparecer, el mensaje de hoy vuelve a ser ese — callarlo por no repetir
+    sería perder al cliente por educación. Lo demás cede el turno al siguiente
+    tema si ya se le mandó estos días.
+    """
+    focos = focos_de(db, client, hoy=hoy, has_nutrition=has_nutrition,
+                     has_training=has_training)
+    for foco in focos:
+        if foco.prioridad <= 2 or foco.key not in recientes:
+            return foco
+    return None
 
 
 def _brief_for_client(index: int, *, has_nutrition: bool, has_training: bool) -> Brief:

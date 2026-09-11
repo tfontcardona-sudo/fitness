@@ -420,10 +420,18 @@ export default function DashboardPage() {
         )}
       </section>
 
-      {/* AGENDA DE VIDEOLLAMADAS — las agendadas (con Meet), hasta realizarlas */}
-      {agenda.length > 0 && (
+      {/* AGENDA DE REVISIONES — las agendadas, hasta realizarlas. Se llaman
+          como las llama el negocio: en un CENTRO la revisión es una visita a
+          la sala, y titularla "videollamadas" era prometer un Meet que no hay.
+          Si conviven las dos (clientes de antes), el título neutro. */}
+      {agenda.length > 0 && (() => {
+        const presenciales = agenda.filter((v) => v.modo === "presencial").length;
+        const titulo = presenciales === agenda.length ? "Visitas agendadas"
+          : presenciales === 0 ? "Videollamadas agendadas" : "Revisiones agendadas";
+        return (
         <section className="mt-8">
-          <SectionHeader title="Videollamadas agendadas" tone="#0EA5E9" icon={Video}
+          <SectionHeader title={titulo} tone="#0EA5E9"
+            icon={presenciales === agenda.length ? MapPin : Video}
             count={agenda.length} />
           <div className="card p-2">
             <ul className="divide-y" style={{ borderColor: "var(--line)" }}>
@@ -477,7 +485,8 @@ export default function DashboardPage() {
             </ul>
           </div>
         </section>
-      )}
+        );
+      })()}
 
       {/* EN ESPERA — informativo, sin urgencia (azul: información) */}
       {enEspera.length > 0 && (

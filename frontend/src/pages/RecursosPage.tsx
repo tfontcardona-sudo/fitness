@@ -33,6 +33,7 @@ import type {
 } from "../types";
 import { ConfirmDialog, EmptyState, PageLoader, Spinner, useToast } from "../components/ui";
 import { useBrand } from "../hooks/useBrand";
+import { usaLaMarca } from "../lib/marca";
 
 /**
  * Recursos del portal (coach): gestiona el catálogo de PRODUCTOS recomendados
@@ -47,18 +48,41 @@ export default function RecursosPage() {
   // directo al bloque de Google, no a buscarlo).
   type RTab = "productos" | "videos" | "enlaces" | "aprendizaje" | "modelos" | "marca";
   const TABS_VALIDAS: RTab[] = ["productos", "videos", "enlaces", "aprendizaje", "modelos", "marca"];
+  // LO QUE ESTE NEGOCIO USA. Con el centro activo, "Productos" (el catálogo de
+  // afiliación de una asesoría online) y "Página de enlaces" (el enlace del
+  // perfil de Instagram, con la conexión de Google dentro) son dos apartados de
+  // otro negocio: no los usa, no los ve. Lo dice el backend, no un `if` por
+  // slug, así que una marca nueva declara lo suyo sin tocar esta pantalla.
+  const { brand } = useBrand();
+  const usaProductos = usaLaMarca(brand?.usa, "productos");
+  const usaEnlaces = usaLaMarca(brand?.usa, "enlaces") || usaLaMarca(brand?.usa, "videollamadas");
+  const visible = (t: RTab) =>
+    t === "productos" ? usaProductos : t === "enlaces" ? usaEnlaces : true;
   const [tab, setTabState] = useState<RTab>(() => {
     const q = new URLSearchParams(window.location.search);
     const t = q.get("tab") as RTab | null;
     if (t && TABS_VALIDAS.includes(t)) return t;
     return q.has("google") ? "enlaces" : "productos";
   });
+  // Si la marca no tiene la pestaña que pide la URL (un enlace viejo, o el
+  // switch cambiado con la pantalla abierta), se cae a la primera que sí
+  // tenga. Sin esto, "Productos" se quedaba seleccionada en el centro y la
+  // pantalla salía en blanco bajo una tira de pestañas que no la incluye.
+  const tabVisible: RTab = visible(tab) ? tab : (TABS_VALIDAS.find(visible) ?? "marca");
+  useEffect(() => {
+    if (tabVisible !== tab) setTabState(tabVisible);
+  }, [tabVisible, tab]);
   const setTab = (t: RTab) => {
     setTabState(t);
     const url = new URL(window.location.href);
     url.searchParams.set("tab", t);
     window.history.replaceState(null, "", url);
   };
+  // Hasta que no se sabe de qué negocio se trata no se pinta la tira: si no,
+  // con el centro activo aparecían un instante las pestañas de DQR y después
+  // desaparecían solas, que es justo la sensación de "esto no es mi panel".
+  if (!brand) return <PageLoader />;
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-6 md:px-8 md:py-8">
       <header className="mb-6">
@@ -70,19 +94,20 @@ export default function RecursosPage() {
           arrastrando la página entera de lado. */}
       <div className="tab-strip mb-6">
       <div className="inline-flex rounded-xl border p-1" style={{ borderColor: "var(--line-strong)" }}>
-        {([["productos", "Productos", Package], ["videos", "Vídeos de ejercicios", Video], ["modelos", "Modelos de plan", Copy], ["enlaces", "Página de enlaces", ExternalLink], ["aprendizaje", "Aprendizaje", GraduationCap], ["marca", "Marca", Store]] as const).map(
+        {([["productos", "Productos", Package], ["videos", "Vídeos de ejercicios", Video], ["modelos", "Modelos de plan", Copy], ["enlaces", "Página de enlaces", ExternalLink], ["aprendizaje", "Aprendizaje", GraduationCap], ["marca", "Marca", Store]] as const).filter(([id]) => visible(id)).map(
           ([id, label, Icon]) => (
             <button
               key={id}
               onClick={() => setTab(id)}
+              type="button"
               // La pestaña que NO está activa llevaba solo texto gris: no se
               // leía como algo pulsable. Ahora todas tienen borde y fondo; la
               // activa se distingue por el color de marca, no por ser la única
               // que parece un control.
               className="flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
-              aria-pressed={tab === id}
+              aria-pressed={tabVisible === id}
               style={
-                tab === id
+                tabVisible === id
                   ? { background: "var(--surface-raised)", color: "var(--brand-accent)",
                       borderColor: "var(--brand-accent)" }
                   : { color: "var(--text-dim)", borderColor: "var(--line-strong)",
@@ -97,10 +122,11 @@ export default function RecursosPage() {
       </div>
       </div>
 
-      {tab === "productos" ? <ProductsManager /> : tab === "videos" ? <ExerciseVideosManager />
-        : tab === "modelos" ? <TemplatesManager />
-        : tab === "marca" ? <MarcaManager />
-        : tab === "enlaces" ? <LinksPageManager /> : <LearningManager />}
+      {tabVisible === "productos" ? <ProductsManager />
+        : tabVisible === "videos" ? <ExerciseVideosManager />
+        : tabVisible === "modelos" ? <TemplatesManager />
+        : tabVisible === "marca" ? <MarcaManager />
+        : tabVisible === "enlaces" ? <LinksPageManager /> : <LearningManager />}
     </div>
   );
 }
@@ -370,6 +396,10 @@ function PatronesDelCoach() {
  *  fondo del coach + tienda del partner (ESN) con su código de descuento. */
 function LinksPageManager() {
   const toast = useToast();
+  // Qué usa el negocio con el que se está trabajando. `brand` (abajo) es la
+  // misma fila, pero se carga aparte para EDITARLA; la pregunta de qué
+  // apartados tiene va por la puerta de siempre.
+  const { brand: marca } = useBrand();
   const [brand, setBrand] = useState<import("../types").BrandConfigOut | null>(null);
   // Sin esto la pantalla giraba para siempre si la marca no cargaba.
   const [brandError, setBrandError] = useState(false);
@@ -482,25 +512,6 @@ function LinksPageManager() {
     }
   }
 
-  // EL LOGO DE LA MARCA. `POST /api/brand/logo` existe desde el principio y no
-  // lo llamaba ninguna pantalla: el logo sale en la página pública de enlaces y
-  // en la cabecera de TODOS los correos al cliente, y para cambiarlo había que
-  // llamar a la API a mano. Va aquí, junto a las otras imágenes de la marca.
-  const [uploadingLogo, setUploadingLogo] = useState(false);
-  const logoRef = useRef<HTMLInputElement>(null);
-  async function uploadLogo(file: File | undefined) {
-    if (!file || uploadingLogo) return;
-    setUploadingLogo(true);
-    try {
-      setBrand(await api.uploadLogo(file));
-      toast.push("Logo actualizado · sale en tu página y en tus correos");
-    } catch (e) {
-      toast.push(e instanceof ApiError ? e.message : "No se pudo subir el logo", "error");
-    } finally {
-      setUploadingLogo(false);
-    }
-  }
-
   async function uploadPlansPhoto(file: File | undefined) {
     if (!file || uploadingPlans) return;
     setUploadingPlans(true);
@@ -531,6 +542,11 @@ function LinksPageManager() {
 
   return (
     <div className="max-w-2xl space-y-4">
+      {/* LA PÁGINA DE ENLACES es de quien vende por Instagram. Un centro
+          con local no la usa —tiene su dirección y su propia web—, así
+          que estas cuatro tarjetas configuran una página que nadie va a
+          abrir. */}
+      {usaLaMarca(marca?.usa, "enlaces") && (<>
       {/* El enlace público para el perfil de Instagram */}
       <div className="card p-5">
         <h3 className="text-sm font-semibold text-zinc-200">Tu enlace para Instagram</h3>
@@ -566,27 +582,6 @@ function LinksPageManager() {
         <button className="btn btn-ghost mt-3" disabled={uploading} onClick={() => photoRef.current?.click()}>
           <Upload size={15} className="text-zinc-500" />
           {uploading ? "Subiendo…" : brand.links_photo_path ? "Cambiar foto" : "Subir foto"}
-        </button>
-      </div>
-
-      {/* EL LOGO: la página pública y la cabecera de todos los correos. */}
-      <div className="card p-5">
-        <h3 className="text-sm font-semibold text-zinc-200">Logo de la marca</h3>
-        <p className="mt-1 text-sm text-zinc-500">
-          Sale en tu página de enlaces y en la cabecera de todos los correos al
-          cliente · PNG/JPG
-        </p>
-        {api.mediaUrl(brand.logo_path) && (
-          <img src={api.mediaUrl(brand.logo_path)!} alt="Logo actual"
-            className="mt-3 h-16 w-auto rounded-xl border p-1"
-            style={{ borderColor: "var(--line-strong)", background: "#fff" }} />
-        )}
-        <input ref={logoRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
-          onChange={(e) => { uploadLogo(e.target.files?.[0]); e.target.value = ""; }} />
-        <button className="btn btn-ghost mt-3" disabled={uploadingLogo}
-          onClick={() => logoRef.current?.click()}>
-          <Upload size={15} className="text-zinc-500" />
-          {uploadingLogo ? "Subiendo…" : brand.logo_path ? "Cambiar logo" : "Subir logo"}
         </button>
       </div>
 
@@ -628,6 +623,13 @@ function LinksPageManager() {
         </button>
       </div>
 
+      </>)}
+
+      {/* Y las videollamadas: en un centro la revisión es una VISITA
+          (`cita_modo`), así que no hay Meet que conectar ni enlace de
+          reservas que dar. Se DEDUCE de cómo trabaja la marca, no se
+          declara aparte: dos verdades sobre lo mismo se contradicen. */}
+      {usaLaMarca(marca?.usa, "videollamadas") && (<>
       {/* Videollamadas de revisión (plan Full): Google Meet + enlace de reservas */}
       <div className="card p-5">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold text-zinc-200">
@@ -676,8 +678,86 @@ function LinksPageManager() {
           </button>
         </div>
       </div>
+      </>)}
 
-      <DiagnosticoCorreo />
+    </div>
+  );
+}
+
+/** Qué APARTADOS trae el negocio al que se cambia. El switch cambiaba media
+ *  pantalla sin avisar: la confirmación decía qué pasa con los clientes y las
+ *  tarifas, y nada de que iban a desaparecer pestañas enteras. */
+function _loQueCambia(p: BrandProfileOut): string {
+  const NOMBRES: Record<string, string> = {
+    productos: "productos recomendados",
+    enlaces: "página de enlaces",
+    videollamadas: "videollamadas de revisión",
+    oferta: "oferta de captación",
+  };
+  const fuera = Object.keys(NOMBRES).filter((k) => p.usa?.[k as keyof typeof p.usa] === false)
+    .map((k) => NOMBRES[k]);
+  if (fuera.length === 0) return "";
+  const lista = fuera.length === 1 ? fuera[0]
+    : fuera.slice(0, -1).join(", ") + " y " + fuera[fuera.length - 1];
+  return `Este negocio no usa ${lista}, así que esos apartados no saldrán. `;
+}
+
+/* ================================================ El logo de la marca ================================================ */
+
+/** EL LOGO. Vivía en la pestaña "Página de enlaces", junto a las fotos de la
+ *  landing del perfil de Instagram — un apartado que un centro con local no
+ *  usa. Al dejar de enseñárselo, su dueño se quedaba sin NINGUNA forma de
+ *  subir su propio logo, que es justo lo único que le falta al negocio nuevo.
+ *  El logo no es la foto de una página: es la identidad, y vive con ella.
+ *
+ *  Y al guardarlo se recarga la marca ENTERA, no un estado local: el logo sale
+ *  en la barra del panel, en el portal del cliente y en los documentos, así
+ *  que se ve el cambio en el sitio donde se hizo y en todos los demás. */
+function LogoDeLaMarca() {
+  const toast = useToast();
+  const { brand, reload } = useBrand();
+  const [subiendo, setSubiendo] = useState(false);
+  const ref = useRef<HTMLInputElement>(null);
+
+  async function subir(file: File | undefined) {
+    if (!file || subiendo) return;
+    setSubiendo(true);
+    try {
+      await api.uploadLogo(file);
+      reload();
+      toast.push("Logo actualizado · sale en tu panel, tu web y tus correos");
+    } catch (e) {
+      toast.push(e instanceof ApiError ? e.message : "No se pudo subir el logo", "error");
+    } finally {
+      setSubiendo(false);
+    }
+  }
+
+  return (
+    <div className="card p-5">
+      <h3 className="text-sm font-semibold text-zinc-200">Logo de {brand?.name || "la marca"}</h3>
+      <p className="mt-1 text-sm text-zinc-500">
+        Sale en tu panel, en el portal del cliente, en sus documentos y en la
+        cabecera de todos los correos · PNG/JPG
+      </p>
+      {api.mediaUrl(brand?.logo_path ?? null) ? (
+        <img src={api.mediaUrl(brand?.logo_path ?? null)!} alt="Logo actual"
+          className="mt-3 h-16 w-auto rounded-xl border p-1"
+          style={{ borderColor: "var(--line-strong)", background: "#fff" }} />
+      ) : (
+        // Sin fichero, cada marca imprime SU rótulo: decirlo aquí evita la
+        // duda de "¿se ha subido y no se ve?" cuando lo que se ve es el texto.
+        <p className="mt-3 text-sm text-zinc-500">
+          Sin logo todavía · mientras tanto se imprime el rótulo <b>{brand?.name}</b>
+        </p>
+      )}
+      <input ref={ref} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+        onChange={(e) => { subir(e.target.files?.[0]); e.target.value = ""; }} />
+      <button type="button" className="btn btn-ghost mt-3" disabled={subiendo}
+        onClick={() => ref.current?.click()}>
+        <Upload size={15} className="text-zinc-500" />
+        {subiendo ? "Subiendo…" : brand?.logo_path ? "Cambiar logo" : "Subir logo"}
+      </button>
     </div>
   );
 }
@@ -1080,8 +1160,13 @@ function ProductsManager() {
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
                   <button
+                    type="button"
                     onClick={() => toggleActive(p)}
-                    className="rounded-lg px-2 py-1 text-xs text-zinc-400 hover:text-zinc-200"
+                    // 57×24 px medidos en el navegador: al lado de dos botones
+                    // de icono de 36 px era el único que había que afinar para
+                    // acertar, y es el que decide si el cliente ve o no ese
+                    // producto en su portal.
+                    className="min-h-[36px] rounded-lg px-2.5 py-1 text-xs text-zinc-400 hover:text-zinc-200"
                     title={p.active ? "Ocultar del portal" : "Mostrar en el portal"}
                   >
                     {p.active ? "Ocultar" : "Mostrar"}
@@ -1827,7 +1912,8 @@ function MarcaManager() {
       <EmptyState
         title="No se pudieron cargar las marcas"
         hint="Puede ser un fallo de conexión."
-        action={<button className="btn-secondary" onClick={() => setIntento((n) => n + 1)}>Reintentar</button>}
+        action={<button type="button" className="btn btn-ghost"
+          onClick={() => setIntento((n) => n + 1)}>Reintentar</button>}
       />
     );
   }
@@ -1886,8 +1972,14 @@ function MarcaManager() {
                     En uso
                   </span>
                 ) : (
+                  /* EL BOTÓN DEL SWITCH. Llevaba la clase `btn-secondary`,
+                     que NO EXISTE en la hoja de estilos: salía como un botón
+                     gris del navegador —sin color de marca, sin borde y sin
+                     altura de dedo—, y por eso no parecía un control. Era el
+                     botón que cambia de negocio y el peor marcado del panel. */
                   <button
-                    className="btn-secondary shrink-0"
+                    type="button"
+                    className="btn btn-primary shrink-0"
                     disabled={cambiando != null}
                     onClick={() => setConfirmar(p)}
                   >
@@ -1911,12 +2003,23 @@ function MarcaManager() {
         })}
       </div>
 
+      {/* EL LOGO, aquí: es identidad, no la foto de una página. Antes vivía en
+          "Página de enlaces", que un centro no usa — y su dueño se quedaba sin
+          forma de subir el suyo. */}
+      <LogoDeLaMarca />
+
+      {/* Y el diagnóstico del correo, que es de SISTEMA: también estaba dentro
+          de la página de enlaces, y un negocio sin esa página manda correos
+          igual (y necesita igual saber por qué no salen). */}
+      <DiagnosticoCorreo />
+
       <ConfirmDialog
         open={confirmar != null}
         title={`¿Trabajar en ${confirmar?.name ?? ""}?`}
         body={
           "El panel pasará a enseñar solo los clientes de esta marca, y la " +
           "página pública, las tarifas y las altas nuevas serán las suyas. " +
+          (confirmar ? _loQueCambia(confirmar) : "") +
           "Tus clientes actuales no cambian: siguen con su marca. Puedes " +
           "volver cuando quieras."
         }

@@ -14,7 +14,8 @@
     "check:portapapeles": "node scripts/check-portapapeles.mjs",
     "check:alertas": "node scripts/check-alertas.mjs",
     "check:botones": "node scripts/check-botones.mjs",
-    "check:marca": "node scripts/check-marca.mjs"
+    "check:marca": "node scripts/check-marca.mjs",
+    "check:planes": "node scripts/check-planes.mjs"
   },
   "dependencies": {
     "date-fns": "^3.6.0",

@@ -288,6 +288,21 @@ body::before {
   white-space: nowrap;
   flex-shrink: 0;
 }
+/* ⚠️ EN UN MÓVIL, UNA TIRA QUE SE DESLIZA ES UN BOTÓN ESCONDIDO.
+   Estas tiras ocultan la barra de desplazamiento a propósito (queda más
+   limpia), así que a 390 px no había NI UNA PISTA de que a la derecha hubiera
+   más: en la ficha del cliente se perdían "Seguimiento", "Feedback" e
+   "Historial", y en Recursos se perdía "Marca" — la pestaña del SWITCH, que
+   es justo lo que el dueño no encontraba. Medido en navegador real.
+   Se doblan SIEMPRE, no solo en el móvil: el hueco depende de cuántas pestañas
+   tenga la pantalla, no del ancho de la ventana. A 1100 px, con las seis de
+   Recursos, «Marca» seguía cayéndose por el borde derecho.
+   Solo las TABLAS se siguen deslizando (una tabla no se puede doblar). */
+.profile-tabs, .tab-strip { overflow-x: visible; flex-wrap: wrap; }
+.profile-tabs > button { flex-shrink: 1; }
+/* Dentro de `.tab-strip` la tira real es el recuadro con borde que agrupa las
+   pestañas: es ÉL quien tiene que doblarlas, no su envoltorio. */
+.tab-strip > * { display: flex; flex-wrap: wrap; max-width: 100%; }
 
 /* ---- Skin crema de la app del coach ------------------------------------
    Los componentes usan la escala zinc pensada para fondo oscuro; aquí se
@@ -703,8 +718,13 @@ a.portal-note:active{transform:translateY(1px)}
      que ocupar dos líneas, se parte entre PALABRAS, nunca dentro de una.
    - altura mínima de dedo y `line-height` cómodo para dos líneas.
    ═══════════════════════════════════════════════════════════════════════ */
+/* `btn-secondary` estuvo aquí y NO existía como estilo en ninguna parte: tres
+   botones del panel —el del switch de marca entre ellos— se pintaban como
+   botones grises del navegador. Las clases de botón son `btn btn-primary`,
+   `btn btn-ghost` y `btn btn-blue`; `npm run check:botones` comprueba que no
+   se use ninguna otra. */
 .btn,
-button.btn-primary, button.btn-secondary, button.btn-ghost, button.btn-blue {
+button.btn-primary, button.btn-ghost, button.btn-blue {
   min-width: max-content;
   flex-shrink: 0;
   overflow-wrap: normal;

@@ -558,8 +558,12 @@ function Chip({ tone, icon: Icon, children, onClick, title }: {
   const cls = "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium";
   const style = { background: `color-mix(in srgb, ${tone} 14%, transparent)`, color: tone };
   if (onClick) {
+    // Un chip que FILTRA es un botón, y medía 24 px de alto: en un móvil se
+    // falla más de lo que se acierta. El que solo informa se queda como está
+    // (no se pulsa, y subirlo solo engordaría la fila).
     return (
-      <button onClick={onClick} title={title} className={cls} style={style}>
+      <button type="button" onClick={onClick} title={title}
+        className={cls + " min-h-[36px] px-3"} style={style}>
         {Icon && <Icon size={13} />}
         {children}
       </button>

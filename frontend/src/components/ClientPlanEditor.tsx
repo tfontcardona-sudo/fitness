@@ -1232,7 +1232,10 @@ function ExerciseSelect({ library, lookup, value, fallbackName, onChange, onCrea
     <button
       type="button"
       onClick={() => pick(e.id)}
-      className="block w-full truncate px-3 py-1.5 text-left text-xs text-zinc-200 hover:bg-zinc-500/10"
+      // El nombre del ejercicio NO se recorta: en el desplegable estrecho,
+      // "Press banca inclinado con mancuernas" salía como "…con manc…" y dos
+      // ejercicios parecidos se volvían indistinguibles justo al elegir.
+      className="block w-full px-3 py-1.5 text-left text-xs leading-snug text-zinc-200 hover:bg-zinc-500/10"
     >
       {e.canonical_name}
     </button>

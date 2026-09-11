@@ -56,7 +56,7 @@ function ChangeRequestsCard({ clientId }: { clientId: number }) {
             <button
               onClick={() => resolve(c.id)}
               disabled={busy === c.id}
-              className="btn-secondary shrink-0 text-xs"
+              className="btn btn-ghost shrink-0 text-xs"
               title="Al marcarla resuelta se apaga su alerta"
             >
               {busy === c.id ? "…" : "Marcar resuelta"}

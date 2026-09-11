@@ -611,8 +611,12 @@ export default function AnamnesisPage() {
               <b>Seguimos donde lo dejaste.</b> Lo que habías escrito se guardó en
               este móvil.{" "}
               <button
+                type="button"
                 onClick={() => { limpiarBorrador(token); setForm(VACIO); setExtra({}); setPaso(0); setRecuperado(false); }}
-                className="underline"
+                // Va DENTRO de una frase, así que no puede crecer en alto sin
+                // romper la línea: crece el área de toque por dentro.
+                className="inline-block underline"
+                style={{ padding: "6px 3px" }}
               >
                 Empezar de cero
               </button>
@@ -722,11 +726,15 @@ export default function AnamnesisPage() {
           <div className="space-y-4">
             {/* Barra de pasos */}
             <div className="flex items-center gap-1.5">
+              {/* Los pasos ya hechos VUELVEN ATRÁS, así que son botones de
+                  verdad, y medían 27 px de alto en el móvil: sube a 34 sin
+                  dejar de parecer una barra de progreso. */}
               {PASOS.map((p, i) => (
-                <button key={p} onClick={() => i < paso && setPaso(i)}
+                <button key={p} type="button" onClick={() => i < paso && setPaso(i)}
                   className="flex-1 rounded-full text-[11px] font-semibold"
                   style={{
-                    padding: "5px 0",
+                    minHeight: 34,
+                    padding: "6px 0",
                     background: i === paso ? "#E8833A" : i < paso ? "#f0c9a4" : "#e9e1cf",
                     color: i === paso ? "#fff" : "#26211a",
                     cursor: i < paso ? "pointer" : "default",

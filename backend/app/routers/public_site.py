@@ -84,6 +84,7 @@ def public_landing(request: Request, db: Session = Depends(get_db)) -> LandingOu
         # de un centro sin decir dónde está no sirve de mucho.
         contact_address=getattr(brand, "contact_address", None),
         has_offer=marca_activa(db).vende_oferta(),
+        usa=marca_activa(db).lo_que_usa(),
         products=[LandingProductOut(
             title=p.title, url=p.url, category=p.category,
             image_url=product_image_url(p),

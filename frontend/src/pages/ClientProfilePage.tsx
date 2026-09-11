@@ -521,7 +521,7 @@ export default function ClientProfilePage() {
             portalUrl={portalUrl} anamnesisUrl={anamnesisUrl} />
           <button
             onClick={() => setConfirmRegen(true)}
-            className="w-full py-1.5 text-center text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
+            className="min-h-[40px] w-full py-2 text-center text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
           >
             Regenerar enlace del portal (el actual dejará de funcionar)
           </button>
@@ -714,8 +714,12 @@ function PlanRow({ client, onSaved }: { client: ClientOut; onSaved: () => void }
           onChange={(e) => change(e.target.value)}
           className="input h-7 w-auto px-1.5 py-0 text-xs"
         >
-          {PACKAGE_ORDER.map((t) => (
-            <option key={t} value={t}>{etiquetaDePlan(t, etiquetas)}</option>
+          {/* Los planes que vende SU marca (la sellada en su ficha), más el
+              suyo aunque ya no se venda: el selector ofrecía los tres de DQR
+              en cualquier negocio, así que a un cliente del centro se le podía
+              poner un plan que allí no existe y que nadie cobra. */}
+          {(client.plan_options?.length ? client.plan_options : PACKAGE_ORDER).map((t) => (
+            <option key={t} value={t}>{etiquetaDePlan(t as PackageTier, etiquetas)}</option>
           ))}
         </select>
       </dd>
@@ -729,6 +733,9 @@ function PlanRow({ client, onSaved }: { client: ClientOut; onSaved: () => void }
 function BillingRow({ client, onSaved }: { client: ClientOut; onSaved: () => void }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
+  // Lo que vende su marca. Sin lista (fichas cargadas por un contrato viejo),
+  // todas: nunca se deja al coach sin poder cambiar una duración.
+  const opciones = client.billing_options?.length ? client.billing_options : null;
 
   async function change(next: string) {
     if (busy || next === client.billing_period) return;
@@ -764,20 +771,25 @@ function BillingRow({ client, onSaved }: { client: ClientOut; onSaved: () => voi
           // El detalle de cada oferta está en Vender, que es donde se elige.
           className="input h-7 w-auto max-w-[9.5rem] truncate px-1.5 py-0 text-xs"
         >
-          {BILLING_PERIODS.map((b) => (
+          {/* Las duraciones que vende SU marca (más la suya, aunque sea de
+              antes): un centro con cuota mensual no vende trimestres. */}
+          {BILLING_PERIODS.filter((b) => !opciones || opciones.includes(b.value)).map((b) => (
             <option key={b.value} value={b.value}>{b.label}</option>
           ))}
-          {/* La oferta se muestra y se puede (re)aplicar SOLO en plan Full:
-              sin esta opción, un cliente de la oferta salía con el select en
-              blanco y cambiarlo era un billete de ida sin vuelta. */}
+          {/* La oferta se muestra y se puede (re)aplicar SOLO en plan Full y
+              solo si su marca la vende: sin esta opción, un cliente de la
+              oferta salía con el select en blanco y cambiarlo era un billete
+              de ida sin vuelta. */}
           {pkg(client.package_tier).tier === "full" && (
             <>
+              {(!opciones || opciones.includes("oferta")) && (
               <option value="oferta" title="1 € + 120 € + 120 € (241 € en total)">
                 Oferta · 3 meses
-              </option>
+              </option>)}
+              {(!opciones || opciones.includes("oferta2")) && (
               <option value="oferta2" title="2 pagos de 120,50 € (241 € en total)">
                 Oferta · 2 pagos
-              </option>
+              </option>)}
             </>
           )}
         </select>
@@ -1008,7 +1020,7 @@ function CobroManual({ client, onDone }: { client: ClientOut; onDone: () => void
     return (
       <button
         onClick={() => setAbierto(true)}
-        className="w-full py-1.5 text-center text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
+        className="min-h-[40px] w-full py-2 text-center text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
       >
         {client.payment_status === "paid"
           ? "Anotar otro cobro (renovación, extra…)"

@@ -437,6 +437,14 @@ def portal_anamnesis_template(
     """Descarga de la plantilla oficial de anamnesis (PDF editable en blanco)."""
     from pathlib import Path
 
+    # El PDF oficial es el de DQR, con su marca dentro. Servírselo al cliente de
+    # otro negocio es mandarle el cuestionario de una asesoría con la que no ha
+    # contratado nada — y el suyo, además, es una pantalla, no un papel.
+    from app.services.branding import marca_de_cliente
+
+    if not marca_de_cliente(client).usa("anamnesis_pdf"):
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            "Tu cuestionario se rellena aquí mismo, no en PDF")
     path = Path(__file__).resolve().parent.parent / "assets" / "anamnesis_template.pdf"
     if not path.exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Plantilla no encontrada")

@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { Copy, Dumbbell, Search, ShoppingBag } from "lucide-react";
 import { copiar } from "../lib/clipboard";
 import MarcaLogo from "../components/MarcaLogo";
 import { useMarcaPublica } from "../hooks/useMarcaPublica";
-import { coloresDeMarca, MARCA_POR_DEFECTO, pielDe } from "../lib/marca";
+import { coloresDeMarca, MARCA_POR_DEFECTO, pielDe, usaLaMarca } from "../lib/marca";
 
 /**
  * Página PÚBLICA de enlaces (/dq) — el link del perfil de Instagram del coach.
@@ -36,6 +36,13 @@ export default function LinksPage() {
     data?.color_secondary ?? MARCA_POR_DEFECTO.secondary);
   const bg = data?.color_bg ?? MARCA_POR_DEFECTO.bg;
 
+  // ESTA PÁGINA ES DE QUIEN VENDE POR INSTAGRAM. Un centro con local no la
+  // usa: tiene su dirección y su propia web, y aquí solo encontraría una foto
+  // que nadie ha configurado y una tienda de afiliación que no es suya. Como
+  // es una URL PÚBLICA que puede estar enlazada desde fuera, no se rompe: se
+  // lleva a lo que ese negocio sí vende.
+  const usaEstaPagina = usaLaMarca(data?.usa, "enlaces");
+
   async function copyCode() {
     if (!data?.partner_discount_code) return;
     // El "Copiado ✓" salía aunque la copia fallara (esta página se ve mucho
@@ -48,6 +55,11 @@ export default function LinksPage() {
       window.prompt("Copia el código a mano:", data.partner_discount_code);
     }
   }
+
+  // Ya cargada la marca, si no usa esta página se va a lo que sí vende. Se
+  // espera a `data` a propósito: desviar antes de saberlo dejaría a DQR sin su
+  // propia página de enlaces en cada primera carga.
+  if (data && !usaEstaPagina) return <Navigate to="/planes" replace />;
 
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-6 py-10"

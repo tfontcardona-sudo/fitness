@@ -178,9 +178,13 @@ export function videoCallScheduledMessage(
   ].join("\n\n");
 }
 
-/** Mensaje de ARRANQUE (alta manual): pagar el plan + rellenar la anamnesis
- *  (página del PDF editable), con la instrucción EN MAYÚSCULAS de enviarla
- *  rellena. Un solo mensaje. */
+/** Mensaje de ARRANQUE (alta manual): pagar el plan + rellenar la anamnesis.
+ *
+ *  ⚠️ Decía "DESCARGA tu cuestionario, rellénalo y súbelo": ese es el camino
+ *  del PDF, que dejó de ser la vía oficial en agosto de 2026 —ahora el
+ *  cuestionario SE RELLENA EN LA PÁGINA— y que en un negocio cuyo formulario
+ *  es una pantalla directamente no existe. Al cliente se le manda a su enlace,
+ *  y ahí ya encuentra lo que su marca ofrezca. */
 export function onboardingMessage(
   fullName: string, planLabel: string, payUrl: string, anamnesisUrl: string,
 ): string {
@@ -188,8 +192,8 @@ export function onboardingMessage(
     `Hola ${waFirstName(fullName)},`,
     "Para empezar tu asesoría necesito dos cosas:",
     `1) Realiza el pago de tu plan (${planLabel}) desde este enlace:\n${payUrl}`,
-    `2) Descarga tu cuestionario inicial (anamnesis), rellénalo y súbelo desde este enlace:\n${anamnesisUrl}`,
-    "IMPORTANTE: RELLENA Y ENVÍAME TU ANAMNESIS COMPLETA PARA QUE PUEDA PREPARARTE EL PLAN.",
+    `2) Rellena tu cuestionario inicial (anamnesis) desde este enlace:\n${anamnesisUrl}`,
+    "IMPORTANTE: NECESITO TU CUESTIONARIO COMPLETO PARA PODER PREPARARTE EL PLAN.",
     "Un saludo.",
   ].join("\n\n");
 }
@@ -201,7 +205,7 @@ export function anamnesisReminderMessage(fullName: string, anamnesisUrl: string)
     `Hola ${waFirstName(fullName)},`,
     "Te reenvío tu cuestionario inicial (anamnesis). Lo necesito completo para poder prepararte la planificación:",
     anamnesisUrl,
-    "Descárgalo, rellénalo con calma y súbelo desde ese mismo enlace. En cuanto lo tenga me pongo con tu plan.",
+    "Ábrelo y rellénalo con calma desde el móvil. En cuanto lo tenga me pongo con tu plan.",
     "Un saludo.",
   ].join("\n\n");
 }

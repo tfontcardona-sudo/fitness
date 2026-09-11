@@ -75,6 +75,21 @@ portal) y el cliente registra su seguimiento diario hasta el cierre quincenal.
 >   dos acentos: el segundo de Professional es su NEGRO de estructura, así que
 >   cada piel decide qué papel le da (`coloresDeMarca`). Vigilado por
 >   `npm run check:marca`.
+> - **QUÉ USA CADA NEGOCIO** (`brand_config.features`, mig. 0054 · `branding.Marca.usa()`
+>   · `frontend/src/lib/marca.usaLaMarca`): el switch no cambia solo la identidad,
+>   cambia el modo de trabajar. Regla de oro: **lo que ya lo dice otro dato se
+>   DEDUCE** (videollamadas ← `cita_modo`, oferta ← `prices`, educativo ←
+>   `doc_variant`, cuestionario en PDF ← `anamnesis_variant`) y solo lo que no
+>   está dicho en ningún sitio se declara (`productos`, `enlaces`). Vacío = lo
+>   usa todo. ⚠️ Lo deducido MANDA sobre lo declarado. Pregunta siempre por
+>   `usa()`, nunca leyendo el diccionario ni por slug.
+> - **LOS MENSAJES AL CLIENTE SALEN DE SUS DATOS** (`services/client_focus.py`):
+>   el tema del día lo calcula el backend con REGLAS (no un modelo), viaja al
+>   prompt con el dato literal, y la IA solo lo redacta. Sin nada que destacar,
+>   el brief genérico del pool. No inventes focos en `prompts`: van aquí.
+> - **El NIVEL del cliente no elige el camino del plan**: recomienda. Los cuatro
+>   caminos (IA · a mano · copiar · documento) se ofrecen igual a todos, y quien
+>   gasta créditos lo confirma. Vigilado por `npm run check:planes`.
 > - **Historia antigua**: `docs/HISTORICO.md` (referencia, NO fuente de verdad viva).
 
 ---
@@ -473,6 +488,8 @@ npm run check:botones       # ni una palabra recortada ni partida en un botón
 npm run check:alertas       # una sola fuente de /api/alerts (barrido caro)
 npm run check:marca         # ninguna pantalla escribe el logo ni la paleta
                             # de una marca: el otro negocio la heredaría
+npm run check:planes        # el nivel del cliente RECOMIENDA un camino de
+                            # plan (con IA / a mano); no lo elige por el coach
 ```
 
 ---
@@ -503,6 +520,124 @@ npm run check:marca         # ninguna pantalla escribe el logo ni la paleta
 ---
 
 ## 9. Trabajo pendiente / próximos pasos
+
+0000000000000000000000000000. ✅ **CADA NEGOCIO ENSEÑA LO SUYO, Y LOS MENSAJES
+   HABLAN DE QUIEN LOS RECIBE (11-09-2026).** Cuatro peticiones del dueño tras
+   ver dos capturas del panel del centro. ⚠️ **Las capturas eran de lo
+   DESPLEGADO, que no llevaba la ronda de la piel**: `main` estaba en el PR
+   #122 y todo lo del negro y el dorado vivía en la rama sin fusionar. Lo que
+   sí faltaba de verdad, y es esta ronda, es que el switch cambiara también
+   QUÉ APARTADOS se ven y CÓMO se le escribe al cliente.
+   - **LO QUE USA CADA NEGOCIO** (mig. **0054**, `brand_config.features`). El
+     panel enseñaba lo mismo con una marca que con otra: el catálogo de
+     PRODUCTOS de afiliación, la PÁGINA DE ENLACES del perfil de Instagram, la
+     conexión con Google, los tres planes de DQR en el alta y en la ficha… para
+     un centro que vende en el mostrador, tiene su dirección y revisa a su
+     gente en la sala. La regla, para que no acabe en un `if` por slug: **lo
+     que YA lo dice otro dato se DEDUCE** —las videollamadas las dice
+     `cita_modo`, la oferta sus `prices`, el educativo `doc_variant`, el
+     cuestionario en PDF `anamnesis_variant`— y solo lo que no está dicho en
+     ningún sitio se DECLARA (`productos`, `enlaces`). Una sola puerta:
+     `branding.Marca.usa()`, que viaja en los cuatro contratos de marca como
+     `usa` y la que pregunta el frontend (`lib/marca.usaLaMarca`). Diccionario
+     vacío = lo usa todo, así que **DQR no pierde absolutamente nada** y una
+     marca nueva no se queda sin pantallas por no rellenar una lista.
+     ⚠️ **Lo deducido MANDA sobre lo declarado**: se puede apagar a mano algo
+     que por defecto se tendría, pero no encender una videollamada en un
+     negocio cuyas citas son visitas — eso no sería una opción, sería una
+     mentira que el resto del ciclo desmiente.
+   - **EL LOGO SE MUDÓ A «MARCA»** (`RecursosPage`): vivía en la pestaña
+     «Página de enlaces», junto a las fotos de la landing de Instagram, que es
+     justo el apartado que el centro no usa — al dejar de enseñárselo, su dueño
+     se quedaba **sin ninguna forma de subir su propio logo**, que es lo único
+     que le falta al negocio nuevo. El logo no es la foto de una página: es la
+     identidad. Se fue con él el DIAGNÓSTICO DEL CORREO, que es de sistema (un
+     negocio sin página de enlaces manda correos igual). Y al guardarlo se
+     recarga la marca entera: el cambio se ve a la vez en la barra del panel,
+     en el portal y en los documentos.
+   - **Y lo que de verdad salía mal**: `/api/p/{token}/anamnesis-template`
+     servía el PDF oficial —que es el de DQR, con su marca dentro— a CUALQUIER
+     cliente; los avisos del panel decían «el cliente propuso videollamada» y
+     «se crea el Meet con invitación» para una VISITA al centro; el mensaje de
+     arranque por WhatsApp mandaba «DESCARGA tu cuestionario, rellénalo y
+     súbelo» cuando la vía oficial es el formulario desde agosto de 2026 (y en
+     el centro ni siquiera hay PDF); y `ClientOut` no decía qué vende la marca
+     del cliente, así que al del centro se le podía poner un «DQR Train
+     semestral» que nadie cobra (`plan_options`/`billing_options`, que además
+     conservan SIEMPRE lo que ya tiene contratado: quitárselo de la lista sería
+     cambiárselo sin querer).
+   - **MENSAJES QUE HABLAN DE ÉL** (`services/client_focus.py`). La ronda
+     diaria mandaba a TODA la cartera el mismo brief del pool con el nombre
+     cambiado. Ahora, para cada cliente, el backend calcula **de qué hay que
+     hablarle hoy** con reglas sobre sus datos —una petición suya sin responder
+     o una duda con interrogante en su diario mandan sobre todo; después el
+     abandono y la seguridad (días sin aparecer, bajar más de un 1 %/semana);
+     después lo corregible esta semana (sesiones por debajo de lo pautado,
+     sueño < 6 h, fatiga, ánimo, adherencia, hambre); después el ciclo (cierre
+     cerca, arranque, sin pesajes); y al final LO BUENO (racha, mejor marca),
+     porque a un cliente al que solo se le escribe cuando algo va mal le acaban
+     dando miedo los mensajes de su coach—. El tema **no lo elige un modelo**,
+     por lo mismo de siempre: un modelo "vería" tendencias que no constan y le
+     hablaría de un mal sueño que nunca registró. La IA sigue haciendo lo que
+     sabe: REDACTARLO. **El dato viaja literal al prompt** («duerme 5,3 h de
+     media en sus últimos 3 registros»), que es la diferencia entre «¿qué tal
+     duermes?» y que el cliente se vea mirado. Si no hay nada que destacar, el
+     brief genérico del pool — inventarle un problema a quien no lo tiene es
+     peor que mandarle algo general.
+     · **El coach lo ve antes de enviar**: cada mensaje de la ronda dice «Sobre
+       lo suyo · <el dato>» o «Tema general». Sin el motivo no puede saber si
+       el texto le cuadra o si la IA se lo ha inventado.
+     · **No se repite el mismo tema dos días seguidos** (memoria en la clave
+       reservada `_focos` de `texts_json`, sin migración), salvo lo URGENTE:
+       callar que lleva cuatro días sin aparecer por no repetirse sería perder
+       al cliente por educación. La baja RGPD se lleva también su tema.
+     · Sin IA, la reserva sigue siendo suya: lleva su dato y va en segunda
+       persona (`Foco.reserva`; `dato` está escrito para el prompt, en tercera,
+       y usarlo tal cual daba un castellano imposible).
+   - **EL NIVEL DEL CLIENTE YA NO DECIDE POR EL COACH.** El mismo botón hacía
+     una cosa u otra según `client.level`, y sin decirlo: al «avanzado» le
+     preparaba la base a mano (0 créditos, borrador) y al resto le generaba el
+     plan entero con IA **y se lo publicaba**. Ahora los cuatro caminos se
+     ofrecen igual a todos y en el mismo orden, con un «Recomendado» que es lo
+     que el nivel es —una recomendación, no un permiso—; la estructura de
+     comidas y el cambio de objetivo tienen sus DOS botones («con IA» / «a mano
+     · 0 créditos»); y generar con IA **se confirma siempre**, porque es el
+     mismo gasto y el mismo envío para cualquier cliente. De paso, el alta
+     decía «la IA genera su plan» / «plan del coach, sin IA» como si fuera una
+     regla del sistema: el nivel cambia los EJERCICIOS y la progresión.
+   - **BOTONES, MEDIDOS EN NAVEGADOR REAL** (panel de las dos marcas, portal,
+     cuestionario y públicas, a 390 px y a 1280 px):
+     · ⚠️ **`btn-secondary` NO EXISTÍA** como estilo en ninguna parte. Tres
+       botones la llevaban —**el del SWITCH DE MARCA entre ellos**— y salían
+       como un botón gris del navegador, sin color, sin borde y sin altura de
+       dedo. No da error, no rompe el build y no sale en ninguna prueba: la
+       forma más silenciosa que hay de tener un botón mal marcado.
+     · ⚠️ **UNA TIRA QUE SE DESLIZA ES UN BOTÓN ESCONDIDO.** `.profile-tabs` y
+       `.tab-strip` ocultan su barra de desplazamiento a propósito, así que a
+       390 px no había NI UNA PISTA de que a la derecha hubiera más: se perdían
+       «Seguimiento», «Feedback» e «Historial» de la ficha y **«Marca» de
+       Recursos — la pestaña del switch**. Por debajo de 700 px se doblan.
+     · `min-w-[30rem]` forzaba 480 px de tabla en Vender aunque la marca venda
+       una sola duración; y siete controles medían menos de 30 px de alto
+       (entre ellos «Descansar 90s», que se pulsa CON LAS MANOS OCUPADAS entre
+       serie y serie, y los pasos del cuestionario, que vuelven atrás).
+     · **GUARDA NUEVA `npm run check:planes`** (van NUEVE) y una comprobación
+       más en `check:botones`: toda clase `btn-*` tiene que existir en el CSS.
+       ⚠️ Al añadirla se descubrió que el propio guardián estaba ciego: buscaba
+       la etiqueta con `<button[^>]*>` y el `>` de la primera flecha
+       (`onClick={() => …}`) la cortaba ahí, dejando fuera el `className` de
+       casi todos los botones del panel. Se falsificó, no lo cazó, y se
+       arregló; con el parser bueno apareció un recorte real más.
+   - Verificado: **suite completa en los dos órdenes**, `tsc`, build, las NUEVE
+     guardas, arranque desde base VACÍA hasta 0054 y una sola cabeza. Barrido
+     en navegador real de 22 pantallas × 2 anchos, midiendo el hueco de cada
+     control: **cero recortes, cero escondidos, cero desbordes**. Tests:
+     `tests/test_marca_apartados.py` (11) y `tests/test_mensajes_personales.py`
+     (9), con las tres claves comprobadas quitando su arreglo.
+   - ⚠️ **Sigue faltando lo mismo, y no me lo puedo inventar**: el FICHERO del
+     LOGO de Professional. Ahora se sube en **Recursos → Marca → «Logo de
+     Professional»** (antes estaba en una pestaña que esa marca ya no ve).
+     Mientras no esté, app y papel imprimen el rótulo «PROFESSIONAL» en dorado.
 
 000000000000000000000000000. ✅ **LA PIEL DE LA MARCA: que el switch cambie de
    verdad lo que se ve (11-09-2026).** El dueño, tras probarlo: «al hacer el
