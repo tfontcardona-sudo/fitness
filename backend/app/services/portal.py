@@ -249,6 +249,7 @@ def brand_payload(db: Session, client=None) -> dict:
             "name": "Tu asesoría", "color_primary": "#E8833A",
             "color_secondary": "#2E5E8C", "color_bg": "#0B111C",
             "font_family": "Inter", "portal_theme": "light", "logo_path": None,
+            "skin": "dqr",
         }
     return {
         "name": cfg.name, "color_primary": cfg.color_primary,
@@ -260,6 +261,9 @@ def brand_payload(db: Session, client=None) -> dict:
         # sirve. Se da ya resuelta (None si no hay logo servible) para que la
         # pantalla no tenga que saber nada de esto.
         "logo_url": media_url(cfg.logo_path),
+        # La PIEL de SU marca. El portal no se pinta con tres colores sueltos
+        # sobre la piel de DQR: aplica la identidad entera de quien lo mira.
+        "skin": (getattr(cfg, "skin", None) or "dqr"),
     }
 
 

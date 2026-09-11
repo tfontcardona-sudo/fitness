@@ -11,6 +11,8 @@ import {
   resyncCoachPushIfGranted,
 } from "../lib/coachPush";
 import { hrefCliente } from "../lib/anchors";
+import { colorLegible, pielDe } from "../lib/marca";
+import { useBrand } from "../hooks/useBrand";
 import { pin, pinId, syncScope } from "../lib/pins";
 import { useDismiss } from "../lib/useDismiss";
 import { useToast } from "./ui";
@@ -24,6 +26,8 @@ import type { CoachAlert } from "../types";
 export function AlertsBell() {
   const navigate = useNavigate();
   const location = useLocation();
+  // La piel activa, para que los rótulos de categoría se lean en las dos.
+  const piel = pielDe(useBrand().brand?.skin);
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -169,7 +173,12 @@ export function AlertsBell() {
                     <div className="flex items-center gap-2 px-4 pb-1 pt-2.5"
                       style={{ background: `color-mix(in srgb, ${g.color} 6%, transparent)` }}>
                       <span className="h-1.5 w-1.5 rounded-full" style={{ background: g.color }} />
-                      <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: g.color }}>
+                      {/* El color de CATEGORÍA es el mismo en las dos marcas
+                          (es un significado, no una identidad), pero está
+                          afinado para leerse sobre crema: sobre negro, el
+                          ámbar y el rojo se quedaban por debajo de AA. */}
+                      <span className="text-[11px] font-bold uppercase tracking-wide"
+                        style={{ color: colorLegible(g.color, piel) }}>
                         {g.label}
                       </span>
                       <span className="text-[11px] text-zinc-500">{items.length}</span>
@@ -244,13 +253,18 @@ export function AlertsBell() {
 const GROUPS: { id: string; label: string; color: string; kinds: string[] }[] = [
   { id: "arranque", label: "Arranque / alta", color: "#6366F1", kinds: ["create_plan", "publish_plan"] },
   { id: "revision", label: "Revisión quincenal", color: "#8B5CF6", kinds: ["generate_feedback", "send_feedback", "period_overdue"] },
-  { id: "adaptacion", label: "Planificación", color: "#E8833A",
+  // Ocho hues de CATEGORÍA. Dos de ellos eran, letra por letra, los dos
+  // colores de DQ (#E8833A y #2E5E8C): en el panel del otro negocio salía su
+  // naranja y su azul dentro de una campana dorada y negra. Se mueven a un
+  // tono vecino que sigue leyéndose igual de bien y ya no es la marca de
+  // nadie. (`colorLegible` los sube sobre fondo oscuro.)
+  { id: "adaptacion", label: "Planificación", color: "#B4652E",
     kinds: ["adapt_plan", "regenerate_goal", "plan_allergen_conflict",
             "plan_dislike_conflict", "plan_stale_inputs"] },
   { id: "seguimiento", label: "Seguimiento", color: "#C2453A",
     kinds: ["no_logs", "change_request", "client_inactive"] },
   { id: "pago", label: "Pagos", color: "#9A6B15", kinds: ["payment_pending", "renewal_due"] },
-  { id: "objetivo", label: "Objetivo", color: "#2E5E8C", kinds: ["goal_review"] },
+  { id: "objetivo", label: "Objetivo", color: "#3D6E9E", kinds: ["goal_review"] },
   { id: "recursos", label: "Recursos / productos", color: "#28707C", kinds: ["missing_products"] },
   { id: "videollamada", label: "Videollamada", color: "#0EA5E9",
     kinds: ["video_call_wait", "video_call_proposed", "video_call_manual",

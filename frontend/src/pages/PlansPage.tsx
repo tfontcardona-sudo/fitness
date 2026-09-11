@@ -1,10 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { MessageCircle } from "lucide-react";
 import { api } from "../lib/api";
 import type { PlanPricesOut } from "../types";
-import { BILLING_PERIODS, PACKAGES, PACKAGE_ORDER, billingLabel } from "../lib/packages";
+import { BILLING_PERIODS, PACKAGES, PACKAGE_ORDER, billingLabel, etiquetaDePlan } from "../lib/packages";
 import { waPhone, waUrl } from "../lib/whatsapp";
 import type { PackageTier, PublicBillingPeriod } from "../types";
+import MarcaLogo from "../components/MarcaLogo";
+import { coloresDeMarca, MARCA_POR_DEFECTO, pielDe } from "../lib/marca";
+import { useMarcaPublica } from "../hooks/useMarcaPublica";
 
 /**
  * Página PÚBLICA de asesorías (el enlace del perfil). SIN PRECIOS a propósito:
@@ -62,11 +65,22 @@ const PLAN_BULLETS: Record<PackageTier, string[]> = {
   ],
 };
 
+/** Lo que se promete cuando la marca tiene LOCAL: la revisión es una visita, no
+ *  una videollamada. Prometer una videollamada en la página de un centro es
+ *  vender algo que después no se hace. */
+function bulletsDePlan(tier: PackageTier, presencial: boolean): string[] {
+  const base = PLAN_BULLETS[tier];
+  if (!presencial) return base;
+  return base.map((b) => b.startsWith("Videollamada de revisión")
+    ? "Revisión con nosotros en el centro cada quince días" : b);
+}
+
 /** Mensaje prellenado del botón (sin emojis: WhatsApp los corrompe a veces). */
-function contactMessage(tier: PackageTier, period: PublicBillingPeriod): string {
+function contactMessage(tier: PackageTier, period: PublicBillingPeriod,
+                        labels?: Record<string, string> | null): string {
   const dur = billingLabel(period).toLowerCase();
   return (
-    `¡Hola! He visto la asesoría ${PACKAGES[tier].label} (${dur}) en tu página ` +
+    `¡Hola! He visto la asesoría ${etiquetaDePlan(tier, labels)} (${dur}) en tu página ` +
     `y me gustaría saber más: cómo funciona, el precio y cómo empezar.`
   );
 }
@@ -118,13 +132,15 @@ export default function PlansPage() {
     }
   }
 
+  // La duración elegida. Arrancaba SIEMPRE en trimestral, que es la que más
+  // vende DQR; en una marca que solo vende cuota mensual, eso dejaba la página
+  // con el plan sin precio y con un rótulo ofreciendo condiciones para unas
+  // duraciones que no existen. `duracionesALaVenta` la corrige en cuanto
+  // llegan los precios.
   const [period, setPeriod] = useState<PublicBillingPeriod>("3m");
-  // Marca pública: foto de fondo + teléfono de contacto del coach (WhatsApp).
-  const [landing, setLanding] = useState<import("../types").LandingOut | null>(null);
-
-  useEffect(() => {
-    api.publicLanding().then(setLanding).catch(() => setLanding(null));
-  }, []);
+  // Marca pública: foto de fondo, teléfono de contacto del coach (WhatsApp)
+  // y la PIEL con la que se pinta la página entera.
+  const landing = useMarcaPublica();
 
   const coachDigits = waPhone(landing?.contact_phone);
 
@@ -140,7 +156,33 @@ export default function PlansPage() {
   // ?pago=error: venimos de un enlace de pago que no pudo abrir Stripe.
   const pagoConError = new URLSearchParams(window.location.search).get("pago") === "error";
 
-  const bg = landing?.color_bg ?? "#0B111C";
+  const bg = landing?.color_bg ?? MARCA_POR_DEFECTO.bg;
+  // Los servicios que ESTA marca tiene a la venta: los que traen precio. Si
+  // aún no han llegado los precios se enseñan los tres de siempre, para que la
+  // página no parpadee en blanco mientras carga.
+  const alaVenta: PackageTier[] = useMemo(() => {
+    if (!precios?.tiers) return PACKAGE_ORDER;
+    const con = PACKAGE_ORDER.filter(
+      (t) => Object.values(precios.tiers[t] ?? {}).some(Boolean));
+    return con.length ? con : PACKAGE_ORDER;
+  }, [precios]);
+  // Las duraciones con precio en ALGÚN plan de esta marca.
+  const duracionesALaVenta = useMemo(() => {
+    const todas = BILLING_PERIODS.map((b) => b.value);
+    if (!precios?.tiers) return todas;
+    const con = todas.filter((d) => PACKAGE_ORDER.some((t) => precios.tiers[t]?.[d]));
+    return con.length ? con : todas;
+  }, [precios]);
+  // Si la elegida no se vende (la trimestral de arranque en una marca mensual),
+  // se pasa a la primera que sí.
+  useEffect(() => {
+    if (!duracionesALaVenta.includes(period)) setPeriod(duracionesALaVenta[0]);
+  }, [duracionesALaVenta, period]);
+  // La atmósfera de la página con el color que le toca a esta piel (el
+  // "segundo" de Professional es su negro de estructura: sobre negro no pinta).
+  const atmosfera = coloresDeMarca(
+    pielDe(landing?.skin), landing?.color_primary ?? MARCA_POR_DEFECTO.primary,
+    landing?.color_secondary ?? MARCA_POR_DEFECTO.secondary).secondary;
   return (
     <div className="relative" style={{ minHeight: "100vh", background: bg, color: "#26211a" }}>
       {/* Foto de fondo propia (Recursos → Página de enlaces → Foto de los
@@ -154,7 +196,7 @@ export default function PlansPage() {
         </>
       ) : (
         <div className="pointer-events-none fixed inset-0"
-          style={{ background: `radial-gradient(120% 80% at 50% 0%, ${(landing?.color_secondary ?? "#2E5E8C")}44 0%, ${bg} 60%)` }} />
+          style={{ background: `radial-gradient(120% 80% at 50% 0%, ${atmosfera}44 0%, ${bg} 60%)` }} />
       )}
       <div className="relative mx-auto max-w-4xl px-5 py-10">
         {/* El enlace de pago no pudo abrir Stripe y hemos traído aquí a quien
@@ -184,9 +226,10 @@ export default function PlansPage() {
         {/* Cabecera en BLANCO sobre la foto (como /dq), con sombra para leerse. */}
         <header className="mb-6 flex flex-col items-center text-center text-white"
           style={{ textShadow: "0 2px 12px rgba(0,0,0,0.55), 0 1px 3px rgba(0,0,0,0.7)" }}>
-          <img src="/dq-logo.png" alt="" className="h-14 w-auto rounded-xl shadow-lg" />
+          <MarcaLogo logoUrl={landing?.logo_url} skin={landing?.skin} nombre={landing?.name} alto={56} />
           <h1 className="mt-4 text-3xl font-extrabold tracking-tight">
-            Empieza tu cambio <span style={{ color: "#F6A560" }}>hoy</span>
+            {/* El acento de LA MARCA, no el naranja claro de DQ escrito a mano. */}
+            Empieza tu cambio <span style={{ color: "var(--brand-accent-hi)" }}>hoy</span>
           </h1>
           <p className="mt-2 max-w-lg text-sm text-white/90">
             Nada de plantillas: estudio tu caso a fondo, monto tu plan a tu medida
@@ -202,9 +245,9 @@ export default function PlansPage() {
 
         {/* Duración: cada plan tiene su versión mensual, trimestral y semestral
             (9 opciones). Las duraciones largas, con mejores condiciones. */}
-        <div className="mb-2 flex justify-center">
+        <div className={`mb-2 flex justify-center ${duracionesALaVenta.length > 1 ? "" : "hidden"}`}>
           <div className="inline-flex rounded-xl border bg-white p-1 shadow-sm" style={{ borderColor: "#e6ddca" }}>
-            {BILLING_PERIODS.map((b) => {
+            {BILLING_PERIODS.filter((b) => duracionesALaVenta.includes(b.value)).map((b) => {
               const sel = period === b.value;
               return (
                 <button
@@ -214,7 +257,7 @@ export default function PlansPage() {
                   aria-pressed={sel}
                   className="rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
                   style={sel
-                    ? { background: "#2E5E8C", color: "white" }
+                    ? { background: "var(--brand-accent-2)", color: "white" }
                     : { color: "#26211a", opacity: 0.65 }}
                 >
                   {b.label}
@@ -225,7 +268,9 @@ export default function PlansPage() {
         </div>
         <p className="mb-6 text-center text-xs font-semibold text-white/75"
           style={{ textShadow: "0 1px 3px rgba(0,0,0,0.6)" }}>
-          Trimestral y semestral con condiciones especiales — pregúntame sin compromiso.
+          {duracionesALaVenta.length > 1
+            ? "Trimestral y semestral con condiciones especiales — pregúntame sin compromiso."
+            : "Se cobra una vez al mes y te avisamos antes de renovar: nada se cobra solo."}
         </p>
 
         {errorPago && (
@@ -236,13 +281,19 @@ export default function PlansPage() {
           </p>
         )}
 
-        <div className="grid gap-4 sm:grid-cols-3">
-          {PACKAGE_ORDER.map((t) => {
+        {/* Solo lo que ESTA marca vende de verdad. La rejilla recorría los
+            tres planes de DQR siempre, así que el escaparate del centro
+            anunciaba tres asesorías con el nombre del otro negocio y dos de
+            ellas sin precio: quien pulsaba no llegaba a ninguna parte. */}
+        <div className={`grid gap-4 ${alaVenta.length > 1 ? "sm:grid-cols-3" : "sm:max-w-md sm:mx-auto"}`}>
+          {alaVenta.map((t) => {
             const p = PACKAGES[t];
-            const destacado = t === "full"; // el pack completo: el más elegido
+            const nombre = etiquetaDePlan(t, landing?.service_labels);
+            // "El más elegido" solo tiene sentido si hay entre qué elegir.
+            const destacado = t === "full" && alaVenta.length > 1;
             const href = contactHref(
-              contactMessage(t, period),
-              `Información ${p.label} (${billingLabel(period)})`,
+              contactMessage(t, period, landing?.service_labels),
+              `Información ${nombre} (${billingLabel(period)})`,
             );
             return (
               <div key={t}
@@ -259,7 +310,7 @@ export default function PlansPage() {
                 )}
                 <span className="inline-flex w-fit items-center rounded-full px-2.5 py-0.5 text-xs font-semibold"
                   style={{ background: `color-mix(in srgb, ${p.color} 14%, transparent)`, color: p.color }}>
-                  {p.label}
+                  {nombre}
                 </span>
                 <p className="mt-2 text-[13px] font-medium italic opacity-75">
                   {PLAN_FOR_YOU[t]}
@@ -283,7 +334,7 @@ export default function PlansPage() {
                   {DURATION_PITCH[t][period]}
                 </p>
                 <ul className="mt-3 flex-1 space-y-1.5">
-                  {PLAN_BULLETS[t].map((b) => (
+                  {bulletsDePlan(t, landing?.cita_modo === "presencial").map((b) => (
                     <li key={b} className="flex gap-2 text-[13px] leading-snug opacity-80">
                       <span className="mt-[1px] shrink-0 font-bold" style={{ color: "#2E7D46" }}>✓</span>
                       <span>{b}</span>
@@ -331,7 +382,7 @@ export default function PlansPage() {
             ].map(([n, titulo, texto]) => (
               <div key={n} className="flex gap-3">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-extrabold text-white"
-                  style={{ background: "#2E5E8C" }}>
+                  style={{ background: "var(--brand-accent-2)" }}>
                   {n}
                 </span>
                 <div>
@@ -345,7 +396,7 @@ export default function PlansPage() {
 
         {/* CTA final: para quien duda entre planes. */}
         <div className="mt-6 rounded-2xl border-2 bg-white p-5 text-center shadow-lg"
-          style={{ borderColor: "#F6A560" }}>
+          style={{ borderColor: "var(--brand-accent-hi)" }}>
           <p className="text-base font-extrabold">¿No tienes claro cuál es para ti?</p>
           <p className="mx-auto mt-1 max-w-md text-sm opacity-75">
             Escríbeme, me cuentas tu caso en dos líneas y te digo yo qué plan te
@@ -381,10 +432,13 @@ export default function PlansPage() {
  *  esperar, y a rebuscar en el spam, un correo que no existe. */
 export function PaymentOkPage() {
   const renovacion = new URLSearchParams(window.location.search).get("r") === "1";
+  // Esta pantalla no tenía marca ninguna: fondo crema clavado y el logo de DQ.
+  // Es lo primero que ve alguien que ACABA DE PAGARLE al centro.
+  const landing = useMarcaPublica();
   return (
-    <div style={{ minHeight: "100vh", background: "#f6f1e7", color: "#26211a" }}
+    <div style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--ink)" }}
       className="flex flex-col items-center justify-center px-8 text-center">
-      <img src="/dq-logo.png" alt="" className="h-14 w-auto rounded-xl shadow-sm" />
+      <MarcaLogo logoUrl={landing?.logo_url} skin={landing?.skin} nombre={landing?.name} alto={56} />
       <h1 className="mt-5 text-2xl font-bold">¡Pago recibido!</h1>
       <p className="mt-2 max-w-md text-sm opacity-75">
         {renovacion

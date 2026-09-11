@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
 import { MessageCircle, ShieldCheck, Zap } from "lucide-react";
-import { api } from "../lib/api";
 import { waPhone, waUrl } from "../lib/whatsapp";
+import MarcaLogo from "../components/MarcaLogo";
+import { useMarcaPublica } from "../hooks/useMarcaPublica";
+import { coloresDeMarca, MARCA_POR_DEFECTO, pielDe } from "../lib/marca";
 
 /**
  * Página PÚBLICA de la OFERTA (el enlace de la bio en la campaña de story/post):
@@ -24,11 +25,7 @@ const INCLUYE = [
 ];
 
 export default function OfertaPage() {
-  const [landing, setLanding] = useState<import("../types").LandingOut | null>(null);
-
-  useEffect(() => {
-    api.publicLanding().then(setLanding).catch(() => setLanding(null));
-  }, []);
+  const landing = useMarcaPublica();
 
   const coachDigits = waPhone(landing?.contact_phone);
   const waHref = coachDigits ? waUrl(coachDigits, WA_MESSAGE) : null;
@@ -37,7 +34,34 @@ export default function OfertaPage() {
   // cobro no hay más cargos — el backend cancela la suscripción solo.
   const pay2Href = "/api/pay/plan/full/oferta2";
 
-  const bg = landing?.color_bg ?? "#0B111C";
+  const bg = landing?.color_bg ?? MARCA_POR_DEFECTO.bg;
+  // La atmósfera de la página con el color que le toca a esta piel (el
+  // "segundo" de Professional es su negro de estructura: sobre negro no pinta).
+  const atmosfera = coloresDeMarca(
+    pielDe(landing?.skin), landing?.color_primary ?? MARCA_POR_DEFECTO.primary,
+    landing?.color_secondary ?? MARCA_POR_DEFECTO.secondary).secondary;
+  // ESTA MARCA NO TIENE OFERTA. La página existe para la campaña de DQR y
+  // anuncia un primer mes a 1 €; con el switch en un negocio que no la vende,
+  // enseñarla es ofrecer un precio que nadie va a cobrar — y sus botones
+  // llevan a un checkout que el backend no tiene montado para esa marca.
+  if (landing && !landing.has_offer) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center px-8 text-center"
+        style={{ background: bg, color: "#fff" }}>
+        <MarcaLogo logoUrl={landing.logo_url} skin={landing.skin} nombre={landing.name} alto={56} />
+        <h1 className="mt-5 text-2xl font-bold">Esta oferta no está disponible</h1>
+        <p className="mt-2 max-w-md text-sm text-white/80">
+          {landing.name} no tiene ninguna promoción abierta ahora mismo. Mira lo
+          que sí ofrecemos y sus precios.
+        </p>
+        <a href="/planes" className="mt-5 rounded-xl px-5 py-3 text-sm font-bold"
+          style={{ background: "var(--brand-accent)", color: "#1A1405" }}>
+          Ver lo que ofrecemos
+        </a>
+      </div>
+    );
+  }
+
   return (
     <div className="relative" style={{ minHeight: "100vh", background: bg, color: "#26211a" }}>
       {landing?.plans_photo_url ? (
@@ -49,13 +73,13 @@ export default function OfertaPage() {
         </>
       ) : (
         <div className="pointer-events-none fixed inset-0"
-          style={{ background: `radial-gradient(120% 80% at 50% 0%, ${(landing?.color_secondary ?? "#2E5E8C")}55 0%, ${bg} 60%)` }} />
+          style={{ background: `radial-gradient(120% 80% at 50% 0%, ${atmosfera}55 0%, ${bg} 60%)` }} />
       )}
 
       <div className="relative mx-auto max-w-xl px-5 py-10">
         <header className="flex flex-col items-center text-center text-white"
           style={{ textShadow: "0 2px 12px rgba(0,0,0,0.55), 0 1px 3px rgba(0,0,0,0.7)" }}>
-          <img src="/dq-logo.png" alt="" className="h-14 w-auto rounded-xl shadow-lg" />
+          <MarcaLogo logoUrl={landing?.logo_url} skin={landing?.skin} nombre={landing?.name} alto={56} />
           <span className="mt-4 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-extrabold uppercase tracking-widest text-white"
             style={{ background: "#C2453A" }}>
             <Zap size={12} /> Oferta de lanzamiento · plazas limitadas este mes
@@ -63,7 +87,7 @@ export default function OfertaPage() {
           <h1 className="mt-3 text-4xl font-extrabold leading-tight tracking-tight">
             Tu primer mes,
             <br />
-            <span style={{ color: "#F6A560" }}>por 1 €</span>
+            <span style={{ color: "var(--brand-accent-hi)" }}>por 1 €</span>
           </h1>
           <p className="mt-3 max-w-md text-sm text-white/90">
             El plan completo: entrenamiento y nutrición hechos SOLO para ti,
@@ -104,7 +128,7 @@ export default function OfertaPage() {
         <div className="mt-5 space-y-2.5">
           <a href={payHref}
             className="flex items-center justify-center gap-2 rounded-xl px-6 py-4 text-base font-extrabold text-white shadow-lg transition-transform hover:brightness-110 active:scale-[0.98]"
-            style={{ background: "#E8833A" }}>
+            style={{ background: "var(--brand-accent)" }}>
             Empezar hoy por 1 € →
           </a>
           {/* La MISMA oferta, en 2 pagos: para quien prefiere dejarlo cerrado. */}
@@ -140,7 +164,7 @@ export default function OfertaPage() {
             ].map(([n, titulo, texto]) => (
               <div key={n} className="flex gap-3">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-extrabold text-white"
-                  style={{ background: "#2E5E8C" }}>
+                  style={{ background: "var(--brand-accent-2)" }}>
                   {n}
                 </span>
                 <div>

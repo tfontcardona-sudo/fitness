@@ -37,6 +37,23 @@ from app.services import packages as _pkgs
 
 def _tier_label(tier: str) -> str:
     return _pkgs.label(tier)
+
+
+def _cita_modo() -> str:
+    """"videollamada" | "presencial": cómo hace la revisión ESTA marca.
+
+    Abre su propia sesión porque `sales_catalog` no recibe ninguna (es una
+    función cacheada que se llama desde varios sitios)."""
+    from app.db import SessionLocal
+    from app.services.citas import modo_de_marca
+
+    ses = SessionLocal()
+    try:
+        return modo_de_marca(ses)
+    except Exception:  # noqa: BLE001 — un dato de rótulo no tumba el catálogo
+        return "videollamada"
+    finally:
+        ses.close()
 PERIOD_LABEL = {"1m": "Mensual", "3m": "Trimestral", "6m": "Semestral"}
 
 
@@ -224,7 +241,15 @@ def sales_catalog(*, refresh: bool = False) -> dict:
         "brand": {"slug": marca.slug, "name": marca.name,
                   "color_primary": marca.color_primary,
                   "contact_phone": marca.contact_phone,
-                  "contact_address": marca.contact_address},
+                  "contact_address": marca.contact_address,
+                  # Cómo es la revisión de esta marca. El argumentario de la
+                  # pantalla de Vender prometía "videollamada de revisión" a
+                  # TODO el mundo: en un centro que recibe al cliente en la
+                  # sala, eso es vender algo que no se hace.
+                  "cita_modo": _cita_modo(),
+                  # Los servicios que se cobran EN EL CENTRO y que el propio
+                  # perfil de la marca declara.
+                  "extra_services": list(marca.extra_services or [])},
         # Lo que la marca vende pero NO cobra por la web (entreno personal,
         # packs de sesiones): se enseña para poder decírselo al cliente.
         "extra_services": list(marca.extra_services or []),

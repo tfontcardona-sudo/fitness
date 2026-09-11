@@ -59,13 +59,28 @@ def _auth():
 
 @pytest.fixture()
 def restaura_marca(db):
-    """Deja la marca activa como estaba: la base de pruebas es compartida."""
+    """Deja la marca activa como estaba: la base de pruebas es compartida.
+
+    Y la PONE en DQR antes de empezar. Los tests del switch comprueban que
+    activar Professional cambia el escaparate, así que dan por hecho que se
+    arranca desde DQR — y la base de desarrollo puede tener puesto el otro
+    negocio (basta con que alguien haya dado al switch, que es exactamente lo
+    que hay que hacer para probarlo en el navegador). Sin esto, el test falla
+    por el estado de la base, no por el código."""
     from sqlalchemy import select, update
 
     from app.models import BrandConfig
     from app.services.branding import invalidar
 
     antes = db.scalar(select(BrandConfig.id).where(BrandConfig.activa.is_(True)))
+    dqr = db.scalar(select(BrandConfig.id).where(BrandConfig.slug == "dqr"))
+    if dqr is not None and antes != dqr:
+        # El índice único parcial exige apagar la otra ANTES de encender esta.
+        db.execute(update(BrandConfig).values(activa=False))
+        db.flush()
+        db.get(BrandConfig, dqr).activa = True
+        db.commit()
+        invalidar()
     yield
     if antes is not None:
         db.execute(update(BrandConfig).values(activa=False))

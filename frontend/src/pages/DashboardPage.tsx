@@ -101,7 +101,7 @@ function nextAction(c: ClientOut, avisoPlan?: CoachAlert): Accion | null {
         alert: avisoPlan,
       };
     return {
-      client: c, prio: 3, tone: "#E8833A", icon: CalendarPlus, category: "Falta planificación",
+      client: c, prio: 3, tone: "var(--brand-accent)", icon: CalendarPlus, category: "Falta planificación",
       title: "Anamnesis lista · falta su planificación",
       cta: "Crear planificación", tab: "planificacion",
     };
@@ -110,7 +110,7 @@ function nextAction(c: ClientOut, avisoPlan?: CoachAlert): Accion | null {
   const dueDays = goalReviewDue(c);
   if (dueDays != null)
     return {
-      client: c, prio: 3, tone: "#2E5E8C", icon: Flag, category: "Objetivo",
+      client: c, prio: 3, tone: "var(--brand-accent-2)", icon: Flag, category: "Objetivo",
       title: `${dueDays} días con el mismo objetivo`,
       cta: "Valorar objetivo", tab: "planificacion",
     };
@@ -578,19 +578,23 @@ function ActionCard({ a, quiet }: { a: Accion; quiet?: boolean }) {
   );
 }
 
-/** Avatar con la inicial: degradado de marca (naranja→azul) con un matiz
- *  propio por cliente, brillo y volumen — nada plano. */
+/** Avatar con la inicial: degradado de LA MARCA con un matiz propio por
+ *  cliente, brillo y volumen — nada plano. La parada de en medio era un
+ *  naranja de DQ escrito a mano, así que en el otro negocio cada avatar
+ *  llevaba el color del primero; ahora sale de los dos colores de la marca. */
 export function Avatar({ name, size = 34 }: { name: string; size?: number }) {
   const hash = Array.from(name).reduce((a, c) => a + c.charCodeAt(0), 0);
   const angle = 115 + (hash % 130); // ángulo estable por nombre
   return (
     <span
-      className="relative flex shrink-0 select-none items-center justify-center overflow-hidden rounded-full font-bold text-white"
+      className="avatar-marca relative flex shrink-0 select-none items-center justify-center overflow-hidden rounded-full font-bold text-white"
       style={{
         width: size,
         height: size,
         fontSize: Math.max(11, Math.round(size * 0.38)),
-        background: `linear-gradient(${angle}deg, var(--brand-accent) 0%, #D96F2E 45%, var(--brand-accent-2) 100%)`,
+        background: `linear-gradient(${angle}deg, var(--brand-accent) 0%,`
+          + ` color-mix(in srgb, var(--brand-accent) 72%, var(--brand-accent-2)) 45%,`
+          + ` var(--brand-accent-2) 100%)`,
         boxShadow:
           "inset 0 1px 1px rgba(255,255,255,0.45), inset 0 -2px 4px rgba(0,0,0,0.18), 0 1px 3px rgba(38,33,26,0.25)",
         textShadow: "0 1px 2px rgba(0,0,0,0.25)",

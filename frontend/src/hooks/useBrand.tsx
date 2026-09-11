@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { api, getToken } from "../lib/api";
+import { aplicarPiel, pielDe } from "../lib/marca";
 import type { BrandConfigOut } from "../types";
 
 interface BrandState {
@@ -21,9 +22,15 @@ export function useBrand(): BrandState {
 export function BrandProvider({ children }: { children: ReactNode }) {
   const [brand, setBrand] = useState<BrandConfigOut | null>(null);
 
-  const aplica = (colorPrimary: string, colorSecondary: string, titulo?: string | null) => {
-    document.documentElement.style.setProperty("--brand-accent", colorPrimary);
-    document.documentElement.style.setProperty("--brand-accent-2", colorSecondary);
+  const aplica = (colorPrimary: string, colorSecondary: string, titulo?: string | null,
+                  skin?: string | null) => {
+    // LA PIEL PRIMERO: es la que decide qué papel juega cada color (ver el
+    // mapa de roles en index.css). Cambiar solo el acento sobre la piel de
+    // DQR era el "cambia la imagen de fuera, y ni eso": el panel seguía siendo
+    // crema con un acento dorado encima.
+    aplicarPiel(pielDe(skin));
+    document.documentElement.style.setProperty("--marca-1", colorPrimary);
+    document.documentElement.style.setProperty("--marca-2", colorSecondary);
     // El TÍTULO de la pestaña también es de la marca: con dos negocios en el
     // mismo sistema, "DQ · Asesorías Fitness" clavado en el index.html decía
     // el nombre del otro. El del index queda solo como valor de arranque.
@@ -39,7 +46,7 @@ export function BrandProvider({ children }: { children: ReactNode }) {
       api.publicLanding()
         .then((l) => {
           setBrand({ ...(l as any), portal_theme: "dark" } as BrandConfigOut);
-          aplica(l.color_primary, l.color_secondary, l.name);
+          aplica(l.color_primary, l.color_secondary, l.name, l.skin);
         })
         .catch(() => { /* sin marca todavía: quedan los defaults del CSS */ });
       return;
@@ -48,7 +55,7 @@ export function BrandProvider({ children }: { children: ReactNode }) {
       .getBrand()
       .then((b) => {
         setBrand(b);
-        aplica(b.color_primary, b.color_secondary, b.page_title || b.name);
+        aplica(b.color_primary, b.color_secondary, b.page_title || b.name, b.skin);
       })
       .catch(() => {
         /* sin marca todavía: se mantienen los defaults del CSS */

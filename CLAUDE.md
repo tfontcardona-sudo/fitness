@@ -65,6 +65,16 @@ portal) y el cliente registra su seguimiento diario hasta el cierre quincenal.
 >   `metrics.individualized_energy_adjustment`), sin alimentos/estructuras
 >   predefinidos (todo sale de la anamnesis), tono único serio-profesional-
 >   cercano, y patologías comunes añadidas a la lista roja (`safety_gate`).
+> - **La PIEL de la marca** (`brand_config.skin`, mig. 0053 · `frontend/src/lib/marca.ts`):
+>   la identidad visual COMPLETA de cada negocio —fondo, tinta, superficies,
+>   líneas, luces, formas y tipografía—, no sus tres colores. El frontend la
+>   aplica de una vez con `data-piel` en `<html>`; el CSS hace el resto. Regla
+>   de oro, la misma de siempre: el panel y las páginas públicas llevan la de
+>   `marca_activa()`; el portal, el cuestionario y los documentos, la de
+>   `marca_de_cliente()`. ⚠️ Los dos colores de una marca son dos PAPELES, no
+>   dos acentos: el segundo de Professional es su NEGRO de estructura, así que
+>   cada piel decide qué papel le da (`coloresDeMarca`). Vigilado por
+>   `npm run check:marca`.
 > - **Historia antigua**: `docs/HISTORICO.md` (referencia, NO fuente de verdad viva).
 
 ---
@@ -461,6 +471,8 @@ npm run check:claves        # toda clave guardada del portal lleva el token
 npm run check:portapapeles  # una sola puerta al portapapeles (`lib/clipboard`)
 npm run check:botones       # ni una palabra recortada ni partida en un botón
 npm run check:alertas       # una sola fuente de /api/alerts (barrido caro)
+npm run check:marca         # ninguna pantalla escribe el logo ni la paleta
+                            # de una marca: el otro negocio la heredaría
 ```
 
 ---
@@ -491,6 +503,105 @@ npm run check:alertas       # una sola fuente de /api/alerts (barrido caro)
 ---
 
 ## 9. Trabajo pendiente / próximos pasos
+
+000000000000000000000000000. ✅ **LA PIEL DE LA MARCA: que el switch cambie de
+   verdad lo que se ve (11-09-2026).** El dueño, tras probarlo: «al hacer el
+   switch a Professional es como si se cambiase solo la imagen de fuera, y ni
+   eso». Tenía razón — la marca publicaba TRES COLORES y el resto de la
+   identidad estaba clavada debajo. Migración **0053** (`brand_config.skin`).
+   - **LA PIEL ES UN DATO, no un `if` por slug** (`skin`: 'dqr' | 'professional',
+     mismo patrón que `anamnesis_variant` y `doc_variant`). Viaja en los cuatro
+     contratos de marca (panel, portal, cuestionario, landing) y el frontend la
+     aplica de una vez con `data-piel` en `<html>` (`lib/marca.aplicarPiel`).
+     Sin el atributo NO cambia absolutamente nada: la piel de un negocio no
+     puede alterar la del otro, y una marca nueva elige la suya sin tocar
+     código. Y sigue la regla de siempre: el PANEL y las páginas públicas
+     llevan la piel de la marca ACTIVA; el PORTAL y el cuestionario, la del
+     CLIENTE (comprobado en navegador: con Professional activa, el portal de un
+     cliente de DQR sigue saliendo en crema).
+   - ⚠️ **LOS DOS COLORES NO SON DOS ACENTOS: son dos PAPELES, y cada piel los
+     reparte.** El `color_secondary` de Professional es un NEGRO (#161616)
+     porque en su identidad el negro es la ESTRUCTURA. Ese color pintaba el
+     ANILLO DE FOCO del panel y el ANILLO DE PROGRESO de la quincena en el
+     portal: negro sobre negro, el cliente no veía los días que le quedaban
+     para su revisión. Ahora el runtime inyecta los colores en crudo
+     (`--marca-1`/`--marca-2`) y es la piel la que decide el papel; en la de
+     Professional, el "segundo" lo hace el ORO CLARO. `coloresDeMarca()` hace
+     lo mismo para los ~74 sitios del portal que pintan con el hexadecimal EN
+     LÍNEA (`${brand.color_secondary}30`), donde el CSS no llega.
+   - **El portal no es un recoloreado**: cambian los cuatro ejes por los que se
+     lee "esto es otra marca" — COLOR (negro real, oro, ni un azul), FORMA
+     (ángulo casi recto contra el 16-20 px de DQR; filete de oro arriba de cada
+     tarjeta en vez de sombra alrededor; barra inferior maciza con subrayado a
+     lo ancho), LUZ (una sola luz dorada; fuera los dos halos —azul arriba,
+     NARANJA abajo— que eran la firma de DQR y salían en el portal del centro)
+     y LETRA (titular fino, antetítulos en versales espaciadas). La cabecera es
+     otra (rótulo sobre el saludo) y la quincena se cuenta en una PLACA en vez
+     de un anillo. Mismas pantallas, mismos datos, mismo ciclo.
+   - **El logo, en una sola puerta** (`components/MarcaLogo.tsx`): había NUEVE
+     pantallas con `/dq-logo.png` escrito a mano. Mientras una marca no tenga
+     fichero de logo sale SU rótulo tipográfico, nunca el de la otra. Y
+     `GET /api/public/landing` devolvía **`logo_url=None` SIEMPRE** («/storage
+     no pasa por Caddy»), que es por lo que /dq, /planes y /oferta del centro
+     imprimían el logo de DQ: los logos viven bajo `media/` desde la ronda del
+     10-09 y Caddy sí los sirve.
+   - **EL INFORME DE LA REVISIÓN, suyo** (`docs/feedback_doc_pf.py`): el cliente
+     recibía su plan en negro y dorado y, quince días después, la revisión con
+     la portada, las tarjetas grises y el orden de DQR — dos marcas en el mismo
+     buzón. Portada compartida con su plan (`_portada_generica`), «Tu quincena
+     en una página» en fichas, el TEXTO antes que las gráficas (es lo que abre
+     buscando) y «Cómo seguimos», el ciclo del centro con su VISITA y su
+     dirección. ⚠️ Y un fallo de papel: el informe de DQR pinta la cabecera de
+     tabla con el color primario y el texto en BLANCO — con un dorado eso da
+     2,1:1 y no se lee impreso; la del centro es negra con el texto en oro.
+   - **LO QUE VENDE EL CENTRO, POR FIN VISIBLE**: las cinco tarifas del centro
+     (gimnasio 60 €/mes, entrenos personales, packs) vivían en su perfil desde
+     que se creó y **no las pintaba ninguna pantalla**. Además, Vender le decía
+     al coach «planes sueltos · un solo pago, NO SE RENUEVAN» cuando su negocio
+     es una CUOTA MENSUAL que se renueva cada mes, llamaba a su Pack Premium
+     «Full» y le pintaba filas y columnas vacías de los servicios que no vende.
+     Y el argumentario prometía «videollamada de revisión» en un centro que
+     hace VISITAS (`cita_modo` viaja ya en el catálogo y en la landing).
+   - **`/planes` del centro**: anunciaba los TRES planes de DQR con su nombre,
+     arrancaba en «Trimestral» —que Professional no vende, así que el único
+     plan salía SIN PRECIO— y ofrecía «condiciones especiales» de duraciones
+     que no existen. Ahora las duraciones y los servicios salen de lo que la
+     marca vende de verdad. Y `/oferta` con una marca SIN oferta ya no anuncia
+     un primer mes a 1 € que nadie va a cobrar.
+   - **`lib/packages.ts` llevaba «DQR Train/Nutri/Full» escrito dentro**, así
+     que la ficha de un cliente del centro decía «DQR Full». El nombre sale de
+     la marca (`etiquetaDePlan`), y el de la FICHA del backend
+     (`ClientOut.plan_label`), porque ahí manda la marca SELLADA y
+     `GET /clients/{id}` no filtra por marca a propósito.
+   - ⚠️ **GUARDA NUEVA `npm run check:marca`** (van OCHO): ninguna pantalla
+     escribe un logo ni la paleta de una marca, la piel se aplica por una sola
+     puerta y existe de verdad en el CSS. Encontró **25 sitios** con el naranja,
+     el azul o la crema de DQ clavados (incluidos dos de los ocho colores de
+     categoría de la campana, que eran letra por letra los de DQ). Verificada
+     falsificándola en los dos sentidos.
+   - **Lo que se arregló de camino, y no era de esta ronda**: el portal SE
+     DESPLAZABA DE LADO en un móvil de 390 px (la cabecera se sangraba 20 px
+     contra un contenedor sin relleno) — en las DOS marcas; la rampa de tinta
+     heredada (`text-zinc-*`, ~640 usos) solo estaba remapeada para la piel
+     clara, así que en negro se habría quedado negro sobre negro; y el avatar
+     del cliente llevaba una parada naranja de DQ dentro de su degradado.
+   - ⚠️ **La suite dependía de qué marca quedara activa**: con Professional
+     puesta fallaban ONCE tests (Stripe, videollamadas, importación del Word)
+     sin que nada estuviera roto — y basta con dar al switch una vez para
+     probarlo. `tests/conftest.py` fija DQR para la suite y la devuelve como
+     estaba. Un rojo que no corresponde a ningún fallo se acaba ignorando.
+   - Verificado: **882 tests** en los dos órdenes, `tsc`, build, las OCHO
+     guardas, arranque desde base VACÍA hasta 0053 y una sola cabeza. Recorrido
+     en navegador real a 390 px y a 1280 px: portal (5 pestañas), cuestionario y
+     páginas públicas de las DOS marcas, más el panel — cero desbordes, cero
+     texto recortado, cero errores de consola. Tests:
+     `tests/test_piel_de_marca.py` (11).
+   - ⚠️ **Lo único que sigue necesitando un fichero del dueño**: el LOGO de
+     Professional (Recursos → Marca → logo; se guarda como
+     `logo-professional-fitness.*`). Mientras no esté, app y papel imprimen el
+     rótulo «PROFESSIONAL» en dorado — digno y coherente, pero su logo de
+     verdad no me lo puedo inventar. En cuanto se suba, aparece solo en las
+     nueve pantallas y en los dos documentos a la vez.
 
 00000000000000000000000000. ✅ **PROFESSIONAL, COMO TRABAJA DE VERDAD (11-09-2026).**
    Tras hablar con el centro (Lidia i Toni · Centre Salut & Fitness, Girona), su

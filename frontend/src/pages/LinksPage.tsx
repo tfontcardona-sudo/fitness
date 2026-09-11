@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Copy, Dumbbell, Search, ShoppingBag } from "lucide-react";
-import { api } from "../lib/api";
-import type { LandingOut } from "../types";
 import { copiar } from "../lib/clipboard";
+import MarcaLogo from "../components/MarcaLogo";
+import { useMarcaPublica } from "../hooks/useMarcaPublica";
+import { coloresDeMarca, MARCA_POR_DEFECTO, pielDe } from "../lib/marca";
 
 /**
  * Página PÚBLICA de enlaces (/dq) — el link del perfil de Instagram del coach.
@@ -12,14 +13,11 @@ import { copiar } from "../lib/clipboard";
  * con el código de descuento del coach.
  */
 export default function LinksPage() {
-  const [data, setData] = useState<LandingOut | null>(null);
+  // La marca del escaparate, con su PIEL ya aplicada a la página.
+  const data = useMarcaPublica();
   const [copied, setCopied] = useState(false);
   // Buscador de productos: cuando el catálogo es largo, filtra por nombre.
   const [q, setQ] = useState("");
-
-  useEffect(() => {
-    api.publicLanding().then(setData).catch(() => setData(null));
-  }, []);
 
   const filteredProducts = useMemo(() => {
     const all = data?.products ?? [];
@@ -30,9 +28,13 @@ export default function LinksPage() {
       || (p.category ?? "").toLowerCase().includes(needle));
   }, [data, q]);
 
-  const primary = data?.color_primary ?? "#E8833A";
-  const secondary = data?.color_secondary ?? "#2E5E8C";
-  const bg = data?.color_bg ?? "#0B111C";
+  // Los dos colores, ya repartidos por el PAPEL que juegan en esta piel: el
+  // "segundo" de Professional es su negro de estructura, y pintar con él la
+  // atmósfera de una página negra es no pintar nada.
+  const { primary, secondary } = coloresDeMarca(
+    pielDe(data?.skin), data?.color_primary ?? MARCA_POR_DEFECTO.primary,
+    data?.color_secondary ?? MARCA_POR_DEFECTO.secondary);
+  const bg = data?.color_bg ?? MARCA_POR_DEFECTO.bg;
 
   async function copyCode() {
     if (!data?.partner_discount_code) return;
@@ -65,11 +67,7 @@ export default function LinksPage() {
       )}
 
       <div className="relative z-10 flex w-full max-w-sm flex-col items-center text-center">
-        {data?.logo_url ? (
-          <img src={data.logo_url} alt="" className="h-16 w-auto rounded-2xl shadow-lg" />
-        ) : (
-          <img src="/dq-logo.png" alt="" className="h-16 w-auto rounded-2xl shadow-lg" />
-        )}
+        <MarcaLogo logoUrl={data?.logo_url} skin={data?.skin} nombre={data?.name} alto={64} />
         <h1 className="mt-4 text-2xl font-bold text-white drop-shadow">{data?.name ?? "DQR Assessories"}</h1>
         {data?.tagline && <p className="mt-1 text-sm text-white/80">{data.tagline}</p>}
 

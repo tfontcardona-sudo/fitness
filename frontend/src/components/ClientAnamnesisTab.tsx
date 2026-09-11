@@ -9,6 +9,8 @@ import { ExpandableArea, Spinner, useToast } from "./ui";
 import { ACTIVITY_LABEL, ageFrom, DIET_LABEL, DIET_PATTERN_LABEL, GOAL_LABEL, LEVEL_LABEL, PLACE_LABEL } from "../lib/format";
 import { isCriticalLine, isRelevantClinical } from "../lib/clinical";
 import { resumenDudas } from "../lib/documentos";
+import { colorLegible, pielDe } from "../lib/marca";
+import { useBrand } from "../hooks/useBrand";
 
 /** Lo que dejó anotado la LECTURA del documento, además de la síntesis y las
  *  contradicciones: la verificación por relectura, el inventario de lo que
@@ -479,10 +481,16 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange, reloadKey =
 // querer. Cada color agrupa un tipo de dato (datos, cuerpo, entreno, dieta,
 // clínica en rojo/ámbar, vida). "Editar datos" abre el formulario clásico.
 
+/* Cada bloque de la ficha tiene su color de SIGNIFICADO (no de marca): el
+   mismo en los dos negocios. Están afinados para crema, así que en la piel
+   negra pasan por `colorLegible`, que los sube lo justo para llegar a AA sin
+   cambiarles el tono. */
 const V_COLORS = {
   datos: "#3D6E9E",      // azul: identidad
-  cuerpo: "#E8833A",     // naranja: cuerpo y objetivo
-  entreno: "#2E5E8C",    // azul marca: entrenamiento
+  // Estos dos SON los colores de la marca (el comentario viejo ya decía
+  // "azul marca"): escritos a mano, el otro negocio heredaba los de DQ.
+  cuerpo: "var(--brand-accent)",      // acento: cuerpo y objetivo
+  entreno: "var(--brand-accent-2)",   // segundo de marca: entrenamiento
   dieta: "#3F7446",      // verde: alimentación
   clinica: "#9A6B15",    // ámbar: salud
   lesiones: "#B3261E",   // rojo: lo crítico
@@ -638,13 +646,15 @@ function VCard({ color, title, rows, note, noteLabel }: {
   note?: string | null; noteLabel?: string;
 }) {
   const [noteOpen, setNoteOpen] = useState(false);
+  const piel = pielDe(useBrand().brand?.skin);
+  const c = colorLegible(color, piel);
   const noteLines = splitNote(note);
   if (!rows.length && !noteLines.length) return null;
   return (
-    <div className="card border-l-2 p-4" style={{ borderLeftColor: color }}>
+    <div className="card border-l-2 p-4" style={{ borderLeftColor: c }}>
       <p
         className="mb-2 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
-        style={{ background: `color-mix(in srgb, ${color} 13%, transparent)`, color }}
+        style={{ background: `color-mix(in srgb, ${c} 13%, transparent)`, color: c }}
       >
         {title}
       </p>
@@ -682,6 +692,7 @@ function VNotes({ color, title, text, emptyLabel }: {
   color: string; title: string; text: string | null | undefined; emptyLabel?: string;
 }) {
   const [showAll, setShowAll] = useState(false);
+  const piel = pielDe(useBrand().brand?.skin);
   const raw = splitNote(text);
   // Prioridad de lectura: crítico (rojo) → relevante → resto (negaciones,
   // "sin cambios"…). El orden ORIGINAL se conserva dentro de cada grupo.
@@ -693,11 +704,12 @@ function VNotes({ color, title, text, emptyLabel }: {
   const cut = Math.max(VISIBLE_LINES, critical.length);
   const visible = showAll ? ordered : ordered.slice(0, cut);
   const hidden = ordered.length - visible.length;
+  const c = colorLegible(color, piel);
   return (
-    <div className="card border-l-2 p-4" style={{ borderLeftColor: color }}>
+    <div className="card border-l-2 p-4" style={{ borderLeftColor: c }}>
       <p
         className="mb-2 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
-        style={{ background: `color-mix(in srgb, ${color} 13%, transparent)`, color }}
+        style={{ background: `color-mix(in srgb, ${c} 13%, transparent)`, color: c }}
       >
         {title}
       </p>
@@ -708,7 +720,7 @@ function VNotes({ color, title, text, emptyLabel }: {
               <li
                 key={i}
                 className={isCriticalLine(l) ? "font-medium" : ""}
-                style={isCriticalLine(l) ? { color } : undefined}
+                style={isCriticalLine(l) ? { color: c } : undefined}
               >
                 <NoteLine line={l} />
               </li>

@@ -13,7 +13,8 @@
     "check:claves": "node scripts/check-claves.mjs",
     "check:portapapeles": "node scripts/check-portapapeles.mjs",
     "check:alertas": "node scripts/check-alertas.mjs",
-    "check:botones": "node scripts/check-botones.mjs"
+    "check:botones": "node scripts/check-botones.mjs",
+    "check:marca": "node scripts/check-marca.mjs"
   },
   "dependencies": {
     "date-fns": "^3.6.0",

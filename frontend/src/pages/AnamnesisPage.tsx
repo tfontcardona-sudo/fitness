@@ -11,6 +11,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { ACEPTA_DOCUMENTOS } from "../lib/documentos";
+import MarcaLogo from "../components/MarcaLogo";
 
 /**
  * Página PÚBLICA de la anamnesis (/anamnesis/{token}) — llega por el email o
@@ -123,13 +124,14 @@ interface PreguntaMarca { key: string; label: string; placeholder?: string }
 interface Marca {
   brand_name: string;
   logo_url: string | null;
+  skin: string;
   optional_blocks: string[];
   extra_questions: PreguntaMarca[];
 }
 // Mientras carga el estado (o si la red falla) se pinta la versión COMPLETA:
 // ante la duda se pregunta de más, nunca de menos.
 const MARCA_POR_DEFECTO: Marca = {
-  brand_name: "", logo_url: null,
+  brand_name: "", logo_url: null, skin: "dqr",
   optional_blocks: ["priority_zones", "exercise_prefs", "meal_times_text"],
   extra_questions: [],
 };
@@ -252,6 +254,7 @@ export default function AnamnesisPage() {
           setMarca({
             brand_name: st.brand_name ?? "",
             logo_url: st.logo_url ?? null,
+            skin: String(st.skin ?? "dqr"),
             optional_blocks: Array.isArray(st.optional_blocks)
               ? st.optional_blocks : MARCA_POR_DEFECTO.optional_blocks,
             extra_questions: Array.isArray(st.extra_questions) ? st.extra_questions : [],
@@ -588,8 +591,8 @@ export default function AnamnesisPage() {
         <header className="mb-6 flex flex-col items-center text-center">
           {/* El logo sale de la MARCA: con dos negocios, el logo clavado
               enseñaba el del otro a quien entra por el centro. */}
-          <img src={marca.logo_url || "/dq-logo.png"} alt={marca.brand_name}
-            className="h-12 w-auto rounded-xl shadow-sm" />
+          <MarcaLogo logoUrl={marca.logo_url} skin={marca.skin}
+            nombre={marca.brand_name} alto={48} />
           <h1 className="mt-3 text-2xl font-bold">Tu cuestionario inicial</h1>
           {marca.brand_name && (
             <p className="mt-0.5 text-sm font-semibold opacity-80">{marca.brand_name}</p>

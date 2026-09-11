@@ -51,6 +51,7 @@ DEFAULTS = {
     "app_name": "DQR · Assessories",
     "app_short_name": "DQR",
     "anamnesis_variant": "dq",
+    "skin": "dqr",
 }
 
 _TTL_S = 30.0
@@ -82,6 +83,9 @@ class Marca:
     app_name: str = ""
     app_short_name: str = ""
     anamnesis_variant: str = "dq"
+    # La PIEL: la identidad visual COMPLETA de la marca, no sus tres
+    # colores. El frontend la aplica de golpe (`data-piel`).
+    skin: str = "dqr"
     contact_address: str | None = None
     extra_services: list = field(default_factory=list)
     activa: bool = False
@@ -152,6 +156,7 @@ def _marca_de_fila(fila: BrandConfig) -> Marca:
         app_name=getattr(fila, "app_name", None) or fila.name or DEFAULTS["app_name"],
         app_short_name=getattr(fila, "app_short_name", None) or DEFAULTS["app_short_name"],
         anamnesis_variant=getattr(fila, "anamnesis_variant", None) or DEFAULTS["anamnesis_variant"],
+        skin=getattr(fila, "skin", None) or DEFAULTS["skin"],
         contact_address=getattr(fila, "contact_address", None),
         extra_services=list(getattr(fila, "extra_services", None) or []),
         activa=bool(getattr(fila, "activa", False)),
@@ -167,7 +172,8 @@ def marca_por_defecto() -> Marca:
                  stripe_prefix=DEFAULTS["stripe_prefix"],
                  page_title=DEFAULTS["page_title"], app_name=DEFAULTS["app_name"],
                  app_short_name=DEFAULTS["app_short_name"],
-                 anamnesis_variant=DEFAULTS["anamnesis_variant"], activa=True)
+                 anamnesis_variant=DEFAULTS["anamnesis_variant"],
+                 skin=DEFAULTS["skin"], activa=True)
 
 
 def invalidar() -> None:

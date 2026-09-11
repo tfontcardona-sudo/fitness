@@ -53,6 +53,57 @@ def _sin_cache_del_educativo():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _la_marca_activa_es_dqr():
+    """La suite entera corre con DQR como marca del ESCAPARATE.
+
+    Desde que existe el switch, la base de desarrollo puede quedarse con
+    Professional puesto — basta con que alguien lo pruebe, que es justo lo que
+    hay que hacer para verlo—. Y con esa marca activa fallaban ONCE tests
+    (Stripe, videollamadas, importación del Word) sin que nada estuviera roto:
+    esperan las tarifas de DQR, su documento y su videollamada, porque la marca
+    activa decide precios, cita y documento.
+
+    Un rojo que no corresponde a ningún fallo es peor que no tener test: se
+    acaba ignorando. Los tests que necesiten la OTRA marca la activan ellos y
+    la devuelven (ver `restaura_marca` en test_marcas.py y test_professional.py).
+
+    Deja la base como estaba al terminar: es la del panel del dueño.
+    """
+    try:
+        from sqlalchemy import select, update
+
+        from app.db import SessionLocal
+        from app.models import BrandConfig
+        from app.services.branding import invalidar
+    except Exception:  # noqa: BLE001 — sin base, la suite ya se salta sola
+        yield
+        return
+
+    db = SessionLocal()
+    try:
+        antes = db.scalar(select(BrandConfig.id).where(BrandConfig.activa.is_(True)))
+        dqr = db.scalar(select(BrandConfig.id).where(BrandConfig.slug == "dqr"))
+        if dqr is not None and antes != dqr:
+            # El índice único parcial exige apagar la otra ANTES de encender esta.
+            db.execute(update(BrandConfig).values(activa=False))
+            db.flush()
+            db.get(BrandConfig, dqr).activa = True
+            db.commit()
+            invalidar()
+        yield
+        if antes is not None and antes != dqr:
+            db.execute(update(BrandConfig).values(activa=False))
+            db.flush()
+            db.get(BrandConfig, antes).activa = True
+            db.commit()
+            invalidar()
+    except Exception:  # noqa: BLE001 — nunca tumbar la suite por esto
+        yield
+    finally:
+        db.close()
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _cleanup_test_clients():
     yield
     try:

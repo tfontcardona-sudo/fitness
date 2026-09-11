@@ -279,6 +279,12 @@ class ClientOut(BaseModel):
     # para volver a enseñar el enlace de cobro en la ventana de renovación:
     # calcularlo en el frontend sería una segunda fórmula que se desincroniza.
     renewal_due: bool = False
+    # Cómo llama SU MARCA a lo que ha contratado ("DQR Full", "Pack Premium").
+    # Lo pone el backend y no el panel porque la marca que manda es la SELLADA
+    # en su ficha, no el switch: `GET /clients/{id}` no filtra por marca a
+    # propósito (un enlace antiguo o un aviso abren la ficha igual), así que el
+    # panel no puede deducirla — y ponía "DQR Full" a todo el mundo.
+    plan_label: str | None = None
     strict_free_meal_enabled: bool
     status: ClientStatus
     emails_enabled: bool
@@ -412,6 +418,7 @@ class BrandProfileOut(BaseModel):
     color_primary: str
     color_secondary: str
     logo_path: str | None = None
+    skin: str | None = None
     # Lo que distingue a un negocio de otro de un vistazo: cómo llama a sus
     # servicios y a cuánto los vende.
     service_labels: dict | None = None
@@ -433,12 +440,18 @@ class BrandConfigOut(BrandConfigIn):
     activa: bool = True
     service_labels: dict | None = None
     service_taglines: dict | None = None
+    # "videollamada" | "presencial". La página de planes promete "videollamada
+    # de revisión" a todo el que entre: en un CENTRO, la revisión es una visita
+    # y eso es vender algo que después no se hace.
+    cita_modo: str | None = None
     prices: dict | None = None
     stripe_prefix: str | None = None
     page_title: str | None = None
     app_name: str | None = None
     app_short_name: str | None = None
     anamnesis_variant: str | None = None
+    # La PIEL (mig. 0053): "dqr" | "professional". El panel la aplica entera.
+    skin: str | None = None
     # Cuánto documento quiere la marca: "completo" o "simple" (mig. 0047).
     doc_variant: str | None = None
     # "videollamada" | "presencial": cómo son las citas de revisión de la marca.
@@ -494,6 +507,18 @@ class LandingOut(BaseModel):
     color_primary: str
     color_secondary: str
     color_bg: str
+    # La piel de la marca activa: /dq, /planes y /oferta se pintan con ella.
+    skin: str = "dqr"
+    # Cómo llama ESTA marca a sus servicios y cómo los resume. La página de
+    # planes los tenía clavados ("DQR Train/Nutri/Full"), así que el escaparate
+    # público del centro anunciaba tres asesorías con el nombre del otro
+    # negocio — y dos de ellas ni las vende.
+    service_labels: dict | None = None
+    service_taglines: dict | None = None
+    # "videollamada" | "presencial". La página de planes promete "videollamada
+    # de revisión" a todo el que entre: en un CENTRO, la revisión es una visita
+    # y eso es vender algo que después no se hace.
+    cita_modo: str | None = None
     logo_url: str | None
     links_photo_url: str | None
     plans_photo_url: str | None = None
@@ -715,6 +740,9 @@ class AnamnesisStateOut(BaseModel):
     # aplicaban los colores) y qué versión del cuestionario se pinta.
     logo_url: str | None = None
     anamnesis_variant: str = "dq"
+    # La identidad visual COMPLETA de la marca. Un color de acento sobre la
+    # piel de otra marca no es "su cuestionario": es el de la otra pintado.
+    skin: str = "dqr"
     # Bloques OPCIONALES que esta marca quiere (zonas a priorizar, ejercicios
     # favoritos, horarios de comida). Lo obligatorio no está aquí: es igual
     # para todas porque de ahí salen los números del plan.
@@ -747,6 +775,9 @@ class PortalBrand(BaseModel):
     # URL ya servible del logo (None si no hay o si es de las viejas, que
     # cuelgan de una carpeta que Caddy no sirve).
     logo_url: str | None = None
+    # La PIEL del cliente: la de SU marca, no la del escaparate. El portal la
+    # aplica entera (fondo, tinta, formas), no solo el color de acento.
+    skin: str = "dqr"
 
 
 class PortalPeriodInfo(BaseModel):

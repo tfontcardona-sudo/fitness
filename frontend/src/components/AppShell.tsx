@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useBrand } from "../hooks/useBrand";
+import MarcaLogo from "./MarcaLogo";
 import { ALERTS_REFRESH_MS, api } from "../lib/api";
 import { BuscadorRapido, useBuscadorRapido } from "./BuscadorRapido";
 import { useAppUpdate } from "../lib/appUpdate";
@@ -122,8 +123,9 @@ export default function AppShell() {
   // clics que no hacían nada.
   const buscador = useBuscadorRapido();
   // El logo del PANEL también sale de la marca (estaba clavado a DQ, así que
-  // el otro negocio trabajaba bajo un logo ajeno).
-  const logoPanel = api.mediaUrl(brand?.logo_path ?? null) ?? "/dq-logo.png";
+  // el otro negocio trabajaba bajo un logo ajeno). Y si esa marca aún no tiene
+  // fichero de logo, sale SU rótulo — nunca el de la otra.
+  const logoMarca = api.mediaUrl(brand?.logo_path ?? null);
 
   // ---- MÓVIL: sin sidebar — navegación inferior tipo app (como el portal) ----
   if (isMobile) {
@@ -200,8 +202,12 @@ export default function AppShell() {
         style={{ borderColor: "var(--line)", width: collapsed ? 64 : 232, background: "var(--surface)" }}
       >
         <div className="flex h-16 items-center gap-3 border-b px-4" style={{ borderColor: "var(--line)" }}>
-          <img src={logoPanel} alt="" className="h-8 w-auto shrink-0 rounded-md" />
-          {!collapsed && (
+          <MarcaLogo logoUrl={logoMarca} skin={brand?.skin} nombre={brand?.name}
+            alto={32} className="shrink-0" />
+          {/* El nombre solo si el logo es una IMAGEN: cuando la marca aún no
+              tiene fichero y su logo ES el nombre escrito, se leía dos veces
+              seguidas y el segundo salía cortado ("PROFESSIONAL Profes…"). */}
+          {!collapsed && logoMarca && (
             <span className="truncate text-sm font-semibold tracking-wide text-zinc-100">
               {brand?.name ?? "Asesorías"}
             </span>

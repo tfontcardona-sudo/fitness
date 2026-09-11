@@ -3,7 +3,7 @@ import { Link, useParams, useSearchParams, useNavigate } from "react-router-dom"
 import { ArrowLeft, Check, BellRing, ChevronRight, Download, MessageCircle, Pencil, Smartphone, ClipboardCheck, Trash2, CreditCard } from "lucide-react";
 import { api, getToken, keepIfSame, REFRESH_MS } from "../lib/api";
 import { openWhatsApp, waPhone } from "../lib/whatsapp";
-import type { PaymentsListOut, ClientOut } from "../types";
+import type { PackageTier, PaymentsListOut, ClientOut } from "../types";
 import {
   ConfirmDialog,
   PageLoader,
@@ -23,7 +23,8 @@ import { ClientFeedbackTab } from "../components/ClientFeedbackTab";
 import { ClientHistoryTab } from "../components/ClientHistoryTab";
 import { ClientTrackingTab } from "../components/ClientTrackingTab";
 import { ageFrom, formatDate, GOAL_LABEL, LEVEL_LABEL, PLACE_LABEL, relativeDays } from "../lib/format";
-import { BILLING_PERIODS, PACKAGES, PACKAGE_ORDER, billingLabel, pkg } from "../lib/packages";
+import { BILLING_PERIODS, PACKAGE_ORDER, billingLabel, etiquetaDePlan, pkg } from "../lib/packages";
+import { useBrand } from "../hooks/useBrand";
 
 type Tab = "resumen" | "anamnesis" | "planificacion" | "seguimiento" | "feedback" | "historial";
 
@@ -366,7 +367,7 @@ export default function ClientProfilePage() {
                 <dt className="text-zinc-500">Pago</dt>
                 <dd>
                   <span
-                    className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                    className="inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold"
                     style={{
                       background: `color-mix(in srgb, ${client.payment_status === "paid" ? "#2E7D46" : "#C2453A"} 14%, transparent)`,
                       color: client.payment_status === "paid" ? "#2E7D46" : "#C2453A",
@@ -413,7 +414,7 @@ export default function ClientProfilePage() {
           <button
             onClick={openPortal}
             className="flex w-full items-center gap-3 rounded-xl px-4 py-3.5 text-left text-white shadow-md transition-transform hover:brightness-110 active:scale-[0.98]"
-            style={{ background: "linear-gradient(135deg, var(--brand-accent-2) 0%, #234B72 100%)" }}
+            style={{ background: "linear-gradient(135deg, var(--brand-accent-2) 0%, var(--brand-accent-2-lo) 100%)" }}
           >
             <span className="relative shrink-0">
               <Smartphone size={26} />
@@ -657,6 +658,10 @@ function PlanRow({ client, onSaved }: { client: ClientOut; onSaved: () => void }
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const info = pkg(client.package_tier);
+  // Cómo llama la marca a cada servicio. El chip usa `plan_label`, que viene
+  // de la marca SELLADA en la ficha; para el selector y la confirmación —que
+  // hablan de a qué va a PASAR— sirve la del escaparate.
+  const etiquetas = useBrand().brand?.service_labels;
 
   async function change(next: string) {
     if (busy || next === client.package_tier) return;
@@ -674,13 +679,13 @@ function PlanRow({ client, onSaved }: { client: ClientOut; onSaved: () => void }
         ? "su dieta y su entrenamiento"
         : pierdeEntreno ? "su entrenamiento" : "su dieta";
       if (!window.confirm(
-        `${client.full_name} pasa a ${PACKAGES[next as keyof typeof PACKAGES].label}: `
+        `${client.full_name} pasa a ${etiquetaDePlan(next as PackageTier, etiquetas)}: `
         + `dejará de ver ${que} en su portal y en su PDF. ¿Seguro?`)) return;
     }
     setBusy(true);
     try {
       await api.updateClient(client.id, { package_tier: next as ClientOut["package_tier"] });
-      toast.push(`Plan cambiado a ${PACKAGES[next as keyof typeof PACKAGES].label}`);
+      toast.push(`Plan cambiado a ${etiquetaDePlan(next as PackageTier, etiquetas)}`);
       onSaved();
     } catch {
       toast.push("No se pudo cambiar el plan", "error");
@@ -694,10 +699,13 @@ function PlanRow({ client, onSaved }: { client: ClientOut; onSaved: () => void }
       <dt className="text-zinc-500">Plan</dt>
       <dd className="flex items-center gap-1.5">
         <span
-          className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold"
+          className="inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold"
           style={{ background: `color-mix(in srgb, ${info.color} 14%, transparent)`, color: info.color }}
         >
-          {info.label}
+          {/* El nombre que le da SU marca. `PACKAGES` lleva los de DQR
+              clavados ("DQR Full"), así que la ficha de un cliente del centro
+              decía el nombre del otro negocio. */}
+          {client.plan_label || info.label}
         </span>
         <select
           aria-label="Cambiar plan del cliente"
@@ -707,7 +715,7 @@ function PlanRow({ client, onSaved }: { client: ClientOut; onSaved: () => void }
           className="input h-7 w-auto px-1.5 py-0 text-xs"
         >
           {PACKAGE_ORDER.map((t) => (
-            <option key={t} value={t}>{PACKAGES[t].short}</option>
+            <option key={t} value={t}>{etiquetaDePlan(t, etiquetas)}</option>
           ))}
         </select>
       </dd>

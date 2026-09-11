@@ -60,9 +60,20 @@ def public_landing(request: Request, db: Session = Depends(get_db)) -> LandingOu
         color_primary=brand.color_primary,
         color_secondary=brand.color_secondary,
         color_bg=brand.color_bg,
-        # El logo servible es el empaquetado en el frontend (/dq-logo.png):
-        # /storage/... no pasa por Caddy en producción, así que no se promete.
-        logo_url=None,
+        # La PIEL de la marca activa: el escaparate público se pinta entero con
+        # ella, no solo con su color de acento.
+        skin=(getattr(brand, "skin", None) or "dqr"),
+        service_labels=marca_activa(db).service_labels,
+        service_taglines=marca_activa(db).service_taglines,
+        cita_modo=(getattr(brand, "cita_modo", None) or "videollamada"),
+        # El logo SUBIDO de la marca, ya resuelto a una URL servible. Devolvía
+        # None SIEMPRE —el comentario decía que /storage no pasa por Caddy—, y
+        # por eso las páginas públicas caían al logo empaquetado de DQ: quien
+        # abría /dq, /planes o /oferta del centro veía la marca del otro
+        # negocio. Los logos viven bajo `media/` desde la ronda del 10-09 y
+        # Caddy SÍ los sirve; `media_url` devuelve None para los legados que
+        # aún cuelgan de `brand/`, así que esto nunca promete un 404.
+        logo_url=media_url(brand.logo_path),
         links_photo_url=media_url(brand.links_photo_path),
         plans_photo_url=media_url(brand.plans_photo_path),
         partner_store_url=brand.partner_store_url,

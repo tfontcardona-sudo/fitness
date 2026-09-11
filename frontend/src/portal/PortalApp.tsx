@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSinConexion } from "../lib/offline";
+import { aplicarPiel, coloresDeMarca, pielDe, type Piel } from "../lib/marca";
+import MarcaLogo from "../components/MarcaLogo";
 import { activarAcordeon } from "../lib/accordion";
 import { useSearchParams } from "react-router-dom";
 import { Bell, BellOff, CalendarCheck, Camera, Check, ChevronDown, Dumbbell, FileText, LineChart, Library, LogOut, MapPin, MessageSquare, NotebookPen, Share, Smartphone, Video, X } from "lucide-react";
@@ -78,9 +80,12 @@ export default function PortalApp({ token }: { token: string }) {
     apiClient
       .state()
       .then((s) => {
-        setState(s);
-        setStateVersion((v) => v + 1);
+        // La piel primero, y con ella los colores ya repartidos por su PAPEL:
+        // las pantallas pintan con `brand.color_*` EN LÍNEA en decenas de
+        // sitios, así que si el reparto no se hace aquí no llega nunca.
         applyBrand(s);
+        setState(conPapelDeCadaColor(s));
+        setStateVersion((v) => v + 1);
         refreshBadge(apiClient); // badge del icono = pendientes de hoy
       })
       .catch((e) => {
@@ -195,15 +200,24 @@ export default function PortalApp({ token }: { token: string }) {
             hacía que el portal se leyera como una página, no como una app. */}
         <header className="portal-header portal-hero relative z-[1] flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-3">
-            {/* El logo sale de la MARCA del cliente. Estaba clavado a
+            {/* El logo sale de la MARCA del cliente. Estuvo clavado a
                 /dq-logo.png, así que quien entraba por el otro negocio veía el
                 logo ajeno — y no era descuido: el logo se guardaba en una
                 carpeta que Caddy no sirve, así que no había forma de pintarlo.
-                Ahora el backend da la URL ya resuelta. */}
-            <img src={state.brand.logo_url || "/dq-logo.png"}
-              alt="" className="h-9 w-auto shrink-0 rounded-lg shadow-sm" />
+                Ahora el backend da la URL ya resuelta y, mientras una marca no
+                tenga fichero de logo, sale SU rótulo, nunca el de la otra. */}
+            {/* Con logo de IMAGEN va al lado, como siempre. Cuando la marca
+                aún no tiene fichero, su RÓTULO ocupa la línea del antetítulo:
+                al lado se comía el ancho y el saludo salía cortado ("Hola,
+                M…") en un móvil de 390 px, que es donde vive el cliente. */}
+            {state.brand.logo_url && (
+              <MarcaLogo logoUrl={state.brand.logo_url} skin={state.brand.skin}
+                nombre={state.brand.name} alto={36} className="shrink-0" />
+            )}
             <div className="min-w-0">
-              <p className="p-eyebrow truncate">{state.brand.name}</p>
+              {state.brand.logo_url
+                ? <p className="p-eyebrow truncate">{state.brand.name}</p>
+                : <MarcaLogo skin={state.brand.skin} nombre={state.brand.name} alto={20} />}
               <h1 className="p-title truncate">Hola, {state.first_name}</h1>
               {/* Racha 🔥: días seguidos con el diario al día. A partir de 2
                   (un solo día no es racha); el cliente no quiere romperla. */}
@@ -222,30 +236,10 @@ export default function PortalApp({ token }: { token: string }) {
                     círculo que se va cerrando — se VE cuánto queda, no solo se
                     lee. Azul (secundario): dato del ciclo, no una acción.
                     Nunca negativo (período vencido pendiente de cerrar → 0). */}
-                {(() => {
-                  const total = Math.max(1, state.period.days_total);
-                  const hecho = Math.max(0, Math.min(total, state.period.days_elapsed));
-                  const R = 20;
-                  const C = 2 * Math.PI * R;
-                  return (
-                    <div className="relative h-12 w-12">
-                      <svg viewBox="0 0 48 48" className="h-12 w-12 -rotate-90">
-                        <circle cx="24" cy="24" r={R} fill="none" strokeWidth="4"
-                          stroke={`${state.brand.color_secondary}30`} />
-                        <circle cx="24" cy="24" r={R} fill="none" strokeWidth="4"
-                          strokeLinecap="round"
-                          stroke={state.brand.color_secondary}
-                          strokeDasharray={C}
-                          strokeDashoffset={C * (1 - hecho / total)}
-                          style={{ transition: "stroke-dashoffset 0.8s cubic-bezier(0.16,1,0.3,1)" }} />
-                      </svg>
-                      <span className="absolute inset-0 flex items-center justify-center text-base font-bold"
-                        style={{ color: state.brand.color_secondary }}>
-                        {Math.max(0, state.period.days_left)}
-                      </span>
-                    </div>
-                  );
-                })()}
+                <ContadorDeQuincena
+                  total={state.period.days_total} hechos={state.period.days_elapsed}
+                  restan={state.period.days_left} color={state.brand.color_secondary}
+                  piel={pielDe(state.brand.skin)} />
                 {/* Concordancia y momento clave: "1 día restante" (no "1 días")
                     y, a 0, la llamada a la acción de la quincena. */}
                 {/* La etiqueta se ciñe al ancho del anillo y parte en dos
@@ -1085,9 +1079,82 @@ function WelcomeSetup({ api, token, accent, secondary }: {
   );
 }
 
+/**
+ * LO QUE QUEDA DE QUINCENA, con la forma de cada marca.
+ *
+ * DQR lo cuenta con un ANILLO que se va cerrando: redondo, suave, el lenguaje
+ * de su portal. Professional lo cuenta con una PLACA: cifra grande y fina
+ * dentro de un rectángulo con filete de oro y una barra de avance recta
+ * debajo — el mismo ángulo del resto de su piel, el de su cuestionario y el de
+ * su documento impreso. La misma información y el mismo cálculo; otra voz.
+ *
+ * Nunca negativo: un período vencido y sin cerrar daba días en negativo.
+ */
+function ContadorDeQuincena({ total, hechos, restan, color, piel }: {
+  total: number; hechos: number; restan: number; color: string; piel: Piel;
+}) {
+  const t = Math.max(1, total);
+  const hecho = Math.max(0, Math.min(t, hechos));
+  const quedan = Math.max(0, restan);
+
+  if (piel === "professional") {
+    return (
+      <div className="flex h-12 w-14 flex-col items-center justify-center"
+        style={{ border: `1px solid ${color}66`, borderRadius: 3 }}>
+        <span className="text-[22px] font-light leading-none tabular-nums" style={{ color }}>
+          {quedan}
+        </span>
+        <span aria-hidden className="mt-1.5 h-[2px] w-8" style={{ background: `${color}33` }}>
+          <span className="block h-full" style={{ width: `${(hecho / t) * 100}%`, background: color,
+            transition: "width 0.8s cubic-bezier(0.16,1,0.3,1)" }} />
+        </span>
+      </div>
+    );
+  }
+  const R = 20;
+  const C = 2 * Math.PI * R;
+  return (
+    <div className="relative h-12 w-12">
+      <svg viewBox="0 0 48 48" className="h-12 w-12 -rotate-90">
+        <circle cx="24" cy="24" r={R} fill="none" strokeWidth="4" stroke={`${color}30`} />
+        <circle cx="24" cy="24" r={R} fill="none" strokeWidth="4" strokeLinecap="round"
+          stroke={color} strokeDasharray={C} strokeDashoffset={C * (1 - hecho / t)}
+          style={{ transition: "stroke-dashoffset 0.8s cubic-bezier(0.16,1,0.3,1)" }} />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center text-base font-bold"
+        style={{ color }}>
+        {quedan}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Reparte los dos colores de la marca por el PAPEL que juegan en esta piel,
+ * antes de que ninguna pantalla los pinte.
+ *
+ * En DQR devuelve el estado tal cual (mismo objeto): cero cambios, cero
+ * riesgo. En Professional sustituye el "segundo color" —que es su NEGRO de
+ * estructura— por el oro claro: con el negro, el anillo de progreso de la
+ * quincena y su número de días salían negro sobre negro, y el cliente no veía
+ * cuánto le quedaba para la revisión.
+ */
+function conPapelDeCadaColor(s: PortalState): PortalState {
+  const piel = pielDe(s.brand.skin);
+  if (piel === "dqr") return s;
+  const c = coloresDeMarca(piel, s.brand.color_primary, s.brand.color_secondary);
+  return { ...s, brand: { ...s.brand, color_primary: c.primary, color_secondary: c.secondary } };
+}
+
 function applyBrand(s: PortalState) {
-  document.documentElement.style.setProperty("--brand-accent", s.brand.color_primary);
-  document.documentElement.style.setProperty("--brand-accent-2", s.brand.color_secondary);
+  // La piel es la de SU marca (la sellada en su ficha), no la del escaparate:
+  // que el coach ponga el switch en el otro negocio no puede cambiarle el
+  // portal a quien ya está pagando. Va en <html> y no en el contenedor porque
+  // el fondo de la ventana —lo que se ve al estirar de más en un iPhone— y el
+  // color de la barra de estado cuelgan de ahí.
+  aplicarPiel(pielDe(s.brand.skin));
+  document.documentElement.style.setProperty("--marca-1", s.brand.color_primary);
+  document.documentElement.style.setProperty("--marca-2", s.brand.color_secondary);
   document.title = `${s.brand.name} · Mi portal`;
 }
 

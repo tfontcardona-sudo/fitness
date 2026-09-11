@@ -69,11 +69,38 @@ export const PACKAGES: Record<PackageTier, PackageInfo> = {
     hasVideoCall: true,
     delivery: "whatsapp",
     priceMonthEur: 129,
-    color: "#E8833A",
+    // El acento de la marca: el plan estrella de cada negocio se marca con
+    // SU color, no con el naranja del otro.
+    color: "var(--brand-accent)",
   },
 };
 
 export const PACKAGE_ORDER: PackageTier[] = ["train", "nutri", "full"];
+
+/**
+ * EL NOMBRE COMERCIAL DE UN SERVICIO, SEGÚN LA MARCA.
+ *
+ * `PACKAGES` lleva los de DQR escritos dentro ("DQR Full"), que es lo que el
+ * panel y la página pública enseñaban en los DOS negocios: la ficha de un
+ * cliente del centro decía "DQR Full" y su escaparate anunciaba tres asesorías
+ * con el nombre de la otra marca. El backend ya sabe el nombre bueno
+ * (`marca.label`) — aquí solo hay que preguntárselo.
+ *
+ * `labels` son los `service_labels` de la marca que toque: la ACTIVA en el
+ * escaparate y en un alta nueva, la del CLIENTE en su ficha.
+ */
+export function etiquetaDePlan(
+  tier: PackageTier, labels?: Record<string, string> | null,
+): string {
+  return (labels ?? {})[tier] || PACKAGES[tier].label;
+}
+
+/** Lo mismo con el resumen de una línea ("nutrición + entrenamiento"). */
+export function taglineDePlan(
+  tier: PackageTier, taglines?: Record<string, string> | null,
+): string {
+  return (taglines ?? {})[tier] || PACKAGES[tier].tagline;
+}
 
 /** Nombres antiguos → nuevos (espejo de LEGACY_TIERS del backend). */
 const LEGACY: Record<string, PackageTier> = { start: "nutri", pro: "full" };

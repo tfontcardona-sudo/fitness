@@ -8,6 +8,7 @@ import type { ClientOut } from "../types";
 import { EmptyState } from "./ui";
 import { formatDate } from "../lib/format";
 import { isCriticalLine, isRelevantClinical } from "../lib/clinical";
+import { acentoDeMarca } from "../lib/marca";
 
 /**
  * Tab Resumen: KPIs del cliente y evolución de peso hacia el objetivo.
@@ -39,9 +40,9 @@ export function ClientSummaryTab({ client }: { client: ClientOut }) {
     return pts;
   }, [client.start_weight_kg, history, currentWeight]);
 
-  const accent = getComputedStyle(document.documentElement)
-    .getPropertyValue("--brand-accent")
-    .trim() || "#E8833A";
+  // Recharts dibuja con el valor literal, no con una `var()`: el acento se
+  // resuelve en `lib/marca`, que es donde vive el valor por defecto.
+  const accent = acentoDeMarca();
 
   return (
     <div className="space-y-5">
@@ -180,7 +181,8 @@ function Kpi({
     value == null ? "—"
       : `${signed && value > 0 ? "+" : ""}${value.toLocaleString("es-ES", { maximumFractionDigits: 1 })} ${unit}`;
   const improving = value != null && (lowerBetter ? value < 0 : value > 0);
-  const tone = signed && value != null && value !== 0 ? (improving ? "#E8833A" : "#9A6B15") : undefined;
+  const tone = signed && value != null && value !== 0
+    ? (improving ? "var(--brand-accent)" : "#9A6B15") : undefined;
   return (
     <div className="card p-4">
       <p className="text-xl font-semibold" style={{ color: tone ?? "#26211A" }}>

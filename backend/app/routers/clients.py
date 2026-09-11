@@ -439,6 +439,13 @@ def list_clients(
             select(Plan.client_id).where(Plan.client_id.in_(ids), Plan.status == "published").distinct()
         ))
 
+    # El nombre comercial de lo contratado, según la marca SELLADA en cada
+    # ficha. Sin esto la cartera del centro etiquetaba a todos con el nombre
+    # corto de DQR ("Full"). `marca_de_cliente` va contra la caché de marcas,
+    # así que no añade una consulta por cliente al barrido.
+    from app.services import packages as _pkgs
+    from app.services.branding import marca_de_cliente
+
     out = []
     for c in clients:
         item = ClientOut.model_validate(c)
@@ -447,6 +454,7 @@ def list_clients(
             item.pending_review_period = pending[c.id]
         item.review_period_index = reviews.get(c.id)
         item.has_published_plan = c.id in with_plan
+        item.plan_label = _pkgs.label(c.package_tier, marca_de_cliente(c, db))
         out.append(item)
     return out
 
@@ -496,6 +504,10 @@ def get_client(client_id: int, db: Session = Depends(get_db)) -> ClientOut:
     from app.services.renewals import is_due
 
     out.renewal_due = is_due(client, today_local())
+    from app.services import packages as _pkgs
+    from app.services.branding import marca_de_cliente
+
+    out.plan_label = _pkgs.label(client.package_tier, marca_de_cliente(client, db))
     return out
 
 

@@ -36,15 +36,47 @@ function eur(n: number): string {
   return (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(".", ",")) + " €";
 }
 
+/* EL ARGUMENTARIO, POR MARCA.
+ *
+ * Estaba escrito para DQR y se mandaba tal cual desde los dos negocios, con
+ * dos cosas que en un CENTRO son sencillamente falsas: "videollamada de
+ * revisión" (allí el cliente VIENE, la revisión es una visita) y el tono de
+ * una asesoría online a distancia. Lo que se promete en un mensaje de venta
+ * tiene que ser lo que después se hace.
+ *
+ * Qué lo decide: `cita_modo` de la marca — presencial = negocio con sala. */
 const PLAN_SELL: Record<PackageTier, string> = {
   train: "Entrenamiento 100 % a tu medida (material, horario, lesiones y nivel), progresión clara semana a semana, app con tu rutina y yo contigo a diario por WhatsApp.",
   nutri: "Nutrición 100 % a tu medida (tus gustos, tus horarios, tus alergias), objetivos calculados sobre tu caso, app de seguimiento y yo contigo a diario por WhatsApp.",
   full: "Entrenamiento y nutrición coordinados y 100 % a tu medida, videollamada de revisión, app de seguimiento y yo contigo a diario por WhatsApp.",
 };
 
+const PLAN_SELL_CENTRO: Record<PackageTier, string> = {
+  train: "Entrenamiento hecho para ti (tu nivel, tus lesiones, los días que puedas venir), progresión clara semana a semana y la app con tu rutina en el móvil.",
+  nutri: "Pauta de alimentación hecha para ti: tus gustos, tus horarios y tus alergias, con las cifras calculadas sobre tu caso y seguimiento en la app.",
+  full: "Entrenamiento y alimentación coordinados y hechos para ti, seguimiento diario en la app y revisión con nosotros en el centro cada quince días.",
+};
+
+/** ¿Esta marca recibe al cliente en un local? Decide el argumentario y cómo se
+ *  describe la revisión. */
+function esCentro(cat: SalesCatalogOut | null): boolean {
+  return cat?.brand?.cita_modo === "presencial";
+}
+
+/** ¿La marca vende SOLO cuota mensual (un plan, una duración de un mes)?
+ *  Entonces su negocio es mes a mes y llamar a eso "plan suelto que no se
+ *  renueva" es describirle al coach un negocio que no es el suyo. */
+function esCuotaMensual(cat: SalesCatalogOut | null): boolean {
+  const planes = (cat?.items ?? []).filter((i) => i.kind === "plan");
+  return planes.length > 0 && planes.every((p) => p.period === "1m");
+}
+
 /** Mensaje de WhatsApp de lo elegido. Sin emojis (algunos móviles los rompen)
  *  y con *negrita* de WhatsApp. El coach puede editarlo antes de mandarlo. */
-function mensajeDe(item: SalesItem): string {
+function mensajeDe(item: SalesItem, cat: SalesCatalogOut | null): string {
+  const centro = esCentro(cat);
+  const mensual = esCuotaMensual(cat);
+  const sell = centro ? PLAN_SELL_CENTRO : PLAN_SELL;
   if (item.kind === "oferta") {
     // El calendario lo manda el backend con los importes reales: aquí no se
     // reconstruye ninguna cifra.
@@ -60,29 +92,61 @@ function mensajeDe(item: SalesItem): string {
   }
   const tier = item.tier as PackageTier;
   return (
-    `*${item.tier_label} ${item.period_label.toLowerCase()}* - ${eur(item.total_eur)}` +
+    `*${item.tier_label}${mensual ? "" : " " + item.period_label.toLowerCase()}* - ` +
+    `${eur(item.total_eur)}${mensual ? "/mes" : ""}` +
     (item.per_month_eur ? ` (sale a ${eur(item.per_month_eur)}/mes)` : "") + "\n" +
-    `${PLAN_SELL[tier] ?? ""}\n\n` +
+    `${sell[tier] ?? ""}\n\n` +
     `Pago seguro con Stripe: ${item.url}\n` +
-    "Es un pago único: no se renueva solo. Al completarlo te llega al momento el " +
-    "acceso a tu app y tu cuestionario inicial, y nos ponemos en marcha."
+    (mensual
+      // La cuota del centro se renueva CADA MES, pero con recordatorio: no se
+      // le cobra la tarjeta a nadie por su cuenta. Decir "no se renueva" a
+      // secas era describir mal el negocio.
+      ? "Se cobra una vez y no se te vuelve a cobrar solo: cada mes te avisamos "
+        + "para renovar. Al pagar te llega al momento el acceso a tu app y tu "
+        + "cuestionario, y nos ponemos en marcha."
+      : "Es un pago único: no se renueva solo. Al completarlo te llega al momento el "
+        + "acceso a tu app y tu cuestionario inicial, y nos ponemos en marcha.")
   );
 }
 
-/** Catálogo completo de precios, para quien pregunta "¿qué tienes?". */
-function mensajeCatalogo(items: SalesItem[]): string {
+/** Catálogo completo de precios, para quien pregunta "¿qué tienes?".
+ *
+ *  Todo sale de la MARCA: su nombre, sus servicios tal y como ella los llama
+ *  y lo que de verdad vende. Antes empezaba por "*Asesorías DQ*" y recorría
+ *  los tres planes de DQR SIEMPRE, así que el centro mandaba a sus clientes
+ *  un catálogo con el nombre del otro negocio y dos servicios vacíos. Y ahora
+ *  incluye también lo que se cobra EN EL CENTRO, que estaba guardado en el
+ *  perfil de la marca desde su migración y no lo enseñaba ninguna pantalla. */
+function mensajeCatalogo(items: SalesItem[], cat: SalesCatalogOut | null): string {
   const planes = items.filter((i) => i.kind === "plan");
-  const bloques = (["train", "nutri", "full"] as PackageTier[]).map((t) => {
-    const lineas = planes.filter((i) => i.tier === t)
-      .map((i) => `· ${i.period_label}: ${eur(i.total_eur)}`
+  const mensual = esCuotaMensual(cat);
+  // Solo los servicios que la marca VENDE: un bloque vacío no es información.
+  const tiers = (["train", "nutri", "full"] as PackageTier[])
+    .filter((t) => planes.some((i) => i.tier === t));
+  const bloques = tiers.map((t) => {
+    const suyos = planes.filter((i) => i.tier === t);
+    const lineas = suyos
+      .map((i) => `· ${mensual ? "Cuota mensual" : i.period_label}: ${eur(i.total_eur)}`
+        + (mensual ? "/mes" : "")
         + (i.per_month_eur ? ` (sale a ${eur(i.per_month_eur)}/mes)` : ""))
       .join("\n");
-    return `*${PACKAGES[t].label}* - ${PACKAGES[t].tagline}\n${lineas}`;
+    // El nombre comercial lo pone la marca (`tier_label`): "Pack Premium" no
+    // es "DQR Full" con otro precio.
+    return `*${suyos[0]?.tier_label ?? PACKAGES[t].label}*\n${lineas}`;
   }).join("\n\n");
+  const extra = (cat?.brand?.extra_services ?? [])
+    .map((e) => `· ${e.title}: ${e.price}`).join("\n");
+  const nombre = cat?.brand?.name ?? "Asesorías DQ";
+  const cierre = esCentro(cat)
+    ? "Todo va con tu plan hecho a medida, la app de seguimiento y la revisión "
+      + "con nosotros en el centro cada quince días.\nDime cuál te encaja y te paso "
+      + "el enlace de pago seguro (Stripe)."
+    : "Incluyen plan 100 % a tu medida, WhatsApp conmigo a diario y app de seguimiento.\n"
+      + "Dime cuál te encaja y te paso el enlace de pago seguro (Stripe) para empezar hoy mismo.";
   return (
-    `*Asesorías DQ - catálogo de planes*\n\n${bloques}\n\n` +
-    "Los tres incluyen plan 100 % a tu medida, WhatsApp conmigo a diario y app de seguimiento.\n" +
-    "Dime cuál te encaja y te paso el enlace de pago seguro (Stripe) para empezar hoy mismo."
+    `*${nombre} - catálogo*\n\n${bloques}\n\n`
+    + (extra ? `*En el centro*\n${extra}\n\n` : "")
+    + cierre
   );
 }
 
@@ -212,6 +276,20 @@ export default function VenderPage() {
 
   const ofertas = useMemo(() => items.filter((i) => i.kind === "oferta"), [items]);
   const planes = useMemo(() => items.filter((i) => i.kind === "plan"), [items]);
+  // QUÉ vende de verdad esta marca. La tabla recorría los tres servicios y las
+  // tres duraciones de DQR siempre: en un negocio que vende uno solo, salían
+  // dos filas y dos columnas vacías con sus cabeceras, como si le faltara algo.
+  const tiersALaVenta = useMemo(
+    () => (["train", "nutri", "full"] as PackageTier[])
+      .filter((t) => planes.some((p) => p.tier === t)),
+    [planes]);
+  const duracionesALaVenta = useMemo(() => {
+    const etiquetas = { "1m": "Mensual", "3m": "Trimestral", "6m": "Semestral" } as const;
+    return (["1m", "3m", "6m"] as const)
+      .filter((d) => planes.some((p) => p.period === d))
+      .map((d) => etiquetas[d]);
+  }, [planes]);
+  const cuotaMensual = esCuotaMensual(cat);
   const elegido = useMemo(
     () => (sel && sel !== "catalogo" ? items.find((i) => i.key === sel) ?? null : null),
     [sel, items]);
@@ -222,10 +300,10 @@ export default function VenderPage() {
     if (key === sel) return;         // no machaca lo que el coach haya editado
     setSel(key);
     setCopia(null);
-    if (key === "catalogo") setTexto(mensajeCatalogo(items));
+    if (key === "catalogo") setTexto(mensajeCatalogo(items, cat));
     else {
       const it = items.find((i) => i.key === key);
-      setTexto(it ? mensajeDe(it) : "");
+      setTexto(it ? mensajeDe(it, cat) : "");
     }
     // El bloque de envío se trae a la vista: en el móvil quedaba debajo del
     // pliegue y parecía que elegir no hacía nada.
@@ -242,7 +320,7 @@ export default function VenderPage() {
    *  clic equivocado antes de pegarlo en el chat del cliente. */
   async function copiar(que: "enlace" | "mensaje", item?: SalesItem) {
     const it = item ?? elegido;
-    const valor = que === "enlace" ? (it?.url ?? "") : (item ? mensajeDe(item) : texto);
+    const valor = que === "enlace" ? (it?.url ?? "") : (item ? mensajeDe(item, cat) : texto);
     if (!valor) return;
     const ok = await alPortapapeles(valor);
     const nombre = it
@@ -284,7 +362,10 @@ export default function VenderPage() {
             Elige qué vender y manda el enlace: abre directamente la página de pago de Stripe.
           </p>
         </div>
-        <div className="flex flex-col items-start gap-1.5 sm:items-end">
+        {/* Hueco para la campana de avisos, que flota en esa esquina: el chip
+            de estado de Stripe le pasaba por debajo y se leía cortado
+            ("…los enlaces no funcio"). */}
+        <div className="flex flex-col items-start gap-1.5 sm:items-end sm:pr-12">
           {/* Estado SIEMPRE a la vista (no solo cuando falla): saber que está
               bien es tan importante como enterarse de que está roto. */}
           <span className="rounded-full px-2.5 py-1 text-[11px] font-bold"
@@ -344,29 +425,38 @@ export default function VenderPage() {
         </section>
       )}
 
-      {/* PLANES SUELTOS — tabla plan × duración, un pago cada uno */}
+      {/* LO QUE VENDE ESTA MARCA — tabla servicio × duración.
+          Tres cosas estaban escritas para DQR y se le contaban al otro negocio:
+          el rótulo ("planes sueltos, no se renuevan" — la cuota del centro es
+          MENSUAL y se renueva cada mes, con recordatorio), el nombre de cada
+          servicio (salía "Full" en vez de "Pack Premium", que es como lo llama
+          su propia marca) y las filas de los servicios que esta marca NO vende,
+          que salían vacías. */}
       <section className="mt-6">
         <h2 className="text-sm font-extrabold uppercase tracking-wide" style={{ color: "var(--text-faint)" }}>
-          Planes sueltos · un solo pago, no se renuevan
+          {cuotaMensual
+            ? "Cuota mensual · se cobra una vez y se avisa para renovar"
+            : "Planes sueltos · un solo pago, no se renuevan"}
         </h2>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full min-w-[30rem] border-separate" style={{ borderSpacing: "0 0.4rem" }}>
             <thead>
               <tr className="text-[11px] uppercase tracking-wide" style={{ color: "var(--text-faint)" }}>
                 <th className="w-24 text-left font-bold">Plan</th>
-                {["Mensual", "Trimestral", "Semestral"].map((d) => (
+                {duracionesALaVenta.map((d) => (
                   <th key={d} className="text-left font-bold">{d}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {(["train", "nutri", "full"] as PackageTier[]).map((t) => (
+              {tiersALaVenta.map((t) => (
                 <tr key={t}>
                   <th scope="row" className="text-left">
                     <span className="flex items-center gap-2 text-xs font-bold" style={{ color: "var(--text)" }}>
                       <span className="inline-block h-5 w-1 rounded-full"
                         style={{ background: PACKAGES[t].color }} aria-hidden />
-                      {PACKAGES[t].short}
+                      {/* El nombre que le da SU marca, no el genérico. */}
+                      {planes.find((p) => p.tier === t)?.tier_label ?? PACKAGES[t].short}
                     </span>
                   </th>
                   {planes.filter((p) => p.tier === t).map((p) => {
@@ -403,6 +493,32 @@ export default function VenderPage() {
             : { borderColor: "var(--line-strong)", color: "var(--text)" }}>
           Mandar el catálogo entero (sin enlace)
         </button>
+
+        {/* LO QUE SE COBRA EN EL CENTRO. Vive en el perfil de la marca desde
+            que se creó y no lo pintaba NINGUNA pantalla: el coach del centro
+            abría Vender y veía un solo producto, como si el resto de su
+            negocio no existiera. No se cobra por la web —por eso no tiene
+            enlace—, pero es lo que más le preguntan en el mostrador. */}
+        {(cat?.brand?.extra_services?.length ?? 0) > 0 && (
+          <div className="mt-6">
+            <h3 className="text-sm font-extrabold uppercase tracking-wide"
+              style={{ color: "var(--text-faint)" }}>
+              En el centro · no se cobra por la web
+            </h3>
+            <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+              {cat!.brand!.extra_services!.map((e, i) => (
+                <li key={i} className="card flex items-center justify-between gap-3 px-3 py-2">
+                  <span className="text-sm" style={{ color: "var(--text)" }}>{e.title}</span>
+                  <span className="shrink-0 text-sm font-extrabold tabular-nums"
+                    style={{ color: "var(--brand-accent)" }}>{e.price}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1.5 text-[11px]" style={{ color: "var(--text-faint)" }}>
+              Va en el catálogo que mandas por WhatsApp.
+            </p>
+          </div>
+        )}
       </section>
 
       {/* ENVIAR — qué se manda, el enlace a la vista y el mensaje editable */}

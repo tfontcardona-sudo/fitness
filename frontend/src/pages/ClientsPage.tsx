@@ -8,7 +8,8 @@ import { EmptyState, PageLoader, StatusBadge, useToast } from "../components/ui"
 import { Avatar } from "./DashboardPage";
 import { GOAL_LABEL, goalReviewDue, relativeDays } from "../lib/format";
 import { onboardingMessage, openWhatsApp, portalAccessMessage, waPhone } from "../lib/whatsapp";
-import { BILLING_PERIODS, OFFER2_EACH_EUR, OFFER_MONTHLY_EUR, PACKAGES, PACKAGE_ORDER, pkg } from "../lib/packages";
+import { BILLING_PERIODS, OFFER2_EACH_EUR, OFFER_MONTHLY_EUR, PACKAGES, PACKAGE_ORDER, etiquetaDePlan, pkg, taglineDePlan } from "../lib/packages";
+import { useBrand } from "../hooks/useBrand";
 import type { BillingPeriod, PackageTier } from "../types";
 import { copiarConAviso } from "../lib/clipboard";
 
@@ -22,10 +23,10 @@ const CATEGORIES: {
 }[] = [
   { id: "all", label: "Todos", color: "var(--brand-accent)", icon: null },
   { id: "anamnesis", label: "Falta anamnesis", color: "#6366F1", icon: ClipboardList },
-  { id: "plan", label: "Falta planificación", color: "#E8833A", icon: CalendarPlus },
+  { id: "plan", label: "Falta planificación", color: "var(--brand-accent)", icon: CalendarPlus },
   { id: "revision", label: "Falta revisión", color: "#8B5CF6", icon: Flag },
   { id: "pago", label: "Falta pago", color: "#2E7D46", icon: CreditCard },
-  { id: "aldia", label: "Al día", color: "#2E5E8C", icon: CheckCircle2 },
+  { id: "aldia", label: "Al día", color: "var(--brand-accent-2)", icon: CheckCircle2 },
 ];
 
 function inCategory(c: ClientOut, cat: Category): boolean {
@@ -200,8 +201,10 @@ export default function ClientsPage() {
   );
 }
 
-/** Etiqueta del plan/paquete contratado por el cliente (Start/Full/Pro). */
-function PackageBadge({ tier }: { tier: string }) {
+/** Etiqueta del plan contratado. El nombre lo pone LA MARCA (`plan_label`, que
+ *  sale de la sellada en su ficha): "Full" era el nombre corto de DQR y salía
+ *  igual en la cartera del otro negocio. */
+function PackageBadge({ tier, etiqueta }: { tier: string; etiqueta?: string | null }) {
   const p = pkg(tier);
   return (
     <span
@@ -209,7 +212,7 @@ function PackageBadge({ tier }: { tier: string }) {
       style={{ background: `color-mix(in srgb, ${p.color} 14%, transparent)`, color: p.color }}
       title={p.includes}
     >
-      {p.short}
+      {etiqueta || p.short}
     </span>
   );
 }
@@ -280,7 +283,7 @@ function ClientCard({ c }: { c: ClientOut }) {
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <p className="truncate text-sm font-medium text-zinc-100">{c.full_name}</p>
-          <PackageBadge tier={c.package_tier} />
+          <PackageBadge tier={c.package_tier} etiqueta={c.plan_label} />
           <PaymentBadge status={c.payment_status} />
         </div>
         <p className="truncate text-xs text-zinc-500">
@@ -345,7 +348,7 @@ function ClientsTable({ clients }: { clients: ClientOut[] }) {
                   <div>
                     <div className="flex items-center gap-1.5">
                       <p className="font-medium text-zinc-100">{c.full_name}</p>
-                      <PackageBadge tier={c.package_tier} />
+                      <PackageBadge tier={c.package_tier} etiqueta={c.plan_label} />
                       <PaymentBadge status={c.payment_status} />
                     </div>
                     <p className="text-xs text-zinc-500">{c.email}</p>
@@ -468,6 +471,26 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
   }
 
   const [sendingOnb, setSendingOnb] = useState(false);
+  // Cómo llama la marca a lo que acaba de contratar: `PACKAGES` lleva los
+  // nombres de DQR escritos dentro, así que el mensaje de arranque del centro
+  // le daba la bienvenida a "DQR Full".
+  const marcaActiva = useBrand().brand;
+  const etiquetasDeMarca = marcaActiva?.service_labels;
+  const resumenesDeMarca = marcaActiva?.service_taglines;
+  // Las duraciones y las ofertas que ESTA marca vende. Lo que no está en sus
+  // tarifas no se vende: el alta ofrecía las tres duraciones de DQR y su
+  // oferta de captación en un negocio que solo tiene cuota mensual.
+  const precios = marcaActiva?.prices;
+  const duracionesDeLaMarca = useMemo(() => {
+    const todas = BILLING_PERIODS.map((b) => b.value);
+    if (!precios) return todas;
+    const con = todas.filter(
+      (d) => PACKAGE_ORDER.some((t) => (precios[t] ?? {})[d]));
+    return con.length ? con : todas;
+  }, [precios]);
+  // ¿Tiene esta marca oferta de captación? DQR sí; un centro puede no tenerla.
+  const vendeOferta = Boolean(precios?.oferta?.monthly_cents);
+  const vendeOferta2 = Boolean(precios?.oferta2?.monthly_cents);
   // Envío combinado de ARRANQUE: enlace de pago + anamnesis en un solo mensaje,
   // por WhatsApp (Pro) o email (Start/Full) según el plan del cliente.
   async function sendOnboarding() {
@@ -480,7 +503,9 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
     // enlace de pago ni cuestionario, y el coach creía haberlo enviado.
     if (info.delivery === "whatsapp" && digits) {
       openWhatsApp(digits, onboardingMessage(
-        created.client.full_name, info.label, payUrl,
+        created.client.full_name,
+        created.client.plan_label || etiquetaDePlan(created.client.package_tier, etiquetasDeMarca),
+        payUrl,
         `${window.location.origin}/anamnesis/${created.links.portal_token}`));
       toast.push("WhatsApp abierto · pulsa enviar");
       return;
@@ -565,10 +590,24 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
                         </span>
                         <span className="min-w-0">
                           <span className="flex flex-wrap items-center gap-x-1.5">
-                            <span className="text-sm font-semibold text-zinc-100">{p.label}</span>
-                            <span className="text-xs text-zinc-500">· {p.tagline}</span>
+                            {/* El nombre y el resumen que le da LA MARCA: dar
+                                de alta en el centro ofrecía "DQR Full". */}
+                            <span className="text-sm font-semibold text-zinc-100">
+                              {etiquetaDePlan(p.tier, etiquetasDeMarca)}
+                            </span>
+                            <span className="text-xs text-zinc-500">
+                              · {taglineDePlan(p.tier, resumenesDeMarca)}
+                            </span>
                           </span>
-                          <span className="mt-0.5 block text-xs text-zinc-500">{p.includes}</span>
+                          <span className="mt-0.5 block text-xs text-zinc-500">
+                            {/* En un centro con sala, la revisión es una VISITA:
+                                prometer una videollamada al dar de alta es
+                                venderle algo que después no se hace. */}
+                            {marcaActiva?.cita_modo === "presencial"
+                              ? p.includes.replace("videollamada de revisión",
+                                                   "revisión en el centro")
+                              : p.includes}
+                          </span>
                         </span>
                       </button>
                     );
@@ -611,8 +650,11 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
               <div>
                 <label className="label">Duración</label>
                 <p className="text-xs text-zinc-500">Fija el precio del pago</p>
+                {/* Solo lo que la marca vende: dar de alta a alguien en una
+                    duración que su negocio no tiene le deja un enlace de pago
+                    sin precio detrás. */}
                 <div className="mt-1.5 grid grid-cols-3 gap-2">
-                  {BILLING_PERIODS.map((b) => {
+                  {BILLING_PERIODS.filter((b) => duracionesDeLaMarca.includes(b.value)).map((b) => {
                     const sel = period === b.value;
                     return (
                       <button
@@ -634,7 +676,10 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
                 </div>
                 {/* Oferta de captación: programa CERRADO de 3 meses en 3 pagos
                     (1 € + 120 € + 120 €); el backend corta la suscripción al
-                    tercer cobro. Elegirla fuerza el plan Full (es solo de Full). */}
+                    tercer cobro. Elegirla fuerza el plan Full (es solo de Full).
+                    Solo si la marca la VENDE: en un negocio sin oferta llevaba
+                    a un checkout que no existe. */}
+                {vendeOferta && (
                 <button
                   type="button"
                   onClick={() => { setPeriod("oferta"); setTier("full"); }}
@@ -654,8 +699,10 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
                     1 € + {OFFER_MONTHLY_EUR} € + {OFFER_MONTHLY_EUR} € · se detiene sola · solo Full
                   </span>
                 </button>
+                )}
                 {/* La MISMA oferta en 2 pagos: 120,50 € hoy y 120,50 € al mes.
                     El cobro se detiene solo tras el segundo pago. */}
+                {vendeOferta2 && (
                 <button
                   type="button"
                   onClick={() => { setPeriod("oferta2"); setTier("full"); }}
@@ -676,6 +723,7 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
                     241 €, lo mismo que 1 € + 120 € + 120 €). Solo plan Full.
                   </span>
                 </button>
+                )}
               </div>
             </div>
             {/* Pie FIJO: los botones quedan siempre a la vista, no dependen del

@@ -320,6 +320,9 @@ export interface ClientOut {
   /** ¿Toca renovar ya? Lo decide el backend (`renewals.is_due`), no el panel:
    *  una segunda fórmula aquí se desincronizaría de la alerta y del email. */
   renewal_due?: boolean;
+  /** Cómo llama SU marca a lo contratado ("DQR Full", "Pack Premium"). Lo pone
+   *  el backend: la marca que manda es la SELLADA en su ficha, no el switch. */
+  plan_label?: string | null;
   strict_free_meal_enabled: boolean;
   status: ClientStatus;
   emails_enabled: boolean;
@@ -434,6 +437,8 @@ export interface BrandConfigOut {
   app_short_name: string;
   /** Versión del cuestionario inicial ("dq" completa, "simple" de centro). */
   anamnesis_variant: string;
+  /** La PIEL: la identidad visual COMPLETA ("dqr" | "professional"). */
+  skin: string;
   /** Cuánto documento quiere la marca ("completo" o "simple"). */
   doc_variant: string;
   /** Dirección del local, si la marca tiene uno. */
@@ -452,6 +457,7 @@ export interface BrandProfileOut {
   color_secondary: string;
   logo_path: string | null;
   activa: boolean;
+  skin: string | null;
   service_labels: Record<string, string> | null;
   /** Tarifas de ESTA marca ({tier: {periodo: céntimos}}). Lo que no está, no se vende. */
   prices: Record<string, Record<string, number>> | null;
@@ -534,6 +540,14 @@ export interface LandingOut {
   color_primary: string;
   color_secondary: string;
   color_bg: string;
+  /** La PIEL de la marca activa: /dq, /planes y /oferta se pintan con ella. */
+  skin: string;
+  /** Cómo llama ESTA marca a sus servicios, y cómo los resume. */
+  service_labels?: Record<string, string> | null;
+  service_taglines?: Record<string, string> | null;
+  /** "presencial" en un centro con sala; "videollamada" en una asesoría online.
+   *  Decide qué se promete en la página de planes. */
+  cita_modo?: "videollamada" | "presencial" | null;
   logo_url: string | null;
   links_photo_url: string | null;
   plans_photo_url: string | null;
@@ -651,6 +665,9 @@ export interface PortalBrand {
   /** URL ya servible del logo (el backend la resuelve; `logo_path` es una ruta
    *  de disco que el navegador no puede pintar). */
   logo_url?: string | null;
+  /** La PIEL de SU marca. El portal la aplica ENTERA (fondo, tinta, formas),
+   *  no solo el color de acento. */
+  skin?: string | null;
 }
 
 export interface PortalPeriodInfo {
@@ -976,6 +993,18 @@ export interface SalesCatalogOut {
   stripe_enabled: boolean;
   test_mode: boolean;          // claves de PRUEBA: los enlaces no cobran de verdad
   items: SalesItem[];
+  /** La MARCA a la que pertenece este catálogo. El backend lleva tiempo
+   *  mandándola y el tipo no la declaraba, así que la pantalla no podía usarla
+   *  y escribía el argumentario de DQR para los dos negocios. */
+  brand?: {
+    slug: string; name: string; color_primary: string;
+    contact_phone: string | null; contact_address: string | null;
+    /** "presencial" en un centro que recibe al cliente; "videollamada" en una
+     *  asesoría online. Decide qué se promete en el mensaje de venta. */
+    cita_modo?: "videollamada" | "presencial";
+    /** Lo que la marca cobra EN EL CENTRO y no por la web. */
+    extra_services?: { title: string; price: string; note?: string }[];
+  };
 }
 
 

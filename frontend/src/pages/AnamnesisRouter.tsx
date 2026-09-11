@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import { aplicarPiel, pielDe } from "../lib/marca";
 
 /**
  * QUÉ CUESTIONARIO LE TOCA A ESTE CLIENTE.
@@ -27,7 +28,18 @@ export default function AnamnesisRouter() {
     let vivo = true;
     fetch(`/api/p/${token}`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((st) => { if (vivo) setVariante(String(st?.anamnesis_variant || "dq")); })
+      .then((st) => {
+        if (!vivo) return;
+        // La PIEL de la marca del cliente, en <html>: el fondo de la ventana
+        // (lo que se ve al estirar de más en un iPhone) y el color de la barra
+        // de estado del móvil cuelgan de ahí, no del contenedor. Sin esto, el
+        // cuestionario negro del centro salía enmarcado en el crema de DQR.
+        aplicarPiel(pielDe(st?.skin));
+        if (st?.color_primary) {
+          document.documentElement.style.setProperty("--marca-1", st.color_primary);
+        }
+        setVariante(String(st?.anamnesis_variant || "dq"));
+      })
       // Sin respuesta (red caída, enlace roto) cae en la completa: cada página
       // vuelve a preguntar por su cuenta y enseña el error que toque.
       .catch(() => { if (vivo) setVariante("dq"); });

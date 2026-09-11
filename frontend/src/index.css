@@ -34,13 +34,20 @@
 @tailwind utilities;
 
 :root {
-  /* Marca DQ configurable en runtime (brand_config la sobreescribe):
-     naranja = acción/energía · azul = estructura/datos.
-     Tonos afinados para gradientes premium (claro→sombra). */
-  --brand-accent: #e8833a;
+  /* LOS DOS COLORES DE LA MARCA, tal cual los guarda `brand_config`, y el
+     PAPEL que juega cada uno. Son dos cosas distintas y confundirlas costó
+     caro: el segundo color de Professional es un NEGRO (#161616) porque en su
+     identidad el negro es la ESTRUCTURA, no un acento — y ese color pintaba el
+     anillo de foco del panel y el anillo de progreso del portal. Negro sobre
+     negro: invisible.
+
+     Así que el runtime inyecta los colores en crudo (--marca-1/--marca-2) y es
+     cada PIEL la que decide qué papel les da. En la de DQR, naranja = acción y
+     azul = estructura/datos, exactamente como siempre. */
+  --brand-accent: var(--marca-1, #e8833a);
   --brand-accent-hi: #f2a25f;   /* naranja luz (borde superior de relieve) */
   --brand-accent-lo: #c86a24;   /* naranja sombra (base del gradiente) */
-  --brand-accent-2: #2e5e8c;
+  --brand-accent-2: var(--marca-2, #2e5e8c);
   --brand-accent-2-hi: #3f77aa; /* azul luz */
   --brand-accent-2-lo: #234b72; /* azul profundo */
 
@@ -839,7 +846,13 @@ summary:not(.plegable-barra) { cursor: pointer; }
 /* -- Cabecera con cuerpo: banda de marca, no una franja transparente ------- */
 .portal-hero {
   position: relative;
-  margin: -24px calc(-1 * var(--p-pad-page)) 6px;
+  /* Solo el margen de ARRIBA. Los laterales eran `calc(-1 * var(--p-pad-page))`
+     para sangrar la banda a todo lo ancho, pero `.portal-root` NO tiene relleno
+     lateral (lo tienen `.portal-header` y `.portal-main` cada uno), así que ese
+     -20 px no cancelaba nada: sacaba la cabecera 20 px fuera por cada lado. En
+     un móvil de 390 px —donde vive el cliente— la página entera se desplazaba
+     de lado. La banda ya es de ancho completo sin sangrar nada. */
+  margin: -24px 0 6px;
   padding: 26px var(--p-pad-page) 18px;
   border-radius: 0 0 26px 26px;
   background:
@@ -947,9 +960,16 @@ summary:not(.plegable-barra) { cursor: pointer; }
  * preguntas. Nada de degradados de colores ni sombras de neón: en negro, el
  * lujo es el espacio.
  * ------------------------------------------------------------------------- */
+/* LA PALETA DE PROFESSIONAL, en un solo sitio. La usan el cuestionario
+   (`.pf-root`), el panel y el portal cuando la marca activa —o la del
+   cliente— es Professional: los tres tienen que decir el mismo negro y el
+   mismo dorado, o son tres marcas distintas. `--pf-oro` sigue a la marca
+   (`--marca-1`), así que si el dueño retoca su dorado en Recursos, cambia en
+   todas partes; el resto de la paleta es la estructura y no se toca. */
+:root[data-piel="professional"],
 .pf-root {
-  --pf-oro: #C9A227;
-  --pf-oro-claro: #E0BE4E;
+  --pf-oro: var(--marca-1, #C9A227);
+  --pf-oro-claro: color-mix(in srgb, var(--pf-oro) 72%, #fff);
   --pf-fondo: #0B0B0B;
   --pf-hoja: #121212;
   --pf-hoja-2: #171717;
@@ -957,9 +977,11 @@ summary:not(.plegable-barra) { cursor: pointer; }
   --pf-tinta-suave: #BFBAB1;
   --pf-tinta-tenue: #8A857D;
   --pf-linea: rgba(255, 255, 255, .10);
-  --pf-linea-oro: rgba(201, 162, 39, .34);
+  --pf-linea-oro: color-mix(in srgb, var(--pf-oro) 34%, transparent);
   --pf-error: #E2685C;
+}
 
+.pf-root {
   min-height: 100vh;
   min-height: 100dvh;
   background: var(--pf-fondo);
@@ -1179,3 +1201,371 @@ select.pf-input option { background: var(--pf-hoja-2); color: var(--pf-tinta); }
 .pf-girar { animation: pf-girar 1s linear infinite; }
 @keyframes pf-girar { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .pf-girar { animation: none; } }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LA PIEL DE PROFESSIONAL · EL PANEL DEL COACH
+   ───────────────────────────────────────────────────────────────────────────
+   Con el switch en Professional, el panel era el de DQR: fondo crema, textura
+   de papel, tarjetas blancas y sombras cálidas, con un acento dorado encima.
+   Eso no es cambiar de negocio, es pintarle el botón de otro color al mismo.
+
+   Aquí cambia la identidad ENTERA: negro, tinta clara y el oro reservado a lo
+   que de verdad marca. Y se arregla de paso un fallo que solo se ve con esta
+   marca puesta: el segundo color de Professional es un negro (#161616) —en su
+   identidad el negro es la ESTRUCTURA, no un acento— y ese color pintaba el
+   ANILLO DE FOCO. Aquí el papel de "segundo color" lo hace el oro claro, que
+   sobre negro se ve; el negro de la marca se queda donde le toca, en las
+   superficies.
+
+   Todo cuelga de `:root[data-piel="professional"]`: la piel de un negocio no
+   puede alterar la del otro, y sin el atributo no cambia absolutamente nada.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root[data-piel="professional"] {
+  /* --- papeles de los colores de la marca --- */
+  --brand-accent: var(--pf-oro);
+  --brand-accent-hi: var(--pf-oro-claro);
+  --brand-accent-lo: color-mix(in srgb, var(--pf-oro) 78%, #000);
+  /* El "segundo" del panel (foco, datos, estructura) NO es `--marca-2`: ese es
+     el negro de la marca y sobre negro no existe. Es el oro claro. */
+  --brand-accent-2: var(--pf-oro-claro);
+  --brand-accent-2-hi: color-mix(in srgb, var(--pf-oro-claro) 70%, #fff);
+  --brand-accent-2-lo: var(--pf-oro);
+  /* El negro de la marca, en su sitio: la superficie. */
+  --marca-superficie: var(--marca-2, #161616);
+
+  /* --- la paleta del panel --- */
+  --bg: var(--pf-fondo);
+  --surface: var(--pf-hoja);
+  --surface-raised: var(--pf-hoja-2);
+  --line: var(--pf-linea);
+  --line-strong: rgba(255, 255, 255, 0.18);
+  --ink: var(--pf-tinta);
+  --text-dim: var(--pf-tinta-suave);
+  --text-faint: var(--pf-tinta-tenue);
+
+  /* En negro, la elevación no la da una sombra clara: la da el CONTRASTE de
+     la superficie y un filo de luz finísimo. Las sombras cálidas de DQR sobre
+     negro no se veían y dejaban las tarjetas flotando sin asiento. */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.55), 0 6px 18px rgba(0, 0, 0, 0.40);
+  --shadow-2: 0 2px 8px rgba(0, 0, 0, 0.55), 0 16px 44px rgba(0, 0, 0, 0.55);
+  --hairline-top: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* El fondo de la ventana: negro con una sola luz dorada arriba — la misma que
+   el cuestionario. Ni rastro de los dos halos (azul y naranja) de DQR. */
+:root[data-piel="professional"] body {
+  background:
+    radial-gradient(110% 40% at 50% -8%, color-mix(in srgb, var(--pf-oro) 13%, transparent), transparent 64%),
+    var(--bg);
+  color: var(--ink);
+}
+/* La textura de papel de DQR es tinta oscura sobre crema: sobre negro no se
+   ve. Aquí es una trama de luz, y más tenue todavía. */
+:root[data-piel="professional"] body::before {
+  opacity: 0.5;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px);
+}
+:root[data-piel="professional"] ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16); border-color: var(--bg);
+}
+:root[data-piel="professional"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+/* --- las formas. Lo que hace que no se lea como la misma app ---------------
+   DQR redondea mucho (16-24 px) y levanta con sombra cálida: es una app de
+   consulta, cercana. Professional es un centro: ángulo casi recto, filete de
+   oro y superficie plana. El mismo contenido, otra letra. */
+:root[data-piel="professional"] .card {
+  border-radius: 10px;
+  background: var(--surface);
+  border-color: var(--line);
+  box-shadow: var(--hairline-top), var(--shadow-1);
+}
+:root[data-piel="professional"] .card-hover:hover {
+  border-color: color-mix(in srgb, var(--pf-oro) 42%, var(--line-strong));
+  box-shadow: var(--hairline-top), 0 0 0 1px color-mix(in srgb, var(--pf-oro) 16%, transparent), var(--shadow-2);
+}
+:root[data-piel="professional"] .btn { border-radius: 8px; }
+/* El botón de acción: oro PLANO con filo de luz. El relieve de tres paradas y
+   el halo naranja de DQR sobre negro leen a neón, que es lo contrario de lo
+   que pidió el centro. */
+:root[data-piel="professional"] .btn-primary {
+  background: var(--pf-oro);
+  color: #1A1405;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24), 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+:root[data-piel="professional"] .btn-primary:hover {
+  filter: none;
+  background: var(--pf-oro-claro);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 2px 10px rgba(0, 0, 0, 0.55);
+}
+/* El "azul de estructura" de DQR aquí es un botón de contorno dorado: un
+   segundo relleno de color compitiendo con el oro rompería la sobriedad. */
+:root[data-piel="professional"] .btn-blue {
+  background: transparent;
+  color: var(--pf-oro-claro);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pf-oro) 55%, transparent);
+}
+:root[data-piel="professional"] .btn-blue:hover {
+  filter: none;
+  background: color-mix(in srgb, var(--pf-oro) 12%, transparent);
+  box-shadow: inset 0 0 0 1px var(--pf-oro);
+}
+:root[data-piel="professional"] .btn-ghost {
+  background: var(--surface-raised);
+  border-color: var(--line-strong);
+}
+:root[data-piel="professional"] .btn-ghost:hover {
+  background: color-mix(in srgb, var(--pf-oro) 10%, var(--surface-raised));
+  border-color: color-mix(in srgb, var(--pf-oro) 40%, var(--line-strong));
+}
+:root[data-piel="professional"] .input {
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+:root[data-piel="professional"] .input:focus {
+  border-color: var(--pf-oro);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pf-oro) 20%, transparent);
+}
+:root[data-piel="professional"] .label { letter-spacing: 0.14em; }
+/* El subrayado de la pestaña activa: filete de oro, sin halo. */
+:root[data-piel="professional"] .tab-btn > span[class*="h-0.5"],
+:root[data-piel="professional"] .tab-underline {
+  background: var(--pf-oro) !important;
+  box-shadow: none;
+}
+:root[data-piel="professional"] .tab-btn:hover {
+  color: var(--pf-oro-claro) !important;
+  background: color-mix(in srgb, var(--pf-oro) 8%, transparent);
+}
+:root[data-piel="professional"] .well {
+  background: var(--surface-raised);
+  border-radius: 8px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+:root[data-piel="professional"] .coach-bottom-nav {
+  box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.6);
+}
+/* Utilidades de Tailwind con color clavado que el panel usa en bordes: en la
+   piel clara se reescriben a tinta oscura (línea 304); aquí vuelven a ser luz,
+   que es lo que son sobre negro. */
+:root[data-piel="professional"] .border-white\/5 { border-color: rgba(255, 255, 255, 0.06); }
+:root[data-piel="professional"] .border-white\/10 { border-color: rgba(255, 255, 255, 0.11); }
+/* (No hay override de `.bg-white`: se probó y era un error. Esa utilidad NO la
+   usa el panel — la usan las páginas PÚBLICAS, que ya son oscuras en las dos
+   marcas y ponen encima tarjetas blancas con tinta oscura a propósito.
+   Oscurecerlas dejaba el texto de la tarjeta en gris sobre gris: ilegible.) */
+/* LA RAMPA DE TINTA, AL REVÉS. El panel arrastra centenares de clases de la
+   época oscura (`text-zinc-500` ×294, `text-zinc-300` ×87…) que la piel de DQR
+   remapea a tinta OSCURA sobre crema (líneas 295-305). Sobre negro, esa misma
+   tinta oscura es texto invisible: ~640 sitios del panel se habrían quedado en
+   negro sobre negro. Aquí la rampa sube en vez de bajar. */
+:root[data-piel="professional"] :is(.text-zinc-100, .text-zinc-200) { color: var(--pf-tinta); }
+:root[data-piel="professional"] .text-zinc-300 { color: #DAD5CC; }
+:root[data-piel="professional"] .text-zinc-400 { color: var(--pf-tinta-suave); }
+:root[data-piel="professional"] .text-zinc-500 { color: var(--pf-tinta-tenue); }
+:root[data-piel="professional"] .text-zinc-600 { color: #6E6A63; }
+:root[data-piel="professional"] :is(.hover\:text-zinc-200:hover, .hover\:text-zinc-300:hover) { color: var(--pf-tinta); }
+/* Los colores de SIGNIFICADO (aviso, bien, error) también estaban afinados
+   para leerse sobre crema: sobre negro hay que aclararlos o no llegan a AA. */
+:root[data-piel="professional"] :is(.text-amber-300, .text-amber-400) { color: #D8A45A; }
+:root[data-piel="professional"] .text-emerald-400 { color: #6FBF7F; }
+:root[data-piel="professional"] .text-red-400 { color: var(--pf-error); }
+:root[data-piel="professional"] .bg-black\/60 { background: rgba(0, 0, 0, 0.62); }
+:root[data-piel="professional"] :is(.bg-zinc-800, .bg-zinc-900) { background-color: var(--surface-raised); }
+:root[data-piel="professional"] .bg-white\/10 { background-color: rgba(255, 255, 255, 0.08); }
+
+/* La ATMÓSFERA de la pantalla de entrada del coach. En DQR, sus dos halos
+   (azul arriba, naranja abajo); en Professional, una sola luz dorada arriba —
+   la misma que su cuestionario y su portal. Estaba escrita a mano dentro de
+   LoginPage, así que el coach del centro entraba cada día por una pantalla con
+   los colores del otro negocio. */
+.login-atmosfera {
+  background:
+    radial-gradient(60% 50% at 50% 0%, rgba(46, 94, 140, 0.10), transparent 70%),
+    radial-gradient(50% 40% at 50% 100%, rgba(232, 131, 58, 0.07), transparent 70%);
+}
+:root[data-piel="professional"] .login-atmosfera {
+  background: radial-gradient(70% 46% at 50% -4%,
+    color-mix(in srgb, var(--pf-oro) 14%, transparent), transparent 68%);
+}
+
+/* La inicial del avatar va en BLANCO sobre el degradado naranja→azul de DQR.
+   Sobre el oro de Professional, blanco da 2,1:1: la inicial no se lee. */
+:root[data-piel="professional"] .avatar-marca { color: #1A1405; text-shadow: none; }
+
+/* El rótulo tipográfico de una marca sin logo subido (ver MarcaLogo.tsx). */
+.marca-rotulo {
+  display: inline-flex; align-items: center;
+  font-weight: 800; letter-spacing: 0.16em; line-height: 1;
+  white-space: nowrap;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LA PIEL DE PROFESSIONAL · EL PORTAL DEL CLIENTE
+   ───────────────────────────────────────────────────────────────────────────
+   Aquí estaba lo más flagrante. El portal tiene dos temas y los DOS son de
+   DQR: el claro es crema, y el "oscuro" es AZUL NOCHE (#0c1420) con un halo
+   azul arriba y un halo NARANJA abajo. Así que el cliente del centro abría su
+   portal y veía el azul y el naranja del otro negocio con un acento dorado
+   pegado encima. Y su anillo de progreso de la quincena —que se pinta con el
+   segundo color de la marca, o sea el negro— era negro sobre negro: no se
+   veía el número de días que le quedaban.
+
+   Esta piel no es un recoloreado. Cambian los cuatro ejes de los que se lee
+   "esto es otra marca":
+   · COLOR — negro real, oro, y ni un azul.
+   · FORMA — el ángulo casi recto del centro contra el 16-20 px de DQR; filete
+     de oro arriba de cada tarjeta en vez de sombra cálida alrededor.
+   · LUZ — una sola luz dorada arriba; fuera los dos halos y los relieves.
+   · LETRA — titulares finos y grandes, antetítulos en versales espaciadas.
+     La misma información, dicha con otra voz.
+
+   El FUNCIONAMIENTO no cambia ni una coma: mismas pantallas, mismos datos,
+   mismo ciclo. Lo que pidió el dueño — que se vean como dos negocios
+   distintos y funcionen igual por dentro.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root[data-piel="professional"] .portal-root {
+  --p-accent: var(--pf-oro);
+  /* El segundo color del portal es el ORO CLARO, no `--marca-2`: el negro de
+     la marca sobre negro no se ve (el anillo de la quincena era invisible). */
+  --p-accent-2: var(--pf-oro-claro);
+  --p-bg: var(--pf-fondo);
+  --p-ink: var(--pf-tinta);
+  --p-ink-soft: var(--pf-tinta-suave);
+  --p-ink-mute: var(--pf-tinta-tenue);
+  --p-nav-idle: var(--pf-tinta-tenue);
+  --p-line: var(--pf-linea);
+  --p-line-strong: rgba(255, 255, 255, 0.20);
+  /* Sobre oro, la tinta es negra: blanco sobre #C9A227 da 2,1:1 y no se lee. */
+  --p-on-accent: #1A1405;
+  --p-accent-ink: var(--pf-oro-claro);
+  --p-accent-2-ink: var(--pf-oro-claro);
+  --p-accent-wash: color-mix(in srgb, var(--pf-oro) 14%, transparent);
+  --p-accent-2-wash: color-mix(in srgb, var(--pf-oro) 10%, transparent);
+  /* Superficie PLANA. El degradado de DQR da calidez; el centro quiere
+     sobriedad, y en negro un degradado de dos grises solo ensucia. */
+  --p-surface: var(--pf-hoja);
+  --p-card-top: var(--pf-hoja);
+  --p-card-bottom: var(--pf-hoja);
+  --p-card-inset: rgba(255, 255, 255, 0.04);
+  --p-card-shadow: rgba(0, 0, 0, 0.6);
+  --p-nav-bg: rgba(11, 11, 11, 0.92);
+  --p-nav-shadow: rgba(0, 0, 0, 0.6);
+  --p-focus: var(--pf-oro-claro);
+  --p-focus-halo: color-mix(in srgb, var(--pf-oro) 22%, transparent);
+  --p-ok: #6FBF7F; --p-warn: #D8A45A; --p-danger: var(--pf-error);
+  --p-hair: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --p-e-1: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --p-e-2: 0 1px 2px rgba(0, 0, 0, 0.5), 0 4px 12px -2px rgba(0, 0, 0, 0.55);
+  --p-e-3: 0 2px 6px rgba(0, 0, 0, 0.5), 0 12px 28px -8px rgba(0, 0, 0, 0.65);
+  --p-e-4: 0 4px 10px rgba(0, 0, 0, 0.55), 0 24px 56px -16px rgba(0, 0, 0, 0.75);
+  /* EL ÁNGULO. Un solo cambio que se nota en toda la pantalla a la vez. */
+  --p-r-xs: 2px; --p-r-sm: 3px; --p-r-md: 4px; --p-r-lg: 5px; --p-r-xl: 6px;
+  /* Más aire entre bloques: en negro, el lujo es el espacio. */
+  --p-gap-card: 14px; --p-gap-section: 32px;
+  background: var(--p-bg) !important;
+}
+/* Una sola luz dorada arriba. Los dos halos de DQR (azul arriba, naranja
+   abajo) eran su firma y aquí no pintan nada. */
+:root[data-piel="professional"] .portal-root::before {
+  background:
+    radial-gradient(120% 38% at 50% -12%, color-mix(in srgb, var(--pf-oro) 13%, transparent), transparent 64%),
+    linear-gradient(180deg, transparent 60%, rgba(0, 0, 0, .5) 100%);
+}
+
+/* --- la forma de las piezas ------------------------------------------------
+   La tarjeta de DQR se distingue por el borde redondo y la sombra que la
+   levanta. La de Professional, por el FILETE DE ORO de arriba: plana, apoyada
+   en la página, con una línea que la encabeza. */
+:root[data-piel="professional"] .portal-card {
+  border: 1px solid var(--p-line);
+  border-top: 2px solid color-mix(in srgb, var(--pf-oro) 45%, transparent);
+  box-shadow: none;
+}
+:root[data-piel="professional"] .portal-card--flat { box-shadow: none; }
+:root[data-piel="professional"] .portal-card--hero {
+  border-top-color: var(--pf-oro);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--pf-oro) 7%, var(--pf-hoja)) 0%, var(--pf-hoja) 60%);
+}
+/* El raíl lateral pasa a ser el filete de arriba con el color del raíl: dos
+   marcas de color en la misma tarjeta (arriba y a la izquierda) se peleaban. */
+:root[data-piel="professional"] .portal-card--rail {
+  border-top-color: var(--rail, var(--pf-oro));
+  box-shadow: none;
+}
+:root[data-piel="professional"] .portal-card--tap:hover {
+  border-color: color-mix(in srgb, var(--pf-oro) 30%, var(--p-line-strong));
+  box-shadow: none;
+}
+:root[data-piel="professional"] .portal-ring-blue {
+  border-color: color-mix(in srgb, var(--pf-oro) 42%, transparent) !important;
+  box-shadow: none;
+}
+/* El botón: oro plano, ángulo recto y versales. En un centro, el botón es un
+   rótulo; en DQR es una pastilla. */
+:root[data-piel="professional"] .portal-btn3d {
+  background: var(--pf-oro);
+  color: var(--p-on-accent);
+  border-radius: var(--p-r-md);
+  font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  font-size: 13.5px;
+  box-shadow: none;
+}
+@media (hover: hover) {
+  :root[data-piel="professional"] .portal-btn3d:hover { background: var(--pf-oro-claro); }
+}
+:root[data-piel="professional"] .portal-btn3d:active { background: var(--pf-oro); }
+:root[data-piel="professional"] .portal-btn-ghost {
+  border-radius: var(--p-r-md);
+  letter-spacing: 0.05em;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pf-oro) 38%, transparent);
+  color: var(--pf-tinta);
+}
+/* La barra de abajo: negra y maciza, con el filete de oro a lo ancho de la
+   pestaña activa. Fuera el cristal esmerilado y la píldora lavada de DQR. */
+:root[data-piel="professional"] .portal-nav {
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  border-top: 1px solid var(--pf-linea-oro) !important;
+  box-shadow: none;
+}
+:root[data-piel="professional"] .portal-nav .nav-ico {
+  border-radius: 3px; background: transparent !important;
+}
+:root[data-piel="professional"] .portal-nav .nav-active { color: var(--pf-oro-claro); }
+:root[data-piel="professional"] .portal-nav .nav-active .nav-ico { color: var(--pf-oro-claro); }
+:root[data-piel="professional"] .portal-nav .nav-active::before {
+  width: 100%; height: 2px; border-radius: 0; background: var(--pf-oro);
+}
+:root[data-piel="professional"] .portal-tab-badge {
+  border-radius: 2px; box-shadow: none; background: var(--pf-oro);
+}
+:root[data-piel="professional"] .portal-today-pill {
+  border-radius: 2px; background: var(--pf-oro); color: var(--p-on-accent);
+  box-shadow: none; letter-spacing: 0.1em;
+}
+:root[data-piel="professional"] .portal-note { border-radius: var(--p-r-md); }
+
+/* --- la voz: cómo se dice lo mismo ----------------------------------------
+   DQR titula en semibold apretado (-0.021em). Professional titula FINO y
+   grande, y pone antetítulos en versales muy espaciadas: es la tipografía de
+   su cuestionario y de su documento impreso, así que la app, el papel y el
+   formulario por fin hablan igual. */
+:root[data-piel="professional"] .p-display {
+  font-weight: 300; letter-spacing: -0.01em; font-size: 27px;
+}
+:root[data-piel="professional"] .p-title { font-weight: 400; letter-spacing: -0.005em; }
+:root[data-piel="professional"] .p-head { font-weight: 600; }
+:root[data-piel="professional"] .p-eyebrow {
+  letter-spacing: 0.18em; color: var(--pf-oro); font-weight: 700;
+}
+:root[data-piel="professional"] .p-metric {
+  font-weight: 300; letter-spacing: -0.02em; color: var(--pf-tinta);
+}
+/* La cabecera del portal: banda de marca con degradado en DQR; aquí, negro
+   con un filete de oro debajo — la misma cabecera del cuestionario. */
+:root[data-piel="professional"] .portal-hero {
+  background: none !important;
+  border-bottom: 1px solid var(--pf-linea-oro);
+}

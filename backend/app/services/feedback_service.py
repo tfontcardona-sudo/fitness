@@ -19,6 +19,7 @@ from app.models import BrandConfig, Client, DailyLog, Exercise, FeedbackDoc, Per
 from app.services import metrics as M
 from app.services.audit import log_event
 from app.services.docs.feedback_doc import generate_feedback_doc
+from app.services.docs.feedback_doc_pf import generate_feedback_doc_pf
 from app.services.docs.word_base import DocBrand
 from app.services.storage import abs_path, client_dir, storage_root
 from app.services import packages as pkgs
@@ -388,7 +389,16 @@ def _goal_label_es(goal: str | None) -> str | None:
 
 def _write_feedback_doc(db: Session, client: Client, period: Period, inputs: dict, ai_out) -> str:
     """Genera el .docx con las gráficas + el texto (de la IA o editado) y lo guarda."""
-    docx = generate_feedback_doc(
+    # QUÉ INFORME le toca. Lo dice el perfil de su marca (`doc_variant`), la
+    # misma decisión y el mismo sitio que el documento del plan: el cliente que
+    # recibe su plan en negro y dorado no puede recibir la revisión con la
+    # portada y las tarjetas grises del otro negocio.
+    from app.services.plan_delivery import variante_de_documento
+
+    escribir = (generate_feedback_doc_pf
+                if variante_de_documento(db, client) == "professional"
+                else generate_feedback_doc)
+    docx = escribir(
         brand=_doc_brand(db, client), client_name=client.full_name, period_index=period.period_index,
         period_label=_period_label(period), goal_label=_goal_label_es(client.goal_type),
         # Lo contratado manda también en el DOCUMENTO (ya mandaba en el prompt

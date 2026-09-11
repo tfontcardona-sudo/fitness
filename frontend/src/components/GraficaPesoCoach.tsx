@@ -34,8 +34,10 @@ export default function GraficaPesoCoach({ series, accent, goalKg }: {
         <YAxis stroke="#8B8172" fontSize={12} tickLine={false} axisLine={false} domain={["dataMin - 2", "dataMax + 2"]} />
         <Tooltip
           contentStyle={{
-            background: "#fffdf9",
-            border: "1px solid rgba(38,33,26,0.15)",
+            // La superficie de la PIEL: en negro, un cuadro crema con
+            // texto oscuro era un recorte de la otra marca sobre la gráfica.
+            background: "var(--surface)",
+            border: "1px solid var(--line-strong)",
             borderRadius: 12,
             fontSize: 13,
           }}

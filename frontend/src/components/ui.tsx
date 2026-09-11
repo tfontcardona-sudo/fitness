@@ -116,12 +116,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           >
             <span
               className="flex h-5 w-5 items-center justify-center rounded-full"
-              style={{ background: t.tone === "error" ? "#C2453A22" : "#E8833A22" }}
+              style={{ background: t.tone === "error" ? "#C2453A22"
+                : "color-mix(in srgb, var(--brand-accent) 14%, transparent)" }}
             >
+              {/* El color del tick va por `style`, no por la prop `color`: esa
+                  acaba en el atributo `stroke` del SVG, donde una `var()` no
+                  siempre se resuelve. Lucide pinta con `currentColor`. */}
               {t.tone === "error" ? (
                 <AlertTriangle size={13} color="#C2453A" />
               ) : (
-                <Check size={13} color="#E8833A" />
+                <Check size={13} style={{ color: "var(--brand-accent)" }} />
               )}
             </span>
             <span className="text-zinc-100">{t.message}</span>

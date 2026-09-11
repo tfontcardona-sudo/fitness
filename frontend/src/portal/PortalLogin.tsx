@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Eye, EyeOff, LogIn } from "lucide-react";
 import { portalLogin, portalSession, PortalError } from "./portalApi";
+import { aplicarPiel, pielDe } from "../lib/marca";
+import MarcaLogo from "../components/MarcaLogo";
 
 /**
  * Login del portal del cliente (ruta /portal). Entra con su email y la
@@ -19,6 +21,29 @@ export default function PortalLogin() {
   // La contraseña la genera el coach y llega por correo: teclearla a ciegas
   // en el móvil es el fallo de acceso nº 1 — el ojo la deja verificar.
   const [showPass, setShowPass] = useState(false);
+  // LA MARCA. En esta pantalla todavía no se sabe de QUÉ cliente es (el token
+  // llega al entrar), así que se pinta la marca pública: su logo, su piel y
+  // sus colores. Antes salía siempre el logo de DQ, con lo que el cliente del
+  // centro entraba a «su» portal por una puerta con la marca del otro negocio.
+  const [marca, setMarca] = useState<
+    { name: string; logo_url: string | null; skin: string;
+      color_primary: string; color_secondary: string } | null>(null);
+  useEffect(() => {
+    let vivo = true;
+    fetch("/api/public/landing")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((m) => {
+        if (!vivo || !m) return;
+        setMarca(m);
+        aplicarPiel(pielDe(m.skin));
+        document.documentElement.style.setProperty("--marca-1", m.color_primary);
+        document.documentElement.style.setProperty("--marca-2", m.color_secondary);
+      })
+      // Sin respuesta se queda la piel por defecto: una pantalla de entrada
+      // sin logo es mucho menos malo que una con el logo equivocado.
+      .catch(() => {});
+    return () => { vivo = false; };
+  }, []);
 
   // Si ya hay sesión recordada, entra directo. Si no, autorrellena el email.
   useEffect(() => {
@@ -51,7 +76,10 @@ export default function PortalLogin() {
     <div className="portal-root mx-auto flex min-h-screen max-w-md flex-col justify-center px-6"
       style={{ paddingBottom: "10vh" }}>
       <div className="mb-6 flex flex-col items-center text-center">
-        <img src="/dq-logo.png" alt="" className="mb-3 h-12 w-auto rounded-xl shadow-sm" />
+        {/* Aquí todavía no se sabe de qué cliente es la pantalla (el token
+            llega DESPUÉS de entrar), así que la marca es la pública. */}
+        <MarcaLogo logoUrl={marca?.logo_url} skin={marca?.skin} nombre={marca?.name}
+          alto={46} className="mb-3" />
         <h1 className="text-2xl font-semibold">Entra a tu portal</h1>
       </div>
 

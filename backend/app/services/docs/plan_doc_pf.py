@@ -106,7 +106,25 @@ def _norm(s: str) -> str:
 def _portada(doc: Document, brand: DocBrand, client_name: str, month_index: int,
              goal_type: str | None, generated_on: _date | None,
              que_lleva: str) -> None:
-    """Bloque negro a toda página: logo dorado, nombre y las fechas del ciclo.
+    """La portada del PLAN: qué lleva, el objetivo y las fechas del ciclo."""
+    hoy = generated_on or _date.today()
+    _portada_generica(
+        doc, brand, client_name, rotulo=que_lleva,
+        datos=[("Objetivo", _OBJETIVO.get(goal_type or "", "A definir en el centro")),
+               ("Entregado", hoy.strftime("%d/%m/%Y")),
+               ("Mes de trabajo", str(month_index)),
+               ("Próxima revisión", "a los 15 días de empezar")],
+    )
+
+
+def _portada_generica(doc: Document, brand: DocBrand, client_name: str, *,
+                      rotulo: str, datos: list[tuple[str, str]]) -> None:
+    """Bloque negro a toda página: rótulo dorado, nombre y los datos que traiga
+    cada documento.
+
+    La comparten el PLAN y el INFORME DE REVISIÓN: son los dos documentos que
+    recibe el mismo cliente y tenían que abrir igual — el informe usaba la
+    portada clara y centrada de DQR, así que parecían de dos negocios.
 
     El negro va en una CELDA sombreada, no en el fondo de la página: Word no
     sabe pintar un fondo a sangre que sobreviva a la conversión a PDF, y una
@@ -149,15 +167,10 @@ def _portada(doc: Document, brand: DocBrand, client_name: str, month_index: int,
     else:
         linea(brand.name.upper(), pt=17, color=ORO, bold=True, espaciado=4, primera=True)
 
-    linea(que_lleva.upper(), pt=10, color=ORO, bold=True, espaciado=3, antes=8)
+    linea(rotulo.upper(), pt=10, color=ORO, bold=True, espaciado=3, antes=8)
     linea(client_name, pt=30, color="FFFFFF", antes=10)
     linea("—" * 18, pt=9, color=ORO, antes=12)
 
-    hoy = generated_on or _date.today()
-    datos = [("Objetivo", _OBJETIVO.get(goal_type or "", "A definir en el centro")),
-             ("Entregado", hoy.strftime("%d/%m/%Y")),
-             ("Mes de trabajo", str(month_index)),
-             ("Próxima revisión", "a los 15 días de empezar")]
     for etiqueta, valor in datos:
         p = celda.add_paragraph()
         p.paragraph_format.space_before = Pt(6)

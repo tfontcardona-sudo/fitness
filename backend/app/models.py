@@ -495,6 +495,11 @@ class BrandConfig(Base):
     # (por defecto, y lo que hace una asesoría online) o "presencial" — una
     # VISITA al centro, sin Meet y sin depender de que haya un Google conectado.
     cita_modo: Mapped[str | None] = mapped_column(String(16))
+    # La PIEL de la marca (mig. 0053): el juego ENTERO de identidad visual
+    # —fondo, tinta, superficies, líneas, luces, formas y tipografía— que el
+    # frontend aplica de golpe con `data-piel`, no tres colores sueltos.
+    # "dqr" (crema, naranja y azul) | "professional" (negro y dorado).
+    skin: Mapped[str | None] = mapped_column(String(20))
     # Dirección física (mig. 0045): una asesoría online no la necesita, un
     # CENTRO sí — es de lo primero que busca su cliente.
     contact_address: Mapped[str | None] = mapped_column(String(200))

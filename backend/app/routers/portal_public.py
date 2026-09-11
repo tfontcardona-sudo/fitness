@@ -161,6 +161,7 @@ def _state(db: Session, client: Client) -> AnamnesisStateOut:
         color_bg=brand.color_bg,
         font_family=brand.font_family,
         portal_theme=brand.portal_theme,
+        skin=(getattr(brand, "skin", None) or "dqr"),
         logo_url=portal_svc.media_url(brand.logo_path),
         **_variante_de_anamnesis(brand),
     )

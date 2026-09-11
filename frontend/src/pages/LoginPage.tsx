@@ -2,7 +2,8 @@ import { useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { useBrand } from "../hooks/useBrand";
 import { Spinner } from "../components/ui";
-import { ApiError } from "../lib/api";
+import MarcaLogo from "../components/MarcaLogo";
+import { api, ApiError } from "../lib/api";
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -31,17 +32,14 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center p-6">
-      {/* Atmósfera: azul arriba, naranja abajo — la firma visual DQ */}
-      <div
-        className="pointer-events-none fixed inset-0"
-        style={{
-          background:
-            "radial-gradient(60% 50% at 50% 0%, rgba(46,94,140,0.10), transparent 70%)," +
-            "radial-gradient(50% 40% at 50% 100%, rgba(232,131,58,0.07), transparent 70%)",
-        }}
-      />
+      {/* Atmósfera de la marca. Los dos halos (azul arriba, naranja abajo)
+          son la firma de DQ y estaban escritos a mano aquí: con el switch en
+          el otro negocio, su coach entraba cada día por una pantalla con los
+          colores del primero. Ahora los pone la PIEL. */}
+      <div className="pointer-events-none fixed inset-0 login-atmosfera" />
       <div className="animate-rise card relative w-full max-w-sm p-8">
-        <img src="/dq-logo.png" alt="DQ" className="mb-6 h-11 w-auto rounded-lg" />
+        <MarcaLogo logoUrl={brand?.logo_path ? api.mediaUrl(brand.logo_path) : null}
+          skin={brand?.skin} nombre={brand?.name} alto={44} className="mb-6" />
         <h1 className="text-xl font-semibold text-zinc-100">
           {brand?.name ?? "Asesorías Fitness"}
         </h1>
