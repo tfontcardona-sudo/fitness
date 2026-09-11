@@ -490,6 +490,27 @@ def notify_video_call_scheduled(db: Session, client: Client, when_label: str,
     return send_to_client(db, client, payload)
 
 
+def notify_visita_presencial(db: Session, client: Client, when_label: str,
+                            donde: str | None) -> int:
+    """Avisa al cliente (push) de que su VISITA al centro quedó agendada.
+
+    Sin enlace de Meet que abrir: la notificación lleva al portal, donde está la
+    tarjeta con el día y la dirección. No hace commit."""
+    if not push_configured():
+        return 0
+    base = settings.public_base_url.rstrip("/")
+    payload = {
+        "title": "Revisión confirmada",
+        "body": f"{when_label}" + (f" · {donde}" if donde else ""),
+        "count": 1,
+        "url": f"{base}/p/{client.portal_token}",
+        # Tag por CITA, no compartida: dos avisos seguidos del mismo cliente no
+        # pueden verse como una sola notificación (el fallo que ya costó caro).
+        "tag": f"dq-visita-{client.id}",
+    }
+    return send_to_client(db, client, payload)
+
+
 def notify_coach_pay_link_failed(db: Session, *, que: str, motivo: str) -> int:
     """Avisa al COACH de que un ENLACE DE PAGO no ha podido abrir Stripe.
 

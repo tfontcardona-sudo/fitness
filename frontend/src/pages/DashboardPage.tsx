@@ -13,6 +13,7 @@ import {
   CreditCard,
   HeartPulse,
   Hourglass,
+  MapPin,
   Package,
   Send,
   Sparkles,
@@ -453,14 +454,23 @@ export default function DashboardPage() {
                         </span>
                       </span>
                     </Link>
-                    {v.meet_url && (
+                    {/* A una videollamada te unes; a una VISITA al centro no:
+                        lo que hace falta ahí es saber dónde es. */}
+                    {v.modo === "presencial" ? (
+                      <span title={v.lugar ?? "Visita en el centro"}
+                        aria-label="Visita en el centro"
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+                        style={{ background: "color-mix(in srgb, #0EA5E9 14%, transparent)", color: "#0EA5E9" }}>
+                        <MapPin size={17} />
+                      </span>
+                    ) : v.meet_url ? (
                       <a href={v.meet_url} target="_blank" rel="noopener noreferrer"
                         title="Unirme a Google Meet" aria-label="Unirme a Google Meet"
                         className="tap flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
                         style={{ background: "color-mix(in srgb, #0EA5E9 14%, transparent)", color: "#0EA5E9" }}>
                         <Video size={17} />
                       </a>
-                    )}
+                    ) : null}
                   </li>
                 );
               })}

@@ -934,3 +934,248 @@ summary:not(.plegable-barra) { cursor: pointer; }
 .portal-hoy-texto { min-width: 0; flex: 1 1 auto; }
 .portal-hoy-titulo { display: block; font-size: 14px; font-weight: 650; color: var(--p-ink); line-height: 1.3; }
 .portal-hoy-sub { display: block; margin-top: 1px; font-size: 12px; color: var(--p-ink-mute); line-height: 1.3; }
+
+/* ============ PROFESSIONAL · el cuestionario del centro =====================
+ * Negro y dorado, que es la identidad de Professional (Centre Salut &
+ * Fitness). Vive en su propio espacio de nombres `pf-` y NO toca ni una regla
+ * del panel ni del portal: la piel de una marca no puede alterar la de la
+ * otra.
+ *
+ * El encargo era «profesional, claro y limpio»: fondo negro sin ruido, una
+ * sola tinta clara, el oro reservado a lo que de verdad marca (el paso en el
+ * que vas, la opción elegida, el botón que avanza) y aire de sobra entre
+ * preguntas. Nada de degradados de colores ni sombras de neón: en negro, el
+ * lujo es el espacio.
+ * ------------------------------------------------------------------------- */
+.pf-root {
+  --pf-oro: #C9A227;
+  --pf-oro-claro: #E0BE4E;
+  --pf-fondo: #0B0B0B;
+  --pf-hoja: #121212;
+  --pf-hoja-2: #171717;
+  --pf-tinta: #F2EFE9;
+  --pf-tinta-suave: #BFBAB1;
+  --pf-tinta-tenue: #8A857D;
+  --pf-linea: rgba(255, 255, 255, .10);
+  --pf-linea-oro: rgba(201, 162, 39, .34);
+  --pf-error: #E2685C;
+
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--pf-fondo);
+  color: var(--pf-tinta);
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  padding: 20px 16px 44px;       /* el gutter lateral, en un solo sitio */
+}
+/* Una luz muy tenue arriba: sin ella el negro plano parece una pantalla
+   apagada, no un documento. */
+.pf-root::before {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(120% 38% at 50% -12%, rgba(201, 162, 39, .13), transparent 64%),
+    linear-gradient(180deg, transparent 60%, rgba(0, 0, 0, .5) 100%);
+}
+.pf-hoja { position: relative; z-index: 1; max-width: 720px; margin: 0 auto; }
+
+/* ---- cabecera y pie ---- */
+.pf-cab {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding-bottom: 16px; margin-bottom: 22px;
+  border-bottom: 1px solid var(--pf-linea-oro);
+}
+.pf-logo { height: 42px; width: auto; max-width: 200px; object-fit: contain; }
+.pf-marca {
+  font-size: 17px; font-weight: 800; letter-spacing: .16em;
+  color: var(--pf-oro);
+}
+.pf-cab-sub {
+  font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--pf-tinta-tenue);
+}
+.pf-pie {
+  margin-top: 30px; padding-top: 16px;
+  border-top: 1px solid var(--pf-linea);
+  font-size: 11px; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--pf-tinta-tenue); text-align: center;
+}
+
+/* ---- texto ---- */
+.pf-eyebrow {
+  font-size: 11px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--pf-oro); margin-bottom: 8px;
+}
+.pf-h1 {
+  font-size: clamp(1.6rem, 6.4vw, 2.1rem); font-weight: 300; line-height: 1.15;
+  letter-spacing: -.015em; color: var(--pf-tinta); margin-bottom: 10px;
+}
+.pf-h2 {
+  font-size: 1.05rem; font-weight: 650; line-height: 1.25; color: var(--pf-tinta);
+}
+.pf-p { font-size: 14px; line-height: 1.65; color: var(--pf-tinta-suave); }
+.pf-sub { margin-top: 3px; font-size: 12.5px; line-height: 1.5; color: var(--pf-tinta-tenue); }
+
+/* ---- el camino: en qué bloque vas ---- */
+.pf-pasos {
+  display: flex; flex-wrap: wrap; gap: 6px 14px;
+  margin: 22px 0 18px; padding: 0; list-style: none;
+}
+.pf-paso { display: flex; align-items: center; gap: 7px; }
+.pf-paso-n {
+  display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; flex: 0 0 auto;
+  border-radius: 50%; border: 1px solid var(--pf-linea);
+  font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+  color: var(--pf-tinta-tenue);
+}
+.pf-paso-t { font-size: 11.5px; font-weight: 600; color: var(--pf-tinta-tenue); }
+.pf-paso[data-estado="actual"] .pf-paso-n {
+  background: var(--pf-oro); border-color: var(--pf-oro); color: #0B0B0B;
+}
+.pf-paso[data-estado="actual"] .pf-paso-t { color: var(--pf-tinta); }
+.pf-paso[data-estado="hecho"] .pf-paso-n { border-color: var(--pf-linea-oro); color: var(--pf-oro); }
+.pf-paso[data-estado="hecho"] .pf-paso-t { color: var(--pf-tinta-suave); }
+
+/* ---- la tarjeta donde se rellena ---- */
+.pf-tarjeta {
+  background: var(--pf-hoja);
+  border: 1px solid var(--pf-linea);
+  border-top: 2px solid var(--pf-oro);       /* el filete dorado */
+  border-radius: 14px;
+  padding: 22px 18px 18px;
+  box-shadow: 0 20px 44px rgba(0, 0, 0, .42);
+}
+.pf-titulo { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 20px; }
+.pf-titulo-n {
+  font-size: 12px; font-weight: 700; letter-spacing: .1em;
+  color: var(--pf-oro); padding-top: 3px; flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- campos ---- */
+.pf-campo { display: block; margin-bottom: 16px; }
+.pf-label {
+  display: block; margin-bottom: 7px;
+  font-size: 12.5px; font-weight: 600; color: var(--pf-tinta-suave);
+}
+.pf-input {
+  display: block; width: 100%;
+  min-height: 46px; padding: 11px 13px;
+  background: var(--pf-hoja-2);
+  border: 1px solid var(--pf-linea); border-radius: 10px;
+  color: var(--pf-tinta); font-size: 15px; font-family: inherit;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.pf-input::placeholder { color: var(--pf-tinta-tenue); }
+.pf-input:focus {
+  outline: none;
+  border-color: var(--pf-oro);
+  box-shadow: 0 0 0 3px rgba(201, 162, 39, .18);
+}
+.pf-area { min-height: 84px; resize: vertical; line-height: 1.55; }
+select.pf-input { appearance: none; padding-right: 34px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--pf-oro) 50%),
+                    linear-gradient(135deg, var(--pf-oro) 50%, transparent 50%);
+  background-position: right 16px center, right 11px center;
+  background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
+select.pf-input option { background: var(--pf-hoja-2); color: var(--pf-tinta); }
+.pf-fila { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 460px) { .pf-fila { grid-template-columns: 1fr; gap: 0; } }
+
+/* ---- elegir: en línea o en tarjetas ---- */
+.pf-eleccion { display: flex; flex-wrap: wrap; gap: 8px; }
+.pf-tarjetas { display: grid; gap: 8px; margin-bottom: 16px; }
+.pf-opcion {
+  display: flex; flex-direction: column; gap: 2px;
+  min-height: 46px; padding: 11px 15px;
+  background: var(--pf-hoja-2);
+  border: 1px solid var(--pf-linea); border-radius: 10px;
+  color: var(--pf-tinta-suave); font-size: 14px; font-weight: 550;
+  text-align: left; cursor: pointer;
+  transition: border-color .15s ease, background .15s ease, color .15s ease;
+}
+.pf-opcion--ancha { width: 100%; }
+.pf-opcion-t { font-size: 14.5px; font-weight: 650; color: inherit; }
+.pf-opcion-s { font-size: 12px; color: var(--pf-tinta-tenue); line-height: 1.35; }
+.pf-opcion[data-activa="true"] {
+  background: rgba(201, 162, 39, .10);
+  border-color: var(--pf-oro);
+  color: var(--pf-tinta);
+}
+.pf-opcion[data-activa="true"] .pf-opcion-s { color: var(--pf-tinta-suave); }
+@media (hover: hover) {
+  .pf-opcion:hover { border-color: var(--pf-linea-oro); color: var(--pf-tinta); }
+}
+.pf-opcion:focus-visible {
+  outline: none; border-color: var(--pf-oro);
+  box-shadow: 0 0 0 3px rgba(201, 162, 39, .22);
+}
+
+/* ---- consentimiento y resumen ---- */
+.pf-consent {
+  padding: 15px; margin-bottom: 16px;
+  background: var(--pf-hoja-2);
+  border: 1px solid var(--pf-linea); border-radius: 10px;
+}
+.pf-check {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 12px; min-height: 44px;
+  font-size: 14px; font-weight: 600; color: var(--pf-tinta); cursor: pointer;
+}
+.pf-check input { width: 20px; height: 20px; flex: 0 0 auto; accent-color: var(--pf-oro); }
+.pf-resumen {
+  display: grid; gap: 6px; margin: 0 0 4px; padding: 14px 15px; list-style: none;
+  border: 1px dashed var(--pf-linea-oro); border-radius: 10px;
+  font-size: 13.5px; color: var(--pf-tinta-suave);
+}
+.pf-resumen b { color: var(--pf-tinta); font-weight: 700; }
+
+/* ---- avisos ---- */
+.pf-falta {
+  margin-top: 14px; padding: 10px 13px;
+  background: rgba(201, 162, 39, .09);
+  border-left: 3px solid var(--pf-oro); border-radius: 0 8px 8px 0;
+  font-size: 13px; color: var(--pf-tinta-suave);
+}
+.pf-error {
+  margin-top: 12px; padding: 10px 13px;
+  background: rgba(226, 104, 92, .10);
+  border-left: 3px solid var(--pf-error); border-radius: 0 8px 8px 0;
+  font-size: 13px; color: #F0B3AC;
+}
+.pf-ok {
+  display: flex; align-items: center; justify-content: center;
+  width: 62px; height: 62px; margin-bottom: 18px;
+  border-radius: 50%; border: 1px solid var(--pf-linea-oro);
+  background: rgba(201, 162, 39, .10); color: var(--pf-oro);
+}
+
+/* ---- botonera ---- */
+.pf-botonera {
+  display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between;
+  margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--pf-linea);
+}
+.pf-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  min-height: 48px; padding: 12px 22px;
+  border-radius: 10px; border: 1px solid transparent;
+  font-size: 14.5px; font-weight: 650; font-family: inherit;
+  cursor: pointer;
+  /* La misma receta que el resto del sistema: el texto manda sobre la caja,
+     nunca al revés (guarda `check:botones`). */
+  min-width: max-content; white-space: normal; word-break: keep-all; hyphens: none;
+  transition: opacity .15s ease, background .15s ease, border-color .15s ease;
+}
+.pf-btn--oro { background: var(--pf-oro); color: #0B0B0B; }
+.pf-btn--ghost {
+  background: transparent; border-color: var(--pf-linea); color: var(--pf-tinta-suave);
+}
+.pf-btn:disabled { opacity: .42; cursor: not-allowed; }
+@media (hover: hover) {
+  .pf-btn--oro:not(:disabled):hover { background: var(--pf-oro-claro); }
+  .pf-btn--ghost:not(:disabled):hover { border-color: var(--pf-linea-oro); color: var(--pf-tinta); }
+}
+.pf-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(201, 162, 39, .32); }
+.pf-girar { animation: pf-girar 1s linear infinite; }
+@keyframes pf-girar { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .pf-girar { animation: none; } }

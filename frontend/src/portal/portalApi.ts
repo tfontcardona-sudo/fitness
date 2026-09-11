@@ -28,6 +28,11 @@ export interface VideoCallStatus {
   // pending_manual: el coach la agenda (te escribirá) · scheduled: agendada (Unirme)
   state: "none" | "book" | "proposed" | "pending_manual" | "scheduled";
   period_index?: number;
+  // Qué cita es: "videollamada" (lo de siempre) o "presencial" — una visita al
+  // centro. `lugar` es la dirección; solo viene en las presenciales.
+  modo?: "videollamada" | "presencial";
+  modo_label?: string;
+  lugar?: string | null;
   call?: {
     scheduled_at?: string;
     when_label?: string;

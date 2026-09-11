@@ -441,6 +441,8 @@ class BrandConfigOut(BrandConfigIn):
     anamnesis_variant: str | None = None
     # Cuánto documento quiere la marca: "completo" o "simple" (mig. 0047).
     doc_variant: str | None = None
+    # "videollamada" | "presencial": cómo son las citas de revisión de la marca.
+    cita_modo: str | None = None
     contact_address: str | None = None
     extra_services: list | None = None
     logo_path: str | None
@@ -530,6 +532,9 @@ class VideoCallOut(BaseModel):
     duration_min: int | None = None
     meet_url: str | None = None
     google_html_link: str | None = None
+    # Qué cita es: "videollamada" (por defecto y para los datos de siempre) o
+    # "presencial" — una visita al centro, sin Meet y sin Google.
+    modo: str | None = None
 
 
 # ------------------------------------------ productos recomendados (portal) ----

@@ -135,6 +135,37 @@ _SIGS_CONOCIDAS = (
 )
 
 
+# Barras de sección que ANCLAN una caja editable, dichas con las palabras de
+# cada marca. El documento de Professional (`plan_doc_pf`) llama a las cosas por
+# su nombre —«Suplementos», «Semana suave»— y sin esta traducción el coach
+# editaba el Word, lo subía y sus cambios se perdían SIN UN AVISO: las cajas se
+# localizan por el título que las precede.
+#
+# ⚠️ Si añades una barra con caja a un documento de marca, añádela AQUÍ. El
+# orden importa: se aplica el primer prefijo que encaje.
+_ALIAS_BARRA: tuple[tuple[str, str], ...] = (
+    ("por que lo planteamos asi", "por que este enfoque"),
+    ("lo que puedes mover", "tu margen de maniobra"),
+    ("suplementos", "suplementacion recomendada"),
+    ("cardio y pasos", "cardio y neat"),
+    ("semana suave", "semana de descarga"),
+    ("tu comida libre de la semana", "tu comida libre semanal"),
+    ("tu rutina", "estructura"),
+)
+
+
+def _barra_canonica(barra: str) -> str:
+    """El título de sección, dicho como lo dice DQR. Traduce el de las otras
+    marcas; lo que no reconoce vuelve tal cual (una barra de SESIÓN
+    —«Lunes · Full Body»— no se toca: se identifica por su «·»)."""
+    for propio, canonico in _ALIAS_BARRA:
+        if barra == propio or barra.startswith(propio + " "):
+            return canonico + barra[len(propio):]
+        if barra.startswith(propio + " ·"):
+            return canonico + barra[len(propio):]
+    return barra
+
+
 def _sig_parecida(sig: tuple[str, ...]) -> str | None:
     """¿Esta cabecera SE PARECE a una tabla nuestra sin serlo? (el coach
     renombró una columna o añadió una). Antes la tabla ENTERA — con todos sus
@@ -694,7 +725,12 @@ def parse_word_edits(db: Session, plan: Plan, docx_bytes: bytes) -> dict:
         # ---- cajas 1×1 (por el título de sección que las precede) ------
         if len(block.rows) == 1 and len(block.rows[0].cells) == 1:
             texto = _cell_text(block.rows[0].cells[0])
-            barra = _norm(ultima_barra)
+            # Lo que ya es una barra de COMIDA o de DÍA manda sobre la
+            # traducción: si el coach llamó «Suplementos» a una toma, su caja
+            # es el recetario de esa toma, no el bloque de suplementación.
+            propia = _norm(ultima_barra)
+            barra = (propia if (propia in barras_comida or propia in barras_dias)
+                     else _barra_canonica(propia))
             if barra.startswith("suplementacion recomendada") and nutrition is not None:
                 _aplicar_suplementos(texto, nutrition, frases, avisos)
             elif barra.startswith("semana de descarga") and training is not None:

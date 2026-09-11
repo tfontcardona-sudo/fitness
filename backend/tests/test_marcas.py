@@ -131,9 +131,9 @@ def test_el_switch_cambia_el_escaparate_pero_no_a_quien_ya_paga(http, db, restau
 
     # El ESCAPARATE es otro…
     assert branding.marca_activa(db).slug == "professional-fitness"
-    # El nombre comercial es el de VERDAD del centro (mig. 0045), no un
+    # El nombre comercial es el de VERDAD del centro (mig. 0051), no un
     # "Professional Full" calcado de DQR: cada marca nombra lo suyo.
-    assert pkgs.label("full") == "Génesis.99"
+    assert pkgs.label("full") == "Pack Premium"
     assert branding.marca_activa(db).page_title == "Professional · Centre Salut & Fitness"
     # …pero el cliente que ya estaba sigue en la suya.
     db.expire_all()
@@ -170,16 +170,18 @@ def test_cada_marca_tiene_sus_tarifas_y_sus_nombres(db):
     assert dqr.oferta()["first_month_cents"] == 100
     assert dqr.label("full") == "DQR Full"
     pf = branding.marca_por_id(ms["professional-fitness"].id, db)
-    assert pf.label("full") == "Génesis.99"
-    # Professional vende UNA sola cosa por la web (99 €/mes) y no tiene oferta
-    # de captación: lo que no está en `prices` no se vende ni se le crea precio
-    # en Stripe. Sus otros servicios se cobran en el centro.
-    assert pf.importe("full", "1m") == 9900
+    assert pf.label("full") == "Pack Premium"
+    # Professional vende UNA sola cosa por la web —el Pack Premium, 129,90 €
+    # al mes con RENOVACIÓN MENSUAL— y no tiene programas cerrados de 3 o 6
+    # meses ni oferta de captación: lo que no está en `prices` no se vende ni
+    # se le crea precio en Stripe. El plan de gimnasio y los entrenos
+    # personales se cobran en el centro.
+    assert pf.importe("full", "1m") == 12990
     assert pf.importe("full", "3m") is None and pf.importe("train", "1m") is None
     assert pf.vende() == [("full", "1m")]
     assert not pf.vende_oferta()
     assert dqr.vende_oferta()
-    assert len(pf.extra_services) == 4        # entreno personal y packs del centro
+    assert len(pf.extra_services) == 5        # gimnasio, entrenos y packs del centro
     assert "Girona" in (pf.contact_address or "")
     # Las tarifas son SUYAS: cambiarlas en una no toca a la otra.
     assert pf.prices is not dqr.prices
@@ -191,7 +193,7 @@ def test_el_selector_del_panel_lista_las_marcas(http, db):
     slugs = {m["slug"]: m for m in r.json()}
     assert {"dqr", "professional-fitness"} <= set(slugs)
     assert sum(1 for m in r.json() if m["activa"]) == 1
-    assert slugs["professional-fitness"]["service_labels"]["full"] == "Génesis.99"
+    assert slugs["professional-fitness"]["service_labels"]["full"] == "Pack Premium"
 
 
 def test_lo_que_edita_el_coach_va_a_la_marca_activa(http, db, restaura_marca):
@@ -430,9 +432,12 @@ def test_el_portal_y_el_cuestionario_llevan_la_marca_del_cliente(http, db, resta
     _activar(http, db, dqr.id)
     st = http.get(f"/api/p/{cli.portal_token}").json()
     assert st["brand_name"] == _marcas(db)["professional-fitness"].name
-    assert st["anamnesis_variant"] == "simple"
-    assert st["optional_blocks"] == []
-    assert [q["key"] for q in st["extra_questions"]] == ["socio", "horario"]
+    # El cuestionario de Professional es SUYO: ni la variante ni las preguntas
+    # se comparten con ninguna otra marca (tocar una cambiaría la otra).
+    assert st["anamnesis_variant"] == "professional"
+    assert st["optional_blocks"] == ["priority_zones"]
+    assert [q["key"] for q in st["extra_questions"]] == [
+        "experiencia", "disponibilidad", "obstaculo"]
 
     # Y el manifest de la app que instala en el móvil, también.
     mf = http.get(f"/api/p/{cli.portal_token}/manifest.webmanifest").json()
@@ -477,8 +482,8 @@ def test_el_catalogo_de_venta_solo_enseña_lo_que_la_marca_vende(http, db, resta
     _activar(http, db, pf.id)
     cat = sales_catalog(refresh=True)
     assert [i["key"] for i in cat["items"]] == ["full-1m"]
-    assert cat["items"][0]["total_eur"] == 99.0
-    assert len(cat["extra_services"]) == 4      # lo que se cobra en el centro
+    assert cat["items"][0]["total_eur"] == 129.9
+    assert len(cat["extra_services"]) == 5      # lo que se cobra en el centro
     assert cat["brand"]["slug"] == "professional-fitness"
 
     _activar(http, db, dqr.id)
@@ -525,12 +530,24 @@ def test_la_marca_simple_entrega_un_plan_mas_corto_con_las_mismas_cifras(
     cambia son los números — salen del mismo motor en las dos marcas."""
     from app.services.docs.plan_doc import generate_plan_doc
     from app.services.docs.word_base import DocBrand
-    from app.services.plan_delivery import documento_simple
+    from app.services.plan_delivery import (documento_simple,
+                                            variante_de_documento)
 
     ms = _marcas(db)
     dqr, pf = ms["dqr"], ms["professional-fitness"]
-    assert documento_simple(db, _cliente_de(db, pf, "Doc simple")) is True
+    # Professional dejó de usar la variante reducida: tiene DOCUMENTO PROPIO
+    # (`plan_doc_pf`), que es otra cosa, no el de DQR recortado.
+    assert variante_de_documento(db, _cliente_de(db, pf, "Doc PF")) == "professional"
     assert documento_simple(db, _cliente_de(db, dqr, "Doc completo")) is False
+    # La variante reducida sigue existiendo para cualquier marca que la quiera.
+    pf.doc_variant = "simple"
+    db.commit()
+    from app.services import branding as _br
+    _br.invalidar()
+    assert documento_simple(db, _cliente_de(db, pf, "Doc simple")) is True
+    pf.doc_variant = "professional"
+    db.commit()
+    _br.invalidar()
 
     marca = DocBrand(name="X", color_primary="#F2C230", color_secondary="#2E2E2E",
                      font_family="Inter")

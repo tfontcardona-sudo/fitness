@@ -22,7 +22,7 @@ const PaymentOkPage = lazy(() =>
   import("./pages/PlansPage").then((m) => ({ default: m.PaymentOkPage }))
 );
 const LinksPage = lazy(() => import("./pages/LinksPage"));
-const AnamnesisPage = lazy(() => import("./pages/AnamnesisPage"));
+const AnamnesisRouter = lazy(() => import("./pages/AnamnesisRouter"));
 const OfertaPage = lazy(() => import("./pages/OfertaPage"));
 
 /**
@@ -50,8 +50,9 @@ export default function App() {
           <Route path="/pago-ok" element={<PaymentOkPage />} />
           {/* Link del perfil de Instagram (landing pública de enlaces). */}
           <Route path="/dq" element={<LinksPage />} />
-          {/* Anamnesis del cliente: descarga del PDF editable + subida (por token). */}
-          <Route path="/anamnesis/:token" element={<AnamnesisPage />} />
+          {/* Cuestionario del cliente (por token). El router elige el de su MARCA:
+              DQR y Professional no comparten formulario. */}
+          <Route path="/anamnesis/:token" element={<AnamnesisRouter />} />
           <Route path="/*" element={<CoachApp />} />
         </Routes>
       </Suspense>
