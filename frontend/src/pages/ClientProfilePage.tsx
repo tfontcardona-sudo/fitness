@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Check, BellRing, ChevronRight, Download, MessageCircle, Pencil, Smartphone, ClipboardCheck, Trash2, CreditCard } from "lucide-react";
-import { api, getToken, keepIfSame, REFRESH_MS } from "../lib/api";
+import { api, ApiError, getToken, keepIfSame, REFRESH_MS } from "../lib/api";
 import { openWhatsApp, waPhone } from "../lib/whatsapp";
 import type { PackageTier, PaymentsListOut, ClientOut } from "../types";
 import {
@@ -353,7 +353,7 @@ export default function ClientProfilePage() {
               <Avatar name={client.full_name} size={48} />
               <div className="min-w-0">
                 <h1 className="truncate text-lg font-semibold text-zinc-100">{client.full_name}</h1>
-                <p className="truncate text-xs text-zinc-500">{client.email}</p>
+                <EmailRow client={client} onSaved={reload} />
               </div>
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -795,6 +795,70 @@ function BillingRow({ client, onSaved }: { client: ClientOut; onSaved: () => voi
         </select>
       </dd>
     </div>
+  );
+}
+
+/** Email editable en línea, bajo el nombre: es su identidad de acceso (login
+ *  del portal + a dónde llegan todos sus correos) y no había dónde corregir
+ *  una errata del alta — `ClientUpdate` ni siquiera lo aceptaba (gotcha §5.8).
+ *  Mismo patrón de lápiz → escribir → ✓ que el teléfono, ancho completo
+ *  porque aquí no comparte fila con una etiqueta. */
+function EmailRow({ client, onSaved }: { client: ClientOut; onSaved: () => void }) {
+  const toast = useToast();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(client.email);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => setValue(client.email), [client.email]);
+
+  async function save() {
+    const limpio = value.trim();
+    if (busy || !limpio || limpio === client.email) { setEditing(false); return; }
+    setBusy(true);
+    try {
+      await api.updateClient(client.id, { email: limpio as ClientOut["email"] });
+      // Es su credencial de entrada al portal: si no se dice, el coach no cae
+      // en que a partir de ahora tiene que entrar con el email nuevo.
+      toast.push("Email guardado · a partir de ahora entra al portal con este");
+      setEditing(false);
+      onSaved();
+    } catch (e) {
+      toast.push(e instanceof ApiError ? e.message : "No se pudo guardar el email", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="mt-0.5 flex items-center gap-1.5">
+        <input
+          autoFocus
+          type="email"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void save();
+            if (e.key === "Escape") { setValue(client.email); setEditing(false); }
+          }}
+          onBlur={save}
+          className="input min-w-0 flex-1 px-2 py-1 text-xs"
+        />
+        <button onMouseDown={(e) => e.preventDefault()} onClick={save} disabled={busy}
+          aria-label="Guardar email" className="hit-tap shrink-0 p-1 text-zinc-500 hover:text-zinc-200">
+          <Check size={14} />
+        </button>
+      </div>
+    );
+  }
+  return (
+    <p className="flex min-w-0 items-center gap-1 text-xs text-zinc-500">
+      <span className="truncate">{client.email}</span>
+      <button onClick={() => setEditing(true)} aria-label="Editar email"
+        className="hit-tap shrink-0 p-1 text-zinc-500 hover:text-zinc-200">
+        <Pencil size={11} />
+      </button>
+    </p>
   );
 }
 

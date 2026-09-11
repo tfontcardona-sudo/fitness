@@ -182,6 +182,20 @@ export default function PortalApp({ token }: { token: string }) {
   const isStart = !caps.hasTraining;
   const effTab: Tab = isStart && tab === "entreno" ? "diario" : tab;
 
+  // PROFESSIONAL ES OTRO PORTAL, NO OTRO COLOR. Su asesoría es rápida y de
+  // volumen (`CRITERIOS`/§9: "el centro ve al cliente en la sala"), así que su
+  // cliente no necesita cinco destinos ni la fuerza de gamificación de DQR
+  // (racha, anillo) para lo mismo que aquí resuelven dos: "qué toca hoy" y
+  // "cómo voy". Menos sitios donde mirar = trabajo ágil con muchos clientes,
+  // que es justo lo que pidió el dueño. `?tab=progreso`/`recursos` (un push
+  // antiguo o un enlace pegado) siguen funcionando: no se borra la ruta, se
+  // deja de OFRECERLA en la barra.
+  const piel = pielDe(state.brand.skin);
+  const simple = piel === "professional";
+  const primeraTab: Tab = isStart ? "diario" : "entreno";
+  const enProgreso = effTab === "cierre" || effTab === "progreso";
+  const enHoy = effTab === "entreno" || effTab === "diario";
+
   const TABS: { id: Tab; label: string; icon: typeof Dumbbell }[] = [
     { id: "entreno", label: "Entreno", icon: Dumbbell },
     { id: "recursos", label: "Recursos", icon: Library },
@@ -189,7 +203,11 @@ export default function PortalApp({ token }: { token: string }) {
     { id: "progreso", label: "Progreso", icon: LineChart },
     { id: "cierre", label: "Quincenal", icon: CalendarCheck },
   ];
-  const visibleTabs = isStart ? TABS.filter((t) => t.id !== "entreno") : TABS;
+  const TABS_SIMPLE: { id: Tab; label: string; icon: typeof Dumbbell }[] = [
+    { id: primeraTab, label: "Hoy", icon: isStart ? NotebookPen : Dumbbell },
+    { id: "cierre", label: "Progreso", icon: LineChart },
+  ];
+  const visibleTabs = simple ? TABS_SIMPLE : isStart ? TABS.filter((t) => t.id !== "entreno") : TABS;
 
   return (
     <PortalToastProvider light={light}>
@@ -220,8 +238,10 @@ export default function PortalApp({ token }: { token: string }) {
                 : <MarcaLogo skin={state.brand.skin} nombre={state.brand.name} alto={20} />}
               <h1 className="p-title truncate">Hola, {state.first_name}</h1>
               {/* Racha 🔥: días seguidos con el diario al día. A partir de 2
-                  (un solo día no es racha); el cliente no quiere romperla. */}
-              {(state.streak_days ?? 0) >= 2 && (
+                  (un solo día no es racha); el cliente no quiere romperla.
+                  En `simple` no: es justo el adorno que sobra cuando el
+                  objetivo es leer la pantalla en dos segundos. */}
+              {!simple && (state.streak_days ?? 0) >= 2 && (
                 <p className="p-micro mt-0.5 flex items-center gap-1"
                    style={{ color: state.brand.color_primary }}>
                   🔥 {state.streak_days} días
@@ -318,14 +338,38 @@ export default function PortalApp({ token }: { token: string }) {
           {state.photos_pending && (
             <PhotosReminder api={apiClient} accent={state.brand.color_primary} onConfirmed={reload} />
           )}
-          <WelcomeSetup api={apiClient} token={token} accent={state.brand.color_primary}
-            secondary={state.brand.color_secondary} />
-          <EscribirAlCoach api={apiClient} accent={state.brand.color_primary} />
-          {/* Lo que YA ha hecho, antes que lo que le queda: un portal que solo
-              enseña deberes cansa. Se remonta con la fecha de negocio para que
-              una PWA resucitada días después no enseñe la semana vieja. */}
-          {state.period != null && (
-            <PortalSemanaCard key={`sem-${state.today ?? ""}-${stateVersion}`} datos={semana} />
+          {/* Lo accionable (anamnesis, PDF, videollamada, fotos) va SIEMPRE a
+              la vista, arriba. Lo informativo —instalar la app, escribir al
+              coach, el resumen de la semana— es justo lo que un cliente de
+              alta rotación no necesita ver sin pedirlo: en `simple` viaja
+              detrás de un solo toque, no como cuatro tarjetas apiladas. */}
+          {simple ? (
+            <details className="portal-more mb-3" style={{ borderTop: "1px solid var(--p-line)" }}>
+              <summary className="hit-tap p-eyebrow cursor-pointer select-none px-1 py-2.5">
+                Más
+              </summary>
+              <div className="space-y-3 pb-1 pt-1">
+                <WelcomeSetup api={apiClient} token={token} accent={state.brand.color_primary}
+                  secondary={state.brand.color_secondary} />
+                <EscribirAlCoach api={apiClient} accent={state.brand.color_primary} />
+                {state.period != null && (
+                  <PortalSemanaCard key={`sem-${state.today ?? ""}-${stateVersion}`} datos={semana} />
+                )}
+              </div>
+            </details>
+          ) : (
+            <>
+              <WelcomeSetup api={apiClient} token={token} accent={state.brand.color_primary}
+                secondary={state.brand.color_secondary} />
+              <EscribirAlCoach api={apiClient} accent={state.brand.color_primary} />
+              {/* Lo que YA ha hecho, antes que lo que le queda: un portal que
+                  solo enseña deberes cansa. Se remonta con la fecha de negocio
+                  para que una PWA resucitada días después no enseñe la semana
+                  vieja. */}
+              {state.period != null && (
+                <PortalSemanaCard key={`sem-${state.today ?? ""}-${stateVersion}`} datos={semana} />
+              )}
+            </>
           )}
           {/* key={effTab+fecha}: transición suave al cambiar de pestaña Y
               remontaje si cambia la FECHA DE NEGOCIO — una PWA resucitada días
@@ -335,24 +379,69 @@ export default function PortalApp({ token }: { token: string }) {
               visibilitychange antes del remontaje. */}
           <div key={`${effTab}-${state.today ?? ""}`} className="animate-rise"
             ref={(el) => { if (el) window.scrollTo({ top: 0 }); }}>
-            {effTab === "entreno" && <PortalWorkout api={apiClient} token={token} brand={state.brand} periodStatus={periodStatus} businessToday={state.today ?? null} hasPeriod={state.period != null || state.status === "review_pending"} />}
-            {effTab === "recursos" && <PortalResources api={apiClient} brand={state.brand} hasTraining={!isStart} />}
-            {effTab === "diario" && <PortalDiary api={apiClient} token={token} brand={state.brand} periodStatus={periodStatus} businessToday={state.today ?? null} hasPeriod={state.period != null || state.status === "review_pending"} hasNutrition={caps.hasNutrition} hasTraining={!isStart} />}
-            {effTab === "progreso" && <PortalProgress api={apiClient} brand={state.brand} hasTraining={!isStart} token={token} />}
-            {effTab === "cierre" && (
-              <PortalClose
-                api={apiClient}
-                token={token}
-                brand={state.brand}
-                onClosed={reload}
-                canClose={canClose}
-                daysLeft={state.period?.days_left ?? null}
-                closeDate={state.period?.ends_on ?? null}
-                periodStatus={periodStatus}
-                hasTraining={!isStart}
-                hasNutrition={caps.hasNutrition}
-                directContact={caps.directContact}
-              />
+            {/* En DQR, Entreno y Diario son dos sitios porque cada uno se
+                mira en un momento distinto del día. En `simple` es UNA sola
+                pantalla ("Hoy"): entrenar y apuntar el diario son las dos
+                cosas que tocan hoy, y el cliente no tiene por qué saber que
+                para el sistema son pestañas distintas — por eso el checklist
+                de arriba también manda aquí al pulsar cualquiera de las dos. */}
+            {simple && enHoy ? (
+              <>
+                {!isStart && (
+                  <>
+                    <PortalWorkout api={apiClient} token={token} brand={state.brand} periodStatus={periodStatus} businessToday={state.today ?? null} hasPeriod={state.period != null || state.status === "review_pending"} />
+                    {/* Professional supervisa en sala: el vídeo del ejercicio
+                        es la excepción, no la puerta de entrada — por eso no
+                        le dedicamos una pestaña entera, solo este enlace. */}
+                    <button type="button" onClick={() => setTab("recursos")}
+                      className="mt-4 w-full text-center text-xs font-semibold opacity-60 hover:opacity-100">
+                      Ver vídeos de tus ejercicios
+                    </button>
+                  </>
+                )}
+                <div className={isStart ? undefined : "mt-6 border-t pt-6"} style={isStart ? undefined : { borderColor: "var(--p-line)" }}>
+                  <PortalDiary api={apiClient} token={token} brand={state.brand} periodStatus={periodStatus} businessToday={state.today ?? null} hasPeriod={state.period != null || state.status === "review_pending"} hasNutrition={caps.hasNutrition} hasTraining={!isStart} />
+                </div>
+              </>
+            ) : (
+              <>
+                {effTab === "entreno" && <PortalWorkout api={apiClient} token={token} brand={state.brand} periodStatus={periodStatus} businessToday={state.today ?? null} hasPeriod={state.period != null || state.status === "review_pending"} />}
+                {effTab === "recursos" && <PortalResources api={apiClient} brand={state.brand} hasTraining={!isStart} />}
+                {effTab === "diario" && <PortalDiary api={apiClient} token={token} brand={state.brand} periodStatus={periodStatus} businessToday={state.today ?? null} hasPeriod={state.period != null || state.status === "review_pending"} hasNutrition={caps.hasNutrition} hasTraining={!isStart} />}
+                {effTab === "progreso" && <PortalProgress api={apiClient} brand={state.brand} hasTraining={!isStart} token={token} />}
+              </>
+            )}
+            {(simple ? enProgreso : effTab === "cierre") && (
+              <>
+                <PortalClose
+                  api={apiClient}
+                  token={token}
+                  brand={state.brand}
+                  onClosed={reload}
+                  canClose={canClose}
+                  daysLeft={state.period?.days_left ?? null}
+                  closeDate={state.period?.ends_on ?? null}
+                  periodStatus={periodStatus}
+                  hasTraining={!isStart}
+                  hasNutrition={caps.hasNutrition}
+                  directContact={caps.directContact}
+                />
+                {/* En DQR "Progreso" (gráficas, fuerza, fotos antes/ahora) vive
+                    en su propia pestaña: es parte de lo que vende, una
+                    asesoría de detalle. Aquí es la revisión quincenal la que
+                    manda y la evolución queda a un toque — el centro trabaja
+                    rápido con mucha gente, no a base de gráficas. */}
+                {simple && (
+                  <details className="portal-more mt-6" style={{ borderTop: "1px solid var(--p-line)" }}>
+                    <summary className="hit-tap p-eyebrow cursor-pointer select-none px-1 py-2.5">
+                      Ver mi evolución
+                    </summary>
+                    <div className="pt-1">
+                      <PortalProgress api={apiClient} brand={state.brand} hasTraining={!isStart} token={token} />
+                    </div>
+                  </details>
+                )}
+              </>
             )}
           </div>
         </main>
@@ -391,7 +480,11 @@ export default function PortalApp({ token }: { token: string }) {
         {/* Navegación inferior: cristal, indicador fino y píldora lavada */}
         <nav className="portal-nav fixed inset-x-0 bottom-0 z-40 mx-auto flex max-w-md justify-around px-2 py-2">
           {visibleTabs.map(({ id, label, icon: Icon }) => {
-            const active = effTab === id;
+            // En `simple` la pestaña "Progreso" reutiliza el id "cierre" pero
+            // también responde a un `?tab=progreso` de fuera (push/enlace
+            // antiguo): sin esto, llegar por ahí dejaba la barra sin ninguna
+            // pestaña marcada.
+            const active = simple ? (id === "cierre" ? enProgreso : enHoy) : effTab === id;
             const alert = id === "cierre" && canClose;  // "!" el día que ya se puede rellenar
             return (
               <button

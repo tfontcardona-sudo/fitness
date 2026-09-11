@@ -140,6 +140,17 @@ async def lifespan(app: FastAPI):
     except Exception:  # noqa: BLE001 — nunca puede impedir el arranque
         logging.getLogger("app.media").warning("Logo de fábrica omitido")
 
+    # Cliente de DEMOSTRACIÓN de Professional (para que el dueño vea su
+    # anamnesis/plan/portal reales): solo en producción, solo una vez
+    # (idempotente) y en un hilo aparte para no retrasar el arranque —
+    # generar un plan con IA y su panel de revisión tarda.
+    try:
+        from app.services.demo_client_seed import seed_demo_professional_client
+
+        seed_demo_professional_client()
+    except Exception:  # noqa: BLE001 — nunca puede impedir el arranque
+        logging.getLogger("app.demo_seed").warning("Cliente demo de Professional omitido")
+
     # El scheduler se desactiva en tests/CI con SCHEDULER_ENABLED=false.
     # Vive en Settings como el resto de la config (una sola fuente de verdad).
     scheduler_on = settings.scheduler_enabled

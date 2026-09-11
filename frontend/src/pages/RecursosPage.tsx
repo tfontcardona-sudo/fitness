@@ -87,12 +87,21 @@ export default function RecursosPage() {
     <div className="mx-auto max-w-4xl px-4 py-6 md:px-8 md:py-8">
       <header className="mb-6">
         <h1 className="text-xl font-semibold text-zinc-100">Recursos del portal</h1>
+        {/* El dueño, sobre esta pantalla: "no sé qué es". No es un cajón de
+            sastre — cada pestaña configura algo distinto que tu cliente o tú
+            usáis en otro sitio (su portal, tus planes, el switch de marca).
+            Sin este renglón, quien entra ve un título y cuatro pestañas sin
+            saber por qué viven juntas. */}
+        <p className="mt-1 text-sm text-zinc-500">
+          Lo que tu cliente ve en su portal, y la configuración de fondo de tu
+          negocio (marca, logo, plantillas de plan).
+        </p>
       </header>
 
       {/* Cinco pestañas no caben en un móvil: "Página de enlaces" y
           "Aprendizaje" quedaban FUERA de la pantalla y solo se llegaba a ellas
           arrastrando la página entera de lado. */}
-      <div className="tab-strip mb-6">
+      <div className="tab-strip mb-1">
       <div className="inline-flex rounded-xl border p-1" style={{ borderColor: "var(--line-strong)" }}>
         {([["productos", "Productos", Package], ["videos", "Vídeos de ejercicios", Video], ["modelos", "Modelos de plan", Copy], ["enlaces", "Página de enlaces", ExternalLink], ["aprendizaje", "Aprendizaje", GraduationCap], ["marca", "Marca", Store]] as const).filter(([id]) => visible(id)).map(
           ([id, label, Icon]) => (
@@ -121,6 +130,18 @@ export default function RecursosPage() {
         )}
       </div>
       </div>
+
+      {/* Una frase por pestaña, sobre lo que hace, no sobre lo que es: la
+          duda del dueño era justo esa — un título y una pestaña activa no
+          dicen para qué sirve lo que hay debajo. */}
+      <p className="mb-6 mt-2 text-xs text-zinc-500">
+        {tabVisible === "productos" && "El catálogo que tu cliente ve en su portal, con tu enlace de afiliación."}
+        {tabVisible === "videos" && "El vídeo de cada ejercicio que tu cliente ve en su rutina."}
+        {tabVisible === "modelos" && "Planes base guardados para no partir de cero cada vez."}
+        {tabVisible === "enlaces" && "La página pública de tu perfil (bio de Instagram) y la conexión con Google."}
+        {tabVisible === "aprendizaje" && "Lo que el sistema ha aprendido de tus correcciones a los planes, para acertar más a la próxima."}
+        {tabVisible === "marca" && "Tu logo, tus colores y — si llevas más de un negocio — el switch entre ellos."}
+      </p>
 
       {tabVisible === "productos" ? <ProductsManager />
         : tabVisible === "videos" ? <ExerciseVideosManager />

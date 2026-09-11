@@ -547,6 +547,18 @@ def update_client(client_id: int, body: ClientUpdate, db: Session = Depends(get_
                 "La oferta es solo del plan Full: cambia "
                 "antes la duración si quieres otro plan.")
 
+    # El email es UNIQUE en la tabla: sin comprobarlo antes, un duplicado
+    # revienta el commit con un IntegrityError crudo (un 500 sin explicación).
+    # Aquí se dice CLARO de quién es el otro, y sin tocar nada.
+    if "email" in changes and changes["email"] != client.email:
+        otro = db.scalar(
+            select(Client).where(func.lower(Client.email) == changes["email"].lower(),
+                                 Client.id != client_id))
+        if otro is not None:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                f"Ese email ya es de {otro.full_name}: no puede repetirse.")
+
     # Cambio de ESTADO manual (auditoría del ciclo: `inactive` era una trampa
     # sin salida — la transición "reactivación manual" existía en la máquina
     # pero no tenía ningún llamador). Validado SIEMPRE contra la máquina.

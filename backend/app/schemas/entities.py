@@ -181,6 +181,11 @@ class ClientUpdate(BaseModel):
     # SIEMPRE contra la máquina de estados (can_transition) antes de aplicarlo.
     status: str | None = None
     full_name: str | None = None
+    # El email es su identidad de acceso (login del portal + a dónde llegan
+    # sus correos): editable, con la MISMA validación que en el alta. Faltaba
+    # en este contrato — Pydantic descarta en silencio lo que no está aquí
+    # (gotcha §5.8) — así que el coach no tenía dónde corregir una errata.
+    email: EmailStr | None = None
     phone: str | None = None
     package_tier: PackageTier | None = None
     billing_period: BillingPeriod | None = None

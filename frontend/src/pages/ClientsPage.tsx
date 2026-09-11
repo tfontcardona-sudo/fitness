@@ -508,25 +508,29 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
   // ¿Tiene esta marca oferta de captación? DQR sí; un centro puede no tenerla.
   const vendeOferta = Boolean(precios?.oferta?.monthly_cents);
   const vendeOferta2 = Boolean(precios?.oferta2?.monthly_cents);
-  // Envío combinado de ARRANQUE: enlace de pago + anamnesis en un solo mensaje,
-  // por WhatsApp (Pro) o email (Start/Full) según el plan del cliente.
-  async function sendOnboarding() {
-    if (!created || sendingOnb) return;
-    const info = pkg(created.client.package_tier);
-    const payUrl = api.payLinkUrl(created.links.portal_token);
+  // Envío combinado de ARRANQUE: enlace de pago + anamnesis en un solo mensaje.
+  // ANTES el canal lo decidía el `delivery` del plan (siempre "whatsapp" hoy,
+  // para los tres planes de cualquier marca) y el coach nunca veía el botón
+  // de email — aunque el endpoint existe y funciona desde hace tiempo. Ahora
+  // los DOS canales están siempre a la vista: el coach elige, no el plan.
+  function sendOnboardingWhatsApp() {
+    if (!created) return;
     const digits = waPhone(created.client.phone ?? phone);
-    // Sin teléfono NO se queda sin arranque: se manda por email (el endpoint
-    // existe y funciona). Antes el alta sin teléfono dejaba al cliente sin
-    // enlace de pago ni cuestionario, y el coach creía haberlo enviado.
-    if (info.delivery === "whatsapp" && digits) {
-      openWhatsApp(digits, onboardingMessage(
-        created.client.full_name,
-        created.client.plan_label || etiquetaDePlan(created.client.package_tier, etiquetasDeMarca),
-        payUrl,
-        `${window.location.origin}/anamnesis/${created.links.portal_token}`));
-      toast.push("WhatsApp abierto · pulsa enviar");
+    if (!digits) {
+      toast.push("Falta el teléfono del cliente", "error");
       return;
     }
+    const payUrl = api.payLinkUrl(created.links.portal_token);
+    openWhatsApp(digits, onboardingMessage(
+      created.client.full_name,
+      created.client.plan_label || etiquetaDePlan(created.client.package_tier, etiquetasDeMarca),
+      payUrl,
+      `${window.location.origin}/anamnesis/${created.links.portal_token}`));
+    toast.push("WhatsApp abierto · pulsa enviar");
+  }
+
+  async function sendOnboardingEmail() {
+    if (!created || sendingOnb) return;
     setSendingOnb(true);
     try {
       const r = await api.sendOnboarding(created.client.id);
@@ -775,11 +779,19 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
               <p className="mt-0.5 text-xs text-zinc-500">
                 Un mensaje: pago ({pkg(created.client.package_tier).short}) + anamnesis.
               </p>
-              <button onClick={sendOnboarding} disabled={sendingOnb} className="btn btn-primary mt-2 w-full justify-center">
-                {pkg(created.client.package_tier).delivery === "whatsapp"
-                  ? <><MessageCircle size={15} /> Enviar por WhatsApp</>
-                  : <><Mail size={15} /> {sendingOnb ? "Enviando…" : "Enviar por email"}</>}
-              </button>
+              {/* LOS DOS CANALES, siempre a la vista: antes el plan decidía uno
+                  solo (y hoy los tres planes de cualquier marca mandan por
+                  WhatsApp, así que el botón de email no salía NUNCA aunque el
+                  envío existiera y funcionara). Elige el coach, no el plan. */}
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <button onClick={sendOnboardingWhatsApp} className="btn btn-primary justify-center">
+                  <MessageCircle size={15} /> WhatsApp
+                </button>
+                <button onClick={() => void sendOnboardingEmail()} disabled={sendingOnb}
+                  className="btn btn-ghost justify-center">
+                  <Mail size={15} /> {sendingOnb ? "Enviando…" : "Email"}
+                </button>
+              </div>
             </div>
 
             {/* Correo de acceso al portal, enviado AUTOMÁTICAMENTE al crear */}
@@ -802,9 +814,18 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
                 <Copy size={14} />
               </button>
             </div>
-            <button className="btn btn-ghost mt-2 w-full justify-center text-xs" onClick={sendPortalWhatsApp}>
-              <MessageCircle size={14} style={{ color: "#25D366" }} /> Enviar por WhatsApp
-            </button>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button className="btn btn-ghost justify-center text-xs" onClick={sendPortalWhatsApp}>
+                <MessageCircle size={14} style={{ color: "#25D366" }} /> WhatsApp
+              </button>
+              {/* Mismo enlace, por correo — el mensaje de acceso al portal ya lo
+                  lleva, pero pedirlo aquí (junto al enlace) es más directo que
+                  ir a buscar el botón de "reenviar correo" de más arriba. */}
+              <button className="btn btn-ghost justify-center text-xs" disabled={resending}
+                onClick={resendEmail}>
+                <Mail size={14} /> {resending ? "Enviando…" : "Email"}
+              </button>
+            </div>
 
             <div className="mt-6 flex justify-end">
               <button className="btn btn-primary" onClick={onClose}>
