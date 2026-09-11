@@ -29,7 +29,7 @@ export class ErrorBoundary extends React.Component<React.PropsWithChildren, Esta
     return (
       <div style={{
         minHeight: "100vh", display: "flex", alignItems: "center",
-        justifyContent: "center", background: pf ? "#0B0B0B" : "#101014",
+        justifyContent: "center", background: pf ? "#151515" : "#101014",
         color: pf ? "#F2EFE9" : "#f4f4f5",
         fontFamily: "system-ui, sans-serif", padding: 24, textAlign: "center",
       }}>

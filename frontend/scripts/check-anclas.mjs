@@ -398,5 +398,26 @@ t("la red de seguridad marca al menos el apartado del que habla el aviso", () =>
     "un aviso sin `fix` se quedaría marcando en rojo sin explicar por qué");
 });
 
+t("«Lo siguiente» marca el punto exacto del aviso, no solo cambia de pestaña", () => {
+  // Bug real (11-09-2026): el botón de "Lo siguiente" en la ficha del cliente
+  // solo hacía `onGoTab(a.tab)` — el aviso YA traía `target`/`fix` (el mismo
+  // dato que usan la campana y el dashboard) y este botón lo tiraba, así que
+  // el coach llegaba a la pestaña correcta sin nada señalado ni explicado.
+  // Esto pasaba `check:anclas` porque el ancla SÍ existe en el DOM: lo que
+  // fallaba era que nadie llegaba a pedirle que se marcara.
+  const src = readFileSync("src/components/LoSiguiente.tsx", "utf8");
+  assert.ok(!/onGoTab\(/.test(src),
+    "LoSiguiente volvió a usar un simple cambio de pestaña: perdió el target/fix del aviso");
+  assert.ok(/onIr:\s*\(a:\s*CoachAlert\)/.test(src),
+    "LoSiguiente debe reenviar el AVISO COMPLETO (con su target) a quien cambia de pestaña");
+
+  const page = readFileSync("src/pages/ClientProfilePage.tsx", "utf8");
+  const cuerpo = page.slice(page.indexOf("irAviso = ("), page.indexOf("irAviso = (") + 900);
+  assert.ok(cuerpo.includes("pin("),
+    "el manejador de «Lo siguiente» ya no registra el pin (nota + marca) del aviso");
+  assert.ok(cuerpo.includes("a.target"),
+    "el manejador de «Lo siguiente» ya no usa el `target` del aviso para marcar el sitio exacto");
+});
+
 for (const nombre of ok) console.log(`✓ ${nombre}`);
 console.log(`\nAnclas OK · ${ok.length} comprobaciones`);

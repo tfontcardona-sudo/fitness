@@ -43,9 +43,15 @@ export function useAvisosDelCliente(clientId: number): {
 }
 
 
-export function LoSiguiente({ alertas, onGoTab }: {
+export function LoSiguiente({ alertas, onIr }: {
   alertas: CoachAlert[] | null;
-  onGoTab: (tab: string) => void;
+  /** Cambia de pestaña Y, si el aviso trae un punto exacto (`target`), lo
+   *  marca y deja su nota — mismo camino que la campana (`AlertsBell`) y el
+   *  dashboard. Antes este botón se quedaba SOLO con la pestaña del aviso y
+   *  tiraba el resto (`target`/`fix`): el coach llegaba al sitio correcto sin
+   *  nada señalado ni explicado. Recibe el AVISO ENTERO, no su nombre de
+   *  pestaña suelto, precisamente para no poder repetir ese recorte. */
+  onIr: (a: CoachAlert) => void;
 }) {
   if (alertas === null) return null;
 
@@ -78,7 +84,7 @@ export function LoSiguiente({ alertas, onGoTab }: {
           <span className="mt-0.5 block text-sm text-zinc-100">{principal.message}</span>
         </span>
         <button
-          onClick={() => onGoTab(principal.tab)}
+          onClick={() => onIr(principal)}
           className="btn-primary shrink-0"
         >
           {principal.action} <ArrowRight size={15} />
@@ -90,7 +96,7 @@ export function LoSiguiente({ alertas, onGoTab }: {
           {resto.slice(0, 3).map((a) => (
             <li key={a.key}>
               <button
-                onClick={() => onGoTab(a.tab)}
+                onClick={() => onIr(a)}
                 className="flex w-full items-center gap-2 text-left text-sm"
                 style={{ color: "var(--text-faint)" }}
               >

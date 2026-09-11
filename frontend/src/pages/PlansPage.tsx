@@ -180,8 +180,9 @@ export default function PlansPage() {
   }, [duracionesALaVenta, period]);
   // La atmósfera de la página con el color que le toca a esta piel (el
   // "segundo" de Professional es su negro de estructura: sobre negro no pinta).
+  const piel = pielDe(landing?.skin);
   const atmosfera = coloresDeMarca(
-    pielDe(landing?.skin), landing?.color_primary ?? MARCA_POR_DEFECTO.primary,
+    piel, landing?.color_primary ?? MARCA_POR_DEFECTO.primary,
     landing?.color_secondary ?? MARCA_POR_DEFECTO.secondary).secondary;
   return (
     <div className="relative" style={{ minHeight: "100vh", background: bg, color: "#26211a" }}>
@@ -257,7 +258,12 @@ export default function PlansPage() {
                   aria-pressed={sel}
                   className="rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
                   style={sel
-                    ? { background: "var(--brand-accent-2)", color: "white" }
+                    // El "segundo" de Professional es oro claro: blanco encima
+                    // da 2,1:1 y no se lee (mismo fallo que ya se corrigió en
+                    // el avatar y en `--p-on-accent`). Late hoy porque el
+                    // centro solo vende UNA duración y este selector ni se
+                    // pinta — en cuanto venda dos, hace falta esto.
+                    ? { background: "var(--brand-accent-2)", color: piel === "professional" ? "#1A1405" : "white" }
                     : { color: "#26211a", opacity: 0.65 }}
                 >
                   {b.label}

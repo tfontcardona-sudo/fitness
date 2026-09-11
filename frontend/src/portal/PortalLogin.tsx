@@ -125,7 +125,8 @@ export default function PortalLogin() {
         </label>
 
         {error && (
-          <p role="alert" className="rounded-lg px-3 py-2 text-sm" style={{ background: "rgba(179,38,30,0.10)", color: "#b3261e" }}>
+          <p role="alert" className="rounded-lg px-3 py-2 text-sm"
+             style={{ background: "color-mix(in srgb, var(--p-danger) 10%, transparent)", color: "var(--p-danger)" }}>
             {error}
           </p>
         )}

@@ -3,7 +3,7 @@ import { Link, useParams, useSearchParams, useNavigate } from "react-router-dom"
 import { ArrowLeft, Check, BellRing, ChevronRight, Download, MessageCircle, Pencil, Smartphone, ClipboardCheck, Trash2, CreditCard } from "lucide-react";
 import { api, ApiError, getToken, keepIfSame, REFRESH_MS } from "../lib/api";
 import { openWhatsApp, waPhone } from "../lib/whatsapp";
-import type { PackageTier, PaymentsListOut, ClientOut } from "../types";
+import type { CoachAlert, PackageTier, PaymentsListOut, ClientOut } from "../types";
 import {
   ConfirmDialog,
   PageLoader,
@@ -15,6 +15,7 @@ import { ClientSummaryTab } from "../components/ClientSummaryTab";
 import { ClientAnamnesisTab } from "../components/ClientAnamnesisTab";
 import { ClientDocuments } from "../components/ClientDocuments";
 import { MarcadorDeAncla } from "../components/Pins";
+import { pin, pinId } from "../lib/pins";
 import { LoSiguiente, useAvisosDelCliente } from "../components/LoSiguiente";
 import { ancla, irYMarcar } from "../lib/anchors";
 import { copiarConAviso } from "../lib/clipboard";
@@ -316,6 +317,34 @@ export default function ClientProfilePage() {
   // Paquete solo-nutrición (Start): sin nada de entreno en la ficha.
   const hasTraining = pkg(client.package_tier).hasTraining;
 
+  /** El botón de "Lo siguiente": cambia de pestaña Y, si el aviso trae un
+   *  punto exacto, lo deja marcado con su nota — MISMO camino que la campana
+   *  (`AlertsBell.go`) y el dashboard (`hrefCliente` + `pin` + `?ir=`). Antes
+   *  este botón solo cambiaba de pestaña (`changeTab`) y tiraba el
+   *  `target`/`fix` que el aviso ya traía: el coach llegaba a la pestaña
+   *  correcta sin nada señalado ni explicado. */
+  const irAviso = (a: CoachAlert) => {
+    if (!aplicarTab(a.tab as Tab)) return;
+    const q = new URLSearchParams({ tab: a.tab });
+    if (a.target) {
+      q.set("ir", a.target);
+      pin({
+        id: pinId("alerts", a.key),
+        scope: "alerts",
+        key: a.key,
+        clientId: client.id,
+        clientName: client.full_name,
+        label: a.action,
+        motivo: a.message,
+        hint: a.fix || a.message,
+        href: `/clientes/${client.id}?${q.toString()}`,
+        target: a.target,
+        severity: a.severity,
+      });
+    }
+    setSearchParams(q, { replace: true });
+  };
+
   return (
     <div className="mx-auto max-w-6xl px-6 py-6">
       {/* Marca el elemento exacto del que hablaba el aviso y le pega la nota de
@@ -554,7 +583,7 @@ export default function ClientProfilePage() {
         <div className="min-w-0 lg:col-start-2 lg:row-start-1 lg:row-span-2">
           {/* Barra de pestañas PEGAJOSA: al hacer scroll de un plan largo, la
               navegación entre secciones sigue siempre accesible. */}
-          <LoSiguiente alertas={avisosCliente} onGoTab={(t: string) => changeTab(t as Tab)} />
+          <LoSiguiente alertas={avisosCliente} onIr={irAviso} />
           <div className="profile-tabs mb-5 flex gap-1 border-b" style={{ borderColor: "var(--line)", position: "sticky", top: 0, zIndex: 10, background: "var(--bg)" }}>
             {(["resumen", "anamnesis", "planificacion", "seguimiento", "feedback", "historial"] as Tab[]).map((t) => (
               <button

@@ -47,7 +47,7 @@ export function aplicarPiel(piel: Piel): void {
   // El color del chrome del navegador (barra de estado en móvil) también es de
   // la marca: en negro con una barra crema, la app parece recortada.
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute("content", piel === "professional" ? "#0B0B0B" : "#f4eee3");
+  if (meta) meta.setAttribute("content", piel === "professional" ? "#151515" : "#f4eee3");
 }
 
 /**
@@ -160,7 +160,7 @@ export function coloresDeMarca(
  */
 export function colorLegible(hex: string, piel: Piel): string {
   if (piel !== "professional") return hex;
-  const FONDO = 0.0045;                       // luminancia relativa de #0B0B0B
+  const FONDO = 0.008;                        // luminancia relativa de #151515
   const lum = (c: string): number | null => {
     const v = c.replace("#", "").trim();
     const full = v.length === 3 ? v.split("").map((x) => x + x).join("") : v;

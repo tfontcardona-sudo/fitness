@@ -57,5 +57,5 @@ export default function AnamnesisRouter() {
 }
 
 function Espera() {
-  return <div style={{ minHeight: "100vh", background: "#0B0B0B" }} aria-busy="true" />;
+  return <div style={{ minHeight: "100vh", background: "#151515" }} aria-busy="true" />;
 }

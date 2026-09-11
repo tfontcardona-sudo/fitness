@@ -1019,9 +1019,14 @@ summary:not(.plegable-barra) { cursor: pointer; }
 .pf-root {
   --pf-oro: var(--marca-1, #C9A227);
   --pf-oro-claro: color-mix(in srgb, var(--pf-oro) 72%, #fff);
-  --pf-fondo: #0B0B0B;
-  --pf-hoja: #121212;
-  --pf-hoja-2: #171717;
+  /* El dueño, tras probarlo: "que sea un tono de negro menos oscuro y más
+     claro". Subido de #0B0B0B a #151515 (más del doble de luminancia) con
+     los tres escalones recalculados para que el texto más apagado
+     (--pf-tinta-tenue) SIGA en AA (≥4.5:1) contra la superficie más clara
+     de las tres — súbelos más y ese texto deja de leerse. */
+  --pf-fondo: #151515;
+  --pf-hoja: #1B1B1B;
+  --pf-hoja-2: #1E1E1E;
   --pf-tinta: #F2EFE9;
   --pf-tinta-suave: #BFBAB1;
   --pf-tinta-tenue: #8A857D;
