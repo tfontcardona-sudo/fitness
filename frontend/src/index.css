@@ -29,6 +29,35 @@
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
+/* ---------------------------------------------------------------------------
+   CINZEL, SERVIDA POR NOSOTROS — la letra del logo de Professional.
+   El dueño mandó el logo del centro (laurel + «PROFESSIONAL» en versanas
+   serifas de trazo fino) y pidió que esa tipografía se note en todo lo suyo,
+   no solo en el archivo del logo. Es Cinzel (Google Fonts, licencia OFL): la
+   misma familia clásica de versales que el logo usa. Autoalojada con el
+   MISMO criterio que Inter (arriba) — nada de IPs de clientes con datos de
+   salud viajando a Google en cada carga del portal o del cuestionario.
+   Solo se CARGA — el `@font-face` no pinta nada por sí solo — donde la piel
+   de Professional la pide (`--pf-font-display`, más abajo); en DQR nunca se
+   descarga porque ningún selector de DQR la nombra.
+   --------------------------------------------------------------------------- */
+@font-face {
+  font-family: "Cinzel";
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url("/fonts/cinzel-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Cinzel";
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url("/fonts/cinzel-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -999,6 +1028,13 @@ summary:not(.plegable-barra) { cursor: pointer; }
   --pf-linea: rgba(255, 255, 255, .10);
   --pf-linea-oro: color-mix(in srgb, var(--pf-oro) 34%, transparent);
   --pf-error: #E2685C;
+  /* LA LETRA DEL LOGO: versales serifas de trazo fino (Cinzel), la misma
+     familia que «PROFESSIONAL» en el archivo que mandó el dueño. Es la
+     tipografía de TÍTULO — nombre de la marca, titulares, antetítulos —, no
+     de párrafo: un cuerpo de texto entero en versalitas serifas se hace
+     cuesta arriba de leer. El cuerpo sigue en Inter (--pf-tinta* lo pinta,
+     esta variable no toca el `font-family` base de `.pf-root`). */
+  --pf-font-display: "Cinzel", "Times New Roman", serif;
 }
 
 .pf-root {
@@ -1028,11 +1064,13 @@ summary:not(.plegable-barra) { cursor: pointer; }
 }
 .pf-logo { height: 42px; width: auto; max-width: 200px; object-fit: contain; }
 .pf-marca {
-  font-size: 17px; font-weight: 800; letter-spacing: .16em;
+  font-family: var(--pf-font-display);
+  font-size: 17px; font-weight: 700; letter-spacing: .16em;
   color: var(--pf-oro);
 }
 .pf-cab-sub {
-  font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase;
+  font-family: var(--pf-font-display);
+  font-size: 11px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase;
   color: var(--pf-tinta-tenue);
 }
 .pf-pie {
@@ -1044,12 +1082,14 @@ summary:not(.plegable-barra) { cursor: pointer; }
 
 /* ---- texto ---- */
 .pf-eyebrow {
-  font-size: 11px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase;
+  font-family: var(--pf-font-display);
+  font-size: 11px; font-weight: 600; letter-spacing: .2em; text-transform: uppercase;
   color: var(--pf-oro); margin-bottom: 8px;
 }
 .pf-h1 {
-  font-size: clamp(1.6rem, 6.4vw, 2.1rem); font-weight: 300; line-height: 1.15;
-  letter-spacing: -.015em; color: var(--pf-tinta); margin-bottom: 10px;
+  font-family: var(--pf-font-display);
+  font-size: clamp(1.5rem, 6vw, 2rem); font-weight: 500; line-height: 1.2;
+  letter-spacing: .01em; color: var(--pf-tinta); margin-bottom: 10px;
 }
 .pf-h2 {
   font-size: 1.05rem; font-weight: 650; line-height: 1.25; color: var(--pf-tinta);
@@ -1421,6 +1461,12 @@ select.pf-input option { background: var(--pf-hoja-2); color: var(--pf-tinta); }
   font-weight: 800; letter-spacing: 0.16em; line-height: 1;
   white-space: nowrap;
 }
+/* El rótulo tipográfico de Professional (sin logo subido, o mientras carga)
+   ya habla con SU letra: versales serifas, no la misma sans de cualquier
+   marca sin logo. */
+:root[data-piel="professional"] .marca-rotulo {
+  font-family: var(--pf-font-display); font-weight: 600; letter-spacing: .14em;
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    LA PIEL DE PROFESSIONAL · EL PORTAL DEL CLIENTE
@@ -1573,12 +1619,18 @@ select.pf-input option { background: var(--pf-hoja-2); color: var(--pf-tinta); }
    su cuestionario y de su documento impreso, así que la app, el papel y el
    formulario por fin hablan igual. */
 :root[data-piel="professional"] .p-display {
-  font-weight: 300; letter-spacing: -0.01em; font-size: 27px;
+  font-family: var(--pf-font-display);
+  font-weight: 500; letter-spacing: .01em; font-size: 25px;
 }
-:root[data-piel="professional"] .p-title { font-weight: 400; letter-spacing: -0.005em; }
-:root[data-piel="professional"] .p-head { font-weight: 600; }
+:root[data-piel="professional"] .p-title {
+  font-family: var(--pf-font-display); font-weight: 500; letter-spacing: 0;
+}
+:root[data-piel="professional"] .p-head {
+  font-family: var(--pf-font-display); font-weight: 600;
+}
 :root[data-piel="professional"] .p-eyebrow {
-  letter-spacing: 0.18em; color: var(--pf-oro); font-weight: 700;
+  font-family: var(--pf-font-display);
+  letter-spacing: 0.2em; color: var(--pf-oro); font-weight: 600;
 }
 :root[data-piel="professional"] .p-metric {
   font-weight: 300; letter-spacing: -0.02em; color: var(--pf-tinta);
@@ -1588,4 +1640,10 @@ select.pf-input option { background: var(--pf-hoja-2); color: var(--pf-tinta); }
 :root[data-piel="professional"] .portal-hero {
   background: none !important;
   border-bottom: 1px solid var(--pf-linea-oro);
+}
+/* Los titulares de las páginas públicas (/planes, /oferta): la MISMA letra
+   del logo, no la sans en negrita de DQR. `.pub-h1` es un enganche neutro —
+   la marca escrita ahí es la del escaparate, compartida entre las dos pieles. */
+:root[data-piel="professional"] .pub-h1 {
+  font-family: var(--pf-font-display); font-weight: 500; letter-spacing: .005em;
 }

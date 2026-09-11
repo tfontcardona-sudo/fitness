@@ -128,6 +128,18 @@ async def lifespan(app: FastAPI):
     except Exception:  # noqa: BLE001 — nunca puede impedir el arranque
         logging.getLogger("app.media").warning("Rescate de imágenes de marca omitido")
 
+    # El logo de FÁBRICA de una marca nueva (el archivo que mande el dueño se
+    # empaqueta en el código): se aplica solo si esa marca no tiene uno subido
+    # todavía. Nunca pisa lo que el dueño ya haya subido a mano.
+    try:
+        from app.db import SessionLocal
+        from app.services.default_brand_logos import aplicar_logos_de_fabrica
+
+        with SessionLocal() as _db:
+            aplicar_logos_de_fabrica(_db)
+    except Exception:  # noqa: BLE001 — nunca puede impedir el arranque
+        logging.getLogger("app.media").warning("Logo de fábrica omitido")
+
     # El scheduler se desactiva en tests/CI con SCHEDULER_ENABLED=false.
     # Vive en Settings como el resto de la config (una sola fuente de verdad).
     scheduler_on = settings.scheduler_enabled

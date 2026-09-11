@@ -227,7 +227,7 @@ export default function PlansPage() {
         <header className="mb-6 flex flex-col items-center text-center text-white"
           style={{ textShadow: "0 2px 12px rgba(0,0,0,0.55), 0 1px 3px rgba(0,0,0,0.7)" }}>
           <MarcaLogo logoUrl={landing?.logo_url} skin={landing?.skin} nombre={landing?.name} alto={56} />
-          <h1 className="mt-4 text-3xl font-extrabold tracking-tight">
+          <h1 className="pub-h1 mt-4 text-3xl font-extrabold tracking-tight">
             {/* El acento de LA MARCA, no el naranja claro de DQ escrito a mano. */}
             Empieza tu cambio <span style={{ color: "var(--brand-accent-hi)" }}>hoy</span>
           </h1>

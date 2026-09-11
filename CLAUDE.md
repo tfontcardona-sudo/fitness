@@ -75,6 +75,12 @@ portal) y el cliente registra su seguimiento diario hasta el cierre quincenal.
 >   dos acentos: el segundo de Professional es su NEGRO de estructura, así que
 >   cada piel decide qué papel le da (`coloresDeMarca`). Vigilado por
 >   `npm run check:marca`.
+> - **EL LOGO DE FÁBRICA** (`services/default_brand_logos.py` ·
+>   `assets/brand/`): si el dueño manda el archivo de una marca, se empaqueta en
+>   el código y se aplica SOLO al arrancar y SOLO si esa marca no tiene uno
+>   subido ya — nunca pisa lo que el dueño suba a mano. La letra del logo de
+>   Professional (Cinzel, autoalojada como Inter) es `--pf-font-display`, y
+>   pinta TÍTULOS (nombre, titulares, antetítulos), nunca el cuerpo de texto.
 > - **QUÉ USA CADA NEGOCIO** (`brand_config.features`, mig. 0054 · `branding.Marca.usa()`
 >   · `frontend/src/lib/marca.usaLaMarca`): el switch no cambia solo la identidad,
 >   cambia el modo de trabajar. Regla de oro: **lo que ya lo dice otro dato se
@@ -520,6 +526,56 @@ npm run check:planes        # el nivel del cliente RECOMIENDA un camino de
 ---
 
 ## 9. Trabajo pendiente / próximos pasos
+
+00000000000000000000000000000. ✅ **EL LOGO DE VERDAD, Y SU LETRA APLICADA A
+   TODO PROFESSIONAL (11-09-2026).** El dueño mandó el archivo real del logo
+   del centro (laurel dorado + «PROFESSIONAL» en versales serifas sobre
+   negro, «CENTRE SALUT & FITNESS · BY LIDIA MIRALPEIX & TONI PÉREZ») y pidió
+   aplicarlo él mismo, sin subirlo a mano: «yo te pido y tú lo fusionas y
+   despliegas… todo lo que te pido debes de desplegarlo de forma automática».
+   - **EL LOGO DE FÁBRICA** (`services/default_brand_logos.py`,
+     `assets/brand/logo-professional-fitness.png`): el archivo que manda el
+     dueño se empaqueta en el código —igual que `dq-logo.png` en el
+     frontend— y se sella en la fila de la marca al ARRANCAR, con el MISMO
+     criterio que `media_legacy.py`: idempotente, nunca pisa un logo que el
+     dueño ya haya subido a mano, y si la marca no tiene fichero de fábrica no
+     hace nada. Sin esto habría hecho falta que él mismo entrara a
+     Recursos → Marca a subirlo — un clic que el sistema ya le puede evitar.
+   - **LA LETRA DEL LOGO, AUTOALOJADA** (`Cinzel`, licencia OFL — mismo
+     criterio que Inter: nada de IPs de clientes con datos de SALUD viajando a
+     Google en cada carga del portal). `--pf-font-display` la aplica a TODO lo
+     que es TÍTULO de la marca —el nombre, los titulares, los antetítulos en
+     versales—: el cuestionario (`.pf-h1`, `.pf-marca`, `.pf-eyebrow`,
+     `.pf-cab-sub`), el portal (`.p-display`, `.p-title`, `.p-head`,
+     `.p-eyebrow` bajo la piel), el rótulo tipográfico de respaldo
+     (`.marca-rotulo`) y los titulares de las páginas públicas /planes y
+     /oferta (`.pub-h1`, clase compartida y neutra: la letra la decide la piel
+     ACTIVA en ese momento). El CUERPO de texto sigue en Inter — una versalita
+     serifa entera de párrafo se hace cuesta arriba de leer, y el logo mismo
+     solo la usa para el título, no para las instrucciones.
+     ⚠️ Dentro de los DOCUMENTOS Word no se fuerza esta fuente en el texto: el
+     lector que no la tenga instalada vería una sustitución arbitraria de SU
+     Word, distinta según la máquina — peor que no tocar nada. La tipografía
+     del logo llega al papel por la vía que SÍ es igual para todos: la imagen
+     del logo, incrustada en la portada y en la cabecera de cada página
+     (`plan_doc_pf`/`feedback_doc_pf`, que ya leían `brand.logo_path` — no
+     hizo falta tocarlos).
+   - **Bug real que destapó la verificación**: el login del PANEL miraba
+     `brand?.logo_path` (la ruta relativa, forma del `BrandConfigOut`
+     autenticado) cuando ANTES de entrar `useBrand()` trae la marca PÚBLICA
+     (forma `logo_url`, ya servible) — así que la pantalla que el coach ve
+     una vez AL DÍA nunca enseñaba el logo subido, ni el de Professional ni
+     el de cualquier marca futura sin el `/dq-logo.png` de reserva que tiene
+     DQR clavado en el frontend. `LoginPage.tsx` mira ahora las dos formas.
+   - Verificado: logo real embebido y comprobado byte a byte en el `.docx`
+     generado (una sola imagen incrustada, 900×704, referenciada en portada y
+     cabecera), en el panel (sidebar, login), en el portal (cabecera y
+     titulares) y en el cuestionario — capturas de pantalla en las cuatro
+     superficies. Suite completa en LOS DOS órdenes, `tsc`, build, las NUEVE
+     guardas y arranque desde base VACÍA hasta 0054. Tests:
+     `tests/test_logo_de_fabrica.py` (5): el fichero existe de verdad, se
+     aplica a una marca sin logo, NUNCA pisa el subido a mano, una marca sin
+     fichero de fábrica no recibe nada inventado, e idempotente.
 
 0000000000000000000000000000. ✅ **CADA NEGOCIO ENSEÑA LO SUYO, Y LOS MENSAJES
    HABLAN DE QUIEN LOS RECIBE (11-09-2026).** Cuatro peticiones del dueño tras

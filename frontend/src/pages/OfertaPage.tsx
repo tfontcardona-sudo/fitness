@@ -84,7 +84,7 @@ export default function OfertaPage() {
             style={{ background: "#C2453A" }}>
             <Zap size={12} /> Oferta de lanzamiento · plazas limitadas este mes
           </span>
-          <h1 className="mt-3 text-4xl font-extrabold leading-tight tracking-tight">
+          <h1 className="pub-h1 mt-3 text-4xl font-extrabold leading-tight tracking-tight">
             Tu primer mes,
             <br />
             <span style={{ color: "var(--brand-accent-hi)" }}>por 1 €</span>

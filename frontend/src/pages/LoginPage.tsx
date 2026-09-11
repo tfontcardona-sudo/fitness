@@ -38,7 +38,16 @@ export default function LoginPage() {
           colores del primero. Ahora los pone la PIEL. */}
       <div className="pointer-events-none fixed inset-0 login-atmosfera" />
       <div className="animate-rise card relative w-full max-w-sm p-8">
-        <MarcaLogo logoUrl={brand?.logo_path ? api.mediaUrl(brand.logo_path) : null}
+        {/* Antes de iniciar sesión, `useBrand()` trae la marca PÚBLICA
+            (`GET /api/public/landing`, forma `logo_url` ya servible); tras
+            entrar, la del panel (`logo_path`, una ruta relativa que hay que
+            resolver con `api.mediaUrl`). Mirar solo `logo_path` dejaba SIEMPRE
+            sin logo la pantalla de login —el momento en que más se ve, una
+            vez al día— y caía al rótulo tipográfico aunque el logo YA
+            estuviera subido. */}
+        <MarcaLogo
+          logoUrl={(brand as { logo_url?: string | null } | null)?.logo_url
+            ?? (brand?.logo_path ? api.mediaUrl(brand.logo_path) : null)}
           skin={brand?.skin} nombre={brand?.name} alto={44} className="mb-6" />
         <h1 className="text-xl font-semibold text-zinc-100">
           {brand?.name ?? "Asesorías Fitness"}
