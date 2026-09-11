@@ -413,6 +413,9 @@ export const api = {
   listAlerts: () =>
     request<{ alerts: CoachAlert[]; count: number; high: number }>("GET", "/alerts"),
   planDocumentUrl: (planId: number) => `/api/plans/${planId}/document`,
+  // La FICHA (lo que ya vive en `Client`) como documento — no el PDF que el
+  // cliente subió. La marca sellada del cliente decide el diseño.
+  anamnesisDocumentUrl: (clientId: number) => `/api/clients/${clientId}/anamnesis-document`,
   // `kind` distingue el CUESTIONARIO de los adjuntos (analítica, informes):
   // sin él, subir una analítica daba la anamnesis por recibida y "Ver PDF"
   // abría el informe de sangre.

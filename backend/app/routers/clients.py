@@ -1442,6 +1442,29 @@ def get_anamnesis_analysis(client_id: int, db: Session = Depends(get_db)) -> dic
             "attachments": adjuntos}
 
 
+@router.get("/{client_id}/anamnesis-document")
+def download_anamnesis_document(
+    client_id: int,
+    format: str = Query("pdf", pattern="^(pdf|docx)$"),
+    db: Session = Depends(get_db),
+):
+    """Descarga la FICHA del cliente (lo que ya vive en `Client`, no el PDF que
+    subió) como documento. format=pdf (por defecto) para entregar/archivar;
+    format=docx para editar. La marca DEL CLIENTE decide el diseño —
+    `services/anamnesis_delivery.build_anamnesis_pdf` — igual que su plan."""
+    from fastapi import Response
+
+    from app.services.anamnesis_delivery import build_anamnesis_pdf
+
+    client = _client_or_404_docs(db, client_id)
+    content, media_type, filename = build_anamnesis_pdf(db, client, fmt=format)
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.post("/{client_id}/send-portal-access")
 def resend_portal_access(client_id: int, db: Session = Depends(get_db)) -> dict:
     """(Re)envía al cliente su acceso al portal por email, regenerando la

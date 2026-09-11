@@ -596,6 +596,63 @@ def test_la_marca_simple_entrega_un_plan_mas_corto_con_las_mismas_cifras(
         assert dentro in t_corto, dentro
 
 
+def test_la_anamnesis_se_descarga_con_el_documento_de_su_marca(http, db, restaura_marca):
+    """La ficha (anamnesis) se puede DESCARGAR como documento — antes no
+    existía ningún camino para esto: solo se podía ver el PDF que subió el
+    cliente o la plantilla en blanco. Cada marca entrega el SUYO: DQR el
+    genérico (datos → objetivo → entreno → alimentación → salud), Professional
+    el propio (entreno → salud → alimentación, sin "objetivo" como sección: se
+    acuerda en el mostrador). La seguridad (alergias) sale en los dos."""
+    from app.services.anamnesis_delivery import build_anamnesis_pdf
+
+    ms = _marcas(db)
+    dqr, pf = ms["dqr"], ms["professional-fitness"]
+    cliente_dqr = _cliente_de(db, dqr, "Ficha DQR")
+    cliente_dqr.sex = "female"
+    cliente_dqr.goal_type = "fat_loss"
+    cliente_dqr.injuries_notes = "Molestia en el hombro"
+    cliente_dqr.food_allergies = ["gluten"]
+    db.commit()
+
+    cliente_pf = _cliente_de(db, pf, "Ficha Professional")
+    cliente_pf.sex = "male"
+    cliente_pf.goal_type = "muscle_gain"
+    cliente_pf.injuries_notes = "Molestia en el hombro"
+    cliente_pf.food_allergies = ["gluten"]
+    db.commit()
+
+    data_dqr, media_dqr, name_dqr = build_anamnesis_pdf(db, cliente_dqr, fmt="docx")
+    data_pf, media_pf, name_pf = build_anamnesis_pdf(db, cliente_pf, fmt="docx")
+    docx_media = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    assert media_dqr == media_pf == docx_media
+    assert name_dqr.startswith("anamnesis_") and name_pf.startswith("anamnesis_")
+
+    from io import BytesIO
+
+    from docx import Document
+
+    def texto(b: bytes) -> str:
+        return "\n".join(p.text for p in Document(BytesIO(b)).paragraphs).upper()
+
+    t_dqr, t_pf = texto(data_dqr), texto(data_pf)
+
+    # La alergia (seguridad) sale en las DOS, sin excepción.
+    assert "GLUTEN" in t_dqr and "GLUTEN" in t_pf
+
+    # Estructura DISTINTA, no un recoloreado: DQR presenta el objetivo como
+    # sección propia antes que el entreno; Professional va directo al
+    # entrenamiento y mira la salud ANTES que la dieta (lo que un entrenador
+    # necesita saber antes de programar un ejercicio en la sala).
+    assert t_dqr.index("OBJETIVO") < t_dqr.index("ENTRENAMIENTO") < t_dqr.index("ALIMENTACIÓN")
+    assert t_pf.index("ENTRENAMIENTO") < t_pf.index("SALUD") < t_pf.index("ALIMENTACIÓN")
+
+    # Y el endpoint HTTP funciona para las dos marcas.
+    r = http.get(f"/api/clients/{cliente_dqr.id}/anamnesis-document?format=docx", headers=_auth())
+    assert r.status_code == 200 and r.content[:2] == b"PK"
+    r2 = http.get(f"/api/clients/{cliente_pf.id}/anamnesis-document?format=docx", headers=_auth())
+    assert r2.status_code == 200 and r2.content[:2] == b"PK"
+
+
 def test_la_marca_simple_no_paga_el_educativo_que_no_va_a_imprimir():
     """Ahorro real de créditos: si el documento no lleva la sección educativa,
     generarla es pagar una llamada a la IA para tirarla a la basura."""

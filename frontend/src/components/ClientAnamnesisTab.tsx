@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ancla } from "../lib/anchors";
-import { ChevronDown, Eye, FileText, Pencil, Save, Sparkles } from "lucide-react";
+import { ChevronDown, Download, Eye, FileText, Pencil, Save, Sparkles } from "lucide-react";
 import { PeriodPhotosFolded } from "./ClientFeedbackTab";
 import { api, ApiError, getToken } from "../lib/api";
 import type { AttachmentSummary, DocumentInfo, DocumentVerification } from "../lib/api";
@@ -81,6 +81,7 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange, reloadKey =
   // ya llevan VNotes/VCard: un cliente con varias analíticas volcaba todas a
   // la vez, con TODAS sus alertas ámbar desplegadas.
   const [showAllAdjuntos, setShowAllAdjuntos] = useState(false);
+  const [descargandoFicha, setDescargandoFicha] = useState(false);
 
   useEffect(() => {
     // Solo el CUESTIONARIO: con los adjuntos (analítica, informes) en la
@@ -116,6 +117,29 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange, reloadKey =
         setTimeout(() => URL.revokeObjectURL(url), 60000);
       })
       .catch(() => toast.push("No se pudo abrir el documento", "error"));
+  }
+
+  /** Descarga la FICHA (lo que ya vive en `Client`) como documento — no el
+   *  PDF que el cliente subió. Petición explícita: la anamnesis tiene que
+   *  poder verse y descargarse como cualquier otro documento del sistema. */
+  function downloadFicha() {
+    if (descargandoFicha) return;
+    setDescargandoFicha(true);
+    fetch(api.anamnesisDocumentUrl(client.id), { headers: { Authorization: `Bearer ${getToken()}` } })
+      .then((r) => {
+        if (!r.ok) throw new Error(`Error ${r.status}`);
+        return r.blob();
+      })
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `anamnesis_${client.full_name.replace(/\s+/g, "_").toLowerCase()}.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
+      })
+      .catch(() => toast.push("No se pudo descargar la ficha", "error"))
+      .finally(() => setDescargandoFicha(false));
   }
 
   function set<K extends keyof ClientOut>(key: K, value: ClientOut[K]) {
@@ -201,6 +225,13 @@ export function ClientAnamnesisTab({ client, onSaved, onDirtyChange, reloadKey =
               <FileText size={15} /> Ver documento
             </button>
           )}
+          {/* La FICHA como documento (no el PDF que subió el cliente): se
+              puede descargar aunque no haya ningún documento subido. */}
+          <button onClick={downloadFicha} disabled={descargandoFicha} className="btn btn-ghost disabled:opacity-60"
+            title="Descarga la ficha (datos de la anamnesis) como documento">
+            {descargandoFicha ? <Spinner /> : <Download size={15} />}
+            {descargandoFicha ? "Preparando…" : "Descargar ficha"}
+          </button>
           <button onClick={() => setEditMode((e) => !e)} className="btn btn-ghost">
             {editMode ? <Eye size={15} /> : <Pencil size={15} />}
             {editMode ? "Ver ficha" : "Editar datos"}
