@@ -11,7 +11,7 @@ import { ACEPTA_DOCUMENTOS } from "../lib/documentos";
 import { manualUpdateMessage, openWhatsApp, planAndFeedbackMessage, planMessage, waPhone, waUrl } from "../lib/whatsapp";
 import { pkg } from "../lib/packages";
 import { CANONICAL_MEALS, mealKeysFromNames } from "../lib/meals";
-import { GOAL_LABEL, goalDays, goalReviewDue, planMonthLabel } from "../lib/format";
+import { DIET_PATTERN_LABEL, GOAL_LABEL, goalDays, goalReviewDue, planMonthLabel } from "../lib/format";
 import { deficitLabel, macroPct, MACRO_TOTAL_TOLERANCE } from "../lib/nutritionTargets";
 import { isCriticalLine } from "../lib/clinical";
 import { ExpandableArea, ProseClamp, Spinner, useToast } from "./ui";
@@ -19,7 +19,7 @@ import type { Destino } from "../lib/findings";
 import { agrupar, resumirDetalle, resumenCorto, toAviso, traducirFlags } from "../lib/findings";
 import { MemoDetails } from "./MemoDetails";
 import { ClientPlanEditor } from "./ClientPlanEditor";
-import type { ClientOut, ExerciseOut, GoalType } from "../types";
+import type { ClientOut, ExerciseOut, FoodSearchResult, FoodSwapResult, GoalType } from "../types";
 
 interface PlanReview {
   color?: "verde" | "ambar" | "rojo" | null;
@@ -1682,6 +1682,13 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
         )}
       </div>
 
+      {/* RASGOS DEL PLAN, de un vistazo: objetivo, sexo, días de entreno,
+          kcal/macros y lo que este plan NO incluye (alergias, aversiones,
+          patrón) — antes había que reconstruirlo mentalmente entre la
+          Anamnesis y la tabla de macros. Lo excluido es el único dato que no
+          se veía en NINGÚN sitio de esta pestaña. */}
+      <RasgosDelPlan client={client} nut={nut} hasNutrition={hasNutrition} />
+
       {/* Estructura de comidas del día: desplegable para elegir qué tomas hace el
           cliente (desayuno, media mañana, comida, snack, cena, pre-cama). Se
           inicializa con las comidas del plan actual; al cambiarlas y regenerar,
@@ -2063,7 +2070,22 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
           toma concreta ("hay lentejas en la toma 2"), el desplegable se abre
           solo y esa toma queda marcada. Sin eso, el coach leía el problema y
           no tenía dónde verlo. */}
-      {hasNutrition && <BancoDeComidas nut={nut} />}
+      {hasNutrition && (
+        <BancoDeComidas
+          nut={nut}
+          clientId={client.id}
+          planId={plan.id}
+          onSwapped={async (r) => {
+            await recargarPlanes(r.new_plan_id);
+            if (r.retained) {
+              toast.push(`Guardado como borrador v${r.new_version} · revísalo antes de activar`, "error");
+            } else {
+              setNeedsDownload(true);
+              toast.push("Alimento cambiado y activado · pendiente de reenviar al cliente");
+            }
+          }}
+        />
+      )}
 
       {/* Entrenamiento — azul de marca (como sus chips de ajustes).
           El paquete Start es solo nutrición: no se muestra el entrenamiento. */}
@@ -2739,6 +2761,65 @@ function AdjustmentRow({ area, main, secondary, reason }: {
 }
 
 /**
+ * Rasgos generales del plan, en una tira compacta: objetivo, sexo, días de
+ * entreno declarados, kcal/macros objetivo y lo que ESTE plan excluye
+ * (alergias, aversiones, patrón dietético). No repite la tabla de macros de
+ * abajo con detalle: es el resumen de identidad del plan de un vistazo, sobre
+ * todo "qué NO lleva" — lo único que antes no se veía en ningún sitio de la
+ * pestaña de Planificación.
+ */
+function RasgosDelPlan({ client, nut, hasNutrition }: {
+  client: ClientOut; nut: any; hasNutrition: boolean;
+}) {
+  const macros = nut?.macros ?? {};
+  const kcal = nut?.target_kcal;
+  const patron = client.diet_pattern ? (DIET_PATTERN_LABEL[client.diet_pattern] ?? client.diet_pattern) : null;
+  const excluidos = [
+    ...(client.food_allergies ?? []).map((f) => ({ label: f, alergia: true })),
+    ...(client.food_dislikes ?? []).map((f) => ({ label: f, alergia: false })),
+  ];
+
+  return (
+    <div className="card flex flex-wrap items-center gap-x-4 gap-y-2 p-3.5">
+      <Rasgo label="Objetivo" valor={client.goal_type ? GOAL_LABEL[client.goal_type] : "—"} />
+      <Rasgo label="Sexo" valor={client.sex === "male" ? "Hombre" : client.sex === "female" ? "Mujer" : "—"} />
+      <Rasgo label="Entreno" valor={client.training_days ? `${client.training_days} días/semana` : "—"} />
+      {hasNutrition && kcal != null && (
+        <Rasgo
+          label="Objetivo diario"
+          valor={`${Math.round(kcal)} kcal · P${Math.round(macros.protein_g ?? 0)} C${Math.round(macros.carbs_g ?? 0)} G${Math.round(macros.fat_g ?? 0)}`}
+        />
+      )}
+      {patron && <Rasgo label="Patrón" valor={patron} />}
+      {excluidos.length > 0 && (
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">No incluye</span>
+          {excluidos.map((e, i) => (
+            <span
+              key={i}
+              className="rounded-full px-2 py-0.5 text-[11px] font-medium"
+              style={{ background: "rgba(179,38,30,0.10)", color: "#B3261E" }}
+              title={e.alergia ? "Alergia declarada — vetado en todo el plan" : "No le gusta — evitado en todo el plan"}
+            >
+              {e.label}{e.alergia ? " ⚠" : ""}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Rasgo({ label, valor }: { label: string; valor: string }) {
+  return (
+    <span className="text-xs text-zinc-400">
+      <span className="font-semibold uppercase tracking-wide text-zinc-500">{label}</span>{" "}
+      <span className="text-zinc-300">{valor}</span>
+    </span>
+  );
+}
+
+/**
  * Las comidas de cada toma, PLEGADAS.
  *
  * El coach no las necesita en pantalla el 99% del tiempo (van completas en el
@@ -2747,18 +2828,33 @@ function AdjustmentRow({ area, main, secondary, reason }: {
  * desplegable se abre solo y esa toma queda marcada — antes el coach leía el
  * problema y no tenía dónde mirarlo.
  *
- * Solo lectura: el banco se cambia regenerando o subiendo el Word editado.
+ * En el banco FLEXIBLE cada ingrediente del catálogo lleva un botón "Cambiar":
+ * arregla ahí mismo el caso real de la alerta ("ya no tolera la avena de esta
+ * opción") sin gastar créditos regenerando el plan — el backend fija los
+ * gramos nuevos con el solver y activa la versión sola si no hay violación.
+ * El menú CERRADO (strict) y las equivalencias siguen siendo solo lectura: se
+ * editan subiendo el Word.
  */
-function BancoDeComidas({ nut }: { nut: any }) {
+function BancoDeComidas({ nut, clientId, planId, onSwapped }: {
+  nut: any; clientId: number; planId: number;
+  onSwapped: (r: FoodSwapResult) => void;
+}) {
   const bank = nut?.meal_bank;
+  const isStrict = bank?.mode === "strict";
   const nombres = new Map<number, string>(
     (Array.isArray(nut?.meals) ? nut.meals : [])
       .map((m: any) => [m?.slot, m?.time ? `${m.name} · ${m.time}` : m?.name]),
   );
+  const [cambiando, setCambiando] = useState<{
+    slot: number; optionIndex: number; food: string; foodId: number;
+  } | null>(null);
 
-  // Las dos formas del banco se aplanan a lo mismo: toma → líneas de texto.
+  // Modo strict + equivalencias: se aplanan a líneas de texto (solo lectura).
   const porToma = new Map<number, string[]>();
-  if (bank?.mode === "strict" && Array.isArray(bank.days)) {
+  // Modo flexible: opción COMPLETA (título + ingredientes con food_id), para
+  // poder ofrecer "Cambiar" por ingrediente sin perder su identidad.
+  const opcionesPorToma = new Map<number, { title: string; ingredients: any[] }[]>();
+  if (isStrict && Array.isArray(bank.days)) {
     for (const d of bank.days) {
       for (const m of d?.meals ?? []) {
         if (m?.slot == null) continue;
@@ -2772,16 +2868,20 @@ function BancoDeComidas({ nut }: { nut: any }) {
   } else if (Array.isArray(bank?.slots)) {
     for (const sb of bank.slots) {
       if (sb?.slot == null) continue;
-      const lista: string[] = [];
+      const opts: { title: string; ingredients: any[] }[] = [];
       for (const opt of sb.options ?? []) {
         const t = (opt?.title ?? "").trim();
-        if (t) lista.push(t);
+        if (t) opts.push({ title: t, ingredients: Array.isArray(opt?.ingredients) ? opt.ingredients : [] });
       }
+      const lista: string[] = [];
       for (const g of sb.equivalences?.groups ?? []) {
         const t = (g?.label ?? g?.name ?? "").trim();
         if (t) lista.push(t);
       }
-      if (lista.length) porToma.set(sb.slot, lista);
+      if (opts.length) opcionesPorToma.set(sb.slot, opts);
+      if (opts.length || lista.length) {
+        porToma.set(sb.slot, [...opts.map((o) => o.title), ...lista]);
+      }
     }
   }
   if (!porToma.size) return null;
@@ -2794,7 +2894,7 @@ function BancoDeComidas({ nut }: { nut: any }) {
       <summary className="cursor-pointer text-sm font-semibold text-zinc-100">
         Comidas de cada toma
         <span className="ml-2 text-xs font-normal text-zinc-500">
-          {tomas.length} tomas · {total} opciones · solo lectura
+          {tomas.length} tomas · {total} opciones{isStrict ? " · solo lectura" : ""}
         </span>
       </summary>
       <div className="mt-3 space-y-2">
@@ -2804,18 +2904,165 @@ function BancoDeComidas({ nut }: { nut: any }) {
             <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
               {nombres.get(slot) ?? `Toma ${slot}`}
             </p>
-            <ul className="mt-1 space-y-0.5">
-              {porToma.get(slot)!.map((t, i) => (
-                <li key={i} className="text-xs text-zinc-400">· {t}</li>
-              ))}
-            </ul>
+            {isStrict || !opcionesPorToma.has(slot) ? (
+              <ul className="mt-1 space-y-0.5">
+                {porToma.get(slot)!.map((t, i) => (
+                  <li key={i} className="text-xs text-zinc-400">· {t}</li>
+                ))}
+              </ul>
+            ) : (
+              <div className="mt-1.5 space-y-2">
+                {opcionesPorToma.get(slot)!.map((opt, oi) => (
+                  <div key={oi} className="text-xs">
+                    <p className="font-medium text-zinc-300">{opt.title}</p>
+                    {opt.ingredients.length > 0 && (
+                      <ul className="mt-0.5 space-y-0.5 pl-3">
+                        {opt.ingredients.map((ing, ii) => (
+                          <li key={ii} className="flex items-center justify-between gap-2 text-zinc-500">
+                            <span>
+                              {ing?.household ? `${ing.household} de ${ing.food}` : `${ing?.grams ?? "?"} g de ${ing?.food}`}
+                            </span>
+                            {ing?.food_id != null && ing?.food && (
+                              <button
+                                onClick={() => setCambiando({ slot, optionIndex: oi, food: ing.food, foodId: ing.food_id })}
+                                className="btn btn-ghost shrink-0 !px-1.5 !py-0.5 text-[10px]"
+                                title={`Cambiar «${ing.food}» por otro alimento`}
+                              >
+                                Cambiar
+                              </button>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))}
+                {/* Las equivalencias no tienen food_id (formato libre): se listan igual, sin botón. */}
+                {porToma.get(slot)!.slice(opcionesPorToma.get(slot)!.length).map((t, i) => (
+                  <p key={`eq-${i}`} className="text-xs text-zinc-500">· {t}</p>
+                ))}
+              </div>
+            )}
           </div>
         ))}
       </div>
       <p className="mt-3 text-xs text-zinc-500">
-        Para cambiarlas: regenera el plan, o descarga el Word, edítalo y súbelo.
+        {isStrict
+          ? "Para cambiarlas: regenera el plan, o descarga el Word, edítalo y súbelo."
+          : "Cambia un alimento suelto con \"Cambiar\". Para reestructurar la toma entera: regenera el plan o descarga el Word, edítalo y súbelo."}
       </p>
+
+      {cambiando && (
+        <FoodSwapPicker
+          clientId={clientId}
+          planId={planId}
+          slot={cambiando.slot}
+          optionIndex={cambiando.optionIndex}
+          oldFood={cambiando.food}
+          oldFoodId={cambiando.foodId}
+          onCerrar={() => setCambiando(null)}
+          onHecho={(r) => { setCambiando(null); onSwapped(r); }}
+        />
+      )}
     </details>
+  );
+}
+
+/**
+ * Buscador para cambiar UN alimento de una opción por otro — el caso real de
+ * la alerta "ya no tolera/odia X en su plan": aquí se arregla directamente,
+ * sin regenerar. El backend ya filtra alergias/aversiones/patrón de la
+ * ficha ANTES de mostrar resultados: lo que aparece siempre es seguro.
+ */
+function FoodSwapPicker({ clientId, planId, slot, optionIndex, oldFood, oldFoodId, onCerrar, onHecho }: {
+  clientId: number; planId: number; slot: number; optionIndex: number;
+  oldFood: string; oldFoodId: number;
+  onCerrar: () => void;
+  onHecho: (r: FoodSwapResult) => void;
+}) {
+  const [q, setQ] = useState("");
+  const [resultados, setResultados] = useState<FoodSearchResult[] | null>(null);
+  const [buscando, setBuscando] = useState(false);
+  const [aplicando, setAplicando] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const caja = useRef<HTMLDivElement>(null);
+  useDismiss(caja, onCerrar, aplicando === null);
+  useModalFocus(caja, true);
+
+  useEffect(() => {
+    const term = q.trim();
+    if (term.length < 2) { setResultados(null); setBuscando(false); return; }
+    setBuscando(true);
+    const t = setTimeout(() => {
+      api.searchFoods(clientId, term)
+        .then(setResultados)
+        .catch(() => setResultados([]))
+        .finally(() => setBuscando(false));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [q, clientId]);
+
+  async function elegir(nuevo: FoodSearchResult) {
+    setAplicando(nuevo.id);
+    setError(null);
+    try {
+      const r = await api.swapFood(clientId, planId, {
+        slot, option_index: optionIndex, old_food_id: oldFoodId, new_food_id: nuevo.id,
+      });
+      onHecho(r);
+    } catch (e: any) {
+      setError(e?.message ?? "No se pudo cambiar el alimento");
+      setAplicando(null);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div ref={caja} role="dialog" aria-modal="true" aria-label={`Cambiar ${oldFood}`}
+        className="card w-full max-w-sm p-5" style={{ background: "var(--surface-raised)" }}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-zinc-100">Cambiar «{oldFood}»</h3>
+            <p className="mt-0.5 text-xs text-zinc-500">
+              El backend recalcula los gramos para esta toma — ya sin alergias, aversiones ni el patrón de su ficha.
+            </p>
+          </div>
+          <button onClick={onCerrar} aria-label="Cerrar" className="tap -m-1 shrink-0 p-1 text-zinc-500 hover:text-zinc-300">
+            <X size={16} />
+          </button>
+        </div>
+        <input
+          autoFocus
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Buscar alimento…"
+          className="input mt-3 w-full text-sm"
+        />
+        {error && <p className="mt-2 text-xs" style={{ color: "#B3261E" }}>{error}</p>}
+        <div className="mt-2 max-h-64 space-y-0.5 overflow-y-auto">
+          {buscando && <div className="flex justify-center py-3"><Spinner /></div>}
+          {!buscando && q.trim().length >= 2 && (resultados?.length ?? 0) === 0 && (
+            <p className="py-3 text-center text-xs text-zinc-500">Sin resultados seguros para su ficha</p>
+          )}
+          {!buscando && q.trim().length < 2 && (
+            <p className="py-3 text-center text-xs text-zinc-500">Escribe al menos 2 letras</p>
+          )}
+          {(resultados ?? []).map((f) => (
+            <button
+              key={f.id}
+              onClick={() => elegir(f)}
+              disabled={aplicando !== null}
+              className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-zinc-200 hover:bg-white/5 disabled:opacity-60"
+            >
+              <span className="truncate">{f.canonical_name}</span>
+              {aplicando === f.id
+                ? <Spinner className="!h-3.5 !w-3.5" />
+                : <span className="shrink-0 text-xs text-zinc-500 tabular-nums">{Math.round(f.kcal)} kcal/100 g</span>}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 

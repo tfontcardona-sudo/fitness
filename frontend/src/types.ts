@@ -899,6 +899,26 @@ export interface GoalProgress {
   rule: string;
 }
 
+// Cambiar UN alimento de una opción del banco flexible sin regenerar el plan
+// (GET .../foods/search, POST .../foods/swap) — el backend fija los gramos
+// con el solver; el coach solo elige el alimento nuevo.
+export interface FoodSearchResult {
+  id: number;
+  canonical_name: string;
+  kcal: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+}
+
+export interface FoodSwapResult {
+  new_plan_id: number;
+  new_version: number;
+  retained: boolean;
+  guardrail_flags: string[];
+  option_title: string;
+}
+
 // Alerta del centro de notificaciones del coach (GET /api/alerts)
 export interface CoachAlert {
   client_id: number;

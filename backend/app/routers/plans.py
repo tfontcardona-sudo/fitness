@@ -1536,6 +1536,60 @@ def swap_apply(client_id: int, plan_id: int, body: SwapApplyIn,
     }
 
 
+# --------------------------------------- cambiar UN alimento de una opción ----
+
+class FoodSearchOut(BaseModel):
+    id: int
+    canonical_name: str
+    kcal: float
+    protein_g: float
+    carbs_g: float
+    fat_g: float
+
+
+class FoodSwapIn(BaseModel):
+    slot: int
+    option_index: int
+    old_food_id: int
+    new_food_id: int
+
+
+@router.get("/api/clients/{client_id}/foods/search", response_model=list[FoodSearchOut])
+def foods_search(client_id: int, q: str, db: Session = Depends(get_db)) -> list[FoodSearchOut]:
+    """Alimentos del catálogo para sustituir uno en el banco de comidas — YA
+    filtrados por sus alergias/aversiones/patrón: el coach no puede ni ver el
+    que reabriría la misma alerta."""
+    from app.services.food_swap import search_foods_for_client
+
+    client = _client_or_404(db, client_id)
+    return [FoodSearchOut(**f) for f in search_foods_for_client(db, client, q)]
+
+
+@router.post("/api/clients/{client_id}/plans/{plan_id}/foods/swap")
+def foods_swap(client_id: int, plan_id: int, body: FoodSwapIn, db: Session = Depends(get_db)) -> dict:
+    """Cambia UN alimento de una opción del banco flexible, sin regenerar el
+    plan: crea una nueva versión, la revalida y la activa sola si no hay
+    violación — sin un botón "Guardar" aparte."""
+    from app.services.food_swap import apply_food_swap
+
+    client = _client_or_404(db, client_id)
+    plan = db.get(Plan, plan_id)
+    if not plan or plan.client_id != client_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan no encontrado")
+    try:
+        result = apply_food_swap(
+            db, client=client, plan=plan, slot=body.slot, option_index=body.option_index,
+            old_food_id=body.old_food_id, new_food_id=body.new_food_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    return {
+        "new_plan_id": result.new_plan_id, "new_version": result.new_version,
+        "retained": result.retained, "guardrail_flags": result.guardrail_flags,
+        "option_title": result.option_title,
+    }
+
+
 # ------------------------------------------- plantilla de anamnesis (PDF oficial) ----
 
 @router.get("/api/anamnesis-template")

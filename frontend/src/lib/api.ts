@@ -73,6 +73,8 @@ import type {
   ClientOut,
   ClientStatus,
   ExerciseOut,
+  FoodSearchResult,
+  FoodSwapResult,
   GoalProgress,
   LandingOut,
   MeOut,
@@ -394,6 +396,13 @@ export const api = {
       guardrail_flags: string[] | null; review_json: any;
       goal_type: string | null; published_at: string | null; created_at: string | null;
     }>("GET", `/plans/${planId}`),
+  // ---- Cambiar UN alimento de una opción del banco (sin regenerar) ----
+  searchFoods: (clientId: number, q: string) =>
+    request<FoodSearchResult[]>("GET", `/clients/${clientId}/foods/search?q=${encodeURIComponent(q)}`),
+  swapFood: (clientId: number, planId: number, body: {
+    slot: number; option_index: number; old_food_id: number; new_food_id: number;
+  }) =>
+    request<FoodSwapResult>("POST", `/clients/${clientId}/plans/${planId}/foods/swap`, body),
   // ---- Etapa del objetivo (45 días) + alertas del coach ----
   goalReviewAnalysis: (clientId: number) =>
     request<{ text: string; options: string[] }>("POST", `/clients/${clientId}/goal-review/analysis`),
