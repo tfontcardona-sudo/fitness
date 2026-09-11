@@ -4,7 +4,8 @@ import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 // estático viajaba al abrir cualquier ficha, se mirara el Resumen o no.
 const GraficaPesoCoach = lazy(() => import("./GraficaPesoCoach"));
 import { api } from "../lib/api";
-import type { ClientOut } from "../types";
+import type { ClientOut, GoalProgress } from "../types";
+import { CheckCircle2, CircleAlert, HelpCircle } from "lucide-react";
 import { EmptyState } from "./ui";
 import { formatDate } from "../lib/format";
 import { isCriticalLine, isRelevantClinical } from "../lib/clinical";
@@ -20,9 +21,17 @@ import { acentoDeMarca } from "../lib/marca";
  */
 export function ClientSummaryTab({ client }: { client: ClientOut }) {
   const [history, setHistory] = useState<Awaited<ReturnType<typeof api.getClientHistory>> | null>(null);
+  // ¿Va bien hacia su objetivo? `undefined` = cargando, `null` = sin
+  // revisión cerrada todavía (no es un error: es pronto para saberlo).
+  const [progress, setProgress] = useState<GoalProgress | null | undefined>(undefined);
 
   useEffect(() => {
     api.getClientHistory(client.id).then(setHistory).catch(() => setHistory(null));
+  }, [client.id]);
+
+  useEffect(() => {
+    setProgress(undefined);
+    api.getGoalProgress(client.id).then(setProgress).catch(() => setProgress(null));
   }, [client.id]);
 
   // Peso actual real: del historial (último cierre/registro), no del campo fijo.
@@ -66,6 +75,11 @@ export function ClientSummaryTab({ client }: { client: ClientOut }) {
         />
       </div>
 
+      {/* ¿Va bien hacia su objetivo? Determinista (misma decisión que la
+          revisión quincenal): lo primero que interpreta las cifras de arriba,
+          antes de la gráfica. */}
+      <GoalProgressCard progress={progress} />
+
       {/* Gráfica de peso */}
       <div className="card p-5">
         <div className="mb-4 flex items-center justify-between">
@@ -92,6 +106,43 @@ export function ClientSummaryTab({ client }: { client: ClientOut }) {
       {/* Notas clínicas: SOLO lo relevante (los "no/ninguna" fuera), por
           secciones separadas y con el color de cada área. */}
       <ClinicalNotesCard client={client} />
+    </div>
+  );
+}
+
+/** "¿Va bien hacia su objetivo?" — verdict card. `undefined` = cargando,
+ *  `null` = aún sin ninguna revisión cerrada (no es un error). */
+function GoalProgressCard({ progress }: { progress: GoalProgress | null | undefined }) {
+  if (progress === undefined) return null;
+  if (progress === null) {
+    return (
+      <div className="card flex items-center gap-2.5 p-4 text-sm text-zinc-500">
+        <HelpCircle size={17} className="shrink-0" />
+        Aún sin revisión cerrada: en cuanto complete su primera quincena, aquí
+        se dirá si va bien hacia su objetivo.
+      </div>
+    );
+  }
+  const cfg = {
+    on_track: { Icon: CheckCircle2, color: "#2E7D46", bg: "rgba(46,125,70,0.08)" },
+    needs_attention: { Icon: CircleAlert, color: "#B3261E", bg: "rgba(179,38,30,0.08)" },
+    insufficient_data: { Icon: HelpCircle, color: "#9A6B15", bg: "rgba(154,107,21,0.08)" },
+  }[progress.status];
+  const puntos = progress.status === "on_track" ? progress.strengths : progress.evidence;
+  return (
+    <div className="card p-4" style={{ background: cfg.bg, borderColor: `${cfg.color}33` }}>
+      <div className="flex items-start gap-2.5">
+        <cfg.Icon size={18} className="mt-0.5 shrink-0" style={{ color: cfg.color }} />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold" style={{ color: cfg.color }}>{progress.headline}</p>
+          {puntos.length > 0 && (
+            <ul className="mt-1.5 space-y-0.5 text-sm text-zinc-300">
+              {puntos.map((p, i) => <li key={i}>· {p}</li>)}
+            </ul>
+          )}
+          <p className="mt-1.5 text-xs text-zinc-500">Según su revisión #{progress.period_index}</p>
+        </div>
+      </div>
     </div>
   );
 }

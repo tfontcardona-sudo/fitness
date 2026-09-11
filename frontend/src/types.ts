@@ -888,6 +888,17 @@ export interface PortalProgress {
   };
 }
 
+// ¿Va bien hacia su objetivo? (GET /clients/{id}/goal-progress) — determinista,
+// misma decisión que el motor quincenal. `null` sin ninguna revisión cerrada.
+export interface GoalProgress {
+  status: "on_track" | "needs_attention" | "insufficient_data";
+  headline: string;
+  evidence: string[];
+  strengths: string[];
+  period_index: number;
+  rule: string;
+}
+
 // Alerta del centro de notificaciones del coach (GET /api/alerts)
 export interface CoachAlert {
   client_id: number;

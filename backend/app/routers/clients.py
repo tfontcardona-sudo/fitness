@@ -1922,6 +1922,17 @@ def client_history(client_id: int, db: Session = Depends(get_db)) -> dict:
     }
 
 
+@router.get("/{client_id}/goal-progress")
+def client_goal_progress(client_id: int, db: Session = Depends(get_db)) -> dict | None:
+    """¿Va bien hacia SU objetivo? Determinista, sobre la última revisión
+    cerrada (misma decisión que el motor quincenal, ver `services.goal_progress`).
+    `null` si el cliente aún no tiene ninguna revisión cerrada."""
+    from app.services.goal_progress import evaluate_goal_progress
+
+    client = _client_or_404_docs(db, client_id)
+    return evaluate_goal_progress(db, client)
+
+
 @router.get("/{client_id}/photos")
 def list_client_photos(client_id: int, db: Session = Depends(get_db)) -> list[dict]:
     """Fotos de progreso del cliente (las que sube en el portal al cerrar)."""

@@ -73,6 +73,7 @@ import type {
   ClientOut,
   ClientStatus,
   ExerciseOut,
+  GoalProgress,
   LandingOut,
   MeOut,
   PaymentOut,
@@ -475,6 +476,8 @@ export const api = {
       }[];
       plans: { id: number; month_index: number; version: number; status: string }[];
     }>("GET", `/clients/${clientId}/history`),
+  getGoalProgress: (clientId: number) =>
+    request<GoalProgress | null>("GET", `/clients/${clientId}/goal-progress`),
   getClientTracking: (clientId: number) =>
     request<{
       has_period: boolean;
