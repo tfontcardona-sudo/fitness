@@ -125,7 +125,7 @@ _ANCLA_DE_PESTANA: dict[str, str] = {
 
 def _alert(client: Client, kind: str, severity: str, message: str, tab: str,
            action: str, *, target: str | None = None, fix: str | None = None,
-           to: str | None = None) -> dict:
+           to: str | None = None, since: date | None = None) -> dict:
     """Un aviso. Además del texto lleva a DÓNDE se arregla (`target`, el ancla
     que la web marca al llegar) y CÓMO (`fix`, la nota pegada a la marca).
 
@@ -133,6 +133,14 @@ def _alert(client: Client, kind: str, severity: str, message: str, tab: str,
     por esa clave y los borra solos cuando deja de aparecer entre los avisos
     vivos. `to` es un destino FUERA de la ficha (p. ej. /recursos), para los
     pocos avisos que se arreglan en otra pantalla.
+
+    `since`: desde CUÁNDO lleva pendiente este aviso concreto (no cuándo se
+    calculó — eso es siempre "ahora"). Es lo que ordena la campana "de menos
+    recientes a más recientes": quien lleva más tiempo esperando sale primero.
+    Se reutiliza SIEMPRE una fecha que el propio chequeo ya tenía en la mano
+    (fin de período, alta del cliente, creación de la petición…), nunca se
+    calcula aparte. `None` cuando el aviso no tiene un "desde cuándo" real
+    (un choque estructural, no una espera) — cae al final del orden por fecha.
     """
     por_defecto = _DESTINO.get(kind)
     if por_defecto:
@@ -150,6 +158,7 @@ def _alert(client: Client, kind: str, severity: str, message: str, tab: str,
         "tab": tab, "action": action,
         "target": target, "fix": fix, "to": to,
         "key": f"{client.id}:{kind}:{target or ''}",
+        "since": since.isoformat() if since else None,
     }
 
 
@@ -173,7 +182,10 @@ def _renewal_alert(client: Client, today: date) -> dict | None:
         msg = (f"Su plan venció hace {-left} días ({ends_on.strftime('%d/%m')}) y sigue "
                "activo: cóbrale la renovación o cierra la asesoría.")
         sev = "alta"
-    return _alert(client, "renewal_due", sev, msg, "resumen", "Renovar plan")
+    # Pendiente desde que se abrió la ventana de aviso (antes o después del
+    # vencimiento, el "desde cuándo" es el mismo día para las dos ramas).
+    since = ends_on - timedelta(days=RENEWAL_WARN_DAYS)
+    return _alert(client, "renewal_due", sev, msg, "resumen", "Renovar plan", since=since)
 
 
 # Columnas de Plan que miran las alertas. Traer el plan ENTERO arrastra el
@@ -405,8 +417,11 @@ def _alerta_peticion(db: Session, client: Client, datos: "_AlVuelo") -> dict | N
     if len(extracto) > 140:
         extracto = extracto[:137] + "…"
     prefix = f"{len(abiertas)} peticiones · última: " if len(abiertas) > 1 else ""
+    # `abiertas` viene de más reciente a más antigua (peticiones_abiertas): el
+    # "desde cuándo" es la MÁS ANTIGUA sin responder, no la que se muestra.
+    since = abiertas[-1].created_at.date()
     return _alert(client, "change_request", "alta", f"{prefix}«{extracto}»",
-                  "seguimiento", "Ver petición")
+                  "seguimiento", "Ver petición", since=since)
 
 
 def client_alerts(db: Session, client: Client, today: date | None = None,
@@ -441,9 +456,28 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
         # Antes se devolvía [] y el cliente inactivo desaparecía de TODO el
         # radar (auditoría del ciclo): estado sin salida y sin aviso. Una única
         # alerta persistente para decidir: reactivar o archivar de verdad.
+        # El mensaje decía SIEMPRE "30 días" (el umbral que dispara el estado,
+        # no lo que ha pasado desde entonces): un cliente inactivo hace 90 días
+        # se leía exactamente igual que uno de ayer. Mismo criterio que
+        # "sin registros" — última fecha con contenido real de su ÚLTIMO
+        # período, o el alta si nunca llegó a tener uno.
+        inactivos = datos.periodos(db, client)
+        last_inactive_period = inactivos[0] if inactivos else None
+        fechas_inactivo = (datos.dias_con_registro(db, last_inactive_period)
+                          if last_inactive_period else set())
+        since = None
+        if fechas_inactivo:
+            since = max(fechas_inactivo)
+        elif last_inactive_period is not None:
+            since = last_inactive_period.starts_on
+        elif getattr(client, "created_at", None):
+            since = client.created_at.date()
+        else:
+            since = today
+        dias = (today - since).days
         out.append(_alert(client, "client_inactive", "media",
-                          "Inactivo · 30 días sin actividad",
-                          "resumen", "Revisar cliente"))
+                          f"Inactivo · {dias} días sin actividad",
+                          "resumen", "Revisar cliente", since=since))
         return out
 
     # --- Pago pendiente ------------------------------------------------------
@@ -453,7 +487,8 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
         out.append(_alert(client, "payment_pending", "media",
                           "Pago pendiente: cobra su plan (o márcalo como pagado "
                           "si te pagó por otra vía).",
-                          "resumen", "Revisar pago"))
+                          "resumen", "Revisar pago",
+                          since=client.created_at.date() if getattr(client, "created_at", None) else None))
 
     # --- Renovación a la vista (pago único, sin suscripción) -----------------
     # Los planes de 1/3/6 meses se cobran de una vez: al acabar la duración no
@@ -477,7 +512,8 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
         if latest is not None:  # borrador ANTIGUO sin activar (legado)
             out.append(_alert(client, "publish_plan", "alta",
                               f"Borrador v{latest.version} sin activar: revísalo y actívalo.",
-                              "planificacion", "Activar planificación"))
+                              "planificacion", "Activar planificación",
+                              since=latest.created_at.date()))
         else:
             # La llegada de la anamnesis era un evento invisible (auditoría del
             # ciclo): el mensaje decía lo mismo antes y después de que el
@@ -494,9 +530,15 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
             if has_doc or por_formulario:
                 extra = "" if client.goal_type else " · ⚠ IA incompleta, revisa a mano"
                 origen = " (formulario del portal)" if (por_formulario and not has_doc) else ""
+                # `consent_signed_at` es el momento REAL de la recepción por
+                # formulario; sin él (llegó por PDF), el alta del cliente es
+                # la mejor aproximación disponible sin consultar el storage.
+                recibida = getattr(client, "consent_signed_at", None)
+                since = (recibida.date() if recibida
+                        else (client.created_at.date() if getattr(client, "created_at", None) else None))
                 out.append(_alert(client, "create_plan", "alta",
                                   f"Anamnesis recibida{origen}{extra}",
-                                  "anamnesis", "Revisar anamnesis"))
+                                  "anamnesis", "Revisar anamnesis", since=since))
             else:
                 days_wait = ((today - client.created_at.date()).days
                              if getattr(client, "created_at", None) else 0)
@@ -508,7 +550,8 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
                                   "anamnesis", "Reclamar la anamnesis",
                                   target="anamnesis.enviar",
                                   fix="Reenvíale el cuestionario por WhatsApp o "
-                                      "sube tú su PDF si te lo pasó por otra vía."))
+                                      "sube tú su PDF si te lo pasó por otra vía.",
+                                  since=client.created_at.date() if getattr(client, "created_at", None) else None))
         return out  # sin plan publicado, el resto del ciclo no aplica
 
     # --- Revisión quincenal recibida sin feedback ---------------------------
@@ -518,7 +561,7 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
         # Seguimiento, donde esa acción no existe (auditoría de calidad).
         out.append(_alert(client, "generate_feedback", "alta",
                           f"Revisión #{last_period.period_index} recibida",
-                          "feedback", "Generar feedback"))
+                          "feedback", "Generar feedback", since=last_period.ends_on))
 
     # --- Feedback generado pero sin enviar / plan sin adaptar ---------------
     # ANCLADO al último período ANALIZADO, no al último absoluto: enviar el
@@ -531,7 +574,7 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
         if fb is not None and fb.sent_at is None:
             out.append(_alert(client, "send_feedback", "alta",
                               f"Feedback de la revisión #{last_analyzed.period_index} sin enviar al cliente.",
-                              "feedback", "Enviar por WhatsApp"))
+                              "feedback", "Enviar por WhatsApp", since=last_analyzed.ends_on))
 
         def _adapted_idx(p: Plan | None) -> int | None:
             if p is None:
@@ -552,20 +595,24 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
                 out.append(_alert(client, "publish_plan", "media",
                                   f"Borrador v{latest.version} en preparación: "
                                   "termínalo y actívalo.",
-                                  "planificacion", "Activar planificación"))
+                                  "planificacion", "Activar planificación",
+                                  since=last_analyzed.ends_on))
             else:
                 out.append(_alert(client, "adapt_plan", "alta",
                                   f"Planificación sin adaptar a la revisión #{last_analyzed.period_index}.",
-                                  "planificacion", "Adaptar planificación"))
+                                  "planificacion", "Adaptar planificación",
+                                  since=last_analyzed.ends_on))
         elif latest is not None and latest.status == "draft":
             out.append(_alert(client, "publish_plan", "alta",
                               f"Borrador adaptado a la revisión #{last_analyzed.period_index} sin activar.",
-                              "planificacion", "Activar planificación"))
+                              "planificacion", "Activar planificación",
+                              since=latest.created_at.date()))
     if last_analyzed is None and latest is not None and latest.status == "draft":
         # Borrador antiguo suelto (legado): los planes nuevos se activan solos
         out.append(_alert(client, "publish_plan", "media",
                           f"Borrador v{latest.version} sin activar.",
-                          "planificacion", "Activar planificación"))
+                          "planificacion", "Activar planificación",
+                          since=latest.created_at.date()))
 
     # --- Cliente sin registros varios días (período abierto) ----------------
     if last_period is not None and last_period.status == "open":
@@ -582,7 +629,7 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
         if gap >= NO_LOGS_DAYS and days_in >= NO_LOGS_DAYS:
             out.append(_alert(client, "no_logs", "media",
                               f"Sin registros del cliente desde hace {gap} días.",
-                              "seguimiento", "Ver seguimiento"))
+                              "seguimiento", "Ver seguimiento", since=since))
         else:
             # Dos avisos distintos para dos huecos distintos, y el de dieta solo
             # aplica a quien tiene nutrición contratada. El de PESAJES no: al
@@ -617,7 +664,7 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
                         client, "no_diet_logs", "media",
                         f"Registra entrenos pero no su dieta: {que_falta}. "
                         "Sin pesajes, la revisión no podrá ajustar las calorías.",
-                        "seguimiento", "Ver seguimiento"))
+                        "seguimiento", "Ver seguimiento", since=desde_dieta))
                     aviso_de_dieta = True
 
                 # Y SI SÍ REGISTRA SU DIETA PERO NO SE PESA (el otro punto
@@ -647,7 +694,7 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
                         client, "sin_pesajes", "media",
                         f"Registra a diario pero {como}: sin pesos no hay con "
                         f"qué medir su progreso al cerrar (quedan {quedan} días).",
-                        "seguimiento", "Pedirle que se pese"))
+                        "seguimiento", "Pedirle que se pese", since=last_period.starts_on))
 
         # --- Período vencido sin cerrar: el cliente registra pero no envía ---
         overdue = (today - last_period.ends_on).days
@@ -656,7 +703,7 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
                 client, "period_overdue", "alta" if overdue >= 5 else "media",
                 f"Su revisión quincenal venció hace {overdue} días y no la ha "
                 "enviado: recuérdaselo por WhatsApp.",
-                "feedback", "Cerrar la revisión"))
+                "feedback", "Cerrar la revisión", since=last_period.ends_on))
 
     # --- Suplementos del plan SIN producto en Recursos ----------------------
     # El portal del cliente destaca los productos de SU planificación (con el
@@ -711,7 +758,7 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
                     client, "video_call_wait", "media",
                     f"Revisión #{last_review.period_index} · esperando su propuesta "
                     f"de {cita_marca}",
-                    "feedback", f"Agendar {cita_marca}"))
+                    "feedback", f"Agendar {cita_marca}", since=last_review.ends_on))
 
     # TODAS las videollamadas vivas — de cualquier revisión y aunque el cliente
     # ya no sea Pro: una propuesta sin responder o una llamada agendada no puede
@@ -732,7 +779,8 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
                 fix=("Acéptala y se le confirma con el día y la dirección, "
                      if presencial else
                      "Acéptala y se crea el Meet con invitación, ")
-                    + "o modifícala para acordar otra hora por WhatsApp."))
+                    + "o modifícala para acordar otra hora por WhatsApp.",
+                since=vc.updated_at.date()))
         elif vc.status == "pending_manual":
             out.append(_alert(
                 client, "video_call_manual", "alta",
@@ -741,7 +789,8 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
                 target=f"feedback.videollamada.{vc.id}",
                 fix="Escribe el día y la hora acordados"
                     + (" y se le confirma la visita." if presencial
-                       else " y se crea el Meet.")))
+                       else " y se crea el Meet."),
+                since=vc.updated_at.date()))
         elif vc.status == "scheduled" and vc.scheduled_for is not None:
             if vc.scheduled_for == today + timedelta(days=1):
                 out.append(_alert(
@@ -768,7 +817,8 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
         old = _GOAL_LABEL.get(published.goal_type, published.goal_type)
         out.append(_alert(client, "regenerate_goal", "alta",
                           f"El objetivo es «{cur}» pero el plan activo sigue en «{old}»: regenéralo.",
-                          "planificacion", "Regenerar planificación"))
+                          "planificacion", "Regenerar planificación",
+                          since=published.created_at.date()))
 
     # --- Alergia/aversión añadida DESPUÉS de generar: el plan activo puede ---
     # seguir sirviendo el alérgeno en el portal y el PDF (auditoría de
@@ -863,7 +913,8 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
             out.append(_alert(
                 client, "plan_stale_inputs", "media",
                 "Ficha cambiada tras generar: " + ", ".join(diffs[:4]),
-                "planificacion", "Regenerar o adaptar"))
+                "planificacion", "Regenerar o adaptar",
+                since=published.created_at.date()))
 
     # --- 45 días en la misma etapa de objetivo ------------------------------
     if client.goal_started_on is not None:
@@ -874,7 +925,8 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
             goal = _GOAL_LABEL.get(client.goal_type or "", client.goal_type or "—")
             out.append(_alert(client, "goal_review", "media",
                               f"Lleva {days_goal} días con el objetivo de {goal}: valora si toca cambiarlo.",
-                              "planificacion", "Valorar objetivo"))
+                              "planificacion", "Valorar objetivo",
+                              since=client.goal_started_on + timedelta(days=GOAL_REVIEW_DAYS)))
 
     return out
 
@@ -939,6 +991,10 @@ def list_alerts(db: Session = Depends(get_db)) -> dict:
                 # el motivo completo. Sin `to`, la campana construía
                 # /clientes/0 y aterrizaba en "no se pudo cargar el cliente".
                 "to": "/", "key": "sistema:jobs_parados",
+                # Un fallo de sistema es siempre lo más urgente: `since` al
+                # mínimo para que el orden por antigüedad lo deje SIEMPRE
+                # primero, no dentro de su fecha real de inicio (irrelevante).
+                "since": date.min.isoformat(),
             })
     except Exception:  # noqa: BLE001 — el chequeo no puede tumbar las alertas
         pass
@@ -961,6 +1017,7 @@ def list_alerts(db: Session = Depends(get_db)) -> dict:
                 "fix": "Recarga en la consola de Anthropic y confirma el importe "
                        "aquí: el saldo se pone al día solo.",
                 "to": "/creditos", "key": "sistema:sin_creditos",
+                "since": date.min.isoformat(),
             })
     except Exception:  # noqa: BLE001 — el chequeo no puede tumbar las alertas
         pass
@@ -995,11 +1052,28 @@ def list_alerts(db: Session = Depends(get_db)) -> dict:
                 "target": None,
                 "fix": "Escríbeles por WhatsApp y créales la ficha desde Clientes → Nuevo cliente.",
                 "to": "/clientes", "key": f"sistema:signups_frenados:{hoy.isoformat()}",
+                "since": date.min.isoformat(),
             })
     except Exception:  # noqa: BLE001 — el aviso nunca tumba las alertas
         pass
 
-    alerts.sort(key=lambda a: (0 if a["severity"] == "alta" else 1, a["client_name"]))
+    # Orden por defecto: "de menos recientes a más recientes" — quien lleva más
+    # tiempo pendiente sale PRIMERO. `since` es la fecha en que el problema
+    # empezó a existir (no cuándo se calculó esta alerta, que es siempre hoy).
+    # Un aviso sin `since` conocido (un choque estructural, no una espera) cae
+    # al final de ese orden; la severidad y el nombre son solo el desempate.
+    def _antiguedad(a: dict) -> date:
+        s = a.get("since")
+        if s:
+            try:
+                return date.fromisoformat(s)
+            except ValueError:
+                pass
+        return date.max
+
+    alerts.sort(key=lambda a: (
+        _antiguedad(a), 0 if a["severity"] == "alta" else 1, a["client_name"],
+    ))
     return {"alerts": alerts, "count": len(alerts),
             "high": sum(1 for a in alerts if a["severity"] == "alta")}
 

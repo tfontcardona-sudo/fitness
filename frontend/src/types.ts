@@ -937,6 +937,10 @@ export interface CoachAlert {
   fix?: string | null;
   /** Destino fuera de la ficha del cliente (p. ej. "/recursos?tab=productos"). */
   to?: string | null;
+  /** Desde CUÁNDO lleva pendiente (fecha ISO), no cuándo se calculó — eso es
+   *  siempre "ahora". Ordena la campana "de menos recientes a más recientes".
+   *  `null` cuando el aviso es un choque estructural, no una espera. */
+  since?: string | null;
 }
 
 /** Ronda diaria de seguimiento por WhatsApp (pool de 100 mensajes). */

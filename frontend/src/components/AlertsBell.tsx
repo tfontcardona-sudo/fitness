@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Bell, Check, Smartphone } from "lucide-react";
+import { Bell, Check, Maximize2, Minimize2, Smartphone } from "lucide-react";
 import { api } from "../lib/api";
 import { useAlertas } from "../lib/alertasCompartidas";
 import {
@@ -11,12 +11,12 @@ import {
   resyncCoachPushIfGranted,
 } from "../lib/coachPush";
 import { hrefCliente } from "../lib/anchors";
-import { colorLegible, pielDe } from "../lib/marca";
-import { useBrand } from "../hooks/useBrand";
 import { pin, pinId, syncScope } from "../lib/pins";
 import { useDismiss } from "../lib/useDismiss";
 import { useToast } from "./ui";
 import type { CoachAlert } from "../types";
+
+const EXPANDED_KEY = "dq_alerts_expanded";
 
 /**
  * Campana de ALERTAS del coach — preventiva e inteligente. Las alertas se
@@ -26,12 +26,20 @@ import type { CoachAlert } from "../types";
 export function AlertsBell() {
   const navigate = useNavigate();
   const location = useLocation();
-  // La piel activa, para que los rótulos de categoría se lean en las dos.
-  const piel = pielDe(useBrand().brand?.skin);
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   useDismiss(panelRef, () => setOpen(false), open);
+
+  // "Ver con más claridad todas": el centro de notificaciones se puede
+  // ampliar. Se recuerda entre sesiones (el coach lo abre a diario) — igual
+  // que `MemoDetails` recuerda sus desplegables.
+  const [expanded, setExpanded] = useState<boolean>(() => {
+    try { return localStorage.getItem(EXPANDED_KEY) === "1"; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(EXPANDED_KEY, expanded ? "1" : "0"); } catch { /* almacenamiento bloqueado */ }
+  }, [expanded]);
 
   // Push al MÓVIL del coach: estado local del interruptor + resuscripción
   // silenciosa al abrir la web (si el permiso ya estaba concedido).
@@ -86,6 +94,14 @@ export function AlertsBell() {
 
   const count = alerts?.length ?? 0;
   const high = alerts?.filter((a) => a.severity === "alta").length ?? 0;
+  // El backend ya entrega la lista ordenada "de menos recientes a más
+  // recientes" (quien lleva más tiempo pendiente, primero). Agrupar por
+  // cliente CONSERVANDO ese orden basta para que también los GRUPOS salgan
+  // en ese orden: el primer aviso de cada cliente en la lista ya es el suyo
+  // más antiguo. Los avisos de SISTEMA (client_id 0) llevan `since` al
+  // mínimo posible, así que su grupo sale siempre el primero sin necesitar
+  // un caso aparte.
+  const grupos = agruparPorCliente(alerts ?? []);
 
   // Pulsar un aviso hace DOS cosas: lleva al sitio exacto (y lo marca al
   // llegar, vía ?ir=) y deja un RECORDATORIO de lo que ibas a arreglar, para
@@ -108,6 +124,11 @@ export function AlertsBell() {
       severity: a.severity,
     });
     navigate(destino);
+  }, [navigate]);
+
+  const irAFicha = useCallback((clientId: number) => {
+    setOpen(false);
+    navigate(hrefCliente(clientId, "resumen"));
   }, [navigate]);
 
   async function snooze(a: CoachAlert) {
@@ -142,55 +163,53 @@ export function AlertsBell() {
 
       {open && (
         <div
-          className="card absolute right-0 mt-2 w-[380px] max-w-[calc(100vw-40px)] overflow-hidden max-sm:bottom-14 max-sm:mt-0"
+          className={`card absolute right-0 mt-2 flex max-w-[calc(100vw-40px)] flex-col overflow-hidden max-sm:fixed max-sm:inset-x-3 max-sm:top-14 max-sm:bottom-14 max-sm:mt-0 max-sm:w-auto max-sm:max-w-none ${
+            expanded ? "w-[640px]" : "w-[380px]"
+          }`}
           role="dialog"
           aria-label="Alertas del coach"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: "var(--line)" }}>
+          <div className="flex shrink-0 items-center justify-between border-b px-4 py-3" style={{ borderColor: "var(--line)" }}>
             <span className="text-sm font-semibold text-zinc-100">Alertas</span>
-            {count > 0 && (
-              <span className="text-xs text-zinc-500">
-                {count} pendiente{count === 1 ? "" : "s"}
-              </span>
-            )}
+            <div className="flex items-center gap-3">
+              {count > 0 && (
+                <span className="text-xs text-zinc-500">
+                  {count} pendiente{count === 1 ? "" : "s"}
+                </span>
+              )}
+              <button
+                onClick={() => setExpanded((v) => !v)}
+                aria-label={expanded ? "Ver la campana en tamaño normal" : "Ampliar para ver todas con más claridad"}
+                title={expanded ? "Ver más compacto" : "Ampliar"}
+                className="text-zinc-500 hover:text-zinc-200"
+              >
+                {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              </button>
+            </div>
           </div>
-          <div className="max-h-[60vh] overflow-y-auto">
+          {/* En escritorio la altura es un % del viewport (crece hacia abajo
+              desde la campana). En MÓVIL el panel va encajado entre top-14 y
+              bottom-14 —para que ampliar no empuje la cabecera fuera de la
+              pantalla, sin cabecera no hay forma de volver a lo compacto—,
+              así que ahí la altura la da flex-1 (lo que sobre entre cabecera
+              y pie), no un % fijo. */}
+          <div className={`overflow-y-auto max-sm:max-h-none max-sm:flex-1 ${expanded ? "sm:max-h-[78vh]" : "sm:max-h-[60vh]"}`}>
             {count === 0 ? (
               <div className="flex items-center justify-center gap-2 px-4 py-8 text-sm text-zinc-500">
                 <Check size={16} style={{ color: "var(--brand-accent)" }} /> Todo al día
               </div>
             ) : (
-              // AGRUPADAS por ámbito: primero el total (cabecera) y aquí cada
-              // clase de alerta con su color, para escanearlas de un vistazo.
-              GROUPS.map((g) => {
-                const known = new Set(GROUPS.flatMap((x) => x.kinds));
-                const items = (alerts ?? []).filter((a) =>
-                  g.id === "otras" ? !known.has(a.kind) : g.kinds.includes(a.kind));
-                if (!items.length) return null;
-                return (
-                  <div key={g.id}>
-                    <div className="flex items-center gap-2 px-4 pb-1 pt-2.5"
-                      style={{ background: `color-mix(in srgb, ${g.color} 6%, transparent)` }}>
-                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: g.color }} />
-                      {/* El color de CATEGORÍA es el mismo en las dos marcas
-                          (es un significado, no una identidad), pero está
-                          afinado para leerse sobre crema: sobre negro, el
-                          ámbar y el rojo se quedaban por debajo de AA. */}
-                      <span className="text-[11px] font-bold uppercase tracking-wide"
-                        style={{ color: colorLegible(g.color, piel) }}>
-                        {g.label}
-                      </span>
-                      <span className="text-[11px] text-zinc-500">{items.length}</span>
-                    </div>
-                    {items.map((a, i) => renderAlert(a, i))}
-                  </div>
-                );
-              })
+              // AGRUPADAS POR CLIENTE: cada uno con sus avisos pendientes
+              // juntos, en el orden real de antigüedad (backend). Antes se
+              // agrupaba por ÁMBITO (nutrición, pagos…) y un mismo cliente con
+              // tres problemas distintos aparecía en tres sitios separados de
+              // la lista, sin verse que era el mismo caso.
+              grupos.map((g) => renderGrupo(g))
             )}
           </div>
           {/* Interruptor: recibir todo esto también en el MÓVIL (push cada 3 h) */}
-          <div className="flex items-center justify-between gap-2 border-t px-4 py-2.5"
+          <div className="flex shrink-0 items-center justify-between gap-2 border-t px-4 py-2.5"
             style={{ borderColor: "var(--line)" }}>
             <span className="flex items-center gap-1.5 text-xs text-zinc-400">
               <Smartphone size={13} /> Avisos en el móvil
@@ -209,65 +228,114 @@ export function AlertsBell() {
     </div>
   );
 
+  function renderGrupo(g: GrupoDeCliente) {
+    const esSistema = g.clientId === 0;
+    const peor = g.items.some((a) => a.severity === "alta") ? "alta" : "media";
+    const antiguedad = hace(g.items[0]?.since);
+    return (
+      <div key={g.clientId}>
+        <div
+          className="flex items-center gap-2 px-4 pb-1 pt-2.5"
+          style={{ background: `color-mix(in srgb, ${peor === "alta" ? "#C2453A" : "var(--brand-accent-2)"} 6%, transparent)` }}
+        >
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: peor === "alta" ? "#C2453A" : "var(--brand-accent-2)" }} />
+          {/* Nombres largos SALTAN de línea (min-w-0 en el flex item) en vez de
+              recortarse: un botón con el texto cortado es justo lo que
+              check:botones vigila que no vuelva a pasar. */}
+          {esSistema ? (
+            <span className="min-w-0 text-[11px] font-bold uppercase tracking-wide text-zinc-400">{g.clientName}</span>
+          ) : (
+            <button
+              onClick={() => irAFicha(g.clientId)}
+              className="min-w-0 text-left text-[11px] font-bold uppercase tracking-wide text-zinc-200 hover:opacity-80"
+            >
+              {g.clientName}
+            </button>
+          )}
+          {g.items.length > 1 && <span className="shrink-0 text-[11px] text-zinc-500">{g.items.length}</span>}
+          {antiguedad && <span className="ml-auto shrink-0 text-[10px] text-zinc-500">{antiguedad}</span>}
+        </div>
+        {g.items.map((a, i) => renderAlert(a, i))}
+      </div>
+    );
+  }
+
   function renderAlert(a: CoachAlert, i: number) {
     return (
-                <div
-                  key={`${a.client_id}-${a.kind}-${i}`}
-                  className="flex items-start gap-2.5 border-b px-4 py-3 last:border-b-0"
-                  style={{ borderColor: "var(--line)" }}
-                >
-                  <span
-                    aria-hidden
-                    className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
-                    style={{ background: a.severity === "alta" ? "#C2453A" : "var(--brand-accent-2)" }}
-                  />
-                  <div className="min-w-0 flex-1">
-                    {/* Nombre + mensaje clicables: llevan a la misma pestaña
-                        donde hay que actuar que el botón de acción. */}
-                    <button onClick={() => go(a)} className="group block w-full text-left">
-                      <span className="block text-sm font-medium text-zinc-100 group-hover:opacity-80">{a.client_name}</span>
-                      <span className="mt-0.5 block text-xs text-zinc-400 group-hover:text-zinc-300">{a.message}</span>
-                    </button>
-                    <div className="mt-1.5 flex flex-wrap gap-2">
-                      <button
-                        onClick={() => go(a)}
-                        className="text-xs font-semibold hover:opacity-80"
-                        style={{ color: "var(--brand-accent)" }}
-                      >
-                        {a.action} →
-                      </button>
-                      {a.kind === "goal_review" && (
-                        <button onClick={() => snooze(a)} className="text-xs text-zinc-500 hover:text-zinc-200">
-                          Mantener objetivo
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
+      <div
+        key={`${a.client_id}-${a.kind}-${i}`}
+        className="flex items-start gap-2.5 border-b px-4 py-3 last:border-b-0"
+        style={{ borderColor: "var(--line)" }}
+      >
+        {/* Hueco invisible del tamaño del punto de color: alinea el texto
+            bajo el de la cabecera del grupo (que sí lo lleva), en vez de
+            colarse más a la izquierda. */}
+        <span aria-hidden className="mt-1.5 h-2 w-2 shrink-0 rounded-full opacity-0" />
+        <div className="min-w-0 flex-1">
+          {/* El mensaje lleva a la misma pestaña donde hay que actuar que el
+              botón de acción: el nombre ya lo dice la cabecera del grupo. */}
+          <button onClick={() => go(a)} className="group block w-full text-left">
+            <span className="block text-xs text-zinc-400 group-hover:text-zinc-200">{a.message}</span>
+          </button>
+          <div className="mt-1.5 flex flex-wrap gap-2">
+            <button
+              onClick={() => go(a)}
+              className="text-xs font-semibold hover:opacity-80"
+              style={{ color: "var(--brand-accent)" }}
+            >
+              {a.action} →
+            </button>
+            {a.kind === "goal_review" && (
+              <button onClick={() => snooze(a)} className="text-xs text-zinc-500 hover:text-zinc-200">
+                Mantener objetivo
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
     );
   }
 }
 
-/** Clases de alerta (ámbitos) para agruparlas en la campana, cada una con su
- *  color. Un kind no listado cae en "Otras". */
-const GROUPS: { id: string; label: string; color: string; kinds: string[] }[] = [
-  { id: "arranque", label: "Arranque / alta", color: "#6366F1", kinds: ["create_plan", "publish_plan"] },
-  { id: "revision", label: "Revisión quincenal", color: "#8B5CF6", kinds: ["generate_feedback", "send_feedback", "period_overdue"] },
-  // Ocho hues de CATEGORÍA. Dos de ellos eran, letra por letra, los dos
-  // colores de DQ (#E8833A y #2E5E8C): en el panel del otro negocio salía su
-  // naranja y su azul dentro de una campana dorada y negra. Se mueven a un
-  // tono vecino que sigue leyéndose igual de bien y ya no es la marca de
-  // nadie. (`colorLegible` los sube sobre fondo oscuro.)
-  { id: "adaptacion", label: "Planificación", color: "#B4652E",
-    kinds: ["adapt_plan", "regenerate_goal", "plan_allergen_conflict",
-            "plan_dislike_conflict", "plan_stale_inputs"] },
-  { id: "seguimiento", label: "Seguimiento", color: "#C2453A",
-    kinds: ["no_logs", "change_request", "client_inactive"] },
-  { id: "pago", label: "Pagos", color: "#9A6B15", kinds: ["payment_pending", "renewal_due"] },
-  { id: "objetivo", label: "Objetivo", color: "#3D6E9E", kinds: ["goal_review"] },
-  { id: "recursos", label: "Recursos / productos", color: "#28707C", kinds: ["missing_products"] },
-  { id: "videollamada", label: "Videollamada", color: "#0EA5E9",
-    kinds: ["video_call_wait", "video_call_proposed", "video_call_manual",
-            "video_call_tomorrow", "video_call_confirm"] },
-  { id: "otras", label: "Otras", color: "#7A7A7A", kinds: [] },
-];
+interface GrupoDeCliente {
+  clientId: number;
+  clientName: string;
+  items: CoachAlert[];
+}
+
+/** Agrupa la lista PLANA (ya ordenada por el backend, `since` ascendente) por
+ *  cliente, conservando el orden de PRIMERA aparición: como esa lista ya sale
+ *  "de menos recientes a más recientes", el primer aviso de cada cliente ya es
+ *  el más antiguo suyo — agrupar así basta para que los GRUPOS salgan en ese
+ *  mismo orden, sin recalcular nada. */
+function agruparPorCliente(alerts: CoachAlert[]): GrupoDeCliente[] {
+  const porId = new Map<number, GrupoDeCliente>();
+  const orden: number[] = [];
+  for (const a of alerts) {
+    let g = porId.get(a.client_id);
+    if (!g) {
+      g = { clientId: a.client_id, clientName: a.client_id === 0 ? "Sistema" : a.client_name, items: [] };
+      porId.set(a.client_id, g);
+      orden.push(a.client_id);
+    }
+    g.items.push(a);
+  }
+  return orden.map((id) => porId.get(id)!);
+}
+
+// El backend sella los avisos de SISTEMA con `date.min` (año 1) para que
+// salgan SIEMPRE primero, sin ser una fecha real que mostrar — enseñarla tal
+// cual daría "hace 739.870 días". No es una espera: es el mínimo posible.
+const SIN_FECHA_REAL = "0001-01-01";
+
+/** "hace N días", para que el orden de la campana se entienda de un vistazo.
+ *  `null` si el aviso no tiene un "desde cuándo" real (un choque estructural,
+ *  o un centinela de sistema) — no se inventa una edad que no existe. */
+function hace(since: string | null | undefined): string | null {
+  if (!since || since === SIN_FECHA_REAL) return null;
+  const dias = Math.floor((Date.now() - new Date(`${since}T00:00:00`).getTime()) / 86_400_000);
+  if (Number.isNaN(dias)) return null;
+  if (dias <= 0) return "hoy";
+  if (dias === 1) return "hace 1 día";
+  return `hace ${dias} días`;
+}
