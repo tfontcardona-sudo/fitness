@@ -340,6 +340,10 @@ export interface ClientOut {
   pending_review_period?: number | null;
   has_published_plan?: boolean;
   review_period_index?: number | null;
+  /** Última vez que pasó algo con este cliente: su interacción (registró
+   *  algo, escribió una petición) o trabajo del coach (plan, ficha). Solo lo
+   *  rellena `GET /clients` (el listado). */
+  last_touch_at?: string | null;
 }
 
 export interface ExerciseOut {

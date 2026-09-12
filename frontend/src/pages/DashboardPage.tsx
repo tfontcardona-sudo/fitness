@@ -134,6 +134,25 @@ function agendaDayTag(iso: string): "Hoy" | "Mañana" | null {
 const agendaHora = (iso: string) =>
   new Date(iso).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
 
+/** Agrupa las acciones de "Qué toca hacer" por cliente, conservando el orden
+ *  de aparición: como `urgentes` ya viene ordenado por prioridad, el primer
+ *  hueco de cada cliente en la lista ya es el suyo más urgente — agrupar así
+ *  basta para que también los GRUPOS salgan en ese mismo orden. */
+function agruparAccionesPorCliente(acciones: Accion[]): { client: ClientOut; items: Accion[] }[] {
+  const porId = new Map<number, { client: ClientOut; items: Accion[] }>();
+  const orden: number[] = [];
+  for (const a of acciones) {
+    let g = porId.get(a.client.id);
+    if (!g) {
+      g = { client: a.client, items: [] };
+      porId.set(a.client.id, g);
+      orden.push(a.client.id);
+    }
+    g.items.push(a);
+  }
+  return orden.map((id) => porId.get(id)!);
+}
+
 export default function DashboardPage() {
   const [clients, setClients] = useState<ClientOut[] | null>(null);
   // Alertas de la fuente COMPARTIDA: un solo temporizador y una sola petición
@@ -390,32 +409,29 @@ export default function DashboardPage() {
             Todo al día
           </div>
         ) : (
-          // AGRUPADO por tipo de acción (como las carpetas de Clientes): cada
-          // grupo con su cabecera, color e icono propios.
+          // AGRUPADO POR CLIENTE: antes se agrupaba por categoría y un mismo
+          // cliente con varios problemas a la vez (petición + revisión + pago)
+          // salía repartido en varios sitios de la página, sin verse que era
+          // el mismo caso — mismo defecto ya corregido en la campana de
+          // alertas. El orden entre y dentro de los grupos es el de siempre
+          // (prioridad): agrupar conservando el orden de aparición basta.
           <div className="space-y-4">
-            {Array.from(new Set(urgentes.map((a) => a.category))).map((cat) => {
-              const items = urgentes.filter((a) => a.category === cat);
-              const { tone, icon: Icon } = items[0];
-              return (
-                <div key={cat}>
-                  <div className="mb-1.5 flex items-center gap-1.5">
-                    <span className="flex h-5 w-5 items-center justify-center rounded-md"
-                      style={{ background: `color-mix(in srgb, ${tone} 14%, transparent)` }}>
-                      <Icon size={12} style={{ color: tone }} />
-                    </span>
-                    <span className="text-xs font-bold uppercase tracking-wide" style={{ color: tone }}>
-                      {cat}
-                    </span>
-                    <span className="text-xs text-zinc-500">{items.length}</span>
-                  </div>
-                  <div className="space-y-2.5">
-                    {items.map((a) => (
-                      <ActionCard key={`${a.client.id}-${a.category}-${a.title}`} a={a} />
-                    ))}
-                  </div>
+            {agruparAccionesPorCliente(urgentes).map((g) => (
+              <div key={g.client.id}>
+                <div className="mb-1.5 flex items-center gap-1.5">
+                  <Avatar name={g.client.full_name} size={20} />
+                  <span className="text-xs font-bold uppercase tracking-wide text-zinc-300">
+                    {g.client.full_name}
+                  </span>
+                  {g.items.length > 1 && <span className="text-xs text-zinc-500">{g.items.length}</span>}
                 </div>
-              );
-            })}
+                <div className="space-y-2.5">
+                  {g.items.map((a) => (
+                    <ActionCard key={`${a.client.id}-${a.category}-${a.title}`} a={a} showName={false} />
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </section>
@@ -535,7 +551,7 @@ export default function DashboardPage() {
   );
 }
 
-function ActionCard({ a, quiet }: { a: Accion; quiet?: boolean }) {
+function ActionCard({ a, quiet, showName = true }: { a: Accion; quiet?: boolean; showName?: boolean }) {
   const Icon = a.icon;
   // Destino: el del aviso (con su ancla, para marcar el sitio al llegar) o,
   // sin aviso, la pestaña de siempre.
@@ -573,8 +589,12 @@ function ActionCard({ a, quiet }: { a: Accion; quiet?: boolean }) {
           >
             {a.category}
           </span>
-          <b>{a.client.full_name}</b>
-          <span className="mx-1.5 text-zinc-600">·</span>
+          {showName && (
+            <>
+              <b>{a.client.full_name}</b>
+              <span className="mx-1.5 text-zinc-600">·</span>
+            </>
+          )}
           {a.title}
         </p>
         {a.detail && <p className="mt-0.5 text-xs text-zinc-500">{a.detail}</p>}

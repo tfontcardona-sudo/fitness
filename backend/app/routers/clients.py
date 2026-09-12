@@ -6,7 +6,7 @@ import json
 import re
 import statistics
 import zipfile
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 from typing import Annotated, List
 
 from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query,
@@ -439,6 +439,32 @@ def list_clients(
             select(Plan.client_id).where(Plan.client_id.in_(ids), Plan.status == "published").distinct()
         ))
 
+    # ÚLTIMA VEZ QUE PASÓ ALGO CON ESTE CLIENTE — interacción SUYA (registró
+    # algo, escribió una petición) O trabajo del COACH (generó/adaptó un
+    # plan, editó su ficha). La cartera lo usa para ordenar "de quien lleva
+    # más tiempo sin tocarse a quien se tocó hoy" — tres consultas AGRUPADAS
+    # más (no una por cliente: mismo criterio anti-N+1 que lo de arriba).
+    ultimo_plan: dict[int, datetime] = {}
+    ultimo_registro: dict[int, date] = {}
+    ultima_peticion: dict[int, datetime] = {}
+    if clients:
+        ultimo_plan = dict(db.execute(
+            select(Plan.client_id, func.max(Plan.created_at))
+            .where(Plan.client_id.in_(ids))
+            .group_by(Plan.client_id)
+        ).all())
+        ultimo_registro = dict(db.execute(
+            select(Period.client_id, func.max(DailyLog.log_date))
+            .join(DailyLog, DailyLog.period_id == Period.id)
+            .where(Period.client_id.in_(ids))
+            .group_by(Period.client_id)
+        ).all())
+        ultima_peticion = dict(db.execute(
+            select(ChangeRequest.client_id, func.max(ChangeRequest.created_at))
+            .where(ChangeRequest.client_id.in_(ids))
+            .group_by(ChangeRequest.client_id)
+        ).all())
+
     # El nombre comercial de lo contratado, según la marca SELLADA en cada
     # ficha. Sin esto la cartera del centro etiquetaba a todos con el nombre
     # corto de DQR ("Full"). `marca_de_cliente` va contra la caché de marcas,
@@ -455,6 +481,18 @@ def list_clients(
         item.review_period_index = reviews.get(c.id)
         item.has_published_plan = c.id in with_plan
         item.plan_label = _pkgs.label(c.package_tier, marca_de_cliente(c, db))
+        # `updated_at` SIEMPRE cuenta (existe en toda fila); los otros tres
+        # solo si ese cliente tiene algo que aportar. El registro diario es
+        # una fecha sin hora — mediodía UTC para no sesgar el empate del
+        # mismo día hacia la ficha (medianoche) ni en contra.
+        candidatos = [c.updated_at]
+        if c.id in ultimo_plan:
+            candidatos.append(ultimo_plan[c.id])
+        if c.id in ultima_peticion:
+            candidatos.append(ultima_peticion[c.id])
+        if c.id in ultimo_registro:
+            candidatos.append(datetime.combine(ultimo_registro[c.id], time(12, 0), tzinfo=timezone.utc))
+        item.last_touch_at = max(candidatos)
         out.append(item)
     return out
 

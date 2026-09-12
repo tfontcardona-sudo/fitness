@@ -90,8 +90,16 @@ export default function ClientsPage() {
     ) as Record<Category, number>;
   }, [clients]);
 
+  // De MENOS reciente a MÁS reciente en cuanto a interacción o trabajo: quien
+  // lleva más tiempo sin tocarse sale primero, y a quien se acaba de tocar
+  // hoy se le encuentra al final — el mismo criterio que ya ordena la
+  // campana de alertas, aplicado aquí a la cartera entera.
   const visible = useMemo(
-    () => (clients ?? []).filter((c) => inCategory(c, filter)),
+    () => (clients ?? [])
+      .filter((c) => inCategory(c, filter))
+      .slice()
+      .sort((a, b) => new Date(a.last_touch_at ?? a.created_at).getTime()
+        - new Date(b.last_touch_at ?? b.created_at).getTime()),
     [clients, filter],
   );
 
@@ -287,7 +295,7 @@ function ClientCard({ c }: { c: ClientOut }) {
           <PaymentBadge status={c.payment_status} />
         </div>
         <p className="truncate text-xs text-zinc-500">
-          {c.goal_type ? GOAL_LABEL[c.goal_type] : "Sin objetivo aún"} · {relativeDays(c.updated_at)}
+          {c.goal_type ? GOAL_LABEL[c.goal_type] : "Sin objetivo aún"} · {relativeDays(c.last_touch_at ?? c.updated_at)}
         </p>
         <div className="mt-1.5">
           <CycleBadges c={c} />
@@ -309,8 +317,8 @@ function ClientsTable({ clients }: { clients: ClientOut[] }) {
             <th className="px-4 py-3 font-medium">Objetivo</th>
             <th className="px-4 py-3 font-medium">Estado</th>
             <th className="px-4 py-3 font-medium"
-              title="Última modificación de la ficha (no es la última vez que el cliente registró)">
-              Ficha act.
+              title="Lo último que pasó con este cliente: su registro, una petición suya, o trabajo tuyo en su plan o su ficha">
+              Última actividad
             </th>
           </tr>
         </thead>
@@ -362,8 +370,8 @@ function ClientsTable({ clients }: { clients: ClientOut[] }) {
                 <CycleBadges c={c} />
               </td>
               <td className="px-4 py-3 text-zinc-500"
-                title="Última modificación de la ficha (no es la última vez que el cliente registró)">
-                {relativeDays(c.updated_at)}
+                title="Lo último que pasó con este cliente: su registro, una petición suya, o trabajo tuyo en su plan o su ficha">
+                {relativeDays(c.last_touch_at ?? c.updated_at)}
               </td>
             </tr>
           ))}

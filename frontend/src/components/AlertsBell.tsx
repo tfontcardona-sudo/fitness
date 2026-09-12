@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Bell, Check, Maximize2, Minimize2, Smartphone } from "lucide-react";
+import { Bell, Check, Smartphone } from "lucide-react";
 import { api } from "../lib/api";
 import { useAlertas } from "../lib/alertasCompartidas";
 import {
@@ -16,8 +16,6 @@ import { useDismiss } from "../lib/useDismiss";
 import { useToast } from "./ui";
 import type { CoachAlert } from "../types";
 
-const EXPANDED_KEY = "dq_alerts_expanded";
-
 /**
  * Campana de ALERTAS del coach — preventiva e inteligente. Las alertas se
  * calculan del estado real de cada cliente (backend /api/alerts): en cuanto
@@ -28,18 +26,13 @@ export function AlertsBell() {
   const location = useLocation();
   const toast = useToast();
   const [open, setOpen] = useState(false);
+  // "Ver con más claridad todas": el centro de notificaciones se puede
+  // ampliar SIN un icono aparte — pulsando la campana OTRA VEZ mientras ya
+  // está abierta (ver el onClick de abajo). Cerrar sigue siendo clic fuera o
+  // Escape (`useDismiss`), así que la campana nunca "atrapa" al coach.
+  const [expanded, setExpanded] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   useDismiss(panelRef, () => setOpen(false), open);
-
-  // "Ver con más claridad todas": el centro de notificaciones se puede
-  // ampliar. Se recuerda entre sesiones (el coach lo abre a diario) — igual
-  // que `MemoDetails` recuerda sus desplegables.
-  const [expanded, setExpanded] = useState<boolean>(() => {
-    try { return localStorage.getItem(EXPANDED_KEY) === "1"; } catch { return false; }
-  });
-  useEffect(() => {
-    try { localStorage.setItem(EXPANDED_KEY, expanded ? "1" : "0"); } catch { /* almacenamiento bloqueado */ }
-  }, [expanded]);
 
   // Push al MÓVIL del coach: estado local del interruptor + resuscripción
   // silenciosa al abrir la web (si el permiso ya estaba concedido).
@@ -144,8 +137,21 @@ export function AlertsBell() {
   return (
     <div className="alerts-bell fixed right-5 top-4 z-40" ref={panelRef}>
       <button
-        onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
-        aria-label={count ? `${count} alertas pendientes` : "Sin alertas"}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (open) {
+            // Ya estaba abierta: esta pulsación es la de "verla más grande"
+            // (no la cierra — para eso está el clic fuera o Escape).
+            setExpanded((v) => !v);
+          } else {
+            // Recién abierta: siempre en compacto, para que exista ese
+            // "segundo toque" que la amplía.
+            setOpen(true);
+            setExpanded(false);
+          }
+        }}
+        aria-label={!open ? (count ? `${count} alertas pendientes` : "Sin alertas")
+          : expanded ? "Ver la campana en tamaño normal" : "Ampliar para ver todas con más claridad"}
         aria-expanded={open}
         className="card relative flex h-11 w-11 items-center justify-center rounded-full"
         style={{ boxShadow: "0 4px 16px rgba(38,33,26,0.12)" }}
@@ -172,26 +178,16 @@ export function AlertsBell() {
         >
           <div className="flex shrink-0 items-center justify-between border-b px-4 py-3" style={{ borderColor: "var(--line)" }}>
             <span className="text-sm font-semibold text-zinc-100">Alertas</span>
-            <div className="flex items-center gap-3">
-              {count > 0 && (
-                <span className="text-xs text-zinc-500">
-                  {count} pendiente{count === 1 ? "" : "s"}
-                </span>
-              )}
-              <button
-                onClick={() => setExpanded((v) => !v)}
-                aria-label={expanded ? "Ver la campana en tamaño normal" : "Ampliar para ver todas con más claridad"}
-                title={expanded ? "Ver más compacto" : "Ampliar"}
-                className="text-zinc-500 hover:text-zinc-200"
-              >
-                {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-              </button>
-            </div>
+            {count > 0 && (
+              <span className="text-xs text-zinc-500">
+                {count} pendiente{count === 1 ? "" : "s"}
+              </span>
+            )}
           </div>
           {/* En escritorio la altura es un % del viewport (crece hacia abajo
               desde la campana). En MÓVIL el panel va encajado entre top-14 y
-              bottom-14 —para que ampliar no empuje la cabecera fuera de la
-              pantalla, sin cabecera no hay forma de volver a lo compacto—,
+              bottom-14 —ampliar no puede empujar nada fuera de la pantalla:
+              la campana, que es lo que amplía/reduce, vive FUERA del panel—,
               así que ahí la altura la da flex-1 (lo que sobre entre cabecera
               y pie), no un % fijo. */}
           <div className={`overflow-y-auto max-sm:max-h-none max-sm:flex-1 ${expanded ? "sm:max-h-[78vh]" : "sm:max-h-[60vh]"}`}>

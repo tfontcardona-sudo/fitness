@@ -317,6 +317,10 @@ class ClientOut(BaseModel):
     # ¿tiene planificación publicada? y nº de la última revisión recibida.
     has_published_plan: bool = False
     review_period_index: int | None = None
+    # Última vez que pasó algo con este cliente: su interacción (registró
+    # algo, escribió una petición) o trabajo del coach (plan, ficha). Solo lo
+    # rellena el listado (`GET /clients`); ver ahí el porqué.
+    last_touch_at: datetime | None = None
 
 
 # ------------------------------------------------------------ exercises ----
