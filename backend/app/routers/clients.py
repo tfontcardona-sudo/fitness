@@ -533,6 +533,32 @@ def macro_recommendation(client_id: int, db: Session = Depends(get_db)) -> dict:
     }
 
 
+def _snapshot_de_entradas(client: Client, weight_now) -> dict:
+    """Con qué datos de la ficha se generó este plan.
+
+    Lo compara `alerts.plan_stale_inputs` para avisar cuando el coach corrige
+    la ficha DESPUÉS de generar (la IA leyó mal la altura, cambia el nivel…) y
+    el plan sigue calculado con el dato viejo. Una sola función porque lo
+    escriben dos caminos —generar y la base a mano— y un snapshot a medias es
+    un aviso que no salta.
+
+    ⚠️ Si añades un dato de la ficha que CAMBIA lo que se genera, añádelo aquí
+    Y a los `checks` de la alerta: si no, cambiarlo no avisará de nada.
+    """
+    return {
+        "weight_kg": weight_now, "height_cm": client.height_cm,
+        "level": client.level, "training_days": client.training_days,
+        "training_place": client.training_place, "diet_mode": client.diet_mode,
+        "diet_pattern": client.diet_pattern,
+        # La ESTRUCTURA de la planificación: cambiarla no tocaba el plan ya
+        # publicado y no lo avisaba nadie.
+        "cycle_days": getattr(client, "cycle_days", None),
+        "mesocycle_blocks": getattr(client, "mesocycle_blocks", None),
+        "muscle_priority": sorted(getattr(client, "muscle_priority", None) or []),
+        "muscle_deprioritized": sorted(getattr(client, "muscle_deprioritized", None) or []),
+    }
+
+
 @router.get("/{client_id}/training-structure")
 def training_structure(client_id: int, db: Session = Depends(get_db)) -> dict:
     """La ESTRUCTURA de su planificación y lo que se deriva de ella.
@@ -2510,12 +2536,7 @@ def generate_client_plan(
     # si el coach corrige la ficha después (altura mal extraída, nivel, días…),
     # la alerta plan_stale_inputs compara contra esto y avisa en vez de callar.
     if nutrition is not None:
-        nutrition["gen_inputs"] = {
-            "weight_kg": weight_now, "height_cm": client.height_cm,
-            "level": client.level, "training_days": client.training_days,
-            "training_place": client.training_place, "diet_mode": client.diet_mode,
-            "diet_pattern": client.diet_pattern,
-        }
+        nutrition["gen_inputs"] = _snapshot_de_entradas(client, weight_now)
 
     # El TDEE que se persiste y se MUESTRA (déficit/superávit del PDF, del panel
     # del coach y del editor) es el AUTORITATIVO del backend (et.tdee), no el eco
@@ -2603,6 +2624,11 @@ def generate_client_plan(
         .order_by(Plan.version.desc()).limit(1)
     )
     version = (last.version + 1) if last else 1
+    # SOLO-ENTRENO: sin dieta no hay `nutrition_json` donde sellar el snapshot,
+    # así que la alerta «ficha cambiada tras generar» no saltaba NUNCA para un
+    # DQR Train — el mismo agujero que ya costó caro con el sello de Novedades.
+    if nutrition is None and isinstance(training, dict):
+        training["gen_inputs"] = _snapshot_de_entradas(client, weight_now)
     plan = Plan(
         client_id=client_id, month_index=month_index, version=version, status="draft",
         nutrition_json=nutrition, training_json=training, education_json=education,
@@ -2774,12 +2800,7 @@ def scaffold_client_plan(
                              + " — añádelas descargando el Word, editándolo y subiéndolo")
         # Mismos sidecars que la generación: snapshot de entradas (alertas de
         # ficha cambiada) y TDEE del motor.
-        nutrition["gen_inputs"] = {
-            "weight_kg": weight_now, "height_cm": client.height_cm,
-            "level": client.level, "training_days": client.training_days,
-            "training_place": client.training_place, "diet_mode": client.diet_mode,
-            "diet_pattern": client.diet_pattern,
-        }
+        nutrition["gen_inputs"] = _snapshot_de_entradas(client, weight_now)
         nutrition["tdee_kcal"] = round(et.tdee)
 
     if include_training:
@@ -2836,6 +2857,11 @@ def scaffold_client_plan(
         .order_by(Plan.version.desc()).limit(1)
     )
     version = (last.version + 1) if last else 1
+    # SOLO-ENTRENO: sin dieta no hay `nutrition_json` donde sellar el snapshot,
+    # así que la alerta «ficha cambiada tras generar» no saltaba NUNCA para un
+    # DQR Train — el mismo agujero que ya costó caro con el sello de Novedades.
+    if nutrition is None and isinstance(training, dict):
+        training["gen_inputs"] = _snapshot_de_entradas(client, weight_now)
     plan = Plan(
         client_id=client_id, month_index=month_index, version=version, status="draft",
         nutrition_json=nutrition, training_json=training, education_json=None,

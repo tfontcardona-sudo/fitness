@@ -17,11 +17,29 @@ from app.services import demo_client_seed as seed
 
 
 def _limpiar(email: str) -> None:
+    """Borra el cliente demo CON sus filas dependientes.
+
+    Con `db.delete(c)` a secas, el ORM anula la FK de los períodos en vez de
+    borrarlos y salta un NOT NULL. Y un cliente demo CON período es un estado
+    perfectamente normal —se le abre solo en cuanto alguien entra en su
+    portal—, así que este test fallaba para cualquiera que lo hubiera abierto,
+    sin que nada estuviera roto. Mismo orden de FKs que el borrado RGPD."""
+    from app.models import DailyLog, Period, Plan, WorkoutLog
+
     with SessionLocal() as db:
         c = db.scalar(select(Client).where(Client.email == email))
-        if c:
-            db.delete(c)
-            db.commit()
+        if not c:
+            return
+        periodos = list(db.scalars(select(Period).where(Period.client_id == c.id)))
+        for per in periodos:
+            logs = list(db.scalars(select(DailyLog).where(DailyLog.period_id == per.id)))
+            for lg in logs:
+                db.query(WorkoutLog).filter(WorkoutLog.daily_log_id == lg.id).delete()
+            db.query(DailyLog).filter(DailyLog.period_id == per.id).delete()
+        db.query(Period).filter(Period.client_id == c.id).delete()
+        db.query(Plan).filter(Plan.client_id == c.id).delete()
+        db.delete(c)
+        db.commit()
 
 
 class _HiloEspia:

@@ -890,7 +890,10 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
     # coach la corregía y las kcal del plan seguían calculadas con el dato
     # viejo sin ningún aviso (auditoría de ediciones). El plan guarda ahora un
     # snapshot de sus inputs y aquí se compara con la ficha actual.
-    gen_inputs = (published.nutrition_json or {}).get("gen_inputs") or {}
+    # El snapshot vive en la dieta, y en un plan SOLO-ENTRENO no hay dieta: se
+    # mira también el entreno o este aviso estaba muerto para un DQR Train.
+    gen_inputs = ((published.nutrition_json or {}).get("gen_inputs")
+                  or (published.training_json or {}).get("gen_inputs") or {})
     if gen_inputs:
         diffs: list[str] = []
         checks = (
@@ -899,11 +902,27 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
             ("training_days", client.training_days, "días de entreno"),
             ("training_place", client.training_place, "lugar de entreno"),
             ("diet_mode", client.diet_mode, "modo de dieta"),
+            # La ESTRUCTURA: cambiar el ciclo, el mesociclo o la prioridad
+            # muscular no tocaba el plan publicado y no lo decía nadie.
+            ("cycle_days", client.cycle_days, "días del ciclo"),
+            ("mesocycle_blocks", client.mesocycle_blocks, "bloques del mesociclo"),
         )
         for key, current, label in checks:
             old = gen_inputs.get(key)
             if old is not None and current is not None and old != current:
                 diffs.append(f"{label} {old}→{current}")
+        # Las listas se comparan ordenadas y solo si el plan trae la clave (los
+        # planes de antes de esta ronda no la tienen: no hay nada que comparar).
+        for key, actual, label in (
+            ("muscle_priority", client.muscle_priority, "prioridad muscular"),
+            ("muscle_deprioritized", client.muscle_deprioritized, "grupos en mantenimiento"),
+        ):
+            if key not in gen_inputs:
+                continue
+            antes = sorted(gen_inputs.get(key) or [])
+            ahora = sorted(actual or [])
+            if antes != ahora:
+                diffs.append(f"{label}: {', '.join(ahora) or 'ninguno'}")
         old_w = gen_inputs.get("weight_kg")
         cur_w = client.current_weight_kg or client.start_weight_kg
         if (isinstance(old_w, (int, float)) and isinstance(cur_w, (int, float))

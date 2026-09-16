@@ -20,10 +20,14 @@
  * pantalla acabaría enseñando un número y generando otro.
  */
 import { useCallback, useEffect, useState } from "react";
-import { Layers, Loader2, RotateCw, Target } from "lucide-react";
+import { Layers, Loader2, Pencil, RotateCw, Sparkles, Target } from "lucide-react";
 
 import { api } from "../lib/api";
 import { ancla } from "../lib/anchors";
+// La MISMA puerta que el resto del sistema para leer el ciclo de un plan
+// (`lib/ciclo` ⇄ `services/training_cycle`): dos formas de deducirlo dan
+// dos respuestas y la tarjeta acabaría contradiciendo al plan.
+import { diasDeCiclo, etiquetaDeBloque } from "../lib/ciclo";
 import type { ClientOut, TrainingStructureOut } from "../types";
 import { SectionHeader, Spinner, useToast } from "./ui";
 
@@ -43,11 +47,21 @@ function siguientePapel(p: Papel): Papel {
 }
 
 export default function EstructuraEntrenamiento({
-  client, onSaved,
+  client, onSaved, hasTraining = true, training, generating = false, onAplicar,
 }: {
   client: ClientOut;
   /** Para que la ficha se refresque: el ciclo cambia lo que se genera. */
   onSaved?: () => void;
+  /** Un cliente de SOLO DIETA no tiene entrenamiento que estructurar: se le
+   *  enseña únicamente el ritmo de revisión, que sí es suyo. */
+  hasTraining?: boolean;
+  /** El `training_json` del plan VIGENTE, para poder decir si lo que hay
+   *  publicado ya sigue esta estructura o todavía es el anterior. */
+  training?: any;
+  generating?: boolean;
+  /** Aplicar la estructura nueva rehaciendo el plan (con IA o a mano). Sin
+   *  esto, cambiar el ciclo no tenía NINGUNA salida con un plan ya publicado. */
+  onAplicar?: (conIa: boolean) => void;
 }) {
   const toast = useToast();
   const [data, setData] = useState<TrainingStructureOut | null>(null);
@@ -116,19 +130,42 @@ export default function EstructuraEntrenamiento({
   }
 
   const conPapel = data.muscle_priority.length + data.muscle_deprioritized.length;
-  const resumen = [
+  const resumen = (hasTraining ? [
     data.semanal ? "Semana (7 días)" : `Ciclo de ${data.cycle_days} días`,
     `${data.sessions_target} sesion${data.sessions_target === 1 ? "" : "es"}`,
     `${data.mesocycle_blocks} ${data.block_label.toLowerCase()}${data.mesocycle_blocks === 1 ? "" : "s"}`,
-    `revisión ${data.review_days} d`,
-  ].join(" · ");
+  ] : []).concat(`revisión ${data.review_days} d`).join(" · ");
+
+  // ¿LO PUBLICADO YA SIGUE ESTA ESTRUCTURA? La tarjeta decía «Ciclo de 10 días ·
+  // 6 sesiones» mientras el cliente tenía delante un plan de lunes a viernes:
+  // describía una rutina que no existe, sin avisar y sin forma de aplicarla.
+  // Exige SESIONES de verdad: con `training = {}` (un plan sin entreno) se
+  // deduciría "ciclo 7" y se avisaría de un desfase contra una rutina que no
+  // existe.
+  const delPlan = hasTraining && training && (training.sessions ?? []).length > 0 ? {
+    ciclo: diasDeCiclo(training),
+    bloques: (training.weekly_progression ?? []).length || null,
+    sesiones: (training.sessions ?? []).length,
+  } : null;
+  const desfase: string[] = [];
+  if (delPlan) {
+    if (delPlan.ciclo !== data.cycle_days) {
+      desfase.push(delPlan.ciclo === 7
+        ? "va por semanas (lunes a domingo)"
+        : `es un ciclo de ${delPlan.ciclo} días`);
+    }
+    if (delPlan.bloques && delPlan.bloques !== data.mesocycle_blocks) {
+      desfase.push(`tiene ${delPlan.bloques} ${etiquetaDeBloque(delPlan.ciclo).toLowerCase()}`
+        + `${delPlan.bloques === 1 ? "" : "s"}`);
+    }
+  }
 
   return (
     <div className="card p-4" {...ancla("plan.estructura")}>
       <SectionHeader
-        title="Estructura del entrenamiento"
+        title={hasTraining ? "Estructura del entrenamiento" : "Ritmo de revisión"}
         icon={Layers}
-        count={conPapel > 0 ? `${conPapel} con prioridad` : undefined}
+        count={hasTraining && conPapel > 0 ? `${conPapel} con prioridad` : undefined}
         right={
           <button
             type="button"
@@ -144,15 +181,69 @@ export default function EstructuraEntrenamiento({
         }
       />
       <p className="text-sm text-zinc-300">{resumen}</p>
-      <p className="mt-1 text-xs text-zinc-500">
-        {data.semanal
-          ? "Su rutina va de lunes a domingo, como siempre."
-          : `Su rutina NO va por semanas: ${data.cycle_days} días que se repiten. `
-            + `El mesociclo completo son ${data.total_days} días.`}
-      </p>
+      {hasTraining && (
+        <p className="mt-1 text-xs text-zinc-500">
+          {data.semanal
+            ? "Su rutina va de lunes a domingo, como siempre."
+            : `Su rutina NO va por semanas: ${data.cycle_days} días que se repiten. `
+              + `El mesociclo completo son ${data.total_days} días.`}
+        </p>
+      )}
+
+      {/* EL DESFASE, DICHO Y CON SALIDA. Cambiar el ciclo con un plan ya
+          publicado no tocaba nada y no lo avisaba nadie: la tarjeta describía
+          una rutina y debajo había otra. La dieta sí tenía sus dos botones
+          («Estructura de comidas del día»); el entreno no tenía ninguno, y un
+          cliente de SOLO ENTRENO se quedaba sin ningún camino de rehacer. */}
+      {desfase.length > 0 && (
+        <div
+          className="mt-3 rounded-lg border p-3"
+          style={{ borderColor: "rgba(154,107,21,0.45)", background: "rgba(154,107,21,0.09)" }}
+        >
+          <p className="text-xs font-medium text-amber-300">
+            El plan que tiene el cliente todavía {desfase.join(" y ")}.
+          </p>
+          <p className="mt-1 text-xs text-zinc-400">
+            Esta estructura se aplica al rehacer el plan. Hasta entonces, lo que
+            ve el cliente es lo anterior.
+          </p>
+          {onAplicar && (
+            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className="btn btn-primary text-xs"
+                disabled={generating}
+                onClick={() => {
+                  if (!window.confirm(
+                    "¿Rehacer el plan con esta estructura? Gasta créditos de IA y "
+                    + "sustituye la versión actual, ediciones manuales incluidas "
+                    + "(queda en el historial).")) return;
+                  onAplicar(true);
+                }}
+              >
+                <Sparkles size={14} /> {generating ? "Rehaciendo…" : "Rehacer con IA"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost text-xs"
+                disabled={generating}
+                title="Rehace la base con esta estructura y la deja en borrador para que la termines tú"
+                onClick={() => onAplicar(false)}
+              >
+                <Pencil size={14} /> Rehacer a mano · 0 créditos
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {abierto && (
         <div className="mt-4 space-y-4" data-open="true">
+          {/* Ciclo, mesociclo y prioridad muscular son del ENTRENAMIENTO: a un
+              cliente de solo dieta no se le enseñan —no cambian nada de lo
+              suyo— igual que a uno de solo entreno no se le enseña la
+              estructura de comidas. La revisión sí es de todos. */}
+          {hasTraining && (<>
           {/* --- CICLO --------------------------------------------------- */}
           <div>
             <label className="block text-xs font-medium text-zinc-400" htmlFor="ciclo-dias">
@@ -263,6 +354,8 @@ export default function EstructuraEntrenamiento({
             </p>
           </div>
 
+          </>)}
+
           {/* --- REVISIÓN ------------------------------------------------ */}
           <div>
             <label className="block text-xs font-medium text-zinc-400" htmlFor="revision-dias">
@@ -301,11 +394,13 @@ export default function EstructuraEntrenamiento({
               <Loader2 size={13} className="animate-spin" /> Guardando…
             </p>
           )}
-          <p className="flex items-start gap-1.5 text-xs text-zinc-500">
-            <Target size={13} className="mt-0.5 shrink-0" />
-            Cambiar la estructura NO toca el plan que ya tiene: se aplica al
-            siguiente que generes o construyas.
-          </p>
+          {hasTraining && (
+            <p className="flex items-start gap-1.5 text-xs text-zinc-500">
+              <Target size={13} className="mt-0.5 shrink-0" />
+              Cambiar la estructura NO toca el plan que ya tiene: cuando no
+              coincidan te lo digo aquí arriba, con el botón para rehacerlo.
+            </p>
+          )}
         </div>
       )}
     </div>

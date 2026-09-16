@@ -776,7 +776,8 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
           y el mesociclo deciden lo que se va a generar, así que verlos cuando
           el plan ya está hecho llega tarde. Mismo sitio en las dos vistas —
           arriba de Planificación— para que se sepa dónde está siempre. */}
-      <EstructuraEntrenamiento client={client} onSaved={onClientChanged} />
+      <EstructuraEntrenamiento client={client} onSaved={onClientChanged}
+        hasTraining={hasTraining} />
       <div className="card p-6">
         <div className="flex items-start gap-3">
           <div className="rounded-xl p-2.5" style={{ background: "color-mix(in srgb, var(--brand-accent) 12%, transparent)" }}>
@@ -1146,15 +1147,32 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
         />
       )}
       {retenido && (() => {
-        const esCopia = (retenido.guardrail_flags ?? [])
+        // TRES casos, no dos. Un borrador EN CONSTRUCCIÓN (base a mano, copia,
+        // modelo, documento importado) nunca lo paró nadie: nace en borrador a
+        // propósito, para que el coach lo remate. Caía en la rama de
+        // «retenido» y se le decía «▲ Adaptación retenida · los guardarraíles
+        // la pararon» a una base que él mismo acababa de pedir — con un
+        // «Activar de todas formas» que avisaba de unos avisos de seguridad
+        // que no existían. Mismo criterio que el backend
+        // (`plan_library.BORRADORES_EN_CONSTRUCCION`).
+        const enConstruccion = ["scaffold", "library", "template", "document"]
+          .includes(retenido.generated_by ?? "");
+        const esCopia = enConstruccion || (retenido.guardrail_flags ?? [])
           .some((f: string) => f.startsWith("copiado de"));
+        // Solo es RETENCIÓN de verdad si hay motivos que la expliquen.
+        const parado = !esCopia && motivosRetencion.length > 0;
+        const comoNace = retenido.generated_by === "scaffold"
+          ? "Base sin IA" : retenido.generated_by === "document"
+          ? "Plan importado" : "Copia";
         return (
         <div className="card p-4" {...ancla("plan.activar")}
           style={{ borderColor: `color-mix(in srgb, ${esCopia ? "var(--brand-accent-2)" : "#C2453A"} 45%, transparent)` }}>
           <p className="text-sm font-semibold" style={{ color: esCopia ? "var(--brand-accent-2)" : "#B91C1C" }}>
             {esCopia
-              ? `Copia v${retenido.version} sin activar · el cliente sigue con la anterior`
-              : `▲ Adaptación v${retenido.version} retenida · el cliente sigue con la anterior`}
+              ? `${comoNace} v${retenido.version} sin activar · el cliente sigue con la anterior`
+              : parado
+                ? `▲ Borrador v${retenido.version} retenido · el cliente sigue con la anterior`
+                : `Borrador v${retenido.version} sin activar · el cliente sigue con la anterior`}
           </p>
           {motivosRetencion.length > 0 && (
             <ul className="mt-2 space-y-1">
@@ -1165,8 +1183,12 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
           )}
           <p className="mt-2 text-xs text-zinc-500">
             {esCopia
-              ? "Adáptala a este cliente y actívala cuando esté lista."
-              : "Los guardarraíles la pararon: revísala y corrige lo señalado, o actívala si estás de acuerdo tal cual."}
+              ? (retenido.generated_by === "scaffold"
+                  ? "Termínala en el editor y actívala cuando esté lista."
+                  : "Adáptala a este cliente y actívala cuando esté lista.")
+              : parado
+                ? "Los guardarraíles la pararon: revísala y corrige lo señalado, o actívala si estás de acuerdo tal cual."
+                : "Revísala y actívala cuando esté lista."}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {/* Con retención por seguridad lo PRIMERO es revisar: el botón
@@ -1178,14 +1200,14 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
             </button>
             <button
               onClick={() => {
-                if (!esCopia && !window.confirm(
+                if (parado && !window.confirm(
                   "Este borrador está RETENIDO por avisos de seguridad. "
                   + "¿Activarlo de todas formas? El cliente lo verá al momento.")) return;
                 activarRetenido();
               }}
               disabled={publishing}
               className={esCopia ? "btn btn-primary text-xs" : "btn btn-ghost text-xs"}>
-              {publishing ? "Activando…" : esCopia ? "Activar" : "Activar de todas formas"}
+              {publishing ? "Activando…" : parado ? "Activar de todas formas" : "Activar"}
             </button>
             <button
               onClick={async () => {
@@ -1224,7 +1246,20 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
           Planificación, encima de la cabecera del plan. Se sabe dónde está
           siempre, con plan y sin él — que es justo lo que se pidió. Va debajo
           de la banda roja de retención: eso es urgente y manda. */}
-      <EstructuraEntrenamiento client={client} onSaved={onClientChanged} />
+      <EstructuraEntrenamiento
+        client={client}
+        onSaved={onClientChanged}
+        hasTraining={hasTraining}
+        training={tr}
+        generating={generating}
+        // LOS MISMOS DOS CAMINOS que la estructura de comidas, y por las mismas
+        // funciones: con IA (gasta créditos, queda activo) o a mano (0 créditos,
+        // borrador). Sin esto, cambiar el ciclo de un cliente con plan
+        // publicado no tenía ninguna salida — y el de SOLO ENTRENO no tenía
+        // ninguna en toda la pestaña, porque los dos botones vivían dentro de
+        // la tarjeta de comidas, que él no ve.
+        onAplicar={(conIa) => (conIa ? generate() : void scaffold())}
+      />
 
       {/* Cabecera con acciones */}
       <div className="card p-5">

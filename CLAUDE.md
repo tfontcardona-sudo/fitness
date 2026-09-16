@@ -527,6 +527,70 @@ npm run check:planes        # el nivel del cliente RECOMIENDA un camino de
 
 ## 9. Trabajo pendiente / próximos pasos
 
+0000000000000000000000000000000. ✅ **LA PLANIFICACIÓN, BIEN CONECTADA: QUE
+   CADA CAMBIO TENGA SALIDA Y SE NOTE (16-09-2026).** El dueño pidió revisar
+   que los clics, las combinaciones y los apartados de la planificación
+   estuvieran «bien definidos, bien conectados y funcionales, y que sean
+   prácticos de acceder y utilizar». Se cruzaron las 122 rutas del cliente HTTP
+   contra las del backend (todas con pareja) y se recorrieron en navegador real
+   las combinaciones que de verdad divergen: **paquete** (full · solo dieta ·
+   solo entreno) × **estado del plan** (sin plan · publicado · borrador) ×
+   **ciclo** (7 · 10). Los fallos que salieron eran todos LA MISMA RAÍZ.
+   - ⚠️ **UN CAMBIO DE ESTRUCTURA NO TENÍA NINGUNA SALIDA.** Con un plan ya
+     publicado, cambiar el ciclo dejaba la tarjeta diciendo «Ciclo de 10 días ·
+     6 sesiones · su rutina NO va por semanas» y debajo, en la misma pantalla,
+     el plan del cliente en LUNES/MARTES/JUEVES/VIERNES. Ni un aviso de que no
+     coincidían, y ni un botón para aplicarlo. La dieta sí los tenía desde
+     siempre («Estructura de comidas del día» → «Regenerar con IA» / «Rehacer a
+     mano · 0 créditos»); el entrenamiento, ninguno. Ahora la tarjeta DICE el
+     desfase («el plan que tiene el cliente todavía va por semanas y tiene 4
+     semanas») y lleva los MISMOS dos botones, por las mismas funciones.
+     Verificado de punta a punta en navegador: pulsar «Rehacer a mano» abre el
+     editor con el plan nuevo en Día 1 · 3 · 4 · 6 · 8 · 9.
+   - ⚠️ **Y EL DE SOLO ENTRENO NO TENÍA NINGUNA EN TODA LA PESTAÑA**: los dos
+     botones de rehacer vivían DENTRO de la tarjeta de comidas, que un DQR
+     Train no ve. Para cambiarle la estructura había que copiar, importar o
+     editar día por día.
+   - **LO QUE NO ES SUYO NO SE LE ENSEÑA**: un cliente de SOLO DIETA veía días
+     del ciclo, bloques del mesociclo y prioridad muscular —nada de eso cambia
+     un gramo de lo suyo—, justo la asimetría contraria a la de arriba. Ahora
+     la tarjeta se titula «Ritmo de revisión» y le deja solo lo que sí es suyo.
+   - **EL AVISO QUE YA EXISTÍA, ARREGLADO DE RAÍZ** (`plan_stale_inputs`). El
+     sistema ya sabía avisar de «ficha cambiada tras generar» comparando contra
+     un SNAPSHOT de las entradas (`gen_inputs`), y ahí estaban los dos huecos
+     de fondo: (1) la estructura no entraba en el snapshot, así que cambiar el
+     ciclo, el mesociclo o la PRIORIDAD MUSCULAR no avisaba de nada; y (2) el
+     snapshot se sellaba en `nutrition_json`, y un plan SOLO-ENTRENO no tiene
+     dieta — para un DQR Train la alerta llevaba MUERTA desde que existe, con
+     cualquier campo, también la altura o el nivel. Una sola función
+     (`_snapshot_de_entradas`) que escriben los dos caminos, sellada también en
+     `training_json` cuando no hay dieta, y la alerta lee de donde esté.
+     ⚠️ Las listas se comparan ORDENADAS (marcar los mismos grupos en otro
+     orden no es un cambio) y solo si el plan trae la clave: los planes de
+     antes de esta ronda no la llevan y no pueden empezar a avisar solos el día
+     del despliegue.
+   - **LA BANDA DEL BORRADOR MENTÍA**: una base a mano recién creada salía en
+     ROJO como «▲ Adaptación v2 retenida · los guardarraíles la pararon», con
+     un «Activar de todas formas» que avisaba de unos avisos de seguridad que
+     no existían. No es una adaptación, no la paró nadie y nace en borrador a
+     propósito. Tres casos y no dos, con el MISMO criterio que el backend
+     (`plan_library.BORRADORES_EN_CONSTRUCCION`): en construcción (base, copia,
+     modelo, documento) · retenida de verdad (hay motivos) · sin activar.
+   - **Lo que se arregló de camino**: `tests/test_demo_client_seed.py` borraba
+     el cliente demo con `db.delete()` a secas y el ORM anula la FK de sus
+     períodos en vez de borrarlos → NOT NULL. Un cliente demo CON período es un
+     estado normal (se le abre en cuanto alguien entra en su portal), así que
+     ese test fallaba para cualquiera que lo hubiera abierto, sin que nada
+     estuviera roto — de la familia que vigila el §7.
+   - Verificado: **967 tests** en los dos órdenes, `tsc`, build y las NUEVE
+     guardas. Navegador real a 1280 px y 390 px sobre las cuatro combinaciones
+     (cero desbordes, cero recortes, cero controles por debajo de 30 px, cero
+     errores de consola) y el ciclo completo PULSADO: cambiar la estructura →
+     el aviso → «Rehacer a mano» → el plan nuevo lleva el ciclo 10 con 6
+     sesiones y 5 bloques, y su snapshot queda sellado para que el próximo
+     cambio vuelva a avisar. Tests: `tests/test_planificacion_conectada.py`
+     (7), con las dos claves comprobadas quitando su arreglo.
+
 000000000000000000000000000000. ✅ **LA PLANIFICACIÓN SE ADAPTA A LA PERSONA:
    SPLITS DE HASTA 10 DÍAS Y MESOCICLOS DE DURACIÓN LIBRE (16-09-2026).** Tres
    peticiones del dueño en un mensaje: splits de hasta 10 días para repartir
