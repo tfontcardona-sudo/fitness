@@ -132,7 +132,9 @@ export default function EstructuraEntrenamiento({
         right={
           <button
             type="button"
-            className="btn-ghost text-xs"
+            // shrink-0 + nowrap: a 390 px el título, el chip y el botón
+            // comparten fila y el botón se comprimía hasta partir su palabra.
+            className="btn-ghost shrink-0 whitespace-nowrap text-xs"
             data-desplegable-toggle
             aria-expanded={abierto}
             onClick={() => setAbierto((v) => !v)}
