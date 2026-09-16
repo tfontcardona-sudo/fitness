@@ -21,6 +21,8 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 
+from app.services import training_cycle as tc
+
 # --- Constantes E.4 (nutrición) ---
 KCAL_FLOOR_FEMALE = 1400
 KCAL_FLOOR_MALE = 1600
@@ -349,6 +351,7 @@ def check_training(
     exercise_lookup: dict[int, dict],
     is_recalibration: bool = False,
     previous_weights: dict[int, float] | None = None,
+    volume_contract: dict | None = None,
 ) -> GuardrailReport:
     """Valida el bloque de entrenamiento contra F.4.
 
@@ -356,20 +359,59 @@ def check_training(
     para cruzar contraindicaciones y contar volumen por grupo.
     `previous_weights`: {exercise_id: start_weight_hint_kg} del plan anterior,
     para el límite de +10% por recalibración.
+    `volume_contract`: el contrato de `training_volume` (series por grupo y por
+    CICLO, ya escaladas). Con él se comprueba además que la prioridad muscular
+    que pidió el coach se respeta de verdad; sin él, solo el techo y el suelo.
     """
     r = GuardrailReport()
     sessions = training.get("sessions", [])
+    ciclo = tc.dias_de_ciclo(training)
+    # Cuántas sesiones caben: el ciclo manda. Con la semana de siempre esto es
+    # exactamente `training_days_declared`; con un ciclo de 10 días, los días
+    # que esa persona entrena en 10 días (y compararla con 7 la dejaría sin
+    # media rutina sin motivo).
+    objetivo_sesiones = tc.sesiones_objetivo(training_days_declared, ciclo)
 
-    # 1) Nunca exceder días declarados
-    if len(sessions) > training_days_declared:
+    # 1) Nunca exceder los días que puede entrenar, medidos en SU ciclo
+    if len(sessions) > objetivo_sesiones:
         r.violations.append(
-            f"{len(sessions)} sesiones > {training_days_declared} días declarados"
+            f"{len(sessions)} sesiones > {objetivo_sesiones} que caben en su "
+            f"ciclo de {ciclo} días ({training_days_declared} días/semana)"
         )
+    if len(sessions) > ciclo:
+        r.violations.append(
+            f"{len(sessions)} sesiones no caben en un ciclo de {ciclo} días")
+
+    # 1-bis) El día de cada sesión dentro del ciclo: sin día reconocible el
+    # portal la da por descanso y el cliente NO la ve — en silencio.
+    dias_vistos: dict[int, str] = {}
+    for sess in sessions:
+        idx = tc.indice_de_dia(sess, ciclo)
+        nombre = str(sess.get("name") or sess.get("day") or "?")
+        if idx is None:
+            # Con el ciclo ROTATIVO no hay día de la semana al que agarrarse:
+            # sin `day_index` esa sesión no existe para el cliente NINGÚN día,
+            # así que bloquea. Con el ciclo semanal es un aviso: los planes de
+            # siempre (hechos a mano, importados de un Word) llaman a sus días
+            # "Día A" y publicarlos nunca ha estado prohibido — convertirlo hoy
+            # en un bloqueo retendría planes que ayer salían.
+            aviso = (f"la sesión '{nombre}' no dice qué día del ciclo es "
+                     f"(day_index 1-{ciclo}): el cliente no la vería")
+            (r.violations if not tc.es_semanal(ciclo) else r.warnings).append(aviso)
+        elif idx in dias_vistos:
+            r.violations.append(
+                f"día {idx} del ciclo repetido: '{dias_vistos[idx]}' y '{nombre}'")
+        else:
+            dias_vistos[idx] = nombre
 
     weekly_sets_by_group: dict[str, float] = {}
+    # En cuántas SESIONES del ciclo aparece cada grupo (frecuencia). El volumen
+    # solo no distingue 20 series en un día de 20 repartidas en cuatro.
+    sesiones_por_grupo: dict[str, int] = {}
 
     for sess in sessions:
         session_sets = 0
+        grupos_de_la_sesion: set[str] = set()
         for ex in sess.get("exercises", []):
             ex_id = ex["exercise_id"]
             sets = int(ex["sets"])
@@ -396,6 +438,7 @@ def check_training(
             # por músculos secundarios (auditoría matemática #15).
             group = info.get("muscle_primary", "desconocido")
             weekly_sets_by_group[group] = weekly_sets_by_group.get(group, 0) + sets
+            grupos_de_la_sesion.add(group)
             for sec in (info.get("muscle_secondary") or []):
                 weekly_sets_by_group[sec] = weekly_sets_by_group.get(sec, 0) + sets * 0.5
 
@@ -412,6 +455,9 @@ def check_training(
                             f"{LOAD_INCREMENT_MAX_PCT * 100:.0f}%"
                         )
 
+        for g in grupos_de_la_sesion:
+            sesiones_por_grupo[g] = sesiones_por_grupo.get(g, 0) + 1
+
         # 4) Duración estimada de la sesión: series×3min + 10. Exceso leve = aviso;
         # exceso holgado (> tolerancia) = violación que bloquea.
         est_min = session_sets * SESSION_MINUTES_FORMULA_PER_SET + SESSION_MINUTES_FIXED_OVERHEAD
@@ -426,18 +472,55 @@ def check_training(
                 f"ligeramente el máximo declarado {session_max_min} min; revisa y recorta series si quieres"
             )
 
-    # 5) Volumen semanal por grupo: techo (bloquea) y piso (avisa)
+    # 5) Volumen por grupo: techo (bloquea) y piso (avisa).
+    # ⚠️ Las series se cuentan POR CICLO (es lo que hay en el plan) pero los
+    # landmarks del criterio del coach —6 mínimo, 25 techo— están escritos POR
+    # SEMANA. Sin normalizar, un ciclo de 10 días infla el recuento un 43 % y
+    # un plan correcto saldría "por encima del máximo"; uno de 4 días lo
+    # desinfla y saldría "por debajo del mínimo". Se compara en semanas.
+    por_semana = tc.SEMANA / max(1, ciclo)
     for group, total in weekly_sets_by_group.items():
-        if total > SETS_MAX_PER_GROUP_WEEK:
+        semanal = total * por_semana
+        if semanal > SETS_MAX_PER_GROUP_WEEK:
             r.violations.append(
-                f"grupo '{group}': {total:.0f} series/semana supera el máximo "
+                f"grupo '{group}': {semanal:.0f} series/semana supera el máximo "
                 f"{SETS_MAX_PER_GROUP_WEEK}"
+                + (f" ({total:.0f} en su ciclo de {ciclo} días)" if ciclo != tc.SEMANA else "")
             )
-        elif total < SETS_MIN_PER_GROUP_WEEK:
+        elif semanal < SETS_MIN_PER_GROUP_WEEK:
             r.warnings.append(
-                f"grupo '{group}': solo {total:.0f} series/semana — por debajo del "
+                f"grupo '{group}': solo {semanal:.0f} series/semana — por debajo del "
                 f"mínimo productivo ({SETS_MIN_PER_GROUP_WEEK}); revisa si es intencionado"
             )
+
+    # 5-bis) ¿Se respeta la PRIORIDAD muscular que pidió el coach? Sin esto, el
+    # contrato de volumen sería una sugerencia: el modelo puede decir que
+    # prioriza la espalda y darle las mismas series que al resto.
+    if volume_contract:
+        for group, objetivo in (volume_contract.get("groups") or {}).items():
+            hechas = weekly_sets_by_group.get(group, 0)
+            if objetivo.get("priority") and hechas < objetivo["min"]:
+                r.violations.append(
+                    f"'{group}' es prioritario y lleva {hechas:.0f} series/ciclo, "
+                    f"por debajo de las {objetivo['min']} del contrato")
+            elif hechas > objetivo["max"]:
+                r.warnings.append(
+                    f"'{group}': {hechas:.0f} series/ciclo por encima de las "
+                    f"{objetivo['max']} previstas para su nivel y prioridad")
+            elif objetivo.get("priority") and hechas < objetivo["target"]:
+                r.warnings.append(
+                    f"'{group}' es prioritario pero se queda en {hechas:.0f} de "
+                    f"{objetivo['target']} series/ciclo")
+        # Frecuencia: un grupo prioritario repartido en una sola sesión no es
+        # prioridad, es un día duro.
+        for group, objetivo in (volume_contract.get("groups") or {}).items():
+            if not objetivo.get("priority"):
+                continue
+            veces = sesiones_por_grupo.get(group, 0)
+            if veces and veces < objetivo["min_frequency"]:
+                r.warnings.append(
+                    f"'{group}' es prioritario y solo se entrena {veces} vez/veces "
+                    f"por ciclo (mínimo {objetivo['min_frequency']})")
 
     # 6) Estructura del mesociclo (avisos, no bloquean): el criterio del coach
     # exige progresión explícita y deload en semana 4 — si el plan no los
@@ -452,9 +535,12 @@ def check_training(
         # acepta por compatibilidad con planes legados.
         dl = training.get("deload_instructions") or training.get("deload")
         if not dl:
+            bloques = len(training.get("weekly_progression") or []) or tc.BLOQUES_POR_DEFECTO
+            unidad = tc.etiqueta_de_bloque(ciclo).lower()
             r.warnings.append(
-                "el plan no declara semana de descarga (deload): el criterio "
-                "es deload en semana 4 (volumen −40-50%)")
+                "el plan no declara descarga (deload): el criterio es "
+                f"descargar en {'la' if unidad == 'semana' else 'el'} "
+                f"{unidad} {bloques} (volumen −40-50%)")
     return r
 
 

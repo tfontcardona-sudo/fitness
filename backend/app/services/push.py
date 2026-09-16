@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models import Client, DailyLog, PushSubscription, WorkoutLog
 from app.services import portal as portal_svc
+from app.services import training_cycle as tc
 from app.services.audit import log_event
 from app.services import packages as pkgs
 
@@ -149,20 +150,18 @@ def remove_subscription(db: Session, client: Client, endpoint: str) -> bool:
 
 # ---------------------------------------------------------- pendientes ----
 
-def has_session_on(training_json: dict | None, day: date) -> bool:
-    """¿El plan tiene sesión de entreno para ese día de la semana? (puro)."""
+def has_session_on(training_json: dict | None, day: date,
+                   ancla: date | None = None) -> bool:
+    """¿El plan tiene sesión de entreno ese día? (puro).
+
+    Por la MISMA puerta que la pantalla "Hoy" (`training_cycle`): si esto
+    respondiera que no toca entrenar y el portal que sí, el cliente vería su
+    sesión y no recibiría el recordatorio — o al revés. `ancla` es el día en
+    que arrancó su planificación, y solo hace falta cuando el ciclo no es la
+    semana natural (con 7 días manda el calendario, como siempre)."""
     if not training_json:
         return False
-    label = portal_svc.DAY_LABELS[day.weekday()].lower()
-    # Mismo lector a prueba de basura que la pantalla "Hoy": con un `day` que
-    # no fuese texto, el `.strip()` reventaba AQUÍ DENTRO del trabajo
-    # programado y se llevaba por delante el recordatorio de TODOS los
-    # clientes, no solo el del plan roto.
-    return any(
-        portal_svc.dia_de_sesion(s) == label
-        for s in (training_json.get("sessions") or [])
-        if isinstance(s, dict)
-    )
+    return tc.sesion_de_fecha(training_json, day, ancla=ancla) is not None
 
 
 def diary_is_filled(log: DailyLog | None) -> bool:
@@ -359,7 +358,8 @@ def pending_for_client(db: Session, client: Client, today: date,
         out["diary"] = not diary_is_filled(log)
 
         plan = portal_svc.published_plan_for_period(db, period)
-        if plan is not None and has_session_on(plan.training_json, today):
+        if plan is not None and has_session_on(plan.training_json, today,
+                                               ancla=period.starts_on):
             has_sets = False
             if log is not None:
                 has_sets = bool(

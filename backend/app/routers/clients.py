@@ -19,6 +19,8 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.db import get_db
 from app.deps import get_current_user
+from app.services import training_cycle as tcycle
+from app.services import training_volume as tvol
 from app.models import (
     ChangeRequest,
     Client,
@@ -528,6 +530,56 @@ def macro_recommendation(client_id: int, db: Session = Depends(get_db)) -> dict:
         "tdee": round(et.tdee), "adjustment_pct": et.adjustment_pct,
         "kcal": mp.kcal, "protein_g": mp.protein_g, "carbs_g": mp.carbs_g,
         "fat_g": mp.fat_g, "warnings": et.warnings + mp.notes,
+    }
+
+
+@router.get("/{client_id}/training-structure")
+def training_structure(client_id: int, db: Session = Depends(get_db)) -> dict:
+    """La ESTRUCTURA de su planificación y lo que se deriva de ella.
+
+    Una sola puerta para la tarjeta del panel: el ciclo, el mesociclo, la
+    revisión, las sesiones que caben en el ciclo y el contrato de volumen por
+    grupo muscular (series y frecuencia). Todo lo CALCULA el backend —el mismo
+    que se lo entrega a la IA como contrato—, igual que con las calorías: dos
+    cuentas de lo mismo en dos sitios acaban dándole al coach una cifra en
+    pantalla y otra en el plan."""
+    from app.services import training_cycle as tcy
+    from app.services import training_volume as tvo
+    from app.services.periods import (MAX_REVIEW_DAYS, MIN_REVIEW_DAYS,
+                                      PERIOD_DAYS, review_days)
+
+    client = _get_or_404(db, client_id)
+    ciclo = tcy.dias_de_ciclo({"cycle_days": client.cycle_days})
+    bloques = max(tcy.MIN_BLOQUES, min(tcy.MAX_BLOQUES,
+                                       int(client.mesocycle_blocks
+                                           or tcy.BLOQUES_POR_DEFECTO)))
+    objetivos = tvo.objetivos_por_grupo(
+        level=client.level, goal_type=client.goal_type, cycle_days=ciclo,
+        priority=client.muscle_priority or [],
+        deprioritized=client.muscle_deprioritized or [],
+    )
+    return {
+        "cycle_days": ciclo,
+        "cycle_default": tcy.SEMANA,
+        "cycle_min": tcy.MIN_DIAS_CICLO,
+        "cycle_max": tcy.MAX_DIAS_CICLO,
+        "semanal": tcy.es_semanal(ciclo),
+        "block_label": tcy.etiqueta_de_bloque(ciclo),
+        "mesocycle_blocks": bloques,
+        "blocks_min": tcy.MIN_BLOQUES,
+        "blocks_max": tcy.MAX_BLOQUES,
+        "blocks_default": tcy.BLOQUES_POR_DEFECTO,
+        "training_days": client.training_days,
+        "sessions_target": tcy.sesiones_objetivo(client.training_days, ciclo),
+        "total_days": ciclo * bloques,
+        "review_days": review_days(client),
+        "review_default": PERIOD_DAYS,
+        "review_min": MIN_REVIEW_DAYS,
+        "review_max": MAX_REVIEW_DAYS,
+        "muscle_groups": list(tvo.GRUPOS_PRINCIPALES),
+        "muscle_priority": list(client.muscle_priority or []),
+        "muscle_deprioritized": list(client.muscle_deprioritized or []),
+        "volume": objetivos,
     }
 
 
@@ -2350,6 +2402,16 @@ def generate_client_plan(
         body_fat_pct=client.body_fat_pct,
         bmr=et.bmr, tdee=et.tdee, target_kcal=target_kcal_final, energy_method=et.method,
         macro_plan=macro_plan,
+        # ESTRUCTURA de su planificación: el ciclo y el mesociclo los decide el
+        # coach en la ficha (NULL = lo de siempre), y el volumen por grupo lo
+        # calcula el backend — la IA los recibe como contrato, igual que los
+        # macros. Sin esto, el modelo volvería a suponer semana de 7 días.
+        cycle_days=client.cycle_days or tcycle.SEMANA,
+        mesocycle_blocks=client.mesocycle_blocks or tcycle.BLOQUES_POR_DEFECTO,
+        volume_contract=tvol.objetivos_por_grupo(
+            level=client.level, goal_type=client.goal_type,
+            cycle_days=client.cycle_days or tcycle.SEMANA,
+            priority=client.muscle_priority, deprioritized=client.muscle_deprioritized),
         exercise_library=library,
         deep_analysis=deep_analysis,
         notes=adj_notes,

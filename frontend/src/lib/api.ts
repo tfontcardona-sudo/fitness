@@ -71,6 +71,7 @@ import type {
   ClientCreate,
   ClientCreatedOut,
   ClientOut,
+  TrainingStructureOut,
   ClientStatus,
   ExerciseOut,
   FoodSearchResult,
@@ -358,6 +359,12 @@ export const api = {
     request<ClientCreatedOut>("POST", "/clients", body),
   updateClient: (id: number, patch: Partial<ClientOut>) =>
     request<ClientOut>("PATCH", `/clients/${id}`, patch),
+  // La ESTRUCTURA de su planificación (ciclo, mesociclo, revisión) y lo que el
+  // backend deriva de ella: sesiones que caben en el ciclo y contrato de
+  // volumen por grupo muscular. Las cifras las calcula el backend —el mismo
+  // que se las entrega a la IA—, nunca la pantalla.
+  trainingStructure: (id: number) =>
+    request<TrainingStructureOut>("GET", `/clients/${id}/training-structure`),
   // Borrado total (RGPD): el backend exige `confirm` == nombre completo exacto.
   // `suscripcionAMano`: el coach declara haber cancelado la suscripción en
   // Stripe él mismo. Es la salida cuando Stripe no responde y el borrado —una

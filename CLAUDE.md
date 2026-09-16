@@ -527,6 +527,84 @@ npm run check:planes        # el nivel del cliente RECOMIENDA un camino de
 
 ## 9. Trabajo pendiente / próximos pasos
 
+000000000000000000000000000000. ✅ **LA PLANIFICACIÓN SE ADAPTA A LA PERSONA:
+   SPLITS DE HASTA 10 DÍAS Y MESOCICLOS DE DURACIÓN LIBRE (16-09-2026).** Tres
+   peticiones del dueño en un mensaje: splits de hasta 10 días para repartir
+   volumen y frecuencia de verdad, mesociclos de 2-5 semanas (o los que sean)
+   con progresión global, y que la app permita **adaptar la planificación al
+   usuario** en vez de adaptar al usuario a un split cerrado. Migración **0056**
+   (`clients.cycle_days`, `mesocycle_blocks`, `muscle_priority`,
+   `muscle_deprioritized`, `review_days`).
+   - **EL CICLO ES UN DATO, no la semana** (`services/training_cycle.py`, una
+     sola puerta). `cycle_days` entre 2 y 10; **7 = EXACTAMENTE lo de siempre**
+     (y todos los planes que ya existen no lo llevan, así que son 7). Con 7 los
+     días son los del calendario y hoy se resuelve por el weekday; con otro
+     número el ciclo ROTA, los días son «Día 1…N» y hoy se cuenta desde el
+     ANCLA (el arranque del período) módulo la duración.
+     ⚠️ **El fallo que esto evita era silencioso y total**: la regla de «qué
+     sesión toca hoy» vivía COPIADA EN TRES SITIOS —la pantalla del portal, el
+     recordatorio diario y «tu semana»— y las tres daban por DESCANSO cualquier
+     día cuyo nombre no fuera un weekday. Con un ciclo de 10 días el cliente no
+     habría visto su entreno NINGÚN día, sin un error en ninguna parte.
+   - **EL MESOCICLO DURA LO QUE TENGA QUE DURAR**: 1-8 vueltas al ciclo
+     (`mesocycle_blocks`, 4 por defecto). Una vuelta = un BLOQUE, que con el
+     ciclo semanal es la semana de toda la vida (por eso se sigue leyendo
+     «Semana 1, 2, 3…»). La escalera se ajusta al número de bloques
+     (`plan_scaffold._progresion_del_mesociclo`): base → progresión(es) → pico →
+     deload. **Con 2 bloques o menos NO hay descarga** —descargar la mitad del
+     mesociclo no es periodizar— y el documento ya no promete una que no
+     existe (`_texto_de_descarga` la lee de la progresión REAL).
+   - **EL VOLUMEN, COMO LOS MACROS: LO CALCULA EL BACKEND**
+     (`services/training_volume.py`). Landmarks del §5 de `CRITERIOS_ASESORIA`
+     (mínimo ~6 series/sem, techo ~25, frecuencia ≥2, y 8-12 / 10-18 / 14-22 por
+     nivel) convertidos a SERIES POR CICLO y entregados a la IA como CONTRATO.
+     La **prioridad muscular** es lo que pidió el dueño —más espalda y hombros
+     dentro de esos 10 días—: +30 % al prioritario, −30 % al de mantenimiento,
+     nunca por debajo del mínimo productivo.
+     ⚠️ **Bug real de fondo que destapó**: los guardarraíles comparaban series
+     POR CICLO contra landmarks POR SEMANA. Un ciclo de 10 días inflaba el
+     recuento un 43 %, así que un plan correcto salía VETADO por exceso (30
+     series de pecho en 10 días son 21/semana, dentro del techo). Normalizado y
+     con regresión que falla sin el arreglo.
+   - **DÓNDE SE TOCA, en un solo sitio y siempre el mismo**:
+     `components/EstructuraEntrenamiento.tsx`, arriba de la pestaña
+     Planificación — en la vista CON plan y en la de SIN plan, para que no haya
+     que buscarla. Días del ciclo, bloques del mesociclo, prioridad por grupo
+     (un toque: normal → prioridad → mantenimiento) y duración de la revisión.
+     Las cifras las sirve `GET /clients/{id}/training-structure`, que es el
+     MISMO contrato que recibe la IA: una cuenta hecha en la pantalla acabaría
+     enseñando un número y generando otro. El EDITOR gana «Añadir día» (el
+     complemento de «Quitar día», que existía solo: añadir una sesión obligaba a
+     regenerar el plan entero, o sea a pagar), selector del día del ciclo cuando
+     rota —escribir «Martes» en un ciclo de 10 días deja la sesión sin sitio— y
+     añadir/quitar bloques de progresión con renumeración automática (un hueco
+     en la serie 1,2,3… tumbaba el guardado con un 422 mudo).
+   - **LA REVISIÓN TAMBIÉN ES SUYA** (`review_days`, 7-31; 14 por defecto). Un
+     principiante que necesita margen y un avanzado en una fase de fuerza no se
+     revisan al mismo ritmo. `periods.review_days()` es la puerta única, y los
+     umbrales del ciclo se escalan con ella (`state_machine._umbral`): clavados,
+     en una revisión SEMANAL el empujón del «día 12» no llegaba nunca y en una
+     MENSUAL saltaba a un tercio del camino. El mes de asesoría deja de ser
+     «revisiones // 2». Y el cierre se abre el ÚLTIMO día del período, no «el
+     día 14»: eso fallaba por los dos lados (uno de 13 días dejaba al cliente
+     sin poder enviar su revisión nunca; uno de 21 se la abría una semana antes).
+   - **DE PUNTA A PUNTA**: esquemas (`week` deja de ser `1|2|3|4`, `day_index`,
+     `cycle_days`, validador de días dentro del ciclo), generación (contrato y
+     estructura en los prompts del núcleo, NO en el de nutrición), plan a mano,
+     importación de documentos ajenos, Word de ida y vuelta, panel de revisión
+     (cortaba en 7 sesiones: con un ciclo de 10 el revisor clínico —que tiene
+     VETO— no veía las tres últimas), documentos de las DOS marcas y portal.
+     ⚠️ **El Word es lo más delicado**: la cabecera de la tabla de progresión se
+     titula «Bloque» cuando el ciclo rota, y `word_import` la reconoce por
+     FIRMA. Sin la segunda firma (`SIG_PROGRESION_BLOQUE`) y sin los alias de la
+     barra («bloque de descarga»), el coach editaría el Word, se le diría
+     «aplicado» y sus cambios se habrían perdido EN SILENCIO. Con test.
+   - Verificado: **960 tests** en los dos órdenes, `tsc`, build, las NUEVE
+     guardas y arranque desde base VACÍA hasta 0056. Tests:
+     `tests/test_ciclo_variable.py` (24), con tres arreglos comprobados
+     quitándolos (la normalización del volumen, la firma del Word y el día del
+     cierre) — los tres caen sin ellos.
+
 00000000000000000000000000000. ✅ **EL LOGO DE VERDAD, Y SU LETRA APLICADA A
    TODO PROFESSIONAL (11-09-2026).** El dueño mandó el archivo real del logo
    del centro (laurel dorado + «PROFESSIONAL» en versales serifas sobre

@@ -46,6 +46,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Client, Exercise, Food, Plan
+from app.services import training_cycle as _tc
 
 MAX_DOCX_BYTES = 15 * 1024 * 1024
 
@@ -124,13 +125,20 @@ def _header_sig(table) -> tuple[str, ...]:
 SIG_ENERGIA = ("calorias", "reparto de macros", "ajuste aplicado")
 SIG_TOMAS = ("hora", "toma", "estrategia")
 SIG_PROGRESION = ("semana", "enfoque", "carga", "rir", "notas")
+# La misma tabla con un ciclo ROTATIVO: el documento la titula «Bloque» porque
+# una vuelta a un split de 10 días no es una semana. Sin esta segunda firma el
+# importador no reconocería su propia tabla y el coach editaría la progresión
+# en el Word para que sus cambios se perdieran en silencio.
+SIG_PROGRESION_BLOQUE = ("bloque",) + SIG_PROGRESION[1:]
 SIG_SESION = ("ejercicio", "series", "rir", "descanso", "clave tecnica")
 SIG_SEMANAL = ("toma", "lun", "mar", "mie", "jue", "vie", "sab", "dom")
 SIG_CAMBIOS = ("area", "que cambia", "por que")
 
 _SIGS_CONOCIDAS = (
     ("resumen energético", SIG_ENERGIA), ("estructura diaria", SIG_TOMAS),
-    ("progresión semanal", SIG_PROGRESION), ("sesión de entrenamiento", SIG_SESION),
+    ("progresión semanal", SIG_PROGRESION),
+    ("progresión del mesociclo", SIG_PROGRESION_BLOQUE),
+    ("sesión de entrenamiento", SIG_SESION),
     ("dieta semanal", SIG_SEMANAL), ("cambios de tu plan", SIG_CAMBIOS),
 )
 
@@ -149,6 +157,10 @@ _ALIAS_BARRA: tuple[tuple[str, str], ...] = (
     ("suplementos", "suplementacion recomendada"),
     ("cardio y pasos", "cardio y neat"),
     ("semana suave", "semana de descarga"),
+    # Con un ciclo ROTATIVO el documento titula la caja «Bloque de descarga»:
+    # sin este alias el coach editaba la descarga en el Word y se perdía.
+    ("bloque de descarga", "semana de descarga"),
+    ("bloque suave", "semana de descarga"),
     ("tu comida libre de la semana", "tu comida libre semanal"),
     ("tu rutina", "estructura"),
 )
@@ -643,8 +655,11 @@ def parse_word_edits(db: Session, plan: Plan, docx_bytes: bytes) -> dict:
             continue
 
         # ---- tabla de PROGRESIÓN SEMANAL -------------------------------
-        if sig == SIG_PROGRESION and training is not None:
+        if sig in (SIG_PROGRESION, SIG_PROGRESION_BLOQUE) and training is not None:
             vio_algo = True
+            # «Semana» o «Bloque» según dure el ciclo: los mensajes tienen que
+            # llamar a las cosas como las llama el documento que el coach edita.
+            _etq = _tc.etiqueta_de_bloque(_tc.dias_de_ciclo(training))
             semanas = {int(w.get("week")): w
                        for w in training.get("weekly_progression", []) if w.get("week")}
             for row in block.rows[1:]:
@@ -652,13 +667,13 @@ def parse_word_edits(db: Session, plan: Plan, docx_bytes: bytes) -> dict:
                 n = _num(_cell_text(c[0]))
                 if n is None:
                     if any(_cell_text(x).strip() for x in c):
-                        avisos.append("Progresión semanal: una fila sin número de "
-                                      "semana legible no se importó.")
+                        avisos.append(f"Progresión: una fila sin número de "
+                                      f"{_etq.lower()} legible no se importó.")
                     continue
                 if int(n) not in semanas:
                     avisos.append(
-                        f"Progresión semanal: la semana {int(n)} no existe en el "
-                        "plan — añadir o quitar semanas se hace desde el editor "
+                        f"Progresión: {_etq.lower()} {int(n)} no existe en el plan "
+                        f"— añadir o quitar {_etq.lower()}s se hace desde el editor "
                         "web; esa fila no se importó.")
                     continue
                 w = semanas[int(n)]
@@ -669,24 +684,24 @@ def parse_word_edits(db: Session, plan: Plan, docx_bytes: bytes) -> dict:
                     # se descartaba EN SILENCIO.
                     intent = _INTENT_MAP.get(_norm(intent_raw), intent_raw[:40])
                     if intent != w.get("intent"):
-                        frases.append(f"Semana {int(n)}: enfoque {w.get('intent')} → {intent}")
+                        frases.append(f"{_etq} {int(n)}: enfoque {w.get('intent')} → {intent}")
                         w["intent"] = intent
                 carga_txt = _cell_text(c[2]).strip()
                 carga = _num(carga_txt)
                 if carga is None and carga_txt:
-                    avisos.append(f"Progresión semanal: no entiendo la carga "
-                                  f"«{carga_txt[:20]}» de la semana {int(n)} — se "
+                    avisos.append(f"Progresión: no entiendo la carga "
+                                  f"«{carga_txt[:20]}» de {_etq.lower()} {int(n)} — se "
                                   "mantiene la actual.")
                 elif carga is not None and abs(carga - float(w.get("load_pct") or 0)) > 0.01:
-                    frases.append(f"Semana {int(n)}: carga {w.get('load_pct')}% → {carga:g}%")
+                    frases.append(f"{_etq} {int(n)}: carga {w.get('load_pct')}% → {carga:g}%")
                     w["load_pct"] = carga
                 rirt = re.sub(r"(?i)^rir\s*", "", _cell_text(c[3])).strip()
                 if rirt and rirt != str(w.get("rir_target") or ""):
-                    frases.append(f"Semana {int(n)}: RIR {w.get('rir_target')} → {rirt}")
+                    frases.append(f"{_etq} {int(n)}: RIR {w.get('rir_target')} → {rirt}")
                     w["rir_target"] = rirt
                 nota = _cell_text(c[4]).strip()
                 if nota and nota != (w.get("volume_note") or "").strip():
-                    frases.append(f"Semana {int(n)}: notas de volumen actualizadas")
+                    frases.append(f"{_etq} {int(n)}: notas de volumen actualizadas")
                     w["volume_note"] = nota
             continue
 
@@ -738,9 +753,10 @@ def parse_word_edits(db: Session, plan: Plan, docx_bytes: bytes) -> dict:
                 # Vaciar la caja también cuenta: es la forma natural de QUITAR
                 # el deload (antes se exigía texto y el borrado se ignoraba).
                 if nuevo != (training.get("deload_instructions") or "").strip():
+                    _e = _tc.etiqueta_de_bloque(_tc.dias_de_ciclo(training)).lower()
                     training["deload_instructions"] = nuevo
-                    frases.append("Instrucciones de la semana de descarga actualizadas"
-                                  if nuevo else "Semana de descarga eliminada")
+                    frases.append(f"Instrucciones de la {_e} de descarga actualizadas"
+                                  if nuevo else f"{_e.capitalize()} de descarga eliminada")
             elif barra.startswith("cardio y neat") and training is not None:
                 _aplicar_cardio(texto, training, frases, avisos)
             elif barra.startswith("tu margen de maniobra") and nutrition is not None:

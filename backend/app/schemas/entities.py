@@ -11,6 +11,14 @@ from typing import Annotated, Literal
 from pydantic import (BaseModel, ConfigDict, EmailStr, Field, computed_field,
                       field_validator)
 
+# Los topes del ciclo y del mesociclo viven en un solo sitio.
+from app.services.training_cycle import (
+    MAX_BLOQUES,
+    MAX_DIAS_CICLO,
+    MIN_BLOQUES,
+    MIN_DIAS_CICLO,
+)
+
 
 def _http_url_or_none(v: str | None) -> str | None:
     """Normaliza una URL OPCIONAL exigiendo http/https (bloquea javascript:, data:…
@@ -144,7 +152,7 @@ class AnamnesisSubmit(BaseModel):
     # llega al prompt de generación.
     exercise_prefs: str | None = None
     # Entrenamiento
-    training_days: int = Field(ge=2, le=6)
+    training_days: int = Field(ge=2, le=7)
     daily_activity_level: Literal["sedentary", "light", "active", "very_active"] | None = None
     session_max_min: int = Field(ge=30, le=180)
     training_place: TrainingPlace
@@ -206,10 +214,18 @@ class ClientUpdate(BaseModel):
     goal_weight_kg: float | None = None
     goal_deadline: date | None = None
     level: Level | None = None
-    training_days: int | None = Field(default=None, ge=2, le=6)
+    training_days: int | None = Field(default=None, ge=2, le=7)
     daily_activity_level: str | None = None  # sedentary|light|active|very_active
     session_max_min: int | None = Field(default=None, ge=30, le=180)
     training_place: TrainingPlace | None = None
+    # ESTRUCTURA de su planificación. ⚠️ Todo campo editable en la ficha tiene
+    # que estar TAMBIÉN aquí: Pydantic descarta en silencio lo que no declara y
+    # el coach se queda creyendo que lo guardó (gotcha §5.8 del traspaso).
+    cycle_days: int | None = Field(default=None, ge=MIN_DIAS_CICLO, le=MAX_DIAS_CICLO)
+    mesocycle_blocks: int | None = Field(default=None, ge=MIN_BLOQUES, le=MAX_BLOQUES)
+    muscle_priority: list[str] | None = None
+    muscle_deprioritized: list[str] | None = None
+    review_days: int | None = Field(default=None, ge=7, le=31)
     equipment: list[str] | None = None
     excluded_exercise_ids: list[int] | None = None
     injuries_notes: str | None = None
@@ -259,6 +275,12 @@ class ClientOut(BaseModel):
     daily_activity_level: str | None = None
     session_max_min: int | None
     training_place: TrainingPlace | None
+    # Estructura de su planificación (NULL = ciclo semanal, 4 bloques, 14 días).
+    cycle_days: int | None = None
+    mesocycle_blocks: int | None = None
+    muscle_priority: list[str] | None = None
+    muscle_deprioritized: list[str] | None = None
+    review_days: int | None = None
     equipment: list[str] | None
     excluded_exercise_ids: list[int] | None
     injuries_notes: str | None
@@ -857,7 +879,7 @@ class PortalPeriodInfo(BaseModel):
     days_total: int
     days_elapsed: int
     days_left: int
-    can_close: bool  # desde día 14
+    can_close: bool  # su último día
     status: Literal["open", "closed", "analyzed"]
 
 

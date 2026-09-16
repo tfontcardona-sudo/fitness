@@ -30,10 +30,26 @@ from datetime import date, timedelta
 
 # Umbrales de G.2
 AT_RISK_DAYS_AFTER_PERIOD_END = 4   # +4 días sin cerrar tras fin de período
-LOG_RATIO_CHECK_DAY = 10            # a día 10 del período
+LOG_RATIO_CHECK_DAY = 10            # a día 10 de una quincena
 LOG_RATIO_MIN = 0.30               # <30% de registros → at_risk
 INACTIVE_DAYS = 30                 # >30 días sin actividad → inactive
-REMINDER_DAY = 12                  # recordatorio si no registra (día 12)
+REMINDER_DAY = 12                  # recordatorio si no registra (día 12 de 14)
+PERIODO_DE_REFERENCIA = 14          # la quincena sobre la que se fijaron los dos
+
+
+def _umbral(dia_en_quincena: int, periodo: int | None) -> int:
+    """Un umbral de la quincena, llevado a un período de otra duración.
+
+    Los dos umbrales —"a día 10 mira la adherencia", "a día 12 dale un
+    empujón"— se fijaron sobre catorce días. Desde que la revisión es
+    configurable, dejarlos clavados los volvía absurdos en los extremos: en una
+    revisión SEMANAL el aviso del día 12 no llegaba nunca (el período ya habría
+    cerrado) y en una MENSUAL saltaba a un tercio del camino, cuando aún no hay
+    nada que reprochar. Se guarda la PROPORCIÓN, que es lo que significaban."""
+    if not periodo or periodo == PERIODO_DE_REFERENCIA:
+        return dia_en_quincena
+    return max(2, min(int(periodo),
+                      round(dia_en_quincena * int(periodo) / PERIODO_DE_REFERENCIA)))
 
 
 @dataclass
@@ -43,6 +59,9 @@ class ClientFacts:
     status: str
     has_active_period: bool = False
     period_start: date | None = None
+    # Cuántos días dura ESTE período (None = la quincena de siempre). Los
+    # umbrales de riesgo y del recordatorio se escalan con él.
+    period_days: int | None = None
     period_end: date | None = None
     period_closed: bool = False
     days_logged_in_period: int = 0
@@ -108,7 +127,7 @@ def evaluate_transition(facts: ClientFacts, today: date) -> TransitionDecision:
         # ¿Baja adherencia a día 10? → at_risk
         if facts.period_start is not None and not facts.period_closed:
             day = _period_day(today, facts.period_start)
-            if day >= LOG_RATIO_CHECK_DAY:
+            if day >= _umbral(LOG_RATIO_CHECK_DAY, facts.period_days):
                 expected = day
                 ratio = facts.days_logged_in_period / expected if expected else 0
                 if ratio < LOG_RATIO_MIN:
@@ -132,10 +151,13 @@ def evaluate_transition(facts: ClientFacts, today: date) -> TransitionDecision:
         # del contenedor antes de las 06:30, un fallo con ese cliente), el
         # empujón del día 12 —el que evita que la quincena salga coja— se
         # perdía para siempre. La dedup del envío es por PERÍODO (jobs.py).
-        and _period_day(today, facts.period_start) >= REMINDER_DAY
-        and facts.days_logged_in_period < REMINDER_DAY // 2
+        and _period_day(today, facts.period_start) >= _umbral(REMINDER_DAY,
+                                                              facts.period_days)
+        and facts.days_logged_in_period < _umbral(REMINDER_DAY, facts.period_days) // 2
     ):
-        return TransitionDecision(None, "recordatorio día 12", send_reminder=True)
+        return TransitionDecision(
+            None, f"recordatorio día {_umbral(REMINDER_DAY, facts.period_days)}",
+            send_reminder=True)
 
     return TransitionDecision(None)
 

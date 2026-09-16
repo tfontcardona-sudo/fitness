@@ -446,7 +446,7 @@ export function PortalWorkout({ api, token, brand, periodStatus = null, business
         >
           <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
             <CalendarRange size={16} style={{ color: brand.color_secondary }} />
-            Semana {week.week} de {week.total_weeks}
+            {week.block_label ?? "Semana"} {week.week} de {week.total_weeks}
             {week.intent && (
               <span
                 className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white"

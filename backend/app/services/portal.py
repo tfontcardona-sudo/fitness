@@ -23,6 +23,7 @@ from app.models import (
     BrandConfig, Client, DailyLog, Exercise, Period, Plan, RecommendedProduct,
     WorkoutLog,
 )
+from app.services import training_cycle as tc
 from app.services.storage import media_url
 
 # URLs que el portal renderiza como href/src: solo esquema http(s) — los datos
@@ -48,8 +49,12 @@ def _playable(url: str | None) -> str | None:
         return None
     return u if u.startswith(_MEDIA_PREFIX) or _HTTP_RE.match(u) else None
 
-DAY_LABELS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
-DAY_SLUGS = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
+# Los nombres de los días y la regla de "qué sesión toca hoy" viven en
+# `training_cycle`: aquí se reexportan para no romper a quien ya los importaba
+# de este módulo (`push`, "tu semana" y sus tests).
+DAY_LABELS = tc.DAY_LABELS
+DAY_SLUGS = tc.DAY_SLUGS
+dia_de_sesion = tc.dia_de_sesion
 _MONTHS_ES = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
               "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
 
@@ -161,7 +166,12 @@ def current_training_week(db: Session, plan: Plan | None, today: date) -> dict |
     )
     start = start_dt.date() if start_dt else today
     n = len(weeks)
-    idx = (max(0, (today - start).days) // 7) % n
+    # Un BLOQUE del mesociclo es una vuelta COMPLETA al ciclo: con la semana de
+    # siempre son 7 días (y esto se lee "semana 1, 2, 3…"), con un ciclo de 10
+    # días son 10. Dividir siempre entre 7 haría avanzar la progresión antes de
+    # que el cliente hubiera terminado su vuelta al split.
+    ciclo = tc.dias_de_ciclo(plan.training_json or {})
+    idx = tc.bloque_de_fecha(today, ancla=start, ciclo=ciclo, bloques=n)
     w = weeks[idx] or {}
     base_pct = (weeks[0] or {}).get("load_pct") or 100
     pct = w.get("load_pct") or base_pct
@@ -180,6 +190,11 @@ def current_training_week(db: Session, plan: Plan | None, today: date) -> dict |
         "load_factor": round(factor, 3),
         "started_on": start,
         "why": why,
+        # Cómo se llama esto delante del cliente: "Semana 2 de 4" con el ciclo
+        # de siempre, "Bloque 2 de 4" cuando el ciclo no es una semana (decirle
+        # "semana" a una vuelta de 10 días sería mentirle).
+        "block_label": tc.etiqueta_de_bloque(ciclo),
+        "cycle_days": ciclo,
     }
 
 
@@ -222,13 +237,14 @@ def period_info(period: Period | None, today: date) -> dict | None:
     days_total = (period.ends_on - period.starts_on).days + 1
     days_elapsed = max(0, min(days_total, (today - period.starts_on).days + 1))
     days_left = max(0, (period.ends_on - today).days)
-    # Cierre disponible desde el día 14 del período (G.4) — o el ÚLTIMO día, si
-    # ese período resulta ser más corto (uno abierto a mano, uno recortado al
-    # publicar el plan a mitad de ciclo). Con el 14 fijo, un período de 13 días
-    # dejaba al cliente en un callejón: el anillo del portal decía "¡toca
-    # revisión!" y la pantalla, "disponible al día 14 · se activa el <fecha que
-    # YA pasó>". No podía enviarla nunca y solo lo desbloqueaba el coach.
-    can_close = days_elapsed >= min(14, days_total) and period.status == "open"
+    # Cierre disponible el ÚLTIMO día del período (G.4). Era "el día 14", y eso
+    # fallaba por los dos lados: un período de 13 días —uno abierto a mano, uno
+    # recortado al publicar el plan a mitad de ciclo— dejaba al cliente en un
+    # callejón (el anillo decía "¡toca revisión!" y la pantalla, "disponible al
+    # día 14 · se activa el <fecha que YA pasó>"), y desde que la revisión es
+    # configurable, a uno de 21 días le habría abierto el cierre una semana
+    # antes de tiempo. Su duración REAL es la única respuesta que vale.
+    can_close = days_elapsed >= days_total and period.status == "open"
     return {
         "period_id": period.id,
         "period_index": period.period_index,
@@ -462,34 +478,27 @@ def _resolve_session(db: Session, sess: dict, load_factor: float = 1.0,
     }
 
 
-def dia_de_sesion(sess: dict) -> str:
-    """El día de una sesión, en minúsculas y a prueba de basura.
-
-    El esquema dice `day: str` ("Lunes"…), pero a `training_json` le llegan
-    planes editados a mano, importados del Word y copiados de un modelo. Con un
-    `day` numérico —o nulo— el `.strip()` de quien lo leía reventaba con un
-    AttributeError: la pantalla "Hoy" del cliente (la más visitada del portal)
-    se caía con un 500, y el recordatorio diario se llevaba por delante el
-    aviso de TODOS los clientes, no solo el del plan roto."""
-    return str(sess.get("day") or "").strip().lower()
-
-
 def _session_for_today(db: Session, plan: Plan, today: date) -> dict | None:
-    """Sesión de entrenamiento que toca hoy según el día de la semana.
+    """Sesión de entrenamiento que toca hoy. Si no hay, es descanso → None.
 
-    Mapea el weekday actual al `day` de las sesiones del plan (que vienen como
-    "Lunes", "Martes"…). Si hoy no hay sesión, es día de descanso → None.
-    Los pesos sugeridos van AJUSTADOS a la semana del mesociclo (mismo factor
-    que la pestaña Entreno — sin desincronizaciones entre vistas).
+    Quién decide qué día del ciclo es hoy es `training_cycle`, una sola puerta
+    para las tres pantallas que lo preguntaban por su cuenta (esta, el
+    recordatorio diario y "tu semana"). Con el ciclo de siempre —7 días— sale
+    el weekday de toda la vida; con un ciclo de 10 la cuenta arranca del día en
+    que empezó la planificación.
+
+    Los pesos sugeridos van AJUSTADOS al bloque del mesociclo (mismo factor que
+    la pestaña Entreno — sin desincronizaciones entre vistas).
     """
     training = plan.training_json or {}
-    today_label = DAY_LABELS[today.weekday()].lower()
     week = current_training_week(db, plan, today)
     factor = (week or {}).get("load_factor") or 1.0
-    for sess in training.get("sessions", []):
-        if dia_de_sesion(sess) == today_label:
-            return _resolve_session(db, sess, factor)
-    return None
+    # El mismo ancla que el bloque del mesociclo: si el ciclo y la progresión
+    # contaran desde días distintos, el cliente vería el entreno del día 3 con
+    # las cargas del día 7.
+    ancla = (week or {}).get("started_on")
+    sess = tc.sesion_de_fecha(training, today, ancla=ancla)
+    return _resolve_session(db, sess, factor) if sess else None
 
 
 def build_training_sessions(db: Session, client: Client, plan: Plan | None = None,

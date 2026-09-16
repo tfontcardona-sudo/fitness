@@ -36,6 +36,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Client, Exercise
+from app.services import training_cycle as tc
+# La progresión del mesociclo y el texto de la descarga salen de la MISMA
+# puerta que el plan a mano: dos escaleras distintas para la misma cosa
+# acaban siendo dos sistemas que se contradicen en el documento del cliente.
+from app.services.plan_scaffold import (
+    _progresion_del_mesociclo,
+    _reparto_del_ciclo,
+    _texto_de_descarga,
+)
 
 
 # ------------------------------------------------------------- esquema IA ----
@@ -268,12 +277,24 @@ def _dia_slug(texto: str | None) -> str | None:
     return None
 
 
-def _dia_sesion(texto: str | None, indice: int, total: int) -> str:
-    slug = _dia_slug(texto)
-    if slug is None:
-        reparto = _REPARTO.get(max(1, min(7, total)), _DIAS)
-        slug = reparto[min(indice, len(reparto) - 1)]
-    return _NOMBRE_DIA[slug]
+def _dia_sesion(texto: str | None, indice: int, total: int,
+                ciclo: int = tc.SEMANA) -> tuple[str, int]:
+    """Dónde cae esta sesión dentro del CICLO: su etiqueta y su día (1…ciclo).
+
+    Un documento ajeno habla en días de la semana ("lunes") o no dice nada. Si
+    el ciclo del cliente ES la semana, se respeta lo de siempre. Si rota, un
+    "lunes" del papel no significa nada dentro de un ciclo de 10 días: las
+    sesiones se reparten de forma pareja, que es lo que hace el plan a mano."""
+    if tc.es_semanal(ciclo):
+        slug = _dia_slug(texto)
+        if slug is None:
+            reparto = _REPARTO.get(max(1, min(tc.SEMANA, total)), _DIAS)
+            slug = reparto[min(indice, len(reparto) - 1)]
+        idx = _DIAS.index(slug) + 1
+        return _NOMBRE_DIA[slug], idx
+    dias = _reparto_del_ciclo(max(1, min(ciclo, total)), ciclo)
+    idx = dias[min(indice, len(dias) - 1)]
+    return tc.etiqueta_de_dia(idx, ciclo), idx
 
 
 def resolver_ejercicio(nombre: str, nombre_a_id: dict[str, int],
@@ -372,16 +393,7 @@ def _semana_completa(dias: dict[str, list[dict]], avisos: list[str]) -> dict[str
     return dias
 
 
-_PROGRESION_DEFECTO = [
-    {"week": 1, "intent": "Base", "load_pct": 100.0, "rir_target": "2",
-     "volume_note": "Asienta técnica y cargas de referencia."},
-    {"week": 2, "intent": "Progresión", "load_pct": 102.5, "rir_target": "1-2",
-     "volume_note": "Sube peso o repeticiones donde el RIR lo permita."},
-    {"week": 3, "intent": "Pico", "load_pct": 105.0, "rir_target": "1",
-     "volume_note": "Semana más exigente del ciclo."},
-    {"week": 4, "intent": "Deload", "load_pct": 60.0, "rir_target": "3-4",
-     "volume_note": "Mitad de series: recuperar para el siguiente ciclo."},
-]
+
 
 
 def _cue(text: str | None, default: str) -> str:
@@ -395,6 +407,12 @@ def build_training(db: Session, client: Client, doc: DocTraining, avisos: list[s
 
     id_a_nombre, nombre_a_id = _exercise_maps(db, None)
     lib = {e.id: e for e in db.scalars(select(Exercise))}
+    # El ciclo y el mesociclo los manda la FICHA del cliente, no el papel: el
+    # documento trae ejercicios y series, la estructura la decide el coach aquí.
+    ciclo = tc.dias_de_ciclo({"cycle_days": getattr(client, "cycle_days", None)})
+    bloques = max(tc.MIN_BLOQUES, min(tc.MAX_BLOQUES,
+                                      int(getattr(client, "mesocycle_blocks", None)
+                                          or tc.BLOQUES_POR_DEFECTO)))
     sesiones = []
     sin_lib: list[str] = []
     tomados: list[str] = []
@@ -431,8 +449,10 @@ def build_training(db: Session, client: Client, doc: DocTraining, avisos: list[s
                 avisos.append(f"La sesión «{ds.name or i + 1}» se queda fuera: ninguno de sus "
                               "ejercicios está en la biblioteca.")
             continue
+        etiqueta_dia, indice_dia = _dia_sesion(ds.day, len(sesiones), n, ciclo)
         sesiones.append({
-            "day": _dia_sesion(ds.day, len(sesiones), n),
+            "day": etiqueta_dia,
+            "day_index": indice_dia,
             "name": (ds.name or f"Sesión {len(sesiones) + 1}")[:60],
             "warmup": (ds.warmup or "5-8 min de cardio suave + 2 series de aproximación en los básicos del día.")[:300],
             "exercises": exs,
@@ -462,25 +482,29 @@ def build_training(db: Session, client: Client, doc: DocTraining, avisos: list[s
     # Lo que el sistema NO puede representar tal cual se dice, no se traga en
     # silencio: el coach tiene que saber qué se ha sustituido por lo estándar.
     if doc.progression:
-        avisos.append("La progresión que describe el documento no encaja en el esquema de 4 "
-                      "semanas del sistema: queda la estándar (y su texto, en el porqué de la "
-                      "rutina). Ajústala en el editor si hace falta.")
+        avisos.append(f"La progresión que describe el documento no encaja en el esquema de "
+                      f"{bloques} {tc.etiqueta_de_bloque(ciclo).lower()}s del sistema: queda la "
+                      "estándar (y su texto, en el porqué de la rutina). Ajústala en el editor "
+                      "si hace falta.")
     sin_minutos = [cs for cs in cardio_doc.sessions if not cs.minutes]
     if sin_minutos:
         avisos.append(f"{len(sin_minutos)} sesión(es) de cardio del documento no dicen cuántos "
                       "minutos duran: no se han importado.")
+    progresion = _progresion_del_mesociclo(bloques)
+    descarga_estandar = _texto_de_descarga(progresion, ciclo)
     if doc.deload is None:
-        avisos.append("El documento no pauta descarga: se ha puesto la del sistema (semana 4).")
+        avisos.append("El documento no pauta descarga: se ha puesto la del sistema "
+                      f"({descarga_estandar.split(':')[0].lower()}).")
     training = {
-        "split_name": (doc.split_name or f"Rutina de {len(sesiones)} días")[:80],
+        "split_name": (doc.split_name or f"Rutina de {len(sesiones)} sesiones")[:80],
         "split_rationale": ("Rutina importada de un documento externo y adaptada al sistema: "
                             + (progresion_txt or "progresión por doble progresión semana a semana."))[:600],
-        "weekly_progression": _PROGRESION_DEFECTO,
+        "weekly_progression": progresion,
+        "cycle_days": ciclo,
         "sessions": sesiones,
         "cardio": {"daily_steps": max(0, min(30000, cardio_doc.daily_steps or pasos)),
                    "sessions": cardio_ses},
-        "deload_instructions": (doc.deload or
-                                "Semana 4: mitad de series con el mismo peso; técnica perfecta.")[:400],
+        "deload_instructions": (doc.deload or descarga_estandar)[:400],
     }
     try:
         from app.schemas.ai import TrainingCore

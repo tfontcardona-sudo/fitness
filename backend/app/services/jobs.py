@@ -142,6 +142,8 @@ def _facts_for(db: Session, client: Client) -> ClientFacts:
         has_active_period=True,
         period_start=period.starts_on,
         period_end=period.ends_on,
+        period_days=((period.ends_on - period.starts_on).days + 1
+                     if period.starts_on and period.ends_on else None),
         period_closed=period.status in ("closed", "analyzed"),
         days_logged_in_period=int(days_logged),
         last_activity_date=last_activity,

@@ -14,6 +14,15 @@ from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+# La duración del ciclo y del mesociclo vive en un solo sitio (el módulo que
+# además resuelve "qué toca hoy"): si mañana el tope sube de 10, sube aquí.
+from app.services.training_cycle import (
+    MAX_BLOQUES,
+    MAX_DIAS_CICLO,
+    MIN_DIAS_CICLO,
+    SEMANA,
+)
+
 # ============================================================ llamada ① ====
 
 
@@ -83,7 +92,10 @@ class NutritionCore(BaseModel):
 
 
 class WeeklyProgressionWeek(BaseModel):
-    week: int = Field(ge=1, le=4)
+    # Un "week" es UNA VUELTA AL CICLO (un bloque del mesociclo). Con el ciclo
+    # de siempre —7 días— una vuelta es una semana y esto se lee igual que
+    # antes; con un ciclo de 10 días, el bloque 2 empieza el día 11.
+    week: int = Field(ge=1, le=MAX_BLOQUES)
     intent: str = Field(description="UNA palabra: Base | Progresión | Pico | Deload")
     load_pct: float = Field(gt=0)
     rir_target: str
@@ -123,7 +135,12 @@ class PlannedExercise(BaseModel):
 
 
 class TrainingSession(BaseModel):
-    day: str  # "Lunes"…
+    day: str  # "Lunes"… con ciclo semanal; "Día 3" con ciclo rotativo
+    # Qué día del CICLO ocupa (1…cycle_days). Es lo que hace que un split de 10
+    # días sea posible: sin él, "qué toca hoy" solo se puede resolver por el
+    # nombre del día de la semana. Opcional por compatibilidad: en los planes
+    # de siempre se deduce del nombre (`training_cycle.indice_de_dia`).
+    day_index: int | None = Field(default=None, ge=1, le=MAX_DIAS_CICLO)
     name: str  # "Upper A"
     warmup: str = Field(
         description="MÁXIMO 15 palabras separadas por '·'. Ej.: '5 min bici · movilidad hombro · 2 series ligeras'."
@@ -149,6 +166,9 @@ class TrainingCore(BaseModel):
     split_rationale: str = Field(
         description="POR QUÉ esta división, en UNA frase de máximo 20 palabras."
     )
+    # Cuántos días dura una vuelta al split (2-10). 7 = la semana de siempre.
+    # Ausente = 7, para que los planes ya guardados sigan valiendo tal cual.
+    cycle_days: int = Field(default=SEMANA, ge=MIN_DIAS_CICLO, le=MAX_DIAS_CICLO)
     weekly_progression: list[WeeklyProgressionWeek]
     sessions: list[TrainingSession] = Field(min_length=1)
     cardio: CardioPlan
@@ -162,10 +182,47 @@ class TrainingCore(BaseModel):
 
     @field_validator("weekly_progression")
     @classmethod
-    def cuatro_semanas(cls, v: list[WeeklyProgressionWeek]) -> list[WeeklyProgressionWeek]:
-        if [w.week for w in v] != [1, 2, 3, 4]:
-            raise ValueError("weekly_progression debe cubrir exactamente las semanas 1-4")
+    def bloques_consecutivos(cls, v: list[WeeklyProgressionWeek]) -> list[WeeklyProgressionWeek]:
+        """El mesociclo son N bloques CONSECUTIVOS empezando en 1.
+
+        Antes se exigían exactamente 4 ([1,2,3,4]): un mesociclo de 3 o de 5
+        bloques no se podía ni generar. Lo que sí se sigue exigiendo es que no
+        falte ni se repita ninguno — un plan con los bloques [1,3] deja al
+        cliente sin pauta la segunda vuelta, y eso el portal no lo puede
+        adivinar."""
+        if not v:
+            raise ValueError("weekly_progression no puede estar vacía")
+        if len(v) > MAX_BLOQUES:
+            raise ValueError(f"weekly_progression: máximo {MAX_BLOQUES} bloques")
+        if [w.week for w in v] != list(range(1, len(v) + 1)):
+            raise ValueError(
+                "weekly_progression debe numerar los bloques de forma "
+                f"consecutiva desde 1 (recibido: {[w.week for w in v]})")
         return v
+
+    @model_validator(mode="after")
+    def dias_dentro_del_ciclo(self) -> "TrainingCore":
+        """Ninguna sesión puede caer fuera del ciclo ni compartir día con otra.
+
+        Dos sesiones el mismo día del ciclo es un plan que el portal no sabe
+        servir: enseñaría la primera y la otra no existiría para el cliente."""
+        vistos: set[int] = set()
+        for s in self.sessions:
+            if s.day_index is None:
+                continue
+            if s.day_index > self.cycle_days:
+                raise ValueError(
+                    f"la sesión '{s.name}' cae en el día {s.day_index}, fuera "
+                    f"del ciclo de {self.cycle_days} días")
+            if s.day_index in vistos:
+                raise ValueError(
+                    f"hay dos sesiones en el día {s.day_index} del ciclo")
+            vistos.add(s.day_index)
+        if len(self.sessions) > self.cycle_days:
+            raise ValueError(
+                f"{len(self.sessions)} sesiones no caben en un ciclo de "
+                f"{self.cycle_days} días")
+        return self
 
 
 class PlanCoreOutput(BaseModel):

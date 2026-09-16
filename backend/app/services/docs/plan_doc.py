@@ -227,8 +227,16 @@ def _macro_lines(macros: dict, kcal: float) -> list[str]:
     return [linea, f"{p_ch}% · {p_pr}% · {p_gr}% de tus calorías"]
 
 
-def _dias_semana(n: int) -> str:
-    return "1 día/semana" if n == 1 else f"{n} días/semana"
+def _dias_semana(n: int, ciclo: int = 7) -> str:
+    """«3 días/semana», o «4 sesiones cada 10 días» cuando el ciclo rota.
+
+    Con un split de 10 días no hay "días por semana" que decir sin mentir: unas
+    semanas entrena 4 veces y otras 3. Se cuenta sobre el ciclo, que es la
+    vuelta completa que el cliente sí puede seguir."""
+    if ciclo == 7:
+        return "1 día/semana" if n == 1 else f"{n} días/semana"
+    return (f"1 sesión cada {ciclo} días" if n == 1
+            else f"{n} sesiones cada {ciclo} días")
 
 
 def _indice_nutricion(nutrition: dict, include_training: bool,
@@ -782,19 +790,40 @@ def generate_plan_doc(
                         col_widths=[1400, 3800, 3826],
                         cant_split_rows=False, keep_together=False)
 
+    from app.services import training_cycle as _tc
+
+    _ciclo = _tc.dias_de_ciclo(training)
+    _semanal = _tc.es_semanal(_ciclo)
+    _etq = _tc.etiqueta_de_bloque(_ciclo)          # "Semana" | "Bloque"
+
     section_bar(doc, f"Estructura · {training.get('split_name','')}", BLUE)
     info_box(doc, [
-        (_dias_semana(len(training.get("sessions", []))), training.get("split_rationale", "")),
+        (_dias_semana(len(training.get("sessions", [])), _ciclo),
+         training.get("split_rationale", "")),
     ])
+    if not _semanal:
+        # El cliente tiene que entender por qué su entreno no cae siempre en los
+        # mismos días: sin esta línea leería "Día 1" y no sabría cuándo es.
+        _nota(doc, f"Tu rutina NO va de lunes a domingo: es un ciclo de {_ciclo} "
+                   f"días que se repite. El «Día 1» es el primero desde que "
+                   "arranca tu plan, y en tu portal te dice cada mañana qué toca.")
 
     prog = training.get("weekly_progression", [])
     if prog:
-        section_bar(doc, "Progresión semanal", WINE)
-        _nota(doc, "El mes no se entrena igual las cuatro semanas: la carga sube y "
-                   "el RIR baja. Esta tabla manda sobre la sensación del día.")
-        rows = [[f"Sem {w.get('week')}", w.get("intent", ""), f"{w.get('load_pct','')}%",
+        _nbloques = len(prog)
+        section_bar(doc, "Progresión semanal" if _semanal
+                    else "Progresión del mesociclo", WINE)
+        _nota(doc, (f"El mes no se entrena igual las {_nbloques} "
+                    f"{_etq.lower()}s: la carga sube y el RIR baja. Esta tabla "
+                    "manda sobre la sensación del día."))
+        _abrev = "Sem" if _semanal else "Bloque"
+        rows = [[f"{_abrev} {w.get('week')}", w.get("intent", ""), f"{w.get('load_pct','')}%",
                  f"RIR {w.get('rir_target','')}", w.get("volume_note", "")] for w in prog]
-        clean_table(doc, ["Semana", "Enfoque", "Carga", "RIR", "Notas"], rows, brand,
+        # ⚠️ La CABECERA la reconoce `word_import` por firma: «Semana» y
+        # «Bloque» son las dos que sabe leer (SIG_PROGRESION[_BLOQUE]). Si
+        # cambias este texto, cámbialo también allí o el coach editará el Word
+        # y sus cambios se perderán EN SILENCIO.
+        clean_table(doc, [_etq, "Enfoque", "Carga", "RIR", "Notas"], rows, brand,
                     header_color=WINE, header_text_color="FFFFFF",
                     col_widths=[1100, 1800, 1100, 1100, 3926], keep_together=False)
 
@@ -853,9 +882,9 @@ def generate_plan_doc(
         info_box(doc, items)
 
     if training.get("deload_instructions"):
-        section_bar(doc, "Semana de descarga (deload)", BLUE)
-        _nota(doc, "No es perder una semana: es lo que permite que la siguiente "
-                   "vuelvas más fuerte.")
+        section_bar(doc, f"{_etq} de descarga (deload)", BLUE)
+        _nota(doc, f"No es perder {'una semana' if _semanal else 'una vuelta'}: es "
+                   "lo que permite que la siguiente vuelvas más fuerte.")
         info_box(doc, [training["deload_instructions"]])
 
     if not simple:

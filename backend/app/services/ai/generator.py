@@ -37,6 +37,8 @@ from app.schemas.ai import (
     TrainingOnlyCoreOutput,
 )
 from app.services import guardrails as gr
+from app.services import training_cycle as tcycle
+from app.services import training_volume as tv
 from app.services.ai.client import AIClient, AIGenerationError
 from app.services.ai.prompts import (
     system_prompt_education,
@@ -84,6 +86,15 @@ class ClientContext:
     # Reparto de macros calculado EN CÓDIGO (hardening §3): la IA lo recibe como
     # CONTRATO (no lo decide). None solo en flujos que aún no lo pasan.
     macro_plan: dict | None = None
+    # --- ESTRUCTURA de la planificación (la decide el COACH, no el modelo) ---
+    # Días que dura una vuelta al split (2-10; 7 = la semana de siempre) y
+    # cuántas vueltas dura el mesociclo. Con estos dos números el modelo ya no
+    # tiene que suponer que la rutina cabe en una semana.
+    cycle_days: int = tcycle.SEMANA
+    mesocycle_blocks: int = tcycle.BLOQUES_POR_DEFECTO
+    # Series por grupo y por CICLO, calculadas por el backend
+    # (`training_volume`): mismo trato que los macros — contrato, no sugerencia.
+    volume_contract: dict | None = None
     # análisis cualitativo del coach/IA (lesiones, hábitos, contexto) — opcional
     deep_analysis: str | None = None
     notes: str = ""
@@ -319,6 +330,9 @@ def _client_block(ctx: ClientContext) -> str:
             "peso_kg": ctx.weight_kg, "porcentaje_graso": ctx.body_fat_pct,
             "objetivo": ctx.goal_type, "nivel": ctx.level,
             "dias_entrenamiento": ctx.training_days,
+            "dias_del_ciclo": ctx.cycle_days,
+            "sesiones_del_ciclo": tcycle.sesiones_objetivo(ctx.training_days, ctx.cycle_days),
+            "bloques_del_mesociclo": ctx.mesocycle_blocks,
             "duracion_max_sesion_min": ctx.session_max_min,
             "lugar_entrenamiento": ctx.training_place,
             "modo_dieta": ctx.diet_mode,
@@ -460,6 +474,54 @@ def _system_con_biblioteca(base: str, ctx: ClientContext) -> list[dict]:
     ]
 
 
+def _estructura_block(ctx: ClientContext) -> str:
+    """La ESTRUCTURA que decide el coach: ciclo, mesociclo y volumen por grupo.
+
+    Es un CONTRATO, igual que los macros: el modelo no elige cuántos días dura
+    el ciclo, ni cuántos bloques el mesociclo, ni cuántas series lleva cada
+    grupo. Elige los EJERCICIOS y cómo se ordenan dentro de eso.
+
+    ⚠️ La unidad se repite en cada línea ("por ciclo de N días") a propósito: la
+    literatura que el modelo tiene aprendida está en series/SEMANA y, sin
+    decírselo en cada cifra, devuelve volumen de una semana dentro de un ciclo
+    de diez días."""
+    ciclo = ctx.cycle_days
+    sesiones = tcycle.sesiones_objetivo(ctx.training_days, ciclo)
+    bloques = ctx.mesocycle_blocks
+    unidad = tcycle.etiqueta_de_bloque(ciclo)
+    if tcycle.es_semanal(ciclo):
+        dias = ("El ciclo es una SEMANA natural: cada sesión lleva su día de la "
+                "semana en `day` (\"Lunes\", \"Martes\"…) y su posición en "
+                "`day_index` (1 = lunes … 7 = domingo).")
+    else:
+        dias = (f"El ciclo NO es una semana: dura {ciclo} días y ROTA (el día "
+                f"{ciclo} lo sigue el día 1, caiga en el día de la semana que "
+                f"caiga). Cada sesión lleva `day_index` (1-{ciclo}) y `day` con "
+                f"el texto \"Día N\". NO uses nombres de días de la semana.")
+    contrato = ""
+    if ctx.volume_contract:
+        contrato = (
+            "\nVOLUMEN POR GRUPO — CONTRATO DEL BACKEND (no lo recalcules; son "
+            f"series EFECTIVAS por ciclo de {ciclo} días, ya escaladas):\n"
+            + tv.texto_para_prompt(ctx.volume_contract)
+            + "\nRespeta el objetivo de cada grupo (±15 %) y la frecuencia mínima. "
+            "Un grupo marcado [PRIORITARIO] es lo que esta persona ha venido a "
+            "mejorar: tiene que notarse en series Y en frecuencia. Uno marcado "
+            "[mantenimiento] no se abandona, se sostiene.\n")
+    return f"""
+ESTRUCTURA DE LA PLANIFICACIÓN (la decide el coach — es un CONTRATO):
+- MICROCICLO: {ciclo} días, con {sesiones} sesiones de entreno dentro. {dias}
+  Los días del ciclo sin sesión son descanso: no los devuelvas.
+- MESOCICLO: {bloques} bloque(s). Un bloque es UNA VUELTA COMPLETA al ciclo, así
+  que el mesociclo dura {ciclo * bloques} días. `weekly_progression` lleva
+  EXACTAMENTE {bloques} objeto(s), numerados 1…{bloques} en `week`, uno por
+  bloque (delante del cliente se llama "{unidad} 1…{bloques}").
+  La progresión se reparte entre esos {bloques} bloque(s): arranque de
+  adaptación, subida de carga y/o volumen, y descarga al final SI el mesociclo
+  da para ella ({bloques} bloque(s): {'con descarga en el último' if bloques >= 3 else 'demasiado corto para una descarga: mantén la progresión'}).
+{contrato}"""
+
+
 def _core_user_prompt(ctx: ClientContext) -> str:
     # (La biblioteca ya NO se monta aquí: viaja en el bloque de system
     #  cacheado, `_biblioteca_block`. Construirla también aquí era trabajo
@@ -483,6 +545,7 @@ etiqueta genérica del objetivo. Refléjalo en rationale y split_rationale.
 (La BIBLIOTECA DE EJERCICIOS te llega arriba, en las instrucciones: usa SOLO
 esos exercise_id.)
 
+{_estructura_block(ctx)}
 Devuelve un JSON con esta forma EXACTA (sin texto fuera del JSON). TODOS los campos de
 cada objeto son OBLIGATORIOS salvo los marcados como (null si no aplica). No omitas NINGUNO:
 - "nutrition": tdee_kcal, target_kcal, rationale, macros{{protein_g,carbs_g,fat_g}},
@@ -490,8 +553,10 @@ cada objeto son OBLIGATORIOS salvo los marcados como (null si no aplica). No omi
   supplements[] (cada uno con los 4 campos: name, dose, timing, evidence_note),
   flexibility_rules[] (strings), refeed_or_break (null si no aplica).
 - "training": split_name, split_rationale,
-  weekly_progression[] (EXACTAMENTE 4 objetos para las semanas 1,2,3,4; cada uno con los 5
-  campos: week (1-4), intent (Base|Progresión|Pico|Deload), load_pct (número), rir_target, volume_note).
+  cycle_days ({ctx.cycle_days}: EXACTAMENTE el del contrato de estructura),
+  weekly_progression[] (EXACTAMENTE {ctx.mesocycle_blocks} objeto(s), uno por bloque, con
+  week numerado 1…{ctx.mesocycle_blocks}; cada uno con los 5 campos: week, intent
+  (Base|Progresión|Pico|Deload), load_pct (número), rir_target, volume_note).
   La PERIODIZACIÓN debe seguir la evidencia SEGÚN EL OBJETIVO del cliente (load_pct relativo a
   la semana base = 100): ganancia muscular/recomposición → onda de sobrecarga progresiva
   (100 → 102.5 → 105) con deload real (60-70, volumen −40/50%); pérdida de grasa → misma onda
@@ -501,7 +566,7 @@ cada objeto son OBLIGATORIOS salvo los marcados como (null si no aplica). No omi
   volume_note: TELEGRÁFICO, MÁX 12 palabras, palabras clave y cifras separadas por " · "
   ("Series ÷2 · carga −30% · lejos del fallo"). NO expliques la intención ni motives:
   para eso está `intent`, que es UNA palabra.
-  sessions[] (day, name, warmup, exercises[], cooldown),
+  sessions[] (day, day_index, name, warmup, exercises[], cooldown),
   cardio{{daily_steps, sessions[] (cada uno: type "liss"|"hiit", minutes, times_per_week, notes)}},
   deload_instructions.
   Cada ejercicio: exercise_id (de la biblioteca), sets, rep_range, rir, tempo, rest_sec,
@@ -509,18 +574,18 @@ cada objeto son OBLIGATORIOS salvo los marcados como (null si no aplica). No omi
 
   LONGITUD DE CADA CAMPO DE TEXTO (techo DURO — el coach y el cliente lo leen en el móvil):
   · deload_instructions: TELEGRÁFICO, MÁX 20 palabras con las cifras
-    ("Semana 4: series ÷2 · carga −30-35% · RIR 3-4 · sin récords"). NO expliques qué es un deload.
+    ("Último bloque: series ÷2 · carga −30-35% · RIR 3-4 · sin récords"). NO expliques qué es un deload.
   · progression_rule: MÁX 12 palabras con la cifra ("Completas 4×8 a RIR 2 → +2,5 kg").
   · technique_cue: orden accionable, MÁX 10 palabras. biomech_cue: el porqué, MÁX 10 palabras.
   · warmup: MÁX 15 palabras separadas por " · ". cooldown: MÁX 12. notes de cardio: MÁX 12.
 
 ENTRENAMIENTO BASADO EN EVIDENCIA (hipertrofia y biomecánica; aplica estos
 principios al DISEÑAR — no los expliques en los campos de texto, que son cortos):
-- VOLUMEN por grupo muscular: ~10-20 series semanales efectivas como rango
-  productivo (Schoenfeld/Krieger); ajusta según nivel (principiante hacia el
-  límite bajo, avanzado más alto) y capacidad de recuperación del cliente.
-- FRECUENCIA: cada músculo ≥2 veces/semana reparte mejor el volumen que 1
-  (mejor calidad de series). Distribuye el split para lograrlo con sus días.
+- VOLUMEN por grupo muscular: el del CONTRATO de arriba (ya viene ajustado a
+  su nivel, su objetivo, su prioridad muscular y la duración de su ciclo).
+  No lo recalcules ni lo traduzcas a semanas: las cifras son por ciclo.
+- FRECUENCIA: la mínima de cada grupo viene en el contrato (≥2 veces por
+  semana, ya escalada al ciclo). Reparte el split para cumplirla.
 - INTENSIDAD y PROXIMIDAD AL FALLO: la mayoría de series a RIR 1-3 (cerca del
   fallo sin llegar siempre); rango 5-30 reps hipertrofia si se acerca al fallo,
   priorizando 6-12 en básicos y 10-20 en accesorios/aislamientos.
@@ -585,6 +650,7 @@ RESTRICCIÓN DE DURACIÓN: la duración de cada sesión se estima como (total de
 declaró un máximo de {ctx.session_max_min} min/sesión, así que NO pongas más de {max_sets} series \
 por sesión (sumando TODOS los ejercicios de esa sesión).
 
+{_estructura_block(ctx)}
 Devuelve un JSON con esta forma EXACTA (sin texto fuera del JSON). TODOS los campos
 son OBLIGATORIOS salvo los marcados como (null si no aplica). No omitas NINGUNO:
 - "training": split_name, split_rationale,
@@ -594,7 +660,7 @@ son OBLIGATORIOS salvo los marcados como (null si no aplica). No omitas NINGUNO:
   volume_note: TELEGRÁFICO, MÁX 12 palabras, palabras clave y cifras separadas por " · "
   ("Series ÷2 · carga −30% · lejos del fallo"). NO expliques la intención ni motives:
   para eso está `intent`, que es UNA palabra.
-  sessions[] (day, name, warmup, exercises[], cooldown),
+  sessions[] (day, day_index, name, warmup, exercises[], cooldown),
   cardio{{daily_steps, sessions[] (cada uno: type "liss"|"hiit", minutes, times_per_week, notes)}},
   deload_instructions.
   Cada ejercicio: exercise_id (de la biblioteca), sets, rep_range, rir, tempo, rest_sec,
@@ -602,7 +668,7 @@ son OBLIGATORIOS salvo los marcados como (null si no aplica). No omitas NINGUNO:
 
   LONGITUD DE CADA CAMPO DE TEXTO (techo DURO — el coach y el cliente lo leen en el móvil):
   · deload_instructions: TELEGRÁFICO, MÁX 20 palabras con las cifras
-    ("Semana 4: series ÷2 · carga −30-35% · RIR 3-4 · sin récords"). NO expliques qué es un deload.
+    ("Último bloque: series ÷2 · carga −30-35% · RIR 3-4 · sin récords"). NO expliques qué es un deload.
   · progression_rule: MÁX 12 palabras con la cifra ("Completas 4×8 a RIR 2 → +2,5 kg").
   · technique_cue: orden accionable, MÁX 10 palabras. biomech_cue: el porqué, MÁX 10 palabras.
   · warmup: MÁX 15 palabras separadas por " · ". cooldown: MÁX 12. notes de cardio: MÁX 12.
@@ -945,6 +1011,7 @@ def generate_monthly_plan(
                 session_max_min=ctx.session_max_min,
                 client_contraindications=ctx.contraindications,
                 exercise_lookup=_exercise_lookup(ctx.exercise_library),
+                volume_contract=ctx.volume_contract,
             )
 
         try:
@@ -1088,6 +1155,7 @@ def generate_monthly_plan(
                 session_max_min=ctx.session_max_min,
                 client_contraindications=ctx.contraindications,
                 exercise_lookup=_exercise_lookup(ctx.exercise_library),
+                volume_contract=ctx.volume_contract,
             )
             rep = nut_report.merge(tr_report)
         else:

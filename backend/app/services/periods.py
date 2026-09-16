@@ -19,7 +19,28 @@ from sqlalchemy.orm import Session
 from app.models import Client, Period, Plan
 from app.services.audit import log_event
 
+# La revisión dura DOS SEMANAS por defecto: es el ritmo con el que se pensó
+# todo el ciclo (recordatorios, motor quincenal, documentos). Desde la ronda
+# del ciclo variable el coach puede ponerle otra a un cliente concreto
+# (`clients.review_days`), porque un principiante que necesita más margen y un
+# avanzado en una fase de fuerza no se revisan al mismo ritmo.
 PERIOD_DAYS = 14
+MIN_REVIEW_DAYS = 7
+MAX_REVIEW_DAYS = 31
+
+
+def review_days(client: Client | None) -> int:
+    """Cuántos días dura una revisión de ESTE cliente. Sin dato, la quincena.
+
+    Una sola puerta: lo consultan la apertura del período, los recordatorios,
+    el portal y el documento. Con dos reglas distintas, el portal le diría al
+    cliente una fecha y el recordatorio le llegaría otro día."""
+    crudo = getattr(client, "review_days", None)
+    try:
+        n = int(crudo)
+    except (TypeError, ValueError):
+        return PERIOD_DAYS
+    return max(MIN_REVIEW_DAYS, min(MAX_REVIEW_DAYS, n))
 
 
 def ensure_open_period(db: Session, client_id: int, *, commit: bool = False) -> Period | None:
@@ -62,7 +83,7 @@ def ensure_open_period(db: Session, client_id: int, *, commit: bool = False) -> 
     period = Period(
         client_id=client_id, plan_id=plan.id,
         period_index=(last.period_index + 1) if last else 1,
-        starts_on=today, ends_on=today + timedelta(days=PERIOD_DAYS - 1),
+        starts_on=today, ends_on=today + timedelta(days=review_days(client) - 1),
         status="open",
     )
     # Índice único parcial (un solo período abierto por cliente): si dos
@@ -98,7 +119,12 @@ def current_month_index(db: Session, client_id: int) -> int:
         select(func.count()).select_from(Period)
         .where(Period.client_id == client_id, Period.status == "analyzed")
     ) or 0
-    return 1 + int(analyzed) // 2
+    # Cuántas revisiones caben en un mes depende de lo que DURE la revisión de
+    # este cliente: con la quincena de siempre son dos (el "//2" histórico),
+    # con revisiones mensuales es una y con semanales, cuatro. Clavarlo en dos
+    # le decía "Mes 1" durante dos meses a quien se revisa cada semana.
+    por_mes = max(1, round(30 / review_days(db.get(Client, client_id))))
+    return 1 + int(analyzed) // por_mes
 
 
 def reference_weight_kg(db: Session, client: Client) -> float | None:

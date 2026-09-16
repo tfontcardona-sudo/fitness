@@ -74,8 +74,57 @@ export interface NutritionCore {
   refeed_or_break: string | null;
 }
 
+/** Series y frecuencia que le tocan a un grupo muscular EN SU CICLO. Lo calcula
+ *  `services/training_volume`: es el mismo contrato que recibe la IA y el que
+ *  después validan los guardarraíles. */
+export interface VolumeTarget {
+  min: number;
+  target: number;
+  max: number;
+  min_frequency: number;
+  priority: boolean;
+  deprioritized: boolean;
+}
+
+/** La estructura de la planificación de un cliente, tal como la sirve
+ *  `GET /clients/{id}/training-structure`. */
+export interface TrainingStructureOut {
+  cycle_days: number;
+  cycle_default: number;
+  cycle_min: number;
+  cycle_max: number;
+  semanal: boolean;
+  /** «Semana» con el ciclo semanal, «Bloque» cuando rota. */
+  block_label: string;
+  mesocycle_blocks: number;
+  blocks_min: number;
+  blocks_max: number;
+  blocks_default: number;
+  training_days: number | null;
+  /** Cuántas sesiones caben en el ciclo para sus días/semana. */
+  sessions_target: number;
+  total_days: number;
+  review_days: number;
+  review_default: number;
+  review_min: number;
+  review_max: number;
+  muscle_groups: string[];
+  muscle_priority: string[];
+  muscle_deprioritized: string[];
+  volume: {
+    cycle_days: number;
+    level: string;
+    in_deficit: boolean;
+    groups: Record<string, VolumeTarget>;
+    floor_per_cycle: number;
+    ceiling_per_cycle: number;
+  };
+}
+
 export interface WeeklyProgressionWeek {
-  week: 1 | 2 | 3 | 4;
+  /** Nº de BLOQUE del mesociclo (1…8). Era `1 | 2 | 3 | 4`: el mesociclo ya no
+   *  tiene por qué durar cuatro vueltas. Con el ciclo semanal, «semana N». */
+  week: number;
   intent: string;
   load_pct: number;
   rir_target: string;
@@ -98,7 +147,12 @@ export interface PlannedExercise {
 }
 
 export interface TrainingSession {
+  /** Cómo se llama el día delante del cliente: «Lunes» con el ciclo semanal,
+   *  «Día 3» cuando el ciclo rota. */
   day: string;
+  /** Qué día del CICLO es (1…cycle_days). Lo rellena el backend; en los planes
+   *  antiguos no viene y se deduce del nombre. */
+  day_index?: number | null;
   name: string;
   warmup: string;
   exercises: PlannedExercise[];
@@ -120,6 +174,8 @@ export interface CardioPlan {
 export interface TrainingCore {
   split_name: string;
   split_rationale: string;
+  /** Cuántos días dura una vuelta al split (2-10). Ausente = 7, la semana. */
+  cycle_days?: number | null;
   weekly_progression: WeeklyProgressionWeek[];
   sessions: TrainingSession[];
   cardio: CardioPlan;
@@ -299,6 +355,18 @@ export interface ClientOut {
   daily_activity_level: string | null;
   session_max_min: number | null;
   training_place: TrainingPlace | null;
+  // ---- Estructura de SU planificación (null = lo de siempre: ciclo semanal,
+  // mesociclo de 4 bloques, revisión de 14 días).
+  /** Días que dura una vuelta al split (2-10). */
+  cycle_days: number | null;
+  /** Vueltas al ciclo que dura el mesociclo (1-8). */
+  mesocycle_blocks: number | null;
+  /** Grupos musculares con PRIORIDAD (más volumen y frecuencia). */
+  muscle_priority: string[] | null;
+  /** Grupos en mantenimiento (menos volumen: el presupuesto es finito). */
+  muscle_deprioritized: string[] | null;
+  /** Días que dura su revisión (7-31). */
+  review_days: number | null;
   equipment: string[] | null;
   excluded_exercise_ids: number[] | null;
   injuries_notes: string | null;
@@ -784,6 +852,10 @@ export interface TrainingWeek {
   load_factor: number;
   started_on: string;
   why: string;
+  /** «Semana» con el ciclo semanal, «Bloque» cuando el split rota. */
+  block_label?: string;
+  /** Días que dura una vuelta al split (7 = la semana de siempre). */
+  cycle_days?: number;
 }
 
 export interface TodaySession {

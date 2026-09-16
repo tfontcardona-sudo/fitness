@@ -97,10 +97,33 @@ enlazan desde Recursos (partner ESN) cuando existen.
 
 - División por días: 2→Full Body · 3→FB o U-L+FB · 4→Upper-Lower · 5→U-L+PPL ·
   6→PPL×2. Siempre justificada.
-- Sobrecarga progresiva explícita (doble progresión + RIR objetivo), deload
-  semana 4 (volumen −40–50%, intensidad −10–20%).
+- **El microciclo NO tiene por qué ser la semana.** Dura entre 2 y 10 días
+  (`clients.cycle_days`, 7 por defecto = lo de siempre). Un split de 10 días es
+  lo que permite dar más frecuencia a un grupo sin quitársela a otro: con siete
+  casillas, subir la espalda obliga a bajar algo. Con el ciclo rotativo los días
+  son "Día 1…N" y el portal resuelve el de hoy contando desde el arranque del
+  plan. La anamnesis sigue preguntando DÍAS POR SEMANA —lo único que una
+  persona sabe contestar— y el backend deriva cuántas sesiones caben en el
+  ciclo (`training_cycle.sesiones_objetivo`).
+- **El mesociclo dura lo que tenga que durar**: de 1 a 8 vueltas al ciclo
+  (`clients.mesocycle_blocks`, 4 por defecto). Una vuelta = un BLOQUE, que con
+  el ciclo semanal es la semana de siempre. La escalera se ajusta al número de
+  bloques (`plan_scaffold._progresion_del_mesociclo`): base → progresión(es) →
+  pico → deload. **Con 2 bloques o menos NO se programa descarga** — descargar
+  la mitad del mesociclo no es periodizar — y el documento no promete una que
+  no existe.
+- Sobrecarga progresiva explícita (doble progresión + RIR objetivo), deload en
+  el ÚLTIMO bloque del mesociclo (volumen −40–50%, intensidad −10–20%).
 - Volumen por grupo con landmarks: mínimo productivo ~6 series/sem, techo ~25;
   frecuencia ≥2/sem salvo justificación. Equilibrio empuje/tracción y rodilla/cadera.
+  ⚠️ Los landmarks están escritos POR SEMANA; el plan cuenta series POR CICLO.
+  El contrato (`services/training_volume`) hace la conversión y es lo que se le
+  ENTREGA a la IA y lo que validan los guardarraíles — como los macros, el
+  modelo no calcula volumen, lo recibe.
+- **PRIORIDAD por grupo muscular** (`muscle_priority` / `muscle_deprioritized`):
+  un grupo prioritario recibe +30 % de series y los demás pueden bajar a
+  mantenimiento (−30 %), nunca por debajo del mínimo productivo. El volumen es
+  finito: priorizar significa que algo baja, y el sistema lo dice en pantalla.
 - Volumen e intensidad ajustados a la profundidad del déficit (nada de mesociclo
   de sobrecarga con −25% de kcal).
 
@@ -108,8 +131,11 @@ enlazan desde Recursos (partner ESN) cuando existen.
 selección la hace la IA **a partir de la anamnesis** (nivel, lesiones, material,
 días, duración de sesión, historial deportivo), dentro de los guardrails
 deterministas que filtran por lesión y material. Los rangos de repeticiones y la
-progresión siguen el marco de arriba (doble progresión + RIR, deload semana 4),
-adaptados al nivel real declarado.
+progresión siguen el marco de arriba (doble progresión + RIR, deload en el
+último bloque), adaptados al nivel real declarado. La ESTRUCTURA —días del
+ciclo, bloques del mesociclo, prioridad muscular y duración de la revisión— la
+decide el coach en «Estructura del entrenamiento», arriba de la pestaña
+Planificación; el sistema ya no la impone.
 
 ## 6. Cómo redacto / tono
 

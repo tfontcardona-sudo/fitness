@@ -10,6 +10,7 @@ import type { PlanImportPreview, PlanSummary } from "../lib/api";
 import { ACEPTA_DOCUMENTOS } from "../lib/documentos";
 import { manualUpdateMessage, openWhatsApp, planAndFeedbackMessage, planMessage, waPhone, waUrl } from "../lib/whatsapp";
 import { pkg } from "../lib/packages";
+import { diasDeCiclo, esSemanal } from "../lib/ciclo";
 import { CANONICAL_MEALS, mealKeysFromNames } from "../lib/meals";
 import { DIET_PATTERN_LABEL, GOAL_LABEL, goalDays, goalReviewDue, planMonthLabel } from "../lib/format";
 import { deficitLabel, macroPct, MACRO_TOTAL_TOLERANCE } from "../lib/nutritionTargets";
@@ -18,6 +19,7 @@ import { ExpandableArea, ProseClamp, Spinner, useToast } from "./ui";
 import type { Destino } from "../lib/findings";
 import { agrupar, resumirDetalle, resumenCorto, toAviso, traducirFlags } from "../lib/findings";
 import { MemoDetails } from "./MemoDetails";
+import EstructuraEntrenamiento from "./EstructuraEntrenamiento";
 import { ClientPlanEditor } from "./ClientPlanEditor";
 import { pielDe } from "../lib/marca";
 import { useBrand } from "../hooks/useBrand";
@@ -769,6 +771,12 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
   // ---------- Sin plan generado todavía ----------
   if (!plan) {
     return (
+      <div className="space-y-3">
+      {/* La ESTRUCTURA va antes que los cuatro caminos, y no después: el ciclo
+          y el mesociclo deciden lo que se va a generar, así que verlos cuando
+          el plan ya está hecho llega tarde. Mismo sitio en las dos vistas —
+          arriba de Planificación— para que se sepa dónde está siempre. */}
+      <EstructuraEntrenamiento client={client} onSaved={onClientChanged} />
       <div className="card p-6">
         <div className="flex items-start gap-3">
           <div className="rounded-xl p-2.5" style={{ background: "color-mix(in srgb, var(--brand-accent) 12%, transparent)" }}>
@@ -961,6 +969,7 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
             )}
           </div>
         </div>
+      </div>
       </div>
     );
   }
@@ -1210,6 +1219,12 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
           </button>
         );
       })()}
+
+      {/* LA ESTRUCTURA, en el MISMO sitio que en la vista sin plan: arriba de
+          Planificación, encima de la cabecera del plan. Se sabe dónde está
+          siempre, con plan y sin él — que es justo lo que se pidió. Va debajo
+          de la banda roja de retención: eso es urgente y manda. */}
+      <EstructuraEntrenamiento client={client} onSaved={onClientChanged} />
 
       {/* Cabecera con acciones */}
       <div className="card p-5">
@@ -2128,7 +2143,9 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
 
         {Array.isArray(tr.weekly_progression) && tr.weekly_progression.length > 0 && (
           <div className="mb-4">
-            <h5 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Progresión semanal</h5>
+            <h5 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              {esSemanal(diasDeCiclo(tr)) ? "Progresión semanal" : "Progresión del mesociclo"}
+            </h5>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {tr.weekly_progression.map((w: any) => (
                 <div
@@ -2137,7 +2154,9 @@ export function ClientPlanPanel({ client, onClientChanged, onEditingChange, onGo
                   style={{ background: "var(--surface-raised)", borderColor: "var(--brand-accent-2)" }}
                 >
                   <div className="font-semibold text-zinc-200">
-                    <span style={{ color: "var(--brand-accent-2)" }}>Sem {w.week}</span> · {w.intent}
+                    <span style={{ color: "var(--brand-accent-2)" }}>
+                      {esSemanal(diasDeCiclo(tr)) ? "Sem" : "Bloque"} {w.week}
+                    </span> · {w.intent}
                   </div>
                   <div className="text-zinc-500">Carga {w.load_pct}% · RIR {w.rir_target}</div>
                   {w.volume_note && (() => {

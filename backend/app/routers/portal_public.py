@@ -1330,7 +1330,7 @@ def portal_close_period(
     client: Client = Depends(get_client_by_token),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Cierre del período (desde día 14). Dispara el pipeline en Fase 7;
+    """Cierre del período (su ÚLTIMO día). Dispara el pipeline en Fase 7;
     aquí persiste el cierre y pasa el cliente a awaiting→review."""
     period = portal_svc.active_period(db, client.id)
     if period is None or period.status != "open":
@@ -1338,9 +1338,13 @@ def portal_close_period(
 
     info = portal_svc.period_info(period, portal_svc.today_local())
     if not info or not info["can_close"]:
+        # El día exacto sale del período, no de un 14 clavado: la revisión de
+        # cada cliente puede durar otra cosa y decirle un día que no es el suyo
+        # es mandarle a mirar el portal en balde.
+        _dia = (info or {}).get("days_total") or 14
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
-            "El cierre estará disponible a partir del día 14 del período",
+            f"El cierre estará disponible a partir del día {_dia} del período",
         )
 
     for field in (

@@ -199,8 +199,12 @@ def test_pending_for_client(db, client_with_plan) -> None:
     db.flush()
     assert push_svc.pending_for_client(db, client, today)["count"] == 0
 
-    # Día ≥14 → toca la revisión quincenal
+    # Período terminado → toca la revisión quincenal. Se mueven las DOS fechas:
+    # el cierre se abre el último día del período REAL (`portal.period_info`),
+    # y un período cuyo fin sigue en el futuro no está para cerrar por mucho
+    # que su inicio quede lejos.
     period.starts_on = today - timedelta(days=14)
+    period.ends_on = today - timedelta(days=1)
     db.flush()
     p = push_svc.pending_for_client(db, client, today)
     assert p["quincenal"] is True and p["count"] == 1

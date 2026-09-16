@@ -186,11 +186,19 @@ def _plan_text(nutrition: dict, training: dict | None = None,
     # RESUMEN DEL ENTRENO: sin él, los roles que juzgan la coherencia
     # dieta↔entreno opinaban a ciegas (solo veían la dieta).
     if training:
+        from app.services import training_cycle as _tc
+
         sesiones = training.get("sessions") or []
+        _ciclo = _tc.dias_de_ciclo(training)
+        _bloques = len(training.get("weekly_progression") or []) or _tc.BLOQUES_POR_DEFECTO
+        _unidad = "semana" if _tc.es_semanal(_ciclo) else f"ciclo de {_ciclo} días"
         lines.append(
             f"Entrenamiento: {training.get('split_name') or 'split'} · "
-            f"{len(sesiones)} sesión(es)/semana.")
-        for s in sesiones[:7]:
+            f"{len(sesiones)} sesión(es)/{_unidad} · mesociclo de {_bloques} "
+            f"{_tc.etiqueta_de_bloque(_ciclo).lower()}(s).")
+        # Hasta el ciclo ENTERO: con 10 días, cortar en 7 le escondía al panel
+        # las tres últimas sesiones — y el revisor clínico tiene VETO.
+        for s in sesiones[:_tc.MAX_DIAS_CICLO]:
             ejercicios = s.get("exercises") or []
             series = sum(int(e.get("sets") or 0) for e in ejercicios)
             lines.append(f"- {s.get('day', '')} {s.get('name', '')}: "

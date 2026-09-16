@@ -110,6 +110,21 @@ class Client(Base):
     daily_activity_level: Mapped[str | None] = mapped_column(String(20))
     session_max_min: Mapped[int | None] = mapped_column(Integer)
     training_place: Mapped[str | None] = mapped_column(String(20))  # gym|home|outdoor
+    # --- ESTRUCTURA DE LA PLANIFICACIÓN (mig. 0056) ---------------------------
+    # Todo NULL = lo de siempre: microciclo semanal de 7 días, mesociclo de 4
+    # bloques y revisión cada 14. Ningún cliente existente cambia de trato.
+    # Días que dura una VUELTA al split (2-10). 7 = la semana de siempre, con
+    # los días anclados al calendario; cualquier otro valor rota.
+    cycle_days: Mapped[int | None] = mapped_column(Integer)
+    # Cuántas vueltas al ciclo dura el mesociclo (1-8). La progresión de carga,
+    # volumen y RIR se reparte entre esos bloques.
+    mesocycle_blocks: Mapped[int | None] = mapped_column(Integer)
+    # Grupos musculares a PRIORIZAR y a mantener: es lo que convierte el split
+    # en la planificación de ESTA persona y no en una rutina de catálogo.
+    muscle_priority: Mapped[list[str] | None] = mapped_column(ARRAY(String))
+    muscle_deprioritized: Mapped[list[str] | None] = mapped_column(ARRAY(String))
+    # Cada cuántos días cierra su revisión (7-31). 14 = la quincena de siempre.
+    review_days: Mapped[int | None] = mapped_column(Integer)
     equipment: Mapped[list[str] | None] = mapped_column(ARRAY(String))
     excluded_exercise_ids: Mapped[list[int] | None] = mapped_column(ARRAY(Integer))
     injuries_notes: Mapped[str | None] = mapped_column(Text)

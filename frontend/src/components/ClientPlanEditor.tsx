@@ -8,6 +8,8 @@ import {
   type MacroTargets,
 } from "../lib/nutritionTargets";
 import { GOAL_LABEL } from "../lib/format";
+import { DIAS_SEMANA, MAX_BLOQUES, diaDeSesion, diasDeCiclo, esSemanal, etiquetaDeBloque,
+  primerDiaLibre } from "../lib/ciclo";
 import { CANONICAL_MEALS, mealKeysFromNames, restructureNutritionMeals } from "../lib/meals";
 import { useDismiss } from "../lib/useDismiss";
 import { ExpandableArea, Spinner, useToast } from "./ui";
@@ -433,6 +435,13 @@ export function ClientPlanEditor({
   nut.flexibility_rules = nut.flexibility_rules ?? [];
   tr.weekly_progression = tr.weekly_progression ?? [];
   tr.sessions = tr.sessions ?? [];
+  // El CICLO del plan que se está editando. Por la misma puerta que el backend
+  // (`lib/ciclo` ⇄ `services/training_cycle`): si la pantalla dedujera el día
+  // de otra forma, el coach vería una sesión el martes y el cliente otra.
+  const cicloDias = diasDeCiclo(tr);
+  const cicloSemanal = esSemanal(cicloDias);
+  const etqBloque = etiquetaDeBloque(cicloDias);
+  const etqBloqueCorta = cicloSemanal ? "Sem" : "Bloque";
   tr.cardio = tr.cardio ?? { daily_steps: 0, sessions: [] };
 
   // No se puede guardar con las calorías vacías o a 0: sería un plan incoherente
@@ -802,15 +811,72 @@ export function ClientPlanEditor({
         <Text label="Nombre del split" value={tr.split_name ?? ""} onChange={(v) => mutate((d) => (d.training.split_name = v))} />
         <Area label="Justificación del split" value={tr.split_rationale ?? ""} onChange={(v) => mutate((d) => (d.training.split_rationale = v))} />
 
-        <Subhead text="Progresión semanal" />
+        {/* EL CICLO manda sobre cómo se llama todo esto. Con 7 días es la
+            semana de siempre («Sem 3»); con un split de 10, un bloque es una
+            vuelta al ciclo y llamarlo «semana» sería mentir: el bloque 2
+            empieza el día 11, no el lunes. */}
+        <Subhead text={cicloSemanal ? "Progresión semanal" : "Progresión del mesociclo"} />
+        <p className="mt-1 text-xs text-zinc-500">
+          {cicloSemanal
+            ? `${tr.weekly_progression.length} semana(s). Un bloque = una semana.`
+            : `Ciclo de ${cicloDias} días · ${tr.weekly_progression.length} bloque(s) `
+              + `= ${cicloDias * tr.weekly_progression.length} días de mesociclo.`}
+        </p>
         {tr.weekly_progression.map((w: any, i: number) => (
           <div key={i} className="mt-2 grid grid-cols-2 gap-2 rounded-lg p-2 sm:grid-cols-4" style={{ background: "var(--surface-raised)" }}>
-            <Text label={`Sem ${w.week ?? i + 1} · intención`} value={w.intent ?? ""} onChange={(v) => mutate((d) => (d.training.weekly_progression[i].intent = v))} />
+            <Text label={`${etqBloqueCorta} ${w.week ?? i + 1} · intención`} value={w.intent ?? ""} onChange={(v) => mutate((d) => (d.training.weekly_progression[i].intent = v))} />
             <Num label="Carga %" value={w.load_pct} onChange={(v) => mutate((d) => (d.training.weekly_progression[i].load_pct = Math.max(0, v ?? 0)))} />
             <Text label="RIR" value={w.rir_target ?? ""} onChange={(v) => mutate((d) => (d.training.weekly_progression[i].rir_target = v))} />
-            <Text label="Volumen" value={w.volume_note ?? ""} onChange={(v) => mutate((d) => (d.training.weekly_progression[i].volume_note = v))} />
+            <div className="flex items-end gap-1">
+              <div className="min-w-0 flex-1">
+                <Text label="Volumen" value={w.volume_note ?? ""} onChange={(v) => mutate((d) => (d.training.weekly_progression[i].volume_note = v))} />
+              </div>
+              <button
+                type="button"
+                className="tap shrink-0 text-zinc-500 hover:text-red-400"
+                style={{ minWidth: 44, minHeight: 44 }}
+                title={`Quitar ${etqBloque.toLowerCase()} ${w.week ?? i + 1}`}
+                onClick={() => {
+                  if (tr.weekly_progression.length <= 1) {
+                    toast.push(`Es ${cicloSemanal ? "la única semana" : "el único bloque"}: edítalo en vez de quitarlo`, "error");
+                    return;
+                  }
+                  // Al quitar uno, los de debajo se RENUMERAN: el contrato exige
+                  // 1, 2, 3… consecutivos, y un hueco tumbaría el guardado
+                  // entero con un error de validación que no dice nada.
+                  mutate((d) => {
+                    d.training.weekly_progression.splice(i, 1);
+                    d.training.weekly_progression.forEach((x: any, k: number) => (x.week = k + 1));
+                  });
+                }}
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
           </div>
         ))}
+        <button
+          type="button"
+          className="btn btn-ghost mt-2 text-xs"
+          onClick={() => {
+            if (tr.weekly_progression.length >= MAX_BLOQUES) {
+              toast.push(`El mesociclo admite hasta ${MAX_BLOQUES} ${etqBloque.toLowerCase()}s`, "error");
+              return;
+            }
+            mutate((d) => {
+              const prev = d.training.weekly_progression[d.training.weekly_progression.length - 1] ?? {};
+              d.training.weekly_progression.push({
+                week: d.training.weekly_progression.length + 1,
+                intent: "Progresión",
+                load_pct: Math.round(((prev.load_pct ?? 100) + 2.5) * 10) / 10,
+                rir_target: prev.rir_target ?? "1-2",
+                volume_note: "Sube peso o repeticiones donde el RIR lo permita.",
+              });
+            });
+          }}
+        >
+          <Plus size={13} /> Añadir {etqBloque.toLowerCase()}
+        </button>
 
         <Subhead text="Sesiones (desplegables por día)" />
         {tr.sessions.map((s: any, si: number) => (
@@ -842,7 +908,39 @@ export function ClientPlanEditor({
               </button>
             </summary>
             <div className="mt-2 grid grid-cols-2 gap-2">
-              <Text label="Día" value={s.day ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].day = v))} />
+              {/* Con el ciclo semanal, el día se escribe («Lunes»): es lo de
+                  siempre y el coach mete lo que quiera. Con un ciclo que rota,
+                  el día es un NÚMERO del 1 al N y se elige de una lista — que
+                  alguien escriba «Martes» en un ciclo de 10 días deja esa
+                  sesión sin sitio y el cliente no la ve NINGÚN día. */}
+              {cicloSemanal ? (
+                <Text label="Día" value={s.day ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].day = v))} />
+              ) : (
+                <label className="block">
+                  <span className="block text-xs text-zinc-400">Día del ciclo</span>
+                  <select
+                    className="input mt-1 h-11"
+                    value={diaDeSesion(s, cicloDias) ?? ""}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (!n) return;
+                      if (tr.sessions.some((o: any, k: number) => k !== si && diaDeSesion(o, cicloDias) === n)) {
+                        toast.push(`El día ${n} ya tiene sesión`, "error");
+                        return;
+                      }
+                      mutate((d) => {
+                        d.training.sessions[si].day_index = n;
+                        d.training.sessions[si].day = `Día ${n}`;
+                      });
+                    }}
+                  >
+                    <option value="">— sin día —</option>
+                    {Array.from({ length: cicloDias }, (_, k) => k + 1).map((n) => (
+                      <option key={n} value={n}>Día {n}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <Text label="Nombre" value={s.name ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].name = v))} />
             </div>
             <Area label="Calentamiento" value={s.warmup ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].warmup = v))} />
@@ -958,6 +1056,40 @@ export function ClientPlanEditor({
             <Area label="Vuelta a la calma" value={s.cooldown ?? ""} onChange={(v) => mutate((d) => (d.training.sessions[si].cooldown = v))} />
           </details>
         ))}
+
+        {/* AÑADIR DÍA: el complemento de «Quitar día», que existía solo. Sin
+            él, meter una sesión más obligaba a regenerar el plan entero (con
+            IA, o sea pagando) o a editar el JSON a mano. El día se elige solo:
+            el primero del ciclo que esté libre. */}
+        <button
+          type="button"
+          className="btn btn-ghost mt-2 text-xs"
+          onClick={() => {
+            const libre = primerDiaLibre(tr.sessions, cicloDias);
+            if (libre == null) {
+              toast.push(
+                `Todos los días del ciclo (${cicloDias}) tienen sesión ya`, "error");
+              return;
+            }
+            mutate((d) => {
+              d.training.sessions.push({
+                _uid: newUid(),
+                day: cicloSemanal ? DIAS_SEMANA[libre - 1] : `Día ${libre}`,
+                day_index: libre,
+                name: "Nueva sesión",
+                warmup: "5-8 min de cardio suave + 2 series de aproximación.",
+                exercises: [],
+                cooldown: "3-5 min de vuelta a la calma y estiramientos suaves.",
+              });
+              // Ordenadas por su día: una sesión añadida al final se leía como
+              // "la última del ciclo" aunque cayera el día 2.
+              d.training.sessions.sort((a: any, b: any) =>
+                (diaDeSesion(a, cicloDias) ?? 99) - (diaDeSesion(b, cicloDias) ?? 99));
+            });
+          }}
+        >
+          <Plus size={14} /> Añadir día
+        </button>
 
         <Subhead text="Cardio y descarga" />
         <div className="grid grid-cols-2 gap-2">

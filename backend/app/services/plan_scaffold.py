@@ -19,6 +19,7 @@ El coach lo repasa en el editor, cambia lo que quiera y lo activa.
 """
 
 from app.schemas.ai import NutritionCore, TrainingCore
+from app.services import training_cycle as tc
 from app.services.metrics import _rhu
 
 # ------------------------------------------------------------- nutrición ----
@@ -218,6 +219,68 @@ _SPLITS: dict[int, tuple[str, list[tuple[str, list[tuple[str, ...]]]]]] = {
 }
 
 
+def _reparto_del_ciclo(sesiones: int, ciclo: int) -> list[int]:
+    """En qué días del ciclo caen las sesiones (1…ciclo).
+
+    Con la SEMANA se respeta el reparto de siempre (`_REPARTO_SEMANAL`): ese
+    cliente que entrena lunes, miércoles y viernes lo sigue haciendo. Con un
+    ciclo más largo se reparten de forma pareja para que el descanso quede
+    repartido y no todo al final — y el coach lo mueve en el editor."""
+    if ciclo == tc.SEMANA:
+        etiquetas = _REPARTO_SEMANAL.get(sesiones, _REPARTO_SEMANAL[3])
+        return [tc.DAY_LABELS.index(e) + 1 for e in etiquetas[:sesiones]]
+    sesiones = max(1, min(sesiones, ciclo))
+    return [round(i * ciclo / sesiones) + 1 for i in range(sesiones)]
+
+
+def _progresion_del_mesociclo(bloques: int) -> list[dict]:
+    """La progresión, con tantas entradas como bloques tenga el mesociclo.
+
+    Estaba clavada a cuatro semanas (Base · Progresión · Pico · Deload). Un
+    mesociclo de 2 bloques no da para una descarga —descargar la mitad del
+    tiempo no es periodizar— y uno de 6 necesita más escalones de subida."""
+    bloques = max(tc.MIN_BLOQUES, min(tc.MAX_BLOQUES, int(bloques or tc.BLOQUES_POR_DEFECTO)))
+    con_descarga = bloques >= 3           # con 2 o menos no hay margen
+    con_pico = bloques >= 4
+    subidas = bloques - 1 - int(con_descarga) - int(con_pico)
+    salida = [{"week": 1, "intent": "Base", "load_pct": 100.0, "rir_target": "2",
+               "volume_note": "Asienta técnica y cargas de referencia."}]
+    for k in range(subidas):
+        salida.append({
+            "week": len(salida) + 1, "intent": "Progresión",
+            "load_pct": round(100.0 + 2.5 * (k + 1), 1), "rir_target": "1-2",
+            "volume_note": "Sube peso o repeticiones donde el RIR lo permita."})
+    if con_pico:
+        salida.append({
+            "week": len(salida) + 1, "intent": "Pico",
+            "load_pct": round(100.0 + 2.5 * (subidas + 1), 1), "rir_target": "1",
+            "volume_note": "El bloque más exigente del mesociclo."})
+    if con_descarga:
+        salida.append({
+            "week": len(salida) + 1, "intent": "Deload", "load_pct": 60.0,
+            "rir_target": "3-4",
+            "volume_note": "Mitad de series: recuperar para el siguiente ciclo."})
+    return salida[:bloques]
+
+
+def _texto_de_descarga(progresion: list[dict], ciclo: int) -> str:
+    """La descarga, dicha sobre el bloque que de verdad la lleva.
+
+    El texto estaba clavado en "Semana 4" y después en "Bloque {bloques}": con
+    un mesociclo de 2 bloques no hay descarga (`_progresion_del_mesociclo` no
+    la pone) y el plan prometía una que no existe. Se lee de la progresión."""
+    etiqueta = tc.etiqueta_de_bloque(ciclo)
+    for p in progresion:
+        if str(p.get("intent") or "").strip().lower() == "deload":
+            return (f"{etiqueta} {p['week']}: reduce las series a la mitad y la "
+                    "carga al 60 %. Llega fresco al siguiente ciclo; el deload "
+                    "es parte del plan, no un extra.")
+    return (f"Este mesociclo es corto ({len(progresion)} "
+            f"{etiqueta.lower()}{'s' if len(progresion) != 1 else ''}) y no lleva "
+            "descarga programada: si llegas muy fatigado, baja las series a la "
+            "mitad durante una vuelta al ciclo antes de seguir.")
+
+
 def _pick(pool: list[dict], prefs: tuple[str, ...], used_session: set[int],
           used_week: set[int]) -> dict | None:
     """Mejor candidato del hueco: patrón preferido, sin repetir en la sesión y
@@ -246,8 +309,21 @@ def build_training(client, filtered: list[dict]) -> dict:
     """TrainingCore determinista desde la biblioteca YA filtrada por guardrails:
     split estándar según los días declarados, básicos primero, series/repes/RIR
     y progresión de referencia. El coach lo remata en el editor."""
+    # El CICLO manda sobre los días de la semana: con 7 sale exactamente lo de
+    # siempre; con 10, las sesiones que esa persona entrena en 10 días.
+    ciclo = int(getattr(client, "cycle_days", None) or tc.SEMANA)
+    bloques = int(getattr(client, "mesocycle_blocks", None) or tc.BLOQUES_POR_DEFECTO)
+    sesiones = tc.sesiones_objetivo(client.training_days or 3, ciclo)
     days = min(6, max(2, int(client.training_days or 3)))
     split_name, day_defs = _SPLITS[days]
+    # Un ciclo largo repite el patrón del split hasta llenar sus sesiones: seis
+    # sesiones en 10 días son ese Torso/Pierna dando dos vueltas y media, no un
+    # split nuevo que haya que inventarse.
+    if sesiones > len(day_defs):
+        day_defs = [day_defs[i % len(day_defs)] for i in range(sesiones)]
+    elif sesiones < len(day_defs):
+        day_defs = day_defs[:sesiones]
+    dias_del_ciclo = _reparto_del_ciclo(len(day_defs), ciclo)
     # Sesiones cortas → menos huecos por día.
     max_min = int(client.session_max_min or 60)
     huecos = 4 if max_min <= 45 else 5 if max_min <= 60 else 6
@@ -288,8 +364,8 @@ def build_training(client, filtered: list[dict]) -> dict:
                 # base nunca marcaba sesión del día ni la preseleccionaba en
                 # Entreno (auditoría 27-08). El coach lo reparte a su gusto en
                 # el editor; este es el reparto estándar de partida.
-                "day": _REPARTO_SEMANAL.get(len(day_defs), _REPARTO_SEMANAL[3])[
-                    min(i - 1, 6)],
+                "day": tc.etiqueta_de_dia(dias_del_ciclo[i - 1], ciclo),
+                "day_index": dias_del_ciclo[i - 1],
                 "name": nombre,
                 "warmup": ("5-8 min de cardio suave + 2 series de aproximación "
                            "en los básicos del día."),
@@ -307,30 +383,23 @@ def build_training(client, filtered: list[dict]) -> dict:
     pasos = {"sedentary": 7000, "light": 8000, "active": 9000,
              "very_active": 10000}.get(client.daily_activity_level or "", 8000)
 
+    progresion = _progresion_del_mesociclo(bloques)
     training = {
         "split_name": split_name,
         # También lo lee el CLIENTE en su PDF: se le explica su rutina, no el
         # proceso interno de preparación.
         "split_rationale": (
-            f"Rutina de {days} días repartida para que cada grupo muscular "
-            "trabaje con la frecuencia adecuada y descanse lo suficiente, "
-            "ajustada al tiempo que tienes por sesión y a tu material."
+            f"Rutina de {len(sessions)} "
+            + ("sesión repartida" if len(sessions) == 1 else "sesiones repartidas")
+            + (" en la semana" if tc.es_semanal(ciclo) else f" en un ciclo de {ciclo} días")
+            + " para que cada grupo muscular trabaje con la frecuencia adecuada "
+            "y descanse lo suficiente, ajustada al tiempo que tienes por sesión "
+            "y a tu material."
         ),
-        "weekly_progression": [
-            {"week": 1, "intent": "Base", "load_pct": 100.0, "rir_target": "2",
-             "volume_note": "Asienta técnica y cargas de referencia."},
-            {"week": 2, "intent": "Progresión", "load_pct": 102.5, "rir_target": "1-2",
-             "volume_note": "Sube peso o repeticiones donde el RIR lo permita."},
-            {"week": 3, "intent": "Pico", "load_pct": 105.0, "rir_target": "1",
-             "volume_note": "Semana más exigente del ciclo."},
-            {"week": 4, "intent": "Deload", "load_pct": 60.0, "rir_target": "3-4",
-             "volume_note": "Mitad de series: recuperar para el siguiente ciclo."},
-        ],
+        "weekly_progression": progresion,
+        "cycle_days": ciclo,
         "sessions": sessions,
         "cardio": {"daily_steps": pasos, "sessions": []},
-        "deload_instructions": (
-            "Semana 4: reduce las series a la mitad y la carga al 60 %. Llega "
-            "fresco al siguiente ciclo; el deload es parte del plan, no un extra."
-        ),
+        "deload_instructions": _texto_de_descarga(progresion, ciclo),
     }
     return TrainingCore.model_validate(training).model_dump()

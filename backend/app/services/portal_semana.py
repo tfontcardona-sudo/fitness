@@ -138,9 +138,11 @@ def lo_de_hoy(db: Session, client: Client, periodo: Period | None, hoy: date) ->
     fuera["diario_hecho"] = bool(diary_is_filled(log))
 
     plan = portal_svc.published_plan_for_period(db, periodo)
-    if plan is not None and has_session_on(plan.training_json, hoy):
+    if plan is not None and has_session_on(plan.training_json, hoy,
+                                           ancla=periodo.starts_on):
         fuera["entrena_hoy"] = True
-        fuera["sesion"] = _nombre_de_la_sesion(plan.training_json, hoy)
+        fuera["sesion"] = _nombre_de_la_sesion(plan.training_json, hoy,
+                                               ancla=periodo.starts_on)
         if log is not None:
             fuera["entreno_hecho"] = bool(db.scalar(
                 select(WorkoutLog.id).where(WorkoutLog.daily_log_id == log.id).limit(1)))
@@ -150,23 +152,17 @@ def lo_de_hoy(db: Session, client: Client, periodo: Period | None, hoy: date) ->
     return fuera
 
 
-def _nombre_de_la_sesion(training: dict | None, hoy: date) -> str | None:
+def _nombre_de_la_sesion(training: dict | None, hoy: date,
+                         ancla: date | None = None) -> str | None:
     """«Torso A» — para que el cliente sepa qué le espera sin abrir nada.
 
-    Con el MISMO lector de días que `push.has_session_on` y que la pantalla de
-    Entreno (`portal.dia_de_sesion`): dos formas de leer "¿es hoy?" acaban
-    siempre en una pantalla diciendo que hoy entrenas y otra diciendo que no."""
-    if not isinstance(training, dict):
-        return None
-    from app.services import portal as portal_svc
+    Por la MISMA puerta que `push.has_session_on` y que la pantalla de Entreno
+    (`training_cycle`): dos formas de leer "¿es hoy?" acaban siempre en una
+    pantalla diciendo que hoy entrenas y otra diciendo que no."""
+    from app.services import training_cycle as tc
 
-    etiqueta = portal_svc.DAY_LABELS[hoy.weekday()].lower()
-    for sesion in training.get("sessions") or []:
-        if not isinstance(sesion, dict):
-            continue
-        if portal_svc.dia_de_sesion(sesion) == etiqueta:
-            return str(sesion.get("name") or "").strip() or None
-    return None
+    sesion = tc.sesion_de_fecha(training, hoy, ancla=ancla)
+    return (str(sesion.get("name") or "").strip() or None) if sesion else None
 
 
 def resumen(db: Session, client: Client, hoy: date) -> dict:

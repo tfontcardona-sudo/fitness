@@ -542,10 +542,23 @@ def _entreno(doc: Document, brand: DocBrand, training: dict,
     """El entrenamiento como FICHAS de sesión: una por día, con lo que se hace
     y cómo se hace. Antes, una caja que explica en dos líneas cómo se lee —
     el cliente de un centro de barrio no tiene por qué saber qué es un RIR."""
+    from app.services import training_cycle as _tc
+
+    _ciclo = _tc.dias_de_ciclo(training)
+    _semanal = _tc.es_semanal(_ciclo)
+    _etq = _tc.etiqueta_de_bloque(_ciclo)          # "Semana" | "Bloque"
+
     _barra(doc, f"Tu rutina · {training.get('split_name', '')}")
     dias = len(training.get("sessions") or [])
-    _caja(doc, [(f"{dias} día{'s' if dias != 1 else ''} a la semana",
+    _caja(doc, [((f"{dias} día{'s' if dias != 1 else ''} a la semana" if _semanal
+                  else f"{dias} sesión{'es' if dias != 1 else ''} cada {_ciclo} días"),
                  training.get("split_rationale", ""))])
+    if not _semanal:
+        # Tu rutina no va de lunes a domingo: dilo antes de que lea «Día 1».
+        _caja(doc, [("Tu ciclo",
+                     f"Tu rutina es un ciclo de {_ciclo} días que se repite, no una "
+                     "semana de lunes a domingo. El «Día 1» es el primero desde que "
+                     "arranca el plan; en tu portal te decimos cada mañana qué toca.")])
 
     _barra(doc, "Cómo se lee tu rutina")
     _caja(doc, [
@@ -560,12 +573,16 @@ def _entreno(doc: Document, brand: DocBrand, training: dict,
 
     prog = training.get("weekly_progression") or []
     if prog:
-        _barra(doc, "Semana a semana")
-        _nota(doc, "Las cuatro semanas no se entrenan igual. Esta tabla manda sobre "
-                   "cómo te encuentres ese día.")
-        filas = [[f"Sem {w.get('week')}", w.get("intent", ""), f"{w.get('load_pct', '')}%",
+        _nbloques = len(prog)
+        _barra(doc, "Semana a semana" if _semanal else "Bloque a bloque")
+        _nota(doc, f"{'Las' if _nbloques != 1 else 'La'} {_nbloques} {_etq.lower()}"
+                   f"{'s' if _nbloques != 1 else ''} no se entrenan igual. Esta tabla "
+                   "manda sobre cómo te encuentres ese día.")
+        _abrev = "Sem" if _semanal else "Bloque"
+        filas = [[f"{_abrev} {w.get('week')}", w.get("intent", ""), f"{w.get('load_pct', '')}%",
                   f"RIR {w.get('rir_target', '')}", w.get("volume_note", "")] for w in prog]
-        _tabla(doc, ["Semana", "Enfoque", "Carga", "RIR", "Notas"], filas, brand,
+        # ⚠️ Cabecera reconocida por `word_import` (SIG_PROGRESION / _BLOQUE).
+        _tabla(doc, [_etq, "Enfoque", "Carga", "RIR", "Notas"], filas, brand,
                anchos=[1100, 1800, 1100, 1100, 4566], keep_together=False)
 
     for sess in training.get("sessions") or []:
@@ -613,10 +630,10 @@ def _entreno(doc: Document, brand: DocBrand, training: dict,
         _caja(doc, items)
 
     if (training.get("deload_instructions") or "").strip():
-        # ⚠️ alias de `word_import`: «semana suave» → semana de descarga.
-        _barra(doc, "Semana suave")
-        _nota(doc, "No es perder una semana: es lo que hace que a la siguiente "
-                   "vuelvas más fuerte.")
+        # ⚠️ alias de `word_import`: «semana suave»/«bloque suave» → descarga.
+        _barra(doc, "Semana suave" if _semanal else "Bloque suave")
+        _nota(doc, f"No es perder {'una semana' if _semanal else 'una vuelta'}: es lo "
+                   "que hace que a la siguiente vuelvas más fuerte.")
         _caja(doc, [training["deload_instructions"]])
 
 
