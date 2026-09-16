@@ -523,8 +523,10 @@ def check_training(
                     f"por ciclo (mínimo {objetivo['min_frequency']})")
 
     # 6) Estructura del mesociclo (avisos, no bloquean): el criterio del coach
-    # exige progresión explícita y deload en semana 4 — si el plan no los
-    # declara, el coach debe verlo antes de confiar en el entreno.
+    # exige progresión explícita y una descarga en el ÚLTIMO bloque — si el
+    # plan no los declara, el coach debe verlo antes de confiar en el entreno.
+    # (Era "deload en semana 4": desde que el mesociclo dura lo que tenga que
+    # durar, el último bloque puede ser el 2 o el 6.)
     if sessions:
         wp = training.get("weekly_progression")
         if not wp:

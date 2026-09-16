@@ -115,15 +115,20 @@ METHODOLOGY_TRAINING = """\
 PROGRAMACIÓN Y SOBRECARGA PROGRESIVA
 - División según días: 2→Full Body / 3→FB o U-L+FB / 4→Upper-Lower / 5→U-L+PPL o especialización /
   6→PPL×2. Siempre justificada.
-- Sobrecarga progresiva EXPLÍCITA: tabla de progresión semanal (semana 1 base, 2–3 progresión de
-  carga y/o volumen, semana 4 deload con volumen −40–50% e intensidad −10–20%). Cada ejercicio
+- Sobrecarga progresiva EXPLÍCITA: tabla de progresión con UNA FILA POR BLOQUE del mesociclo
+  (bloque 1 base, los intermedios progresión de carga y/o volumen, el ÚLTIMO deload con volumen
+  −40–50% e intensidad −10–20%). ⚠️ El número de bloques lo dice la ESTRUCTURA que se te entrega,
+  NO son cuatro siempre; y con 2 bloques o menos NO pongas deload (no hay margen). Cada ejercicio
   lleva su `progression_rule` TELEGRÁFICA con la cifra ("Completas 4×8 a RIR 2 → +2,5 kg").
-  `volume_note` de cada semana y `deload_instructions`: solo cifras y palabras clave separadas
+  `volume_note` de cada bloque y `deload_instructions`: solo cifras y palabras clave separadas
   por "·" (máx. 12 y 20 palabras). NO expliques qué es un deload ni para qué sirve.
 - Doble progresión por defecto; lineal simple en principiantes los 2 primeros meses.
 - RIR: compuestos pesados 2–3, secundarios 1–2, aislamiento 0–2. Tempo solo cuando aporte.
   Descansos: compuestos 2–3 min, aislamiento 60–90 s.
 - Volumen semanal (series efectivas/grupo): principiante 8–12, intermedio 10–18, avanzado 14–22.
+  ⚠️ Estas cifras son POR SEMANA y son CONTEXTO, no lo que tienes que aplicar: el volumen y la
+  frecuencia que debes cumplir te llegan YA CALCULADOS POR CICLO en el contrato de la estructura
+  (con la prioridad muscular del cliente aplicada). Ese contrato manda; tú no conviertes nada.
 - Cardio sin interferir con la recuperación: pasos diarios objetivo + LISS/HIIT según objetivo.
 - En recalibraciones: ajusta cargas desde los e1RM reales que te entrega el backend.
 
