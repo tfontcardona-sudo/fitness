@@ -1070,7 +1070,7 @@ function CobrosDelCliente({ clientId, refreshKey, onCambio }: {
   return (
     <details className="mt-2" onToggle={(e) => setAbierto((e.target as HTMLDetailsElement).open)}>
       <summary className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-300">
-        Ver sus {pagos.length} {pagos.length === 1 ? "cobro" : "cobros"}
+        {pagos.length === 1 ? "Ver su cobro" : `Ver sus ${pagos.length} cobros`}
       </summary>
       {abierto && (
         <ul className="mt-2 space-y-1">
