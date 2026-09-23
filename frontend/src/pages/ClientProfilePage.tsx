@@ -334,6 +334,7 @@ export default function ClientProfilePage() {
         </Link>
         <BloqueoPorPago
           client={client}
+          anamnesisUrl={anamnesisUrl}
           onCobrado={reload}
           onEntrarIgual={() => setVerSinPagar(true)}
         />

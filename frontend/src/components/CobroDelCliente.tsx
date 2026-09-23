@@ -17,7 +17,7 @@
  *                   ha pagado, con todo lo necesario para cobrarle allí mismo.
  */
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, CalendarClock, CreditCard, Eye, MessageCircle, Wallet } from "lucide-react";
+import { AlertTriangle, CalendarClock, ClipboardList, CreditCard, Eye, MessageCircle, Wallet } from "lucide-react";
 import { api } from "../lib/api";
 import { copiarConAviso } from "../lib/clipboard";
 import { openWhatsApp, waPhone } from "../lib/whatsapp";
@@ -276,8 +276,14 @@ export function CobroManual({ client, onDone, abiertoPorDefecto = false }: {
  *  atender una petición suya y sobre todo exportar o borrar sus datos, que son
  *  obligaciones legales con plazo—. Un bloqueo sin salida convierte un impago
  *  en un incumplimiento. */
-export function BloqueoPorPago({ client, onCobrado, onEntrarIgual }: {
+export function BloqueoPorPago({ client, anamnesisUrl, onCobrado, onEntrarIgual }: {
   client: ClientOut;
+  /** Su cuestionario. Va aquí porque un alta que aún no ha pagado es el caso
+   *  más frecuente del bloqueo, y el coach manda las dos cosas en el MISMO
+   *  mensaje: "aquí tienes el pago y aquí el cuestionario". Sin él había que
+   *  abrir la ficha con la salida solo para copiar un enlace que no cuesta
+   *  nada — y eso es enseñar a saltarse el bloqueo. */
+  anamnesisUrl?: string | null;
   onCobrado: () => void;
   onEntrarIgual: () => void;
 }) {
@@ -288,9 +294,13 @@ export function BloqueoPorPago({ client, onCobrado, onEntrarIgual }: {
   const telefono = waPhone(client.phone);
   const enlace = pago?.enlace_pago ?? "";
 
+  const alta = estado?.motivo === "alta";
   const mensaje = `Hola ${client.full_name.split(" ")[0]}, te paso el enlace para `
-    + `${estado?.motivo === "alta" ? "activar" : "renovar"} tu plan`
-    + `${previsto ? ` (${euros(previsto)})` : ""}: ${enlace}`;
+    + `${alta ? "activar" : "renovar"} tu plan`
+    + `${previsto ? ` (${euros(previsto)})` : ""}: ${enlace}`
+    // En un alta, el cuestionario va en el MISMO mensaje: es el paso que viene
+    // justo después de pagar y así no hace falta un segundo WhatsApp.
+    + (alta && anamnesisUrl ? `\n\nY aquí tu cuestionario inicial: ${anamnesisUrl}` : "");
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-10">
@@ -348,6 +358,21 @@ export function BloqueoPorPago({ client, onCobrado, onEntrarIgual }: {
             >
               <MessageCircle size={20} className="shrink-0" />
               <span className="text-sm font-medium">Reclamárselo por WhatsApp</span>
+            </button>
+          )}
+          {anamnesisUrl && (
+            <button
+              onClick={() => void copiarConAviso(anamnesisUrl, toast, "Enlace del cuestionario copiado")}
+              className="flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left text-zinc-300 transition-transform active:scale-[0.98]"
+              style={{ borderColor: "var(--line-strong)" }}
+            >
+              <ClipboardList size={20} className="shrink-0" />
+              <span className="min-w-0">
+                <span className="block text-sm font-medium">Copiar su cuestionario</span>
+                <span className="block text-xs text-zinc-500">
+                  puede ir rellenándolo mientras paga
+                </span>
+              </span>
             </button>
           )}
           <CobroManual client={client} onDone={onCobrado} />
