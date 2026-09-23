@@ -578,6 +578,19 @@ function Chip({ tone, icon: Icon, children, onClick, title }: {
 }
 
 /** Una línea del feed: quién, qué plan, a qué hora y cuánto. */
+
+/** Por dónde entró ese movimiento: "Tarjeta", "Efectivo", "Transferencia"…
+ *  Lo de Stripe es tarjeta; lo de fuera lo dice la descripción que escribe el
+ *  backend al anotarlo ("Transferencia · registrado por el coach"). */
+function formaDePago(p: PaymentOut): string {
+  if (p.kind !== "manual") return "Tarjeta";
+  const t = (p.description ?? "").toLowerCase();
+  if (t.startsWith("efectivo")) return "Efectivo";
+  if (t.startsWith("transferencia")) return "Transferencia";
+  if (t.startsWith("bizum")) return "Bizum";
+  return "A mano";
+}
+
 function Movimiento({ pago, nuevo, onClick, onDescartar }: {
   pago: PaymentOut; nuevo: boolean; onClick: () => void;
   onDescartar?: () => void;
@@ -625,6 +638,13 @@ function Movimiento({ pago, nuevo, onClick, onDescartar }: {
               prueba
             </span>
           )}
+          {/* POR DÓNDE entró el dinero, a la vista. Iba dentro de la
+              descripción, en gris y en tercer lugar: quien repasa el libro
+              buscando qué cobró en efectivo no lo encontraba de un vistazo. */}
+          <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold"
+                style={{ background: "var(--surface-raised)", color: "var(--ink-soft)" }}>
+            {formaDePago(pago)}
+          </span>
         </span>
         <span className="mt-0.5 block truncate text-xs text-zinc-500">
           {hora(pago.paid_at)}

@@ -484,11 +484,28 @@ def client_alerts(db: Session, client: Client, today: date | None = None,
     # Sin alerta, un pago sin completar solo se veía en la carpeta "Falta pago":
     # el coach debe enterarse también por la campana y el resumen del móvil.
     if getattr(client, "payment_status", None) == "pending":
-        out.append(_alert(client, "payment_pending", "media",
-                          "Pago pendiente: cobra su plan (o márcalo como pagado "
-                          "si te pagó por otra vía).",
-                          "resumen", "Revisar pago",
-                          since=client.created_at.date() if getattr(client, "created_at", None) else None))
+        # El aviso DICE POR QUÉ debe: no se atiende igual un alta sin cobrar
+        # que una baja de suscripción o una tarjeta rechazada. El motivo lo
+        # pone `payment_profile` (la misma verdad que el rojo del listado y el
+        # bloqueo del perfil) y no se deduce aquí por segunda vez.
+        from app.services import payment_profile as pp
+        from app.services.branding import marca_de_cliente
+
+        _pago = pp.estado(client, marca_de_cliente(client, db), today)
+        _cuanto = _pago.get("importe_previsto_cents")
+        _msg = _pago["motivo_texto"]
+        if _cuanto:
+            _msg += f" Le tocan {pp.euros(_cuanto)} {_pago['cadencia_label']}."
+        _msg += " Cóbraselo, o anótalo si te pagó por otra vía."
+        _desde = _pago.get("desde")
+        out.append(_alert(
+            client, "payment_pending",
+            # Una BAJA y un cobro FALLIDO son urgentes: el dinero ya se ha
+            # perdido una vez y el cliente sigue recibiendo la asesoría.
+            "alta" if _pago.get("motivo") in ("cancelado", "fallido") else "media",
+            _msg, "resumen", "Revisar pago",
+            since=(_desde.date() if hasattr(_desde, "date") else _desde)
+            or (client.created_at.date() if getattr(client, "created_at", None) else None)))
 
     # --- Renovación a la vista (pago único, sin suscripción) -----------------
     # Los planes de 1/3/6 meses se cobran de una vez: al acabar la duración no

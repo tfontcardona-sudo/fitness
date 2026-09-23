@@ -549,6 +549,105 @@ def notify_coach_sin_creditos(db: Session, *, motivo: str = "") -> int:
     return send_to_coach(db, payload)
 
 
+def notify_coach_cobro_anotado(db: Session, client: Client, *, amount_cents: int,
+                               metodo: str, renovacion: bool = False) -> int:
+    """Avisa al COACH de un cobro que se ha anotado A MANO, con su importe.
+
+    Lo de Stripe ya avisaba; lo de fuera de la pasarela —efectivo, Bizum, una
+    transferencia— entraba en el libro sin que sonara nada. Con dos admins eso
+    es el segundo enterándose del ingreso al abrir el panel; y para quien lo
+    anotó, la confirmación de que el dinero cuadró en el mes.
+
+    La `tag` lleva el importe y el día: dos cobros del mismo cliente el mismo
+    día (una renovación y un extra) no pueden verse como una sola notificación
+    en el móvil — el fallo de las tags compartidas que ya costó caro."""
+    if not push_configured():
+        return 0
+    from app.services.payment_profile import METODO_LABEL, euros
+
+    base = settings.public_base_url.rstrip("/")
+    first = ((client.full_name or "").split() or ["Un cliente"])[0]
+    via = METODO_LABEL.get(metodo, "Otro método").lower()
+    dia = datetime.now(timezone.utc).astimezone(ZoneInfo(settings.tz)).date().isoformat()
+    payload = {
+        "title": f"💰 +{euros(amount_cents)} · Cobro anotado",
+        "body": (f"{first} ha pagado {'la renovación de ' if renovacion else ''}"
+                 f"su plan por {via}."),
+        "count": 1,
+        "url": f"{base}/pagos",
+        "tag": f"dq-cobro-mano-{client.id}-{dia}-{int(amount_cents)}",
+    }
+    return send_to_coach(db, payload)
+
+
+def notify_coach_cliente_nuevo(db: Session, client: Client, *,
+                               origen: str = "alta manual") -> int:
+    """Avisa al COACH de que hay un CLIENTE NUEVO en la cartera.
+
+    El alta por Stripe ya avisaba (venía con su pago); la que daba el coach a
+    mano y la del formulario público no avisaban de nada, así que un alta que
+    entraba un sábado por la web se descubría el lunes. Dice de entrada si
+    llega pagado o con el cobro pendiente, que es lo primero que hay que hacer
+    con él."""
+    if not push_configured():
+        return 0
+    from app.services.payment_profile import estado
+    from app.services.branding import marca_de_cliente
+
+    base = settings.public_base_url.rstrip("/")
+    try:
+        pago = estado(client, marca_de_cliente(client, db))
+    except Exception:  # noqa: BLE001 — un alta nunca se cae por su aviso
+        pago = {"situacion": "pendiente", "importe_previsto_cents": None}
+    if pago.get("situacion") == "al_dia":
+        cola = "Ya está pagado: prepárale la anamnesis."
+    else:
+        from app.services.payment_profile import euros
+
+        cuanto = pago.get("importe_previsto_cents")
+        cola = ("Falta su pago"
+                + (f" de {euros(cuanto)}" if cuanto else "")
+                + ": mándale su enlace de cobro.")
+    payload = {
+        "title": f"🆕 Cliente nuevo · {client.full_name}",
+        "body": f"{origen.capitalize()}. {cola}",
+        "count": 1,
+        "url": f"{base}/clientes/{client.id}",
+        # Por cliente: dos altas seguidas no pueden verse como una sola.
+        "tag": f"dq-cliente-nuevo-{client.id}",
+    }
+    return send_to_coach(db, payload)
+
+
+def notify_client_toca_pagar(db: Session, client: Client, *, importe_cents: int | None,
+                             url_pago: str, vencido: bool = False) -> int:
+    """Avisa AL CLIENTE, en su móvil, de que le toca pagar — con su enlace.
+
+    El sistema ya le mandaba un email de renovación, pero el email se pierde
+    entre otros cincuenta y el enlace de Stripe acababa sin abrirse. El push
+    abre directamente la pasarela: un toque desde la notificación y paga.
+
+    Se manda UNA vez por ciclo (sello `payment_notice_sent_at`, que se borra en
+    cuanto entra un cobro) y el portal enseña además un aviso fijo que se
+    retira solo al pagar: insistir cinco veces al día es la forma más rápida de
+    que el cliente apague las notificaciones."""
+    if not push_configured():
+        return 0
+    from app.services.payment_profile import euros
+
+    cuanto = f" · {euros(importe_cents)}" if importe_cents else ""
+    payload = {
+        "title": (f"Pago vencido{cuanto}" if vencido else f"Toca renovar{cuanto}"),
+        "body": ("Tu plan ha vencido. Toca aquí para renovarlo y seguir."
+                 if vencido else
+                 "Tu plan se renueva hoy. Toca aquí para pagarlo en un minuto."),
+        "count": 1,
+        "url": url_pago,
+        "tag": f"dq-pago-cliente-{client.id}",
+    }
+    return send_to_client(db, client, payload)
+
+
 def notify_coach_video_call_proposed(db: Session, client: Client, when_label: str) -> int:
     """Avisa al COACH (push) de que un cliente propuso día/hora de videollamada.
     Al tocar, abre el panel del coach. Silencioso sin push/dispositivos."""

@@ -162,9 +162,24 @@ class Client(Base):
         String(12), default="pending", server_default=text("'paid'"), nullable=False
     )
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # CÓMO pagó la última vez (mig. 0057): stripe | efectivo | transferencia |
+    # bizum | otro. Lo sella la pasarela en sus cobros y el coach al anotar uno
+    # de fuera. Es lo que la ficha enseña junto al importe: "pagó 129 €" sin
+    # decir por dónde entró obligaba a abrir el libro de caja.
+    payment_method: Mapped[str | None] = mapped_column(String(20))
+    # POR QUÉ no está pagado (mig. 0057): alta (nunca pagó) | cancelado (dio de
+    # baja su suscripción) | fallido (Stripe no pudo cobrar). "vencido" NO se
+    # guarda: lo deduce la ventana de renovación, que ya es una sola verdad.
+    # Se limpia en cuanto entra un cobro.
+    unpaid_reason: Mapped[str | None] = mapped_column(String(16))
+    unpaid_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Email de renovación enviado AL CLIENTE en este ciclo (se compara contra
     # paid_at: un pago nuevo re-arma el recordatorio del ciclo siguiente).
     renewal_reminder_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Push de "toca pagar" mandado AL CLIENTE en este ciclo. Sello PROPIO y no
+    # el del email: el correo se resella solo si salió de verdad (un SMTP caído
+    # se reintenta mañana), y compartirlo habría matado ese reintento.
+    payment_notice_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     portal_token: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     # Acceso del cliente al portal con login (usuario = email). El hash y la
     # marca de envío nacen nulos y se rellenan al enviar el acceso por email.

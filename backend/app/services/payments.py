@@ -635,10 +635,10 @@ def _refresca_ficha(client: Client | None, *, pagado_en: datetime | None,
     ya queda SIN LEER en el feed si es reciente)."""
     if client is None or not livemode:
         return
-    client.payment_status = "paid"
-    cuando = pagado_en or datetime.now(timezone.utc)
-    if client.paid_at is None or cuando > client.paid_at:
-        client.paid_at = cuando
+    from app.services.payment_profile import marcar_pagado
+
+    marcar_pagado(client, metodo="stripe",
+                  cuando=pagado_en or datetime.now(timezone.utc))
 
 
 def _sub_de_factura(inv: dict) -> str | None:

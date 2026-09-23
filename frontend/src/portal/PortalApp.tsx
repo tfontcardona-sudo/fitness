@@ -4,7 +4,7 @@ import { aplicarPiel, coloresDeMarca, pielDe, type Piel } from "../lib/marca";
 import MarcaLogo from "../components/MarcaLogo";
 import { activarAcordeon } from "../lib/accordion";
 import { useSearchParams } from "react-router-dom";
-import { Bell, BellOff, CalendarCheck, Camera, Check, ChevronDown, Dumbbell, FileText, LineChart, Library, LogOut, MapPin, MessageSquare, NotebookPen, Share, Smartphone, Video, X } from "lucide-react";
+import { Bell, BellOff, CalendarCheck, Camera, Check, ChevronDown, CreditCard, Dumbbell, FileText, LineChart, Library, LogOut, MapPin, MessageSquare, NotebookPen, Share, Smartphone, Video, X } from "lucide-react";
 import { portalApi, portalSession, PortalError } from "./portalApi";
 import type { VideoCallStatus } from "./portalApi";
 import { pkg } from "../lib/packages";
@@ -297,6 +297,33 @@ export default function PortalApp({ token }: { token: string }) {
               pantalla en blanco. */}
           {semana?.hoy && state.period != null && (
             <PortalHoy hoy={semana.hoy} onIr={(t) => setTab(t)} />
+          )}
+          {/* TOCA PAGAR. Lo PRIMERO de la pantalla mientras deba: si se
+              queda debajo de su plan y de su rutina, el cliente entra, mira lo
+              suyo y se va sin verlo. Se retira SOLO en cuanto entra el cobro
+              (el backend deja de mandarlo), y no sale nunca si su suscripción
+              se cobra sola — pedirle que pague algo domiciliado es la mejor
+              forma de que pague dos veces. */}
+          {state.pago_pendiente && (
+            <a href={state.pago_pendiente.url_pago}
+              className="portal-note portal-note--action items-center"
+              style={{
+                borderColor: "#C2453A",
+                background: "color-mix(in srgb, #C2453A 10%, transparent)",
+              }}>
+              <CreditCard size={18} style={{ color: "#C2453A" }} className="shrink-0" />
+              <span className="min-w-0">
+                <span className="p-head block" style={{ color: "#C2453A" }}>
+                  {state.pago_pendiente.vencido ? "Tu plan ha vencido" : "Toca renovar tu plan"}
+                  {state.pago_pendiente.importe_cents
+                    ? ` · ${(state.pago_pendiente.importe_cents / 100).toLocaleString("es-ES", { style: "currency", currency: "EUR" })}`
+                    : ""}
+                </span>
+                <span className="p-sub mt-0.5 block">
+                  {state.pago_pendiente.cuando} · pagar ahora (tarjeta segura) →
+                </span>
+              </span>
+            </a>
           )}
           {state.needs_anamnesis && (
             <a href={`/anamnesis/${token}`}

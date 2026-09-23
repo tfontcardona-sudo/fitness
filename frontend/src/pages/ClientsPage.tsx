@@ -25,7 +25,7 @@ const CATEGORIES: {
   { id: "anamnesis", label: "Falta anamnesis", color: "#6366F1", icon: ClipboardList },
   { id: "plan", label: "Falta planificación", color: "var(--brand-accent)", icon: CalendarPlus },
   { id: "revision", label: "Falta revisión", color: "#8B5CF6", icon: Flag },
-  { id: "pago", label: "Falta pago", color: "#2E7D46", icon: CreditCard },
+  { id: "pago", label: "Falta pago", color: "#C2453A", icon: CreditCard },
   { id: "aldia", label: "Al día", color: "var(--brand-accent-2)", icon: CheckCircle2 },
 ];
 
@@ -39,14 +39,17 @@ function inCategory(c: ClientOut, cat: Category): boolean {
     case "plan": return !!c.goal_type && !c.has_published_plan;
     // Revisión quincenal recibida, pendiente de feedback/adaptación
     case "revision": return c.status === "review_pending";
-    // Pago del plan pendiente (informativo, del enlace de Stripe)
-    case "pago": return c.payment_status === "pending";
+    // Falta su pago: no ha pagado, o pagó y su ciclo ya venció. Lo decide el
+    // backend (`payment_profile`), que es el mismo que bloquea su ficha: una
+    // segunda regla aquí dejaría fuera de la carpeta a alguien bloqueado.
+    case "pago": return c.pago ? c.pago.situacion !== "al_dia" : c.payment_status === "pending";
     // Nada pendiente: plan activo, sin revisión por atender y pago al día
     case "aldia":
       // "Al día" excluye también a los EN RIESGO: el Dashboard los pinta como
       // prioridad 1 y aquí colaban dentro de la carpeta tranquila (auditoría).
       return !!c.has_published_plan && c.status !== "review_pending"
-        && c.status !== "at_risk" && c.payment_status !== "pending";
+        && c.status !== "at_risk"
+        && (c.pago ? c.pago.situacion === "al_dia" : c.payment_status !== "pending");
   }
 }
 
@@ -225,17 +228,51 @@ function PackageBadge({ tier, etiqueta }: { tier: string; etiqueta?: string | nu
   );
 }
 
-/** Estado de pago del plan (Stripe): pagado / pendiente. */
-function PaymentBadge({ status }: { status: string }) {
-  const paid = status === "paid";
-  const color = paid ? "#2E7D46" : "#C2453A";
+/** Estado de pago, con su MOTIVO. Tres situaciones y no dos: "pagó pero su
+ *  ciclo ya terminó" no es estar al día, y hasta ahora salía en verde — el
+ *  cliente seguía recibiendo la asesoría sin que nada lo dijera. El estado lo
+ *  calcula el backend (`services/payment_profile`); aquí solo se pinta. */
+function PaymentBadge({ c }: { c: ClientOut }) {
+  const pago = c.pago;
+  const pagado = pago ? pago.situacion === "al_dia" : c.payment_status === "paid";
+  if (pagado) {
+    return (
+      <span
+        className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold"
+        style={{ background: "color-mix(in srgb, #2E7D46 14%, transparent)", color: "#2E7D46" }}
+        title={pago?.proximo_pago
+          ? `Pagado · próximo cobro el ${new Date(pago.proximo_pago).toLocaleDateString("es-ES")}`
+          : "Pago realizado"}
+      >
+        Pagado
+      </span>
+    );
+  }
+  // Un cobro fallido de una suscripción VIVA no es lo mismo: Stripe reintenta
+  // solo y la ficha no se bloquea, así que pintarlo del mismo rojo macizo que
+  // a quien hay que reclamar sería pedir al coach que persiga un cobro que ya
+  // está en marcha — y, a base de rojos que no eran, dejaría de mirarlos.
+  if (pago && !pago.bloqueado) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold"
+        style={{ background: "color-mix(in srgb, #D98324 16%, transparent)", color: "#D98324" }}
+        title={`${pago.motivo_texto} Su suscripción sigue activa: Stripe lo reintenta solo.`}
+      >
+        {pago.motivo_corto} · Stripe reintenta
+      </span>
+    );
+  }
+  // FALTA PAGO en rojo macizo (no un tinte): es lo que bloquea su ficha, y un
+  // rojo suave se leía como decoración al lado de los otros seis chips.
   return (
     <span
-      className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold"
-      style={{ background: `color-mix(in srgb, ${color} 14%, transparent)`, color }}
-      title={paid ? "Pago realizado" : "Pago pendiente"}
+      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold text-white"
+      style={{ background: "#C2453A" }}
+      title={pago?.motivo_texto ?? "Falta el pago de su plan"}
     >
-      {paid ? "Pagado" : "Pago pendiente"}
+      FALTA PAGO
+      {pago?.motivo ? <span className="font-medium opacity-90">· {pago.motivo_corto}</span> : null}
     </span>
   );
 }
@@ -270,12 +307,33 @@ function CycleBadges({ c }: { c: ClientOut }) {
   );
 }
 
+/** ¿A este cliente le falta el pago? Lo dice el BACKEND (`payment_profile`),
+ *  que es el mismo que bloquea su ficha: deducirlo aquí con un
+ *  `payment_status === "pending"` dejaba fuera al que pagó y se le venció el
+ *  ciclo, y dentro al que tiene la suscripción de Stripe viva. */
+export function faltaPago(c: ClientOut): boolean {
+  // El RAÍL rojo lo pinta el BLOQUEO, no la situación: una fila que sí se
+  // puede abrir (suscripción viva que Stripe reintenta) no puede verse igual
+  // que una cerrada. El chip de al lado sí dice lo que pasa en los dos casos.
+  return c.pago ? c.pago.bloqueado : c.payment_status === "pending";
+}
+
+/** Cómo se pinta una fila con el pago pendiente: raíl rojo a la izquierda y el
+ *  contenido apagado. Es el mismo lenguaje en la tarjeta del móvil y en la
+ *  tabla del escritorio, y lo que anticipa que al entrar habrá un bloqueo. */
+const ESTILO_IMPAGO = {
+  borderLeft: "4px solid #C2453A",
+  background: "color-mix(in srgb, #C2453A 7%, transparent)",
+} as const;
+
 /** Tarjeta de cliente para MÓVIL: toda la fila en un solo toque cómodo. */
 function ClientCard({ c }: { c: ClientOut }) {
+  const debe = faltaPago(c);
   return (
     <Link
       to={`/clientes/${c.id}?tab=seguimiento`}
-      className="card flex items-center gap-3 p-3.5 active:scale-[0.99]"
+      style={debe ? ESTILO_IMPAGO : undefined}
+      className={`card flex items-center gap-3 p-3.5 active:scale-[0.99]${debe ? " opacity-90" : ""}`}
     >
       <div className="relative shrink-0">
         <Avatar name={c.full_name} size={38} />
@@ -292,7 +350,7 @@ function ClientCard({ c }: { c: ClientOut }) {
         <div className="flex items-center gap-1.5">
           <p className="truncate text-sm font-medium text-zinc-100">{c.full_name}</p>
           <PackageBadge tier={c.package_tier} etiqueta={c.plan_label} />
-          <PaymentBadge status={c.payment_status} />
+          <PaymentBadge c={c} />
         </div>
         <p className="truncate text-xs text-zinc-500">
           {c.goal_type ? GOAL_LABEL[c.goal_type] : "Sin objetivo aún"} · {relativeDays(c.last_touch_at ?? c.updated_at)}
@@ -336,8 +394,10 @@ function ClientsTable({ clients }: { clients: ClientOut[] }) {
                   navigate(`/clientes/${c.id}?tab=seguimiento`);
                 }
               }}
-              className="cursor-pointer border-t transition-colors hover:bg-[var(--surface-raised)]"
-              style={{ borderColor: "var(--line)", background: i % 2 ? "rgba(38,33,26,0.02)" : undefined }}
+              className={`cursor-pointer border-t transition-colors hover:bg-[var(--surface-raised)]${faltaPago(c) ? " opacity-90" : ""}`}
+              style={faltaPago(c)
+                ? { borderColor: "var(--line)", ...ESTILO_IMPAGO }
+                : { borderColor: "var(--line)", background: i % 2 ? "rgba(38,33,26,0.02)" : undefined }}
             >
               <td className="px-4 py-3">
                 <div className="flex items-center gap-3">
@@ -357,7 +417,7 @@ function ClientsTable({ clients }: { clients: ClientOut[] }) {
                     <div className="flex items-center gap-1.5">
                       <p className="font-medium text-zinc-100">{c.full_name}</p>
                       <PackageBadge tier={c.package_tier} etiqueta={c.plan_label} />
-                      <PaymentBadge status={c.payment_status} />
+                      <PaymentBadge c={c} />
                     </div>
                     <p className="text-xs text-zinc-500">{c.email}</p>
                   </div>

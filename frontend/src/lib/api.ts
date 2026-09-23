@@ -71,6 +71,7 @@ import type {
   ClientCreate,
   ClientCreatedOut,
   ClientOut,
+  EstadoDePagoOut,
   TrainingStructureOut,
   ClientStatus,
   ExerciseOut,
@@ -829,6 +830,16 @@ export const api = {
     method: "efectivo" | "transferencia" | "bizum" | "otro";
     paid_on?: string; note?: string;
   }) => request<{ id: number; amount_cents: number }>("POST", "/payments/manual", body),
+  /** Todo lo del dinero de un cliente para poder COBRARLE sin salir de su
+   *  ficha: situación, motivo del impago, cuánto le toca, último y próximo
+   *  pago, cómo paga y su enlace de Stripe. Lo calcula el backend entero. */
+  estadoDePago: (clientId: number) =>
+    request<EstadoDePagoOut>("GET", `/clients/${clientId}/pago`),
+  /** Abre la ficha de quien no ha pagado, DEJANDO CONSTANCIA. El bloqueo es
+   *  una regla de negocio, no de seguridad: atender una petición suya o
+   *  exportar/borrar sus datos (RGPD) no puede depender de que deba dinero. */
+  accesoSinPago: (clientId: number) =>
+    request<{ ok: boolean }>("POST", `/clients/${clientId}/acceso-sin-pago`),
 
   // --- VENDER: catálogo de ofertas/planes con su enlace de pago ------------
   /** Todo lo vendible con importes REALES de Stripe, el enlace definitivo y si

@@ -35,6 +35,7 @@ from app.models import (
     WorkoutLog,
 )
 from app.schemas.entities import (
+    PagoDelCliente,
     ClientCreate,
     ClientCreatedOut,
     ClientOut,
@@ -360,8 +361,23 @@ def create_client(body: ClientCreate, db: Session = Depends(get_db)) -> ClientCr
         db.rollback()
         access_status = "error"  # que el coach lo vea y pueda reenviarlo
 
+    # Aviso al coach del alta (al móvil, con lo que falta por cobrar). El alta
+    # por Stripe ya avisaba porque venía con su pago; esta y la del formulario
+    # público no avisaban de nada, así que un alta del sábado se descubría el
+    # lunes. Nunca bloquea el alta.
+    try:
+        from app.services import push as push_svc
+
+        push_svc.notify_coach_cliente_nuevo(db, client, origen="alta desde el panel")
+    except Exception:  # noqa: BLE001
+        pass
+
+    salida = ClientOut.model_validate(client)
+    from app.services.branding import marca_de_cliente as _mdc
+
+    salida.pago = _pago_de(client, _mdc(client, db))
     return ClientCreatedOut(
-        client=ClientOut.model_validate(client),
+        client=salida,
         links=_links(client),
         portal_access=access_status,
     )
@@ -482,7 +498,13 @@ def list_clients(
             item.pending_review_period = pending[c.id]
         item.review_period_index = reviews.get(c.id)
         item.has_published_plan = c.id in with_plan
-        item.plan_label = _pkgs.label(c.package_tier, marca_de_cliente(c, db))
+        _marca_c = marca_de_cliente(c, db)
+        item.plan_label = _pkgs.label(c.package_tier, _marca_c)
+        # El estado de pago de cada fila: es lo que pinta el rojo de "FALTA
+        # PAGO" y decide el bloqueo del perfil. SIN `db` a propósito — aquí se
+        # recorre la cartera entera y el total pagado no vale una consulta por
+        # cliente (el barrido de alertas ya costó 431 consultas por refresco).
+        item.pago = _pago_de(c, _marca_c)
         # `updated_at` SIEMPRE cuenta (existe en toda fila); los otros tres
         # solo si ese cliente tiene algo que aportar. El registro diario es
         # una fecha sin hora — mediodía UTC para no sesgar el empate del
@@ -559,6 +581,53 @@ def _snapshot_de_entradas(client: Client, weight_now) -> dict:
     }
 
 
+@router.post("/{client_id}/acceso-sin-pago")
+def acceso_sin_pago(client_id: int, db: Session = Depends(get_db)) -> dict:
+    """Abre la ficha de un cliente que NO ha pagado, dejando constancia.
+
+    El bloqueo por falta de pago es una regla de NEGOCIO —que no se trabaje
+    gratis—, no de seguridad, y hay cosas que el coach tiene que poder hacer
+    aunque el cliente deba dinero: atender una petición suya, leer su historial
+    clínico si le pasa algo, y sobre todo EXPORTAR o BORRAR sus datos, que son
+    obligaciones legales con plazo (RGPD, art. 15 y 17). Un bloqueo sin salida
+    convertía un impago en un incumplimiento.
+
+    Así que la salida existe, es de un clic, y QUEDA REGISTRADA: el coach sabe
+    que la está usando y en la auditoría consta quién abrió qué ficha sin
+    cobrar. El estado de pago no se toca — no es un "marcar pagado" encubierto.
+    """
+    client = _get_or_404(db, client_id)
+    log_event(db, "client", client.id, "perfil_abierto_sin_pago",
+              {"payment_status": client.payment_status,
+               "motivo": client.unpaid_reason})
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/{client_id}/pago")
+def estado_de_pago(client_id: int, db: Session = Depends(get_db)) -> dict:
+    """Todo lo del dinero de este cliente, para la pantalla del cobro.
+
+    Lo mismo que viaja en `ClientOut.pago` más el ENLACE de pago y el importe
+    que SE ESPERA de él: es lo que el formulario de "anotar cobro" pre-rellena
+    para que el coach no tenga que acordarse de la tarifa de cada uno, y lo que
+    la pantalla de bloqueo enseña para poder cobrarle sin salir de ahí.
+    """
+    from app.services import payment_profile as pp
+    from app.services.branding import marca_de_cliente
+
+    client = _get_or_404(db, client_id)
+    marca = marca_de_cliente(client, db)
+    datos = _pago_de(client, marca, db=db).model_dump()
+    datos["enlace_pago"] = pp.enlace_de_pago(client, settings.public_base_url)
+    # Cuándo tocaría el SIGUIENTE cobro si se anota uno hoy: el formulario lo
+    # dice antes de guardar nada, que es cuando sirve de algo.
+    datos["proximo_si_cobro_hoy"] = pp.proximo_desde(
+        datetime.now(timezone.utc), client.billing_period)
+    datos["plan_label"] = marca.label(client.package_tier)
+    return datos
+
+
 @router.get("/{client_id}/training-structure")
 def training_structure(client_id: int, db: Session = Depends(get_db)) -> dict:
     """La ESTRUCTURA de su planificación y lo que se deriva de ella.
@@ -609,6 +678,37 @@ def training_structure(client_id: int, db: Session = Depends(get_db)) -> dict:
     }
 
 
+def _pago_de(client: Client, marca, *, db: Session | None = None) -> PagoDelCliente:
+    """El bloque de pago de un cliente (services/payment_profile).
+
+    Con `db` añade lo que solo sabe el LIBRO DE CAJA (total pagado, nº de
+    cobros, importe del último): una consulta, y por eso solo la paga la FICHA.
+    El LISTADO recorre la cartera entera y lo llama sin `db` — ahí todo sale de
+    la ficha y de los precios de su marca, sin una sola consulta más.
+    """
+    from app.services import payment_profile as pp
+    from app.services.portal import today_local
+
+    datos = pp.estado(client, marca, today_local())
+    if db is not None:
+        hist = pp.historial(db, client)
+        ultimo = hist.get("ultimo") or {}
+        datos.update({
+            "total_cents": hist["total_cents"],
+            "num_pagos": hist["num_pagos"],
+            "ultimo_importe_cents": ultimo.get("amount_cents"),
+            "ultimo_concepto": ultimo.get("description"),
+            "primero_en": hist.get("primero_en"),
+        })
+        # El método que dice el LIBRO manda sobre el sellado en la ficha: la
+        # columna guarda el último que se anotó, y un cobro repescado de Stripe
+        # después (o un cobro a mano borrado) la deja rancia.
+        if ultimo.get("method"):
+            datos["metodo"] = ultimo["method"]
+            datos["metodo_label"] = pp.METODO_LABEL.get(ultimo["method"])
+    return PagoDelCliente(**datos)
+
+
 @router.get("/{client_id}", response_model=ClientOut)
 def get_client(client_id: int, db: Session = Depends(get_db)) -> ClientOut:
     client = _get_or_404(db, client_id)
@@ -638,6 +738,7 @@ def get_client(client_id: int, db: Session = Depends(get_db)) -> ClientOut:
     out.billing_options = periodos + ([client.billing_period]
                                       if client.billing_period not in periodos else [])
     out.brand_usa = marca.lo_que_usa()
+    out.pago = _pago_de(client, marca, db=db)
     return out
 
 
@@ -699,16 +800,31 @@ def update_client(client_id: int, body: ClientUpdate, db: Session = Depends(get_
             diff[field] = {"from": _jsonable(old_value), "to": _jsonable(serialized_new)}
         setattr(client, field, serialized_new)
 
-    # "Marcar pagado" a mano (sin webhook de Stripe): sella también paid_at,
-    # para que las vistas/consultas por fecha de pago no lo lean como impagado.
-    if changes.get("payment_status") == "paid" and client.paid_at is None:
-        client.paid_at = datetime.now(timezone.utc)
+    # "Marcar pagado" a mano (sin webhook de Stripe): sella también paid_at y
+    # BORRA el motivo del impago, por la misma puerta que todo lo demás. Sin
+    # esa limpieza, marcarlo pagado desde la ficha dejaba el "canceló su
+    # suscripción" puesto y el rojo del listado no se iba.
+    if changes.get("payment_status") == "paid":
+        from app.services.payment_profile import marcar_pagado
+
+        marcar_pagado(client, cuando=client.paid_at or datetime.now(timezone.utc))
+    elif changes.get("payment_status") == "pending":
+        from app.services.payment_profile import marcar_impago
+
+        marcar_impago(client, "alta" if client.paid_at is None else "")
 
     if diff:
         log_event(db, "client", client.id, "client_updated", {"fields": diff})
     db.commit()
     db.refresh(client)
-    return ClientOut.model_validate(client)
+    salida = ClientOut.model_validate(client)
+    from app.services.branding import marca_de_cliente as _mdc
+
+    # El bloque de pago también en la respuesta del PATCH: el panel pinta con
+    # ella sin recargar, y sin él un guardado cualquiera dejaba la ficha un
+    # instante sin saber si el cliente está al día (y el bloqueo parpadeaba).
+    salida.pago = _pago_de(client, _mdc(client, db), db=db)
+    return salida
 
 
 def _jsonable(value):

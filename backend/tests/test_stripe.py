@@ -773,7 +773,14 @@ def test_webhook_baja_de_la_suscripcion(monkeypatch):
         c = db.get(Client, cid)
         assert c.payment_status == "pending"
         assert c.stripe_subscription_id is None
-        assert any("Suscripción cancelada" in a["title"] for a in avisos)
+        # El aviso dice QUIÉN canceló y qué queda: "Suscripción cancelada" a
+        # secas no decía de quién era ni que el cliente pasa a deber.
+        assert any("canceló su suscripción" in a["title"] for a in avisos)
+        assert any("FALTA PAGO" in a["body"] for a in avisos)
+        # Y el impago queda con su MOTIVO, que es lo que el panel pinta en rojo
+        # y lo que distingue una baja de un alta sin cobrar.
+        assert c.unpaid_reason == "cancelado"
+        assert c.unpaid_since is not None
     finally:
         db.close()
 
@@ -1158,7 +1165,7 @@ def test_webhook_segundo_pago_detiene_la_suscripcion(monkeypatch):
         c = db.get(Client, cid)
         assert c.payment_status == "paid"
         assert c.stripe_subscription_id is None
-        assert not any("Suscripción cancelada" in a.get("title", "") for a in avisos)
+        assert not any("canceló su suscripción" in a.get("title", "") for a in avisos)
         fila = db.scalar(select(Payment).where(Payment.stripe_object_id == "sub_2p",
                                                Payment.status == "canceled"))
         assert fila is not None and "completada" in (fila.description or "")
@@ -1197,7 +1204,7 @@ def test_webhook_baja_temprana_de_la_oferta2_es_impago(monkeypatch):
         assert res == {"subscription_cancelled": cid}
         db.expire_all()
         assert db.get(Client, cid).payment_status == "pending"
-        assert any("Suscripción cancelada" in a.get("title", "") for a in avisos)
+        assert any("canceló su suscripción" in a.get("title", "") for a in avisos)
     finally:
         db.close()
 
@@ -1323,7 +1330,7 @@ def test_webhook_tercer_pago_detiene_la_oferta(monkeypatch):
         c = db.get(Client, cid)
         assert c.payment_status == "paid"
         assert c.stripe_subscription_id is None
-        assert not any("Suscripción cancelada" in a.get("title", "") for a in avisos)
+        assert not any("canceló su suscripción" in a.get("title", "") for a in avisos)
         fila = db.scalar(select(Payment).where(Payment.stripe_object_id == "sub_o3",
                                                Payment.status == "canceled"))
         assert fila is not None and "1 € + 120 € + 120 €" in (fila.description or "")
@@ -1420,7 +1427,7 @@ def test_webhook_baja_temprana_de_la_oferta3_es_impago(monkeypatch):
         assert res == {"subscription_cancelled": cid}
         db.expire_all()
         assert db.get(Client, cid).payment_status == "pending"
-        assert any("Suscripción cancelada" in a.get("title", "") for a in avisos)
+        assert any("canceló su suscripción" in a.get("title", "") for a in avisos)
     finally:
         db.close()
 

@@ -231,6 +231,7 @@ def public_register(request: Request, body: PublicRegisterIn,
         log_event(db, "client", client.id, "client_created",
                   {"by": "self", "tier": client.package_tier,
                    "billing_period": client.billing_period})
+        nueva_ficha = True
     else:
         # Reintento del mismo cliente (pago pendiente): actualizar su elección
         # y reenviar el arranque en vez de duplicar la ficha.
@@ -238,8 +239,23 @@ def public_register(request: Request, body: PublicRegisterIn,
         client.phone = body.phone.strip() or client.phone
         client.package_tier = body.tier
         client.billing_period = body.period
+        nueva_ficha = False
     db.commit()
     db.refresh(client)
+
+    # Aviso al coach del alta que entra SOLA por la web. Antes esto era mudo:
+    # el interesado rellenaba el formulario un domingo y el coach se enteraba
+    # al abrir el panel (o al llegar el cobro, si llegaba). Solo en un alta
+    # NUEVA — el reintento del mismo interesado no es un cliente más. Nunca
+    # bloquea el registro.
+    if nueva_ficha:
+        try:
+            from app.services import push as push_svc
+
+            push_svc.notify_coach_cliente_nuevo(
+                db, client, origen="alta desde la web")
+        except Exception:  # noqa: BLE001
+            pass
 
     # Email de arranque (pago + anamnesis PDF). No bloquea el registro si falla.
     # FRENO anti-abuso: a una misma dirección, como mucho UN email por hora —

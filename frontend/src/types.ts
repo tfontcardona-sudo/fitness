@@ -327,6 +327,46 @@ export interface AnamnesisSubmit {
   consent_accepted: true;
 }
 
+/** Estado de pago de un cliente, tal y como lo cuenta el backend
+ *  (`services/payment_profile.estado`). Viaja en la ficha Y en cada fila del
+ *  listado; los cuatro últimos campos solo en la ficha (los saca del libro de
+ *  caja y el listado no paga esa consulta). */
+export interface PagoDelCliente {
+  /** al_dia | pendiente (no ha pagado) | vencido (pagó, pero su ciclo acabó) */
+  situacion: "al_dia" | "pendiente" | "vencido";
+  /** ¿Se le bloquea el perfil? Nunca si tiene suscripción viva en Stripe. */
+  bloqueado: boolean;
+  motivo: string | null;          // alta | cancelado | fallido | vencido
+  motivo_corto: string;           // "Canceló", "Cobro fallido"…
+  motivo_texto: string;
+  desde: string | null;           // debe desde
+  ultimo_pago_en: string | null;
+  metodo: string | null;          // stripe | efectivo | transferencia | bizum | otro
+  metodo_label: string | null;
+  cadencia: string;               // 1m | 3m | 6m | oferta | oferta2
+  cadencia_label: string;         // "cada mes", "cada 3 meses"…
+  proximo_pago: string | null;
+  dias_para_pago: number | null;
+  toca_cobrar: boolean;
+  importe_previsto_cents: number | null;
+  /** Suscripción viva: se cobra sola, ni aviso ni bloqueo. */
+  domiciliado: boolean;
+  total_cents?: number | null;
+  num_pagos?: number | null;
+  ultimo_importe_cents?: number | null;
+  ultimo_concepto?: string | null;
+  primero_en?: string | null;
+}
+
+/** Lo de `PagoDelCliente` más lo que solo hace falta para COBRAR: su enlace de
+ *  Stripe, cuándo tocaría el siguiente si se anota uno hoy y el nombre de su
+ *  plan. `GET /clients/{id}/pago`. */
+export interface EstadoDePagoOut extends PagoDelCliente {
+  enlace_pago: string;
+  proximo_si_cobro_hoy: string | null;
+  plan_label: string;
+}
+
 export interface ClientOut {
   id: number;
   full_name: string;
@@ -388,6 +428,11 @@ export interface ClientOut {
   /** ¿Toca renovar ya? Lo decide el backend (`renewals.is_due`), no el panel:
    *  una segunda fórmula aquí se desincronizaría de la alerta y del email. */
   renewal_due?: boolean;
+  /** TODO lo del dinero de este cliente, calculado por el backend
+   *  (`services/payment_profile`). Es lo que pinta el rojo de FALTA PAGO y lo
+   *  que decide el bloqueo del perfil: el panel no deduce NADA de esto, ni
+   *  siquiera "¿está pagado?" — hay tres situaciones, no dos. */
+  pago?: PagoDelCliente | null;
   /** Cómo llama SU marca a lo contratado ("DQR Full", "Pack Premium"). Lo pone
    *  el backend: la marca que manda es la SELLADA en su ficha, no el switch. */
   plan_label?: string | null;
@@ -792,6 +837,23 @@ export interface PortalState {
   today?: string | null;
   // Racha de días consecutivos con el diario rellenado (🔥 de la cabecera).
   streak_days?: number;
+  /** Le toca pagar: importe, cuándo y su enlace de Stripe. Es un aviso de
+   *  ESTADO, no una notificación suelta: está mientras deba y desaparece solo
+   *  en cuanto el cobro entra. null = no hay nada que cobrarle (o su
+   *  suscripción se cobra sola, y pedirle que pague sería cobrar dos veces). */
+  pago_pendiente?: PortalPagoPendiente | null;
+}
+
+/** El aviso de pago del portal (`PortalState.pago_pendiente`). Lo justo: ni el
+ *  motivo interno ni su historial — el portal no es el panel del coach. */
+export interface PortalPagoPendiente {
+  importe_cents: number | null;
+  /** Ya redactado por el backend ("vence hoy", "venció hace 3 días"): el
+   *  dispositivo del cliente puede estar en otro día que el servidor. */
+  cuando: string;
+  vencido: boolean;
+  url_pago: string;
+  cadencia_label: string;
 }
 
 /** GET /api/p/{token}/push/pending — espejo de PushPendingOut. */

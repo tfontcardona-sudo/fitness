@@ -277,7 +277,12 @@ def borrar_cobro_manual(payment_id: int, db: Session = Depends(get_db)) -> Respo
             # Una suscripción viva de Stripe manda sobre la ausencia de filas:
             # el cobro está domiciliado aunque el libro aún no lo tenga.
             if ultimo is None and not cliente.stripe_subscription_id:
-                cliente.payment_status = "pending"
+                # Sin ningún cobro en el libro, vuelve a ser un alta sin pagar:
+                # un impago sin motivo es un rojo que no se sabe atender.
+                from app.services.payment_profile import marcar_impago
+
+                marcar_impago(cliente, "alta")
+                cliente.payment_method = None
     log_event(db, "client", client_id or 0, "manual_payment_deleted",
               {"payment_id": payment_id, "amount_cents": pago.amount_cents})
     db.commit()
@@ -324,13 +329,25 @@ def manual_payment(body: ManualPaymentIn, db: Session = Depends(get_db)) -> Paym
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "No se pudo anotar el cobro. Vuelve a intentarlo.")
 
-    # La ficha queda al día: el ciclo de renovación cuenta desde ESTE cobro.
-    client.payment_status = "paid"
-    if client.paid_at is None or pago.paid_at > client.paid_at:
-        client.paid_at = pago.paid_at
-    # Un cobro nuevo reabre la ventana del recordatorio de renovación.
-    if hasattr(client, "renewal_reminder_sent_at"):
-        client.renewal_reminder_sent_at = None
+    # La ficha queda al día: el ciclo de renovación cuenta desde ESTE cobro, se
+    # sella CÓMO pagó (la ficha lo enseña junto al importe) y se borra el rastro
+    # del impago — dejar el motivo puesto hacía que a quien acaba de pagar le
+    # siguiera diciendo "canceló su suscripción" y no se le quitara el rojo.
+    # Una sola puerta para los tres sitios que marcan un cobro.
+    from app.services import payment_profile as pp
+
+    renovacion = client.payment_status == "paid" or client.paid_at is not None
+    pp.marcar_pagado(client, metodo=body.method, cuando=pago.paid_at)
     db.commit()
     db.refresh(pago)
+    # Notificación con el IMPORTE, como la de un cobro de Stripe: un ingreso de
+    # fuera de la pasarela entraba en el libro sin que sonara nada.
+    try:
+        from app.services import push as push_svc
+
+        push_svc.notify_coach_cobro_anotado(
+            db, client, amount_cents=importe, metodo=body.method,
+            renovacion=renovacion)
+    except Exception:  # noqa: BLE001 — el cobro ya está anotado; el aviso es extra
+        pass
     return _to_out(pago, {client.id: client.full_name})

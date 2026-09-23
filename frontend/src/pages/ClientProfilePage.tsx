@@ -20,6 +20,7 @@ import { LoSiguiente, useAvisosDelCliente } from "../components/LoSiguiente";
 import { ancla, irYMarcar } from "../lib/anchors";
 import { copiarConAviso } from "../lib/clipboard";
 import { ClientPlanPanel } from "../components/ClientPlanPanel";
+import { BloqueoPorPago, CobroManual, ResumenDePago } from "../components/CobroDelCliente";
 import { ClientFeedbackTab } from "../components/ClientFeedbackTab";
 import { ClientHistoryTab } from "../components/ClientHistoryTab";
 import { ClientTrackingTab } from "../components/ClientTrackingTab";
@@ -119,6 +120,11 @@ export default function ClientProfilePage() {
   }, [anamnesisDirty, planEditing]);
 
   const [loadError, setLoadError] = useState(false);
+  // "Ver la ficha igualmente" a pesar del impago: dura lo que dure esta visita
+  // a la ficha (no se guarda). Al volver a entrar el bloqueo vuelve a estar —
+  // si no, el primer clic lo levantaría para siempre y dejaría de significar
+  // nada. Cada uso queda registrado en la auditoría desde el backend.
+  const [verSinPagar, setVerSinPagar] = useState(false);
   const load = useCallback(() => {
     api.getClient(clientId)
       // keepIfSame: solo cambia la referencia (y re-renderiza) si los datos han
@@ -313,6 +319,28 @@ export default function ClientProfilePage() {
   }
   if (client === null) return <PageLoader />;
 
+  // BLOQUEO POR FALTA DE PAGO. Lo decide el backend (`payment_profile`): el
+  // panel no vuelve a deducir "¿está pagado?" —hay TRES situaciones y no dos, y
+  // un cliente con la suscripción de Stripe viva no se bloquea nunca—. Es una
+  // regla de negocio, no de seguridad: la pantalla trae con qué cobrarle sin
+  // salir de ahí, y una salida de un clic REGISTRADA para lo que no puede
+  // esperar a un cobro (una petición suya, su historial clínico, o exportar y
+  // borrar sus datos, que son obligaciones legales con plazo).
+  if (client.pago?.bloqueado && !verSinPagar) {
+    return (
+      <div className="mx-auto max-w-6xl px-6 py-6">
+        <Link to="/clientes" className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-300">
+          <ArrowLeft size={15} /> Clientes
+        </Link>
+        <BloqueoPorPago
+          client={client}
+          onCobrado={reload}
+          onEntrarIgual={() => setVerSinPagar(true)}
+        />
+      </div>
+    );
+  }
+
   const age = ageFrom(client.birth_date);
   // Paquete solo-nutrición (Start): sin nada de entreno en la ficha.
   const hasTraining = pkg(client.package_tier).hasTraining;
@@ -442,12 +470,6 @@ export default function ClientProfilePage() {
             {/* CUÁNTO ha pagado este cliente: el backend ya filtraba el feed
                 por cliente y ninguna pantalla lo pedía, así que "¿le cobré la
                 renovación de julio?" solo se respondía bajándose el CSV. */}
-            {/* `refreshKey`: anotar un cobro a mano llama a `reload` del
-                padre, pero este hijo solo recarga cuando cambia `clientId` —
-                así que el cobro recién anotado no aparecía hasta cambiar de
-                ficha (y si era el PRIMERO, el bloque entero seguía oculto,
-                porque se esconde con la lista vacía). */}
-            <CobrosDelCliente clientId={client.id} refreshKey={reloadKey} onCambio={reload} />
           </div>
 
           {/* DIARIO DEL CLIENTE (su app del móvil): botón destacado y distinto. */}
@@ -498,12 +520,25 @@ export default function ClientProfilePage() {
           {/* ENLACE DE PAGO (Stripe): color diferenciado (verde), debajo del
               portal. Copia el enlace para mandárselo al cliente y que pague. */}
           <div {...ancla("resumen.pago")} className="space-y-3">
+          {/* Cuánto lleva pagado, cuándo fue el último cobro y por dónde entró,
+              cada cuánto paga y cuándo le toca el siguiente. La ficha solo
+              decía "Pagado"/"Pago pendiente": delante de un cliente que
+              pregunta "¿cuándo me toca?" había que abrir el libro de caja. */}
+          {client.pago && <ResumenDePago pago={client.pago} />}
+          {/* El detalle, debajo de su resumen: un solo sitio para el dinero.
+              La lista vivía arriba, en la tarjeta de datos, con su propio
+              total — dos totales en la misma columna acaban discrepando.
+              `refreshKey`: anotar un cobro llama a `reload` del padre, pero
+              este hijo solo recarga cuando cambia `clientId`, así que el cobro
+              recién anotado no aparecía hasta cambiar de ficha. */}
+          <CobrosDelCliente clientId={client.id} refreshKey={reloadKey} onCambio={reload} />
           {/* Manda lo que dice el BACKEND sobre ese enlace (payState): si no va a
               cobrar nada, no se ofrece como "enlace de pago". Su corazonada
               local queda de reserva mientras carga. */}
           {payUrl && (payState
             ? payState !== "pagado"
-            : (client.payment_status !== "paid" || client.renewal_due)) && (
+            : (client.pago ? client.pago.toca_cobrar
+                           : (client.payment_status !== "paid" || client.renewal_due))) && (
             <button
               onClick={() => {
                 void copiarConAviso(payUrl, toast, client.payment_status === "paid"
@@ -994,35 +1029,18 @@ function Row({ label, value, faint, onGo }: {
   );
 }
 
-/** Cobro FUERA de Stripe (efectivo, transferencia, Bizum).
- *
- *  Pide el IMPORTE además de marcar la ficha: sin la cifra, el libro de caja
- *  solo contaba la pasarela y el total del mes mentía en cuanto el cliente
- *  pagaba por otra vía. La fecha por defecto es hoy, pero se puede corregir:
- *  un cobro apuntado con retraso cuenta en el mes en que se cobró.
- */
-/** Fecha de HOY en horario LOCAL (YYYY-MM-DD). `toISOString()` da la de UTC:
- *  en España, de madrugada, apuntaba al día —y a veces al mes— anterior. */
-function hoyLocal(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 function CobrosDelCliente({ clientId, refreshKey, onCambio }: {
   clientId: number; refreshKey: number; onCambio: () => void;
 }) {
   const toast = useToast();
   const [pagos, setPagos] = useState<PaymentsListOut["items"] | null>(null);
-  // Total REAL del cliente: lo calcula el backend sobre TODOS sus movimientos
-  // (y sin el dinero de prueba). Sumar la página de 20 mentía a partir del
-  // movimiento 21 y contaba los cobros con sk_test_ como ingresos.
-  const [totalCents, setTotalCents] = useState<number | null>(null);
   const [abierto, setAbierto] = useState(false);
   const [borrando, setBorrando] = useState<number | null>(null);
 
   const cargar = useCallback(() => {
     api.listPayments({ client_id: clientId, limit: 20 })
-      .then((r) => { setPagos(r.items); setTotalCents(r.client_total_cents ?? null); })
+      .then((r) => setPagos(r.items))
       .catch(() => setPagos([]));
     // `refreshKey` en las dependencias: cada acción del perfil (anotar un
     // cobro, marcar pagado) lo sube y esta lista se vuelve a pedir.
@@ -1030,11 +1048,8 @@ function CobrosDelCliente({ clientId, refreshKey, onCambio }: {
   useEffect(cargar, [cargar]);
 
   if (!pagos || pagos.length === 0) return null;
-  // Los cobros suman y las devoluciones restan: el total es lo que ha entrado.
-  // Manda el del backend (todos los movimientos, sin dinero de prueba); la
-  // suma local solo es reserva si la petición no lo trajo.
-  const total = totalCents ?? pagos.reduce(
-    (a, p) => a + (p.status === "refunded" ? -p.amount_cents : p.status === "paid" ? p.amount_cents : 0), 0);
+  // El TOTAL ya lo dice la tarjeta de arriba (`ResumenDePago`, que lo saca del
+  // mismo cálculo del backend): aquí va el detalle, movimiento a movimiento.
   const eur = (c: number) => (c / 100).toLocaleString("es-ES", { minimumFractionDigits: 2 });
 
   async function borrar(id: number) {
@@ -1055,7 +1070,7 @@ function CobrosDelCliente({ clientId, refreshKey, onCambio }: {
   return (
     <details className="mt-2" onToggle={(e) => setAbierto((e.target as HTMLDetailsElement).open)}>
       <summary className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-300">
-        Cobros ({pagos.length}) · {eur(total)} €
+        Ver sus {pagos.length} {pagos.length === 1 ? "cobro" : "cobros"}
       </summary>
       {abierto && (
         <ul className="mt-2 space-y-1">
@@ -1084,96 +1099,3 @@ function CobrosDelCliente({ clientId, refreshKey, onCambio }: {
 }
 
 
-function CobroManual({ client, onDone }: { client: ClientOut; onDone: () => void }) {
-  const toast = useToast();
-  const [abierto, setAbierto] = useState(false);
-  const [importe, setImporte] = useState("");
-  const [metodo, setMetodo] = useState<"efectivo" | "transferencia" | "bizum" | "otro">("transferencia");
-  const [fecha, setFecha] = useState(hoyLocal);
-  // El 409 de duplicado pide "añádele una nota que los distinga" y el
-  // formulario no tenía dónde escribirla: la instrucción era imposible de
-  // seguir (el campo ya viajaba en el schema).
-  const [nota, setNota] = useState("");
-  const [guardando, setGuardando] = useState(false);
-
-  // Coma o punto: en España se teclea "129,50".
-  const eur = Number((importe || "").replace(",", "."));
-  const valido = Number.isFinite(eur) && eur > 0;
-
-  async function registrar() {
-    if (!valido || guardando) return;
-    setGuardando(true);
-    try {
-      await api.registrarCobroManual({
-        client_id: client.id, amount_eur: eur, method: metodo, paid_on: fecha,
-        note: nota.trim() || undefined,
-      });
-      toast.push(`Cobro de ${eur.toLocaleString("es-ES", { minimumFractionDigits: 2 })} € anotado`);
-      setAbierto(false);
-      setImporte("");
-      setNota("");
-      onDone();
-    } catch (e: any) {
-      toast.push(e?.message ?? "No se pudo anotar el cobro", "error");
-    } finally {
-      setGuardando(false);
-    }
-  }
-
-  if (!abierto) {
-    return (
-      <button
-        onClick={() => setAbierto(true)}
-        className="min-h-[40px] w-full py-2 text-center text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
-      >
-        {client.payment_status === "paid"
-          ? "Anotar otro cobro (renovación, extra…)"
-          : "¿Te pagó por otra vía? Anotar el cobro"}
-      </button>
-    );
-  }
-
-  return (
-    <div className="rounded-xl border p-3" style={{ borderColor: "var(--line-strong)" }}>
-      <p className="mb-2 text-xs font-semibold text-zinc-200">Cobro fuera de Stripe</p>
-      <div className="flex gap-2">
-        <label className="flex-1">
-          <span className="mb-1 block text-[11px] text-zinc-500">Importe (€)</span>
-          <input
-            type="text" inputMode="decimal" autoFocus value={importe}
-            onChange={(e) => setImporte(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") registrar(); }}
-            placeholder="129,00" className="input w-full"
-          />
-        </label>
-        <label className="flex-1">
-          <span className="mb-1 block text-[11px] text-zinc-500">Cómo</span>
-          <select value={metodo} onChange={(e) => setMetodo(e.target.value as typeof metodo)} className="input w-full">
-            <option value="transferencia">Transferencia</option>
-            <option value="efectivo">Efectivo</option>
-            <option value="bizum">Bizum</option>
-            <option value="otro">Otro</option>
-          </select>
-        </label>
-      </div>
-      <label className="mt-2 block">
-        <span className="mb-1 block text-[11px] text-zinc-500">Fecha del cobro</span>
-        <input type="date" value={fecha} max={hoyLocal()}
-          onChange={(e) => setFecha(e.target.value)} className="input w-full" />
-      </label>
-      <label className="mt-2 block">
-        <span className="mb-1 block text-[11px] text-zinc-500">Nota (opcional)</span>
-        <input type="text" value={nota} maxLength={120}
-          onChange={(e) => setNota(e.target.value)}
-          placeholder="Ej.: segunda mensualidad" className="input w-full" />
-      </label>
-      <div className="mt-3 flex justify-end gap-2">
-        <button onClick={() => setAbierto(false)} className="btn btn-ghost !py-1.5 text-xs">Cancelar</button>
-        <button onClick={registrar} disabled={!valido || guardando} className="btn btn-primary !py-1.5 text-xs">
-          {guardando ? "Anotando…" : "Anotar cobro"}
-        </button>
-      </div>
-      <p className="mt-2 text-[11px] text-zinc-500">Suma en el total del mes, junto a los cobros de Stripe.</p>
-    </div>
-  );
-}

@@ -723,15 +723,18 @@ def _mark_paid(db: Session, client: Client, period: str | None = None, *,
                   {"antes": client.package_tier, "ahora": tier})
         client.package_tier = tier
     transicion = client.payment_status != "paid"
-    client.payment_status = "paid"
     # Fecha del último cobro: la renovación reinicia el contador de la alerta.
     # Se compara con la que ya tiene la ficha en vez de fiarse de "¿he anotado
     # yo esta fila?": si la sincronización con Stripe anotó antes el movimiento,
     # la reentrega del webhook llegaba con `movimiento_nuevo=False` y `paid_at`
     # se quedaba en el pago ANTERIOR (alerta de renovación eterna).
+    # Una sola puerta (services/payment_profile.marcar_pagado): sella el estado,
+    # la fecha y el MÉTODO, y borra el motivo del impago — sin eso, la ficha de
+    # quien acababa de pagar seguía diciendo "canceló su suscripción".
     cobrado_en = pagado_en or datetime.now(timezone.utc)
-    if client.paid_at is None or cobrado_en > client.paid_at:
-        client.paid_at = cobrado_en
+    from app.services.payment_profile import marcar_pagado
+
+    marcar_pagado(client, metodo="stripe", cuando=cobrado_en)
     if transicion or movimiento_nuevo:
         log_event(db, "client", client.id, "payment_received",
                   {"tier": client.package_tier, "billing_period": client.billing_period,
@@ -1422,8 +1425,9 @@ def _handle_invoice_event(db: Session, event: dict) -> dict:
     _anotar_factura(db, invoice, client, pagada=pagada, event_id=event.get("id"))
     if pagada:
         transicion = client.payment_status != "paid"
-        client.payment_status = "paid"
-        client.paid_at = datetime.now(timezone.utc)
+        from app.services.payment_profile import marcar_pagado
+
+        marcar_pagado(client, metodo="stripe", cuando=datetime.now(timezone.utc))
         log_event(db, "client", client.id, "payment_received",
                   {"source": "invoice", "invoice_id": invoice_id,
                    "amount_eur": (invoice.get("amount_paid") or 0) / 100.0,
@@ -1446,7 +1450,11 @@ def _handle_invoice_event(db: Session, event: dict) -> dict:
             # devuelve el dict directamente y `get_db` solo hace close().
             db.commit()
             return {"ignored": "invoice_fallida_antigua", "client_id": client.id}
-        client.payment_status = "pending"
+        # El impago queda con su MOTIVO: el panel lo pinta en rojo diciendo
+        # "cobro fallido", que no se atiende igual que un alta sin cobrar.
+        from app.services.payment_profile import marcar_impago
+
+        marcar_impago(client, "fallido")
         log_event(db, "client", client.id, "payment_failed",
                   {"source": "invoice", "invoice_id": invoice_id,
                    "amount_eur": (invoice.get("amount_due") or 0) / 100.0})
@@ -1535,7 +1543,9 @@ def _handle_subscription_deleted(db: Session, event: dict) -> dict:
         )
         db.commit()
         return {"subscription_completed": client.id}
-    client.payment_status = "pending"
+    from app.services.payment_profile import marcar_impago
+
+    marcar_impago(client, "cancelado")
     if client.stripe_subscription_id == sub_id:
         client.stripe_subscription_id = None
     log_event(db, "client", client.id, "subscription_cancelled",
@@ -1560,9 +1570,9 @@ def _handle_subscription_deleted(db: Session, event: dict) -> dict:
         first = ((client.full_name or "").split() or ["Un cliente"])[0]
         base = settings.public_base_url.rstrip("/")
         push_svc.send_to_coach(db, {
-            "title": "💰 Suscripción cancelada",
-            "body": (f"{first} ha dejado la suscripción de la oferta: no habrá "
-                     "más cobros mensuales. Revisa su ficha."),
+            "title": f"🚫 {first} canceló su suscripción",
+            "body": ("No habrá más cobros: su ficha queda en FALTA PAGO con el "
+                     "motivo. Cóbrale o cierra la asesoría."),
             "count": 1,
             "url": f"{base}/clientes/{client.id}",
             "tag": f"dq-sub-cancelada-{client.id}",

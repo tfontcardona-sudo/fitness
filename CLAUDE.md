@@ -527,6 +527,86 @@ npm run check:planes        # el nivel del cliente RECOMIENDA un camino de
 
 ## 9. Trabajo pendiente / próximos pasos
 
+00000000000000000000000000000000. ✅ **EL DINERO DEL CLIENTE: QUE SE SEPA,
+   QUE SE AVISE Y QUE TENGA CONSECUENCIA (23-09-2026).** El dueño pidió
+   notificaciones de todo cobro (Stripe, alta y cobro a mano) CON SU IMPORTE,
+   que el impago BLOQUEE el perfil y pinte al cliente en rojo con su motivo,
+   que anotar un cobro a mano recuerde plan, último pago, próximo e importe,
+   que se vea cuánto lleva pagado y por dónde paga, y que el PORTAL le avise el
+   día que toca con el enlace de Stripe, retirando el aviso al cobrar.
+   Migración **0057** (`clients.payment_method`, `unpaid_reason`,
+   `unpaid_since`, `payment_notice_sent_at`).
+   - **UNA SOLA VERDAD DEL PAGO** (`services/payment_profile.py`). La ficha
+     sabía DOS cosas del dinero —`payment_status` y `paid_at` sin importe— y
+     cada pantalla deducía el resto por su cuenta: el listado con un
+     `payment_status === "pending"`, la ficha con otra corazonada, el portal
+     con ninguna. `estado(client, marca, hoy)` es **PURA** (no toca la base, y
+     por eso el listado la llama por cada fila sin una consulta más: el barrido
+     de la cartera ya costó 431 consultas por refresco) e `historial(db,
+     client)` es UNA consulta, solo para la ficha.
+     ⚠️ **TRES situaciones y no dos**: "pagó y su ciclo ya terminó" salía en
+     VERDE en todas las pantallas y el cliente seguía recibiendo la asesoría
+     sin que nada lo dijera. Ahora `al_dia` · `pendiente` · `vencido`.
+     ⚠️ **Una suscripción VIVA de Stripe no se bloquea NUNCA**: bloquear al que
+     sí paga, porque su ficha va un rato por detrás del cobro domiciliado, era
+     el peor fallo posible de toda la ronda. En el listado sale en ÁMBAR
+     («Cobro fallido · Stripe reintenta»), no en el rojo del que hay que
+     reclamar — a base de rojos que no eran, se dejan de mirar todos.
+   - **EL MOTIVO DEL IMPAGO, porque un rojo sin motivo no se sabe atender.** Se
+     GUARDA solo lo que no se puede deducir (`cancelado` de la baja de
+     suscripción, `fallido` del cobro rechazado); «vencido» sale de la ventana
+     de renovación —que ya era una sola verdad— y «alta» de no tener ningún
+     cobro. Sellado en los tres sitios que ponen `pending`, por una sola puerta
+     (`marcar_impago`/`marcar_pagado`).
+     ⚠️ **Cobrar BORRA el rastro**: sin esa limpieza, la ficha de quien ACABA de
+     pagar seguía diciendo «canceló su suscripción» —cierto ayer, falso hoy— y
+     el rojo del listado no se iba. Y «debe desde» es la fecha del PRIMER
+     impago de la racha, no la del último reintento: Stripe reintenta una
+     tarjeta rechazada varios días, y sin eso quien lleva tres semanas sin
+     pagar salía siempre como «debe desde hoy».
+   - **EL BLOQUEO, con salida AUDITADA.** La ficha de quien no ha pagado la
+     sustituye una pantalla con lo necesario para cobrarle allí mismo (importe,
+     enlace de Stripe, WhatsApp y el formulario de cobro), y la ficha **se abre
+     sola** en cuanto entra el cobro. Es una regla de NEGOCIO, no de seguridad,
+     y por eso lleva salida de un clic: hay cosas que el coach tiene que poder
+     hacer aunque el cliente deba dinero —atender una petición suya, leer su
+     historial clínico y sobre todo EXPORTAR o BORRAR sus datos, que son
+     obligaciones legales con plazo—. Un bloqueo sin salida convierte un impago
+     en un incumplimiento. Queda registrada (`perfil_abierto_sin_pago`) y dura
+     solo esa visita: si se guardara, el primer clic la levantaría para siempre.
+   - **EL COBRO A MANO, CON MEMORIA** (`components/CobroDelCliente.tsx`): llega
+     con el importe de SU plan escrito, dice su plan, su cadencia, el último
+     cobro (importe, fecha y método) y **cuándo tocará el siguiente**. Avisa si
+     el importe se sale de su tarifa —AVISO, nunca reescritura: cobrar otra
+     cifra es legítimo, pero un 1290 por 129 tiene que cantar—. La ficha estrena
+     «Sus pagos» (lleva pagado, último cobro con su vía, cada cuánto, próximo) y
+     el libro de caja enseña la FORMA de pago como chip, no enterrada en la
+     descripción.
+   - **NOTIFICACIONES CON EL IMPORTE**: lo de Stripe ya avisaba; el cobro a mano
+     entraba en el libro sin que sonara nada (con dos admins, el segundo se
+     enteraba al abrir el panel) y el alta —del panel o del formulario público—
+     tampoco avisaba, así que una del sábado se descubría el lunes.
+     `notify_coach_cobro_anotado` (importe en el TÍTULO, que es lo único que se
+     lee en el móvil) y `notify_coach_cliente_nuevo` (dice si llega pagado o
+     cuánto falta cobrarle).
+   - **EL PORTAL DEL CLIENTE AVISA, Y EL AVISO SE VA SOLO.** El banner vive en
+     el ESTADO (`PortalState.pago_pendiente`) y no como una notificación
+     suelta, precisamente porque tenía que retirarse al cobrar. Va lo PRIMERO
+     de la pantalla —debajo de su rutina, el cliente mira lo suyo y se va— con
+     el importe y su enlace de Stripe. Más un push, **una vez por ciclo**, con
+     sello PROPIO (`payment_notice_sent_at`): compartir el del email habría
+     matado su reintento del día siguiente cuando el SMTP se cae. Al
+     domiciliado no se le pide nada: sería pedirle que pague dos veces.
+   - Verificado: **987 tests** en los dos órdenes, `tsc`, build, las NUEVE
+     guardas y arranque desde base VACÍA hasta 0057. Navegador real a 1280 px y
+     390 px sobre los seis estados de pago (al día · sin cobrar · cancelado ·
+     fallido · vencido · domiciliado): cero desbordes, cero errores de consola,
+     y el ciclo PULSADO de punta a punta —ficha bloqueada → anotar el cobro con
+     su importe puesto → la ficha se abre sola → el movimiento en /pagos con su
+     forma de pago—. Tests: `tests/test_pagos_memoria.py` (20), con tres claves
+     comprobadas quitando su arreglo (la situación «vencido», la exención del
+     domiciliado y el borrado del motivo al cobrar).
+
 0000000000000000000000000000000. ✅ **LA PLANIFICACIÓN, BIEN CONECTADA: QUE
    CADA CAMBIO TENGA SALIDA Y SE NOTE (16-09-2026).** El dueño pidió revisar
    que los clics, las combinaciones y los apartados de la planificación

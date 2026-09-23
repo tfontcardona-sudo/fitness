@@ -246,6 +246,40 @@ class ClientUpdate(BaseModel):
 
     _v_tier_legado = field_validator("package_tier", mode="before")(_tier_legado)
 
+class PagoDelCliente(BaseModel):
+    """El estado de pago de un cliente, contado entero (services/payment_profile).
+
+    Va en CADA ficha y en CADA fila del listado porque es lo que decide el rojo
+    de "falta pago" y el bloqueo del perfil: calcularlo en el panel sería una
+    segunda fórmula que se desincroniza de la del backend (ya pasó con la
+    ventana de renovación). Sale de la ficha y de los precios de SU marca, sin
+    una sola consulta extra — el listado recorre la cartera entera.
+    """
+
+    situacion: Literal["al_dia", "pendiente", "vencido"] = "al_dia"
+    bloqueado: bool = False
+    motivo: str | None = None
+    motivo_corto: str = "Falta pago"
+    motivo_texto: str = "Falta el pago de su plan."
+    desde: datetime | None = None
+    ultimo_pago_en: datetime | None = None
+    metodo: str | None = None
+    metodo_label: str | None = None
+    cadencia: str = "1m"
+    cadencia_label: str = "cada mes"
+    proximo_pago: date | None = None
+    dias_para_pago: int | None = None
+    toca_cobrar: bool = False
+    importe_previsto_cents: int | None = None
+    domiciliado: bool = False
+    # Solo en la FICHA (una consulta al libro de caja; el listado no la paga).
+    total_cents: int | None = None
+    num_pagos: int | None = None
+    ultimo_importe_cents: int | None = None
+    ultimo_concepto: str | None = None
+    primero_en: datetime | None = None
+
+
 class ClientOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -307,6 +341,10 @@ class ClientOut(BaseModel):
     # para volver a enseñar el enlace de cobro en la ventana de renovación:
     # calcularlo en el frontend sería una segunda fórmula que se desincroniza.
     renewal_due: bool = False
+    # TODO lo del dinero de este cliente, en un bloque (services/payment_profile):
+    # situación, motivo del impago, cuánto le toca, cuándo fue el último cobro,
+    # cuándo es el próximo y cómo paga. El panel no deduce NADA de esto.
+    pago: PagoDelCliente | None = None
     # Cómo llama SU MARCA a lo que ha contratado ("DQR Full", "Pack Premium").
     # Lo pone el backend y no el panel porque la marca que manda es la SELLADA
     # en su ficha, no el switch: `GET /clients/{id}` no filtra por marca a
@@ -883,6 +921,23 @@ class PortalPeriodInfo(BaseModel):
     status: Literal["open", "closed", "analyzed"]
 
 
+class PortalPagoPendiente(BaseModel):
+    """Lo que el CLIENTE tiene que ver cuando le toca pagar.
+
+    Lo justo y nada más: cuánto, desde cuándo y el enlace. Ni el motivo interno
+    ni su historial — el portal no es el panel del coach, y a quien se le ha
+    caído una tarjeta no se le recita su expediente.
+    """
+
+    importe_cents: int | None = None
+    # "vence hoy" | "vencido" | "en N días" — ya redactado: el portal no
+    # recalcula fechas (el cliente y el servidor pueden estar en otro día).
+    cuando: str
+    vencido: bool = False
+    url_pago: str
+    cadencia_label: str = ""
+
+
 class PortalState(BaseModel):
     """GET /api/p/{token}/state — todo lo que el portal necesita para arrancar."""
 
@@ -909,6 +964,12 @@ class PortalState(BaseModel):
     # palanca de adherencia — el cliente no quiere romperla. El día de HOY aún
     # sin rellenar no la rompe (se rompe al acabar el día vacío).
     streak_days: int = 0
+    # AVISO DE PAGO: el día que le toca pagar (y mientras no pague), su portal
+    # lo dice con el importe y un botón que abre su checkout de Stripe. Es un
+    # aviso que se RETIRA SOLO en cuanto entra el cobro — por eso vive aquí, en
+    # el estado, y no como una notificación que se pierde entre otras. None
+    # cuando no hay nada que cobrar (o cuando su suscripción se cobra sola).
+    pago_pendiente: PortalPagoPendiente | None = None
 
     _v_tier_legado = field_validator("package_tier", mode="before")(_tier_legado)
 

@@ -376,6 +376,37 @@ def _maintain_client(db: Session, client: Client, today: date,
                 client.renewal_reminder_sent_at = datetime.now(timezone.utc)
                 summary["reminders"] += 1
 
+    # 1f) El MISMO aviso, en su MÓVIL. Un email de renovación se pierde entre
+    # otros cincuenta y el enlace acaba sin abrirse; el push abre su checkout
+    # de un toque. Va con SELLO PROPIO (`payment_notice_sent_at`) y no con el
+    # del email: ese solo se marca si el correo SALE de verdad, y compartirlo
+    # habría matado el reintento del día siguiente cuando el SMTP falla.
+    # Una vez por ciclo — el aviso que INSISTE es el del portal, que está
+    # siempre y se retira solo al cobrar.
+    if ventana is not None and ventana[1] <= RENEWAL_WARN_DAYS:
+        ya_push = (client.payment_notice_sent_at is not None
+                   and client.paid_at is not None
+                   and client.payment_notice_sent_at >= client.paid_at)
+        if not ya_push:
+            from datetime import datetime, timezone
+
+            from app.services import payment_profile as pp
+            from app.services import push as push_svc
+            from app.services.branding import marca_de_cliente
+
+            try:
+                _est = pp.estado(client, marca_de_cliente(client, db), today)
+                enviados = push_svc.notify_client_toca_pagar(
+                    db, client,
+                    importe_cents=_est["importe_previsto_cents"],
+                    url_pago=pp.enlace_de_pago(client, base),
+                    vencido=ventana[1] < 0)
+            except Exception:  # noqa: BLE001 — el mantenimiento no cae por un push
+                enviados = 0
+            if enviados:
+                client.payment_notice_sent_at = datetime.now(timezone.utc)
+                summary["reminders"] += 1
+
     # 2) Cambio de estado
     if decision.new_status and decision.new_status != client.status:
         if can_transition(client.status, decision.new_status):

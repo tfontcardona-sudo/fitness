@@ -50,6 +50,7 @@ from app.schemas.entities import (
     PortalBrand,
     PortalPlanOut,
     PortalResourcesOut,
+    PortalPagoPendiente,
     PortalState,
     PushKeyOut,
     PushPendingOut,
@@ -611,6 +612,46 @@ def portal_state_full(
         needs_anamnesis=_needs_anamnesis(client),
         today=portal_svc.today_local(),
         streak_days=portal_svc.streak_days(db, client.id, portal_svc.today_local()),
+        pago_pendiente=_pago_pendiente(db, client),
+    )
+
+
+def _pago_pendiente(db: Session, client: Client) -> PortalPagoPendiente | None:
+    """El aviso de "toca pagar" del portal del cliente, con su enlace.
+
+    Vive en el ESTADO y no en una notificación suelta a propósito: una
+    notificación se pierde entre otras cincuenta y no se puede retirar cuando
+    el cliente paga. Este aviso está mientras deba y desaparece SOLO en cuanto
+    el cobro entra, que es exactamente lo que se pidió.
+
+    No sale nunca si su suscripción se cobra sola (Stripe ya lo hace, y pedirle
+    que pague algo que tiene domiciliado es la mejor forma de que pague dos
+    veces) ni fuera de la ventana de aviso.
+    """
+    from app.services import payment_profile as pp
+    from app.services.branding import marca_de_cliente
+
+    try:
+        estado = pp.estado(client, marca_de_cliente(client, db), portal_svc.today_local())
+    except Exception:  # noqa: BLE001 — el portal nunca se cae por su aviso
+        return None
+    if estado["domiciliado"] or not estado["toca_cobrar"]:
+        return None
+    dias = estado["dias_para_pago"]
+    if dias is None:
+        cuando = "pendiente"
+    elif dias < 0:
+        cuando = f"venció hace {-dias} {'día' if -dias == 1 else 'días'}"
+    elif dias == 0:
+        cuando = "vence hoy"
+    else:
+        cuando = f"en {dias} {'día' if dias == 1 else 'días'}"
+    return PortalPagoPendiente(
+        importe_cents=estado["importe_previsto_cents"],
+        cuando=cuando,
+        vencido=bool(dias is not None and dias < 0),
+        url_pago=pp.enlace_de_pago(client, settings.public_base_url),
+        cadencia_label=estado["cadencia_label"],
     )
 
 
