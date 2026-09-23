@@ -17,6 +17,7 @@
  *                   ha pagado, con todo lo necesario para cobrarle allí mismo.
  */
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { AlertTriangle, CalendarClock, ClipboardList, CreditCard, Eye, MessageCircle, Wallet } from "lucide-react";
 import { api } from "../lib/api";
 import { copiarConAviso } from "../lib/clipboard";
@@ -70,7 +71,13 @@ export function useEstadoDePago(clientId: number, activo = true) {
  *  La ficha solo decía "Pagado" o "Pago pendiente": delante de un cliente que
  *  pregunta "¿cuánto llevo?" o "¿cuándo me toca?", el coach tenía que abrir el
  *  libro de caja y sumar a ojo. */
-export function ResumenDePago({ pago }: { pago: PagoDelCliente }) {
+export function ResumenDePago({ pago, clientId }: {
+  pago: PagoDelCliente;
+  /** Si se pasa, la tarjeta enlaza a su historial en /pagos — la misma
+   *  información de "cuánto debe y cuándo" vista movimiento a movimiento, en
+   *  el apartado de pagos y no solo aquí. */
+  clientId?: number;
+}) {
   const alDia = pago.situacion === "al_dia";
   const filas: [string, string][] = [];
   if (pago.total_cents != null && (pago.num_pagos ?? 0) > 0) {
@@ -115,6 +122,14 @@ export function ResumenDePago({ pago }: { pago: PagoDelCliente }) {
           </div>
         ))}
       </dl>
+      {clientId != null && (
+        <Link
+          to={`/pagos?cliente=${clientId}`}
+          className="mt-2 flex min-h-[40px] items-center justify-center text-center text-[11px] text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
+        >
+          Ver su historial en Pagos →
+        </Link>
+      )}
     </div>
   );
 }

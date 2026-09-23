@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   AlertTriangle,
   ArrowDownLeft,
@@ -10,7 +10,8 @@ import {
 } from "lucide-react";
 import { ALERTS_REFRESH_MS, api, ApiError, getToken, keepIfSame } from "../lib/api";
 import { EmptyState, PageLoader, Spinner, useToast } from "../components/ui";
-import type { PaymentOut, PaymentsSummaryOut } from "../types";
+import { ResumenDePago } from "../components/CobroDelCliente";
+import type { ClientOut, PaymentOut, PaymentsSummaryOut } from "../types";
 
 /**
  * PAGOS — el libro de caja de Stripe, con cara de app de banco.
@@ -82,6 +83,37 @@ const FILTROS: { id: Filtro; label: string }[] = [
 export default function PagosPage() {
   const navigate = useNavigate();
   const toast = useToast();
+  const [params, setParams] = useSearchParams();
+  // El filtro POR CLIENTE ("Ver su historial en Pagos" desde la ficha): el
+  // feed se acota a él y una tarjeta arriba dice lo que la ficha ya sabe
+  // —cuánto debe, cuándo el próximo pago— para no tener que volver allí.
+  const rawCliente = params.get("cliente");
+  const clienteId = (() => {
+    const n = Number(rawCliente);
+    return Number.isInteger(n) && n > 0 ? n : null;
+  })();
+  const [clienteInfo, setClienteInfo] = useState<ClientOut | null>(null);
+  // Un cliente BORRADO (RGPD u otro motivo) no es lo mismo que un cliente
+  // SIN COBROS: el primero no tiene ficha a la que volver ni enlace de pago
+  // que mandarle, y decirle al coach "anótale uno" sería una acción imposible.
+  const [clienteError, setClienteError] = useState(false);
+  useEffect(() => {
+    setClienteInfo(null);
+    setClienteError(false);
+    if (clienteId == null) return;
+    api.getClient(clienteId).then(setClienteInfo).catch(() => setClienteError(true));
+  }, [clienteId]);
+  // ?cliente= presente pero inválido (texto, 0, negativo): se limpia de la
+  // URL y se avisa UNA vez — si no, la barra de direcciones sigue diciendo
+  // que hay un filtro puesto y la pantalla enseña el libro ENTERO sin decir
+  // por qué no se aplicó nada.
+  useEffect(() => {
+    if (rawCliente == null || clienteId != null) return;
+    toast.push("Ese enlace no llevaba un cliente válido — mostrando todos los pagos", "error");
+    params.delete("cliente");
+    setParams(params, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo debe reaccionar a que CAMBIE el crudo/derivado, no a la identidad de `params`/`toast`/`setParams` en cada render.
+  }, [rawCliente, clienteId]);
   const [items, setItems] = useState<PaymentOut[] | null>(null);
   const [total, setTotal] = useState(0);
   const [resumen, setResumen] = useState<PaymentsSummaryOut | null>(null);
@@ -96,6 +128,13 @@ export default function PagosPage() {
   const [nuevos, setNuevos] = useState<Set<number>>(new Set());
   const [meses, setMeses] = useState<{ month: string; total_cents: number; count: number }[] | null>(null);
   const selladoRef = useRef(false);
+  // Cada llamada de red (cargar/verMas) lleva su NÚMERO: si al cambiar de
+  // filtro o de cliente la respuesta VIEJA llega después que la nueva, se
+  // descarta en vez de pisar la lista ya correcta. Sin esto, quitar el filtro
+  // de cliente justo antes de que respondiera la petición filtrada dejaba el
+  // feed contaminado con los movimientos de OTRO cliente para siempre (el
+  // refresco de fondo solo FUSIONA, nunca corrige lo que ya está mal puesto).
+  const peticionRef = useRef(0);
 
   // Gráfica de ingresos: 6 meses netos (cobrado − devuelto, sin pagos de
   // prueba). Se carga una vez y se refresca junto al feed.
@@ -106,12 +145,16 @@ export default function PagosPage() {
   const cargar = useCallback(
     (opts: { silencioso?: boolean } = {}) => {
       if (!opts.silencioso) setCargando(true);
+      const miPeticion = ++peticionRef.current;
       const { status, orphan } = filtroApi(filtro);
       return Promise.all([
-        api.listPayments({ limit: PAGE, status, orphan }),
+        api.listPayments({ limit: PAGE, status, orphan, client_id: clienteId ?? undefined }),
         api.paymentsSummary(),
       ])
         .then(([lista, sum]) => {
+          // Ya no es la ÚLTIMA petición en vuelo (el filtro o el cliente
+          // cambiaron mientras esta viajaba): se tira, no se pinta.
+          if (miPeticion !== peticionRef.current) return;
           setItems((prev) => {
             // Refresco de fondo: se FUSIONA la primera página con lo que ya hay
             // en pantalla en vez de reemplazarlo. Si no, un cobro nuevo (o el
@@ -156,11 +199,23 @@ export default function PagosPage() {
             }
           }
         })
-        .catch(() => setFalloCarga(true))
-        .finally(() => setCargando(false));
+        .catch(() => { if (miPeticion === peticionRef.current) setFalloCarga(true); })
+        .finally(() => { if (miPeticion === peticionRef.current) setCargando(false); });
     },
-    [filtro],
+    [filtro, clienteId],
   );
+
+  // Entrar o salir del filtro por cliente reinicia la lista Y el sellado de
+  // "sin leer": si no, la primera página se fusionaba con movimientos de OTRO
+  // cliente que ya estaban en pantalla. Aparte del efecto de abajo (que ya
+  // corre en cada cambio de `filtro` porque `cargar` lo lleva en sus
+  // dependencias) para no tocar CÓMO se sella al cambiar de pestaña de
+  // estado (Todos/Cobrados/Fallidos), que ya se controlaba a mano en cada
+  // `onClick` con `setItems(null)` y nunca resellaba selladoRef.
+  useEffect(() => {
+    setItems(null);
+    selladoRef.current = false;
+  }, [clienteId]);
 
   useEffect(() => {
     cargar();
@@ -194,9 +249,16 @@ export default function PagosPage() {
   async function verMas() {
     if (!items) return;
     setCargando(true);
+    // Misma guarda que cargar(): si el coach cambia de filtro o de cliente
+    // mientras esta página siguiente viaja, la respuesta llega para un feed
+    // que ya no es el que hay en pantalla y no puede simplemente concatenarse.
+    const miPeticion = ++peticionRef.current;
     try {
       const { status, orphan } = filtroApi(filtro);
-      const mas = await api.listPayments({ limit: PAGE, offset: items.length, status, orphan });
+      const mas = await api.listPayments({
+        limit: PAGE, offset: items.length, status, orphan, client_id: clienteId ?? undefined,
+      });
+      if (miPeticion !== peticionRef.current) return;
       // Si entró un cobro nuevo entre la primera página y esta, el offset se
       // desplaza y Stripe devuelve una fila repetida: se descarta por id (si no,
       // React pintaría dos veces el mismo movimiento con la misma key).
@@ -213,9 +275,11 @@ export default function PagosPage() {
           .catch(() => {});
       }
     } catch (e) {
-      toast.push(e instanceof ApiError ? e.message : "No se pudieron cargar más movimientos", "error");
+      if (miPeticion === peticionRef.current) {
+        toast.push(e instanceof ApiError ? e.message : "No se pudieron cargar más movimientos", "error");
+      }
     } finally {
-      setCargando(false);
+      if (miPeticion === peticionRef.current) setCargando(false);
     }
   }
 
@@ -373,7 +437,58 @@ export default function PagosPage() {
         </div>
       )}
 
-      {/* Cabecera tipo banco: lo cobrado este mes, de un vistazo. */}
+      {/* FILTRADO POR CLIENTE ("Ver su historial en Pagos" desde su ficha): su
+          resumen financiero completo —cuánto lleva pagado, el último cobro con
+          su vía, cada cuánto paga y cuándo le toca el siguiente— vive TAMBIÉN
+          aquí, en el apartado de pagos, y no solo en su ficha. El feed de abajo
+          queda acotado a sus movimientos. */}
+      {clienteId != null && (
+        <div className="mb-5">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="text-sm font-medium text-zinc-300">
+              {clienteInfo ? clienteInfo.full_name : `Cliente #${clienteId}`}
+            </p>
+            <div className="flex items-center gap-2">
+              {clienteInfo && (
+                <button
+                  onClick={() => navigate(`/clientes/${clienteId}`)}
+                  className="min-h-[40px] text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
+                >
+                  Ver su ficha
+                </button>
+              )}
+              <button
+                onClick={() => { params.delete("cliente"); setParams(params); }}
+                className="btn btn-ghost !py-1 text-xs"
+              >
+                Quitar filtro
+              </button>
+            </div>
+          </div>
+          {/* Un cliente BORRADO no tiene ficha ni "cuánto debe": decirlo tal
+              cual, en vez de dejar que el hueco de la tarjeta lo dé por
+              "sin cobros" (que sería falso si sí llegó a pagar). */}
+          {clienteError ? (
+            <div className="rounded-xl border p-3 text-xs text-zinc-500"
+                 style={{ borderColor: "var(--line-strong)" }}>
+              Este cliente ya no existe (puede haberse borrado). Si llegó a
+              pagar, sus movimientos siguen abajo, pero sin ficha a la que
+              volver.
+            </div>
+          ) : (
+            clienteInfo?.pago && <ResumenDePago pago={clienteInfo.pago} />
+          )}
+        </div>
+      )}
+
+      {/* Cabecera tipo banco: lo cobrado este mes, de un vistazo. OCULTA
+          mientras el feed está filtrado por un cliente: es el total de TODA
+          la cartera, y apilada justo debajo de "Sus pagos" de ese cliente se
+          leía como si fuera suyo — 4.820 € de setiembre pegados a sus 350 €.
+          Sus chips ("N fallidos", "N sin ficha") tampoco tienen sentido aquí:
+          aplican un filtro de ESTADO sobre TODA la cartera que, combinado con
+          el de cliente, casi siempre vacía el feed sin explicar por qué. */}
+      {clienteId == null && (
       <div className="card mb-5 p-5">
         <p className="text-xs uppercase tracking-widest text-zinc-500">
           Cobrado en {mesActual}
@@ -471,6 +586,7 @@ export default function PagosPage() {
           )}
         </div>
       </div>
+      )}
 
       {/* Filtros + marcar leído */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
@@ -507,11 +623,16 @@ export default function PagosPage() {
 
       {items && items.length === 0 ? (
         <EmptyState
-          title="Todavía no hay movimientos"
+          title={
+            clienteError ? "No hay ningún movimiento con ficha viva de este cliente"
+            : clienteId != null ? "Este cliente aún no tiene ningún cobro"
+            : "Todavía no hay movimientos"
+          }
           hint={
-            resumen?.stripe_enabled
-              ? "Sincroniza para traer el histórico"
-              : "Configura Stripe en el servidor"
+            clienteError ? "Puede que se borrara antes de pagar, o que sus cobros quedaran sin ficha"
+            : clienteId != null ? "Anótale uno en su ficha, o mándale su enlace de pago"
+            : resumen?.stripe_enabled ? "Sincroniza para traer el histórico"
+            : "Configura Stripe en el servidor"
           }
         />
       ) : (
@@ -588,6 +709,11 @@ function formaDePago(p: PaymentOut): string {
   if (t.startsWith("efectivo")) return "Efectivo";
   if (t.startsWith("transferencia")) return "Transferencia";
   if (t.startsWith("bizum")) return "Bizum";
+  // "Otro método" (services/payments.METODOS_MANUALES): el coach eligió
+  // "Otro" a propósito porque no encajaba en las tres de arriba — etiquetarlo
+  // "A mano" (el genérico de "no reconocido") lo confundía con un fallo de
+  // este parser, no con la elección real del coach.
+  if (t.startsWith("otro método")) return "Otro";
   return "A mano";
 }
 

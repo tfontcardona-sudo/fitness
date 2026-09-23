@@ -20,7 +20,7 @@ import { LoSiguiente, useAvisosDelCliente } from "../components/LoSiguiente";
 import { ancla, irYMarcar } from "../lib/anchors";
 import { copiarConAviso } from "../lib/clipboard";
 import { ClientPlanPanel } from "../components/ClientPlanPanel";
-import { BloqueoPorPago, CobroManual, ResumenDePago } from "../components/CobroDelCliente";
+import { BloqueoPorPago, CobroManual, euros, ResumenDePago } from "../components/CobroDelCliente";
 import { ClientFeedbackTab } from "../components/ClientFeedbackTab";
 import { ClientHistoryTab } from "../components/ClientHistoryTab";
 import { ClientTrackingTab } from "../components/ClientTrackingTab";
@@ -525,7 +525,7 @@ export default function ClientProfilePage() {
               cada cuánto paga y cuándo le toca el siguiente. La ficha solo
               decía "Pagado"/"Pago pendiente": delante de un cliente que
               pregunta "¿cuándo me toca?" había que abrir el libro de caja. */}
-          {client.pago && <ResumenDePago pago={client.pago} />}
+          {client.pago && <ResumenDePago pago={client.pago} clientId={client.id} />}
           {/* El detalle, debajo de su resumen: un solo sitio para el dinero.
               La lista vivía arriba, en la tarjeta de datos, con su propio
               total — dos totales en la misma columna acaban discrepando.
@@ -539,27 +539,63 @@ export default function ClientProfilePage() {
           {payUrl && (payState
             ? payState !== "pagado"
             : (client.pago ? client.pago.toca_cobrar
-                           : (client.payment_status !== "paid" || client.renewal_due))) && (
-            <button
-              onClick={() => {
-                void copiarConAviso(payUrl, toast, client.payment_status === "paid"
-                  ? "Enlace de renovación copiado — mándaselo al cliente"
-                  : "Enlace de pago copiado — mándaselo al cliente");
-              }}
-              className="flex w-full items-center gap-3 rounded-xl border-2 px-4 py-3 text-left transition-transform active:scale-[0.98]"
-              style={{ borderColor: "#2E7D46", color: "#2E7D46", background: "color-mix(in srgb, #2E7D46 7%, transparent)" }}
-            >
-              <CreditCard size={22} className="shrink-0" />
-              <span className="min-w-0">
-                <span className="block text-sm font-semibold">
-                  {client.payment_status === "paid" ? "Enlace de renovación" : "Enlace de pago"}
-                </span>
-                <span className="block text-xs opacity-80">
-                  {payNote ?? `copiar y enviar al cliente — ${client.payment_status === "paid" ? "renueva" : "cobra"} su plan ${billingLabel(client.billing_period).toLowerCase()}`}
-                </span>
-              </span>
-            </button>
-          )}
+                           : (client.payment_status !== "paid" || client.renewal_due))) && (() => {
+            // Un clic manda el enlace de Stripe DIRECTO a su WhatsApp: la
+            // alerta de pago decía "revisa su pago" y el coach acababa
+            // copiando el enlace para pegarlo a mano en el chat — dos pasos
+            // por cada cliente en la carpeta "Falta pago". Sin teléfono
+            // guardado se cae a copiar (mismo criterio que "Escribirle por
+            // WhatsApp", arriba): la acción nunca se queda muda.
+            const digits = waPhone(client.phone);
+            const renueva = client.payment_status === "paid";
+            const primero = (client.full_name || "").split(" ")[0];
+            const cuanto = client.pago?.importe_previsto_cents
+              ? ` (${euros(client.pago.importe_previsto_cents)})` : "";
+            const mensaje = `Hola ${primero}, aquí tienes el enlace para `
+              + `${renueva ? "renovar" : "activar"} tu plan${cuanto}: ${payUrl}`;
+            return (
+              <div>
+                <button
+                  onClick={() => {
+                    if (digits) {
+                      openWhatsApp(digits, mensaje);
+                    } else {
+                      void copiarConAviso(payUrl, toast,
+                        "Este cliente no tiene teléfono guardado — enlace copiado, pégaselo donde puedas");
+                    }
+                  }}
+                  className="flex w-full items-center gap-3 rounded-xl border-2 px-4 py-3 text-left transition-transform active:scale-[0.98]"
+                  style={{ borderColor: "#2E7D46", color: "#2E7D46", background: "color-mix(in srgb, #2E7D46 7%, transparent)" }}
+                >
+                  <CreditCard size={22} className="shrink-0" />
+                  <span className="min-w-0">
+                    {/* El TÍTULO en negrita cambia con `digits`, no solo el
+                        subtítulo pequeño: un coach que solo lee la primera
+                        línea (el patrón habitual) no puede creer que "envió"
+                        algo cuando en realidad el clic solo copió el enlace. */}
+                    <span className="block text-sm font-semibold">
+                      {digits
+                        ? (renueva ? "Enviar enlace de renovación" : "Enviar enlace de pago")
+                        : (renueva ? "Copiar enlace de renovación" : "Copiar enlace de pago")}
+                    </span>
+                    <span className="block text-xs opacity-80">
+                      {digits
+                        ? `por WhatsApp — ${renueva ? "renueva" : "cobra"} su plan ${billingLabel(client.billing_period).toLowerCase()}`
+                        : (payNote ?? `sin teléfono — se copiará para pegarlo a mano`)}
+                    </span>
+                  </span>
+                </button>
+                {digits && (
+                  <button
+                    onClick={() => void copiarConAviso(payUrl, toast, "Enlace copiado — pégalo donde haga falta")}
+                    className="mt-1 min-h-[40px] w-full text-center text-[11px] text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
+                  >
+                    o copiar el enlace (email, SMS…)
+                  </button>
+                )}
+              </div>
+            );
+          })()}
           {/* Pago por OTRA VÍA (bizum, transferencia, efectivo): sin este botón
               la ficha quedaba "Pago pendiente" para siempre, con la campana
               insistiendo y la carpeta "Falta pago" contaminada. */}

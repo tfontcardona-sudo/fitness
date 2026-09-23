@@ -527,6 +527,76 @@ npm run check:planes        # el nivel del cliente RECOMIENDA un camino de
 
 ## 9. Trabajo pendiente / próximos pasos
 
+000000000000000000000000000000000. ✅ **EL ENLACE DE PAGO VA DIRECTO AL
+   WHATSAPP, Y "PAGOS" SE ABRE POR CLIENTE (23-09-2026).** Sobre la ronda
+   anterior, el dueño pidió tres afinados: que el enlace de pago se mande
+   DIRECTAMENTE al WhatsApp del cliente (no que haya que copiarlo y pegarlo),
+   que TODO método de cobro —Bizum, transferencia, efectivo, otro o Stripe—
+   se vea igual de claro en Pagos, y que "cuánto lleva pagado / cuánto debe /
+   cuándo el próximo" se pueda consultar también desde el propio apartado de
+   Pagos, no solo desde la ficha. El aviso del portal (retirado al cobrar) ya
+   estaba desde la ronda de ayer — confirmado en navegador que sigue vivo.
+   - **UN CLIC, WHATSAPP ABIERTO CON EL ENLACE PUESTO.** El botón de la ficha
+     («Enlace de pago» / «Enlace de renovación») dejó de copiar: ahora abre
+     WhatsApp con el mensaje y el enlace de Stripe ya escritos («Enviar
+     enlace de pago/renovación»), con el importe si se conoce. Sin teléfono
+     guardado se cae a copiar —la acción nunca se queda muda—, y debajo queda
+     un enlace pequeño «copiar el enlace (email, SMS…)» para cuando WhatsApp
+     no es el canal. Mismo criterio que ya usaban `BloqueoPorPago` (el
+     bloqueo por impago) y `VenderPage` (el kit de ventas): ahora los TRES
+     sitios que mandan un enlace de cobro lo hacen igual.
+   - **"OTRO MÉTODO" YA NO SE CONFUNDÍA CON UN FALLO DEL PARSER.** El chip de
+     forma de pago en el feed (`formaDePago`) reconocía efectivo,
+     transferencia y bizum por el texto de la descripción, y cualquier otra
+     cosa —incluido «Otro método», que el coach elige a propósito cuando
+     ninguna de las tres encaja— caía al genérico «A mano». Ahora "Otro" se
+     reconoce y se pinta como lo que es.
+   - **PAGOS SE ABRE POR CLIENTE** (`/pagos?cliente=ID`). Desde la tarjeta
+     «Sus pagos» de la ficha (`ResumenDePago`, ya construida la ronda
+     anterior) cuelga un enlace «Ver su historial en Pagos →» que lleva
+     aquí: el feed queda acotado a sus movimientos y arriba aparece la MISMA
+     tarjeta de resumen —cuánto lleva pagado, el último cobro con su vía,
+     cada cuánto paga, cuándo el próximo— con un botón «Quitar filtro». No
+     es una segunda fórmula: reutiliza `ResumenDePago` y el
+     `client_total_cents` que el backend ya calculaba (`GET /api/payments`
+     con `client_id`, de la ronda de ayer). Al cambiar de cliente o quitar el
+     filtro, la lista se reinicia entera (no se fusionaba con movimientos de
+     OTRO cliente que ya estuvieran en pantalla).
+   - Verificado en navegador real (1280 px): el botón de WhatsApp interceptado
+     confirma la URL `wa.me` correcta con el mensaje y el enlace de pago
+     codificados; `/pagos?cliente=ID` muestra el nombre, el resumen, el chip
+     "Otro" y "Quitar filtro" funcionando; el enlace desde la ficha navega
+     bien; el aviso del portal sigue mostrando importe y enlace. Cero errores
+     de consola, cero desbordes. Suite completa (sin cambios de backend en
+     esta ronda), `tsc`, build y las nueve guardas en verde.
+   - **REVISIÓN ADVERSARIAL (workflow, 3 dimensiones + verificación): 6 de 8
+     hallazgos en crudo confirmados, los 6 corregidos.** Dos GRAVES de fondo:
+     (1) `cargar()` no descartaba respuestas OBSOLETAS — sin `AbortController`
+     ni id de petición, si el coach quitaba el filtro de cliente antes de que
+     respondiera la llamada filtrada, esa respuesta tardía llegaba después y
+     sobrescribía sin condición la lista ya correcta con los movimientos de
+     OTRO cliente, y el refresco de fondo posterior los FUSIONABA en vez de
+     corregirlos — el feed quedaba contaminado hasta recargar a mano. Arreglado
+     con un contador de petición (`peticionRef`) que descarta cualquier
+     respuesta que ya no sea la última pedida, en `cargar()` y en `verMas()`.
+     (2) La cabecera «Cobrado en {mes}» (TODA la cartera) seguía pintándose
+     justo debajo de «Sus pagos» de un cliente filtrado, sin ninguna etiqueta
+     que dijera de quién era — fácil de leer como si el total del mes fuera
+     suyo. Se OCULTA entera (con sus chips de fallidos/huérfanos/prueba, que
+     además combinados con el filtro de cliente casi siempre vaciaban el feed
+     sin explicarlo) mientras hay un cliente puesto.
+     Y cuatro menores: el botón decía «Enviar enlace…» aunque, sin teléfono,
+     solo copiaba (el título en negrita ahora también dice «Copiar…», no solo
+     el subtítulo pequeño); `?cliente=ID` de un cliente BORRADO (RGPD deja sus
+     pagos con `client_id=NULL` para siempre) caía en el mismo vacío engañoso
+     que «aún no tiene cobros», con dos acciones imposibles («anótale uno en
+     su ficha» sin ficha) — ahora se distingue y lo dice; un `?cliente=` no
+     numérico se descartaba en silencio dejando la URL mintiendo sobre el
+     filtro — ahora se limpia y avisa una vez; y tres controles nuevos
+     («Ver su historial en Pagos», «Ver su ficha», «o copiar el enlace») no
+     llevaban `min-h-[40px]` como sus hermanos ya existentes en los mismos
+     ficheros. Verificado cada uno en navegador tras el arreglo.
+
 00000000000000000000000000000000. ✅ **EL DINERO DEL CLIENTE: QUE SE SEPA,
    QUE SE AVISE Y QUE TENGA CONSECUENCIA (23-09-2026).** El dueño pidió
    notificaciones de todo cobro (Stripe, alta y cobro a mano) CON SU IMPORTE,
