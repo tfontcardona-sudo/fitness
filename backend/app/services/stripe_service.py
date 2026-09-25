@@ -12,6 +12,8 @@ El estado de pago es SOLO informativo: no bloquea el trabajo del coach.
 from __future__ import annotations
 
 import logging
+import time
+import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import func, or_, select
@@ -126,7 +128,31 @@ def _stripe():
     import stripe
 
     stripe.api_key = settings.stripe_secret_key
+    # Sin esto, CUALQUIER tropiezo de red con Stripe (un timeout de un
+    # segundo, un 503 puntual) reventaba a la primera: el cliente veía
+    # "la pasarela no ha respondido" por un blip que una segunda petición
+    # habría resuelto sola. El propio SDK reintenta con la MISMA idempotency
+    # key, así que no hay riesgo de duplicar la sesión/suscripción.
+    stripe.max_network_retries = 2
     return stripe
+
+
+def _con_reintento(fn, *, intentos: int = 2, espera_s: float = 0.6):
+    """Segunda red por si el blip dura más que los reintentos internos del SDK
+    (`_stripe().max_network_retries`): UN reintento más, con una pausa breve,
+    antes de rendirse. El cliente no puede quedarse sin poder pagar por un
+    segundo de mala suerte de la red. `fn` debe ser idempotente (o llevar su
+    propia `idempotency_key`) para que reintentar nunca duplique nada."""
+    ultimo: Exception | None = None
+    for intento in range(intentos):
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001 — cualquier error del SDK de Stripe
+            ultimo = exc
+            if intento + 1 < intentos:
+                time.sleep(espera_s)
+    assert ultimo is not None
+    raise ultimo
 
 
 # --------------------------------------------------- resolución de precios ----
@@ -515,15 +541,22 @@ def create_checkout_url(db: Session, tier: str, period: str = "1m", *,
         # _stripe() dentro del try: un fallo aquí (clave ilegible, SDK) salía
         # como 500 al navegador del interesado en vez de traducirse.
         stripe = _stripe()
-        session = stripe.checkout.Session.create(
+        # Idempotency key FIJA para este intento lógico: si el reintento
+        # golpea Stripe tras un timeout cuyo primer intento SÍ había llegado a
+        # crear la sesión, Stripe devuelve la MISMA sesión en vez de una
+        # segunda — nunca dos Checkout Sessions (ni dos suscripciones) por un
+        # tropiezo de red.
+        idem = str(uuid.uuid4())
+        session = _con_reintento(lambda: stripe.checkout.Session.create(
             mode="subscription" if es_oferta else modo,
             line_items=[{"price": price, "quantity": 1}],
             success_url=f"{base}/pago-ok" + ("" if _es_primera_compra(client) else "?r=1"),
             cancel_url=f"{base}/planes",
             metadata=metadata,
             client_reference_id=(str(client.id) if client else None),
+            idempotency_key=idem,
             **extra,
-        )
+        ))
     except Exception as exc:  # noqa: BLE001 — errores del SDK de Stripe
         # Los errores de la librería (precio archivado, cupón borrado a mano,
         # red, rate limit…) NO heredan de nuestra StripeError: sin esto se
@@ -549,8 +582,11 @@ def open_invoice_url(client: Client) -> str | None:
         return None
     try:
         stripe = _stripe()
-        invs = stripe.Invoice.list(subscription=client.stripe_subscription_id,
-                                   status="open", limit=1)["data"]
+        # Es una LECTURA (list): siempre segura de reintentar, sin idempotency
+        # key — no crea ni modifica nada en Stripe.
+        resp = _con_reintento(lambda: stripe.Invoice.list(
+            subscription=client.stripe_subscription_id, status="open", limit=1))
+        invs = resp["data"]
         return invs[0].get("hosted_invoice_url") if invs else None
     except Exception as exc:  # noqa: BLE001
         # OJO: "no se pudo consultar" NO es "no debe nada". Devolviendo None se

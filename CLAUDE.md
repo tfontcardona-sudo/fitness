@@ -527,6 +527,52 @@ npm run check:planes        # el nivel del cliente RECOMIENDA un camino de
 
 ## 9. Trabajo pendiente / próximos pasos
 
+0000000000000000000000000000000000. ✅ **EL ENLACE DE PAGO YA NO SE ROMPE POR
+   UN TROPIEZO DE RED CON STRIPE (25-09-2026).** El coach recibió el push
+   «⚠️ Enlace de pago sin abrir» de un cliente real (Christian Curiel Mitjà) con
+   el motivo «La pasarela de pago no ha respondido; prueba de nuevo en un
+   momento» y pidió que el cliente pudiera pagar sin problema, que el fallo no
+   se repitiera y que ningún cliente vea nunca un error al pagar.
+   - **CAUSA RAÍZ**: `_stripe()` nunca configuraba reintentos — el SDK de
+     Stripe por defecto NO reintenta nada (`max_network_retries=0`). Un
+     timeout de un segundo o un 503 puntual de Stripe tumbaba
+     `checkout.Session.create` a la PRIMERA, sin una segunda oportunidad
+     dentro de la misma petición: el cliente caía en `/planes?pago=error` y el
+     coach recibía el aviso, aunque Stripe estuviera perfectamente operativo
+     un instante después.
+   - **DOS CAPAS DE REINTENTO** en `services/stripe_service.py`: (1)
+     `stripe.max_network_retries = 2` en `_stripe()` — el propio SDK reintenta
+     con la MISMA idempotency key, sin riesgo de duplicar nada, y cubre la
+     mayoría de blips de red en TODAS las llamadas a Stripe del sistema (una
+     sola puerta, un solo arreglo); (2) `_con_reintento()` — una segunda red
+     propia, UN reintento más tras una pausa breve, para cuando el corte dura
+     más que los reintentos internos del SDK. Aplicado en los DOS puntos donde
+     el cliente espera una respuesta síncrona para poder pagar:
+     `create_checkout_url` (con una `idempotency_key` fija por intento lógico:
+     si el primer intento SÍ había llegado a crear la sesión y solo se perdió
+     la respuesta, Stripe devuelve la MISMA sesión, nunca una segunda) y
+     `open_invoice_url` (lectura, sin idempotency key — nunca hace falta para
+     un `list`).
+   - **CUBRE A LA VEZ EL ENLACE DE WHATSAPP Y EL AVISO DEL PORTAL**: los dos
+     usan el mismo `GET /api/pay/{token}` (`pp.enlace_de_pago` en
+     `payment_profile.py`), así que el cliente que paga desde el aviso de su
+     propio portal («Toca renovar tu plan») queda protegido exactamente igual
+     que el enlace que se le manda por WhatsApp — un solo arreglo, dos
+     caminos.
+   - **Si aun así Stripe está caído de verdad** (no un blip, una caída real),
+     el cliente sigue sin ver nunca un error crudo: cae en la pantalla ya
+     existente de `/planes?pago=error` («Ha sido cosa nuestra, no tuya») con
+     un botón de WhatsApp directo al coach, y el coach recibe el push de
+     siempre para revisarlo en Vender — eso no cambia, solo se dispara mucho
+     menos.
+   - Tests nuevos en `tests/test_stripe.py`: un fallo transitorio (timeout en
+     el primer intento) se resuelve solo en el segundo sin que se vea ningún
+     error, con la MISMA idempotency key en ambos intentos; si el fallo NO es
+     transitorio (persiste tras el reintento) el comportamiento es el de
+     siempre (mismo mensaje, mismo aviso al coach); y el mismo reintento en la
+     consulta de factura abierta de la oferta. Los tres FALLAN sin el
+     arreglo. Suite completa de `test_stripe.py` (50) en verde.
+
 000000000000000000000000000000000. ✅ **EL ENLACE DE PAGO VA DIRECTO AL
    WHATSAPP, Y "PAGOS" SE ABRE POR CLIENTE (23-09-2026).** Sobre la ronda
    anterior, el dueño pidió tres afinados: que el enlace de pago se mande

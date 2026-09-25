@@ -437,6 +437,7 @@ def test_error_del_sdk_de_stripe_no_revienta_el_enlace_de_pago(monkeypatch):
     monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_x")
     monkeypatch.setattr(ss, "_resolve_price_id", lambda t, p: "price_x")
     monkeypatch.setattr(ss, "_stripe", lambda: _SdkBoom())
+    monkeypatch.setattr(ss.time, "sleep", lambda *_a: None)  # el reintento no debe frenar el test
     _reset_stripe_caches(monkeypatch, ss)
     ss._lookup_cache["ids"]["dqr_full_3m"] = "price_x"  # caché "envenenada"
 
@@ -444,6 +445,100 @@ def test_error_del_sdk_de_stripe_no_revienta_el_enlace_de_pago(monkeypatch):
         r = http.get("/api/pay/plan/full/3m", follow_redirects=False)
         assert r.status_code == 302 and r.headers["location"].endswith("/planes?pago=error")
     assert ss._lookup_cache["ids"] == {}  # el siguiente clic re-resuelve
+
+
+def test_reintento_stripe_recupera_de_un_fallo_transitorio(monkeypatch):
+    """REGRESIÓN (23-09-2026 → push "Enlace de pago sin abrir" de un cliente
+    real): un timeout PUNTUAL de Stripe al crear la Checkout Session ya no le
+    rompe el pago — un segundo intento en la MISMA petición lo resuelve solo,
+    sin que el cliente vea ningún error ni el coach reciba el aviso."""
+    from types import SimpleNamespace
+
+    from app.config import settings
+    from app.services import stripe_service as ss
+
+    intentos: list[dict] = []
+
+    class _FlakyThenOk:
+        class checkout:
+            class Session:
+                @staticmethod
+                def create(**kw):
+                    intentos.append(kw)
+                    if len(intentos) == 1:
+                        raise TimeoutError("Request timed out")
+                    return SimpleNamespace(url="https://stripe.test/ok")
+
+    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_x")
+    monkeypatch.setattr(ss, "_resolve_price_id", lambda t, p: "price_x")
+    monkeypatch.setattr(ss, "_stripe", lambda: _FlakyThenOk())
+    monkeypatch.setattr(ss.time, "sleep", lambda *_a: None)
+
+    url = ss.create_checkout_url(None, "full", "1m")
+
+    assert url == "https://stripe.test/ok"
+    assert len(intentos) == 2
+    # Misma idempotency key en los dos intentos: si el primero SÍ había
+    # llegado a crear la sesión en Stripe (el timeout fue en la RESPUESTA),
+    # el reintento no crea una segunda sesión.
+    assert intentos[0]["idempotency_key"] == intentos[1]["idempotency_key"]
+
+
+def test_reintento_agotado_sigue_avisando_igual_que_antes(monkeypatch):
+    """Si Stripe sigue sin responder tras el reintento (no es un blip), el
+    comportamiento es el de siempre: StripeError con el mismo mensaje, para
+    que el 302 a /planes?pago=error y el push al coach no cambien."""
+    from app.config import settings
+    from app.services import stripe_service as ss
+
+    intentos: list[dict] = []
+
+    class _SiempreCae:
+        class checkout:
+            class Session:
+                @staticmethod
+                def create(**kw):
+                    intentos.append(kw)
+                    raise TimeoutError("Request timed out")
+
+    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_x")
+    monkeypatch.setattr(ss, "_resolve_price_id", lambda t, p: "price_x")
+    monkeypatch.setattr(ss, "_stripe", lambda: _SiempreCae())
+    monkeypatch.setattr(ss.time, "sleep", lambda *_a: None)
+
+    with pytest.raises(ss.StripeError, match="La pasarela de pago no ha respondido"):
+        ss.create_checkout_url(None, "full", "1m")
+    assert len(intentos) == 2  # un intento + UN reintento, no más
+
+
+def test_reintento_en_consulta_de_factura_abierta(monkeypatch):
+    """La misma red de seguridad para el OTRO tramo del enlace de pago: el
+    cliente de la oferta con suscripción viva, cuando Stripe tarda en
+    responder al consultar si tiene una factura abierta."""
+    from app.config import settings
+    from app.models import Client
+    from app.services import stripe_service as ss
+
+    intentos: list[dict] = []
+
+    class _FlakyThenOk:
+        class Invoice:
+            @staticmethod
+            def list(**kw):
+                intentos.append(kw)
+                if len(intentos) == 1:
+                    raise TimeoutError("Request timed out")
+                return {"data": [{"hosted_invoice_url": "https://stripe.test/factura"}]}
+
+    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_x")
+    monkeypatch.setattr(ss, "_stripe", lambda: _FlakyThenOk())
+    monkeypatch.setattr(ss.time, "sleep", lambda *_a: None)
+
+    client = Client(billing_period="oferta", stripe_subscription_id="sub_x")
+    url = ss.open_invoice_url(client)
+
+    assert url == "https://stripe.test/factura"
+    assert len(intentos) == 2
 
 
 def test_head_del_enlace_de_pago_no_crea_sesion(monkeypatch):
