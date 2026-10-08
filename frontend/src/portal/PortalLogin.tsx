@@ -4,6 +4,7 @@ import { Eye, EyeOff, LogIn } from "lucide-react";
 import { portalLogin, portalSession, PortalError } from "./portalApi";
 import { aplicarPiel, pielDe } from "../lib/marca";
 import MarcaLogo from "../components/MarcaLogo";
+import { PantallaMantenimiento } from "../components/Mantenimiento";
 
 /**
  * Login del portal del cliente (ruta /portal). Entra con su email y la
@@ -18,6 +19,9 @@ export default function PortalLogin() {
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Modo mantenimiento (503): no es «contraseña incorrecta», y pintarlo como
+  // error del formulario hacía reintentar a quien no tenía nada mal.
+  const [mantenimiento, setMantenimiento] = useState<string | null>(null);
   // La contraseña la genera el coach y llega por correo: teclearla a ciegas
   // en el móvil es el fallo de acceso nº 1 — el ojo la deja verificar.
   const [showPass, setShowPass] = useState(false);
@@ -67,10 +71,16 @@ export default function PortalLogin() {
       else portalSession.clear();
       nav(`/p/${token}`, { replace: true });
     } catch (err) {
-      setError(err instanceof PortalError ? err.message : "No se pudo entrar");
+      if (err instanceof PortalError && err.status === 503) {
+        setMantenimiento(err.message);
+      } else {
+        setError(err instanceof PortalError ? err.message : "No se pudo entrar");
+      }
       setBusy(false);
     }
   }
+
+  if (mantenimiento) return <PantallaMantenimiento mensaje={mantenimiento} />;
 
   return (
     <div className="portal-root mx-auto flex min-h-screen max-w-md flex-col justify-center px-6"

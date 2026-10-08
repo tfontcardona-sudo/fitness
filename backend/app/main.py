@@ -202,6 +202,23 @@ def _http_error_handler(request: Request, exc: StarletteHTTPException):
     ({"detail":"No encontrado"}) es lo que veía un cliente cuyo enlace había
     caducado porque se le regeneró el acceso al portal. Se le da una página que
     explica qué hacer; el resto de la API sigue devolviendo JSON."""
+    if request.url.path.startswith("/api/pay/") and exc.status_code == 503:
+        # Modo mantenimiento (ver `services/mantenimiento.py`): quien pulsa un
+        # enlace de pago guardado en WhatsApp ve el aviso del coach, no el JSON.
+        import html as _html
+
+        from fastapi.responses import HTMLResponse
+
+        return HTMLResponse(
+            "<!doctype html><html lang='es'><head><meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+            "<title>No disponible por ahora</title></head>"
+            "<body style=\"font-family:system-ui,sans-serif;max-width:32rem;"
+            "margin:3rem auto;padding:0 1.25rem;text-align:center\">"
+            "<h1 style='font-size:1.2rem'>No disponible por ahora</h1>"
+            f"<p>{_html.escape(str(exc.detail))}</p></body></html>",
+            status_code=503,
+        )
     if request.url.path.startswith("/api/pay/") and exc.status_code in (403, 404):
         from fastapi.responses import HTMLResponse
 

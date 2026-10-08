@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import Client, User
-from app.security import decode_access_token, portal_token_client_id
+from app.security import decode_access_claims, portal_token_client_id
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -20,12 +20,17 @@ def get_current_user(
     """Coach autenticado vía JWT Bearer (app de coaches)."""
     if credentials is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Autenticación requerida")
-    username = decode_access_token(credentials.credentials)
-    if not username:
+    claims = decode_access_claims(credentials.credentials)
+    if not claims:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token inválido o expirado")
+    username, emitido = claims
     user = db.scalar(select(User).where(User.username == username))
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Usuario no encontrado")
+    # Una contraseña cambiada mata las sesiones que ya estaban abiertas con la
+    # anterior (aunque el usuario siga existiendo con el mismo nombre).
+    if user.password_changed_at is not None and emitido < int(user.password_changed_at.timestamp()):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sesión caducada: vuelve a entrar")
     return user
 
 

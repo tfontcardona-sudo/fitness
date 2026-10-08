@@ -1,3 +1,4 @@
+import { useLocation } from "react-router-dom";
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import {
@@ -67,6 +68,16 @@ export default function RecursosPage() {
     if (t && TABS_VALIDAS.includes(t)) return t;
     return q.has("google") ? "enlaces" : "productos";
   });
+  // El banner de «acceso público pausado» (y cualquier otro enlace) navega a
+  // `/recursos?tab=…` aunque el coach YA esté aquí: la pantalla no se remonta,
+  // así que la pestaña elegida en la URL hay que releerla en cada navegación
+  // (por `key`: pulsar dos veces el mismo enlace también cuenta).
+  const location = useLocation();
+  useEffect(() => {
+    const t = new URLSearchParams(location.search).get("tab") as RTab | null;
+    if (t && TABS_VALIDAS.includes(t)) setTabState(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key]);
   // Si la marca no tiene la pestaña que pide la URL (un enlace viejo, o el
   // switch cambiado con la pantalla abierta), se cae a la primera que sí
   // tenga. Sin esto, "Productos" se quedaba seleccionada en el centro y la
@@ -2079,6 +2090,7 @@ function MantenimientoManager() {
   }, [intento]);
 
   async function cambiar(activo: boolean) {
+    if (guardando) return; // doble toque en «Sí, pausar ahora»: una sola petición
     setGuardando(true);
     try {
       const d = await api.setMantenimiento(activo, mensaje.trim() || undefined);

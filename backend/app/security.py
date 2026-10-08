@@ -58,13 +58,21 @@ def create_access_token(username: str) -> str:
     return jwt.encode(payload, settings.jwt_secret, algorithm=JWT_ALGORITHM)
 
 
-def decode_access_token(token: str) -> str | None:
-    """Devuelve el username o None si el token es inválido/expirado."""
+def decode_access_claims(token: str) -> tuple[str, int] | None:
+    """(username, iat en segundos) o None si el token es inválido/expirado.
+    El `iat` permite invalidar las sesiones anteriores a un cambio de
+    contraseña (`users.password_changed_at`)."""
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[JWT_ALGORITHM])
-        return str(payload["sub"])
-    except (jwt.PyJWTError, KeyError):
+        return str(payload["sub"]), int(payload.get("iat") or 0)
+    except (jwt.PyJWTError, KeyError, TypeError, ValueError):
         return None
+
+
+def decode_access_token(token: str) -> str | None:
+    """Devuelve el username o None si el token es inválido/expirado."""
+    claims = decode_access_claims(token)
+    return claims[0] if claims else None
 
 
 # -------------------------------------------------------- tokens de portal ----

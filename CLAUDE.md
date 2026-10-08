@@ -594,7 +594,45 @@ npm run check:planes        # el nivel del cliente RECOMIENDA un camino de
      activo, un token de portal inventado da 503 (no 404), la landing da 503,
      el panel sigue dando 401 ante credenciales malas (no 503) y el webhook de
      Stripe sigue llegando a su validación de firma (400, no 503). Tests:
-     `tests/test_modo_mantenimiento.py` (6).
+     `tests/test_modo_mantenimiento.py` (9).
+   - **REVISIÓN ADVERSARIAL (workflow, 3 dimensiones + verificación): 3 hallazgos
+     de fondo confirmados, los 3 corregidos, cada uno con su regresión
+     comprobada quitando el arreglo.** (1) ⚠️ **Rotar SOLO la contraseña (mismo
+     usuario) NO mataba las sesiones abiertas**: `get_current_user` solo mira
+     que el usuario siga existiendo, así que un token robado seguía vivo hasta
+     72 h después de «rotar». Migración **0059** (`users.password_changed_at`,
+     idempotente): `seed_admins` la sella al cambiar un hash y `get_current_user`
+     rechaza todo token con `iat` anterior («Sesión caducada: vuelve a entrar»).
+     Nulo = nunca rotado, así que los tokens de tests y los de quien no ha
+     cambiado contraseña no se tocan. (2) **Un admin A MEDIAS en el `.env`
+     (usuario sin contraseña, o al revés) se BORRABA** si el otro admin seguía
+     bien: la guarda solo miraba si quedaban los dos vacíos. Ahora un hueco
+     a medias es un error de edición, no una baja → no se borra a nadie y se
+     avisa en el arranque; dejar AMBOS campos de un hueco vacíos sí lo da de baja
+     (un único login compartido). `seed_admins` imprime a quién retira. (3) El
+     enlace de pago abierto desde WhatsApp (`/api/pay/*`) enseñaba el 503 en JSON
+     crudo: `_http_error_handler` lo traduce ahora a una página HTML con el
+     mensaje del coach (escapado), igual que ya hacía con 403/404/429.
+   - **Menores verificados a mano y corregidos**: el banner «Acceso público
+     PAUSADO» no llevaba a la pestaña Sistema si el coach ya estaba en Recursos
+     (la pestaña solo se leía de la URL al montar; ahora se relee por
+     `location.key`); doble toque en «Sí, pausar ahora» lanzaba dos peticiones;
+     el login del portal (`/portal`) pintaba el 503 como «contraseña incorrecta»
+     (ahora `PantallaMantenimiento`).
+   - **Vistos y NO tocados a propósito**: el login del PANEL pierde logo/colores
+     de marca mientras dura la pausa (lee `/api/public/landing`, que ahora da 503;
+     el formulario y el login siguen funcionando, es solo cosmético); la pantalla
+     «No disponible» de un cliente de Professional sale con la piel por defecto si
+     no llegó a cargar su marca; `/api/media/*` (logos, fotos, vídeos sueltos) y
+     la imagen de producto siguen sirviéndose por URL directa (sin datos
+     personales ni acción posible); un portal ya cargado en primer plano no ve la
+     pausa hasta volver a enfocarlo o guardar algo (no hay sondeo periódico).
+   - ⚠️ **PASO MANUAL DEL DUEÑO (no vive en git)**: la rotación se dispara al
+     editar el `.env` REAL del servidor (`ADMIN_1_USER`/`ADMIN_1_PASS`, y
+     `ADMIN_2_*` o vaciarlo) y desplegar/reiniciar. Las credenciales nunca se
+     escriben en el repo, ni aquí. Hasta que lo haga, el acceso sigue siendo el
+     de antes. La pausa del acceso público arranca DESACTIVADA: se enciende desde
+     Recursos → Sistema.
 
 0000000000000000000000000000000000. ✅ **EL ENLACE DE PAGO YA NO SE ROMPE POR
    UN TROPIEZO DE RED CON STRIPE (25-09-2026).** El coach recibió el push

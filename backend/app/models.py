@@ -47,6 +47,11 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(80), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # Cuándo cambió por última vez la contraseña (`seed_admins`). Todo token
+    # emitido ANTES queda invalidado: sin esto, rotar solo la contraseña de un
+    # usuario que conserva su nombre dejaba vivas las sesiones abiertas hasta 72 h.
+    password_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
 
 
 # -------------------------------------------------------------- clients ----

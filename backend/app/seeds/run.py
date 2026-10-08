@@ -8,6 +8,7 @@ Uso manual: python -m app.seeds.run
 """
 
 import sys
+from datetime import datetime, timezone
 
 from sqlalchemy import delete, func, select
 
@@ -110,22 +111,24 @@ def seed_admins(db) -> int:
 
     Esto es lo que hace que rotar credenciales sea tan simple como cambiar
     `ADMIN_1_USER`/`ADMIN_1_PASS` (o `ADMIN_2_*`) en el `.env` del servidor y
-    reiniciar: el admin antiguo deja de poder entrar en el acto, sin tocar
-    nada más — `get_current_user` vuelve a consultar la tabla `users` en CADA
-    petición (no confía solo en el JWT), así que un admin borrado aquí no
-    puede seguir usando una sesión ya abierta.
+    reiniciar. Las sesiones que ya estaban abiertas también mueren:
+    · usuario cambiado → la fila antigua se borra, y `get_current_user` vuelve a
+      consultar `users` en CADA petición (no confía solo en el JWT);
+    · SOLO contraseña cambiada (mismo usuario) → se sella `password_changed_at`
+      y `get_current_user` rechaza todo token emitido antes.
 
-    ⚠️ Guarda de seguridad: si el `.env` se quedara sin NINGÚN admin
-    configurado (los dos vacíos, por un error al editarlo), aquí NO se borra
-    a nadie — es preferible dejar un admin "de más" que dejar el sistema sin
-    ninguno y sin forma de arreglarlo desde fuera."""
-    configurados = {
-        (u, p) for u, p in (
-            (settings.admin_1_user, settings.admin_1_pass),
-            (settings.admin_2_user, settings.admin_2_pass),
-        )
-        if u and p
-    }
+    ⚠️ Guardas de seguridad — es preferible dejar un admin "de más" que dejar
+    el sistema sin ninguno y sin forma de arreglarlo desde fuera:
+    · si el `.env` se queda sin NINGÚN admin completo, no se borra a nadie;
+    · si un admin está A MEDIAS (usuario sin contraseña o al revés), es un
+      error al editar el `.env`, no una baja: tampoco se borra a nadie. Dejar
+      AMBOS campos vacíos sí es dar de baja ese hueco, a propósito."""
+    huecos = (
+        (settings.admin_1_user, settings.admin_1_pass),
+        (settings.admin_2_user, settings.admin_2_pass),
+    )
+    configurados = {(u, p) for u, p in huecos if u and p}
+    a_medias = [u or "(sin usuario)" for u, p in huecos if bool(u) != bool(p)]
     created = 0
     for username, password in configurados:
         existente = db.scalar(select(User).where(User.username == username))
@@ -134,9 +137,18 @@ def seed_admins(db) -> int:
             created += 1
         elif not verify_password(password, existente.password_hash):
             existente.password_hash = hash_password(password)
-    if configurados:
+            existente.password_changed_at = datetime.now(timezone.utc)
+    if a_medias:
+        print(f"[seed] ⚠️ admin a medias en el .env ({', '.join(a_medias)}): "
+              "no se borra a nadie hasta que se complete usuario Y contraseña")
+    elif configurados:
         usernames_validos = {u for u, _ in configurados}
-        db.execute(delete(User).where(User.username.notin_(usernames_validos)))
+        borrados = db.scalars(
+            select(User.username).where(User.username.notin_(usernames_validos))
+        ).all()
+        if borrados:
+            db.execute(delete(User).where(User.username.in_(borrados)))
+            print(f"[seed] admins retirados (ya no están en el .env): {', '.join(borrados)}")
     db.commit()
     return created
 

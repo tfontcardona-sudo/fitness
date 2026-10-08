@@ -69,6 +69,14 @@ def test_mantenimiento_bloquea_lo_publico_y_respeta_el_mensaje():
             # El enlace de pago directo (sin alta previa) también se corta.
             r4 = c.get("/api/pay/plan/full/1m", follow_redirects=False)
             assert r4.status_code == 503
+            # Lo abre una PERSONA desde WhatsApp: ve el aviso del coach en una
+            # página, nunca el JSON crudo (y el mensaje va escapado).
+            assert r4.headers["content-type"].startswith("text/html")
+            assert "Pausado por mantenimiento" in r4.text
+            assert '"detail"' not in r4.text
+            r5 = c.get("/api/pay/token-cualquiera-largo", follow_redirects=False)
+            assert r5.status_code == 503
+            assert r5.headers["content-type"].startswith("text/html")
 
             m.desactivar(db)
             assert c.get("/api/public/landing").status_code == 200
@@ -307,5 +315,150 @@ def test_guarda_de_seguridad_nunca_borra_a_todos(monkeypatch):
         monkeypatch.undo()
         seed_admins(db)
         db.execute(delete(User).where(User.username == "superviviente-test"))
+        db.commit()
+        db.close()
+
+
+@pytest_db
+def test_cambiar_solo_la_contrasena_mata_las_sesiones_abiertas(monkeypatch):
+    """REGRESIÓN: rotar SOLO la contraseña (el usuario conserva su nombre) debe
+    invalidar los tokens ya emitidos con la anterior. Antes `get_current_user`
+    solo miraba que el usuario siguiera existiendo, así que una sesión robada
+    seguía viva hasta 72 h después de 'rotar'. Falla sin `password_changed_at`."""
+    import time
+
+    import jwt
+
+    from app.config import settings as real_settings
+    from app.db import SessionLocal
+    from app.routers import auth
+    from app.security import JWT_ALGORITHM, create_access_token
+    from app.seeds.run import seed_admins
+
+    monkeypatch.setattr(auth.limiter, "enabled", False)
+    db = SessionLocal()
+    try:
+        db.execute(delete(User).where(User.username == "sesion-admin-test"))
+        db.commit()
+        monkeypatch.setattr(
+            "app.seeds.run.settings",
+            _settings(admin_1_user="sesion-admin-test", admin_1_pass="passA1234",
+                      admin_2_user="", admin_2_pass=""),
+        )
+        seed_admins(db)
+
+        from fastapi.testclient import TestClient
+
+        from app.main import app
+
+        # Token emitido ANTES de la rotación (hace un minuto, para no depender
+        # de que caiga en el mismo segundo que el cambio de contraseña).
+        ahora = int(time.time())
+        viejo = jwt.encode(
+            {"sub": "sesion-admin-test", "iat": ahora - 60, "exp": ahora + 3600},
+            real_settings.jwt_secret, algorithm=JWT_ALGORITHM)
+        # Y un token SIN cambio de contraseña de por medio sigue sirviendo.
+        with TestClient(app) as c:
+            assert c.get("/api/auth/me", headers={"Authorization": f"Bearer {viejo}"}).status_code == 200
+
+            monkeypatch.setattr(
+                "app.seeds.run.settings",
+                _settings(admin_1_user="sesion-admin-test", admin_1_pass="passB5678",
+                          admin_2_user="", admin_2_pass=""),
+            )
+            seed_admins(db)
+
+            r = c.get("/api/auth/me", headers={"Authorization": f"Bearer {viejo}"})
+            assert r.status_code == 401
+            assert "vuelve a entrar" in r.json()["detail"].lower()
+
+            # Entrar de nuevo con la contraseña nueva da un token que SÍ sirve.
+            r2 = c.post("/api/auth/login",
+                        json={"username": "sesion-admin-test", "password": "passB5678"})
+            assert r2.status_code == 200
+            nuevo = r2.json()["access_token"]
+            assert c.get("/api/auth/me", headers={"Authorization": f"Bearer {nuevo}"}).status_code == 200
+            # Y los tokens sin el sello (p. ej. de tests) no se ven afectados
+            # mientras nadie haya cambiado esa contraseña.
+            assert create_access_token("sesion-admin-test")
+    finally:
+        monkeypatch.undo()
+        seed_admins(db)
+        db.execute(delete(User).where(User.username == "sesion-admin-test"))
+        db.commit()
+        db.close()
+
+
+@pytest_db
+def test_admin_a_medias_en_el_env_no_se_borra(monkeypatch):
+    """REGRESIÓN: un admin con SOLO usuario o SOLO contraseña (error al editar
+    el `.env`) no es una baja: `seed_admins` no borra a nadie hasta que se
+    complete — aunque el OTRO admin siga bien configurado. Antes la guarda solo
+    miraba si quedaban los dos vacíos, y borraba al admin roto dejándolo sin
+    cuenta vieja NI nueva."""
+    from app.db import SessionLocal
+    from app.seeds.run import seed_admins
+
+    db = SessionLocal()
+    try:
+        db.execute(delete(User).where(User.username.in_(["roto-test", "bueno-test", "nuevo-roto-test"])))
+        db.commit()
+        monkeypatch.setattr(
+            "app.seeds.run.settings",
+            _settings(admin_1_user="roto-test", admin_1_pass="passX1234",
+                      admin_2_user="bueno-test", admin_2_pass="passY1234"),
+        )
+        seed_admins(db)
+        assert db.scalar(select(User).where(User.username == "roto-test"))
+
+        # El dueño cambia el usuario del admin 1 y deja su contraseña vacía.
+        monkeypatch.setattr(
+            "app.seeds.run.settings",
+            _settings(admin_1_user="nuevo-roto-test", admin_1_pass="",
+                      admin_2_user="bueno-test", admin_2_pass="passY1234"),
+        )
+        seed_admins(db)
+        assert db.scalar(select(User).where(User.username == "roto-test")) is not None
+        assert db.scalar(select(User).where(User.username == "bueno-test")) is not None
+        assert db.scalar(select(User).where(User.username == "nuevo-roto-test")) is None
+    finally:
+        monkeypatch.undo()
+        seed_admins(db)
+        db.execute(delete(User).where(User.username.in_(["roto-test", "bueno-test", "nuevo-roto-test"])))
+        db.commit()
+        db.close()
+
+
+@pytest_db
+def test_vaciar_un_hueco_del_env_da_de_baja_a_ese_admin(monkeypatch):
+    """El contrapunto de la guarda anterior: dejar AMBOS campos de un hueco
+    vacíos es dar de baja a ese admin a propósito (un único login compartido)."""
+    from app.db import SessionLocal
+    from app.seeds.run import seed_admins
+
+    db = SessionLocal()
+    try:
+        db.execute(delete(User).where(User.username.in_(["uno-test", "dos-test"])))
+        db.commit()
+        monkeypatch.setattr(
+            "app.seeds.run.settings",
+            _settings(admin_1_user="uno-test", admin_1_pass="passX1234",
+                      admin_2_user="dos-test", admin_2_pass="passY1234"),
+        )
+        seed_admins(db)
+        assert db.scalar(select(User).where(User.username == "dos-test"))
+
+        monkeypatch.setattr(
+            "app.seeds.run.settings",
+            _settings(admin_1_user="uno-test", admin_1_pass="passX1234",
+                      admin_2_user="", admin_2_pass=""),
+        )
+        seed_admins(db)
+        assert db.scalar(select(User).where(User.username == "uno-test")) is not None
+        assert db.scalar(select(User).where(User.username == "dos-test")) is None
+    finally:
+        monkeypatch.undo()
+        seed_admins(db)
+        db.execute(delete(User).where(User.username.in_(["uno-test", "dos-test"])))
         db.commit()
         db.close()
