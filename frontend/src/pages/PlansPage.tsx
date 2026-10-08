@@ -6,6 +6,7 @@ import { BILLING_PERIODS, PACKAGES, PACKAGE_ORDER, billingLabel, etiquetaDePlan 
 import { waPhone, waUrl } from "../lib/whatsapp";
 import type { PackageTier, PublicBillingPeriod } from "../types";
 import MarcaLogo from "../components/MarcaLogo";
+import { PantallaMantenimiento } from "../components/Mantenimiento";
 import { coloresDeMarca, MARCA_POR_DEFECTO, pielDe } from "../lib/marca";
 import { useMarcaPublica } from "../hooks/useMarcaPublica";
 
@@ -140,7 +141,7 @@ export default function PlansPage() {
   const [period, setPeriod] = useState<PublicBillingPeriod>("3m");
   // Marca pública: foto de fondo, teléfono de contacto del coach (WhatsApp)
   // y la PIEL con la que se pinta la página entera.
-  const landing = useMarcaPublica();
+  const { landing, mantenimiento } = useMarcaPublica();
 
   const coachDigits = waPhone(landing?.contact_phone);
 
@@ -184,6 +185,9 @@ export default function PlansPage() {
   const atmosfera = coloresDeMarca(
     piel, landing?.color_primary ?? MARCA_POR_DEFECTO.primary,
     landing?.color_secondary ?? MARCA_POR_DEFECTO.secondary).secondary;
+  // Todos los hooks de arriba ya se han llamado: este return condicional, tras
+  // ellos, no rompe las Rules of Hooks (check:hooks lo vigila).
+  if (mantenimiento) return <PantallaMantenimiento mensaje={mantenimiento} />;
   return (
     <div className="relative" style={{ minHeight: "100vh", background: bg, color: "#26211a" }}>
       {/* Foto de fondo propia (Recursos → Página de enlaces → Foto de los
@@ -439,8 +443,10 @@ export default function PlansPage() {
 export function PaymentOkPage() {
   const renovacion = new URLSearchParams(window.location.search).get("r") === "1";
   // Esta pantalla no tenía marca ninguna: fondo crema clavado y el logo de DQ.
-  // Es lo primero que ve alguien que ACABA DE PAGARLE al centro.
-  const landing = useMarcaPublica();
+  // Es lo primero que ve alguien que ACABA DE PAGARLE al centro. (Nadie llega
+  // aquí en mantenimiento: el checkout que trae a esta pantalla ya está
+  // cortado, así que no hace falta mirar `mantenimiento` aquí.)
+  const { landing } = useMarcaPublica();
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--ink)" }}
       className="flex flex-col items-center justify-center px-8 text-center">

@@ -3,6 +3,7 @@ import { Link, Navigate } from "react-router-dom";
 import { Copy, Dumbbell, Search, ShoppingBag } from "lucide-react";
 import { copiar } from "../lib/clipboard";
 import MarcaLogo from "../components/MarcaLogo";
+import { PantallaMantenimiento } from "../components/Mantenimiento";
 import { useMarcaPublica } from "../hooks/useMarcaPublica";
 import { coloresDeMarca, MARCA_POR_DEFECTO, pielDe, usaLaMarca } from "../lib/marca";
 
@@ -14,7 +15,7 @@ import { coloresDeMarca, MARCA_POR_DEFECTO, pielDe, usaLaMarca } from "../lib/ma
  */
 export default function LinksPage() {
   // La marca del escaparate, con su PIEL ya aplicada a la página.
-  const data = useMarcaPublica();
+  const { landing: data, mantenimiento } = useMarcaPublica();
   const [copied, setCopied] = useState(false);
   // Buscador de productos: cuando el catálogo es largo, filtra por nombre.
   const [q, setQ] = useState("");
@@ -59,6 +60,7 @@ export default function LinksPage() {
   // Ya cargada la marca, si no usa esta página se va a lo que sí vende. Se
   // espera a `data` a propósito: desviar antes de saberlo dejaría a DQR sin su
   // propia página de enlaces en cada primera carga.
+  if (mantenimiento) return <PantallaMantenimiento mensaje={mantenimiento} />;
   if (data && !usaEstaPagina) return <Navigate to="/planes" replace />;
 
   return (

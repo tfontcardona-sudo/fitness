@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import { PantallaMantenimiento } from "../components/Mantenimiento";
 import { aplicarPiel, pielDe } from "../lib/marca";
 
 /**
@@ -23,13 +24,26 @@ const AnamnesisProfesional = lazy(() => import("./AnamnesisProfesional"));
 export default function AnamnesisRouter() {
   const { token } = useParams();
   const [variante, setVariante] = useState<string | null>(null);
+  const [mantenimiento, setMantenimiento] = useState<string | null>(null);
 
   useEffect(() => {
     let vivo = true;
     fetch(`/api/p/${token}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((st) => {
+      .then(async (r) => {
+        // El interruptor global de mantenimiento corta TODO `/api/p/*`, este
+        // primer paso incluido: sin esto, el cliente rellenaba el formulario
+        // entero y el 503 le llegaba recién al ENVIARLO.
+        if (r.status === 503) {
+          let mensaje = "El sistema no está disponible en este momento. Vuelve a intentarlo más tarde.";
+          try { mensaje = (await r.json())?.detail || mensaje; } catch { /* sin cuerpo JSON */ }
+          return { mantenimiento: mensaje, st: null };
+        }
+        return { mantenimiento: null, st: r.ok ? await r.json() : null };
+      })
+      .then((res) => {
         if (!vivo) return;
+        if (res.mantenimiento) { setMantenimiento(res.mantenimiento); return; }
+        const st = res.st;
         // La PIEL de la marca del cliente, en <html>: el fondo de la ventana
         // (lo que se ve al estirar de más en un iPhone) y el color de la barra
         // de estado del móvil cuelgan de ahí, no del contenedor. Sin esto, el
@@ -46,6 +60,7 @@ export default function AnamnesisRouter() {
     return () => { vivo = false; };
   }, [token]);
 
+  if (mantenimiento) return <PantallaMantenimiento mensaje={mantenimiento} />;
   if (variante === null) return <Espera />;
   return (
     <Suspense fallback={<Espera />}>

@@ -1,6 +1,7 @@
 import { MessageCircle, ShieldCheck, Zap } from "lucide-react";
 import { waPhone, waUrl } from "../lib/whatsapp";
 import MarcaLogo from "../components/MarcaLogo";
+import { PantallaMantenimiento } from "../components/Mantenimiento";
 import { useMarcaPublica } from "../hooks/useMarcaPublica";
 import { coloresDeMarca, MARCA_POR_DEFECTO, pielDe } from "../lib/marca";
 
@@ -25,7 +26,8 @@ const INCLUYE = [
 ];
 
 export default function OfertaPage() {
-  const landing = useMarcaPublica();
+  const { landing, mantenimiento } = useMarcaPublica();
+  if (mantenimiento) return <PantallaMantenimiento mensaje={mantenimiento} />;
 
   const coachDigits = waPhone(landing?.contact_phone);
   const waHref = coachDigits ? waUrl(coachDigits, WA_MESSAGE) : null;

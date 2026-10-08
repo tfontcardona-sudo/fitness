@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSinConexion } from "../lib/offline";
 import { aplicarPiel, coloresDeMarca, pielDe, type Piel } from "../lib/marca";
 import MarcaLogo from "../components/MarcaLogo";
+import { PantallaMantenimiento } from "../components/Mantenimiento";
 import { activarAcordeon } from "../lib/accordion";
 import { useSearchParams } from "react-router-dom";
 import { Bell, BellOff, CalendarCheck, Camera, Check, ChevronDown, CreditCard, Dumbbell, FileText, LineChart, Library, LogOut, MapPin, MessageSquare, NotebookPen, Share, Smartphone, Video, X } from "lucide-react";
@@ -60,10 +61,14 @@ export default function PortalApp({ token }: { token: string }) {
   // diga una cosa y la de al lado otra.
   const semana = useSemana(apiClient);
   const [error, setError] = useState<string | null>(null);
-  // 404 = token inválido/caducado (sesión fuera). Cualquier otro fallo (red,
-  // 500, 429) es TEMPORAL: se ofrece reintentar sin tocar la sesión — antes
-  // un corte de red decía "tu enlace ha caducado" y borraba el acceso.
-  const [errorKind, setErrorKind] = useState<"token" | "transient">("transient");
+  // 404 = token inválido/caducado (sesión fuera). 503 = el coach activó el
+  // modo mantenimiento (no es un fallo: reintentar no sirve de nada, así que
+  // NO lleva el botón "Reintentar" del caso transitorio). Cualquier otro
+  // fallo (red, 500, 429) es TEMPORAL: se ofrece reintentar sin tocar la
+  // sesión — antes un corte de red decía "tu enlace ha caducado" y borraba
+  // el acceso.
+  const [errorKind, setErrorKind] =
+    useState<"token" | "transient" | "mantenimiento">("transient");
   // La pestaña vive en la URL (?tab=): el botón "atrás" del navegador vuelve a
   // la pestaña anterior (no expulsa del portal) y los overlays abiertos se
   // cierran solos al cambiar de ruta (el contenido de la pestaña se desmonta).
@@ -89,8 +94,13 @@ export default function PortalApp({ token }: { token: string }) {
         refreshBadge(apiClient); // badge del icono = pendientes de hoy
       })
       .catch((e) => {
-        setErrorKind(e instanceof PortalError && e.status === 404 ? "token" : "transient");
-        setError(e instanceof PortalError ? e.message : "No se pudo cargar tu portal");
+        const esPortalError = e instanceof PortalError;
+        setErrorKind(
+          esPortalError && e.status === 404 ? "token"
+          : esPortalError && e.status === 503 ? "mantenimiento"
+          : "transient",
+        );
+        setError(esPortalError ? e.message : "No se pudo cargar tu portal");
       });
   }, [apiClient]);
 
@@ -117,6 +127,12 @@ export default function PortalApp({ token }: { token: string }) {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [token, apiClient]);
+
+  if (error && errorKind === "mantenimiento") {
+    // El coach activó el interruptor global: no es un fallo, reintentar no
+    // serviría de nada, así que no lleva el botón "Reintentar" de abajo.
+    return <PantallaMantenimiento mensaje={error} />;
+  }
 
   if (error && errorKind === "transient") {
     // Fallo de red / servidor: NO es un problema del enlace. Reintentar sin

@@ -527,6 +527,75 @@ npm run check:planes        # el nivel del cliente RECOMIENDA un camino de
 
 ## 9. Trabajo pendiente / próximos pasos
 
+00000000000000000000000000000000000. ✅ **PARAR Y REACTIVAR TODO EL SISTEMA DE
+   UN TOQUE, Y ROTAR QUIÉN ENTRA AL PANEL (08-10-2026).** El dueño pidió poder
+   cambiar las credenciales del panel (con las dos cuentas de coach obligadas a
+   usar la nueva, la antigua inservible) y, por separado, dejar TODO el acceso
+   público —portales de los clientes, pagos, compras, `/planes`, `/oferta` y la
+   página de enlaces con la tienda ESN— mostrando "no disponible" hasta que él
+   mismo lo reactive. Migración **0058** (`system_state`).
+   - **ROTAR CREDENCIALES ERA INVISIBLE HASTA HOY**: `seed_admins()` solo
+     AÑADÍA el admin que faltara en el `.env`; nunca retiraba uno antiguo si el
+     `.env` cambiaba. Cambiar `ADMIN_1_USER`/`PASS` no echaba a nadie: el
+     usuario viejo se quedaba vivo para siempre. Reescrito para SINCRONIZAR de
+     verdad: crea/actualiza el hash de los admins que el `.env` tenga puestos
+     y BORRA cualquier fila de `users` que ya no esté configurada — y como
+     `get_current_user` vuelve a consultar `users` en CADA petición (no confía
+     solo en el JWT), borrar la fila basta para invalidar una sesión YA
+     abierta, sin tocar `JWT_SECRET`. ⚠️ **Guarda de seguridad**: si el `.env`
+     se quedara sin NINGÚN admin configurado (los dos vacíos, por un error al
+     editarlo), no se borra a nadie — mejor un admin "de más" que un sistema
+     sin ninguno y sin forma de entrar desde fuera para arreglarlo. Rotar es
+     tan simple como cambiar `ADMIN_1_USER`/`ADMIN_1_PASS` (o `ADMIN_2_*`) en
+     el `.env` del servidor y reiniciar (lo que ya hace cada despliegue,
+     `entrypoint.sh` corre los seeds en cada arranque) — **la contraseña real
+     nunca se escribe en el repo**: eso es un paso manual del dueño en el
+     `.env` del VPS, que esta sesión no puede tocar (no vive en git).
+   - **EL INTERRUPTOR GLOBAL** (`services/mantenimiento.py`, fila única con
+     caché de 5 s — mismo patrón que `ai_credit_state`): activo, responde 503
+     con el mensaje del coach a TODO lo público — el router entero del portal
+     (`/api/p/*`), el router entero de la landing/catálogo/registro
+     (`/api/public/*`: `/dq`, `/planes`, `/oferta`) y los tres enlaces de pago
+     directo de `stripe_router.py` (`/api/public/checkout`,
+     `/api/pay/plan/{tier}/{period}`, `/api/pay/{token}`). Por una sola
+     dependencia de FastAPI (`deps.no_en_mantenimiento`) añadida con
+     `dependencies=[...]` en `main.py`/los decoradores — nunca tocando los
+     endpoints por dentro, así que cualquier ruta NUEVA que se añada a esos dos
+     routers queda cubierta sola. ⚠️ **Lo que NUNCA se corta**: el panel del
+     coach entero (todo lo que va detrás de `get_current_user`, para que
+     siempre se pueda entrar a reactivarlo) y el webhook de Stripe
+     (`/api/stripe/webhook`) — cortar el webhook habría desincronizado los
+     cobros/bajas que siguieran llegando mientras el sistema está en pausa.
+   - **Panel**: pestaña nueva **Recursos → Sistema** (`MantenimientoManager`)
+     con el estado actual, un mensaje editable para quien llegue a una
+     pantalla pausada, y el botón de pausar/reactivar —confirmación SOLO al
+     pausar, nunca al reactivar, porque la fricción tiene que estar del lado
+     que hace daño—. Banner persistente en `AppShell` (móvil y escritorio)
+     mientras está activo, para que no se le olvide al coach que lo dejó
+     puesto.
+   - **Lo que ve el cliente/visitante**: nunca un error crudo.
+     `useMarcaPublica()` (la puerta compartida de `/dq`, `/planes`, `/oferta`)
+     traduce el 503 a un mensaje, y las tres pantallas pintan
+     `<PantallaMantenimiento>` (mismo lenguaje visual que `ErrorBoundary`: lee
+     la PIEL ya aplicada en `<html>`, sin depender de datos de marca que ahora
+     mismo no se pueden pedir). El cuestionario (`AnamnesisRouter`, que hace su
+     propio `fetch` crudo) y el **portal del cliente** (`PortalApp`, un tercer
+     `errorKind` junto a "token inválido" y "fallo transitorio" — sin el botón
+     "Reintentar" de ese último, porque reintentar no sirve de nada aquí) lo
+     mismo.
+   - Verificado: migración con guarda de idempotencia (una base vacía ya crea
+     `system_state` vía `create_all` al declarar el modelo — sin la guarda,
+     `alembic upgrade head` desde cero revienta con "relation already
+     exists", el mismo fallo que ya costó caro en 0036/0041). Suite completa
+     en verde, `tsc`, build y las NUEVE guardas (`check:marca` exige una
+     exención documentada para `components/Mantenimiento.tsx`, mismo motivo
+     que `ErrorBoundary`: se pinta precisamente cuando no hay datos de marca
+     que pedir). Probado con TestClient de punta a punta: con el interruptor
+     activo, un token de portal inventado da 503 (no 404), la landing da 503,
+     el panel sigue dando 401 ante credenciales malas (no 503) y el webhook de
+     Stripe sigue llegando a su validación de firma (400, no 503). Tests:
+     `tests/test_modo_mantenimiento.py` (6).
+
 0000000000000000000000000000000000. ✅ **EL ENLACE DE PAGO YA NO SE ROMPE POR
    UN TROPIEZO DE RED CON STRIPE (25-09-2026).** El coach recibió el push
    «⚠️ Enlace de pago sin abrir» de un cliente real (Christian Curiel Mitjà) con

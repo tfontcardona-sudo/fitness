@@ -717,6 +717,23 @@ class ChangeRequest(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+# --------------------------------------------------------- system_state ----
+class SystemState(Base):
+    """Interruptor GLOBAL de mantenimiento (fila única, mismo patrón que
+    `AiCreditState`/`BrandConfig`). Cuando `maintenance_enabled` está activo,
+    TODO el acceso público (portales de cliente, pagos, `/planes`, `/oferta`,
+    `/dq`) responde 503 con `maintenance_message`; el panel del coach (detrás
+    de login) sigue intacto para poder trabajar y volver a activarlo. Ver
+    `services/mantenimiento.py`."""
+
+    __tablename__ = "system_state"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    maintenance_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    maintenance_message: Mapped[str | None] = mapped_column(String(300))
+    maintenance_enabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 # ------------------------------------------------------- ai_credit_state ----
 class AiCreditState(Base):
     """Saldo de créditos de la API de Anthropic (fila única).

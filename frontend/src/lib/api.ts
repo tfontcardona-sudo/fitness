@@ -79,6 +79,7 @@ import type {
   FoodSwapResult,
   GoalProgress,
   LandingOut,
+  MantenimientoOut,
   MeOut,
   PaymentOut,
   PaymentsListOut,
@@ -932,6 +933,10 @@ export const api = {
 
   // --- página pública de enlaces + registro self-serve ---
   publicLanding: () => request<LandingOut>("GET", "/public/landing"),
+  // --- EL INTERRUPTOR GLOBAL de mantenimiento (coach) ---
+  getMantenimiento: () => request<MantenimientoOut>("GET", "/system/mantenimiento"),
+  setMantenimiento: (activo: boolean, mensaje?: string) =>
+    request<MantenimientoOut>("POST", "/system/mantenimiento", { activo, mensaje }),
   publicPlanPrices: () => request<PlanPricesOut>("GET", "/public/plan-prices"),
   // URL pública de un archivo bajo media/ (foto de landing, portada de vídeos…).
   mediaUrl: (path: string | null | undefined) =>

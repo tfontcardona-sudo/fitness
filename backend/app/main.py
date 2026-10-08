@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 import logging
 import re
 
-from fastapi import FastAPI, Request, status
+from fastapi import Depends, FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import Limiter
@@ -17,13 +17,14 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from sqlalchemy import text
 
 from app.config import settings
+from app.deps import no_en_mantenimiento
 from app.ratelimit import client_key
 from app.db import engine
 from app.routers import (
     ai_credit, alerts, auth, brand, clients, coach_push, email, exercises,
     google_oauth, learning, payments, plan_library,
     plans, portal_public, public_site,
-    resources, sales, stripe_router, whatsapp,
+    resources, sales, stripe_router, system, whatsapp,
 )
 
 APP_VERSION = "0.2.0"
@@ -352,9 +353,14 @@ app.include_router(email.router)
 app.include_router(stripe_router.router)
 app.include_router(coach_push.router)
 app.include_router(google_oauth.router)
-app.include_router(public_site.router)
+app.include_router(system.router)
 app.include_router(whatsapp.router)
-app.include_router(portal_public.router)
+# EL INTERRUPTOR DE MANTENIMIENTO: estos dos routers son PÚBLICOS enteros (el
+# portal del cliente y la landing/catálogo/registro — /dq, /planes, /oferta),
+# así que la dependencia se añade de una vez para TODAS sus rutas, presentes y
+# futuras. El panel del coach y el webhook de Stripe no la llevan.
+app.include_router(public_site.router, dependencies=[Depends(no_en_mantenimiento)])
+app.include_router(portal_public.router, dependencies=[Depends(no_en_mantenimiento)])
 
 
 @app.get("/api/health", tags=["health"])

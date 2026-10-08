@@ -29,6 +29,18 @@ def get_current_user(
     return user
 
 
+def no_en_mantenimiento(db: Session = Depends(get_db)) -> None:
+    """Corta el acceso PÚBLICO (portal, pagos, landing) con un 503 cuando el
+    modo mantenimiento está activo (ver `services/mantenimiento.py`). Se
+    inyecta como `dependencies=[...]` en los routers/rutas públicas — el panel
+    del coach y el webhook de Stripe nunca llevan esta dependencia."""
+    from app.services import mantenimiento
+
+    actual = mantenimiento.estado(db)
+    if actual["activo"]:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, actual["mensaje"])
+
+
 def get_client_by_token(
     token: str = Path(min_length=10, max_length=255),
     db: Session = Depends(get_db),

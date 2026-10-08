@@ -8,6 +8,7 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
+  Power,
   Search,
   Users,
   Wallet,
@@ -16,6 +17,7 @@ import { useAuth } from "../hooks/useAuth";
 import { useBrand } from "../hooks/useBrand";
 import MarcaLogo from "./MarcaLogo";
 import { ALERTS_REFRESH_MS, api } from "../lib/api";
+import type { MantenimientoOut } from "../types";
 import { BuscadorRapido, useBuscadorRapido } from "./BuscadorRapido";
 import { useAppUpdate } from "../lib/appUpdate";
 import { AlertsBell } from "./AlertsBell";
@@ -51,6 +53,28 @@ function usePagosSinLeer(): number {
     return () => { vivo = false; window.clearInterval(t); };
   }, [location.pathname]);
   return sinLeer;
+}
+
+/** EL INTERRUPTOR GLOBAL: si está activo, el coach lo ve en TODAS partes del
+ *  panel (no solo en Recursos → Sistema) — es fácil olvidarse de que está
+ *  pausado y pensar que un cliente "no lo está usando" cuando en realidad su
+ *  portal le está devolviendo un 503. */
+function useMantenimientoActivo(): MantenimientoOut | null {
+  const [estado, setEstado] = useState<MantenimientoOut | null>(null);
+  const location = useLocation();
+  useEffect(() => {
+    let vivo = true;
+    const leer = () => {
+      if (document.hidden) return;
+      api.getMantenimiento()
+        .then((d) => { if (vivo) setEstado(d); })
+        .catch(() => {});
+    };
+    leer();
+    const t = window.setInterval(leer, ALERTS_REFRESH_MS);
+    return () => { vivo = false; window.clearInterval(t); };
+  }, [location.pathname]);
+  return estado?.activo ? estado : null;
 }
 
 /** Numerito del menú (99+ como tope para no romper el ancho). */
@@ -101,6 +125,16 @@ export default function AppShell() {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const pagosSinLeer = usePagosSinLeer();
+  const mantenimiento = useMantenimientoActivo();
+  const mantenimientoBanner = mantenimiento ? (
+    <button
+      onClick={() => navigate("/recursos?tab=sistema")}
+      className="tap mb-3 flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-white"
+      style={{ background: "#C2453A" }}
+    >
+      <Power size={14} /> Acceso público PAUSADO — toca para reactivarlo
+    </button>
+  ) : null;
   // Versión nueva desplegada: el panel se pone al día solo al volver del
   // segundo plano, o con un toque si el coach está trabajando (mismo
   // mecanismo que el portal del cliente — nadie reinstala nada).
@@ -133,6 +167,7 @@ export default function AppShell() {
       <div className="flex h-screen flex-col overflow-hidden">
         <main className="coach-mobile relative flex-1 overflow-y-auto pb-24" style={{ background: "var(--bg)" }}>
           {updateBanner}
+          {mantenimientoBanner && <div className="px-3 pt-3">{mantenimientoBanner}</div>}
           <button
             onClick={buscador.abrir}
             aria-label="Buscar cliente"
@@ -301,6 +336,7 @@ export default function AppShell() {
         style={{ background: "var(--bg)" }}
       >
         {updateBanner}
+        {mantenimientoBanner && <div className="px-6 pt-4">{mantenimientoBanner}</div>}
         {/* Centro de alertas: preventivo, se autolimpia al resolver acciones */}
         <AlertsBell />
         {sinConexion && <BandaSinConexion />}

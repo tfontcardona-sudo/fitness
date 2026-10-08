@@ -34,6 +34,7 @@ const EXENTOS = new Map([
   ["src/pages/AnamnesisProfesional.tsx", "el cuestionario del centro es una pantalla suya"],
   ["src/pages/AnamnesisRouter.tsx", "solo elige entre los dos cuestionarios"],
   ["src/components/ErrorBoundary.tsx", "envuelve a BrandProvider: no puede usar el hook"],
+  ["src/components/Mantenimiento.tsx", "se pinta precisamente cuando NO hay datos de marca (el interruptor global los corta): mismo caso que ErrorBoundary"],
 ]);
 
 /** El naranja y el azul de DQ, y su crema. Escritos en cualquier variante. */

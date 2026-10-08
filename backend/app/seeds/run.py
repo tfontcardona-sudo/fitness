@@ -2,19 +2,19 @@
 
 1. Biblioteca de 150 ejercicios — solo si la tabla está vacía.
 2. brand_config por defecto (H.1) — solo si no existe ninguna fila.
-3. Usuarios admin desde ADMIN_x del .env — solo los que falten.
+3. Usuarios admin desde ADMIN_x del .env — se ROTAN (ver `seed_admins`).
 
 Uso manual: python -m app.seeds.run
 """
 
 import sys
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from app.config import settings
 from app.db import SessionLocal
 from app.models import BrandConfig, Exercise, Food, User
-from app.security import hash_password
+from app.security import hash_password, verify_password
 from app.seeds.exercises_data import EXERCISES
 from app.seeds.foods_data import FOODS
 from app.seeds.home_exercises_data import HOME_EXERCISES
@@ -104,18 +104,39 @@ def seed_coach_contact(db) -> bool:
 
 
 def seed_admins(db) -> int:
+    """Sincroniza los admins con el `.env`: crea los que faltan, actualiza el
+    hash de los que cambiaron de contraseña, y BORRA cualquier admin cuyo
+    usuario YA NO esté configurado.
+
+    Esto es lo que hace que rotar credenciales sea tan simple como cambiar
+    `ADMIN_1_USER`/`ADMIN_1_PASS` (o `ADMIN_2_*`) en el `.env` del servidor y
+    reiniciar: el admin antiguo deja de poder entrar en el acto, sin tocar
+    nada más — `get_current_user` vuelve a consultar la tabla `users` en CADA
+    petición (no confía solo en el JWT), así que un admin borrado aquí no
+    puede seguir usando una sesión ya abierta.
+
+    ⚠️ Guarda de seguridad: si el `.env` se quedara sin NINGÚN admin
+    configurado (los dos vacíos, por un error al editarlo), aquí NO se borra
+    a nadie — es preferible dejar un admin "de más" que dejar el sistema sin
+    ninguno y sin forma de arreglarlo desde fuera."""
+    configurados = {
+        (u, p) for u, p in (
+            (settings.admin_1_user, settings.admin_1_pass),
+            (settings.admin_2_user, settings.admin_2_pass),
+        )
+        if u and p
+    }
     created = 0
-    for username, password in (
-        (settings.admin_1_user, settings.admin_1_pass),
-        (settings.admin_2_user, settings.admin_2_pass),
-    ):
-        if not username or not password:
-            continue
-        exists = db.scalar(select(func.count()).where(User.username == username))
-        if exists:
-            continue
-        db.add(User(username=username, password_hash=hash_password(password)))
-        created += 1
+    for username, password in configurados:
+        existente = db.scalar(select(User).where(User.username == username))
+        if existente is None:
+            db.add(User(username=username, password_hash=hash_password(password)))
+            created += 1
+        elif not verify_password(password, existente.password_hash):
+            existente.password_hash = hash_password(password)
+    if configurados:
+        usernames_validos = {u for u, _ in configurados}
+        db.execute(delete(User).where(User.username.notin_(usernames_validos)))
     db.commit()
     return created
 
@@ -137,7 +158,7 @@ def main() -> None:
             f"alimentos nuevos: {n_food} · "
             f"brand: {'creada' if brand else 'ya existía'} · "
             f"whatsapp del coach: {'rellenado' if contacto else 'ya estaba'} · "
-            f"admins creados: {n_admins}"
+            f"admins creados: {n_admins} (los que ya no estén en el .env quedan fuera)"
         )
     finally:
         db.close()

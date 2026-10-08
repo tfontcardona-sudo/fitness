@@ -12,6 +12,7 @@ import {
   Pencil,
   Pill,
   Plus,
+  Power,
   Search,
   Sparkles,
   Store,
@@ -28,6 +29,7 @@ import type {
   BrandProfileOut,
   LearningPatternsOut,
   ExerciseOut,
+  MantenimientoOut,
   ProductCategory,
   RecommendedProductOut,
 } from "../types";
@@ -46,8 +48,9 @@ export default function RecursosPage() {
   // La pestaña viaja en la URL: sobrevive a recargar y, sobre todo, permite
   // ENLAZARLA desde donde se la menciona ("conecta Google en Recursos" lleva
   // directo al bloque de Google, no a buscarlo).
-  type RTab = "productos" | "videos" | "enlaces" | "aprendizaje" | "modelos" | "marca";
-  const TABS_VALIDAS: RTab[] = ["productos", "videos", "enlaces", "aprendizaje", "modelos", "marca"];
+  type RTab = "productos" | "videos" | "enlaces" | "aprendizaje" | "modelos" | "marca" | "sistema";
+  const TABS_VALIDAS: RTab[] =
+    ["productos", "videos", "enlaces", "aprendizaje", "modelos", "marca", "sistema"];
   // LO QUE ESTE NEGOCIO USA. Con el centro activo, "Productos" (el catálogo de
   // afiliación de una asesoría online) y "Página de enlaces" (el enlace del
   // perfil de Instagram, con la conexión de Google dentro) son dos apartados de
@@ -103,7 +106,7 @@ export default function RecursosPage() {
           arrastrando la página entera de lado. */}
       <div className="tab-strip mb-1">
       <div className="inline-flex rounded-xl border p-1" style={{ borderColor: "var(--line-strong)" }}>
-        {([["productos", "Productos", Package], ["videos", "Vídeos de ejercicios", Video], ["modelos", "Modelos de plan", Copy], ["enlaces", "Página de enlaces", ExternalLink], ["aprendizaje", "Aprendizaje", GraduationCap], ["marca", "Marca", Store]] as const).filter(([id]) => visible(id)).map(
+        {([["productos", "Productos", Package], ["videos", "Vídeos de ejercicios", Video], ["modelos", "Modelos de plan", Copy], ["enlaces", "Página de enlaces", ExternalLink], ["aprendizaje", "Aprendizaje", GraduationCap], ["marca", "Marca", Store], ["sistema", "Sistema", Power]] as const).filter(([id]) => visible(id)).map(
           ([id, label, Icon]) => (
             <button
               key={id}
@@ -141,12 +144,14 @@ export default function RecursosPage() {
         {tabVisible === "enlaces" && "La página pública de tu perfil (bio de Instagram) y la conexión con Google."}
         {tabVisible === "aprendizaje" && "Lo que el sistema ha aprendido de tus correcciones a los planes, para acertar más a la próxima."}
         {tabVisible === "marca" && "Tu logo, tus colores y — si llevas más de un negocio — el switch entre ellos."}
+        {tabVisible === "sistema" && "Pausar o reactivar el acceso público entero: portales, pagos, planes y oferta."}
       </p>
 
       {tabVisible === "productos" ? <ProductsManager />
         : tabVisible === "videos" ? <ExerciseVideosManager />
         : tabVisible === "modelos" ? <TemplatesManager />
         : tabVisible === "marca" ? <MarcaManager />
+        : tabVisible === "sistema" ? <MantenimientoManager />
         : tabVisible === "enlaces" ? <LinksPageManager /> : <LearningManager />}
     </div>
   );
@@ -2047,6 +2052,128 @@ function MarcaManager() {
         confirmLabel="Cambiar de marca"
         onCancel={() => setConfirmar(null)}
         onConfirm={() => { if (confirmar) void cambiar(confirmar); }}
+      />
+    </div>
+  );
+}
+
+/** EL INTERRUPTOR GLOBAL: pausar todo el acceso público de un toque (y
+ *  volver a activarlo igual de rápido). Backend: `services/mantenimiento.py`
+ *  + `GET/POST /api/system/mantenimiento`. */
+function MantenimientoManager() {
+  const toast = useToast();
+  const [estado, setEstado] = useState<MantenimientoOut | null>(null);
+  const [error, setError] = useState(false);
+  const [intento, setIntento] = useState(0);
+  const [mensaje, setMensaje] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const [confirmarPausa, setConfirmarPausa] = useState(false);
+
+  useEffect(() => {
+    let vivo = true;
+    setError(false);
+    api.getMantenimiento()
+      .then((d) => { if (vivo) { setEstado(d); setMensaje(d.activo ? d.mensaje : ""); } })
+      .catch(() => { if (vivo) setError(true); });
+    return () => { vivo = false; };
+  }, [intento]);
+
+  async function cambiar(activo: boolean) {
+    setGuardando(true);
+    try {
+      const d = await api.setMantenimiento(activo, mensaje.trim() || undefined);
+      setEstado(d);
+      setMensaje(d.activo ? d.mensaje : "");
+      toast.push(activo ? "Acceso público pausado" : "Acceso público reactivado");
+    } catch (e) {
+      toast.push(e instanceof ApiError ? e.message : "No se pudo cambiar el estado", "error");
+    } finally {
+      setGuardando(false);
+      setConfirmarPausa(false);
+    }
+  }
+
+  if (error) {
+    return (
+      <EmptyState
+        title="No se pudo cargar el estado"
+        hint="Puede ser un fallo de conexión."
+        action={<button type="button" className="btn btn-ghost"
+          onClick={() => setIntento((n) => n + 1)}>Reintentar</button>}
+      />
+    );
+  }
+  if (!estado) return <PageLoader />;
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border p-4" style={{
+        borderColor: estado.activo ? "#C2453A" : "var(--line-strong)",
+        background: estado.activo ? "color-mix(in srgb, #C2453A 10%, var(--surface-raised))"
+                                   : "var(--surface-raised)",
+      }}>
+        <div className="flex items-center gap-2">
+          <Power size={18} style={{ color: estado.activo ? "#C2453A" : "var(--text-faint)" }} />
+          <h3 className="font-semibold" style={{ color: estado.activo ? "#C2453A" : "var(--text-dim)" }}>
+            {estado.activo ? "Acceso público PAUSADO" : "Todo en marcha"}
+          </h3>
+        </div>
+        <p className="mt-2 text-sm" style={{ color: "var(--text-faint)" }}>
+          {estado.activo
+            ? "Ningún cliente puede entrar a su portal ni pagar, y /planes, /oferta y tu página de enlaces enseñan el aviso de abajo en vez de su contenido."
+            : "Los portales de tus clientes, los enlaces de pago y las páginas públicas (/planes, /oferta, tu página de enlaces) funcionan con normalidad."}
+        </p>
+      </div>
+
+      <p className="text-sm" style={{ color: "var(--text-faint)" }}>
+        Esto corta <b>todo</b> lo que no necesita tu sesión abierta: el portal
+        de cada cliente, los enlaces de pago y compra, y las páginas públicas
+        (asesorías, ofertas, tu página de enlaces con la tienda ESN). Este
+        panel —donde estás ahora— sigue intacto para que puedas trabajar y
+        reactivarlo cuando quieras, y los avisos de Stripe se siguen
+        registrando: nada de dinero se pierde de vista mientras está en pausa.
+      </p>
+
+      <div>
+        <label className="mb-1 block text-xs font-medium" style={{ color: "var(--text-faint)" }}>
+          Mensaje que verá quien llegue a una pantalla pausada (opcional)
+        </label>
+        <textarea
+          value={mensaje}
+          onChange={(e) => setMensaje(e.target.value)}
+          maxLength={300}
+          rows={2}
+          placeholder="El sistema no está disponible en este momento. Vuelve a intentarlo más tarde."
+          className="w-full rounded-xl border px-3 py-2 text-sm"
+          style={{ borderColor: "var(--line-strong)", background: "var(--surface)", color: "var(--text)" }}
+        />
+      </div>
+
+      {estado.activo ? (
+        <button type="button" disabled={guardando} onClick={() => void cambiar(false)}
+          className="btn btn-primary min-h-[44px]">
+          {guardando ? <Spinner /> : "Reactivar el acceso público"}
+        </button>
+      ) : (
+        <button type="button" disabled={guardando} onClick={() => setConfirmarPausa(true)}
+          className="min-h-[44px] rounded-xl px-4 py-2 text-sm font-semibold text-white"
+          style={{ background: "#C2453A" }}>
+          {guardando ? <Spinner /> : "Pausar todo el acceso público"}
+        </button>
+      )}
+
+      <ConfirmDialog
+        open={confirmarPausa}
+        title="¿Pausar todo el acceso público?"
+        body={
+          "Ningún cliente podrá entrar a su portal ni pagar, y tus páginas " +
+          "públicas (asesorías, ofertas, página de enlaces) dejarán de " +
+          "funcionar hasta que lo reactives tú mismo desde aquí. Este panel " +
+          "sigue disponible para que puedas trabajar."
+        }
+        confirmLabel="Sí, pausar ahora"
+        onCancel={() => setConfirmarPausa(false)}
+        onConfirm={() => void cambiar(true)}
       />
     </div>
   );

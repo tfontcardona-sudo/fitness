@@ -668,6 +668,12 @@ export interface AiCreditOut {
   ultima_recarga_usd: number | null;
 }
 
+/** GET/POST /api/system/mantenimiento — el interruptor global. */
+export interface MantenimientoOut {
+  activo: boolean;
+  mensaje: string;
+}
+
 /** GET /api/public/landing — datos públicos de la página de enlaces (/dq). */
 export interface LandingOut {
   /** Qué usa este negocio: la página de enlaces es de quien vende por

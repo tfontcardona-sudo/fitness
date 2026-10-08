@@ -20,7 +20,7 @@ from slowapi import Limiter
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.deps import get_client_by_token
+from app.deps import get_client_by_token, no_en_mantenimiento
 from app.models import Client
 from app.ratelimit import client_key
 from app.schemas.entities import BillingPeriod, PackageTier
@@ -71,7 +71,7 @@ def _avisa_al_coach(db: Session, que: str, motivo: str) -> None:
         db.rollback()
 
 
-@router.post("/api/public/checkout")
+@router.post("/api/public/checkout", dependencies=[Depends(no_en_mantenimiento)])
 @limiter.limit("10/minute")
 def public_checkout(request: Request, body: CheckoutIn, db: Session = Depends(get_db)) -> dict:
     """Registro personal: crea la sesión de pago del plan elegido → URL de Stripe.
@@ -82,7 +82,7 @@ def public_checkout(request: Request, body: CheckoutIn, db: Session = Depends(ge
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
 
-@router.get("/api/pay/plan/{tier}/{period}")
+@router.get("/api/pay/plan/{tier}/{period}", dependencies=[Depends(no_en_mantenimiento)])
 @limiter.limit("10/minute")
 def pay_plan_link(request: Request, tier: str, period: str,
                   db: Session = Depends(get_db)):
@@ -167,7 +167,7 @@ def pay_plan_link(request: Request, tier: str, period: str,
     return RedirectResponse(url, status_code=302)
 
 
-@router.get("/api/pay/{token}")
+@router.get("/api/pay/{token}", dependencies=[Depends(no_en_mantenimiento)])
 @limiter.limit("10/minute")
 def pay_link(request: Request, client: Client = Depends(get_client_by_token),
              db: Session = Depends(get_db)):
