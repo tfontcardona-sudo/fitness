@@ -112,6 +112,12 @@ def test_mantenimiento_no_toca_el_panel_del_coach_ni_el_webhook():
             r2 = c.post("/api/stripe/webhook", content=b"{}",
                         headers={"stripe-signature": "firma-invalida"})
             assert r2.status_code != 503
+
+            # /api/health tampoco: es la sonda de vida del despliegue (con la
+            # pausa activa, sondear una ruta pública haría fallar SIEMPRE el
+            # deploy aunque la API estuviera sana).
+            r3 = c.get("/api/health")
+            assert r3.status_code == 200 and r3.json()["status"] == "ok"
     finally:
         m.desactivar(db)
         db.close()
@@ -460,5 +466,50 @@ def test_vaciar_un_hueco_del_env_da_de_baja_a_ese_admin(monkeypatch):
         monkeypatch.undo()
         seed_admins(db)
         db.execute(delete(User).where(User.username.in_(["uno-test", "dos-test"])))
+        db.commit()
+        db.close()
+
+
+@pytest_db
+def test_mismo_usuario_en_los_dos_huecos_gana_el_primero_y_el_log_no_nombra(monkeypatch, capsys):
+    """REGRESIÓN (revisión del mecanismo de órdenes): con el MISMO usuario en
+    ADMIN_1 y ADMIN_2 la contraseña vigente dependía del orden de un set — y cada
+    arranque podía cerrar todas las sesiones. Ahora gana siempre el admin 1. Y los
+    mensajes del seed no imprimen nombres de usuario (el log del despliegue es
+    público: con el usuario conocido, el único secreto del panel sería la
+    contraseña)."""
+    from app.db import SessionLocal
+    from app.security import verify_password
+    from app.seeds.run import seed_admins
+
+    db = SessionLocal()
+    try:
+        db.execute(delete(User).where(User.username.in_(["dup-test", "retirado-test"])))
+        db.commit()
+        monkeypatch.setattr(
+            "app.seeds.run.settings",
+            _settings(admin_1_user="retirado-test", admin_1_pass="passR1234",
+                      admin_2_user="", admin_2_pass=""),
+        )
+        seed_admins(db)
+        monkeypatch.setattr(
+            "app.seeds.run.settings",
+            _settings(admin_1_user="dup-test", admin_1_pass="primera1234",
+                      admin_2_user="dup-test", admin_2_pass="segunda5678"),
+        )
+        capsys.readouterr()
+        seed_admins(db)
+        salida = capsys.readouterr().out
+        fila = db.scalar(select(User).where(User.username == "dup-test"))
+        assert fila is not None
+        assert verify_password("primera1234", fila.password_hash)
+        assert not verify_password("segunda5678", fila.password_hash)
+        assert db.scalar(select(User).where(User.username == "retirado-test")) is None
+        assert "retirado-test" not in salida and "dup-test" not in salida
+        assert "accesos retirados" in salida
+    finally:
+        monkeypatch.undo()
+        seed_admins(db)
+        db.execute(delete(User).where(User.username.in_(["dup-test", "retirado-test"])))
         db.commit()
         db.close()

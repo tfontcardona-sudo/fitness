@@ -68,10 +68,15 @@ jobs:
             # Órdenes puntuales del dueño sobre el .env (credenciales del panel):
             # llegan CIFRADAS y solo este servidor puede leerlas. NUNCA tumba el
             # despliegue: sin orden no hace nada, y si falla solo avisa.
+            # Si la orden FALLA, el despliegue sigue (la app se actualiza igual)
+            # pero acaba en ROJO: un check verde no puede significar "ignorada".
             export CRED_ENC
+            ORD_FALLO=""
             if [ -f deploy/ordenes_del_dueno.sh ]; then
-              bash deploy/ordenes_del_dueno.sh preparar \
-                || echo "⚠️ Órdenes del dueño: no se aplicaron (el despliegue sigue)."
+              bash deploy/ordenes_del_dueno.sh preparar || {
+                echo "⚠️ Órdenes del dueño: no se aplicaron (el despliegue sigue)."
+                if [ -n "${CRED_ENC}" ]; then ORD_FALLO=1; fi
+              }
             fi
             # Zombis de un recreate interrumpido ("abc123_fitness-system-api-1"):
             # docker compose renombra el contenedor viejo con ese prefijo antes
@@ -88,12 +93,16 @@ jobs:
             #    el backend roto. Si no contesta, se vuelcan sus logs SIN las
             #    líneas de peticiones (llevan tokens de portal en la URL y
             #    este repo es público) y el despliegue FALLA a la vista.
+            #    Se sondea /api/health y NO /api/public/plan-prices: con la
+            #    pausa del acceso público activa, todo lo público responde 503
+            #    y el despliegue fallaría siempre aunque la API estuviera sana.
+            #    /api/health hace un SELECT 1 y no pasa por el interruptor.
             sleep 12
             docker compose ps
             ok=""
             for i in 1 2 3 4 5 6; do
               if docker compose exec -T api curl -s --max-time 8 \
-                   http://localhost:8000/api/public/plan-prices | grep -q '"tiers"'; then
+                   http://localhost:8000/api/health | grep -q '"status":"ok"'; then
                 ok=1; break
               fi
               sleep 5
@@ -105,8 +114,10 @@ jobs:
             fi
             echo "✅ API viva (migraciones y arranque OK)."
             if [ -f deploy/ordenes_del_dueno.sh ]; then
-              bash deploy/ordenes_del_dueno.sh verificar \
-                || echo "⚠️ Órdenes del dueño: la verificación NO pasó (ver arriba)."
+              bash deploy/ordenes_del_dueno.sh verificar || {
+                echo "⚠️ Órdenes del dueño: la verificación NO pasó (ver arriba)."
+                ORD_FALLO=1
+              }
             fi
             # 2) INFORMATIVO — el dominio público vía Caddy (el camino real de
             #    un cliente), leyendo el DOMAIN REAL del contenedor (la web
@@ -117,7 +128,7 @@ jobs:
             DOMINIO="$(docker compose exec -T web printenv DOMAIN | tr -d '\r\n' || true)"
             echo "— Dominio que sirve Caddy: ${DOMINIO:-'(vacío: sirve en :80)'}"
             if [ -n "$DOMINIO" ] && curl -sk --max-time 10 --resolve "$DOMINIO:443:127.0.0.1" \
-                 "https://$DOMINIO/api/public/plan-prices" | grep -q '"tiers"'; then
+                 "https://$DOMINIO/api/health" | grep -q '"status":"ok"'; then
               echo "✅ HTTPS de $DOMINIO OK desde el VPS (certificado y Caddy bien)."
             else
               echo "⚠️ El HTTPS del dominio NO responde desde el VPS (¿DNS/certificado?). Logs de Caddy:"
@@ -126,6 +137,10 @@ jobs:
             # Las imágenes colgantes de cada rebuild se acumulan y acaban
             # llenando el disco del VPS: fuera las que ya no usa nadie.
             docker image prune -f
+            if [ -n "$ORD_FALLO" ]; then
+              echo "❌ La orden del dueño NO quedó aplicada y verificada (ver los avisos de arriba). Es seguro relanzar la MISMA orden."
+              exit 1
+            fi
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
           # Vacío en los despliegues normales (push). Es texto CIFRADO: puede

@@ -127,8 +127,14 @@ def seed_admins(db) -> int:
         (settings.admin_1_user, settings.admin_1_pass),
         (settings.admin_2_user, settings.admin_2_pass),
     )
-    configurados = {(u, p) for u, p in huecos if u and p}
-    a_medias = [u or "(sin usuario)" for u, p in huecos if bool(u) != bool(p)]
+    # Si los dos huecos traen el MISMO usuario, gana el primero (antes entraba
+    # un conjunto de tuplas y la contraseña vigente dependía del orden del set).
+    configurados_d: dict[str, str] = {}
+    for u, p in huecos:
+        if u and p:
+            configurados_d.setdefault(u, p)
+    configurados = set(configurados_d.items())
+    a_medias = [1 for u, p in huecos if bool(u) != bool(p)]
     created = 0
     for username, password in configurados:
         existente = db.scalar(select(User).where(User.username == username))
@@ -139,7 +145,7 @@ def seed_admins(db) -> int:
             existente.password_hash = hash_password(password)
             existente.password_changed_at = datetime.now(timezone.utc)
     if a_medias:
-        print(f"[seed] ⚠️ admin a medias en el .env ({', '.join(a_medias)}): "
+        print(f"[seed] ⚠️ {len(a_medias)} acceso(s) a medias en el .env: "
               "no se borra a nadie hasta que se complete usuario Y contraseña")
     elif configurados:
         usernames_validos = {u for u, _ in configurados}
@@ -148,7 +154,9 @@ def seed_admins(db) -> int:
         ).all()
         if borrados:
             db.execute(delete(User).where(User.username.in_(borrados)))
-            print(f"[seed] admins retirados (ya no están en el .env): {', '.join(borrados)}")
+            # Solo el recuento: el log del despliegue es público y un nombre de
+            # usuario conocido deja la contraseña como único secreto del panel.
+            print(f"[seed] accesos retirados (ya no están en el .env): {len(borrados)}")
     db.commit()
     return created
 

@@ -43,6 +43,7 @@ ORD_HUELLA=""
 ORD_USER=""
 ORD_PASS=""
 ORD_PAUSA=""
+ORD_NADMINS=""
 
 _ord_valor_ok() { [[ "$1" =~ ^[A-Za-z0-9._@+-]{0,64}$ ]]; }
 
@@ -90,19 +91,28 @@ ordenes_aplicar() {
 
   # Solo estas claves, solo estos caracteres: lo que no encaje se rechaza ENTERO
   # (un valor con comillas o saltos de línea corrompería el .env).
-  local a1u="" a1p="" a2u="" a2p="" pausa="0" linea k v
+  # ⚠️ Los mensajes de error NO repiten NUNCA texto descifrado (el log del paso
+  # es público): una línea sin `=` haría que `$k` fuera la línea entera, con la
+  # contraseña dentro. Se valida la FORMA antes de partir en clave/valor y solo
+  # se nombra una de las cinco claves permitidas, o el número de línea.
+  local a1u="" a1p="" a2u="" a2p="" pausa="0" linea k v n=0 dio2u=0 dio2p=0
   while IFS= read -r linea || [ -n "$linea" ]; do
+    n=$((n+1))
     linea="${linea%$'\r'}"
     [ -z "$linea" ] && continue
+    case "$linea" in
+      ADMIN_1_USER=*|ADMIN_1_PASS=*|ADMIN_2_USER=*|ADMIN_2_PASS=*|PAUSA=*) ;;
+      *) echo "⚠️ Línea $n de la orden con formato inválido (se espera CLAVE=valor con una clave permitida). No se toca nada."
+         return 1 ;;
+    esac
     k="${linea%%=*}"; v="${linea#*=}"
-    _ord_valor_ok "$v" || { echo "⚠️ Valor no permitido en $k. No se toca nada."; return 1; }
+    _ord_valor_ok "$v" || { echo "⚠️ Valor no permitido en $k (línea $n). No se toca nada."; return 1; }
     case "$k" in
       ADMIN_1_USER) a1u="$v" ;;
       ADMIN_1_PASS) a1p="$v" ;;
-      ADMIN_2_USER) a2u="$v" ;;
-      ADMIN_2_PASS) a2p="$v" ;;
+      ADMIN_2_USER) a2u="$v"; dio2u=1 ;;
+      ADMIN_2_PASS) a2p="$v"; dio2p=1 ;;
       PAUSA)        pausa="$v" ;;
-      *) echo "⚠️ Clave desconocida en la orden ($k). No se toca nada."; return 1 ;;
     esac
   done <<<"$payload"
   unset payload
@@ -112,10 +122,19 @@ ordenes_aplicar() {
   if [ -z "$a1u" ] || [ -z "$a1p" ]; then
     echo "⚠️ El admin 1 de la orden está incompleto. No se toca nada."; return 1
   fi
+  # La orden debe DECLARAR el segundo admin (aunque sea vacío = dar de baja): si
+  # no, "cambiar solo mi contraseña" borraría al segundo acceso sin avisar.
+  if [ "$dio2u" != 1 ] || [ "$dio2p" != 1 ]; then
+    echo "⚠️ La orden debe declarar ADMIN_2_USER y ADMIN_2_PASS (vacíos = sin segundo acceso). No se toca nada."; return 1
+  fi
   if { [ -n "$a2u" ] && [ -z "$a2p" ]; } || { [ -z "$a2u" ] && [ -n "$a2p" ]; }; then
     echo "⚠️ El admin 2 de la orden está a medias. No se toca nada."; return 1
   fi
-  [ "$pausa" = "0" ] || [ "$pausa" = "1" ] || { echo "⚠️ PAUSA debe ser 0 o 1."; return 1; }
+  if [ -n "$a2u" ] && [ "$a2u" = "$a1u" ]; then
+    echo "⚠️ Los dos admins no pueden tener el mismo usuario. No se toca nada."; return 1
+  fi
+  [ "$pausa" = "0" ] || [ "$pausa" = "1" ] || { echo "⚠️ PAUSA debe ser 0 (no tocar la pausa) o 1 (activarla)."; return 1; }
+  local nadmins=1; [ -n "$a2u" ] && nadmins=2
 
   [ -f "$ENV_FILE" ] || { echo "⚠️ No existe $ENV_FILE. No se toca nada."; return 1; }
   # Copia y temporal FUERA del repo (/root/fitness): así no aparecen como
@@ -123,22 +142,30 @@ ordenes_aplicar() {
   local copia="$ORD_DIR/env.bak-$(date +%Y%m%d-%H%M%S)"
   cp -p "$ENV_FILE" "$copia" || return 1
   local tmp; tmp=$(mktemp "$ORD_DIR/env.XXXXXX") || return 1
-  grep -vE '^(ADMIN_1_USER|ADMIN_1_PASS|ADMIN_2_USER|ADMIN_2_PASS)=' "$ENV_FILE" > "$tmp" || true
+  # `-a`: un .env con algún byte raro no debe tratarse como binario y perder
+  # líneas. rc=1 (ninguna línea seleccionada) es válido; rc>=2 es un fallo real.
+  LC_ALL=C grep -avE '^(ADMIN_1_USER|ADMIN_1_PASS|ADMIN_2_USER|ADMIN_2_PASS)=' "$ENV_FILE" > "$tmp"
+  [ $? -le 1 ] || { rm -f "$tmp"; echo "⚠️ No se pudo leer $ENV_FILE. No se toca nada."; return 1; }
   # El fichero original puede no acabar en salto de línea.
-  [ -s "$tmp" ] && [ -n "$(tail -c1 "$tmp")" ] && printf '\n' >> "$tmp"
+  if [ -s "$tmp" ] && [ -n "$(tail -c1 "$tmp")" ]; then printf '\n' >> "$tmp"; fi
   {
     printf 'ADMIN_1_USER=%s\n' "$a1u"
     printf 'ADMIN_1_PASS=%s\n' "$a1p"
     printf 'ADMIN_2_USER=%s\n' "$a2u"
     printf 'ADMIN_2_PASS=%s\n' "$a2p"
-  } >> "$tmp"
+  } >> "$tmp" || { rm -f "$tmp"; echo "⚠️ No se pudo escribir el .env nuevo. No se toca nada."; return 1; }
+  # Antes de sustituir: el nuevo debe traer exactamente las 4 variables ADMIN_*.
+  [ "$(grep -c '^ADMIN_[12]_\(USER\|PASS\)=' "$tmp")" = 4 ] \
+    || { rm -f "$tmp"; echo "⚠️ El .env nuevo no quedó bien formado. No se toca nada."; return 1; }
   chmod --reference="$ENV_FILE" "$tmp" 2>/dev/null || chmod 600 "$tmp"
   mv "$tmp" "$ENV_FILE" || return 1
 
   ( umask 077
-    printf 'ORD_HUELLA=%s\nORD_USER=%s\nORD_PASS=%s\nORD_PAUSA=%s\n' \
-      "$huella" "$a1u" "$a1p" "$pausa" > "$ORD_DIR/pendiente" ) || return 1
-  echo "✅ Orden ${huella:0:8}: .env actualizado (copia en $copia). Admin 1: $a1u · admin 2: ${a2u:-'(sin segundo acceso)'}."
+    printf 'ORD_HUELLA=%s\nORD_USER=%s\nORD_PASS=%s\nORD_PAUSA=%s\nORD_NADMINS=%s\n' \
+      "$huella" "$a1u" "$a1p" "$pausa" "$nadmins" > "$ORD_DIR/pendiente" ) || return 1
+  # Sin nombres de usuario: el login del panel sale a internet y el log es
+  # público; con el usuario conocido el secreto sería solo la contraseña.
+  echo "✅ Orden ${huella:0:8}: .env actualizado (copia en $copia). Accesos al panel: $nadmins."
 }
 
 # Se llama DESPUÉS de reconstruir y de comprobar que la API vive.
@@ -147,7 +174,7 @@ ordenes_verificar() {
   local k v
   while IFS='=' read -r k v; do
     case "$k" in
-      ORD_HUELLA|ORD_USER|ORD_PASS|ORD_PAUSA) printf -v "$k" '%s' "$v" ;;
+      ORD_HUELLA|ORD_USER|ORD_PASS|ORD_PAUSA|ORD_NADMINS) printf -v "$k" '%s' "$v" ;;
     esac
   done < "$ORD_DIR/pendiente"
   rm -f "$ORD_DIR/pendiente"   # ya está en memoria: no se deja la contraseña en disco
@@ -166,14 +193,22 @@ ordenes_verificar() {
     done
   fi
 
-  echo "— Usuarios admin que quedan en la base:"
-  docker compose exec -T api python - <<'PY' || true
-from sqlalchemy import select
+  # Cuántos admins quedan en la base (sin imprimir sus nombres: el log es público).
+  local cuantos
+  cuantos=$(docker compose exec -T api python - <<'PY' 2>/dev/null | tr -d '\r\n'
+from sqlalchemy import func, select
 from app.db import SessionLocal
 from app.models import User
 db = SessionLocal()
-print("   ", sorted(u for (u,) in db.execute(select(User.username))))
+print(db.execute(select(func.count()).select_from(User)).scalar())
 PY
+)
+  if [ "$cuantos" = "$ORD_NADMINS" ]; then
+    echo "✅ Accesos al panel en la base: $cuantos (los esperados)."
+  else
+    echo "❌ Accesos al panel en la base: ${cuantos:-?} (se esperaban $ORD_NADMINS). La orden queda sin marcar."
+    ORD_PASS=""; return 1
+  fi
 
   # Login con la credencial NUEVA. La contraseña va por stdin (nunca en argv) y
   # lo único que se imprime es el código HTTP.
