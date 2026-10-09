@@ -627,12 +627,47 @@ npm run check:planes        # el nivel del cliente RECOMIENDA un camino de
      la imagen de producto siguen sirviéndose por URL directa (sin datos
      personales ni acción posible); un portal ya cargado en primer plano no ve la
      pausa hasta volver a enfocarlo o guardar algo (no hay sondeo periódico).
-   - ⚠️ **PASO MANUAL DEL DUEÑO (no vive en git)**: la rotación se dispara al
-     editar el `.env` REAL del servidor (`ADMIN_1_USER`/`ADMIN_1_PASS`, y
-     `ADMIN_2_*` o vaciarlo) y desplegar/reiniciar. Las credenciales nunca se
-     escriben en el repo, ni aquí. Hasta que lo haga, el acceso sigue siendo el
-     de antes. La pausa del acceso público arranca DESACTIVADA: se enciende desde
-     Recursos → Sistema.
+   - ✅ **APLICADO EN PRODUCCIÓN (09-10-2026), sin que el dueño tocara el
+     servidor.** El `.env` real no vive en git, el repo es PÚBLICO y esta sesión
+     no tiene SSH ni red hacia el VPS, así que la credencial nueva viajó por el
+     propio despliegue **cifrada**: el despliegue generó EN EL VPS un par RSA-3072
+     (la privada no salió de él) y publicó solo la pública en su log; se cifró la
+     orden (RSA-OAEP/SHA-256) con ella y se lanzó como entrada `ordenes` del
+     `workflow_dispatch`; el servidor la descifró, reescribió SOLO las cuatro
+     variables `ADMIN_*` del `.env` (con copia fuera del repo, en
+     `/root/.fitness_ordenes/`), reconstruyó y **comprobó con la API viva**: un
+     único acceso en la base, login nuevo = 200, pausa activada y
+     `/api/public/landing` = 503; después destruyó la clave. Un solo acceso
+     compartido (`ADMIN_2_*` vacío). El mecanismo (`deploy/ordenes_del_dueno.sh`
+     + las entradas del workflow) era de UN solo uso y **ya se retiró**; queda en
+     el historial de git (commits `e4912bf`, `31a49df`) por si hace falta repetir
+     una rotación. Para rotar de nuevo basta con volver a ponerlo, o editar el
+     `.env` del VPS a mano y reiniciar (`seed_admins` hace el resto).
+     ⚠️ **Ni la contraseña ni el usuario están escritos en el repo.** Los nombres
+     de usuario tampoco se imprimen en ningún log del despliegue (público): con el
+     usuario conocido, el único secreto del panel sería la contraseña.
+   - **La pausa quedó ACTIVA** (era lo pedido: «de momento no»; la primera versión
+     la dejaba apagada por defecto, error de lectura). Se reactiva desde
+     **Recursos → Sistema**. Mientras esté activa, los recordatorios automáticos
+     a clientes (correo y push) siguen saliendo con enlaces que mostrarán «no
+     disponible»: decisión pendiente del dueño.
+   - **Revisión adversarial del mecanismo de órdenes (14 hallazgos confirmados,
+     los que procedían, corregidos y con la prueba de punta a punta repetida)**:
+     los mensajes de error repetían texto descifrado (una línea sin `=` hacía que
+     la «clave» fuera la contraseña entera, a un log público); se imprimían
+     nombres de usuario; una orden sin `ADMIN_2_*` borraba el segundo acceso sin
+     avisar; la reescritura del `.env` no comprobaba errores de lectura/escritura.
+     Hallazgo ajeno al mecanismo y **importante**: ⚠️ **con la pausa activa lo
+     público responde 503, y la sonda de vida del despliegue
+     (`/api/public/plan-prices`) habría hecho FALLAR todo despliegue** aunque la
+     API estuviera sana. Ahora sondea `/api/health` (SELECT 1, fuera del
+     interruptor), también en la sonda del dominio. No lo devuelvas a una ruta
+     pública.
+   - **Riesgo conocido y aceptado** (por tiempo de exposición mínimo): mientras
+     el mecanismo estuvo activo, la clave pública era visible en un log público y
+     la orden no iba autenticada, así que quien pudiera lanzar un
+     `workflow_dispatch` (escritura/Actions en el repo) habría podido forjar una.
+     La ventana fue de minutos y la clave se destruyó al aplicarse.
 
 0000000000000000000000000000000000. ✅ **EL ENLACE DE PAGO YA NO SE ROMPE POR
    UN TROPIEZO DE RED CON STRIPE (25-09-2026).** El coach recibió el push

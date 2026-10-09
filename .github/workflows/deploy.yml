@@ -26,14 +26,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      ordenes:
-        description: >-
-          Orden CIFRADA del dueño (base64) sobre el .env del servidor. Solo es
-          legible con la clave privada que genera el propio servidor y que no
-          sale de él. Vacío = despliegue normal. Ver deploy/ordenes_del_dueno.sh.
-        required: false
-        default: ''
 
 concurrency:
   group: deploy-vps
@@ -52,7 +44,7 @@ jobs:
           command_timeout: 30m
           # El token viaja al servidor como variable de entorno (no queda en el
           # YAML ni en el código). Vacío si el repo aún es público.
-          envs: GH_PAT,CRED_ENC
+          envs: GH_PAT
           script: |
             set -e
             cd /root/fitness
@@ -64,19 +56,6 @@ jobs:
             else
               # Repo público: pull normal, sin credenciales.
               git pull origin main
-            fi
-            # Órdenes puntuales del dueño sobre el .env (credenciales del panel):
-            # llegan CIFRADAS y solo este servidor puede leerlas. NUNCA tumba el
-            # despliegue: sin orden no hace nada, y si falla solo avisa.
-            # Si la orden FALLA, el despliegue sigue (la app se actualiza igual)
-            # pero acaba en ROJO: un check verde no puede significar "ignorada".
-            export CRED_ENC
-            ORD_FALLO=""
-            if [ -f deploy/ordenes_del_dueno.sh ]; then
-              bash deploy/ordenes_del_dueno.sh preparar || {
-                echo "⚠️ Órdenes del dueño: no se aplicaron (el despliegue sigue)."
-                if [ -n "${CRED_ENC}" ]; then ORD_FALLO=1; fi
-              }
             fi
             # Zombis de un recreate interrumpido ("abc123_fitness-system-api-1"):
             # docker compose renombra el contenedor viejo con ese prefijo antes
@@ -113,12 +92,6 @@ jobs:
               exit 1
             fi
             echo "✅ API viva (migraciones y arranque OK)."
-            if [ -f deploy/ordenes_del_dueno.sh ]; then
-              bash deploy/ordenes_del_dueno.sh verificar || {
-                echo "⚠️ Órdenes del dueño: la verificación NO pasó (ver arriba)."
-                ORD_FALLO=1
-              }
-            fi
             # 2) INFORMATIVO — el dominio público vía Caddy (el camino real de
             #    un cliente), leyendo el DOMAIN REAL del contenedor (la web
             #    vive en app.dqrassessories.com; el dominio raíz no tiene DNS
@@ -137,12 +110,5 @@ jobs:
             # Las imágenes colgantes de cada rebuild se acumulan y acaban
             # llenando el disco del VPS: fuera las que ya no usa nadie.
             docker image prune -f
-            if [ -n "$ORD_FALLO" ]; then
-              echo "❌ La orden del dueño NO quedó aplicada y verificada (ver los avisos de arriba). Es seguro relanzar la MISMA orden."
-              exit 1
-            fi
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
-          # Vacío en los despliegues normales (push). Es texto CIFRADO: puede
-          # verse en el log sin revelar nada.
-          CRED_ENC: ${{ inputs.ordenes }}

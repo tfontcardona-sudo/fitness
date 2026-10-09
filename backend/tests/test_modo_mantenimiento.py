@@ -189,7 +189,7 @@ def test_rotar_admin_invalida_el_antiguo_y_habilita_el_nuevo(monkeypatch):
     monkeypatch.setattr(auth.limiter, "enabled", False)
     db = SessionLocal()
     try:
-        db.execute(delete(User).where(User.username.in_(["viejo-admin-test", "tonifont-test"])))
+        db.execute(delete(User).where(User.username.in_(["viejo-admin-test", "nuevo-admin-test"])))
         db.commit()
 
         monkeypatch.setattr(
@@ -213,7 +213,7 @@ def test_rotar_admin_invalida_el_antiguo_y_habilita_el_nuevo(monkeypatch):
             # a correr seed_admins, exactamente lo que hace entrypoint.sh).
             monkeypatch.setattr(
                 "app.seeds.run.settings",
-                _settings(admin_1_user="tonifont-test", admin_1_pass="nuevapass1234",
+                _settings(admin_1_user="nuevo-admin-test", admin_1_pass="nuevapass1234",
                           admin_2_user="", admin_2_pass=""),
             )
             seed_admins(db)
@@ -224,7 +224,7 @@ def test_rotar_admin_invalida_el_antiguo_y_habilita_el_nuevo(monkeypatch):
 
             # El NUEVO funciona, con su contraseña nueva.
             r3 = c.post("/api/auth/login",
-                        json={"username": "tonifont-test", "password": "nuevapass1234"})
+                        json={"username": "nuevo-admin-test", "password": "nuevapass1234"})
             assert r3.status_code == 200
     finally:
         # `seed_admins` ROTA de verdad: sin restaurar el admin REAL del
@@ -232,7 +232,7 @@ def test_rotar_admin_invalida_el_antiguo_y_habilita_el_nuevo(monkeypatch):
         # comparte la misma base) en cuanto deshace el monkeypatch.
         monkeypatch.undo()
         seed_admins(db)
-        db.execute(delete(User).where(User.username.in_(["viejo-admin-test", "tonifont-test"])))
+        db.execute(delete(User).where(User.username.in_(["viejo-admin-test", "nuevo-admin-test"])))
         db.commit()
         db.close()
 
